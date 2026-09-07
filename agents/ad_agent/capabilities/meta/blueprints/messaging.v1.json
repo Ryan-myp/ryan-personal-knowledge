@@ -21,7 +21,7 @@
     {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS"]},
     {"path": "ad_set.messaging_apps", "tool_ref": "meta_create_adset.messaging_apps", "label": "消息目的地", "required": true, "source": "enum", "options": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},
     {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "受众定向", "required": true, "presentation": "object_editor"},
-    {"path": "ad_set.daily_budget", "tool_ref": "meta_create_adset.daily_budget", "label": "Ad Set 日预算", "required": true},
+    {"path": "ad_set.daily_budget", "tool_ref": "meta_create_adset.daily_budget", "label": "Ad Set 日预算（可选；Campaign 已设置预算时留空）", "required": false},
     {"path": "ad.name", "tool_ref": "meta_create_messaging_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.page_id", "tool_ref": "meta_create_messaging_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
     {"path": "ad.messaging_app", "tool_ref": "meta_create_messaging_ad.messaging_app", "label": "消息目的地（与 Ad Set 保持一致）", "required": true, "source": "enum", "options": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},

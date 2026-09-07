@@ -83,6 +83,11 @@ class MetaCreateAdHandler(ToolHandler):
         adset_id = input_data.get("adset_id")
         if self.client and ctx.account_id and adset_id:
             try:
+                requested_status = str(input_data.get("status") or "PAUSED").upper()
+                if requested_status != "PAUSED":
+                    return ToolResult.error(
+                        "受控 Meta 创建链路只允许以 PAUSED 状态创建 Ad"
+                    )
                 if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
                     ctx.account_id, "adset", adset_id
                 ):
@@ -97,7 +102,7 @@ class MetaCreateAdHandler(ToolHandler):
                 return ToolResult.ok({
                     "ad_id": ad_id,
                     "name": input_data.get("name"),
-                    "status": input_data.get("status", "PAUSED"),
+                    "status": requested_status,
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Meta ad: {e}")

@@ -87,6 +87,29 @@ META_TARGETING_SEARCH_TYPES = [
     "adworkposition", "adworkemployer", "adtargetingcategory",
 ]
 
+# Meta's ``targeting.geo_locations.countries`` accepts ISO 3166-1 alpha-2
+# codes.  This is a static provider enum, not a targeting-search result:
+# ``targetingsearch?type=adgeolocation`` returns Meta location objects whose
+# IDs are valid for regions/cities, but are not valid country values.
+META_COUNTRY_CODES = [
+    'AD', 'AE', 'AF', 'AG', 'AI', 'AL', 'AM', 'AO', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AW', 'AX', 'AZ',
+    'BA', 'BB', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BL', 'BM', 'BN', 'BO', 'BQ', 'BR', 'BS',
+    'BT', 'BV', 'BW', 'BY', 'BZ', 'CA', 'CC', 'CD', 'CF', 'CG', 'CH', 'CI', 'CK', 'CL', 'CM', 'CN',
+    'CO', 'CR', 'CU', 'CV', 'CW', 'CX', 'CY', 'CZ', 'DE', 'DJ', 'DK', 'DM', 'DO', 'DZ', 'EC', 'EE',
+    'EG', 'EH', 'ER', 'ES', 'ET', 'FI', 'FJ', 'FK', 'FM', 'FO', 'FR', 'GA', 'GB', 'GD', 'GE', 'GF',
+    'GG', 'GH', 'GI', 'GL', 'GM', 'GN', 'GP', 'GQ', 'GR', 'GS', 'GT', 'GU', 'GW', 'GY', 'HK', 'HM',
+    'HN', 'HR', 'HT', 'HU', 'ID', 'IE', 'IL', 'IM', 'IN', 'IO', 'IQ', 'IR', 'IS', 'IT', 'JE', 'JM',
+    'JO', 'JP', 'KE', 'KG', 'KH', 'KI', 'KM', 'KN', 'KP', 'KR', 'KW', 'KY', 'KZ', 'LA', 'LB', 'LC',
+    'LI', 'LK', 'LR', 'LS', 'LT', 'LU', 'LV', 'LY', 'MA', 'MC', 'MD', 'ME', 'MF', 'MG', 'MH', 'MK',
+    'ML', 'MM', 'MN', 'MO', 'MP', 'MQ', 'MR', 'MS', 'MT', 'MU', 'MV', 'MW', 'MX', 'MY', 'MZ', 'NA',
+    'NC', 'NE', 'NF', 'NG', 'NI', 'NL', 'NO', 'NP', 'NR', 'NU', 'NZ', 'OM', 'PA', 'PE', 'PF', 'PG',
+    'PH', 'PK', 'PL', 'PM', 'PN', 'PR', 'PS', 'PT', 'PW', 'PY', 'QA', 'RE', 'RO', 'RS', 'RU', 'RW',
+    'SA', 'SB', 'SC', 'SD', 'SE', 'SG', 'SH', 'SI', 'SJ', 'SK', 'SL', 'SM', 'SN', 'SO', 'SR', 'SS',
+    'ST', 'SV', 'SX', 'SY', 'SZ', 'TC', 'TD', 'TF', 'TG', 'TH', 'TJ', 'TK', 'TL', 'TM', 'TN', 'TO',
+    'TR', 'TT', 'TV', 'TW', 'TZ', 'UA', 'UG', 'UM', 'US', 'UY', 'UZ', 'VA', 'VC', 'VE', 'VG', 'VI',
+    'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
+]
+
 
 def _field(field_type: Any, description: str = "", **kwargs: Any) -> dict[str, Any]:
     value = {"type": field_type, "description": description}
@@ -174,13 +197,13 @@ def meta_targeting_schema() -> dict[str, Any]:
         "geo_locations": _object({
             "countries": _field(
                 "array", "ISO country codes; search by country name or code",
-                items={"type": "string", "minLength": 2, "maxLength": 3},
-                lookup_tool="meta_search_targeting_options",
-                lookup_result_key="targeting_options",
-                lookup_query_field="query",
-                lookup_defaults={"type": "adgeolocation"},
-                selection_value_fields=["key", "id", "value", "country_code"],
-                selection_label_fields=["name", "label", "country_name", "key"],
+                items={"type": "string", "enum": META_COUNTRY_CODES},
+                option_labels={
+                    "US": "美国", "CA": "加拿大", "GB": "英国", "AU": "澳大利亚",
+                    "SG": "新加坡", "JP": "日本", "KR": "韩国", "IN": "印度",
+                    "ID": "印度尼西亚", "MY": "马来西亚", "TH": "泰国", "VN": "越南",
+                    "PH": "菲律宾", "CN": "中国", "TW": "中国台湾地区", "HK": "中国香港地区",
+                },
             ),
             "regions": _field(
                 "array", "Region IDs; search by region name",
@@ -204,6 +227,15 @@ def meta_targeting_schema() -> dict[str, Any]:
             ),
             "location_types": _field("array", "Location semantics", items={"type": "string", "enum": ["home", "recent"]}),
         }, "Geographic targeting"),
+        # Meta Graph v19 requires the caller to make an explicit choice for
+        # Advantage Audience on this account. Keep it inside the targeting
+        # spec, where Meta expects it, instead of silently choosing a mode.
+        "targeting_automation": _object({
+            "advantage_audience": _field(
+                "integer", "Advantage Audience: 1 enabled, 0 disabled",
+                enum=[0, 1],
+            ),
+        }, "Meta Advantage Audience setting", required=["advantage_audience"]),
         "age_min": _field("integer", "Minimum age", minimum=13, maximum=65),
         "age_max": _field("integer", "Maximum age", minimum=13, maximum=65),
         "genders": _field("array", "1 male, 2 female", items={"type": "integer", "enum": [1, 2]}),
@@ -893,7 +925,9 @@ def meta_adset_schema() -> dict[str, Any]:
     return {
         "required": ["campaign_id", "name"],
         "provider_required": ["optimization_goal", "billing_event", "targeting"],
-        "provider_any_of": [["daily_budget", "lifetime_budget", "budget"]],
+        # The parent Campaign may own the budget. Sending a second Ad Set
+        # budget is rejected by Meta, so this cannot be a global one-of.
+        "provider_any_of": [],
         "properties": {
             "campaign_id": _field("string", "Parent Campaign ID"),
             "name": _field("string", "Ad Set name", maxLength=400),

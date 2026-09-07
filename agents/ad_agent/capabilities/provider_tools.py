@@ -69,6 +69,7 @@ def method_tool(
     timeout_seconds: float = 30.0,
     max_output_bytes: int = 1_000_000,
     required_permissions: Optional[Iterable[str]] = None,
+    readback_tool: Optional[str] = None,
 ) -> tuple[ToolDefinition, ProviderMethodHandler]:
     """Build one provider-owned Tool and its fixed method handler."""
     effect = ToolEffect.WRITE if write else ToolEffect.READ
@@ -107,6 +108,7 @@ def method_tool(
         timeout_seconds=timeout_seconds,
         max_output_bytes=max_output_bytes,
         required_permissions=list(required_permissions or []),
+        readback_tool=readback_tool,
     )
     handler = ProviderMethodHandler(
         None,

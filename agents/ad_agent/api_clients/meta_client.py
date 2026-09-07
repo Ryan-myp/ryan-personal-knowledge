@@ -281,10 +281,27 @@ class MetaAPIClient(BasePlatformClient):
     ) -> list:
         """Consume Graph API cursor pages without leaking paging envelopes."""
         items: list = []
+        # Graph's ``limit`` is a page size, but callers of the Capability
+        # contract use it as the total discovery bound.  Do not walk an
+        # entire large account merely to populate a picker or ownership
+        # check; that can also make a child-create confirmation appear stuck.
+        raw_limit = params.get("limit") if isinstance(params, dict) else None
+        total_limit = (
+            int(raw_limit)
+            if isinstance(raw_limit, int) and not isinstance(raw_limit, bool)
+            and raw_limit > 0 else None
+        )
         after = None
         seen_cursors: set[str] = set()
         for _ in range(max_pages):
             page_params = dict(params)
+            # Meta Graph treats ``limit`` as the size of one page. Runtime
+            # callers use it as a bounded total discovery limit, so cap the
+            # wire value to a provider-safe page size and enforce the total
+            # locally below. Sending limit=1000 can make some Graph edges
+            # return a provider 500 even when the account is valid.
+            if total_limit is not None:
+                page_params["limit"] = min(total_limit, 100)
             if after:
                 page_params["after"] = after
             self.acquire_rate_limit(self._get_account_limiter(account_id))
@@ -296,6 +313,8 @@ class MetaAPIClient(BasePlatformClient):
             else:
                 page_items = []
             items.extend(page_items)
+            if total_limit is not None and len(items) >= total_limit:
+                return items[:total_limit]
 
             paging = result.get("paging", {}) if isinstance(result, dict) else {}
             cursors = paging.get("cursors", {}) if isinstance(paging, dict) else {}
@@ -499,6 +518,12 @@ class MetaAPIClient(BasePlatformClient):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", raw):
             raise ValueError(f"{field_name} must be a simple Meta object ID")
         return raw
+
+    @classmethod
+    def _ad_account_edge(cls, account_id: Any, edge: str) -> str:
+        """Build a Marketing API edge using Meta's required ``act_`` ID."""
+        clean_id = cls._clean_meta_id(account_id, "account_id")
+        return f"/act_{clean_id}/{str(edge).lstrip('/')}"
 
     def get_audience(self, account_id: str, audience_id: str, fields: list = None) -> dict:
         """Get one Custom/Lookalike Audience visible to an ad account."""
@@ -919,13 +944,32 @@ class MetaAPIClient(BasePlatformClient):
         )
 
     def list_pages(self, account_id: str, limit: int = 25) -> list:
-        """List Facebook Pages available for promotion by an ad account."""
+        """List Facebook Pages usable as a Meta ad identity.
+
+        Older Marketing API versions exposed ``promotable_pages`` on the ad
+        account. Meta v19 no longer exposes that edge, so fall back to the
+        current user's Page list. The fallback deliberately does not return
+        Page access tokens and callers must still use the selected Page ID
+        explicitly; it never guesses a Page for a live creative.
+        """
         clean_id = str(account_id).replace("act_", "")
-        return self._list_graph_pages(
-            clean_id,
-            f"/act_{clean_id}/promoted_pages",
-            {"limit": limit, "fields": "id,name,category"},
-        )
+        try:
+            return self._list_graph_pages(
+                clean_id,
+                f"/act_{clean_id}/promotable_pages",
+                {"limit": limit, "fields": "id,name,category"},
+            )
+        except APIError as exc:
+            # Only fall back for the removed/unsupported edge. Permission,
+            # auth and other provider failures must remain visible.
+            message = str(exc).lower()
+            if exc.status_code != 400 or "unknown path" not in message:
+                raise
+            return self._list_graph_pages(
+                clean_id,
+                "/me/accounts",
+                {"limit": limit, "fields": "id,name,category,tasks"},
+            )
 
     def list_pixels(self, account_id: str, limit: int = 25) -> list:
         """List Meta Pixels owned by an ad account."""
@@ -1194,22 +1238,44 @@ class MetaAPIClient(BasePlatformClient):
             "ad_set": "adset", "ad_group": "adset", "audiences": "audience",
             "pixels": "pixel",
         }.get(str(resource_type or "").lower(), str(resource_type or "").lower())
+
+        # Graph object IDs are globally addressable. For objects that expose
+        # ``account_id`` (notably Ad Creative), a node read is both cheaper
+        # and more complete than searching an arbitrary first page of the
+        # account edge. If the provider omits the ownership field, retain the
+        # bounded edge lookup as a conservative fallback.
+        if resource_type == "creative":
+            try:
+                node = self.require_resource_object(
+                    self.request(
+                        "GET", f"/{self._clean_meta_id(resource_id, 'creative_id')}",
+                        extra_params={"fields": "id,account_id"},
+                    ),
+                    "Meta creative ownership lookup",
+                )
+                owner_id = str(node.get("account_id") or "").replace("act_", "")
+                if owner_id:
+                    return owner_id == str(account_id).replace("act_", "")
+            except APIError:
+                # Keep the existing bounded list fallback for older API
+                # versions/tokens that cannot read account_id on the node.
+                pass
         if resource_type == "campaign":
-            items = self.list_campaigns(account_id)
+            items = self.list_campaigns(account_id, limit=1000)
         elif resource_type == "adset":
-            items = self.list_adsets(account_id)
+            items = self.list_adsets(account_id, limit=1000)
         elif resource_type == "ad":
-            items = self.list_ads(account_id)
+            items = self.list_ads(account_id, limit=1000)
         elif resource_type == "audience":
-            items = self.list_audiences(account_id)
+            items = self.list_audiences(account_id, limit=1000)
         elif resource_type == "pixel":
-            items = self.list_pixels(account_id)
+            items = self.list_pixels(account_id, limit=1000)
         elif resource_type == "custom_conversion":
-            items = self.list_custom_conversions(account_id)
+            items = self.list_custom_conversions(account_id, limit=1000)
         elif resource_type == "creative":
-            items = self.list_creatives(account_id)
+            items = self.list_creatives(account_id, limit=1000)
         elif resource_type == "catalog":
-            items = self.list_catalogs(account_id)
+            items = self.list_catalogs(account_id, limit=1000)
         else:
             return False
         if not isinstance(items, list):
@@ -1293,7 +1359,7 @@ class MetaAPIClient(BasePlatformClient):
                 value = campaign[field_name]
                 data[field_name] = json.dumps(value) if isinstance(value, (dict, list)) else value
         
-        result = self.request('POST', f"/{account_id}/campaigns", data=data)
+        result = self.request('POST', self._ad_account_edge(account_id, "campaigns"), data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta campaign create")
     
@@ -1329,7 +1395,7 @@ class MetaAPIClient(BasePlatformClient):
     
     def list_adsets(self, account_id: str, campaign_id: str = None, limit: int = 25) -> list:
         """获取 Ad Set 列表"""
-        endpoint = f"/{account_id}/adsets"
+        endpoint = self._ad_account_edge(account_id, "adsets")
         params = {
             'limit': limit,
             'fields': 'id,name,status,budget_remaining,daily_budget,campaign{id,name}'
@@ -1353,7 +1419,7 @@ class MetaAPIClient(BasePlatformClient):
         - optimization_goal: 必须使用有效值
         - billing_event: 必须指定
         - targeting: 必须指定（即使是空对象）
-        - bid_amount: 必须指定
+        - bid_amount: 仅在 BID_CAP/COST_CAP 策略下指定
         """
         self.acquire_rate_limit(self._get_account_limiter(account_id))
         
@@ -1369,6 +1435,12 @@ class MetaAPIClient(BasePlatformClient):
         bid_amount = adset.get('bid_amount')
         if bid_strategy in {"LOWEST_COST_WITH_BID_CAP", "COST_CAP"} and bid_amount is None:
             raise ValueError(f"Meta {bid_strategy} requires bid_amount")
+        if bid_amount is not None and bid_strategy not in {
+            "LOWEST_COST_WITH_BID_CAP", "COST_CAP",
+        }:
+            raise ValueError(
+                f"Meta {bid_strategy} does not accept bid_amount; use a bid-cap strategy"
+            )
         if bid_strategy == "LOWEST_COST_WITH_MIN_ROAS" and adset.get("roas_average_floor") is None:
             raise ValueError("Meta LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor")
         data = {
@@ -1376,11 +1448,18 @@ class MetaAPIClient(BasePlatformClient):
             'campaign_id': campaign_id,
             'optimization_goal': adset.get('optimization_goal', 'REACH'),
             'billing_event': adset.get('billing_event', 'IMPRESSIONS'),
-            'bidding_strategy': bid_strategy,
-            'bid_amount': str(bid_amount if bid_amount is not None else 100),
             'targeting': targeting,
             'status': adset.get('status', 'PAUSED'),
         }
+        # Meta's LOWEST_COST_WITHOUT_CAP is the account/API default. Sending
+        # that value explicitly on this test account makes Graph require a
+        # bid_amount even though the strategy has no cap. Keep accepting the
+        # canonical input, but omit the default strategy on the wire. All
+        # capped/targeted strategies remain explicit and are validated below.
+        if bid_strategy != "LOWEST_COST_WITHOUT_CAP":
+            data['bid_strategy'] = bid_strategy
+        if bid_amount is not None:
+            data['bid_amount'] = str(bid_amount)
         # ``promoted_object`` is required by several conversion/app/catalog
         # optimization goals. Preserve the complete schema-declared object
         # instead of silently dropping it before the Graph request.
@@ -1403,13 +1482,17 @@ class MetaAPIClient(BasePlatformClient):
             data['start_time'] = adset['start_time']
         if 'end_time' in adset:
             data['end_time'] = adset['end_time']
-        result = self.request('POST', f"/{account_id}/adsets", data=data)
+        result = self.request('POST', self._ad_account_edge(account_id, "adsets"), data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta ad set create")
     
     def update_adset(self, adset_id: str, updates: dict) -> dict:
         """更新 Ad Set"""
         data = {k: v for k, v in updates.items() if v is not None}
+        # Accept the historical client-side alias while normalizing the
+        # provider payload to Meta's official Graph field name.
+        if 'bidding_strategy' in data and 'bid_strategy' not in data:
+            data['bid_strategy'] = data.pop('bidding_strategy')
         if 'bid_amount' in data:
             data['bid_amount'] = str(data['bid_amount'])
         if 'daily_budget' in data:
@@ -1438,7 +1521,7 @@ class MetaAPIClient(BasePlatformClient):
     
     def list_ads(self, account_id: str, adset_id: str = None, limit: int = 25) -> list:
         """获取 Ad 列表"""
-        endpoint = f"/{account_id}/ads"
+        endpoint = self._ad_account_edge(account_id, "ads")
         params = {
             'limit': limit,
             'fields': 'id,name,status,adset_id'
@@ -1503,7 +1586,7 @@ class MetaAPIClient(BasePlatformClient):
                 raise ValueError("Meta Ad media requires a non-empty url")
             data['creative'] = json.dumps({'attachment_link': media_url})
         
-        result = self.request('POST', f"/{account_id}/ads", data=data)
+        result = self.request('POST', self._ad_account_edge(account_id, "ads"), data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta ad create")
 
@@ -1744,21 +1827,26 @@ class MetaAPIClient(BasePlatformClient):
         """创建 Creative"""
         account_id = self._clean_meta_id(account_id, "account_id")
         self.acquire_rate_limit(self._get_account_limiter(account_id))
-        data = {
-            'name': creative.get('name', 'Creative'),
-            'object_story_spec': {
-                'page_id': creative.get('page_id', ''),
-                'link_data': {
-                    'message': creative.get('message', ''),
-                    'link': creative.get('link', ''),
-                    'image_hash': creative.get('image_hash', ''),
-                },
+        story_spec = {
+            'page_id': creative.get('page_id', ''),
+            'link_data': {
+                'message': creative.get('message', ''),
+                'link': creative.get('link', ''),
+                'image_hash': creative.get('image_hash', ''),
             },
         }
+        data = {
+            'name': creative.get('name', 'Creative'),
+            # Raw Graph requests need the SDK's JSON encoding explicitly.
+            'object_story_spec': json.dumps(story_spec, separators=(',', ':')),
+        }
         if creative.get('image_url'):
-            data['object_story_spec']['link_data']['image_url'] = creative['image_url']
+            story_spec['link_data']['image_url'] = creative['image_url']
+            data['object_story_spec'] = json.dumps(story_spec, separators=(',', ':'))
         
-        result = self.request('POST', f"/act_{account_id}/creatives", data=data)
+        # Meta's account edge is named ``adcreatives`` for both listing and
+        # creation. ``creatives`` is not a writable ad-account edge.
+        result = self.request('POST', f"/act_{account_id}/adcreatives", data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta creative create")
 

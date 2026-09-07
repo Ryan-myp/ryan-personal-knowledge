@@ -121,6 +121,11 @@ class MetaCreateCampaignHandler(ToolHandler):
         account_id = ctx.account_id
         if self.client and account_id:
             try:
+                requested_status = str(input_data.get("status") or "PAUSED").upper()
+                if requested_status != "PAUSED":
+                    return ToolResult.error(
+                        "受控 Meta 创建链路只允许以 PAUSED 状态创建 Campaign"
+                    )
                 campaign_id = self.client.create_campaign(
                     account_id=account_id,
                     campaign=input_data,
@@ -128,7 +133,11 @@ class MetaCreateCampaignHandler(ToolHandler):
                 return ToolResult.ok({
                     "campaign_id": campaign_id,
                     "name": input_data.get("name"),
-                    "status": "ACTIVE",
+                    # Meta accepts the requested delivery status.  The
+                    # controlled live-create contract requires PAUSED, so
+                    # expose the actual requested value rather than claiming
+                    # that every newly-created Campaign is ACTIVE.
+                    "status": requested_status,
                 })
             except Exception as e:
                 return ToolResult.error(f"Failed to create Meta campaign: {e}")

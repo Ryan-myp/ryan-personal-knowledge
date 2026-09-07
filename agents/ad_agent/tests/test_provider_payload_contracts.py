@@ -1125,8 +1125,11 @@ def test_existing_creation_contracts_keep_provider_specific_fixes():
 def test_meta_creation_options_are_forwarded_to_provider_payloads():
     client = MetaAPIClient({"access_token": "test"})
     payloads = []
+    endpoints = []
     client.request = lambda method, endpoint, data=None, **kwargs: (
-        payloads.append(data) or {"id": "resource-1"}
+        endpoints.append((method, endpoint))
+        or payloads.append(data)
+        or {"id": "resource-1"}
     )
 
     client.create_campaign("m1", {
@@ -1139,6 +1142,7 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
         "start_time": "2026-08-28T00:00:00+0000",
         "end_time": "2026-09-04T00:00:00+0000",
     })
+    assert endpoints[-1] == ("POST", "/act_m1/campaigns")
     assert payloads[-1]["buying_type"] == "AUCTION"
     assert payloads[-1]["spend_cap"] == "2500"
     assert payloads[-1]["start_time"].startswith("2026-08-28")
@@ -1147,12 +1151,17 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
         "name": "Ad Set",
         "bid_strategy": "COST_CAP",
         "bid_amount": 5,
-        "targeting": {"geo_locations": {"countries": ["US"]}},
+        "targeting": {
+            "geo_locations": {"countries": ["US"]},
+            "targeting_automation": {"advantage_audience": 0},
+        },
         "promoted_object": {"pixel_id": "px1", "custom_event_type": "PURCHASE"},
         "start_time": "2026-08-28T00:00:00+0000",
         "end_time": "2026-09-04T00:00:00+0000",
     })
-    assert payloads[-1]["bidding_strategy"] == "COST_CAP"
+    assert endpoints[-1] == ("POST", "/act_m1/adsets")
+    assert payloads[-1]["bid_strategy"] == "COST_CAP"
+    assert "bidding_strategy" not in payloads[-1]
     assert payloads[-1]["targeting"]
     assert json.loads(payloads[-1]["promoted_object"]) == {
         "pixel_id": "px1", "custom_event_type": "PURCHASE"
@@ -1163,6 +1172,7 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
         "name": "Ad",
         "creative": {"creative_id": "cr1"},
     })
+    assert endpoints[-1] == ("POST", "/act_m1/ads")
     assert json.loads(payloads[-1]["creative"]) == {"creative_id": "cr1"}
 
 
@@ -1178,11 +1188,15 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
     assert payloads[-1]["is_adset_budget_sharing_enabled"] is False
 
     client.update_adset("as1", {
-        "targeting": {"geo_locations": {"countries": ["US"]}},
+        "targeting": {
+            "geo_locations": {"countries": ["US"]},
+            "targeting_automation": {"advantage_audience": 0},
+        },
         "daily_budget": 12,
     })
     assert json.loads(payloads[-1]["targeting"]) == {
-        "geo_locations": {"countries": ["US"]}
+        "geo_locations": {"countries": ["US"]},
+        "targeting_automation": {"advantage_audience": 0},
     }
     assert payloads[-1]["daily_budget"] == "1200"
 
@@ -1497,6 +1511,47 @@ def test_meta_resource_ownership_accepts_graph_ids_and_ad_set_alias():
 
     client.list_adsets = lambda account_id, campaign_id=None, limit=25: [{"id": "as-1"}]
     assert client.resource_belongs_to_account("123", "ad_set", "as-1") is True
+
+
+def test_meta_creative_ownership_prefers_node_account_lookup():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, kwargs.get("extra_params")))
+        return {"id": "cr-1", "account_id": "123"}
+
+    client.request = request
+    client.list_creatives = lambda *args, **kwargs: pytest.fail(
+        "creative ownership should not scan the first account pages"
+    )
+
+    assert client.resource_belongs_to_account("act_123", "creative", "cr-1") is True
+    assert calls == [("GET", "/cr-1", {"fields": "id,account_id"})]
+
+
+def test_meta_graph_pagination_caps_wire_page_size_and_keeps_total_bound():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        params = dict(kwargs.get("extra_params") or {})
+        calls.append(params)
+        if params.get("after"):
+            return {"data": [{"id": f"item-{index}"} for index in range(100, 150)]}
+        return {
+            "data": [{"id": f"item-{index}"} for index in range(100)],
+            "paging": {"cursors": {"after": "cursor-1"}},
+        }
+
+    client.request = request
+    items = client._list_graph_pages(
+        "123", "/act_123/adcreatives", {"limit": 1000, "fields": "id"}, max_pages=3
+    )
+
+    assert len(items) == 150
+    assert [params["limit"] for params in calls] == [100, 100]
+    assert calls[1]["after"] == "cursor-1"
 
 
 def test_meta_lead_form_get_checks_page_ownership_and_forwards_fields():
@@ -2747,7 +2802,7 @@ def test_meta_creation_dependency_lookups_cover_pages_pixels_and_lead_forms():
     assert client.list_pixels("123")[0]["id"] == "resource-1"
     assert client.list_lead_forms("page-1")[0]["id"] == "resource-1"
     assert calls == [
-        ("123", "/act_123/promoted_pages", {"limit": 25, "fields": "id,name,category"}),
+        ("123", "/act_123/promotable_pages", {"limit": 25, "fields": "id,name,category"}),
         ("123", "/act_123/adspixels", {"limit": 25, "fields": "id,name,last_fired_time"}),
         ("page-1", "/page-1/leadgen_forms", {
             "limit": 25, "fields": "id,name,status,created_time,updated_time"
@@ -3125,6 +3180,23 @@ def test_meta_creative_crud_uses_account_scoped_graph_edges():
     assert calls[6][0:2] == ("DELETE", "/cr-1")
 
 
+def test_meta_create_creative_uses_account_adcreatives_edge():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {"id": "cr-2"}
+    )
+
+    assert client.create_creative("act_123", {
+        "name": "Creative",
+        "page_id": "page-1",
+        "link": "https://www.example.com/",
+        "image_hash": "hash-1",
+    }) == "cr-2"
+    assert calls[0][0:2] == ("POST", "/act_123/adcreatives")
+    assert json.loads(calls[0][2]["object_story_spec"])["page_id"] == "page-1"
+
+
 def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
     definitions = {
         definition.name: definition
@@ -3299,7 +3371,10 @@ def test_meta_adset_bid_strategy_and_inline_creative_contracts_are_explicit():
     adset_schema = definitions["meta_create_adset"].input_schema
     base = {
         "campaign_id": "campaign-1", "name": "Sales ad set",
-        "targeting": {"geo_locations": {"countries": ["US"]}},
+        "targeting": {
+            "geo_locations": {"countries": ["US"]},
+            "targeting_automation": {"advantage_audience": 0},
+        },
         "optimization_goal": "OFFSITE_CONVERSIONS",
         "billing_event": "IMPRESSIONS", "daily_budget": 20,
         "promoted_object": {"pixel_id": "pixel-1", "custom_event_type": "PURCHASE"},
@@ -3339,8 +3414,25 @@ def test_meta_adset_client_rejects_missing_cap_limits_and_forwards_roas_floor():
         "name": "Min ROAS", "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS",
         "roas_average_floor": 1.4,
     }) == "adset-1"
-    assert payloads[-1]["bidding_strategy"] == "LOWEST_COST_WITH_MIN_ROAS"
+    assert payloads[-1]["bid_strategy"] == "LOWEST_COST_WITH_MIN_ROAS"
     assert payloads[-1]["roas_average_floor"] == "1.4"
+    assert "bid_amount" not in payloads[-1]
+
+
+def test_meta_adset_client_omits_default_lowest_cost_strategy_on_wire():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data) or {"id": "adset-1"}
+    )
+
+    client.create_adset("123", "campaign-1", {
+        "name": "Lowest cost", "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+    })
+
+    assert "bid_strategy" not in payloads[-1]
+    assert "bidding_strategy" not in payloads[-1]
+    assert "bid_amount" not in payloads[-1]
 
 
 def test_google_creation_options_are_mapped_to_rest_resources():

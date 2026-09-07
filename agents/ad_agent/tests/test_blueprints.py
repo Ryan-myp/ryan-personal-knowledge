@@ -427,9 +427,11 @@ def test_creation_contracts_expose_provider_resource_sources_and_fixed_placement
     card = runtime.build_creation_ui(intent)["cards"][0]
     targeting = next(item for item in card["fields"] if item["path"] == "ad_set.targeting")
     properties = targeting["object_properties"]
-    assert properties["geo_locations"]["properties"]["countries"]["lookup_tool"] == (
-        "meta_search_targeting_options"
-    )
+    countries = properties["geo_locations"]["properties"]["countries"]
+    assert countries["items"]["enum"]
+    assert "US" in countries["items"]["enum"]
+    assert "SG" in countries["items"]["enum"]
+    assert "lookup_tool" not in countries
     assert properties["facebook_positions"]["items"]["enum"]
     assert properties["instagram_positions"]["items"]["enum"]
 

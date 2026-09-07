@@ -1,5 +1,5 @@
 {
-  "digest": "0f7041d341216882a16f4c05594f5f3e3ca5a0762cb932e1c201ef4460fb6af4",
+  "digest": "81b63a767d2ec7fa4d964aa0653ffe14838dd6d53c176e3aad6a0bd9b64916b1",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -16636,7 +16636,7 @@
       ]
     },
     "meta": {
-      "digest": "84b8192a8dd98a70704ab37debf015b9f9e00bf9366c95d9c7a1f0af5311eec7",
+      "digest": "fd041659079f419c7b22eea3377cc3ad52f38799bb269fc295c14159d6febd41",
       "tool_count": 76,
       "tools": [
         {
@@ -16660,6 +16660,9 @@
                 "type": "integer"
               },
               "page_id": {
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "selection_label_fields": [
@@ -17061,6 +17064,9 @@
                       },
                       "page_id": {
                         "description": "Facebook Page ID",
+                        "lookup_defaults": {
+                          "limit": 1000
+                        },
                         "lookup_result_key": "pages",
                         "lookup_tool": "meta_list_pages",
                         "minLength": 1,
@@ -17175,6 +17181,9 @@
                   },
                   "page_id": {
                     "description": "Page ID",
+                    "lookup_defaults": {
+                      "limit": 1000
+                    },
                     "lookup_result_key": "pages",
                     "lookup_tool": "meta_list_pages",
                     "minLength": 1,
@@ -17279,9 +17288,8 @@
                 "type": "object"
               },
               "status": {
-                "description": "Initial delivery status",
+                "description": "受控创建固定为暂停状态",
                 "enum": [
-                  "ACTIVE",
                   "PAUSED"
                 ],
                 "type": "string"
@@ -17312,16 +17320,17 @@
             "type": "object"
           },
           "intent_types": [
-            "create_campaign"
+            "create_campaign",
+            "create_ad"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_ad",
           "parent_resource_id_field": "adset_id",
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_ad",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -17616,6 +17625,9 @@
                   },
                   "page_id": {
                     "description": "Facebook Page used by the lead flow",
+                    "lookup_defaults": {
+                      "limit": 1000
+                    },
                     "lookup_result_key": "pages",
                     "lookup_tool": "meta_list_pages",
                     "minLength": 1,
@@ -17762,6 +17774,9 @@
                   },
                   "page_id": {
                     "description": "Facebook Page ID",
+                    "lookup_defaults": {
+                      "limit": 1000
+                    },
                     "lookup_result_key": "pages",
                     "lookup_tool": "meta_list_pages",
                     "selection_label_fields": [
@@ -17834,9 +17849,8 @@
                 "type": "string"
               },
               "status": {
-                "description": "Initial delivery status",
+                "description": "受控创建固定为暂停状态",
                 "enum": [
-                  "ACTIVE",
                   "PAUSED"
                 ],
                 "type": "string"
@@ -18338,28 +18352,277 @@
                       "countries": {
                         "description": "ISO country codes; search by country name or code",
                         "items": {
-                          "maxLength": 3,
-                          "minLength": 2,
+                          "enum": [
+                            "AD",
+                            "AE",
+                            "AF",
+                            "AG",
+                            "AI",
+                            "AL",
+                            "AM",
+                            "AO",
+                            "AQ",
+                            "AR",
+                            "AS",
+                            "AT",
+                            "AU",
+                            "AW",
+                            "AX",
+                            "AZ",
+                            "BA",
+                            "BB",
+                            "BD",
+                            "BE",
+                            "BF",
+                            "BG",
+                            "BH",
+                            "BI",
+                            "BJ",
+                            "BL",
+                            "BM",
+                            "BN",
+                            "BO",
+                            "BQ",
+                            "BR",
+                            "BS",
+                            "BT",
+                            "BV",
+                            "BW",
+                            "BY",
+                            "BZ",
+                            "CA",
+                            "CC",
+                            "CD",
+                            "CF",
+                            "CG",
+                            "CH",
+                            "CI",
+                            "CK",
+                            "CL",
+                            "CM",
+                            "CN",
+                            "CO",
+                            "CR",
+                            "CU",
+                            "CV",
+                            "CW",
+                            "CX",
+                            "CY",
+                            "CZ",
+                            "DE",
+                            "DJ",
+                            "DK",
+                            "DM",
+                            "DO",
+                            "DZ",
+                            "EC",
+                            "EE",
+                            "EG",
+                            "EH",
+                            "ER",
+                            "ES",
+                            "ET",
+                            "FI",
+                            "FJ",
+                            "FK",
+                            "FM",
+                            "FO",
+                            "FR",
+                            "GA",
+                            "GB",
+                            "GD",
+                            "GE",
+                            "GF",
+                            "GG",
+                            "GH",
+                            "GI",
+                            "GL",
+                            "GM",
+                            "GN",
+                            "GP",
+                            "GQ",
+                            "GR",
+                            "GS",
+                            "GT",
+                            "GU",
+                            "GW",
+                            "GY",
+                            "HK",
+                            "HM",
+                            "HN",
+                            "HR",
+                            "HT",
+                            "HU",
+                            "ID",
+                            "IE",
+                            "IL",
+                            "IM",
+                            "IN",
+                            "IO",
+                            "IQ",
+                            "IR",
+                            "IS",
+                            "IT",
+                            "JE",
+                            "JM",
+                            "JO",
+                            "JP",
+                            "KE",
+                            "KG",
+                            "KH",
+                            "KI",
+                            "KM",
+                            "KN",
+                            "KP",
+                            "KR",
+                            "KW",
+                            "KY",
+                            "KZ",
+                            "LA",
+                            "LB",
+                            "LC",
+                            "LI",
+                            "LK",
+                            "LR",
+                            "LS",
+                            "LT",
+                            "LU",
+                            "LV",
+                            "LY",
+                            "MA",
+                            "MC",
+                            "MD",
+                            "ME",
+                            "MF",
+                            "MG",
+                            "MH",
+                            "MK",
+                            "ML",
+                            "MM",
+                            "MN",
+                            "MO",
+                            "MP",
+                            "MQ",
+                            "MR",
+                            "MS",
+                            "MT",
+                            "MU",
+                            "MV",
+                            "MW",
+                            "MX",
+                            "MY",
+                            "MZ",
+                            "NA",
+                            "NC",
+                            "NE",
+                            "NF",
+                            "NG",
+                            "NI",
+                            "NL",
+                            "NO",
+                            "NP",
+                            "NR",
+                            "NU",
+                            "NZ",
+                            "OM",
+                            "PA",
+                            "PE",
+                            "PF",
+                            "PG",
+                            "PH",
+                            "PK",
+                            "PL",
+                            "PM",
+                            "PN",
+                            "PR",
+                            "PS",
+                            "PT",
+                            "PW",
+                            "PY",
+                            "QA",
+                            "RE",
+                            "RO",
+                            "RS",
+                            "RU",
+                            "RW",
+                            "SA",
+                            "SB",
+                            "SC",
+                            "SD",
+                            "SE",
+                            "SG",
+                            "SH",
+                            "SI",
+                            "SJ",
+                            "SK",
+                            "SL",
+                            "SM",
+                            "SN",
+                            "SO",
+                            "SR",
+                            "SS",
+                            "ST",
+                            "SV",
+                            "SX",
+                            "SY",
+                            "SZ",
+                            "TC",
+                            "TD",
+                            "TF",
+                            "TG",
+                            "TH",
+                            "TJ",
+                            "TK",
+                            "TL",
+                            "TM",
+                            "TN",
+                            "TO",
+                            "TR",
+                            "TT",
+                            "TV",
+                            "TW",
+                            "TZ",
+                            "UA",
+                            "UG",
+                            "UM",
+                            "US",
+                            "UY",
+                            "UZ",
+                            "VA",
+                            "VC",
+                            "VE",
+                            "VG",
+                            "VI",
+                            "VN",
+                            "VU",
+                            "WF",
+                            "WS",
+                            "YE",
+                            "YT",
+                            "ZA",
+                            "ZM",
+                            "ZW"
+                          ],
                           "type": "string"
                         },
-                        "lookup_defaults": {
-                          "type": "adgeolocation"
+                        "option_labels": {
+                          "AU": "澳大利亚",
+                          "CA": "加拿大",
+                          "CN": "中国",
+                          "GB": "英国",
+                          "HK": "中国香港地区",
+                          "ID": "印度尼西亚",
+                          "IN": "印度",
+                          "JP": "日本",
+                          "KR": "韩国",
+                          "MY": "马来西亚",
+                          "PH": "菲律宾",
+                          "SG": "新加坡",
+                          "TH": "泰国",
+                          "TW": "中国台湾地区",
+                          "US": "美国",
+                          "VN": "越南"
                         },
-                        "lookup_query_field": "query",
-                        "lookup_result_key": "targeting_options",
-                        "lookup_tool": "meta_search_targeting_options",
-                        "selection_label_fields": [
-                          "name",
-                          "label",
-                          "country_name",
-                          "key"
-                        ],
-                        "selection_value_fields": [
-                          "key",
-                          "id",
-                          "value",
-                          "country_code"
-                        ],
                         "type": "array"
                       },
                       "location_types": {
@@ -18462,18 +18725,30 @@
                       "type": "string"
                     },
                     "type": "array"
+                  },
+                  "targeting_automation": {
+                    "additionalProperties": false,
+                    "description": "Meta Advantage Audience setting",
+                    "properties": {
+                      "advantage_audience": {
+                        "description": "Advantage Audience: 1 enabled, 0 disabled",
+                        "enum": [
+                          0,
+                          1
+                        ],
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "advantage_audience"
+                    ],
+                    "type": "object"
                   }
                 },
                 "type": "object"
               }
             },
-            "provider_any_of": [
-              [
-                "daily_budget",
-                "lifetime_budget",
-                "budget"
-              ]
-            ],
+            "provider_any_of": [],
             "provider_required": [
               "optimization_goal",
               "billing_event",
@@ -18486,16 +18761,17 @@
             "type": "object"
           },
           "intent_types": [
-            "create_campaign"
+            "create_campaign",
+            "create_adset"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_adset",
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_adset",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -18964,9 +19240,8 @@
                 "type": "string"
               },
               "status": {
-                "description": "Initial delivery status",
+                "description": "受控创建固定为暂停状态",
                 "enum": [
-                  "ACTIVE",
                   "PAUSED"
                 ],
                 "type": "string"
@@ -18992,14 +19267,14 @@
           "intent_types": [
             "create_campaign"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_campaign",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_campaign",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -19208,6 +19483,9 @@
               },
               "page_id": {
                 "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -19444,6 +19722,9 @@
               },
               "page_id": {
                 "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -19532,7 +19813,7 @@
           "action": "create",
           "activation_rules": [],
           "contract_version": "1.4.0",
-          "description": "创建 Meta Creative；当前仅支持 dry-run 计划。",
+          "description": "创建 Meta Creative；受控 live 路径仅允许配合 PAUSED Ad 使用。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -19571,6 +19852,9 @@
                 "type": "string"
               },
               "page_id": {
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "selection_label_fields": [
@@ -19602,14 +19886,14 @@
           "intent_types": [
             "create_creative"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_creative",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_creative",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -19891,6 +20175,9 @@
               },
               "page_id": {
                 "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -20102,6 +20389,9 @@
               },
               "page_id": {
                 "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -20244,6 +20534,9 @@
               },
               "page_id": {
                 "description": "Facebook Page that owns the Instant Form",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -20635,6 +20928,9 @@
               },
               "page_id": {
                 "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -20930,6 +21226,9 @@
               },
               "page_id": {
                 "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -22443,6 +22742,9 @@
               },
               "page_id": {
                 "description": "Facebook Page that owns the Instant Form",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -22537,6 +22839,9 @@
                 "type": "string"
               },
               "page_id": {
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "selection_label_fields": [
@@ -23349,6 +23654,9 @@
                 "type": "integer"
               },
               "page_id": {
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "selection_label_fields": [
@@ -23454,6 +23762,9 @@
               },
               "page_id": {
                 "description": "Facebook Page that owns the Instant Form",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,
@@ -24431,7 +24742,7 @@
           "action": "update",
           "activation_rules": [],
           "contract_version": "1.4.0",
-          "description": "更新 Meta ad，默认仅生成 dry-run 计划。",
+          "description": "更新 Meta ad；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -24534,14 +24845,14 @@
           "intent_types": [
             "update_ad"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_ad",
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_set",
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_ad",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24560,7 +24871,7 @@
           "action": "update",
           "activation_rules": [],
           "contract_version": "1.4.0",
-          "description": "更新 Meta ad_set，默认仅生成 dry-run 计划。",
+          "description": "更新 Meta ad_set；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -24688,14 +24999,14 @@
           "intent_types": [
             "update_adset"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_adset",
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_adset",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -24809,7 +25120,7 @@
           "action": "update",
           "activation_rules": [],
           "contract_version": "1.4.0",
-          "description": "更新 Meta campaign，默认仅生成 dry-run 计划。",
+          "description": "更新 Meta campaign；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -24896,14 +25207,14 @@
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_campaign",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_campaign",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -25054,14 +25365,14 @@
           "intent_types": [
             "update_creative"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_creative",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "meta",
           "provider_api_version": "v19.0",
-          "readback_tool": null,
+          "readback_tool": "meta_get_creative",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -25247,6 +25558,9 @@
               },
               "page_id": {
                 "description": "Facebook Page that owns the Instant Form",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
                 "lookup_result_key": "pages",
                 "lookup_tool": "meta_list_pages",
                 "minLength": 1,

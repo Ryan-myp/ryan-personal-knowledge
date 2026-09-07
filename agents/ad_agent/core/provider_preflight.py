@@ -116,6 +116,13 @@ def build_provider_preflight(
     for definition in definitions:
         is_write = bool(getattr(definition, "is_write_tool", False))
         required_permissions = set(getattr(definition, "required_permissions", ()) or ())
+        effective_live_permissions = set(required_permissions)
+        if is_write:
+            # Tool contracts declare the base planning grant. Runtime adds
+            # the separate live mutation grant at execution time; preflight
+            # must inspect that same effective set instead of forcing every
+            # write Tool to carry live authority in its static metadata.
+            effective_live_permissions.add("ads.write")
         row: dict[str, Any] = {
             "tool": definition.name,
             "platform": canonical,
@@ -126,6 +133,7 @@ def build_provider_preflight(
             "account": _safe_id(normalized_account),
             "live_support": bool(getattr(definition, "live_support", False)),
             "required_permissions": sorted(required_permissions),
+            "live_required_permissions": sorted(effective_live_permissions),
             "readback_tool": getattr(definition, "readback_tool", None),
             "status": "ready",
             "issues": [],
@@ -146,8 +154,8 @@ def build_provider_preflight(
                 approved = set(getattr(runtime, "_live_approved_tools", set()) or set())
                 if definition.name not in approved:
                     row["issues"].append("Tool 不在 live 批准清单")
-                if "ads.write" not in required_permissions:
-                    row["issues"].append("Tool 未声明 ads.write 权限")
+                if "ads.write" not in effective_live_permissions:
+                    row["issues"].append("live 有效权限未包含 ads.write")
         if row["issues"]:
             row["status"] = "blocked"
             issues.extend(f"{definition.name}: {item}" for item in row["issues"])

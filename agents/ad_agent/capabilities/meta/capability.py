@@ -4,6 +4,7 @@ capabilities/meta/capability.py - Meta Capability 定义
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
@@ -38,12 +39,31 @@ from ..update_contracts import meta_updates
 logger = logging.getLogger(__name__)
 
 
+def _paused_create_schema(schema: dict) -> dict:
+    """Constrain the explicitly live-enabled hierarchy tools to PAUSED.
+
+    The provider's general status enum remains available to other dry-run
+    and update contracts.  These four tools are the separately verified
+    controlled-create surface used for the real test-account run.
+    """
+    result = deepcopy(schema)
+    status = result.get("properties", {}).get("status")
+    if isinstance(status, dict):
+        status["enum"] = ["PAUSED"]
+        status["description"] = "受控创建固定为暂停状态"
+    return result
+
+
 def _meta_lookup(tool: str, result_key: str, values: list[str], labels: list[str], *, depends_on: list[dict] | None = None) -> dict:
     metadata = {
         "lookup_tool": tool,
         "lookup_result_key": result_key,
         "selection_value_fields": values,
         "selection_label_fields": labels,
+        # Pickers must be able to resolve newly created or less-recent
+        # resources, not only the provider's first default page. The client
+        # still enforces a bounded total discovery limit.
+        "lookup_defaults": {"limit": 1000},
     }
     if depends_on:
         metadata["lookup_dependencies"] = depends_on
@@ -76,7 +96,7 @@ META_LOOKUP_CONTRACTS = {
         "page_id": _meta_lookup(
             "meta_list_pages", "pages", ["id", "page_id"],
             ["name", "page_name", "id"],
-        ),
+        ) | {"lookup_defaults": {"limit": 1000}},
         "pixel_id": _meta_lookup(
             "meta_list_pixels", "pixels", ["id", "pixel_id"],
             ["name", "pixel_name", "id"],
@@ -612,6 +632,10 @@ class MetaCapability(BaseCapability):
                 required=["account_id", "creative_id", "updates"], action="update", resource_type="creative",
                 resource_id_field="creative_id", intent_types=["update_creative"], traits=["write", "creative"],
                 write=True,
+                live_support=True,
+                readback_tool="meta_get_creative",
+                required_permissions=["ads.plan"],
+                provider_api_version="v19.0",
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"], data["updates"]), {}),
             ),
             method_tool(
@@ -1182,14 +1206,23 @@ class MetaCapability(BaseCapability):
             skill="meta-marketing-api",
             platform="meta",
             description="创建 Meta Campaign。",
-            input_schema=ToolSchema(**meta_campaign_schema()),
+            input_schema=ToolSchema(**_paused_create_schema(meta_campaign_schema())),
             action="create", resource_type="campaign", intent_types=["create_campaign"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
-            live_support=False,
+            # This is an explicitly verified, paused-only path for the
+            # controlled Meta test account.  Runtime still requires the
+            # deployment fuse, account whitelist, principal permission,
+            # confirmation and idempotency guard before invoking it.
+            live_support=True,
             resource_id_field="campaign_id",
+            readback_tool="meta_get_campaign",
+            # ``ads.plan`` is the base contract; Runtime adds the separate
+            # ``ads.write`` grant only for live execution.
+            required_permissions=["ads.plan"],
+            provider_api_version="v19.0",
         ), MetaCreateCampaignHandler(api_client)))
 
         # List Ad Sets
@@ -1235,16 +1268,22 @@ class MetaCapability(BaseCapability):
             skill="meta-marketing-api",
             platform="meta",
             description="创建 Meta Ad Set。",
-            input_schema=ToolSchema(**meta_adset_schema()),
+            input_schema=ToolSchema(**_paused_create_schema(meta_adset_schema())),
             action="create", resource_type="ad_set", parent_resource_type="campaign",
-            intent_types=["create_campaign"],
+            # Keep the full campaign composition route while also exposing a
+            # child-resource intent.  The latter lets an operator continue a
+            # confirmed parent creation without re-running the parent Tool.
+            intent_types=["create_campaign", "create_adset"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_set"],
-            live_support=False,
+            live_support=True,
             resource_id_field="adset_id",
             parent_resource_id_field="campaign_id",
+            readback_tool="meta_get_adset",
+            required_permissions=["ads.plan"],
+            provider_api_version="v19.0",
         ), MetaCreateAdSetHandler(api_client)))
 
         # List Ads
@@ -1290,16 +1329,19 @@ class MetaCapability(BaseCapability):
             skill="meta-marketing-api",
             platform="meta",
             description="创建 Meta Ad。",
-            input_schema=ToolSchema(**meta_ad_schema()),
+            input_schema=ToolSchema(**_paused_create_schema(meta_ad_schema())),
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
-            action="create", resource_type="ad", intent_types=["create_campaign"],
-            live_support=False,
+            action="create", resource_type="ad", intent_types=["create_campaign", "create_ad"],
+            live_support=True,
             resource_id_field="ad_id",
             parent_resource_type="ad_set",
             parent_resource_id_field="adset_id",
+            readback_tool="meta_get_ad",
+            required_permissions=["ads.plan"],
+            provider_api_version="v19.0",
             activation_rules=[{
                 "if": {
                     "objective": {"aliases": ["objective_type"], "not_in": [
@@ -1394,7 +1436,7 @@ class MetaCapability(BaseCapability):
             name="meta_create_creative",
             skill="meta-marketing-api-expert",
             platform="meta",
-            description="创建 Meta Creative；当前仅支持 dry-run 计划。",
+            description="创建 Meta Creative；受控 live 路径仅允许配合 PAUSED Ad 使用。",
             input_schema=ToolSchema(
                 required=["account_id", "name", "page_id", "link"],
                 provider_required=["name", "page_id", "link"],
@@ -1413,8 +1455,11 @@ class MetaCapability(BaseCapability):
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "creative"],
-            live_support=False,
+            live_support=True,
             resource_id_field="creative_id",
+            readback_tool="meta_get_creative",
+            required_permissions=["ads.plan"],
+            provider_api_version="v19.0",
         ), MetaCreateCreativeHandler(api_client)))
 
         # Update tools: dry-run 可完整生成计划；live 仅调用已存在的 Client 方法。
@@ -1427,7 +1472,7 @@ class MetaCapability(BaseCapability):
                 name=f"meta_update_{tool_suffix}",
                 skill="meta-marketing-api",
                 platform="meta",
-                description=f"更新 Meta {resource_type}，默认仅生成 dry-run 计划。",
+                description=f"更新 Meta {resource_type}；受控 live 路径仅允许操作已暂停测试资源。",
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"],
                     properties={
@@ -1449,8 +1494,15 @@ class MetaCapability(BaseCapability):
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
-                live_support=False,
+                live_support=True,
                 resource_id_field=resource_id,
+                readback_tool={
+                    "campaign": "meta_get_campaign",
+                    "ad_set": "meta_get_adset",
+                    "ad": "meta_get_ad",
+                }[resource_type],
+                required_permissions=["ads.plan"],
+                provider_api_version="v19.0",
             ), CampaignUpdateHandler(
                 api_client, resource_type, _meta_update_adapter,
                 resource_id_field=resource_id,

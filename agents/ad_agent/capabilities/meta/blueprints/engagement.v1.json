@@ -19,7 +19,7 @@
     {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["POST_ENGAGEMENT", "VIDEO_VIEWS"], "options_from": ["campaign.objective"], "option_rules": [{"when": {"field": "campaign.objective", "equals": "OUTCOME_ENGAGEMENT"}, "options": ["POST_ENGAGEMENT", "VIDEO_VIEWS"]}]},
     {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS", "THRUPLAY"], "options_from": ["ad_set.optimization_goal"], "option_rules": [{"when": {"field": "ad_set.optimization_goal", "equals": "POST_ENGAGEMENT"}, "options": ["IMPRESSIONS"]}, {"when": {"field": "ad_set.optimization_goal", "equals": "VIDEO_VIEWS"}, "options": ["THRUPLAY", "IMPRESSIONS"]}]},
     {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "受众定向", "required": true, "presentation": "object_editor"},
-    {"path": "ad_set.daily_budget", "tool_ref": "meta_create_adset.daily_budget", "label": "Ad Set 日预算", "required": true},
+    {"path": "ad_set.daily_budget", "tool_ref": "meta_create_adset.daily_budget", "label": "Ad Set 日预算（可选；Campaign 已设置预算时留空）", "required": false},
     {"path": "ad.name", "tool_ref": "meta_create_engagement_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.page_id", "tool_ref": "meta_create_engagement_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
     {"path": "ad.engagement_type", "tool_ref": "meta_create_engagement_ad.engagement_type", "label": "互动形式", "required": true, "source": "enum", "options": ["POST_ENGAGEMENT", "VIDEO_VIEWS"]},
