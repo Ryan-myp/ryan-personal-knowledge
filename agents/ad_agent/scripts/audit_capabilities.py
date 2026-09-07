@@ -314,6 +314,18 @@ def audit_capabilities() -> dict[str, Any]:
                 live_read_tools.append(name)
             if definition.live_support and definition.is_write_tool:
                 live_write_tools.append(name)
+                # A live write must have an explicit, unambiguous recovery
+                # read. The resolver validates platform/resource/parent
+                # compatibility and rejects ambiguous candidates; this keeps
+                # a future live enablement from silently weakening recovery.
+                if not getattr(definition, "readback_tool", None):
+                    platform_issues.append(
+                        f"{name}: live write must declare readback_tool explicitly"
+                    )
+                elif getattr(runtime, "_resolve_readback_definition", lambda _n: None)(name) is None:
+                    platform_issues.append(
+                        f"{name}: declared readback_tool is missing or incompatible"
+                    )
             if action == "create":
                 schema = getattr(definition, "input_schema", None)
                 creation_chain.append({

@@ -33,6 +33,9 @@ from agents.ad_agent.scripts.validate_contracts import (  # noqa: E402
     build_contract_snapshot,
     verify_snapshot,
 )
+from agents.ad_agent.evals.skill_up_assertions import (  # noqa: E402
+    evaluate_structured_expectations,
+)
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -66,12 +69,17 @@ def _run_skill_up_cases() -> dict[str, Any]:
                 expected = case.get("expect") or {}
                 missing = [str(item) for item in (expected.get("must_contain") or []) if str(item) not in output]
                 forbidden = [str(item) for item in (expected.get("must_not_contain") or []) if str(item) in output]
-                passed = result.get("exit_code") == expected.get("exit_code", 0) and not missing and not forbidden
+                structured_failures = evaluate_structured_expectations(result, expected)
+                passed = (
+                    result.get("exit_code") == expected.get("exit_code", 0)
+                    and not missing and not forbidden and not structured_failures
+                )
                 rows.append({
                     "case": str(case.get("id") or case_path.stem),
                     "passed": passed,
                     "missing": missing,
                     "forbidden": forbidden,
+                    "structured_failures": structured_failures,
                 })
         failures = [row for row in rows if not row["passed"]]
         return {

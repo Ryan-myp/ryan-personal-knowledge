@@ -17,3 +17,10 @@ judge:
   success:
     - output_contains:
         all: ["不会猜测", '"results": []']
+expect:
+  structured:
+    intent_type: create_campaign
+    platforms: [tiktok]
+    needs_input: true
+    needs_confirmation: true
+    results_empty: true

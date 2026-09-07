@@ -20,3 +20,10 @@ judge:
   failure:
     - output_contains:
         any: ["access_token", "client_secret", "Authorization:"]
+expect:
+  structured:
+    intent_type: create_campaign
+    platforms: [tiktok]
+    needs_input: false
+    needs_confirmation: true
+    tool_names: [tiktok_create_campaign, tiktok_create_adgroup, tiktok_create_app_ad]

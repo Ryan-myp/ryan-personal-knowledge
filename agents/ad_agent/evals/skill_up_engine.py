@@ -96,6 +96,33 @@ def _safe_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep only non-sensitive facts needed by the platform-owned judge."""
+    rows = runtime_result.get("results")
+    safe_rows = []
+    if isinstance(rows, list):
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            data = row.get("data") if isinstance(row.get("data"), Mapping) else {}
+            safe_rows.append({
+                "tool": row.get("tool"),
+                "platform": row.get("platform"),
+                "success": bool(row.get("success")),
+                "data": {
+                    "data_status": data.get("data_status"),
+                    "simulated": bool(data.get("simulated")),
+                },
+            })
+    return {
+        "intent": runtime_result.get("intent"),
+        "needs_input": bool(runtime_result.get("needs_input", False)),
+        "needs_confirmation": bool(runtime_result.get("needs_confirmation", False)),
+        "tool_plan": runtime_result.get("tool_plan") or {},
+        "results": safe_rows,
+    }
+
+
 def _session_result(
     *,
     session_input: Mapping[str, Any],
@@ -138,6 +165,10 @@ def _session_result(
             "variant": str(session_input.get("variant") or "with_skill"),
             "runtime_execution_mode": "dry_run",
             "runtime_offline_mode": True,
+            # Structured evidence is platform-generated Runtime output. It is
+            # retained for the local judge and is already subject to Runtime
+            # result redaction; it is not model/tool execution capability.
+            "runtime_result": _structured_evidence(runtime_result),
         },
     }
 

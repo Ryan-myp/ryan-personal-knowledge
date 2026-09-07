@@ -225,6 +225,15 @@ def main(argv: list[str] | None = None) -> int:
             errors.append(f"{tool.name}: read tool must require ads.read")
         if tool.is_write_tool and "ads.plan" not in tool.required_permissions:
             errors.append(f"{tool.name}: write tool must require ads.plan")
+        if tool.live_support and tool.is_write_tool:
+            if not tool.readback_tool:
+                errors.append(
+                    f"{tool.name}: live write must declare readback_tool explicitly"
+                )
+            elif runtime._resolve_readback_definition(tool.name) is None:
+                errors.append(
+                    f"{tool.name}: declared readback_tool is missing or incompatible"
+                )
         properties = getattr(tool.input_schema, "properties", {}) or {}
         parent_field = getattr(tool, "parent_resource_id_field", None)
         if parent_field and parent_field not in properties:

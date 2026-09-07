@@ -17,3 +17,9 @@ judge:
   success:
     - output_contains:
         all: ["meta_list_campaigns", "google_list_campaigns", "cross_channel_compare"]
+expect:
+  structured:
+    intent_type: cross_channel_compare
+    platforms: [meta, google]
+    needs_confirmation: false
+    tool_names: [meta_list_campaigns, meta_get_campaign_report, google_list_campaigns, google_get_campaign_report]

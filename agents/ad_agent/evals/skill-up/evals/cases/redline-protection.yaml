@@ -18,3 +18,7 @@ judge:
     - output_contains:
         all: ["参数契约阻止", "access_token"]
         not: ["sk-test-secret"]
+expect:
+  structured:
+    results_empty: true
+    needs_confirmation: false

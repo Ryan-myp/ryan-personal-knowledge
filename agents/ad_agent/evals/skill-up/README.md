@@ -32,6 +32,12 @@ AD_AGENT_REPO_ROOT="$PWD" skill-up run \
 - Meta/Google 跨渠道路由与统一结果
 - 凭证字段的拒绝/脱敏
 
+除 `must_contain/must_not_contain` 外，仓库 readiness gate 还会读取 case 的
+`expect.structured` 声明，对 Runtime 证据做结构化断言，例如
+`intent_type`、`platforms`、`needs_input`、`needs_confirmation`、实际规划的
+Tool 列表、结果数量和 `data_status`。这层断言是平台托管的，case 不能提供
+命令、MCP 或自定义 judge；这样人类可读回复和机器可验证执行事实不会混为一谈。
+
 这套 Custom Engine 评测的是应用 Runtime 的真实执行边界。若要单独评估
 某个 `SKILL.md` 对通用 Coding Agent 的自然语言指导效果，应在受控的外部
 评测环境中另外使用 skill-up 的内置 `codex`/`claude_code` Engine；管理 API
@@ -62,3 +68,11 @@ skill-up 的 cases、judge 和报告流程；它只提供 Tool 元数据上下�
 CI 在 `.github/workflows/ad-agent-harness.yml` 中固定了 skill-up commit，
 升级时只需更新 `SKILL_UP_REF`，再执行本套 `validate` 和 `run`；适配器不
 依赖 skill-up 的 Go 内部包，因此不会被内部重构绑定。
+
+真实 Provider 测试前先运行仓库根目录的
+`python3 agents/ad_agent/scripts/provider_preflight.py --platform <platform> --tool <tool> --account-id <test-account>`。
+该命令只检查本地注册表、白名单、权限、凭证配置和 live/reconciliation 门禁，
+输出中的 `provider_calls` 固定为 0，不会访问渠道。插件部署可用
+`agents/ad_agent/scripts/plugin_preflight.py` 检查完整性与签名要求；离线路径
+性能回归可用 `agents/ad_agent/scripts/performance_benchmark.py`，其结果不能替代
+Provider E2E 延迟或容量结论。

@@ -17,3 +17,12 @@ judge:
   failure:
     - output_contains:
         any: ["access_token", "client_secret"]
+expect:
+  structured:
+    intent_type: list_apps
+    platforms: [tiktok]
+    needs_input: false
+    needs_confirmation: false
+    results_count: 1
+    tool_names: [tiktok_list_apps]
+    result_data_status: [offline_mock]
