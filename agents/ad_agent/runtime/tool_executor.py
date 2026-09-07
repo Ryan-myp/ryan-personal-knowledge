@@ -294,6 +294,16 @@ class ToolExecutor:
                 )
             except FutureTimeoutError:
                 return timeout_result()
+            except Exception as exc:
+                # Handler exceptions are provider-controlled text. Convert
+                # them into the common result contract here so direct callers
+                # cannot observe an exception containing credentials or raw
+                # provider payload details before Runtime persistence gets a
+                # chance to redact it.
+                safe_error = self.services.redact(str(exc))
+                return self.services.security.sanitize_result(
+                    ToolResult.error(f"工具 {tool_name} 执行失败：{safe_error}")
+                )
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)
             if not isinstance(result, ToolResult):
@@ -305,6 +315,7 @@ class ToolExecutor:
                 )
             if time.monotonic() > deadline:
                 return timeout_result()
+            result = self.services.security.sanitize_result(result)
             result = self.services.security.enforce_result_limit(result, definition)
             return self.services.security.apply_read_data_boundary(
                 tool_name, result

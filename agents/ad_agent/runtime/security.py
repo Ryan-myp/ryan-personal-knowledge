@@ -46,6 +46,23 @@ class RuntimeSecurity:
         visit(value)
         return list(dict.fromkeys(paths))[:10]
 
+    def sanitize_result(self, result: ToolResult) -> ToolResult:
+        """Redact a Tool result before it leaves the Runtime boundary.
+
+        Persistence and prompt-context redaction are not sufficient: callers
+        can also receive the in-memory ``ToolResult`` directly through the
+        API, a Feature, or an injected Runtime.  Provider responses and
+        exception messages are untrusted data, so data, error text, and
+        confirmation cards must all use the same central redactor.
+        """
+        if not isinstance(result, ToolResult):
+            return result
+        redact = self.runtime._redact_for_persistence
+        result.data = redact(result.data)
+        result.error = redact(result.error)
+        result.card_payload = redact(result.card_payload)
+        return result
+
     @staticmethod
     def confirmation_plan(
         session_id: str,

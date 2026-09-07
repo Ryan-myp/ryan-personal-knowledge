@@ -827,6 +827,12 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                         if platform not in params and isinstance(values, dict):
                             params[platform] = dict(values)
                     normalized["platform_params"] = params
+            # A repair response is still untrusted model output. Apply the
+            # same explicit-value boundary as the first parse so repair cannot
+            # re-introduce guessed account/App/Pixel/Audience IDs.
+            normalized = self._enrich_intent_from_user_input(
+                normalized, user_input
+            )
             return ParsedIntent(**normalized)
         except (TypeError, ValueError, json.JSONDecodeError, RuntimeError):
             logger.warning("LLM intent repair failed; preserving the original result")
@@ -999,6 +1005,77 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                 )
         return result
 
+    @staticmethod
+    def _is_dynamic_provider_field(field: str, spec: Any) -> bool:
+        """Identify values that must come from the user or a lookup Tool.
+
+        A model may understand that a request needs an App, Pixel, Audience,
+        or Campaign and still emit a plausible-looking placeholder ID. Such
+        values are not evidence. The provider schema is authoritative for
+        lookup fields; the identifier suffix is a conservative fallback for
+        provider schemas that have not annotated every resource field.
+        """
+        spec = spec if isinstance(spec, Mapping) else {}
+        lookup = spec.get("lookup_tool")
+        if not lookup and isinstance(spec.get("lookup"), Mapping):
+            lookup = spec["lookup"].get("tool")
+        leaf = str(field).rsplit(".", 1)[-1].casefold()
+        return bool(
+            lookup
+            or leaf.endswith("_id")
+            or leaf in {"resource_name", "image_hash"}
+        )
+
+    @classmethod
+    def _drop_unverified_dynamic_values(
+        cls,
+        model_value: Any,
+        explicit_value: Any,
+        specs: Mapping[str, Mapping[str, Any]],
+        prefix: str = "",
+    ) -> Any:
+        """Remove model-invented resource IDs before routing/execution.
+
+        A placeholder such as ``my-app`` can satisfy ``type: string`` and
+        fail only much later at a provider. Removing it here lets the normal
+        creation card expose the missing lookup/input state. Explicit IDs
+        typed by the user are retained and overlaid afterwards.
+        """
+        if isinstance(model_value, Mapping):
+            result: dict[str, Any] = {}
+            for key, value in model_value.items():
+                field = str(key)
+                path = f"{prefix}.{field}" if prefix else field
+                spec = specs.get(path)
+                if cls._is_dynamic_provider_field(path, spec):
+                    explicit_item = cls._value_at_parameter(
+                        explicit_value if isinstance(explicit_value, Mapping) else {},
+                        path,
+                    )
+                    if explicit_item in (None, "", [], {}):
+                        continue
+                if isinstance(value, Mapping):
+                    value = cls._drop_unverified_dynamic_values(
+                        value, explicit_value, specs, path
+                    )
+                elif isinstance(value, list):
+                    value = [
+                        cls._drop_unverified_dynamic_values(
+                            item, explicit_value, specs, path
+                        ) if isinstance(item, (Mapping, list)) else item
+                        for item in value
+                    ]
+                result[field] = value
+            return result
+        if isinstance(model_value, list):
+            return [
+                cls._drop_unverified_dynamic_values(
+                    item, explicit_value, specs, prefix
+                ) if isinstance(item, (Mapping, list)) else item
+                for item in model_value
+            ]
+        return model_value
+
     def _enrich_intent_from_user_input(
         self, normalized: dict[str, Any], user_input: str,
     ) -> dict[str, Any]:
@@ -1016,10 +1093,23 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
 
         extracted = self._extract_params_from_input(user_input, platforms)
         model_params = result.get("platform_params")
-        result["platform_params"] = self._merge_missing_values(
+        merged_params = self._merge_missing_values(
             extracted,
             model_params if isinstance(model_params, Mapping) else {},
         )
+        # Model output is not a trusted resource-selection channel. Keep an
+        # App/Pixel/Audience/Campaign ID only when the user explicitly typed
+        # it; signed card selections are merged later by Runtime.
+        result["platform_params"] = {
+            platform: self._drop_unverified_dynamic_values(
+                merged_params.get(platform, {})
+                if isinstance(merged_params, Mapping) else {},
+                extracted.get(platform, {})
+                if isinstance(extracted, Mapping) else {},
+                self._platform_field_specs.get(platform, {}),
+            )
+            for platform in platforms
+        }
         for platform in platforms:
             result["platform_params"].setdefault(platform, {})
             result["platform_params"][platform] = self._overlay_explicit_dynamic_values(
@@ -1476,7 +1566,7 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
         generic_fields = {
             key.lower(): value
             for key, value in re.findall(
-                r"(?<![\w-])([A-Za-z][\w-]*)\s*[=:：]\s*([^\s;；]+)", user_input
+                r"(?<![\w-])([A-Za-z][\w-]*)\s*[=:：]\s*([^\s,，、;；]+)", user_input
             )
             if key.lower() not in {
             "campaign_id", "campaign_ids", "ad_group_id", "adgroup_id", "ad_id",
@@ -1515,14 +1605,14 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
             alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
             for key in keys:
                 qualified = re.search(
-                    rf"(?:{alias_pattern})\s+{re.escape(key)}\s*[=:：]\s*([^\s;；]+)",
+                    rf"(?:{alias_pattern})\s+{re.escape(key)}\s*[=:：]\s*([^\s,，、;；]+)",
                     user_input,
                     re.IGNORECASE,
                 )
                 unqualified = None
                 if len(platforms) == 1:
                     unqualified = re.search(
-                        rf"(?<![\w]){re.escape(key)}\s*[=:：]\s*([^\s;；]+)",
+                        rf"(?<![\w]){re.escape(key)}\s*[=:：]\s*([^\s,，、;；]+)",
                         user_input,
                         re.IGNORECASE,
                     )
@@ -1732,6 +1822,13 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
         intent_type = data.get("intent_type")
         if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
+        elif self._intent_catalog:
+            # Once Runtime publishes its active Registry, it is the only
+            # authority for executable intent names. Unknown model labels are
+            # made repairable instead of being allowed to look executable.
+            allowed_intents = set(self._intent_catalog) | self._custom_intents | {"chat"}
+            if intent_type.strip() not in allowed_intents:
+                data["intent_type"] = "chat"
 
         # 确保 platforms 是列表，并限制为实际注册体系支持的平台。
         platforms = data.get("platforms", [])
