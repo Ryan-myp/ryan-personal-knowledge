@@ -355,10 +355,10 @@ def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_t
     ]
     assert calls == [
         (
-            "GET", "catalog/get/",
+                "GET", "catalog/get/",
             {
                 "advertiser_id": "123", "page_size": 50,
-                "filtering": [{"field": "CATALOG_IDS", "operator": "IN", "values": ["catalog-1"]}],
+                "filtering": '{"catalog_ids":["catalog-1"]}',
             },
         ),
         (
@@ -2354,6 +2354,48 @@ def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
     ]
     assert definitions["tiktok_create_carousel_ad"].input_schema.properties["image_ids"]["minItems"] == 2
     assert definitions["tiktok_create_single_image_ad"].live_support is False
+
+
+def test_tiktok_ad_queries_use_scoped_filter_and_create_accepts_ad_ids():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+
+    def request_raw(method, endpoint, **kwargs):
+        seen.append((method, endpoint, kwargs))
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {
+                    "list": [{
+                        "ad_id": "ad-1",
+                        "adgroup_id": "group-1",
+                        "operation_status": "DISABLE",
+                    }],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            },
+            "headers": {},
+        }
+
+    client.request_raw = request_raw
+    assert client.list_ads("account-1", "group-1", page_size=20) == [{
+        "ad_id": "ad-1",
+        "adgroup_id": "group-1",
+        "operation_status": "DISABLE",
+    }]
+    assert json.loads(seen[-1][2]["params"]["filtering"]) == {
+        "adgroup_ids": ["group-1"]
+    }
+
+    client.request = lambda method, endpoint, data=None, **kwargs: {
+        "ad_ids": ["ad-1"],
+    }
+    assert client.create_ad("account-1", "campaign-1", "group-1", {
+        "name": "Authorized video",
+        "tiktok_item_id": "item-1",
+        "identity_id": "identity-1",
+    }) == "ad-1"
 
 
 def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():

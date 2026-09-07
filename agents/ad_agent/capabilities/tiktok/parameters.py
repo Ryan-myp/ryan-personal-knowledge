@@ -1438,6 +1438,15 @@ def tiktok_single_video_ad_schema() -> dict[str, Any]:
     return _tiktok_format_ad_schema(
         "SINGLE_VIDEO", "TikTok single-video ad", {
             "video_id": _field("string", "Uploaded TikTok video asset ID", minLength=1),
+            "tiktok_item_id": _field(
+                "string", "Authorized TikTok post/item ID used as the video source",
+                minLength=1,
+                manual_entry={
+                    "title": "已授权 TikTok 帖子/视频 ID",
+                    "instructions": "当 Identity 类型为 AUTH_CODE 或 TT_USER 时，填写该身份已授权的帖子/视频 ID；不会根据名称猜测。",
+                    "source": "provider_authorized_item",
+                },
+            ),
             "media": _tiktok_media_field("Single-video media payload"),
             "creatives": _tiktok_creatives_field("Single-video creative payload"),
         },

@@ -92,6 +92,56 @@ class TikTokAPIClient(BasePlatformClient):
             return payload["data"]
         return payload
 
+    @staticmethod
+    def _encode_filtering(filtering: Any, *, id_field: Optional[str] = None) -> Optional[str]:
+        """Encode Runtime filter clauses into TikTok's JSON query shape.
+
+        The public Tool contract uses a provider-neutral list of clauses, for
+        example ``[{"field": "ADGROUP_IDS", "operator": "IN", ...}]``.
+        TikTok v1.3 GET endpoints instead expect ``filtering`` to be a JSON
+        object such as ``{"adgroup_ids": ["..."]}``.  Sending the public
+        list directly is accepted by ``requests`` but rejected by TikTok as
+        ``filtering: invalid json type``; omitting the conversion also makes
+        a supposedly scoped lookup return an account-wide first page.
+        """
+        if filtering in (None, "", [], {}):
+            if id_field is None:
+                return None
+            filtering = {id_field: []}
+        if isinstance(filtering, str):
+            return filtering
+        if isinstance(filtering, dict):
+            return json.dumps(filtering, separators=(",", ":"))
+        if not isinstance(filtering, list):
+            raise ValueError("TikTok filtering must be an object, JSON string, or clause list")
+
+        field_map = {
+            "CAMPAIGN_IDS": "campaign_ids",
+            "ADGROUP_IDS": "adgroup_ids",
+            "AD_GROUP_IDS": "adgroup_ids",
+            "AD_IDS": "ad_ids",
+            "CREATIVE_IDS": "creative_ids",
+            "VIDEO_IDS": "video_ids",
+            "IMAGE_IDS": "image_ids",
+            "CONVERSION_IDS": "conversion_ids",
+            "CATALOG_IDS": "catalog_ids",
+        }
+        encoded: dict[str, Any] = {}
+        for clause in filtering:
+            if not isinstance(clause, dict):
+                raise ValueError("TikTok filtering clauses must be objects")
+            field = str(clause.get("field") or "").upper()
+            key = field_map.get(field, field.lower())
+            values = clause.get("values")
+            if values is None and clause.get("value") is not None:
+                values = [clause["value"]]
+            if values is None:
+                continue
+            encoded[key] = values
+        if id_field and not encoded:
+            encoded[id_field] = []
+        return json.dumps(encoded, separators=(",", ":"))
+
     def _list_pages(self, endpoint: str, params: dict, max_pages: int = 100) -> list:
         """Consume TikTok ``page_info`` pages into one deterministic list."""
         items: list = []
@@ -257,7 +307,7 @@ class TikTokAPIClient(BasePlatformClient):
             'page_size': page_size,
         }
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         # Consume a bounded number of provider pages. Runtime applies the
         # response-size limit for cards; the client must still be able to
         # read back a newly-created resource that is not on page one.
@@ -391,8 +441,9 @@ class TikTokAPIClient(BasePlatformClient):
             'campaign_id': str(campaign_id),
             'page_size': page_size,
         }
-        if filtering:
-            data['filtering'] = filtering
+        data['filtering'] = self._encode_filtering(
+            filtering or {'campaign_ids': [str(campaign_id)]}
+        )
         rows = self._list_pages('adgroup/get/', data, max_pages=100)
         # TikTok may return an account-wide page despite campaign_id. Enforce
         # the parent relation locally so lookup cards and get operations can
@@ -647,7 +698,12 @@ class TikTokAPIClient(BasePlatformClient):
         """获取 Ad 列表"""
         data = {
             'advertiser_id': str(advertiser_id),
-            'ad_group_id': str(adgroup_id),
+            # TikTok's scoped Ad query uses a JSON ``adgroup_ids`` filter;
+            # ``ad_group_id`` as a top-level query parameter is ignored and
+            # returns an account-wide page.
+            'filtering': json.dumps(
+                {'adgroup_ids': [str(adgroup_id)]}, separators=(',', ':')
+            ),
             'page_size': page_size,
         }
         rows = self._list_pages('ad/get/', data, max_pages=100)
@@ -743,7 +799,18 @@ class TikTokAPIClient(BasePlatformClient):
         }
         result = self.request('POST', 'ad/create/', data=data)
         payload = self._data_section(result)
-        resource_id = payload.get('ad_id') if isinstance(payload, dict) else None
+        resource_id = None
+        if isinstance(payload, dict):
+            resource_id = payload.get('ad_id')
+            ad_ids = payload.get('ad_ids')
+            if resource_id is None and isinstance(ad_ids, list) and ad_ids:
+                resource_id = ad_ids[0]
+            if resource_id is None:
+                creatives = payload.get('creatives')
+                if isinstance(creatives, list) and creatives:
+                    first = creatives[0]
+                    if isinstance(first, dict):
+                        resource_id = first.get('ad_id')
         return self.require_resource_id(resource_id, "TikTok ad create")
 
     def create_product_sales_ad(
@@ -821,7 +888,7 @@ class TikTokAPIClient(BasePlatformClient):
         """Create a single-video ad through TikTok's ad-create endpoint."""
         return self._create_format_ad(
             advertiser_id, campaign_id, adgroup_id, ad, "SINGLE_VIDEO",
-            ("video_id", "media", "creatives"),
+            ("video_id", "tiktok_item_id", "media", "creatives"),
         )
 
     def create_single_image_ad(
@@ -1496,7 +1563,7 @@ class TikTokAPIClient(BasePlatformClient):
             'page_size': page_size,
         }
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'creative/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
@@ -1538,7 +1605,7 @@ class TikTokAPIClient(BasePlatformClient):
             'page_size': page_size,
         }
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         # Asset rows contain preview URLs and can be much larger than normal
         # resource rows.  Return one bounded page here; callers can narrow
         # with ``filtering`` and request another page through the provider
@@ -1576,7 +1643,7 @@ class TikTokAPIClient(BasePlatformClient):
             'page_size': page_size,
         }
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         return self._list_pages('file/image/ad/search/', data, max_pages=1)
 
     def get_image(self, advertiser_id: str, image_id: str) -> dict:
@@ -1804,7 +1871,7 @@ class TikTokAPIClient(BasePlatformClient):
             'page_size': page_size,
         }
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'conversion/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
@@ -2177,7 +2244,7 @@ class TikTokAPIClient(BasePlatformClient):
             'page_size': page_size,
         }
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'catalog/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
@@ -2220,7 +2287,7 @@ class TikTokAPIClient(BasePlatformClient):
         if catalog_id:
             data['catalog_id'] = str(catalog_id)
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'product_set/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
@@ -2290,7 +2357,7 @@ class TikTokAPIClient(BasePlatformClient):
         self.acquire_rate_limit(self._rate_limiter)
         data = {'page_size': page_size}
         if filtering:
-            data['filtering'] = filtering
+            data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'app/get/', params=data)
         payload = self._data_section(result)
         return payload.get('list', []) if isinstance(payload, dict) else []
