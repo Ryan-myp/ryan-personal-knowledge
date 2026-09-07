@@ -3197,20 +3197,62 @@ def test_meta_create_creative_uses_account_adcreatives_edge():
     assert json.loads(calls[0][2]["object_story_spec"])["page_id"] == "page-1"
 
 
+def test_meta_create_creative_wires_optional_call_to_action():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data)) or {"id": "cr-app"}
+    )
+
+    client.create_creative("act_123", {
+        "name": "App Creative",
+        "page_id": "page-1",
+        "link": "http://play.google.com/store/apps/details?id=com.example.app",
+        "call_to_action_type": "INSTALL_MOBILE_APP",
+    })
+    payload = json.loads(calls[0][2]["object_story_spec"])
+    assert payload["link_data"]["call_to_action"] == {
+        "type": "INSTALL_MOBILE_APP",
+        "value": {
+            "link": "http://play.google.com/store/apps/details?id=com.example.app",
+        },
+    }
+
+
 def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
     definitions = {
         definition.name: definition
         for definition, _handler in create_meta_capability().register_tools()
     }
     assert {
-        "meta_list_creatives", "meta_get_creative", "meta_create_creative",
+        "meta_list_creatives", "meta_get_creative", "meta_lookup_creative", "meta_create_creative",
         "meta_update_creative", "meta_delete_creative",
     } <= set(definitions)
+    lookup = definitions["meta_lookup_creative"]
+    assert lookup.action == "list"
+    assert lookup.input_schema.required == ["account_id", "creative_id"]
+    assert lookup.input_schema.properties["creative_id"]["lookup_tool"] == (
+        "meta_list_creatives"
+    )
     updates = definitions["meta_update_creative"].input_schema.properties["updates"]
     assert updates["properties"] == {
         "name": updates["properties"]["name"]
     }
     assert updates["additionalProperties"] is False
+
+
+def test_meta_create_ad_uses_exact_creative_lookup_contract():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_capability().register_tools()
+    }
+    assert "meta_lookup_adset" in definitions
+    adset = definitions["meta_create_ad"].input_schema.properties["adset_id"]
+    assert adset["lookup_tool"] == "meta_lookup_adset"
+    assert adset["lookup_query_field"] == "adset_id"
+    creative = definitions["meta_create_ad"].input_schema.properties["creative_id"]
+    assert creative["lookup_tool"] == "meta_lookup_creative"
+    assert creative["lookup_result_key"] == "creatives"
 
 
 def test_meta_catalog_tools_expose_lookup_and_format_contract():

@@ -60,7 +60,10 @@ class MetaGetAdSetHandler(ToolHandler):
                     return ToolResult.error(
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
                     )
-                adset = self.client.get_adset(adset_id)
+                adset = self.client.get_adset(
+                    adset_id,
+                    fields=input_data.get("fields"),
+                )
                 return ToolResult.ok({"adset": adset, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta adset: {e}")
@@ -74,6 +77,41 @@ class MetaGetAdSetHandler(ToolHandler):
                 "data_status": "offline_no_client",
                 "simulated": True,
             })
+
+
+class MetaLookupAdSetHandler(ToolHandler):
+    """Resolve one Ad Set for a bounded provider-selection lookup."""
+
+    def __init__(self, api_client: Optional[MetaAPIClient] = None):
+        self.client = api_client
+
+    def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        adset_id = input_data.get("adset_id")
+        if self.client and ctx.account_id and adset_id:
+            try:
+                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
+                    ctx.account_id, "adset", adset_id
+                ):
+                    return ToolResult.error(
+                        f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
+                    )
+                adset = self.client.get_adset(
+                    adset_id,
+                    fields=input_data.get("fields"),
+                )
+                return ToolResult.ok({
+                    "ad_sets": [adset],
+                    "adset": adset,
+                    "data_status": "live",
+                })
+            except Exception as exc:
+                return ToolResult.error(f"Failed to lookup Meta adset: {exc}")
+        return ToolResult.ok({
+            "ad_sets": [],
+            "account_id": ctx.account_id,
+            "data_status": "offline_no_client",
+            "simulated": True,
+        })
 
 
 class MetaCreateAdSetHandler(ToolHandler):

@@ -90,7 +90,15 @@ class MetaGetCampaignHandler(ToolHandler):
                     return ToolResult.error(
                         f"Campaign {campaign_id} does not belong to account {account_id}"
                     )
-                campaign = self.client.get_campaign(campaign_id)
+                fields = input_data.get("fields")
+                # Keep replaceable/test Provider clients compatible with the
+                # original one-argument read signature.  Only pass the
+                # optional keyword when the caller actually selected fields.
+                campaign = (
+                    self.client.get_campaign(campaign_id, fields=fields)
+                    if fields is not None
+                    else self.client.get_campaign(campaign_id)
+                )
                 return ToolResult.ok({
                     "campaign": campaign,
                     "account_id": account_id,

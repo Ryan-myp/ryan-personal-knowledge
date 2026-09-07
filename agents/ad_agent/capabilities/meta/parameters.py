@@ -25,6 +25,7 @@ META_BID_STRATEGIES = [
 META_CTA_TYPES = [
     "LEARN_MORE", "SHOP_NOW", "SIGN_UP", "CONTACT_US", "LIKE_PAGE",
     "WATCH_VIDEO", "SEND_MESSAGE", "WHATSAPP", "GET_QUOTE", "BOOK_TRAVEL",
+    "INSTALL_MOBILE_APP", "DOWNLOAD", "PLAY_GAME", "USE_APP",
 ]
 META_AD_FORMATS = ["LINK", "VIDEO", "CAROUSEL", "LEAD", "CATALOG"]
 META_MESSAGING_APPS = ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]
@@ -252,6 +253,10 @@ def meta_targeting_schema() -> dict[str, Any]:
         "device_platforms": _field(
             "array", "Device platforms",
             items={"type": "string", "enum": META_DEVICE_PLATFORMS},
+        ),
+        "user_os": _field(
+            "array", "Mobile operating systems; required when promoting an app",
+            items={"type": "string", "enum": ["Android", "iOS"]},
         ),
         "publisher_platforms": _field(
             "array", "Publisher platforms",
@@ -750,6 +755,9 @@ def meta_creative_schema() -> dict[str, Any]:
             ),
             "link": _field("string", "Destination URL"),
             "message": _field("string", "Primary text"),
+            "call_to_action_type": _field(
+                "string", "Creative CTA", enum=META_CTA_TYPES,
+            ),
             "image_hash": _field(
                 "string", "Uploaded image hash",
                 lookup_tool="meta_list_image_assets", lookup_result_key="images",

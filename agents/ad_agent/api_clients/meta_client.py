@@ -163,7 +163,23 @@ class MetaAPIClient(BasePlatformClient):
             if isinstance(data, dict):
                 error = data.get("error")
                 if isinstance(error, dict):
-                    message = error.get("message", message)
+                    message = str(error.get("message") or message)
+                    # Meta often puts the actionable validation reason in
+                    # error_user_msg while keeping message as the generic
+                    # "Invalid parameter". Surface only provider diagnostic
+                    # text and stable numeric metadata; request credentials
+                    # and raw error_data remain outside the exception.
+                    user_message = str(error.get("error_user_msg") or "").strip()
+                    user_title = str(error.get("error_user_title") or "").strip()
+                    if user_title and user_title.lower() not in message.lower():
+                        message = f"{message} ({user_title})"
+                    if user_message and user_message.lower() not in message.lower():
+                        message = f"{message}: {user_message}"
+                    if error.get("code") is not None:
+                        message = f"{message} [code={error.get('code')}"
+                        if error.get("error_subcode") is not None:
+                            message += f", subcode={error.get('error_subcode')}"
+                        message += "]"
             return APIError(
                 f"Meta API HTTP {status_code}: {message}",
                 status_code=status_code,
@@ -705,9 +721,18 @@ class MetaAPIClient(BasePlatformClient):
     def list_catalogs(self, account_id: str, limit: int = 25) -> list:
         """获取广告账户可用的商品目录。"""
         clean_id = self._clean_meta_id(account_id, "account_id")
+        # Catalog ownership is exposed on the Business node, not on the ad
+        # account node.  Keep the account argument as the Runtime scope, but
+        # use the credential-bound Business ID for the provider edge; never
+        # accept a business ID from the tool payload.
+        business_id = self._clean_meta_id(
+            self.credentials.get("business_id"), "business_id"
+        )
+        if not business_id:
+            raise ValueError("Meta credentials must include business_id to list catalogs")
         return self._list_graph_pages(
-            clean_id,
-            f"/act_{clean_id}/owned_product_catalogs",
+            business_id,
+            f"/{business_id}/owned_product_catalogs",
             {
                 'limit': limit,
                 'fields': 'id,name,vertical,product_count,feed_count',
@@ -1835,6 +1860,14 @@ class MetaAPIClient(BasePlatformClient):
                 'image_hash': creative.get('image_hash', ''),
             },
         }
+        call_to_action_type = str(
+            creative.get('call_to_action_type') or ''
+        ).strip().upper()
+        if call_to_action_type:
+            story_spec['link_data']['call_to_action'] = {
+                'type': call_to_action_type,
+                'value': {'link': creative.get('link', '')},
+            }
         data = {
             'name': creative.get('name', 'Creative'),
             # Raw Graph requests need the SDK's JSON encoding explicitly.

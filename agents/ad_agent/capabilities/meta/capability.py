@@ -11,12 +11,15 @@ from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect
 from ..base import BaseCapability, CampaignUpdateHandler, apply_lookup_contracts
 from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import MetaListCampaignsHandler, MetaGetCampaignHandler, MetaCreateCampaignHandler
-from .ad_sets import MetaListAdSetsHandler, MetaGetAdSetHandler, MetaCreateAdSetHandler
+from .ad_sets import (
+    MetaListAdSetsHandler, MetaGetAdSetHandler, MetaLookupAdSetHandler,
+    MetaCreateAdSetHandler,
+)
 from .ads import MetaListAdsHandler, MetaGetAdHandler, MetaCreateAdHandler
 from .reports import MetaGetReportHandler
 from .audiences import MetaListAudiencesHandler
 from .boost import MetaBoostPostHandler
-from .creatives import MetaCreateCreativeHandler
+from .creatives import MetaCreateCreativeHandler, MetaLookupCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
@@ -174,6 +177,22 @@ META_LOOKUP_CONTRACTS = {
             },
         },
     },
+    # A new Creative can be absent from the first page of the account edge.
+    # Keep the Runtime selection-token boundary intact by resolving the exact
+    # ID through a bounded read Tool for the hierarchy create flow.
+        "meta_create_ad": {
+            "adset_id": _meta_lookup(
+                "meta_lookup_adset", "ad_sets", ["id", "adset_id"],
+                ["name", "adset_name", "id"],
+            ) | {
+                "lookup_dependencies": [],
+                "lookup_query_field": "adset_id",
+            },
+            "creative_id": _meta_lookup(
+                "meta_lookup_creative", "creatives", ["id", "creative_id"],
+                ["name", "creative_name", "id"],
+            ) | {"lookup_query_field": "creative_id"},
+        },
 }
 
 
@@ -242,7 +261,8 @@ class MetaCapability(BaseCapability):
         "update_campaign": ["meta_update_campaign"], "pause_campaign": ["meta_pause_campaign"],
         "resume_campaign": ["meta_resume_campaign"], "delete_campaign": ["meta_delete_campaign"],
         "list_adsets": ["meta_list_ad_sets"],
-        "get_adset": ["meta_get_adset"], "create_adset": ["meta_create_adset"],
+        "get_adset": ["meta_get_adset", "meta_lookup_adset"],
+        "create_adset": ["meta_create_adset"],
         "update_adset": ["meta_update_adset"], "pause_adset": ["meta_pause_adset"],
         "delete_adset": ["meta_delete_adset"],
         "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
@@ -254,7 +274,8 @@ class MetaCapability(BaseCapability):
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "delete_ad": ["meta_delete_ad"],
         "create_creative": ["meta_create_creative"],
-        "list_creatives": ["meta_list_creatives"], "get_creative": ["meta_get_creative"],
+        "list_creatives": ["meta_list_creatives"],
+        "get_creative": ["meta_get_creative", "meta_lookup_creative"],
         "update_creative": ["meta_update_creative"], "delete_creative": ["meta_delete_creative"],
         "list_image_assets": ["meta_list_image_assets"],
         "upload_image_asset": ["meta_upload_image_asset"],
@@ -1152,6 +1173,24 @@ class MetaCapability(BaseCapability):
                 traits=["write", resource_type], write=True,
                 argument_builder=lambda _ctx, data, field=resource_id: ((data[field],), {}),
             ))
+        lookup_creative_tool = method_tool(
+            platform="meta", skill="meta-marketing-api", name="meta_lookup_creative",
+            description="按 Creative ID 精确查询 Meta Creative，供创建广告时选择刚创建或不在首屏列表中的素材。",
+            method_name="get_creative", result_key="creatives", properties={
+                key: creative_properties[key]
+                for key in ("account_id", "creative_id", "fields")
+            }, required=["account_id", "creative_id"], action="list",
+            resource_type="creative", resource_id_field="creative_id",
+            intent_types=["lookup_creative"], traits=["read", "creative", "lookup"],
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {
+                "fields": data.get("fields"),
+            }),
+        )
+        tools = [
+            item for item in tools
+            if item[0].name != "meta_lookup_creative"
+        ]
+        tools.append((lookup_creative_tool[0], MetaLookupCreativeHandler(client)))
         return [bind_provider_method(tool, client) for tool in tools]
 
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
@@ -1190,6 +1229,11 @@ class MetaCapability(BaseCapability):
                 properties={
                     "campaign_id": {"type": "string"},
                     "campaign_name": {"type": "string", "description": "Campaign 名称（可通过名称查找 ID）"},
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "description": "可选的 Meta Campaign 字段集合",
+                    },
                 },
             ),
             action="get", resource_type="campaign", resource_id_field="campaign_id",
@@ -1258,7 +1302,14 @@ class MetaCapability(BaseCapability):
             description="获取 Meta Ad Set 详情。",
             input_schema=ToolSchema(
                 required=["adset_id"],
-                properties={"adset_id": {"type": "string"}},
+                properties={
+                    "adset_id": {"type": "string"},
+                    "fields": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "description": "可选的 Meta Ad Set 字段集合",
+                    },
+                },
             ),
             action="get", resource_type="ad_set", parent_resource_type="campaign",
             resource_id_field="adset_id",
@@ -1268,6 +1319,23 @@ class MetaCapability(BaseCapability):
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "ad_set"],
         ), MetaGetAdSetHandler(api_client)))
+
+        # Exact-ID lookup keeps creation pickers bounded on large accounts.
+        lookup_adset_tool = method_tool(
+            platform="meta", skill="meta-marketing-api", name="meta_lookup_adset",
+            description="按 Ad Set ID 精确查询 Meta Ad Set，供创建广告时选择指定父级。",
+            method_name="get_adset", result_key="ad_sets", properties={
+                "account_id": {"type": "string"},
+                "adset_id": {"type": "string", "minLength": 1},
+                "fields": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            }, required=["account_id", "adset_id"], action="list",
+            resource_type="ad_set", resource_id_field="adset_id",
+            intent_types=["lookup_adset"], traits=["read", "ad_set", "lookup"],
+            argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"]), {
+                "fields": data.get("fields"),
+            }),
+        )
+        tools.append((lookup_adset_tool[0], MetaLookupAdSetHandler(api_client)))
 
         # Create Ad Set
         tools.append((ToolDefinition(
@@ -1453,6 +1521,15 @@ class MetaCapability(BaseCapability):
                     "page_id": {"type": "string"},
                     "link": {"type": "string"},
                     "message": {"type": "string"},
+                    "call_to_action_type": {
+                        "type": "string",
+                        "enum": [
+                            "LEARN_MORE", "SHOP_NOW", "SIGN_UP", "CONTACT_US",
+                            "LIKE_PAGE", "WATCH_VIDEO", "SEND_MESSAGE", "WHATSAPP",
+                            "GET_QUOTE", "BOOK_TRAVEL", "INSTALL_MOBILE_APP",
+                            "DOWNLOAD", "PLAY_GAME", "USE_APP",
+                        ],
+                    },
                     "image_hash": {"type": "string"},
                     "image_url": {"type": "string"},
                 },

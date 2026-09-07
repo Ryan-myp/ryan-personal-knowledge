@@ -133,6 +133,14 @@ class ToolInputBuilder:
         for part in str(field_name or "").split("."):
             if not part or not isinstance(current, dict):
                 return {}
+            # ``properties`` starts at the ToolSchema top level, while an
+            # object-valued field stores its children below a nested
+            # ``properties`` key.  Enter that object schema before resolving
+            # the next path segment.  Without this generic step, signed
+            # selections such as ``promoted_object.pixel_id`` were rejected
+            # even though the provider schema declared their lookup tool.
+            if "properties" in current and isinstance(current.get("properties"), dict):
+                current = current["properties"]
             current = current.get(part)
         return current if isinstance(current, dict) else {}
 
