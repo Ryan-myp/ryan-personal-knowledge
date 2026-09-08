@@ -97,8 +97,6 @@ class ToolSchema:
             "provider_any_of": [list(group) for group in self.provider_any_of],
             "conditional_rules": self.conditional_rules,
             "additional_properties": self.additional_properties,
-            # Keep the Python-facing name above for compatibility while also
-            # exposing the JSON Schema spelling to external consumers.
             "additionalProperties": self.additional_properties,
         }
         if self.provider_exactly_one_of:
@@ -127,6 +125,10 @@ class ToolDefinition:
     resource_type: str = ""
     parent_resource_type: Optional[str] = None
     intent_types: list[str] = field(default_factory=list)
+    # Natural-language aliases are owned by the Tool/Skill publisher. Core
+    # may use them for constrained offline parsing, but never invents a
+    # provider or business vocabulary of its own.
+    intent_aliases: list[str] = field(default_factory=list)
     # Provider-owned routing predicates. A Tool can publish a conditional
     # creation-chain membership without adding a provider branch to Router.
     # Each rule is JSON-serializable and is evaluated against ParsedIntent and
@@ -144,22 +146,17 @@ class ToolDefinition:
     # live confirmation/execution path.
     # Live writes are opt-in. A newly added Tool that forgets to declare a
     # verified provider adapter remains dry-run-only by default.
-    # ``None`` preserves the safe historical default for read tools while
-    # making live support opt-in for writes.  Explicit True remains possible
-    # only for a provider path that has been separately verified.
+    # Read tools are live by default; write tools must opt in explicitly.
     live_support: Optional[bool] = None
     # Operational contract used by the Runtime before a handler is invoked.
-    # These defaults keep existing Skills source-compatible while making the
-    # limits visible to /tools and future policy implementations.
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
     required_permissions: list[str] = field(default_factory=list)
     # Provider schemas do not agree on identifier spelling (for example
-    # ``adset_id`` vs ``ad_group_id``).  Keep the wire names on the Tool
+    # ``adset_id`` vs ``ad_group_id``). Keep the wire names on the Tool
     # contract so Runtime can persist and connect resources without knowing a
-    # provider's hierarchy.  The Runtime has a conservative naming fallback
-    # for older/custom Tools, but provider Capabilities should declare these
-    # fields whenever the schema is ambiguous.
+    # provider's hierarchy. Mutating Tools must declare the identity they
+    # create or address; Runtime never derives it from resource_type.
     resource_id_field: Optional[str] = None
     parent_resource_id_field: Optional[str] = None
     # Optional explicit read-back edge for an uncertain write.  The Runtime
@@ -218,6 +215,9 @@ class ToolDefinition:
         if self.readback_tool is not None:
             self.readback_tool = str(self.readback_tool).strip() or None
         self.intent_types = list(dict.fromkeys(str(item) for item in self.intent_types))
+        self.intent_aliases = list(dict.fromkeys(
+            str(item).strip() for item in self.intent_aliases if str(item).strip()
+        ))
 
     def routing_metadata_errors(self) -> list[str]:
         """Return missing self-description fields without Core inference.
@@ -233,19 +233,15 @@ class ToolDefinition:
             errors.append("resource_type")
         if not self.intent_types:
             errors.append("intent_types")
+        if self.action in {"create", "update", "delete", "pause", "resume", "enable", "disable"} and not self.resource_id_field:
+            errors.append("resource_id_field")
+        if self.parent_resource_type and not self.parent_resource_id_field:
+            errors.append("parent_resource_id_field")
         return errors
 
     @staticmethod
     def _normalize_resource(value: str) -> str:
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
-        aliases = {
-            "adset": "ad_set", "ad_group": "ad_group", "adgroup": "ad_group",
-            "lineitem": "line_item", "assetgroup": "asset_group",
-            "audiences": "audience", "creatives": "creative",
-            "videos": "video", "images": "image", "locations": "location",
-            "devices": "device", "catalogs": "catalog",
-        }
-        return aliases.get(normalized, normalized)
+        return re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
 
     def add_intents(self, intents: list[str] | tuple[str, ...] | set[str]) -> None:
         self.intent_types = list(dict.fromkeys(self.intent_types + [str(item) for item in intents]))
@@ -265,6 +261,7 @@ class ToolDefinition:
             "resource_type": self.resource_type,
             "parent_resource_type": self.parent_resource_type,
             "intent_types": list(self.intent_types),
+            "intent_aliases": list(self.intent_aliases),
             "activation_rules": [dict(rule) for rule in self.activation_rules],
             "risk_level": self.risk_level.value,
             "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
@@ -288,7 +285,7 @@ class ToolDefinition:
 class ToolError:
     """Structured, provider-neutral error classification.
 
-    ``ToolResult.error`` remains a string for API/backward compatibility;
+    ``ToolResult.error`` remains a human-readable string for API consumers;
     callers that need recovery semantics should use ``error_detail``.
     """
 
@@ -561,10 +558,6 @@ class ReconciliationContext:
     # Optional Runtime-owned metadata lookup. Provider reconcilers can use it
     # to discover the matching read Tool without a shared provider table.
     resolve_read_tool: Optional[Callable[[str], Any]] = None
-    # Resolve an explicitly declared Tool name. This keeps provider-owned
-    # readback mappings declarative while preventing reconcilers from gaining
-    # direct registry/handler access.
-    resolve_tool: Optional[Callable[[str], Any]] = None
 
 
 class ProviderReconciler(ABC):
@@ -652,6 +645,11 @@ class Skill(ABC):
     def platform(self) -> str:
         """所属平台"""
         raise NotImplementedError("Subclasses must implement 'platform'")
+
+    @property
+    def platform_aliases(self) -> list[str]:
+        """Natural-language platform aliases published by this Skill."""
+        return []
 
     @property
     def description(self) -> str:
@@ -749,11 +747,7 @@ class WriteGuard(ABC):
     def finalize(
         self, reservation: WriteReservation, result: ToolResult,
     ) -> None:
-        """Finalize a reservation when implemented by an enhanced guard.
-
-        The default is intentionally a no-op so existing provider guards stay
-        source-compatible; Runtime retains the legacy mark/release fallback.
-        """
+        """Finalize a reservation after the provider outcome is known."""
         return None
 
 
@@ -819,24 +813,42 @@ class IntentParser(ABC):
     def register_tool_definitions(
         self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]
     ) -> None:
-        """Receive the current Tool catalog for model-backed intent parsing.
-
-        This is an optional lifecycle hook rather than a required parser
-        implementation detail.  Custom parsers that do not use a model may
-        safely keep the default no-op implementation.
-        """
+        """Receive the current Tool catalog for model-backed intent parsing."""
         return None
 
     def refresh_tool_catalog(
         self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]
     ) -> None:
-        """Replace the parser's discoverable Tool catalog after a lifecycle change.
-
-        Implementations that keep derived intent/schema indexes should rebuild
-        them here.  The default preserves compatibility with lightweight
-        custom parsers that only support incremental registration.
-        """
+        """Replace the parser's discoverable Tool catalog after a lifecycle change."""
         self.register_tool_definitions(definitions)
+
+    def register_platform_aliases(
+        self, platform: str, aliases: list[str] | set[str]
+    ) -> None:
+        """Publish Skill-owned display aliases for parser context."""
+        return None
+
+    def register_intent_descriptors(
+        self, descriptors: Mapping[str, Mapping[str, Any]]
+    ) -> None:
+        """Publish Feature-owned language descriptors."""
+        return None
+
+    def extract_parameters(
+        self, user_input: str, platforms: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Extract only explicitly declared parameters for a continuation turn."""
+        return {}
+
+    def repair_for_routing(
+        self, user_input: str, context: ToolContext, previous: ParsedIntent
+    ) -> Optional[ParsedIntent]:
+        """Optionally repair a model result against the active Tool catalog."""
+        return None
+
+    def model_client(self) -> Any:
+        """Return the injected model client, if this parser uses one."""
+        return None
 
 
 class IntentRouter(ABC):

@@ -15,14 +15,17 @@ import json
 import logging
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Mapping, Optional
-import yaml
 from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
     ToolDefinition, ToolRegistry
 )
-from .platform import normalize_platform, parser_platform
+from .platform import (
+    declared_platforms,
+    normalize_platform,
+    parser_platform,
+    recognition_aliases,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -65,9 +68,9 @@ class LLMIntentParser(IntentParser):
 {
   "intent_type": "<候选值>",
   "platforms": ["<当前已注册的平台标识>"],
-  "objective": "可选业务目标",
-  "campaign_type": "可选平台 Campaign 类型",
-  "budget_daily": 100,
+  "objective": "可选的通用业务目标提示",
+  "campaign_type": "可选的能力类型提示",
+  "budget": 100,
   "duration_days": 7,
   "date_range": "LAST_7_DAYS",
   "creative_materials": [{"type": "image", "description": "海报图"}],
@@ -86,14 +89,10 @@ App、Pixel、事件、Audience、Page、Catalog、素材等动态资源 ID；�
 授予。创建参数不完整或存在多个合法组合时，保留待选择状态；参数收齐后只能生成预览，
 必须等待用户明确确认才进入写操作。
 
-理解中文、英文和中英混合表达，识别广告目标、广告形式、预算模式、年龄段、设备和优化
-目标，但只能输出当前 Schema/Blueprint 声明的 canonical enum。sales 表示电商销售/转化，
-leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光。
+理解中文、英文和中英混合表达；所有可执行的枚举、字段和资源引用都必须以当前
+Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保留为空，并通过澄清请求
+补充，不要用 Core 中预置的业务词典猜测。
 """.strip()
-
-    # Kept as a compatibility name for callers that imported the old
-    # template. It is intentionally volatile and contains only the request.
-    PARSE_PROMPT_TEMPLATE = "本轮用户输入（VOLATILE）：\n{user_input}\n\n请严格按照 STABLE 与 CONTEXT 的协议只输出 JSON。"
 
     def __init__(self, llm_client=None, *, allow_rule_fallback: bool = True):
         """
@@ -109,10 +108,11 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         # without leaving its intent names in the LLM contract.
         self._custom_intents: set[str] = set()
         self._tool_intents: set[str] = set()
-        # Platform identity and natural-language aliases are published by
-        # Skills.  Discover the installed channel metadata for standalone
-        # parser use; Runtime registration remains the authoritative update
-        # path when plugins are added or removed at runtime.
+        self._intent_aliases: dict[str, set[str]] = {}
+        self._feature_intent_descriptors: dict[str, dict[str, Any]] = {}
+        # Platform identity and natural-language aliases are published by the
+        # active Skill/Capability lifecycle. The parser never scans the
+        # repository to discover a provider.
         self._platform_aliases: dict[str, str] = {}
         self._known_platforms: set[str] = set()
         self._platform_field_specs: dict[str, dict[str, dict]] = {}
@@ -124,8 +124,6 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         # serialized form so each turn does not rebuild the same prompt prefix.
         # It is invalidated whenever Tool definitions are refreshed.
         self._intent_catalog_prompt_cache: dict[tuple[str, ...], str] = {}
-        self._load_installed_channel_metadata()
-
     def register_tool_definitions(self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]) -> None:
         """Publish Tool-owned intent metadata to the LLM parser.
 
@@ -145,11 +143,46 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                     "name": name,
                     "platform": str(getattr(definition, "platform", "") or ""),
                     "description": str(getattr(definition, "description", "") or ""),
+                    # A Tool may expose a precise intent plus a broader
+                    # compatibility intent (for example
+                    # ``get_campaign_report`` and ``download_report``).
+                    # Keep the declaration order so the broad alias does not
+                    # inherit the precise Tool description and tie the
+                    # parser between two semantically different intents.
+                    "primary_intent": intents[0] if intents else "",
                     "action": str(getattr(definition, "action", "") or ""),
                     "resource_type": str(getattr(definition, "resource_type", "") or ""),
                     "traits": [str(item) for item in (getattr(definition, "traits", []) or [])],
                 }
+                # A Tool can advertise a precise intent and a broad
+                # compatibility intent. Its natural-language aliases belong
+                # to the first (primary) intent only; copying them to every
+                # advertised intent makes e.g. ``create_campaign_only`` tie
+                # with ``create_campaign`` and fails closed unnecessarily.
+                if intent == (intents[0] if intents else ""):
+                    aliases = getattr(definition, "intent_aliases", []) or []
+                    self._intent_aliases.setdefault(intent, set()).update(
+                        str(alias).strip() for alias in aliases if str(alias).strip()
+                    )
             self._tool_intents.update(intents)
+
+    def register_intent_descriptors(
+        self, descriptors: Mapping[str, Mapping[str, Any]]
+    ) -> None:
+        """Register Feature-owned language metadata without a Core intent map."""
+        self._intent_catalog_prompt_cache.clear()
+        for raw_intent, descriptor in (descriptors or {}).items():
+            intent = str(raw_intent or "").strip()
+            if not intent or not isinstance(descriptor, Mapping):
+                continue
+            aliases = descriptor.get("aliases", [])
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            self._feature_intent_descriptors[intent] = dict(descriptor)
+            self._custom_intents.add(intent)
+            self._intent_aliases.setdefault(intent, set()).update(
+                str(alias).strip() for alias in (aliases or []) if str(alias).strip()
+            )
 
     def refresh_tool_catalog(
         self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]
@@ -158,17 +191,23 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
 
         Runtime registration is dynamic. Incremental registration alone would
         leave removed Tool names, intents, provider fields and platform IDs in
-        subsequent model prompts. Installed Skill aliases are reloaded as a
-        stable baseline; Runtime then adds aliases for currently active
-        Skills.
+        subsequent model prompts. Runtime republishes aliases from the
+        currently active Skill set.
         """
         self._intent_catalog.clear()
         self._intent_catalog_prompt_cache.clear()
         self._tool_intents.clear()
+        self._intent_aliases.clear()
         self._platform_field_specs.clear()
         self._known_platforms.clear()
         self._platform_aliases.clear()
-        self._load_installed_channel_metadata()
+        for intent, descriptor in self._feature_intent_descriptors.items():
+            aliases = descriptor.get("aliases", [])
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            self._intent_aliases.setdefault(intent, set()).update(
+                str(alias).strip() for alias in (aliases or []) if str(alias).strip()
+            )
         for definition in definitions or []:
             self.register_platforms([getattr(definition, "platform", "")])
             schema = getattr(definition, "input_schema", None)
@@ -190,7 +229,7 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         latency and makes the creation choice less clear.
         """
         scoped_platforms = tuple(sorted({
-            parser_platform(str(platform).strip().lower())
+            normalize_platform(str(platform).strip().lower())
             for platform in (platforms or ())
             if str(platform).strip()
         }))
@@ -205,7 +244,7 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
             if scoped_platforms:
                 tools = [
                     item for item in tools
-                    if parser_platform(str(item.get("platform") or "").lower())
+                    if normalize_platform(str(item.get("platform") or "").lower())
                     in set(scoped_platforms)
                 ]
                 if not tools:
@@ -225,8 +264,14 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
             rows.append(f"{intent}: {detail}" if detail else intent)
         for intent in sorted(self._custom_intents):
             if intent not in self._intent_catalog:
+                descriptor = self._feature_intent_descriptors.get(intent, {})
+                description = str(descriptor.get("description") or "").strip()
+                aliases = sorted(self._intent_aliases.get(intent, set()))
                 rows.append(
-                    f"{intent}: Runtime 控制能力；由对应 Feature 处理，不直接调用 Provider"
+                    f"{intent}: "
+                    + (description + "；" if description else "")
+                    + ("aliases=" + ", ".join(aliases[:8]) + "；" if aliases else "")
+                    + "由对应 Feature 处理，不直接调用 Provider"
                 )
         rows.append("chat: 无匹配的已注册工具")
         result = " | ".join(rows)[:8000]
@@ -289,7 +334,11 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         messages.append({"role": "system", "content": "\n\n".join(volatile_parts)})
         messages.append({
             "role": "user",
-            "content": self.PARSE_PROMPT_TEMPLATE.format(user_input=str(user_input)[:12000]),
+            "content": (
+                "本轮用户输入（VOLATILE）：\n"
+                + str(user_input)[:12000]
+                + "\n\n请严格按照 STABLE 与 CONTEXT 的协议只输出 JSON。"
+            ),
         })
         return messages
 
@@ -313,68 +362,36 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         ])
         return messages
 
-    def _load_installed_channel_metadata(self) -> None:
-        """Load aliases from channel Skill frontmatter without a channel table."""
-        channels_root = Path(__file__).resolve().parent.parent / "skills" / "channels"
-        if not channels_root.is_dir():
-            return
-        for skill_file in sorted(channels_root.rglob("SKILL.md")):
-            try:
-                text = skill_file.read_text(encoding="utf-8")
-                if not text.startswith("---"):
-                    continue
-                _, frontmatter, _ = text.split("---", 2)
-                metadata = yaml.safe_load(frontmatter) or {}
-                if not isinstance(metadata, dict):
-                    continue
-                identity = metadata.get("skill", metadata)
-                if not isinstance(identity, dict):
-                    continue
-                platform = str(identity.get("platform") or skill_file.parent.name).strip()
-                if not platform:
-                    continue
-                aliases = identity.get("aliases", [])
-                if isinstance(aliases, str):
-                    aliases = [aliases]
-                aliases = list(aliases) if isinstance(aliases, list) else []
-                skill_name = identity.get("name")
-                if skill_name:
-                    aliases.append(str(skill_name))
-                self.register_platform_aliases(platform, aliases)
-            except (OSError, ValueError, yaml.YAMLError):
-                # SkillLoader owns strict validation. Parser metadata is only
-                # an optional discovery hint and must never block startup.
-                continue
-
-    def register_intents(self, intents: set[str] | list[str]) -> None:
-        """Allow registered Skills to extend the intent contract safely."""
-        self._intent_catalog_prompt_cache.clear()
-        self._custom_intents.update(str(intent) for intent in (intents or []))
-
     def register_platforms(self, platforms: set[str] | list[str]) -> None:
         """Publish platform identifiers from registered Capabilities/Skills."""
         for platform in platforms or []:
-            value = str(platform or "").strip().lower()
-            if not value:
+            canonical = normalize_platform(str(platform or ""))
+            if not canonical:
                 continue
-            canonical = parser_platform(value)
             self._known_platforms.add(canonical)
             self._platform_aliases.setdefault(canonical, canonical)
-            self._platform_aliases.setdefault(value, canonical)
-            self._platform_aliases.setdefault(value.replace("-", " "), canonical)
-            self._platform_aliases.setdefault(value.replace("_", " "), canonical)
+            self._platform_aliases.setdefault(canonical.replace("-", " "), canonical)
 
     def register_platform_aliases(self, platform: str, aliases: list[str] | set[str]) -> None:
         """Publish Skill-owned natural-language aliases for a platform."""
-        value = str(platform or "").strip().lower()
-        if not value:
+        canonical = normalize_platform(str(platform or ""))
+        if not canonical:
             return
-        self.register_platforms([value])
-        canonical = parser_platform(value)
+        self.register_platforms([canonical])
         for alias in aliases or []:
-            text = str(alias or "").strip().lower()
+            text = str(alias or "").strip().casefold()
             if text:
                 self._platform_aliases[text] = canonical
+                self._platform_aliases.setdefault(normalize_platform(text), canonical)
+                self._platform_aliases.setdefault(normalize_platform(text), canonical)
+                self._platform_aliases.setdefault(normalize_platform(text), canonical)
+                self._platform_aliases.setdefault(normalize_platform(text), canonical)
+
+    def extract_parameters(
+        self, user_input: str, platforms: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Expose the schema-driven continuation extractor through the contract."""
+        return self._extract_params_from_input(user_input, platforms)
 
     def register_tool_schemas(self, platform: str, schemas: list[dict] | tuple[dict, ...]) -> None:
         """Publish provider fields so rule parsing also remains extensible.
@@ -387,7 +404,7 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         normal ToolInputBuilder.
         """
         value = str(platform or "").strip().lower()
-        canonical = parser_platform(value)
+        canonical = normalize_platform(value)
         if not canonical:
             return
         self.register_platforms([canonical])
@@ -493,6 +510,16 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                 values = [values]
             if isinstance(values, (list, tuple, set)):
                 aliases.extend(str(value) for value in values)
+        # ``intent_map`` is the provider-owned bridge from a conversational
+        # objective (for example ``sales``) to a canonical enum.  Treat its
+        # keys as aliases only for the mapped option; Core does not maintain a
+        # channel/objective vocabulary of its own.
+        intent_map = metadata.get("intent_map")
+        if isinstance(intent_map, Mapping):
+            aliases.extend(
+                str(key) for key, mapped in intent_map.items()
+                if cls._phrase(mapped) == cls._phrase(option)
+            )
         # The canonical wire spelling is also a useful English phrase.  Do
         # not split arbitrary IDs or short values into unsafe guesses.
         canonical = cls._phrase(option)
@@ -618,11 +645,8 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                     continue
                 if is_array_item_path(field):
                     continue
-                # Compatibility aliases such as Google's hidden
-                # ``campaign_type`` are consumed by ToolInputBuilder, not
-                # selected as a second conversational value.  The visible
-                # Blueprint selector/match_terms remains responsible for
-                # choosing that variant.
+                # Hidden schema fields remain available to the structured
+                # builder, but are not inferred from conversational text.
                 if spec.get("ui_hidden") is True:
                     continue
                 options = self._schema_options(spec)
@@ -638,9 +662,14 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                     for alias in self._option_aliases(
                         spec, option, include_canonical=False
                     ):
-                        if not spec.get("option_aliases") and not spec.get("option_labels") and not (
+                        if (
+                            not spec.get("option_aliases")
+                            and not spec.get("option_labels")
+                            and not spec.get("intent_map")
+                            and not (
                             isinstance(spec.get("items"), dict)
                             and (spec["items"].get("option_aliases") or spec["items"].get("option_labels"))
+                            )
                         ):
                             continue
                         if self._field_option_matches_text(user_input, field, alias):
@@ -648,15 +677,12 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                 if not candidates:
                     # Provider schemas may declare that a field is the
                     # canonical destination for a generic ParsedIntent value.
-                    # Apply that mapping only after checking explicit
-                    # provider aliases, so “App 转化” cannot be shadowed by
-                    # the broader generic “转化” objective.
+                    # Apply that mapping only after checking explicit field
+                    # aliases, so a broad phrase cannot shadow a precise one.
                     intent_field = str(spec.get("intent_field") or "").strip()
                     generic_value = (
-                        self._detect_objective(user_input.casefold())
-                        if intent_field == "objective"
-                        else self._extract_campaign_type(user_input.casefold())
-                        if intent_field == "campaign_type"
+                        self._declared_intent_value(user_input, platforms, intent_field)
+                        if intent_field
                         else None
                     )
                     if generic_value not in (None, ""):
@@ -684,72 +710,6 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                 elif len(best) == 1:
                     self._assign_parameter(params[platform], field, best[0])
 
-            # Common age ranges are represented differently by providers:
-            # some expose min/max integers, others expose enum groups.  The
-            # shape is derived from the schema, not a provider branch.
-            range_match = _regex_search(
-                r"(?<!\d)(\d{1,3})\s*(?:到|至|至多|to|through|-)\s*(\d{1,3})(?!\d)",
-                user_input,
-                re.IGNORECASE,
-            )
-            if range_match:
-                lower, upper = int(range_match.group(1)), int(range_match.group(2))
-                specs = self._platform_field_specs.get(platform, {})
-                shallow_leaves = {
-                    field.rsplit(".", 1)[-1]
-                    for field in specs
-                    if "." not in field
-                }
-                age_min_fields = [
-                    field for field in specs if field.rsplit(".", 1)[-1] == "age_min"
-                ]
-                age_max_fields = [
-                    field for field in specs if field.rsplit(".", 1)[-1] == "age_max"
-                ]
-                for field in age_min_fields:
-                    if field == "updates" or field.startswith("updates."):
-                        continue
-                    if self._value_at_parameter(params[platform], field) is None:
-                        self._assign_parameter(params[platform], field, lower)
-                for field in age_max_fields:
-                    if field == "updates" or field.startswith("updates."):
-                        continue
-                    if self._value_at_parameter(params[platform], field) is None:
-                        self._assign_parameter(params[platform], field, upper)
-                for field, spec in specs.items():
-                    if field == "updates" or field.startswith("updates."):
-                        continue
-                    if "." in field and field.rsplit(".", 1)[-1] in shallow_leaves:
-                        continue
-                    if self._value_at_parameter(params[platform], field) is not None or not field.rsplit(".", 1)[-1].endswith("age_groups"):
-                        continue
-                    groups = []
-                    for option in self._schema_options(spec):
-                        match = _regex_search(r"(?:AGE|age)[_ -]?(\d{1,3})[_ -](\d{1,3}|\+)", str(option))
-                        if not match:
-                            continue
-                        start = int(match.group(1))
-                        end = upper if match.group(2) == "+" else int(match.group(2))
-                        if start <= upper and end >= lower:
-                            groups.append(option)
-                    if groups:
-                        self._assign_parameter(params[platform], field, groups)
-
-            budget_match = _regex_search(
-                r"(?:日预算|每天预算|daily\s+budget|per\s+day)\s*(?:是|为|=|:|：)?\s*(\d+(?:\.\d+)?)",
-                user_input,
-                re.IGNORECASE,
-            )
-            if budget_match:
-                for field in self._platform_field_specs.get(platform, {}):
-                    if field == "updates" or field.startswith("updates."):
-                        continue
-                    if field.rsplit(".", 1)[-1] == "daily_budget":
-                        if self._value_at_parameter(params[platform], field) is None:
-                            self._assign_parameter(
-                                params[platform], field, float(budget_match.group(1))
-                            )
-
     @staticmethod
     def _assign_parameter(target: dict[str, Any], field: str, value: Any) -> None:
         parts = [part for part in str(field).split(".") if part]
@@ -776,6 +736,10 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
     def inject_llm(self, llm_client) -> None:
         """注入自定义 LLM 客户端"""
         self._llm = llm_client
+
+    def model_client(self) -> Any:
+        """Return the model explicitly injected into this parser."""
+        return self._llm
     
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """解析用户输入为结构化意图"""
@@ -785,9 +749,6 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
             raise RuntimeError(
                 "LLM client is required for Agent intent parsing; inject an LLM client"
             )
-        fast_path = self._simple_creation_fast_path(user_input)
-        if fast_path is not None:
-            return fast_path
         try:
             return self._parse_with_llm(user_input, context)
         except Exception as exc:
@@ -798,28 +759,6 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                 return self._parse_with_rules(user_input)
             raise
 
-    def _simple_creation_fast_path(
-        self, user_input: str,
-    ) -> Optional[ParsedIntent]:
-        """Handle an unambiguous single-platform creation request locally.
-
-        A request such as “创建 TikTok 广告系列，日预算 100” still only
-        needs the provider-owned creation card to collect/validate the final
-        contract. The deterministic parser extracts only values declared by
-        the registered schemas; missing or ambiguous values remain visible in
-        the card. This avoids making a model round-trip a prerequisite for
-        ordinary creation requests while preserving the normal registry,
-        schema, permission, confirmation and audit gates.
-        """
-        candidate = self._parse_with_rules(str(user_input or ""))
-        if (
-            not candidate.platforms
-            or len(candidate.platforms) != 1
-            or not str(candidate.intent_type or "").startswith("create_")
-        ):
-            return None
-        return candidate
-    
     def _parse_with_llm(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """使用 LLM 解析意图"""
         messages = self._layered_messages(user_input, context, recent_limit=10)
@@ -844,24 +783,6 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
             )
             intent = ParsedIntent(**normalized)
             if self._needs_intent_repair(intent):
-                # A clear platform + action can be repaired locally from the
-                # same schema-driven parser used for explicit offline tests.
-                # This is not an unavailable-LLM fallback: the model was
-                # called first, and the deterministic candidate is accepted
-                # only when it resolves to a concrete registered action and
-                # platform. It avoids a second network round trip for simple
-                # requests such as “创建 TikTok 广告系列”.
-                try:
-                    deterministic = self._parse_with_rules(user_input)
-                except Exception:
-                    deterministic = None
-                if (
-                    deterministic is not None
-                    and deterministic.intent_type != "chat"
-                    and deterministic.platforms
-                    and str(deterministic.intent_type or "").startswith("create_")
-                ):
-                    return deterministic
                 repaired = self._repair_intent_with_llm(
                     user_input,
                     context,
@@ -1041,7 +962,7 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
 
     @staticmethod
     def _canonical_catalog_platform(platform: Any) -> str:
-        return parser_platform(str(platform or "").strip().lower())
+        return normalize_platform(str(platform or "").strip().lower())
 
     @staticmethod
     def _merge_missing_values(
@@ -1100,13 +1021,7 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                     else None
                 )
             ) if isinstance(spec, Mapping) else None
-            is_identifier = leaf in {
-                "account_id", "advertiser_id", "customer_id", "manager_customer_id",
-                "campaign_id", "ad_group_id", "adgroup_id", "ad_id", "app_id",
-                "pixel_id", "audience_id", "page_id", "conversion_id", "catalog_id",
-                "product_set_id", "form_id", "post_id", "identity_id", "video_id",
-                "resource_name", "image_hash",
-            } or leaf.endswith("_id")
+            is_identifier = leaf.endswith("_id") or leaf in {"resource_name", "image_hash"}
             if explicit_value not in (None, "", [], {}) and (lookup or is_identifier):
                 result[str(key)] = explicit_value
             elif isinstance(explicit_value, Mapping) and isinstance(result.get(key), Mapping):
@@ -1228,637 +1143,149 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
                 self._platform_field_specs.get(platform, {}),
             )
 
-        # ``campaign_type`` is a generic intent field. When a provider schema
-        # explicitly declares that it is the intent source, normalize labels
-        # such as “app conversion” to the provider's canonical selector value.
-        # No provider name or campaign table is kept in Core.
-        generic_type = result.get("campaign_type")
-        if generic_type not in (None, ""):
-            for platform in platforms:
-                for field, spec in self._platform_field_specs.get(platform, {}).items():
-                    if spec.get("intent_field") != "campaign_type":
-                        continue
-                    candidate = self._normalize_declared_value(generic_type, spec)
-                    if candidate in self._schema_options(spec):
-                        result["campaign_type"] = candidate
-                        break
+        # Normalize any top-level ParsedIntent value that a provider schema
+        # explicitly publishes as an ``intent_field``.  The field name is
+        # metadata-owned, so adding a new capability does not require adding a
+        # new Core branch.
+        for platform in platforms:
+            for _field, spec in self._platform_field_specs.get(platform, {}).items():
+                intent_field = str(spec.get("intent_field") or "").strip()
+                generic_value = result.get(intent_field)
+                if not intent_field or generic_value in (None, ""):
+                    continue
+                candidate = self._normalize_declared_value(generic_value, spec)
+                if candidate in self._schema_options(spec):
+                    result[intent_field] = candidate
         return result
     
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
+        """Parse only vocabulary and fields published by the active catalog.
+
+        This mode is explicit offline development support. It is not a second
+        business router: every value still comes from the active Tool schema.
         """
-        规则解析器（LLM 不可用时的 fallback）。
-        
-        基于关键词匹配，提取基本意图信息。
-        """
-        text = user_input.lower()
-        
-        intent_type = self._detect_intent_type(text)
-        
-        # 检测平台
+        text = str(user_input or "").casefold()
         platforms = self._detect_platforms(text)
-        # Cross-channel create/update are intentionally represented by the
-        # same per-platform intent as their single-channel counterparts.  Do
-        # not use the normalized intent name as the only signal here, or a
-        # request such as "跨渠道创建 campaign" would end up with no
-        # platforms and therefore no executable plan.
-        cross_markers = [
-            "跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比",
-            "cross-channel", "cross channel", "cross-platform", "cross platform",
-            "all channels",
-        ]
-        is_cross_request = any(marker in text for marker in cross_markers)
-        if is_cross_request and not platforms:
-            # Use the channels currently registered with Runtime. This keeps
-            # a generic "cross-channel" request extensible without editing
-            # the parser when a new provider is installed.
-            platforms = sorted(self._known_platforms)
-        
-        # 检测投放目标
-        objective = self._detect_objective(text)
-
-        # Campaign 类型是业务策略校验和平台 payload 选择的独立字段，不能
-        # 只依赖 objective 推断。
-        campaign_type = self._extract_campaign_type(user_input)
-        
-        # 检测预算
-        budget = self._extract_budget(text)
-
-        # 检测报表日期范围
-        date_range = self._extract_date_range(text)
-        
-        # 检测素材
-        materials = self._extract_materials(user_input)
-        
-        # 从用户输入中提取参数（支持中文和英文）
-        platform_params = self._extract_params_from_input(user_input, platforms)
-        
         normalized = self._normalize_intent({
-            "intent_type": intent_type,
+            "intent_type": self._detect_intent_type(text),
             "raw_input": user_input,
             "platforms": platforms,
-            "objective": objective,
-            "campaign_type": campaign_type,
-            "budget": budget,
-            "date_range": date_range,
-            "creative_materials": materials,
-            "platform_params": platform_params,
+            "platform_params": self._extract_params_from_input(user_input, platforms),
         })
         return ParsedIntent(**self._enrich_intent_from_user_input(normalized, user_input))
 
     def _detect_intent_type(self, text: str) -> str:
-        """检测意图类型（注意顺序：更具体的规则放在前面）"""
-        schedule_markers = ["定时任务", "定时执行", "定期执行", "cron", "schedule", "每天", "每周", "每月"]
-        if any(marker in text for marker in schedule_markers):
-            if any(kw in text for kw in ["查询", "列表", "查看", "list", "show"]):
-                return "schedule_list"
-            if any(kw in text for kw in ["暂停", "停用", "pause"]):
-                return "schedule_pause"
-            if any(kw in text for kw in ["恢复", "启用", "resume"]):
-                return "schedule_resume"
-            if any(kw in text for kw in ["删除", "移除", "delete"]):
-                return "schedule_delete"
-            if any(kw in text for kw in ["立即执行", "现在执行", "run now"]):
-                return "schedule_run_now"
-            return "schedule_create"
-        cross_markers = [
-            "跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比",
-            "cross-channel", "cross channel", "cross-platform", "cross platform",
-            "all channels",
-        ]
-        compare_words = ["对比", "比较", "compare"]
-        batch_markers = ["批量", "多个", "多条", "bulk", "batch"]
-        # These are read-only cross-channel analyses. Resolve them before the
-        # generic report/create rules so the Runtime can run the two-phase
-        # campaign-list + campaign-report workflow.
-        is_cross_request = any(marker in text for marker in cross_markers)
-        # Creation is a first-class cross-channel workflow.  It must be
-        # resolved before the generic cross-channel overview fallback below;
-        # otherwise "跨渠道创建 campaign" gets routed to list_campaigns and
-        # never reaches the per-platform create chain.
-        if is_cross_request and any(kw in text for kw in [
-            "创建", "新建", "create", "launch", "投放",
-        ]):
-            return "create_campaign"
-        if is_cross_request and any(kw in text for kw in [
-            "删除", "移除", "delete", "remove",
-        ]):
-            return "cross_channel_batch_delete"
-        if is_cross_request and any(kw in text for kw in [
-            "预算优化", "优化预算", "预算分配", "分配预算", "allocate budget", "budget optimization",
-        ]):
-            return "cross_channel_optimize_budget"
-        if is_cross_request and any(kw in text for kw in [
-            "导出", "export", "下载 csv", "下载csv",
-        ]) and any(kw in text for kw in ["报表", "报告", "report", "数据"]):
-            return "cross_channel_export_report"
-        if is_cross_request and any(kw in text for kw in [
-            "洞察", "分析", "优化建议", "performance insight", "insights",
-        ]):
-            return "cross_channel_performance_insights"
-        # Cross-channel lifecycle actions are batch operations even when the
-        # user names only one ID per platform.  Do not route them to a
-        # provider's single-resource update tool.
-        if is_cross_request and any(kw in text for kw in [
-            "暂停", "停用", "pause", "disable",
-        ]):
-            return "cross_channel_batch_pause"
-        if is_cross_request and any(kw in text for kw in [
-            "恢复", "启用", "resume", "enable",
-        ]):
-            return "cross_channel_batch_resume"
-        if is_cross_request and any(kw in text for kw in [
-            "预算", "budget",
-        ]):
-            return "cross_channel_batch_update_budget"
-        # Resolve explicit multi-platform comparisons before the generic
-        # report rule, so “比较 Meta 和 Google 的报表” remains a comparison.
-        if (
-            len(self._detect_platforms(text)) >= 2
-            and any(kw in text for kw in compare_words)
-        ):
-            return "cross_channel_compare"
-        if any(marker in text for marker in batch_markers):
-            if any(kw in text for kw in ["删除", "移除", "delete", "remove"]):
-                return "cross_channel_batch_delete"
-            if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
-                return "cross_channel_batch_pause"
-            if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
-                return "cross_channel_batch_resume"
-            if any(kw in text for kw in ["预算", "budget"]):
-                return "cross_channel_batch_update_budget"
-        # 先检查报表查询
-        if any(kw in text for kw in ["报表", "report", "下载", "查看数据", "performance", "统计"]):
-            return "download_report"
-        if any(kw in text for kw in ["line item", "line_item", "行项目"]):
-            if any(kw in text for kw in ["详情", "detail", "get "]):
-                return "get_line_item"
-            if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query"]):
-                return "list_line_items"
-        if (
-            any(kw in text for kw in ["insertion order", "insertion_order", "订单"])
-            or _regex_search(r"(?<![a-z])io(?![a-z])", text)
-        ):
-            if any(kw in text for kw in ["详情", "detail", "get "]):
-                return "get_io"
-            if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query"]):
-                return "list_ios"
-        # 更新/暂停/恢复必须优先于创建，避免“更新广告系列”被识别为 create。
-        if any(kw in text for kw in cross_markers):
-            if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit"]):
-                return "update_campaign"
-            if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
-                return "pause_campaign"
-            if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
-                return "resume_campaign"
-            return "cross_channel_overview"
-        if any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit"]):
-            if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
-                return "update_keyword"
-            if any(kw in text for kw in ["line item", "line_item", "行项目"]):
-                return "update_line_item"
-            if any(kw in text for kw in ["insertion order", "insertion_order", "订单"]):
-                return "update_io"
-            if any(kw in text for kw in ["asset group", "asset_group", "素材组", "资产组"]):
-                return "update_asset_group"
-            if any(kw in text for kw in ["广告组", "adset", "ad set"]):
-                return "update_adset"
-            if any(kw in text for kw in ["ad group", "adgroup"]):
-                return "update_adgroup"
-            if any(kw in text for kw in ["广告", " ad", "ad "]) and "广告系列" not in text and "campaign" not in text:
-                return "update_ad"
-            if any(kw in text for kw in ["广告系列", "campaign"]):
-                return "update_campaign"
-        if any(kw in text for kw in ["删除", "移除", "delete", "remove"]):
-            if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
-                return "delete_keyword"
-            if any(kw in text for kw in ["campaign", "广告系列"]):
-                return "delete_campaign"
-        if any(kw in text for kw in ["暂停", "停用", "pause", "disable"]):
-            return "pause_campaign"
-        if any(kw in text for kw in ["恢复", "启用", "resume", "enable"]):
-            return "resume_campaign"
-        # 先检查创建意图（优先级高于列表，避免"创建广告系列"误匹配）
-        if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
-            if any(kw in text for kw in ["创建", "新建", "create", "add"]):
-                return "create_keywords"
-        if any(kw in text for kw in ["asset group", "asset_group", "素材组", "资产组"]):
-            if any(kw in text for kw in ["创建", "新建", "create", "add"]):
-                return "create_asset_group"
-        # An explicitly requested child Ad format is an Ad-level action. Do
-        # not route it into the full Campaign -> Ad Group composition path;
-        # the caller may already have selected the parent resources in the
-        # creation card. Generic "创建广告" remains the full campaign flow.
-        ad_level_markers = [
-            "单视频广告", "单图广告", "轮播广告", "视频广告", "图片广告",
-            "single video", "single_image", "single image", "carousel ad",
-            "create ad", "new ad",
-        ]
-        campaign_level_markers = ["广告系列", "campaign", "广告活动"]
-        if (
-            any(kw in text for kw in ["创建", "新建", "create", "add"])
-            and any(marker in text for marker in ad_level_markers)
-            and not any(marker in text for marker in campaign_level_markers)
-        ):
-            if any(marker in text for marker in ["单视频广告", "视频广告", "single video"]):
-                return "create_single_video_ad"
-            if any(marker in text for marker in ["单图广告", "图片广告", "single image", "single_image"]):
-                return "create_single_image_ad"
-            if any(marker in text for marker in ["轮播广告", "carousel ad", "carousel"]):
-                return "create_carousel_ad"
-            return "create_ad"
-        if any(kw in text for kw in ["创意", "creative", "素材"]) and any(
-            kw in text for kw in ["创建", "新建", "create", "add"]
-        ):
-            return "create_creative"
-        if any(kw in text for kw in ["投放", "创建广告", "创建", "promote", "launch ad", "run ad", "新建广告", "创建 campaign"]):
-            return "create_campaign"
-        # 特定列表查询 - 按优先级排序
-        if any(kw in text for kw in ["兴趣类别", "interest", "兴趣"]):
-            return "list_interests"
-        if any(kw in text for kw in ["地域", "location", "地区"]):
-            return "list_locations"
-        if any(kw in text for kw in ["设备", "device"]):
-            return "list_devices"
-        if any(kw in text for kw in ["关键词", "keyword", "keywords"]):
-            return "list_keywords"
-        if any(kw in text for kw in ["人群包", "audience", "受众"]):
-            return "list_audiences"
-        if any(kw in text for kw in ["广告组", "ad group", "adgroup"]):
-            return "list_adgroups"
-        if any(kw in text for kw in ["广告组", "adset", "ad set", "广告集"]):
-            return "list_adsets"
-        # Campaign 详情查询 — 优先于列表（带 ID 或"详情"关键词）
-        if any(kw in text for kw in ["详情", "detail", "information", "信息", "get ", " 的 详情", "的详情", "看看这个"]):
-            if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
-                return "get_campaign"
-        # Campaign 列表查询 — 只在明确表达"查询/列出"意图时匹配
-        if any(kw in text for kw in ["列出", "列表", "查询", "查看", "list", "query", "search", "获取"]):
-            if any(kw in text for kw in ["Campaign", "campaign", "广告系列"]):
-                return "list_campaigns"
-        if any(kw in text for kw in ["视频", "video"]):
-            return "list_videos"
-        if any(kw in text for kw in ["图片", "image"]):
-            return "list_images"
-        if any(kw in text for kw in ["创意", "creative", "素材"]):
-            return "list_creatives"
-        # "转化广告系列" 是 campaign 类型，不是 conversion 查询
-        if any(kw in text for kw in ["转化", "conversion"]) and "广告系列" not in text and "campaign" not in text:
-            return "list_conversions"
-        if any(kw in text for kw in ["商品目录", "catalog"]):
-            return "list_catalogs"
-        if any(kw in text for kw in ["商品集", "product set"]):
-            return "list_product_sets"
-        if any(kw in text for kw in ["应用", "app ", "apps"]):
-            return "list_apps"
-        if any(kw in text for kw in ["品牌安全", "brand safety"]):
-            return "list_brand_safety"
-        # Ad 级别查询 — 排除"广告系列"（campaign）和"广告主"（advertiser）
-        if ("广告" in text or " ad" in text or "ad " in text) and "广告系列" not in text and "广告主" not in text and "adgroup" not in text and "ad_group" not in text:
-            return "list_ads"
-        elif any(kw in text for kw in ["boost", "助推", "加热", "推广帖子", "boost post"]):
-            return "boost_post"
-        elif any(kw in text for kw in ["再营销", "remarketing", "retargeting", "重定向"]):
-            return "run_remarketing"
-        # 检查问候和闲聊
-        if any(kw in text for kw in ["你好", "hello", "hi", "在吗", "帮助", "help", "你是谁", "支持"]):
+        """Resolve an offline intent using only registered publisher metadata."""
+        normalized = str(text or "").casefold()
+        matches: list[tuple[int, str]] = []
+        candidates = set(self._intent_catalog) | set(self._custom_intents)
+        for intent in candidates:
+            descriptor = self._feature_intent_descriptors.get(intent)
+            values = list(descriptor.get("aliases", [])) if descriptor else []
+            values.extend(self._intent_aliases.get(intent, set()))
+            values.append(str(intent).replace("_", " "))
+            for value in values:
+                phrase = (
+                    str(value or "").strip().casefold()
+                    .replace("_", " ").replace("-", " ")
+                )
+                if phrase and phrase in normalized:
+                    matches.append((len(phrase), intent))
+        if not matches:
             return "chat"
-        # 默认返回 chat，不要默认创建
-        return "chat"
-    
+        longest = max(length for length, _intent in matches)
+        winners = sorted({intent for length, intent in matches if length == longest})
+        return winners[0] if len(winners) == 1 else "chat"
+
     def _extract_params_from_input(self, user_input: str, platforms: list[str]) -> dict:
         """
-        从用户输入中提取参数。
-        支持格式：
-        - "campaign_id=12345"
-        - "名称=test"
-        - "budget 50"
-        - "campaign 12345"
-        - "ID: 12345"
+        Extract explicitly named values from the active Tool schemas.
         """
         params = {p: {} for p in platforms}
-        text = user_input.lower()
-
         platform_aliases: dict[str, list[str]] = {}
         for alias, canonical in self._platform_aliases.items():
             platform_aliases.setdefault(canonical, []).append(alias)
 
-        # Prefer platform-qualified IDs. A single generic campaign_id is only
-        # a fallback; copying it to every channel is unsafe for cross-channel
-        # management because platform IDs are not globally interchangeable.
-        for platform in platforms:
-            aliases_for_platform = platform_aliases.get(platform, [platform])
-            alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
-            campaign_match = _regex_search(
-                rf"(?:{alias_pattern})\s*(?:campaign|广告系列)[_-]?id\s*[=:]\s*([\w-]+)",
-                text,
-                re.IGNORECASE,
-            )
-            if campaign_match:
-                params[platform]["campaign_id"] = campaign_match.group(1)
-            declared_account_keys = [
-                key for key in self._platform_field_specs.get(platform, {})
-                if key in {"account_id", "advertiser_id", "customer_id"}
-            ]
-            account_key = declared_account_keys[0] if declared_account_keys else "account_id"
-            account_match = _regex_search(
-                rf"(?:{alias_pattern})\s*(?:account|ad[_-]?account|customer|advertiser)(?:[_-]?id)?\s*[=:]\s*([\w-]+)",
-                text,
-                re.IGNORECASE,
-            )
-            if account_match:
-                params[platform][account_key] = account_match.group(1)
+        def aliases_for(field: str, spec: Mapping[str, Any]) -> list[str]:
+            leaf = str(field).rsplit(".", 1)[-1]
+            aliases = [leaf, leaf.replace("_", " "), str(field)]
+            declared = spec.get("input_aliases", [])
+            if isinstance(declared, str):
+                declared = [declared]
+            if isinstance(declared, (list, tuple, set)):
+                aliases.extend(str(alias) for alias in declared)
+            return list(dict.fromkeys(alias for alias in aliases if alias.strip()))
 
-        # A continuation turn often contains only “account ID is …” or
-        # “App ID: …” and omits the provider name.  For a single active
-        # platform this is unambiguous; for multiple platforms we keep the
-        # strict qualified form above so IDs can never cross channels.
-        if len(platforms) == 1:
-            platform = platforms[0]
-            field_specs = self._platform_field_specs.get(platform, {})
-            account_keys = [
-                key for key in field_specs
-                if key in {"account_id", "advertiser_id", "customer_id"}
-            ]
-            if account_keys:
-                account_phrase = "|".join(
-                    re.escape(value) for value in (
-                        "account id", "advertiser id", "customer id",
-                        "ad account id", "账户 id", "账户ID", "广告账户 id",
-                    )
-                )
-                generic_account = _regex_search(
-                    rf"(?:{account_phrase})\s*(?:是|为|=|:|：)?\s*([A-Za-z0-9][\w-]*)",
-                    user_input,
-                    re.IGNORECASE,
-                )
-                if generic_account:
-                    params[platform].setdefault(account_keys[0], generic_account.group(1))
-
-            # Explicit dynamic resource IDs are safe to accept as user input;
-            # unlike “my app” they are not inferred.  The set of fields comes
-            # from the registered Tool schemas, and provider-specific Chinese
-            # labels can be published with ``input_aliases``.
-            def is_array_item_path(field_path: str) -> bool:
-                parts = str(field_path).split(".")
-                for index in range(1, len(parts)):
-                    parent = field_specs.get(".".join(parts[:index]))
-                    if isinstance(parent, Mapping) and parent.get("type") == "array":
-                        items = parent.get("items")
-                        if isinstance(items, Mapping) and isinstance(items.get("properties"), Mapping):
-                            return True
-                return False
-
-            for key, spec in field_specs.items():
-                leaf = str(key).rsplit(".", 1)[-1]
-                if not (
-                    leaf.endswith("_id") or leaf in {"image_hash", "resource_name"}
-                ) or key in params[platform] or is_array_item_path(key):
-                    continue
-                aliases = [leaf.replace("_", " ")]
-                declared_aliases = spec.get("input_aliases") if isinstance(spec, dict) else None
-                if isinstance(declared_aliases, str):
-                    aliases.append(declared_aliases)
-                elif isinstance(declared_aliases, (list, tuple, set)):
-                    aliases.extend(str(alias) for alias in declared_aliases)
-                alias_pattern = "|".join(re.escape(alias) for alias in aliases if alias)
-                if not alias_pattern:
-                    continue
-                identifier = _regex_search(
-                    rf"(?:{alias_pattern})\s*(?:是|为|=|:|：)?\s*([A-Za-z0-9][\w:.-]*)",
-                    user_input,
-                    re.IGNORECASE,
-                )
-                if identifier:
-                    self._assign_parameter(
-                        params[platform], key, identifier.group(1)
-                    )
-        
-        # campaign_id 提取 - 支持多种格式
-        # 格式1: campaign_id=12345 或 campaign_id: 12345
-        campaign_match = _regex_search(r'campaign[_-]?id[=:\s]+(\d+)', text)
-        if campaign_match:
-            # A bare ID is only unambiguous for a single platform.  Campaign
-            # IDs are provider/account scoped and must never be copied across
-            # channels by the parser.
-            if len(platforms) == 1:
-                params[platforms[0]].setdefault("campaign_id", campaign_match.group(1))
-        else:
-            # 格式2: campaign 12345 或 campaign ID 12345
-            campaign_match = _regex_search(r'campaign(?:\s+id)?\s+(\d+)', text)
-            if campaign_match:
-                if len(platforms) == 1:
-                    params[platforms[0]].setdefault("campaign_id", campaign_match.group(1))
-            else:
-                # 格式3: ID: 12345 (大数字，可能是 campaign ID)
-                id_match = _regex_search(r'\bid[:\s]+(\d{10,})', text)
-                if id_match:
-                    if len(platforms) == 1:
-                        params[platforms[0]].setdefault("campaign_id", id_match.group(1))
-
-        # 批量 ID：只有显式平台限定或单平台请求才会写入，避免把一个渠道
-        # 的 Campaign ID 误复制到其他渠道。
-        # A platform-qualified batch may contain one or many IDs. The old
-        # pattern required a comma, so a valid single Google/TikTok/DV360 ID
-        # was silently dropped in a multi-platform request.
-        batch_id_pattern = r'[\w-]+(?:\s*[,，]\s*[\w-]+)*'
-        for platform in platforms:
-            aliases_for_platform = platform_aliases.get(platform, [platform])
-            alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
-            batch_match = _regex_search(
-                rf"(?:{alias_pattern})\s*(?:campaign|广告系列)[_-]?ids\s*[=:]\s*({batch_id_pattern})",
-                text,
-                re.IGNORECASE,
-            )
-            if batch_match:
-                ids = [x.strip() for x in re.split(r"[,，]", batch_match.group(1)) if x.strip()]
-                params[platform]["campaign_ids"] = list(dict.fromkeys(ids))
-                params[platform].setdefault("campaign_id", ids[0])
-        if len(platforms) == 1 and "campaign_ids" not in params[platforms[0]]:
-            generic_batch_match = _regex_search(
-                rf"campaign[_-]?ids?\s*[=:]\s*({batch_id_pattern})", text, re.IGNORECASE
-            )
-            if generic_batch_match:
-                ids = [x.strip() for x in re.split(r"[,，]", generic_batch_match.group(1)) if x.strip()]
-                params[platforms[0]]["campaign_ids"] = list(dict.fromkeys(ids))
-                params[platforms[0]].setdefault("campaign_id", ids[0])
-        
-        # ad_group_id / adgroup_id 提取
-        adgroup_match = _regex_search(r'ad[_-]?group[_-]?id[=:\s]+(\d+)', text)
-        if adgroup_match:
-            if len(platforms) == 1:
-                params[platforms[0]]["ad_group_id"] = adgroup_match.group(1)
-        else:
-            adgroup_match = _regex_search(r'adgroup(?:\s+id)?\s+(\d+)', text)
-            if adgroup_match:
-                if len(platforms) == 1:
-                    params[platforms[0]]["ad_group_id"] = adgroup_match.group(1)
-        
-        # ad_id 提取
-        ad_match = _regex_search(r'ad[_-]?id[=:\s]+(\d+)', text)
-        if ad_match:
-            if len(platforms) == 1:
-                params[platforms[0]]["ad_id"] = ad_match.group(1)
-        else:
-            ad_match = _regex_search(r'\bad\s+(?:ID\s+)?(\d{10,})', text)
-            if ad_match:
-                if len(platforms) == 1:
-                    params[platforms[0]]["ad_id"] = ad_match.group(1)
-
-        # Provider fields come from registered Tool Schemas. For a standalone
-        # parser with no registry yet, a single-platform request can still use
-        # the generic ``field=value`` fallback; validation later decides
-        # whether that field belongs to the selected Tool.
-        generic_fields = {
-            key.lower(): value
-            for key, value in _compiled_regex(
-                r"(?<![\w-])([A-Za-z][\w-]*)\s*[=:：]\s*([^\s,，、;；]+)"
-            ).findall(user_input)
-            if key.lower() not in {
-            "campaign_id", "campaign_ids", "ad_group_id", "adgroup_id", "ad_id",
-            "account_id", "customer_id", "advertiser_id", "budget", "status", "id",
-            }
-        }
-
-        def parse_parameter_value(key: str, raw_value: str, spec: Optional[dict] = None):
-            value = raw_value.strip().strip("[](){}").strip().strip("'\"")
-            spec = spec if isinstance(spec, dict) else {}
-            is_array = spec.get("type") == "array" or isinstance(spec.get("items"), dict)
-            if is_array:
-                return [
-                    item.strip().strip("'\"")
-                    for item in re.split(r"[,，]", value)
-                    if item.strip()
-                ]
-            if spec.get("type") in {"number", "integer"}:
+        def parse_value(raw: str, field: str, spec: Mapping[str, Any]) -> Any:
+            value = raw.strip().strip("[](){}").strip().strip("'\"")
+            field_type = spec.get("type")
+            if field_type == "array" or isinstance(spec.get("items"), Mapping):
+                return [item.strip().strip("'\"") for item in re.split(r"[,，]", value) if item.strip()]
+            if field_type in {"number", "integer"}:
                 try:
-                    return float(value) if "." in value else int(value)
+                    return float(value) if field_type == "number" or "." in value else int(value)
                 except ValueError:
                     return value
-            return value.upper() if not (key.endswith("_id") or key.endswith("_url")) else value
+            if field_type == "boolean":
+                lowered = value.casefold()
+                if lowered in {"true", "yes", "是"}:
+                    return True
+                if lowered in {"false", "no", "否"}:
+                    return False
+            return self._normalize_declared_value(value, dict(spec))
 
+        def is_array_item_path(field_path: str, specs: Mapping[str, Any]) -> bool:
+            """Keep array item properties inside an explicitly supplied item."""
+            parts = str(field_path).split(".")
+            for index in range(1, len(parts)):
+                parent = specs.get(".".join(parts[:index]))
+                if isinstance(parent, Mapping) and parent.get("type") == "array":
+                    items = parent.get("items")
+                    if isinstance(items, Mapping) and isinstance(items.get("properties"), Mapping):
+                        return True
+            return False
+
+        # Only an explicitly registered Tool schema        # Only an explicitly registered Tool schema can create a parameter.
+        # The parser accepts a field's wire name, its provider-declared aliases,
+        # or an explicitly qualified platform form. It never maps business
+        # nouns (campaign/ad/budget/date) to fields owned by another Tool.
         for platform in platforms:
             field_specs = self._platform_field_specs.get(platform, {})
-            # These values have dedicated intent extraction below; parsing a
-            # create-schema ``status`` as a platform-level update field would
-            # make an update request fail the closed parameter contract.
-            keys = set(field_specs) - {"status", "updates"}
-            if len(platforms) == 1:
-                keys.update(generic_fields)
-            if not keys:
-                continue
-            aliases_for_platform = platform_aliases.get(platform, [platform])
-            alias_pattern = "|".join(re.escape(alias) for alias in aliases_for_platform)
-            for key in keys:
+            for field, raw_spec in field_specs.items():
+                if not isinstance(raw_spec, Mapping) or is_array_item_path(field, field_specs):
+                    continue
+                aliases = aliases_for(field, raw_spec)
+                alias_pattern = "|".join(re.escape(alias) for alias in sorted(aliases, key=len, reverse=True))
+                separator = (
+                    r"\s*(?:是|为|=|:|：)?\s*"
+                    if self._is_dynamic_provider_field(field, raw_spec)
+                    else r"\s*(?:是|为|=|:|：)\s*"
+                )
                 qualified = _regex_search(
-                    rf"(?:{alias_pattern})\s+{re.escape(key)}\s*[=:：]\s*([^\s,，、;；]+)",
+                    rf"(?:{alias_pattern}){separator}([^\n,，、;；。]+)",
+                    user_input,
+                    re.IGNORECASE,
+                ) if len(platforms) == 1 else None
+                platform_aliases_for_platform = platform_aliases.get(platform, [platform])
+                platform_pattern = "|".join(
+                    re.escape(alias) for alias in sorted(platform_aliases_for_platform, key=len, reverse=True)
+                )
+                qualified_platform = _regex_search(
+                    rf"(?:{platform_pattern})\s+(?:{alias_pattern})\s*(?:是|为|=|:|：)\s*([^\n,，、;；。]+)",
                     user_input,
                     re.IGNORECASE,
                 )
-                unqualified = None
-                if len(platforms) == 1:
-                    unqualified = _regex_search(
-                        rf"(?<![\w]){re.escape(key)}\s*[=:：]\s*([^\s,，、;；]+)",
-                        user_input,
-                        re.IGNORECASE,
-                    )
-                match = qualified or unqualified
+                match = qualified_platform or qualified
                 if match:
-                    self._assign_parameter(params[platform], key, parse_parameter_value(
-                        key, match.group(1), field_specs.get(key)
-                    ))
-        
-        # campaign_name 提取 - 支持 "名称=xxx"、"name: xxx"、"：xxx"、"详情: xxx" 等格式
-        name_patterns = [
-            r'(?:名称|name)\s*(?:是|为|=|:|：)\s*([^\s,，;；：:]+(?:\s+[^\s,，;；：:]+)*)',
-            r'详情[：:\s]+([^\s,，;；]+(?:\s+[^\s,，;；]+)*)',
-            r'(?:这个|该|特定)\s*campaign[：:\s]*([A-Za-z0-9_\-]+(?:\s+[A-Za-z0-9_\-]+)*)',
-        ]
-        for pattern in name_patterns:
-            name_match = _regex_search(pattern, text, re.IGNORECASE)
-            if name_match:
-                extracted = name_match.group(1).strip().rstrip('。,.，')
-                extracted = re.split(
-                    r'\s+(?:预算|budget|目标|objective|跑|持续|duration|天数)\b',
-                    extracted,
-                    maxsplit=1,
-                    flags=re.IGNORECASE,
-                )[0].strip()
-                if extracted:
-                    for p in platforms:
-                        field_specs = self._platform_field_specs.get(p, {})
-                        # Provider schemas use either name (Meta/TikTok)
-                        # or campaign_name (Google). Keep the extraction
-                        # schema-driven instead of leaking a third alias into
-                        # the Tool payload.
-                        name_field = (
-                            "name" if "name" in field_specs
-                            else "campaign_name" if "campaign_name" in field_specs
-                            else None
-                        )
-                        if name_field:
-                            params[p][name_field] = extracted
-                    break
-        
-        # budget 提取
-        budget_match = _regex_search(r'(?:预算|budget)[=:\s]*(\d+(?:\.\d+)?)', text)
-        if budget_match:
-            for p in platforms:
-                params[p]["budget"] = float(budget_match.group(1))
-        
-        # objective 提取
-        objective_match = _regex_search(r'(?:目标|objective)[=:\s]+([A-Z_]+)', text)
-        if objective_match:
-            for p in platforms:
-                params[p]["objective"] = objective_match.group(1)
-        
-        # date_range 提取 - 支持 "最近7天"、"last_7_days" 等
-        date_patterns = [
-            (r'最近(\d+)天', lambda m: {"start_date": f"LAST_{m.group(1)}_DAYS", "end_date": "TODAY"}),
-            (r'last\s*(\d+)\s*days?', lambda m: {"start_date": f"LAST_{m.group(1)}_DAYS", "end_date": "TODAY"}),
-            (r'(\d{4})-(\d{2})-(\d{2})\s*至\s*(\d{4})-(\d{2})-(\d{2})', lambda m: {"start_date": f"{m.group(1)}-{m.group(2)}-{m.group(3)}", "end_date": f"{m.group(4)}-{m.group(5)}-{m.group(6)}"}),
-        ]
-        for pattern, handler in date_patterns:
-            match = _regex_search(pattern, text)
-            if match:
-                date_range = handler(match)
-                if date_range:
-                    for p in platforms:
-                        params[p]["date_range"] = date_range
-                break
+                    self._assign_parameter(params[platform], field, parse_value(match.group(1), field, raw_spec))
 
-        # 更新请求的最小结构化参数，避免把自然语言原样交给 Handler。
-        is_creation_request = any(
-            kw in text for kw in ["创建", "新建", "投放", "launch", "create", "promote"]
-        )
-        if not is_creation_request and any(kw in text for kw in ["更新", "修改", "编辑", "update", "modify", "edit", "暂停", "恢复", "启用"]):
-            updates = {}
-            status_match = _regex_search(r'(?:状态|status)[=：:\s]+([\w-]+)', text, re.IGNORECASE)
-            if status_match:
-                updates["status"] = status_match.group(1).upper()
-            if any(kw in text for kw in ["暂停", "pause", "停用", "disable"]):
-                updates["status"] = "PAUSED"
-            elif any(kw in text for kw in ["恢复", "resume", "启用", "enable"]):
-                updates["status"] = "ENABLED"
-            if budget_match and any(kw in text for kw in ["更新", "修改", "预算", "budget"]):
-                updates["daily_budget"] = float(budget_match.group(1))
-            if updates:
-                for p in platforms:
-                    # Keep independent payloads per provider.  A later
-                    # Capability-specific normalization (for example
-                    # TikTok campaign_group_status vs Meta status) must never
-                    # mutate the object that another channel receives.
-                    params[p]["updates"] = dict(updates)
-
-        # The explicit ``field=value`` syntax above is useful for power users;
-        # this second pass handles ordinary conversational phrases such as
-        # “TikTok App 转化广告，18 到 35 岁，日预算 100”.  It only writes
-        # values that a currently registered Tool schema declares.
         self._semantic_parameter_values(user_input, platforms, params)
         
         return params
     
     def _detect_platforms(self, text: str) -> list[str]:
         """检测目标平台"""
+        text = str(text or "").casefold()
         platforms = []
         # Longest aliases first prevents a generic alias from shadowing a
         # provider's more specific spelling. Every registered platform gets
@@ -1879,72 +1306,22 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         # 如果没有指定平台，返回空列表（需要用户明确指定）
         return platforms
     
-    def _detect_objective(self, text: str) -> Optional[str]:
-        """检测投放目标"""
-        if any(kw in text for kw in ["销售", "转化", "sales", "conversion"]):
-            return "sales"
-        elif any(kw in text for kw in ["线索", "lead", "收集表单"]):
-            return "leads"
-        elif any(kw in text for kw in ["流量", "traffic", "点击"]):
-            return "traffic"
-        elif any(kw in text for kw in ["品牌", "awareness", "曝光"]):
-            return "brand"
-        return None
-    
-    def _extract_budget(self, text: str) -> Optional[float]:
-        """提取预算（元）"""
-        # 匹配 "预算 100" / "daily 50" / "500元" 等模式
-        patterns = [
-            r'预算\s*(\d+\.?\d*)\s*[元yuan]*',
-            r'daily\s*(\d+\.?\d*)',
-            r'(\d+\.?\d*)\s*元/天',
-        ]
-        for pattern in patterns:
-            match = _regex_search(pattern, text)
-            if match:
-                return float(match.group(1))
-        return None
-
-    def _extract_date_range(self, text: str) -> Optional[str]:
-        """Extract a conservative normalized date range for reporting."""
-        if any(kw in text for kw in ["昨天", "yesterday"]):
-            return "YESTERDAY"
-        if any(kw in text for kw in ["今天", "today"]):
-            return "TODAY"
-        if any(kw in text for kw in ["本月", "this month"]):
-            return "THIS_MONTH"
-        match = _regex_search(
-            r"(?:最近|过去|近|last|past)\s*(\d+)\s*天",
-            text,
-            re.IGNORECASE,
-        )
-        if match:
-            return f"LAST_{match.group(1)}_DAYS"
-        return None
-
-    def _extract_campaign_type(self, text: str) -> Optional[str]:
-        """Extract an explicitly supplied campaign type conservatively.
-
-        Do not guess a provider-specific type from a vague business objective;
-        an explicit value is needed before business-policy validation can make
-        a safe decision.
-        """
-        match = _regex_search(
-            r"(?:campaign[_ -]?type|广告系列类型|广告类型|类型)\s*[=:：\s]+([A-Za-z][A-Za-z0-9_-]*)",
-            text,
-            re.IGNORECASE,
-        )
-        return match.group(1).upper() if match else None
-    
-    def _extract_materials(self, text: str) -> list[dict]:
-        """提取素材信息"""
-        materials = []
-        # 简单检测：图片/视频关键词
-        if any(kw in text for kw in ["图片", "海报", "image", "poster"]):
-            materials.append({"type": "image", "description": "user_provided"})
-        if any(kw in text for kw in ["视频", "video", " clip"]):
-            materials.append({"type": "video", "description": "user_provided"})
-        return materials
+    def _declared_intent_value(
+        self, text: str, platforms: list[str], intent_field: str,
+    ) -> Optional[str]:
+        """Extract one value only from a publisher-declared field contract."""
+        matches: list[Any] = []
+        for platform in platforms:
+            for field, spec in self._platform_field_specs.get(platform, {}).items():
+                if spec.get("intent_field") != intent_field:
+                    continue
+                options = self._schema_options(spec)
+                for option in options:
+                    aliases = self._option_aliases(spec, option, include_canonical=False)
+                    if any(self._option_matches_text(text, alias) for alias in aliases):
+                        matches.append(option)
+        unique = list(dict.fromkeys(matches))
+        return str(unique[0]) if len(unique) == 1 else None
     
     def _extract_json(self, text: str) -> Optional[str]:
         """从文本中提取 JSON 块"""
@@ -1969,12 +1346,11 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
     def _normalize_intent(self, data: dict) -> dict:
         """规范化解析结果"""
         data = dict(data or {})
-        # The prompt uses budget_daily for readability while ParsedIntent uses
-        # the common ``budget`` field. Normalize aliases before construction.
-        if data.get("budget") is None and data.get("budget_daily") is not None:
+        # Preserve the early public spelling at the parser boundary while
+        # exposing only the current ParsedIntent field. Provider-specific
+        # budget fields remain owned by their Tool schemas.
+        if data.get("budget") in (None, "") and data.get("budget_daily") not in (None, ""):
             data["budget"] = data.get("budget_daily")
-        if data.get("date_range") is None and data.get("time_range") is not None:
-            data["date_range"] = data.get("time_range")
         intent_type = data.get("intent_type")
         if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
@@ -1993,7 +1369,8 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         platform_aliases = self._platform_aliases
         normalized_platforms = []
         for platform in platforms if isinstance(platforms, list) else []:
-            normalized = platform_aliases.get(str(platform).lower(), str(platform).lower())
+            value = str(platform or "").strip().casefold()
+            normalized = platform_aliases.get(value, normalize_platform(value))
             if normalized in self._known_platforms and normalized not in normalized_platforms:
                 normalized_platforms.append(normalized)
         data["platforms"] = normalized_platforms
@@ -2016,7 +1393,8 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
         params = params if isinstance(params, dict) else {}
         normalized_params = {}
         for key, value in params.items():
-            normalized = platform_aliases.get(str(key).lower(), str(key).lower())
+            key_value = str(key or "").strip().casefold()
+            normalized = platform_aliases.get(key_value, normalize_platform(key_value))
             if normalized in self._known_platforms:
                 platform_values = value if isinstance(value, dict) else {}
                 # Models sometimes echo Tool routing metadata inside
@@ -2072,8 +1450,6 @@ leads 表示线索收集，traffic 表示网站流量，brand 表示品牌曝光
             "schedule_prompt", "schedule_id",
         }
         return {key: value for key, value in data.items() if key in allowed}
-        
-        return data
 
 
 class SimpleIntentRouter(IntentRouter):
@@ -2103,25 +1479,21 @@ class SimpleIntentRouter(IntentRouter):
         for platform in intent.platforms:
             canonical = normalize_platform(platform)
             platform_definitions = registry.list_by_platform(canonical)
-            tools = [
+            intent_candidates = [
                 definition for definition in platform_definitions
                 if self._matches_intent(definition, intent.intent_type)
-                and self._matches_activation(definition, intent, platform)
             ]
-            if not tools:
-                # LLMs occasionally return a semantic synonym such as
-                # ``query_report`` although the registered Tool contract uses
-                # ``download_report``. Resolve only against provider-published
-                # intent metadata; this is not a provider or business table.
-                alias = self._resolve_intent_alias(
-                    intent.intent_type, platform_definitions
+            # Activation predicates narrow an ambiguous intent only. This is
+            # structural metadata behavior: a new Capability can publish any
+            # intent name without adding it to a Core allowlist.
+            narrow_candidates = len(intent_candidates) > 1
+            tools = [
+                definition for definition in intent_candidates
+                if self._matches_activation(
+                    definition, intent, platform,
+                    narrow_candidates=narrow_candidates,
                 )
-                if alias:
-                    tools = [
-                        definition for definition in platform_definitions
-                        if self._matches_intent(definition, alias)
-                        and self._matches_activation(definition, intent, platform)
-                    ]
+            ]
             tools = self._order_by_resource_dependencies(tools)
             if tools:
                 result[platform] = tools
@@ -2133,75 +1505,21 @@ class SimpleIntentRouter(IntentRouter):
         return str(intent_type) in set(getattr(definition, "intent_types", []) or [])
 
     @classmethod
-    def _resolve_intent_alias(
-        cls, requested: str, definitions: list[ToolDefinition],
-    ) -> Optional[str]:
-        """Resolve an unregistered semantic synonym from Tool intent metadata."""
-        requested_tokens = {
-            token for token in re.split(r"[^a-z0-9]+", str(requested).lower())
-            if token
-        }
-        if not requested_tokens:
-            return None
-
-        candidates: set[str] = {
-            str(intent).strip()
-            for definition in definitions
-            for intent in (getattr(definition, "intent_types", []) or [])
-            if str(intent).strip()
-        }
-        scored: list[tuple[float, int, str]] = []
-        for candidate in candidates:
-            candidate_tokens = {
-                token for token in re.split(r"[^a-z0-9]+", candidate.lower())
-                if token
-            }
-            overlap = requested_tokens & candidate_tokens
-            if not overlap:
-                continue
-            # Prefer the candidate that explains the largest proportion of
-            # the requested phrase, then the shortest contract name. A unique
-            # best score is required; ambiguity remains fail-closed.
-            score = len(overlap) / max(len(requested_tokens), len(candidate_tokens))
-            scored.append((score, -len(candidate_tokens), candidate))
-        if not scored:
-            return None
-        scored.sort(reverse=True)
-        best = scored[0]
-        if len(scored) > 1 and scored[1][:2] == best[:2]:
-            return None
-        return best[2]
-
-    @classmethod
     def _matches_activation(
         cls, definition: ToolDefinition, intent: ParsedIntent, platform: str,
+        *, narrow_candidates: bool = False,
     ) -> bool:
         """Apply provider-published Tool activation rules.
 
         Rules are data, not a central provider map. A rule may use ``if`` or
         ``when`` with field/value pairs, or the compact form
-        ``{"field": "campaign_type", "in": ["SEARCH"]}``. Field aliases
-        and defaults are declared by the provider. Multiple rules are ORed;
+        ``{"field": "provider_field", "in": ["VALUE"]}``. Field aliases
+        and defaults are declared by the publisher. Multiple rules are ORed;
         multiple conditions inside one rule are ANDed. ``not_in`` treats a
         missing field as a match, which is useful for a generic fallback Tool.
         """
         rules = getattr(definition, "activation_rules", None) or []
-        if not rules:
-            return True
-        # An explicitly requested specialized intent is already an
-        # unambiguous route. The three generic composition intents are
-        # different: they can match several provider-owned Tools and must
-        # still be narrowed by the provider-published activation predicates.
-        # This keeps the rule data-driven without adding a provider or
-        # objective branch to Core.
-        generic_composition_intents = {
-            "create_campaign", "create_adgroup", "create_ad",
-        }
-        if (
-            str(getattr(intent, "intent_type", "")) not in generic_composition_intents
-            and str(getattr(intent, "intent_type", ""))
-            in set(getattr(definition, "intent_types", []) or [])
-        ):
+        if not rules or not narrow_candidates:
             return True
         params: dict[str, Any] = {}
         for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
@@ -2215,37 +1533,53 @@ class SimpleIntentRouter(IntentRouter):
                 else:
                     params[key] = value
 
+        intent_values = (
+            intent.to_dict() if callable(getattr(intent, "to_dict", None))
+            else dict(getattr(intent, "__dict__", {}) or {})
+        )
+
+        def lookup(mapping: Mapping[str, Any], field: str) -> Any:
+            """Read a flat or dotted field from a publisher-owned payload."""
+            if field in mapping:
+                return mapping[field]
+            current: Any = mapping
+            for part in str(field).split("."):
+                if not isinstance(current, Mapping) or part not in current:
+                    return None
+                current = current[part]
+            return current
+
+        intent_values = (
+            intent.to_dict() if callable(getattr(intent, "to_dict", None))
+            else dict(getattr(intent, "__dict__", {}) or {})
+        )
+
+        def lookup(mapping: Mapping[str, Any], field: str) -> Any:
+            if field in mapping:
+                return mapping[field]
+            current: Any = mapping
+            for part in str(field).split("."):
+                if not isinstance(current, Mapping) or part not in current:
+                    return None
+                current = current[part]
+            return current
+
         def value_for(field: str, aliases: list[str], default: Any = None) -> Any:
-            candidates = [field, *aliases]
-            for candidate in candidates:
-                if candidate in params and params[candidate] not in (None, ""):
-                    return params[candidate]
-            if "campaign_type" in candidates and getattr(intent, "campaign_type", None):
-                return intent.campaign_type
-            if "objective" in candidates and getattr(intent, "objective", None):
-                return intent.objective
+            for candidate in [field, *aliases]:
+                value = lookup(params, candidate)
+                if value not in (None, ""):
+                    return value
+                value = lookup(intent_values, candidate)
+                if value not in (None, ""):
+                    return value
             return default
 
         def value_present(field: str, aliases: list[str]) -> bool:
-            """Return whether a provider field has a meaningful value.
-
-            Presence is intentionally different from equality with ``None``:
-            provider-owned activation rules often need to select a specialized
-            chain when an optional reference such as ``catalog_id`` or
-            ``spark_post_id`` is supplied.  The generic fallback can then use
-            ``{"exists": False}`` without adding provider logic to Core.
-            """
-            candidates = [field, *aliases]
-            if any(
-                candidate in params and params[candidate] not in (None, "", {}, [])
-                for candidate in candidates
-            ):
-                return True
-            if "campaign_type" in candidates:
-                return bool(getattr(intent, "campaign_type", None))
-            if "objective" in candidates:
-                return bool(getattr(intent, "objective", None))
-            return False
+            return any(
+                lookup(params, candidate) not in (None, {}, [], "")
+                or lookup(intent_values, candidate) not in (None, {}, [], "")
+                for candidate in [field, *aliases]
+            )
 
         def condition_matches(field: str, condition: Any, rule: dict[str, Any]) -> bool:
             aliases = [str(item) for item in (rule.get("aliases") or [])]
