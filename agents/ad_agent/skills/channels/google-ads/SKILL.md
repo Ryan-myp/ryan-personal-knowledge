@@ -1,227 +1,149 @@
 ---
 name: google-ads-api-expert
-description: Google Ads API 专家技能，提供 OAuth 认证、广告管理、批量操作、智能出价、报表下载、限流处理等完整 API 操作能力
-version: 1.0.0
+description: "Google Ads 专家 Skill：负责账户层级、广告类型、出价、素材、GAQL 报表、变更验证和故障诊断的业务判断与 SOP"
+version: 2.0.0
 author: Ryan
-created: 2026-08-14
-tags: [google, ads, api, google-ads, bidding, reporting, advertising]
+created: 2026-09-08
+tags: [google, google-ads, search, shopping, performance-max, gaql, bidding, reporting]
 aliases: [google, google ads, gads, 谷歌]
 parser_platform: google
 ---
 
-# Google Ads API 专家技能
+# Google Ads API 专家 Skill
 
-> 执行边界：本文是自然语言专家知识、SOP 和安全边界。下面的能力分类只用于帮助理解，不是 Tool 注册表；当前可执行工具由 Capability 自描述并自动发现。新增或调整 Tool 不需要修改本文件，除非要补充使用指导。
+> 本 Skill 提供 Google Ads 业务知识、参数依赖和操作 SOP。它不是 Tool 注册表，也不直接
+> import Google SDK、读取凭证或发起 API 请求。可执行能力只能来自当前 Registry 中已注册、
+> 通过 schema/权限/dry-run/live gate 的 Google Capability Tool。
 
-## 📌 角色定位
+## 先做的判断：账户、资源和请求类型
 
-你是 Google Ads API 专家，精通 Google 广告平台的完整技术栈，包括：
-- OAuth 2.0 认证与 Developer Token 管理
-- Campaign/Ad Group/Keyword/Ad 全层级管理
-- Streaming Mutate 批量操作
-- 智能出价策略配置
-- 报表下载与数据分析
-- 限流处理与重试机制
+Google Ads 的账户边界优先于 Campaign 语义：先确认当前 principal 授权的 customer，再确认
+请求针对单一 customer、经理账户下的子客户，还是跨客户汇总。账户标识和认证材料属于部署配置，
+不能让用户通过业务 Tool 写入，也不能回显到 Prompt、日志或错误中。
 
-## 🎯 核心能力
+资源关系如下，不能跨层级猜 ID：
 
-### 1. 认证管理
-```python
-from google.ads.googleads.client import GoogleAdsClient
-
-# 加载配置
-client = GoogleAdsClient.load_from_storage('google-ads.yaml')
-
-# 获取服务
-customer_service = client.get_service('CustomerService')
-campaign_service = client.get_service('CampaignService')
+```text
+Manager / Customer
+        │
+     Campaign ── CampaignBudget / BiddingStrategy
+        ├── AdGroup ── AdGroupCriterion(Keyword) / Ad
+        └── AssetGroup(PMax) ── AssetGroupAsset / ListingGroupFilter
+        └── CampaignAsset / ConversionGoal / Experiment
 ```
 
-### 2. 广告管理
-- 创建/更新/暂停广告系列
-- 批量操作（Streaming Mutate）
-- 智能出价策略配置
-- 关键词管理
+用户只说“Google 广告”时先追问广告类型、customer、资源范围和目标；用户给出名称时，先走
+当前已注册的只读 lookup/list 能力，不能把名称拼成 resource name。Google 资源名通常形如
+`customers/{customer_id}/campaigns/{campaign_id}`，但对外应以 Tool schema 接受的字段为准。
 
-### 3. 报表查询
-- GAQL 查询语言
-- 分页查询
-- 报表下载
+## 广告类型与创建决策
 
-### 4. 限流处理
-- 自动重试机制
-- 指数退避
-- 配额监控
+| 场景 | 关键对象 | 必须确认的依赖 | 不能做的推断 |
+|---|---|---|---|
+| Search | Campaign → AdGroup → Keyword/RSA | 搜索网络、语言/地域、出价、最终 URL、关键词与匹配类型 | 不能把“搜索”自动改成 PMax |
+| Display | Campaign → AdGroup → responsive/display Ad | 受众/内容定向、素材比例、出价、落地页 | 不能把图片素材当作 RSA 文案 |
+| Shopping | Campaign → AdGroup/Product group → Product ad | Merchant Center、feed、商品分组、国家/语言、预算 | 不能用普通 Search ad 代替商品广告 |
+| Video | Campaign → AdGroup → Video ad | YouTube 视频、视频格式、目标、CPV/CPM 依赖 | 不能凭 URL 生成 video ID |
+| App | `MULTI_CHANNEL` Campaign → AdGroup → App ad | App ID、操作系统、应用目标、素材与深链 | 不能把 app 名称当 app_id |
+| Performance Max | Campaign → AssetGroup → Assets | final URLs、文本/图片/Logo、business name、目标设置 | PMax 不走普通 AdGroup 关键词链路 |
+| Demand Gen/Hotel/Local/Travel/Smart | 由当前 Schema 决定 | 专用设置、素材和下级资源覆盖情况 | 通用 Campaign Tool 不等于完整类型支持 |
 
-## 🛠️ 能力与参数参考
+`MAX`、`APP` 等历史/用户友好别名只允许在已验证 Client 的兼容边界内归一化；对外计划和
+确认摘要优先使用当前 Capability Schema 的规范枚举。未被当前广告类型 Schema 标记为
+`supported_dry_run` 的格式，只能说明为“已识别但当前未覆盖”，不能声称可以创建。
 
-本 Skill 只描述 Google Ads 的对象、字段语义和操作 SOP，不维护固定 Tool 清单。
-运行时先读取当前 Capability 发布的 ToolDefinition、`/tools` Schema 和
-`/ad-formats` 目录，再选择可用能力。新增 Google API Tool 或升级 Provider 版本时，
-只需在 Google Capability/Client 中注册和验证，不应修改业务 Skill 来“接线”。
+## 出价、预算与参数依赖
 
-能力范围包括：账户与 Campaign 查询、Campaign/Ad Group/Ad/Asset Group 的 dry-run
-创建与更新、Search 关键词与否定关键词、PMax 资产、出价策略、定向和 GAQL 报表，
-以及 Google Experiment 的创建、更新、删除和 schedule/end/graduate/promote 生命周期
-计划。Experiment 是独立资源，不能用普通 Campaign 状态更新替代；实验目标应使用
-ExperimentService 的 metric/direction 结构，并在执行前明确基础 Campaign、实验类型、
-时间范围和流量分配依赖。
-每次创建前必须按当前广告类型 Schema 校验预算、目标、网络、App/Shopping 设置和
-素材依赖；未标记为 `supported_dry_run` 的格式不得声称已有完整支持。
+- 预算通常在 CampaignBudget，金额单位和币种必须从当前 Tool schema/账户配置确认；不要把
+  普通货币值、micros 和账户币种混用。
+- 一个 Campaign 绑定一个有效预算和出价策略；预算调整是写操作，先生成 dry-run 变更摘要，
+  展示旧值、新值、日/月节奏和风险，不直接提交。
+- Target CPA、Target ROAS、Maximize Conversions、Manual CPC 等策略的目标字段有条件依赖；
+  用户未提供硬约束时不能用默认 bid 或目标替代。
+- Target Impression Share 需要位置、上限等配套字段；视频的 Target CPM/CPV、App/PMax 的
+  conversion goal/asset 约束同样按 schema 条件校验。
+- Campaign、AdGroup、Ad、AssetGroup 的父级 ID 必须来自同一 customer，并按声明的
+  `parent_resource_type` / `parent_resource_id_field` 连接。缺父级时优先 lookup，而不是重建。
 
-Campaign 类型和参数以当前 Google Ads API 版本的 Capability Schema 为准。除
-Search、Display、Shopping、Video、App 和 Performance Max 外，Demand Gen、Hotel、
-Local、Smart、Travel、Local Services 等渠道也可以被识别，但在专用下级资源 Tool
-尚未发布前只能报告为未覆盖，不能把通用 Campaign 创建误报成完整业务流程。
-App Campaign 的渠道类型是 `MULTI_CHANNEL`，需要 App 设置；Shopping 需要
-Merchant Center 设置；Video 需要 Video 设置；Performance Max 需要目标设置。
-Target CPM/CPV 和 Target Impression Share 的依赖参数也由 Schema 条件校验，
-不要用默认值替代用户未提供的优化目标参数。Campaign 输入中的 `MAX`/`APP` 仅由
-Client 做兼容性归一化，Tool 对外仍发布 Google 当前的 `PERFORMANCE_MAX`/
-`MULTI_CHANNEL` 枚举。
+## 素材和层级 SOP
 
-## 📚 参考文档
+### Search
 
-- **官方文档**: https://developers.google.com/google-ads/api/docs/start
-- **Python SDK**: https://github.com/googleapis/google-ads-python
-- **GAQL 参考**: https://developers.google.com/google-ads/api/docs/query/overview
-- **Experiment 参考**: https://developers.google.com/google-ads/api/docs/experiments/overview
+先确认 Campaign 与 AdGroup，再确认关键词文本、match type、否定关键词范围和 RSA 的
+headlines/descriptions 数量与重复度。关键词意图、落地页和广告文案要一致；不要因用户说
+“加关键词”而自动创建 Campaign。
 
-## 💡 最佳实践
+### Shopping / PMax
 
-### 1. 限流处理
-```python
-import time
-from google.ads.googleads.errors import GoogleAdsException
+先确认 Merchant Center/feed 或商品资源是否可用，再选择商品分组或 AssetGroup。PMax 的
+文字资产、图片、Logo、视频、最终 URL 和 business name 是组合契约；缺少必需资产时要列出
+缺口。商品/素材资源 ID 不能由文件名或 URL 猜测，必须使用已注册的上传或 lookup 能力。
 
-def safe_mutate(client, customer_id, operation, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            response = operation.execute()
-            return response
-        except GoogleAdsException as e:
-            if e.error.code().code == 8:  # RESOURCE_EXHAUSTED
-                wait_time = min(2 ** attempt, 60)
-                print(f"限流，等待 {wait_time} 秒...")
-                time.sleep(wait_time)
-            else:
-                raise
-    raise Exception(f"重试 {max_retries} 次后仍失败")
+### Experiment
+
+Experiment 是独立生命周期，涉及基础 Campaign、实验类型、实验预算/流量、开始/结束时间和
+实验指标。不能把实验的 schedule/end/graduate/promote 当作普通 Campaign pause/update，
+也不能在没有基础 Campaign 校验的情况下创建实验。
+
+## GAQL 报表与诊断
+
+报表请求先确认 customer、资源粒度、日期范围、时区、币种、segments 和指标。GAQL 的
+resource、metrics、segments 必须来自当前版本兼容组合；不要把不同粒度的指标直接相加，
+也不要把昨日实时数据描述成最终结算数据。
+
+至少区分：impressions、clicks、cost、CTR、average CPC、conversions、conversion value、
+CPA、ROAS、view-through/视频指标（若该资源支持）。派生指标要给分母、时间窗口和数据源；
+零曝光、延迟回传和归因窗口不足时标记“不可判断”，不补零或臆造。
+
+```text
+选择粒度/资源
+  -> 校验 GAQL 字段兼容性
+  -> 按 customer 时区确定日期边界
+  -> 只读查询/分页
+  -> 保留原始字段与统一指标
+  -> 标注延迟、币种、归因窗口和异常
 ```
 
-### 2. 批量操作优化
-```python
-def batch_create_keywords(client, customer_id, ad_group_id, keywords):
-    """批量添加关键词"""
-    ad_group_criterion_service = client.get_service('AdGroupCriterionService')
-    
-    operations = []
-    for keyword_text in keywords:
-        operation = client.get_type('AdGroupCriterionOperation')
-        keyword = operation.create
-        keyword.ad_group = f'customers/{customer_id}/adGroups/{ad_group_id}'
-        keyword.keyword.text = keyword_text
-        keyword.keyword.match_type = client.enums.KeywordMatchType.PHRASE
-        
-        operations.append(operation)
-    
-    # 分批执行（每批 100 个）
-    batch_size = 100
-    for i in range(0, len(operations), batch_size):
-        batch = operations[i:i+batch_size]
-        response = ad_group_criterion_service.mutate_ad_group_criteria(
-            customer_id=customer_id,
-            operations=batch
-        )
-```
+## 变更、重试与失败恢复
 
-### 3. 智能出价配置
-```python
-def set_target_cpa(client, customer_id, campaign_resource_name, target_cpa):
-    """设置 Target CPA 出价"""
-    campaign_service = client.get_service('CampaignService')
-    
-    campaign_operation = client.get_type('CampaignOperation')
-    campaign = campaign_operation.update
-    campaign.resource_name = campaign_resource_name
-    
-    # 设置目标 CPA
-    tpub bidding_strategy = campaign_service.bidding_strategy_path(
-        customer_id, 'bidding-strategy-id'
-    )
-    campaign.bidding_strategy = bidding_strategy
-    
-    # 设置 Target CPA
-    target_cpa_setting = client.get_type('TargetCpaSetting')
-    target_cpa_setting.target_cpa_micros = int(target_cpa * 1000000)
-    
-    response = campaign_service.mutate_campaigns(
-        customer_id=customer_id,
-        operations=[campaign_operation]
-    )
-```
+1. 先读取父资源当前状态，形成变更前快照和目标差异。
+2. Tool schema 校验 required、enum、conditional rules、父级资源和账户范围。
+3. 写操作默认 dry-run；确认摘要必须包含影响资源、预算/出价变化、风险和幂等键。
+4. 真实 live 仅能在 Runtime 显式 live、白名单、权限、确认和审计全部通过时执行。
+5. Mutate 失败时按错误类别处理：参数/权限错误不盲目重试；配额/瞬时错误采用有上限的
+   指数退避；未知状态先只读回查，不能无证据重复创建。
+6. 批量操作要保留每个 operation 的成功/失败、resource name、request ID（如受控输出）和
+   可重试性；部分失败不能被汇总成“全部成功”。
 
-## 🎓 常见问题
+不要在 Skill 中写死 SDK 方法、Provider endpoint 或 Tool 名称。当前 Tool 的超时、输出上限、
+replay policy、readback Tool 和 live_support 才是执行合同；到期定时任务还必须重新预检。
 
-**Q: Google Ads API 和 Ads Script 有什么区别？**
-A: 
-- **API**: 支持 Python/Java/Go，功能强大，可部署到任意服务器
-- **Script**: JavaScript 语言，有执行时间限制（5 分钟），适合简单自动化
+## 常见故障判断
 
-**Q: 如何处理 API 限流？**
-A: 使用指数退避重试，实现请求队列，监控配额使用情况。
+| 现象 | 优先排查 | 处理原则 |
+|---|---|---|
+| 资源不存在 | customer、资源名、父级和 principal scope | 先只读确认，不跨账户重试 |
+| Invalid argument | enum、micros、日期、字段组合、条件规则 | 修参数后重新 dry-run |
+| Permission denied | customer 授权、OAuth scope、manager 链路 | 明确缺少权限，不索要凭证文本 |
+| Quota/rate limit | 请求量、分页、批量大小、并发 | 有界退避，记录 retry-after/错误摘要 |
+| Mutate 状态未知 | 超时、网络中断、部分失败 | 先回查 resource，再决定是否补偿 |
+| 报表为空 | 日期/时区、字段粒度、数据延迟、过滤条件 | 说明原因，不当作无投放 |
 
-**Q: Streaming Mutate 和普通 Mutate 有什么区别？**
-A: Streaming Mutate 可以批量处理大量操作，每个操作独立提交，失败不影响其他操作。
+## 给用户的标准输出
 
-## 🛠️ Campaign 查询建议
+查询类回答应包含 customer/资源范围、日期范围及时区、原始数据来源、关键指标、异常和
+不可比项。变更类回答应包含 dry-run 计划、逐项资源、旧值/新值、风险、下一步确认和
+“尚未写入 Google Ads”的明确说明。任何凭证、manager 配置和内部认证材料均不得输出。
 
-通过自然语言提供 customer、Campaign ID 或名称以及查询范围；Runtime 会从当前已注册
-的只读 Tool 选择查询路径，并同时返回 Provider 原始字段和统一后的业务字段。
+## 参考资料与自测
 
-### Campaign Resource Name 格式
+- `references/operational-playbook.md`：按广告类型的 preflight、创建和回查清单。
+- `agents/ad_agent/knowledge_base/platforms/google/`：层级、约束和工作流背景资料。
+- 官方文档入口：https://developers.google.com/google-ads/api/docs
 
-```
-customers/{customer_id}/campaigns/{campaign_id}
-```
+自测：
 
-示例：
-```
-customers/1234567890/campaigns/9876543210
-```
-
-### 输出格式说明
-
-| 格式 | 用途 | 内容 |
-|------|------|------|
-| `[原始数据]` | 开发人员 | JSON 格式的 API 响应，包含所有字段 |
-| `[业务解读版]` | 业务人员 | 中文格式化输出，带 emoji 和解释 |
-
-### 业务解读版示例
-
-```
-📌 Campaign（广告系列）:
-   • 名称: Summer Sale Campaign
-   • 状态: 🟢 运行中
-   • 预算: $500.00
-   • 投放方式: STANDARD
-
-📌 Ad Group（广告组）:
-   --- 广告组 1 ---
-   • 名称: Search - Branded
-   • 状态: 🟢 运行中
-   • CPC 出价: $1.2500
-
-📌 Ads（广告）:
-   --- 广告 1 ---
-   • 名称: Responsive Search Ad
-   • 状态: 🟢 运行中
-   • 类型: RESPONSIVE_SEARCH_ADS
-```
-
-### 前置要求
-
-1. 安装 SDK: `pip install google-ads`
-2. 在受信任的部署配置中提供认证材料；这些材料只由 Runtime 注入 API
-   Client，不进入 Skill、Tool 输入或模型上下文。`login_customer_id` 等账户/管理器
-   配置也不允许通过广告业务 Tool 修改。
+1. 用户说“创建一个 Google 广告”，应先问哪三类信息？广告类型、customer/账户范围、目标
+   与资源依赖；不能直接选择 Search 或 PMax。
+2. PMax 能否用普通 AdGroup/Keyword 流程创建？不能，应识别 AssetGroup 与素材组合。
+3. GAQL 查询返回空结果是否等于没有投放？不等于，需排查日期时区、延迟、过滤和字段粒度。

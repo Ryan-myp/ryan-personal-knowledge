@@ -496,7 +496,7 @@ class DynamicToolSelector:
     
     def _merge_expert_knowledge(self, tools: List[ToolDefinition]) -> str:
         """合并多个工具的专家知识"""
-        platforms = set(t.platform for t in tools)
+        platforms = sorted(set(t.platform for t in tools))
         knowledge = []
         
         for platform in platforms:
@@ -507,12 +507,28 @@ class DynamicToolSelector:
                     # 截取前 500 字符
                     summary = content[:500] + "..." if len(content) > 500 else content
                     knowledge.append(f"[{platform}] {key}: {summary}")
-            elif skill and getattr(skill, "description", None):
-                # Channel SKILL.md files currently carry their expert scope in
-                # frontmatter rather than separate expert/*.md files.  Keep a
-                # compact description available to the LLM instead of silently
-                # dropping all Skill context.
-                knowledge.append(f"[{platform}] skill_scope: {skill.description[:500]}")
+            if skill:
+                # Channel SKILL.md is advisory context, not an executable
+                # registry. Keep a bounded excerpt in the model context so
+                # channel-specific hierarchy, parameter dependencies and
+                # failure semantics actually guide intent parsing. The
+                # authoritative executable plan still comes from Tool metadata
+                # and IntentRouter after parsing.
+                raw_markdown = str(getattr(skill, "raw_markdown", "") or "")
+                if raw_markdown:
+                    body = re.sub(
+                        r"\A---\s*.*?\s*---\s*",
+                        "",
+                        raw_markdown,
+                        count=1,
+                        flags=re.DOTALL,
+                    ).strip()
+                    if body:
+                        knowledge.append(
+                            f"[{platform}] channel_skill_guidance:\n{body[:1800]}"
+                        )
+                elif getattr(skill, "description", None):
+                    knowledge.append(f"[{platform}] skill_scope: {skill.description[:500]}")
         
         return "\n\n".join(knowledge)
 

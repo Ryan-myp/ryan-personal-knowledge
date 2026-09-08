@@ -6,6 +6,8 @@ import threading
 from pathlib import Path
 
 from agents.ad_agent import AgentRuntime
+from agents.ad_agent.core.interfaces import ParsedIntent
+from agents.ad_agent.core.interfaces import ToolDefinition, ToolSchema
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.skill_management import (
     BuiltinSkillCatalog,
@@ -25,7 +27,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "google-ads-api-expert", "meta-marketing-api-expert", "tiktok-ads-expert",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
-    detail = catalog.get_version("google-ads-api-expert", "1.0.0")
+    detail = catalog.get_version("google-ads-api-expert", "2.0.0")
     assert detail["files"]["SKILL.md"]["encoding"] == "base64"
     assert detail["location"] == "channels/google-ads"
 
@@ -65,6 +67,37 @@ def test_channel_and_cross_channel_skills_are_natural_language_guidance():
         assert "workflow.yaml" not in content, skill_path
         assert "meta_list_pixels" not in content, skill_path
         assert "ToolDefinition" in content or "Capability" in content, skill_path
+
+
+def test_channel_skill_body_is_available_to_model_context():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    try:
+        examples = {
+            "google-ads": ("查询 Google Ads campaign", "Google Ads API 专家 Skill"),
+            "meta": ("查询 Meta campaign performance", "Meta Marketing API 专家 Skill"),
+            "tiktok": ("查询 TikTok campaign performance", "TikTok Ads 专家 Skill"),
+            "dv360": ("查询 DV360 line item report", "Display & Video 360 专家 Skill"),
+        }
+        for platform, (request, marker) in examples.items():
+            # The test only needs a provider-owned contract to enter the
+            # selector's expert-context merge; it must not initialize or call
+            # a real Provider client.
+            tool = ToolDefinition(
+                name=f"{platform}_list_campaigns",
+                skill=f"{platform}-capability",
+                platform=platform,
+                description="list campaigns",
+                input_schema=ToolSchema(),
+                intent_types=["list_campaigns"],
+            )
+            selection = runtime.tool_selector.select_tools(
+                request,
+                ParsedIntent("list_campaigns", request, [platform]),
+                [tool],
+            )
+            assert marker in selection.expert_knowledge, platform
+    finally:
+        runtime.close(wait=True)
 
 
 def test_standard_skill_directory_is_versioned_and_published(tmp_path):

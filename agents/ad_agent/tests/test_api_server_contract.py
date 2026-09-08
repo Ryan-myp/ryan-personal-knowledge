@@ -944,7 +944,7 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
         assert any(item["source"] == "builtin" for item in response.json()["builtin_skills"])
 
         response = client.get(
-            "/skills/builtin/google-ads-api-expert/versions/1.0.0",
+            "/skills/builtin/google-ads-api-expert/versions/2.0.0",
             headers=headers,
         )
         assert response.status_code == 200
