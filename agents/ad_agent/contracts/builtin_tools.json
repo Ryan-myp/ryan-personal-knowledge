@@ -1,5 +1,5 @@
 {
-  "digest": "305f029a8d19858e884a8a41c0db373a141a190d3c0335769c22625c712c2909",
+  "digest": "b69baaf2d611b819a11ef040da00c41be84d5dd4eeaa2f73f3010319524bd0f9",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2053,7 +2053,7 @@
       ]
     },
     "google-ads": {
-      "digest": "32f1a26128f6b6f560b3fd246b572e2cd6022c8548afb1faf49c07a337cb019e",
+      "digest": "98bb73b020eab6af8cfa945415bacae841136bbd84cb5ec3c5c8c1154ab9f462",
       "tool_count": 108,
       "tools": [
         {
@@ -2336,16 +2336,17 @@
             "type": "object"
           },
           "intent_types": [
-            "create_campaign"
+            "create_campaign",
+            "create_ad"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_ad",
           "parent_resource_id_field": "ad_group_id",
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2381,7 +2382,7 @@
               ]
             }
           ],
-          "contract_hash": "0d5434db3a780dbb7cb343605a52d365596a1aca78e10d156538ace65a216598",
+          "contract_hash": "e660b9800fb0adf67f29e9fcb4432770954f24dc4f0687552c874f5881703914",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
@@ -2598,7 +2599,7 @@
                   "SEARCH_STANDARD",
                   "SEARCH_DYNAMIC_ADS",
                   "DISPLAY_STANDARD",
-                  "SHOPPING_PRODUCT",
+                  "SHOPPING_PRODUCT_ADS",
                   "VIDEO_TRUEVIEW_IN_STREAM",
                   "VIDEO_BUMPER",
                   "HOTEL_ADS",
@@ -2624,16 +2625,17 @@
             "type": "object"
           },
           "intent_types": [
-            "create_campaign"
+            "create_campaign",
+            "create_adgroup"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_ad_group",
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad_group",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2673,7 +2675,7 @@
           ],
           "contract_hash": "e7a90c0ed08b922737775a61df47d2c28c92292bd97aaa6eaf138feb6cff41e8",
           "contract_version": "1.4.0",
-          "description": "创建 Google App Campaign AppAd 素材广告；默认仅生成 dry-run 计划。",
+          "description": "创建 Google App Campaign AppAd 素材广告；live 仅在受控测试账号和确认后执行。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -2894,14 +2896,14 @@
             "create_app_ad",
             "create_campaign"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_app_ad",
           "parent_resource_id_field": "ad_group_id",
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -2940,9 +2942,9 @@
               }
             }
           ],
-          "contract_hash": "748660c748ed99f992979158a435e92b4c98b540bb8440dcbedc403b38edbf66",
+          "contract_hash": "05b5c1efebfc7354c449b39fd6ff9018e00a6207260595da1807157c86a92d8b",
           "contract_version": "1.4.0",
-          "description": "创建 Google App Campaign Ad Group；默认仅生成 dry-run 计划。",
+          "description": "创建 Google App Campaign Ad Group；live 仅在受控测试账号和确认后执行。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -2979,20 +2981,10 @@
                   "REMOVED"
                 ],
                 "type": "string"
-              },
-              "type": {
-                "default": "SEARCH_STANDARD",
-                "description": "Google App campaign ad group type",
-                "enum": [
-                  "SEARCH_STANDARD"
-                ],
-                "type": "string"
               }
             },
             "provider_any_of": [],
-            "provider_required": [
-              "type"
-            ],
+            "provider_required": [],
             "required": [
               "campaign_id",
               "name"
@@ -3003,14 +2995,14 @@
             "create_app_ad_group",
             "create_campaign"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_app_ad_group",
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad_group",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3199,9 +3191,9 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_hash": "c040ed379a1e26b7f10d4550b0ebc0b838c7b41a33c273f085e883b46837ff3f",
+          "contract_hash": "34bae93d82594a590ee762fca1c1baddba3ef187b813addf0e624c99bb7cf988",
           "contract_version": "1.4.0",
-          "description": "创建 Google PMax Asset Group；当前仅支持 dry-run 计划。",
+          "description": "创建 Google PMax Asset Group；live 仅在受控测试账号和确认后执行。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -3214,6 +3206,20 @@
                   "PERFORMANCE_MAX"
                 ],
                 "type": "string"
+              },
+              "business_names": {
+                "description": "Performance Max business name text assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 1,
+                "presentation": "text_list",
+                "type": "array"
               },
               "campaign_id": {
                 "description": "Parent Performance Max Campaign ID",
@@ -3279,10 +3285,10 @@
                 "type": "array"
               },
               "images": {
-                "description": "Performance Max image assets",
+                "description": "Performance Max marketing image assets",
                 "items": {
                   "additionalProperties": true,
-                  "description": "Performance Max image assets",
+                  "description": "Performance Max marketing image assets",
                   "lookup_account_required": true,
                   "lookup_result_key": "assets",
                   "lookup_tool": "google_list_assets",
@@ -3383,6 +3389,49 @@
                 "maxLength": 255,
                 "type": "string"
               },
+              "square_marketing_images": {
+                "description": "Performance Max square marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "description": "Performance Max square marketing image assets",
+                  "lookup_account_required": true,
+                  "lookup_result_key": "assets",
+                  "lookup_tool": "google_list_assets",
+                  "presentation": "asset_picker",
+                  "selection_label_fields": [
+                    "name",
+                    "text",
+                    "resource_name",
+                    "id"
+                  ],
+                  "selection_value_fields": [
+                    "resource_name",
+                    "asset_id",
+                    "id"
+                  ],
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "lookup_account_required": true,
+                "lookup_result_key": "assets",
+                "lookup_tool": "google_list_assets",
+                "minItems": 1,
+                "presentation": "asset_picker",
+                "selection_label_fields": [
+                  "name",
+                  "text",
+                  "resource_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "resource_name",
+                  "asset_id",
+                  "id"
+                ],
+                "type": "array"
+              },
               "status": {
                 "description": "Asset group status",
                 "enum": [
@@ -3442,7 +3491,11 @@
               "final_urls",
               "headlines",
               "long_headlines",
-              "descriptions"
+              "descriptions",
+              "images",
+              "square_marketing_images",
+              "logos",
+              "business_names"
             ],
             "required": [
               "campaign_id",
@@ -3451,21 +3504,25 @@
               "final_urls",
               "headlines",
               "long_headlines",
-              "descriptions"
+              "descriptions",
+              "images",
+              "square_marketing_images",
+              "logos",
+              "business_names"
             ],
             "type": "object"
           },
           "intent_types": [
             "create_asset_group"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_asset_group",
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_asset_group",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -3753,7 +3810,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_hash": "019589e8b3c4957a826933dccbbca413d093db117df17d92370ea9e93aa3da31",
+          "contract_hash": "60ba3179db4bc5b7c12944f1b7f52b6842dad5630c99ff6f26e5e08d58013ab9",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
@@ -3883,7 +3940,7 @@
                 "if": {
                   "advertising_channel_type": "PERFORMANCE_MAX"
                 },
-                "message": "PERFORMANCE_MAX requires campaign_goal_setting",
+                "message": "PERFORMANCE_MAX requires campaign_goal_setting (optional optimization goal selection)",
                 "required": [
                   "campaign_goal_setting"
                 ]
@@ -4066,11 +4123,23 @@
                     "description": "App campaign optimization goal",
                     "enum": [
                       "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
-                      "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST"
+                      "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
+                      "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
+                      "OPTIMIZE_RETURN_ON_ADVERTISING_SPEND",
+                      "OPTIMIZE_PRE_REGISTRATION_CONVERSION_VOLUME",
+                      "OPTIMIZE_INSTALLS_WITHOUT_TARGET_INSTALL_COST",
+                      "OPTIMIZE_IN_APP_CONVERSIONS_WITHOUT_TARGET_CPA",
+                      "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS"
                     ],
                     "option_labels": {
                       "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST": "优化安装量（目标安装成本）",
-                      "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST": "优化应用内转化（目标安装成本）"
+                      "OPTIMIZE_INSTALLS_WITHOUT_TARGET_INSTALL_COST": "最大化安装量",
+                      "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST": "优化应用内转化（目标转化成本）",
+                      "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST": "优化应用内转化（目标安装成本）",
+                      "OPTIMIZE_IN_APP_CONVERSIONS_WITHOUT_TARGET_CPA": "最大化应用内转化量",
+                      "OPTIMIZE_PRE_REGISTRATION_CONVERSION_VOLUME": "优化预注册量",
+                      "OPTIMIZE_RETURN_ON_ADVERTISING_SPEND": "优化广告支出回报",
+                      "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS": "最大化总转化价值"
                     },
                     "type": "string"
                   },
@@ -4114,7 +4183,8 @@
                 },
                 "required": [
                   "app_id",
-                  "app_store"
+                  "app_store",
+                  "bidding_strategy_goal_type"
                 ],
                 "type": "object",
                 "ui_visible_when": {
@@ -4142,6 +4212,14 @@
                 ],
                 "type": "string"
               },
+              "brand_guidelines_enabled": {
+                "description": "Whether Google brand guidelines are enabled for Performance Max",
+                "type": "boolean",
+                "ui_visible_when": {
+                  "equals": "PERFORMANCE_MAX",
+                  "field": "advertising_channel_type"
+                }
+              },
               "budget": {
                 "description": "Daily budget alias",
                 "minimum": 0,
@@ -4150,28 +4228,33 @@
               },
               "campaign_goal_setting": {
                 "additionalProperties": false,
-                "description": "Performance Max campaign goal settings",
+                "description": "Performance Max optimization goal settings",
                 "properties": {
-                  "ecommerce_checkout_progress": {
-                    "description": "E-commerce checkout progress",
-                    "maximum": 1,
-                    "minimum": 0,
-                    "type": "number"
-                  },
                   "goal_type": {
-                    "description": "Performance Max campaign goal",
+                    "description": "Legacy PMax goal alias",
                     "enum": [
                       "SALES_GOAL_TYPE_ECOMMERCE",
                       "LEAD_GENERATION",
                       "APP_INSTALL",
                       "APP_ENGAGEMENT"
                     ],
-                    "type": "string"
+                    "type": "string",
+                    "ui_hidden": true
+                  },
+                  "optimization_goal_types": {
+                    "description": "Google optimization goal types",
+                    "items": {
+                      "enum": [
+                        "CALL_CLICKS",
+                        "DRIVING_DIRECTIONS",
+                        "APP_PRE_REGISTRATION"
+                      ],
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
                   }
                 },
-                "required": [
-                  "goal_type"
-                ],
                 "type": "object",
                 "ui_visible_when": {
                   "equals": "PERFORMANCE_MAX",
@@ -4224,6 +4307,14 @@
                 },
                 "type": "string",
                 "ui_hidden": true
+              },
+              "contains_eu_political_advertising": {
+                "description": "EU political advertising declaration; required by Google Ads v24 for live creation",
+                "enum": [
+                  "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                  "CONTAINS_EU_POLITICAL_ADVERTISING"
+                ],
+                "type": "string"
               },
               "cpc_bid_ceiling_micros": {
                 "description": "Maximum CPC bid for Target Impression Share",
@@ -4389,8 +4480,45 @@
                 "additionalProperties": false,
                 "description": "Google Shopping settings",
                 "properties": {
+                  "advertising_partner_ids": {
+                    "description": "Advertising partner Google Ads account IDs",
+                    "items": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "manual_entry": {
+                      "example": "1234567890",
+                      "instructions": "可选。请输入允许共享该 Shopping 广告系列的合作方 Google Ads 账号 ID 列表；多个账号分别填写，不要填写 MCC ID。",
+                      "source": "operator_provided_account_ids",
+                      "title": "合作方 Google Ads 账号 ID"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "campaign_priority": {
+                    "description": "Shopping campaign priority (0-2)",
+                    "maximum": 2,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "enable_local": {
+                    "description": "Include local products",
+                    "type": "boolean"
+                  },
                   "exclude_offline_store_locations": {
                     "description": "Exclude offline store locations",
+                    "type": "boolean",
+                    "ui_hidden": true
+                  },
+                  "feed_label": {
+                    "description": "Merchant Center feed label",
+                    "maxLength": 20,
+                    "minLength": 1,
+                    "pattern": "[A-Za-z0-9_-]+",
+                    "type": "string"
+                  },
+                  "ignore_brand_exclusion_in_shopping_ads": {
+                    "description": "Ignore brand exclusions for Shopping ads",
                     "type": "boolean"
                   },
                   "marketing_language": {
@@ -4401,7 +4529,8 @@
                     },
                     "maxLength": 5,
                     "minLength": 2,
-                    "type": "string"
+                    "type": "string",
+                    "ui_hidden": true
                   },
                   "merchant_id": {
                     "description": "Merchant Center ID",
@@ -4415,10 +4544,11 @@
                     "type": "integer"
                   },
                   "priority": {
-                    "description": "Shopping campaign priority",
-                    "maximum": 100,
+                    "description": "Shopping campaign priority (legacy alias)",
+                    "maximum": 2,
                     "minimum": 0,
-                    "type": "integer"
+                    "type": "integer",
+                    "ui_hidden": true
                   },
                   "sales_country": {
                     "description": "Shopping sales country",
@@ -4428,13 +4558,17 @@
                     },
                     "maxLength": 3,
                     "minLength": 2,
-                    "type": "string"
+                    "type": "string",
+                    "ui_hidden": true
+                  },
+                  "use_vehicle_inventory": {
+                    "description": "Target vehicle listing inventory (legacy Smart Shopping only)",
+                    "type": "boolean"
                   }
                 },
                 "required": [
                   "merchant_id",
-                  "sales_country",
-                  "marketing_language"
+                  "campaign_priority"
                 ],
                 "type": "object",
                 "ui_visible_when": {
@@ -4629,7 +4763,8 @@
             ],
             "provider_required": [
               "advertising_channel_type",
-              "bidding_strategy"
+              "bidding_strategy",
+              "contains_eu_political_advertising"
             ],
             "required": [
               "customer_id",
@@ -4638,16 +4773,17 @@
             "type": "object"
           },
           "intent_types": [
-            "create_campaign"
+            "create_campaign",
+            "create_campaign_only"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_campaign",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_campaign",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -7589,9 +7725,9 @@
               ]
             }
           ],
-          "contract_hash": "c040ed379a1e26b7f10d4550b0ebc0b838c7b41a33c273f085e883b46837ff3f",
+          "contract_hash": "34bae93d82594a590ee762fca1c1baddba3ef187b813addf0e624c99bb7cf988",
           "contract_version": "1.4.0",
-          "description": "创建 Google PMax Asset Group；默认仅生成 dry-run 计划。",
+          "description": "创建 Google PMax Asset Group；live 仅在受控测试账号和确认后执行。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -7604,6 +7740,20 @@
                   "PERFORMANCE_MAX"
                 ],
                 "type": "string"
+              },
+              "business_names": {
+                "description": "Performance Max business name text assets",
+                "items": {
+                  "additionalProperties": true,
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "maxItems": 5,
+                "minItems": 1,
+                "presentation": "text_list",
+                "type": "array"
               },
               "campaign_id": {
                 "description": "Parent Performance Max Campaign ID",
@@ -7669,10 +7819,10 @@
                 "type": "array"
               },
               "images": {
-                "description": "Performance Max image assets",
+                "description": "Performance Max marketing image assets",
                 "items": {
                   "additionalProperties": true,
-                  "description": "Performance Max image assets",
+                  "description": "Performance Max marketing image assets",
                   "lookup_account_required": true,
                   "lookup_result_key": "assets",
                   "lookup_tool": "google_list_assets",
@@ -7773,6 +7923,49 @@
                 "maxLength": 255,
                 "type": "string"
               },
+              "square_marketing_images": {
+                "description": "Performance Max square marketing image assets",
+                "items": {
+                  "additionalProperties": true,
+                  "description": "Performance Max square marketing image assets",
+                  "lookup_account_required": true,
+                  "lookup_result_key": "assets",
+                  "lookup_tool": "google_list_assets",
+                  "presentation": "asset_picker",
+                  "selection_label_fields": [
+                    "name",
+                    "text",
+                    "resource_name",
+                    "id"
+                  ],
+                  "selection_value_fields": [
+                    "resource_name",
+                    "asset_id",
+                    "id"
+                  ],
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                },
+                "lookup_account_required": true,
+                "lookup_result_key": "assets",
+                "lookup_tool": "google_list_assets",
+                "minItems": 1,
+                "presentation": "asset_picker",
+                "selection_label_fields": [
+                  "name",
+                  "text",
+                  "resource_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "resource_name",
+                  "asset_id",
+                  "id"
+                ],
+                "type": "array"
+              },
               "status": {
                 "description": "Asset group status",
                 "enum": [
@@ -7832,7 +8025,11 @@
               "final_urls",
               "headlines",
               "long_headlines",
-              "descriptions"
+              "descriptions",
+              "images",
+              "square_marketing_images",
+              "logos",
+              "business_names"
             ],
             "required": [
               "campaign_id",
@@ -7841,7 +8038,11 @@
               "final_urls",
               "headlines",
               "long_headlines",
-              "descriptions"
+              "descriptions",
+              "images",
+              "square_marketing_images",
+              "logos",
+              "business_names"
             ],
             "type": "object"
           },
@@ -7849,14 +8050,14 @@
             "create_pmax_asset_group",
             "create_campaign"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_pmax_asset_group",
           "parent_resource_id_field": "campaign_id",
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_asset_group",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -7884,9 +8085,9 @@
               ]
             }
           ],
-          "contract_hash": "e2e8d1b338757183c25c9b2e9db97ba64fc97e11eb862e1b6609e96987e10d0d",
+          "contract_hash": "98b18c139cc3be7fced29b31808cd71ed11227d7e7c54bd37dd6592832537b38",
           "contract_version": "1.4.0",
-          "description": "创建 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
+          "description": "创建 Google Shopping Product Group/Listing Group；live 仅在受控测试账号和确认后执行。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -8068,6 +8269,16 @@
                   "product_group_type": "channel"
                 },
                 "message": "channel value must be ONLINE or LOCAL"
+              },
+              {
+                "id": "unit_cpc_bid_dependency",
+                "if": {
+                  "partition_type": "UNIT"
+                },
+                "message": "UNIT product groups require cpc_bid_micros",
+                "required": [
+                  "cpc_bid_micros"
+                ]
               }
             ],
             "properties": {
@@ -8109,8 +8320,8 @@
                 "type": "string"
               },
               "cpc_bid_micros": {
-                "description": "Optional product partition CPC bid in micros",
-                "minimum": 0,
+                "description": "Product partition CPC bid in micros (required for UNIT)",
+                "minimum": 1,
                 "type": "integer"
               },
               "parent_criterion_id": {
@@ -8171,6 +8382,15 @@
                 ],
                 "type": "string"
               },
+              "status": {
+                "default": "PAUSED",
+                "description": "Product partition status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
               "value": {
                 "description": "Dimension value; bidding_category accepts a numeric category ID",
                 "minLength": 1,
@@ -8194,14 +8414,14 @@
             "create_product_group",
             "create_campaign"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_product_group",
           "parent_resource_id_field": "ad_group_id",
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_product_group",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -8850,14 +9070,14 @@
           "intent_types": [
             "create_search_ad"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_search_ad",
           "parent_resource_id_field": "ad_group_id",
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -9026,7 +9246,7 @@
               ]
             }
           ],
-          "contract_hash": "8122f473613eec61b8ebcf16f8adcaf6557f80cb032299cce45ced5b974da507",
+          "contract_hash": "7f81b273447fab30149f7daacdaad6284b5a726368c35c83e4b088d221aa6884",
           "contract_version": "1.4.0",
           "description": "创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -9232,7 +9452,7 @@
                   "SEARCH_STANDARD",
                   "SEARCH_DYNAMIC_ADS",
                   "DISPLAY_STANDARD",
-                  "SHOPPING_PRODUCT",
+                  "SHOPPING_PRODUCT_ADS",
                   "VIDEO_TRUEVIEW_IN_STREAM",
                   "VIDEO_BUMPER",
                   "HOTEL_ADS",
@@ -13538,7 +13758,7 @@
         {
           "action": "list",
           "activation_rules": [],
-          "contract_hash": "7b5c920fd6154275e1e1c121ce45c0308997f4b829f8b34d50883065907dfcf4",
+          "contract_hash": "fff557fdae0151f3369d3bd40b0b986a8a51827913f06f67000eb6cfe06e302b",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
@@ -13547,6 +13767,22 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
+              "campaign_id": {
+                "description": "可选：精确查询一个 Campaign ID，适用于父资源选择",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "google_list_campaigns",
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
               "customer_id": {
                 "type": "string"
               },
@@ -14788,14 +15024,14 @@
           "intent_types": [
             "update_ad"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_ad",
           "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -14911,14 +15147,14 @@
           "intent_types": [
             "update_adgroup"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_ad_group",
           "parent_resource_id_field": null,
           "parent_resource_type": "campaign",
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_ad_group",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -15291,14 +15527,14 @@
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget"
           ],
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_campaign",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
           "platform": "google-ads",
           "provider_api_version": "v24",
-          "readback_tool": null,
+          "readback_tool": "google_get_campaign",
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
@@ -42834,13 +43070,14 @@
         "action": "live_create",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "not_supported",
-        "gap": "PMax Asset Group live 多步 AssetService mutate 尚未经过指定测试账户验证",
+        "execution_status": "dry_run_only",
         "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_pmax_asset_group",
         "provider": "google-ads",
+        "provider_operation": "GoogleAdsService.mutate: AssetService + AssetGroupService + AssetGroupAssetService atomic mutateOperations",
         "resource": "asset_group",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "implemented"
       },
       {
         "action": "report",

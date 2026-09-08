@@ -607,6 +607,19 @@ class ProviderMethodHandler(ToolHandler):
                     f"Provider method {self.method_name} is unavailable"
                 )
             args, kwargs = self.argument_builder(ctx, input_data)
+            # Provider adapters may expose a deliberate ``live`` switch for
+            # multi-step mutations. Inject it only when the fixed method
+            # explicitly declares the parameter; arbitrary Tools never
+            # receive Runtime state through user-controlled kwargs.
+            try:
+                method_parameters = inspect.signature(method).parameters
+            except (TypeError, ValueError):
+                method_parameters = {}
+            if "live" in method_parameters and "live" not in kwargs:
+                kwargs["live"] = (
+                    str(getattr(ctx, "metadata", {}).get("execution_mode", "dry_run"))
+                    == "live"
+                )
             value = method(*args, **kwargs)
             data = {
                 self.result_key: value,

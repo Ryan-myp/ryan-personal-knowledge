@@ -11,6 +11,7 @@
   "resources": ["campaign", "ad_group", "ad"],
   "fields": [
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.contains_eu_political_advertising", "tool_ref": "google_create_campaign.contains_eu_political_advertising", "label": "欧盟政治广告声明", "required": true, "source": "enum", "options": ["DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING", "CONTAINS_EU_POLITICAL_ADVERTISING"]},
     {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["DEMAND_GEN"], "presentation": "derived_readonly"},
     {"path": "campaign.bidding_strategy", "tool_ref": "google_create_campaign.bidding_strategy", "label": "出价策略", "required": true, "source": "enum", "options": ["MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSION_VALUE", "TARGET_CPA", "TARGET_ROAS"]},
     {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA（微单位）", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},

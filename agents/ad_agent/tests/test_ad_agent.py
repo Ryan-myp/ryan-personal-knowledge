@@ -1289,6 +1289,7 @@ class TestSafeWriteExecution:
                     "customer_id": "g1", "campaign_name": "Google campaign",
                     "advertising_channel_type": "SEARCH",
                     "bidding_strategy": "MAXIMIZE_CONVERSIONS", "budget": 100,
+                    "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
                     "type": "SEARCH_STANDARD", "final_url": "https://example.com",
                     "headlines": ["a", "b", "c"], "descriptions": ["a", "b"],
                 },

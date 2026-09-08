@@ -88,6 +88,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "MAX": "PERFORMANCE_MAX",
         "APP": "MULTI_CHANNEL",
     }
+    AD_GROUP_TYPE_ALIASES = {
+        # Google Ads v24 uses SHOPPING_PRODUCT_ADS. Keep accepting the old
+        # saved-blueprint alias at the provider boundary, but never emit it.
+        "SHOPPING_PRODUCT": "SHOPPING_PRODUCT_ADS",
+    }
     DATE_LITERALS = {
         "TODAY", "YESTERDAY", "LAST_7_DAYS", "LAST_14_DAYS", "LAST_30_DAYS",
         "THIS_MONTH", "LAST_MONTH", "THIS_WEEK_SUN_TODAY", "THIS_WEEK_MON_TODAY",
@@ -1969,6 +1974,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         parent_criterion_id: str = None,
         cpc_bid_micros: int = None,
         bidding_category_level: str = "LEVEL1",
+        status: str = "PAUSED",
     ) -> dict[str, Any]:
         """Create one Shopping product partition criterion.
 
@@ -1982,6 +1988,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
         partition = str(partition_type or "UNIT").strip().upper()
         if partition not in {"UNIT", "SUBDIVISION"}:
             raise ValueError("partition_type must be UNIT or SUBDIVISION")
+        status = str(status or "PAUSED").strip().upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
 
         supported_types = {
             "all_products",
@@ -1993,6 +2002,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if group_type not in supported_types:
             raise ValueError(f"Unsupported product_group_type: {product_group_type}")
 
+        if partition == "UNIT" and cpc_bid_micros is None:
+            raise ValueError("cpc_bid_micros is required for UNIT product groups")
         listing_group: dict[str, Any] = {"type": partition}
         if parent_criterion_id:
             listing_group["parentAdGroupCriterion"] = self._criterion_resource_name(
@@ -2007,12 +2018,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
         criterion: dict[str, Any] = {
             "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
+            "status": status,
             "listingGroup": listing_group,
         }
         if cpc_bid_micros is not None:
             cpc_bid_micros = int(cpc_bid_micros)
-            if cpc_bid_micros < 0:
-                raise ValueError("cpc_bid_micros must be non-negative")
+            if cpc_bid_micros <= 0:
+                raise ValueError("cpc_bid_micros must be positive")
             criterion["cpcBidMicros"] = cpc_bid_micros
 
         response = self._mutate_operations(
@@ -2037,12 +2049,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "ad_group_criterion.listing_group.type, "
             "ad_group_criterion.listing_group.parent_ad_group_criterion, "
             "ad_group_criterion.listing_group.case_value.product_brand.value, "
-            "ad_group_criterion.listing_group.case_value.product_bidding_category.id, "
-            "ad_group_criterion.listing_group.case_value.product_bidding_category.level, "
+            "ad_group_criterion.listing_group.case_value.product_category.category_id, "
+            "ad_group_criterion.listing_group.case_value.product_category.level, "
             "ad_group_criterion.listing_group.case_value.product_channel.channel, "
             "ad_group_criterion.listing_group.case_value.product_condition.condition, "
-            "ad_group_criterion.listing_group.case_value.product_custom_label.index, "
-            "ad_group_criterion.listing_group.case_value.product_custom_label.value, "
+            "ad_group_criterion.listing_group.case_value.product_custom_attribute.index, "
+            "ad_group_criterion.listing_group.case_value.product_custom_attribute.value, "
             "ad_group_criterion.listing_group.case_value.product_item_id.value, "
             "ad_group_criterion.listing_group.case_value.product_type.level, "
             "ad_group_criterion.listing_group.case_value.product_type.value "
@@ -2073,10 +2085,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
             ("productType", "product_type", "product_type"),
             ("productBrand", "product_brand", "brand"),
             ("productCondition", "product_condition", "condition"),
-            ("productCustomLabel", "product_custom_label", "custom_label"),
+            ("productCustomAttribute", "product_custom_attribute", "custom_label"),
             ("productChannel", "product_channel", "channel"),
             ("productItemId", "product_item_id", "item_id"),
-            ("productBiddingCategory", "product_bidding_category", "bidding_category"),
+            ("productCategory", "product_category", "bidding_category"),
         )
         product_group_type = "all_products"
         value: Any = None
@@ -2563,7 +2575,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             return {"productCondition": {"condition": condition}}
         if group_type.startswith("custom_label_"):
             index = group_type.rsplit("_", 1)[-1]
-            return {"productCustomLabel": {"index": f"INDEX{index}", "value": str(value)}}
+            return {"productCustomAttribute": {"index": f"INDEX{index}", "value": str(value)}}
         if group_type == "channel":
             channel = str(value).upper()
             if channel not in {"ONLINE", "LOCAL"}:
@@ -2578,7 +2590,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             level = str(bidding_category_level or "LEVEL1").upper()
             if level not in {f"LEVEL{item}" for item in range(1, 6)}:
                 raise ValueError("bidding_category_level must be LEVEL1 through LEVEL5")
-            return {"productBiddingCategory": {"level": level, "id": int(category_id)}}
+            return {"productCategory": {"level": level, "categoryId": int(category_id)}}
         raise ValueError(f"Unsupported product_group_type: {group_type}")
     
     def get_ad(self, ad_id: str) -> dict:
@@ -3148,6 +3160,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         local_campaign_setting: dict = None,
         travel_campaign_settings: dict = None,
         local_services_campaign_settings: dict = None,
+        brand_guidelines_enabled: Optional[bool] = None,
         contains_eu_political_advertising: Optional[str] = None,
         final_url_suffix: str = None,
         start_date: str = None,
@@ -3165,6 +3178,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("daily_budget must be a positive number") from exc
         if daily_budget <= 0:
             raise ValueError("daily_budget must be greater than 0")
+        if brand_guidelines_enabled is not None and not isinstance(
+            brand_guidelines_enabled, bool
+        ):
+            raise ValueError("brand_guidelines_enabled must be boolean")
         # Google Ads REST writes go through the customer-level mutate
         # endpoints.  Resource-level POST/PUT endpoints look plausible but
         # are not Google Ads API contracts.
@@ -3175,7 +3192,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'name': budget_name,
             'amountMicros': budget_amount_micros,
             'deliveryMethod': 'STANDARD',
-            'explicitlyShared': True,
+            # Smart bidding campaigns such as PMax and App campaigns cannot
+            # use a shared budget. A campaign-created budget belongs to this
+            # campaign, so it must be explicitly non-shared.
+            'explicitlyShared': False,
         }
         budget_resp = self._mutate('campaignBudgets', {'create': budget_data})
         budget_resource_name = self._mutation_resource_name(budget_resp)
@@ -3185,6 +3205,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
             str(advertising_channel_type or "").upper(),
             str(advertising_channel_type or "").upper(),
         )
+        # v24 treats omitted PMax brand-guideline configuration as enabled in
+        # this account state. The no-brand-guidelines path is the safe default
+        # for the generic campaign Tool; opting into guidelines requires a
+        # separate CampaignAsset flow with a business name and square logo.
+        if advertising_channel_type == "PERFORMANCE_MAX" and brand_guidelines_enabled is None:
+            brand_guidelines_enabled = False
         campaign_data = {
             'name': name,
             'advertisingChannelType': advertising_channel_type,
@@ -3202,9 +3228,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
         if advertising_channel_sub_type:
             campaign_data['advertisingChannelSubType'] = advertising_channel_sub_type
+        if brand_guidelines_enabled is not None:
+            campaign_data['brandGuidelinesEnabled'] = brand_guidelines_enabled
         for field_name, value in (
             ('shoppingSetting', shopping_setting),
-            ('campaignGoalSetting', campaign_goal_setting),
             ('videoSetting', video_setting),
             ('targetingSetting', targeting_setting),
             ('demandGenCampaignSettings', demand_gen_campaign_settings),
@@ -3217,6 +3244,25 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 if not isinstance(value, dict):
                     raise ValueError(f"{field_name} must be an object")
                 campaign_data[field_name] = self._camel_case_keys(value)
+
+        # Google Ads v24 exposes this as OptimizationGoalSetting, not the
+        # older/nonexistent CampaignGoalSetting shape. Keep the public input
+        # name stable for saved blueprints, but translate it to the v24 wire
+        # contract and never send the legacy goal_type object verbatim.
+        if campaign_goal_setting is not None:
+            if not isinstance(campaign_goal_setting, dict):
+                raise ValueError("campaign_goal_setting must be an object")
+            optimization_goal_types = campaign_goal_setting.get(
+                "optimization_goal_types"
+            )
+            if optimization_goal_types:
+                if not isinstance(optimization_goal_types, list):
+                    raise ValueError("optimization_goal_types must be a list")
+                campaign_data["optimizationGoalSetting"] = {
+                    "optimizationGoalTypes": [
+                        str(item).strip().upper() for item in optimization_goal_types
+                    ]
+                }
         if final_url_suffix:
             campaign_data['finalUrlSuffix'] = final_url_suffix
 
@@ -3249,9 +3295,60 @@ class GoogleAdsAPIClient(BasePlatformClient):
             app_store = app_campaign_setting.get("app_store")
             if not app_id or not app_store:
                 raise ValueError("app_campaign_setting requires app_id and app_store")
-            campaign_data['appCampaignSetting'] = self._camel_case_keys(
-                app_campaign_setting
+            allowed_app_fields = {
+                "app_id", "app_store", "bidding_strategy_goal_type",
+            }
+            unknown_app_fields = set(app_campaign_setting) - allowed_app_fields
+            if unknown_app_fields:
+                raise ValueError(
+                    "Unsupported app_campaign_setting fields: "
+                    + ", ".join(sorted(unknown_app_fields))
+                )
+            campaign_data['appCampaignSetting'] = self._camel_case_keys({
+                key: value for key, value in app_campaign_setting.items()
+                if key in allowed_app_fields and value is not None
+            })
+
+        if advertising_channel_type == "SHOPPING" and shopping_setting is not None:
+            if not isinstance(shopping_setting, dict):
+                raise ValueError("shopping_setting must be an object")
+            merchant_id = shopping_setting.get("merchant_id")
+            priority = shopping_setting.get(
+                "campaign_priority", shopping_setting.get("priority")
             )
+            if merchant_id in (None, ""):
+                raise ValueError("shopping_setting.merchant_id is required")
+            if priority in (None, ""):
+                raise ValueError("shopping_setting.campaign_priority is required")
+            try:
+                merchant_id = int(merchant_id)
+                priority = int(priority)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "shopping_setting.merchant_id and campaign_priority must be integers"
+                ) from exc
+            if merchant_id <= 0 or priority not in {0, 1, 2}:
+                raise ValueError(
+                    "shopping_setting.merchant_id must be positive and campaign_priority must be 0, 1 or 2"
+                )
+            shopping_payload = {
+                "merchant_id": merchant_id,
+                "campaign_priority": priority,
+            }
+            for key in (
+                "feed_label", "enable_local", "use_vehicle_inventory",
+                "advertising_partner_ids", "ignore_brand_exclusion_in_shopping_ads",
+            ):
+                if shopping_setting.get(key) is not None:
+                    shopping_payload[key] = shopping_setting[key]
+            # Older saved drafts used sales_country. Google v24 replaced that
+            # wire field with feed_label, so use it only as a compatibility
+            # source and never emit salesCountry.
+            if not shopping_payload.get("feed_label") and shopping_setting.get("sales_country"):
+                shopping_payload["feed_label"] = str(
+                    shopping_setting["sales_country"]
+                ).strip().upper()
+            campaign_data['shoppingSetting'] = self._camel_case_keys(shopping_payload)
         
         # 出价策略附加参数
         strategy = (bidding_strategy or 'MAXIMIZE_CONVERSIONS').upper()
@@ -3486,9 +3583,19 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'name': name,
             'status': status or 'PAUSED',
             'campaign': f'customers/{self.customer_id}/campaigns/{campaign_id}',
-            'type': type,
-            'cpcBidMicros': cpc_bid_micros,
         }
+        if type not in (None, ""):
+            normalized_type = str(type).strip().upper()
+            if normalized_type:
+                ad_group_data['type'] = self.AD_GROUP_TYPE_ALIASES.get(
+                    normalized_type, normalized_type
+                )
+        # App and other automated campaign ad groups do not accept a manual
+        # CPC bid. Callers that need a CPC bid still get the historical
+        # default, while specialized automated chains can explicitly pass
+        # None to omit the provider field.
+        if cpc_bid_micros is not None:
+            ad_group_data['cpcBidMicros'] = cpc_bid_micros
         if targeting:
             # ``targeting`` is a provider-ready targetingSetting object. More
             # granular criteria are separate Google Ads resources and should
@@ -3739,15 +3846,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         videos: list[Any] = None,
         html5_media_bundles: list[Any] = None,
         status: str = None,
+        live: bool = False,
     ) -> dict[str, Any]:
-        """Build a Google AppAd mutation plan without provider I/O.
+        """Create or plan a Google AppAd mutation.
 
         App campaign creative is an ``Ad.appAd`` payload attached to an App
-        campaign Ad Group.  The product deliberately exposes this adapter as
-        dry-run-only until the selected test customer has verified the exact
-        AssetService/AdGroupAd mutation sequence.  Keeping the provider-shaped
-        plan here means that verification later changes this adapter, not the
-        Skill, Runtime, or route metadata.
+        campaign Ad Group. In live mode media assets are resolved through
+        AssetService while text assets use the inline AppAdInfo contract.
         """
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         if not str(name or "").strip():
@@ -3759,6 +3864,50 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status = str(status or "PAUSED").upper()
         if status not in {"PAUSED", "ENABLED"}:
             raise ValueError("status must be PAUSED or ENABLED")
+
+        if live:
+            customer = self._numeric_id(self.customer_id, "customer_id")
+            app_ad: dict[str, Any] = {
+                "headlines": [
+                    self._app_text_asset(item, "headline") for item in headlines
+                ],
+                "descriptions": [
+                    self._app_text_asset(item, "description") for item in descriptions
+                ],
+            }
+            for wire_name, field_type, values in (
+                ("images", "AD_IMAGE", images),
+                ("youtubeVideos", "VIDEO", videos),
+                ("html5MediaBundles", "MEDIA_BUNDLE", html5_media_bundles),
+            ):
+                if values:
+                    if not isinstance(values, list):
+                        raise ValueError(f"{wire_name} must be a list")
+                    app_ad[wire_name] = [
+                        {"asset": self._asset_resource_for_mutation(
+                            item, field_type, name_prefix=str(name)
+                        )}
+                        for item in values
+                    ]
+            # Google does not allow an AppAd association to be PAUSED. The
+            # enclosing App Campaign and Ad Group remain PAUSED, so the
+            # hierarchy is still inactive while the provider-valid ad status
+            # is ENABLED.
+            ad_status = "ENABLED" if status == "PAUSED" else status
+            response = self._mutate("adGroupAds", {"create": {
+                "adGroup": f"customers/{customer}/adGroups/{ad_group_id}",
+                "status": ad_status,
+                "ad": {"name": str(name).strip(), "appAd": app_ad},
+            }})
+            resource_name = self._mutation_resource_name(response)
+            if not resource_name:
+                raise APIError(f"App Ad mutate returned no resource name: {response}")
+            return {
+                "mode": "live", "execution_status": "executed", "live_support": True,
+                "ad_resource_name": resource_name,
+                "ad_id": resource_name.rsplit("~", 1)[-1],
+                "ad_group_id": ad_group_id, "status": ad_status,
+            }
 
         app_ad: dict[str, Any] = {
             "headlines": [self._text_asset(item) for item in headlines],
@@ -3997,6 +4146,23 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise ValueError("text asset must be a non-empty string or object")
 
     @classmethod
+    def _app_text_asset(cls, value: Any, field_name: str) -> dict[str, Any]:
+        """Build the inline TextAsset shape required by Google AppAdInfo."""
+        if isinstance(value, str):
+            text = value.strip()
+        elif isinstance(value, dict) and value:
+            if any(key in value for key in ("asset", "asset_id", "resource_name")):
+                raise ValueError(
+                    f"App ad {field_name} must use inline text; asset references are not supported"
+                )
+            text = str(value.get("text") or "").strip()
+        else:
+            text = ""
+        if not text:
+            raise ValueError(f"App ad {field_name} text cannot be empty")
+        return {"text": text}
+
+    @classmethod
     def _asset_reference(cls, value: Any) -> dict[str, Any]:
         if isinstance(value, str):
             if not value.strip():
@@ -4005,6 +4171,35 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if isinstance(value, dict) and value:
             return cls._camel_case_keys(value)
         raise ValueError("asset reference must be a non-empty string or object")
+
+    def _asset_resource_for_mutation(
+        self, value: Any, field_type: str, *, name_prefix: str,
+    ) -> str:
+        """Resolve an existing Asset or create a text Asset for a live chain."""
+        customer = self._numeric_id(self.customer_id, "customer_id")
+        reference = None
+        text = None
+        if isinstance(value, str):
+            reference = value.strip()
+        elif isinstance(value, dict) and value:
+            reference = value.get("asset") or value.get("resource_name") or value.get("asset_id")
+            text = str(value.get("text") or "").strip() or None
+        else:
+            raise ValueError(f"{field_type} asset must be a non-empty string or object")
+        if reference not in (None, ""):
+            reference = str(reference).strip()
+            if re.fullmatch(r"\d+", reference):
+                return f"customers/{customer}/assets/{reference}"
+            match = re.fullmatch(r"customers/(\d+)/assets/(\d+)", reference)
+            if match and match.group(1) == customer:
+                return reference
+            raise ValueError(f"{field_type} asset reference must belong to customer {customer}")
+        if field_type not in {"HEADLINE", "LONG_HEADLINE", "DESCRIPTION"} or not text:
+            raise ValueError(f"{field_type} requires an existing Google Asset resource name or ID")
+        asset_id = self.create_asset({
+            "asset_type": "TEXT", "name": f"{name_prefix}_{field_type.lower()}", "text": text,
+        })
+        return f"customers/{customer}/assets/{asset_id}"
     
     # ==================== PMax Asset 管理 ====================
     
@@ -4015,22 +4210,26 @@ class GoogleAdsAPIClient(BasePlatformClient):
         headlines: list[dict],
         descriptions: list[dict] = None,
         images: list[dict] = None,
+        square_marketing_images: list[dict] = None,
         videos: list[str] = None,
         *,
         asset_group_type: str = "PERFORMANCE_MAX",
         final_urls: list[str] = None,
         long_headlines: list[dict] = None,
         logos: list[dict] = None,
+        business_names: list[dict] = None,
         final_mobile_urls: list[str] = None,
         status: str = "PAUSED",
+        live: bool = False,
     ) -> dict[str, Any]:
-        """Build a verified-shape PMax mutation plan without provider I/O.
+        """Create or plan a PMax AssetGroup and its Asset links.
 
         PMax creation spans AssetGroup, Asset and AssetGroupAsset mutations.
         The current product contract intentionally exposes this as a
-        dry-run-only operation: the returned plan contains temporary resource
-        names and can be reviewed before a separately approved live adapter is
-        introduced.  It must never be mistaken for a provider success.
+        bounded hierarchy mutation. In dry-run mode the returned plan
+        contains temporary resource names.
+        In live mode the required AssetService, AssetGroupService and
+        AssetGroupAssetService mutations are executed in order.
         """
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
         if not str(name or "").strip():
@@ -4048,6 +4247,108 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("long_headlines must contain at least 1 asset")
         if not isinstance(descriptions, list) or len(descriptions) < 2:
             raise ValueError("descriptions must contain at least 2 assets")
+        if not isinstance(images, list) or not images:
+            raise ValueError("images must contain at least 1 marketing image asset")
+        if not isinstance(square_marketing_images, list) or not square_marketing_images:
+            raise ValueError(
+                "square_marketing_images must contain at least 1 square marketing image asset"
+            )
+        if not isinstance(logos, list) or not logos:
+            raise ValueError("logos must contain at least 1 logo asset")
+        if not isinstance(business_names, list) or not business_names:
+            raise ValueError("business_names must contain at least 1 text asset")
+
+        if live:
+            customer = self._numeric_id(self.customer_id, "customer_id")
+            refs: list[tuple[str, str]] = []
+            asset_operations: list[dict[str, Any]] = []
+            temporary_asset_id = -2
+
+            def asset_resource(value: Any, field_type: str) -> str:
+                nonlocal temporary_asset_id
+                if isinstance(value, str):
+                    value = (
+                        {"text": value}
+                        if field_type in {"HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "BUSINESS_NAME"}
+                        else {"asset": value}
+                    )
+                if not isinstance(value, dict) or not value:
+                    raise ValueError(f"{field_type} asset must be an object or resource name")
+                reference = value.get("asset") or value.get("resource_name") or value.get("asset_id")
+                if reference not in (None, ""):
+                    reference = str(reference).strip()
+                    if re.fullmatch(r"\d+", reference):
+                        return f"customers/{customer}/assets/{reference}"
+                    match = re.fullmatch(r"customers/(\d+)/assets/(\d+)", reference)
+                    if match and match.group(1) == customer:
+                        return reference
+                    raise ValueError(f"{field_type} asset reference must belong to customer {customer}")
+                text = str(value.get("text") or "").strip()
+                if field_type not in {
+                    "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "BUSINESS_NAME"
+                } or not text:
+                    raise ValueError(
+                        f"{field_type} requires an existing Google Asset resource name or ID"
+                    )
+                resource = f"customers/{customer}/assets/{temporary_asset_id}"
+                temporary_asset_id -= 1
+                asset_operations.append({"assetOperation": {"create": {
+                    "resourceName": resource,
+                    "name": str(value.get("name") or f"pmax_{field_type.lower()}"),
+                    "textAsset": {"text": text},
+                }}})
+                return resource
+
+            for field_name, field_type, values in (
+                ("headlines", "HEADLINE", headlines),
+                ("long_headlines", "LONG_HEADLINE", long_headlines),
+                ("descriptions", "DESCRIPTION", descriptions),
+            ):
+                for index, value in enumerate(values):
+                    refs.append((field_type, asset_resource(value, field_type)))
+            for field_type, values in (
+                ("MARKETING_IMAGE", images or []),
+                ("SQUARE_MARKETING_IMAGE", square_marketing_images or []),
+                ("LOGO", logos or []),
+                ("BUSINESS_NAME", business_names or []),
+                ("YOUTUBE_VIDEO", videos or []),
+            ):
+                for value in values:
+                    refs.append((field_type, asset_resource(value, field_type)))
+            asset_group_resource = f"customers/{customer}/assetGroups/-1"
+            group_payload = {
+                "resourceName": asset_group_resource,
+                "campaign": f"customers/{customer}/campaigns/{campaign_id}",
+                "name": str(name).strip(), "status": status,
+                "finalUrls": [str(url).strip() for url in final_urls],
+            }
+            if final_mobile_urls:
+                group_payload["finalMobileUrls"] = [str(url).strip() for url in final_mobile_urls]
+            operations = [*asset_operations, {"assetGroupOperation": {"create": group_payload}}]
+            operations.extend({"assetGroupAssetOperation": {"create": {
+                "assetGroup": asset_group_resource,
+                "asset": asset_resource,
+                "fieldType": field_type,
+            }}} for field_type, asset_resource in refs)
+            group_response = self._mutate_google_operations(operations)
+            result_rows = self._google_mutation_rows(group_response)
+            group_resource = next(
+                (str(row.get("resourceName")) for row in result_rows
+                 if isinstance(row, dict) and "/assetGroups/" in str(row.get("resourceName", ""))),
+                "",
+            )
+            if not group_resource:
+                raise APIError(f"AssetGroup mutate returned no resource name: {group_response}")
+            group_id = str(group_resource.rsplit("/", 1)[-1])
+            links = [
+                str(row.get("resourceName")) for row in result_rows
+                if isinstance(row, dict) and "/assetGroupAssets/" in str(row.get("resourceName", ""))
+            ]
+            return {
+                "mode": "live", "execution_status": "executed", "live_support": True,
+                "asset_group_id": group_id, "asset_group_resource_name": group_resource,
+                "asset_group_asset_resource_names": links, "status": status,
+            }
 
         customer = str(self.customer_id or "").strip()
         if not re.fullmatch(r"\d+", customer):
@@ -4060,7 +4361,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
                     "resourceName": asset_group_resource,
                     "campaign": f"customers/{customer}/campaigns/{campaign_id}",
                     "name": str(name).strip(),
-                    "assetGroupType": "PERFORMANCE_MAX",
                     "status": status,
                     "finalUrls": [str(url).strip() for url in final_urls],
                     **({
@@ -4075,7 +4375,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         def asset_resource(value: Any, field_type: str) -> str:
             nonlocal temporary_asset_id
             if isinstance(value, str):
-                value = {"asset": value}
+                value = (
+                    {"text": value}
+                    if field_type in {"HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "BUSINESS_NAME"}
+                    else {"asset": value}
+                )
             if not isinstance(value, dict) or not value:
                 raise ValueError(f"{field_type} asset must be an object or resource name")
             reference = value.get("asset") or value.get("resource_name") or value.get("asset_id")
@@ -4087,7 +4391,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
                     raise ValueError(f"{field_type} asset reference must be a Google Asset ID or resource name")
                 return f"customers/{customer}/assets/{reference}"
             text = str(value.get("text") or "").strip()
-            if field_type not in {"HEADLINE", "LONG_HEADLINE", "DESCRIPTION"} or not text:
+            if field_type not in {
+                "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "BUSINESS_NAME"
+            } or not text:
                 raise ValueError(
                     f"{field_type} requires an existing asset reference; only text assets can be created in the plan"
                 )
@@ -4108,7 +4414,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             ("long_headlines", "LONG_HEADLINE", long_headlines),
             ("descriptions", "DESCRIPTION", descriptions),
             ("images", "MARKETING_IMAGE", images or []),
+            ("square_marketing_images", "SQUARE_MARKETING_IMAGE", square_marketing_images or []),
             ("logos", "LOGO", logos or []),
+            ("business_names", "BUSINESS_NAME", business_names or []),
             ("videos", "YOUTUBE_VIDEO", videos or []),
         ):
             for value in values:
@@ -4614,6 +4922,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """Execute a bounded batch of Google Ads mutate operations."""
         if not isinstance(operations, list) or not operations:
             raise ValueError("mutate operations must be a non-empty list")
+        if len(operations) > 1_000:
+            raise ValueError("mutate operations cannot contain more than 1000 items")
         url = f"{self.BASE_URL}/customers/{self.customer_id}/{resource}:mutate"
         # A stale access token can be supplied by the credential store even
         # when a refresh token is available.  Read-only GAQL already opts into
@@ -4630,6 +4940,70 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 status_code=status, response=response,
             )
         return response
+
+    def _mutate_google_operations(self, operations: list[dict]) -> dict:
+        """Execute one atomic customer-level Google Ads mutate request.
+
+        Google Ads uses this endpoint when a request has to create resources
+        from different services together (for example PMax Assets,
+        AssetGroup and AssetGroupAsset links).  Temporary negative resource
+        IDs in the operation list are resolved by Google within this single
+        request, so splitting it into resource-specific calls would lose the
+        dependency graph and could leave partially-created hierarchy objects.
+        """
+        if not isinstance(operations, list) or not operations:
+            raise ValueError("mutate operations must be a non-empty list")
+        if len(operations) > 1_000:
+            raise ValueError("mutate operations cannot contain more than 1000 items")
+        url = f"{self.BASE_URL}/customers/{self.customer_id}/googleAds:mutate"
+        response = self.request_raw(
+            "POST",
+            url,
+            data={"mutateOperations": operations},
+            retry_auth_on_401=True,
+        )
+        status = response.get("status_code", 200)
+        if status not in (200, 201, 202):
+            raise APIError(
+                f"Google Ads customer mutate returned HTTP {status}",
+                status_code=status,
+                response=response,
+            )
+        return response
+
+    @classmethod
+    def _google_mutation_rows(cls, response: Any) -> list[dict[str, Any]]:
+        """Normalize Google customer-mutate results for hierarchy callers.
+
+        Resource-specific mutate endpoints return ``results``.  The
+        cross-service customer endpoint returns a union list named
+        ``mutateOperationResponses`` where each item contains e.g.
+        ``assetGroupResult`` or ``assetGroupAssetResult``.  Keep that wire
+        detail in the Google adapter and expose one small internal shape to
+        the PMax builder.
+        """
+        payload = cls._response_payload(response)
+        raw_rows = payload.get("mutateOperationResponses")
+        if not isinstance(raw_rows, list):
+            raw_rows = payload.get("results", [])
+        rows: list[dict[str, Any]] = []
+        for row in raw_rows:
+            if not isinstance(row, dict):
+                continue
+            if row.get("resourceName"):
+                rows.append({"resourceName": str(row["resourceName"])})
+                continue
+            for result_key, result in row.items():
+                if not result_key.endswith("Result") or not isinstance(result, dict):
+                    continue
+                resource_name = result.get("resourceName")
+                if resource_name:
+                    rows.append({
+                        "resourceName": str(resource_name),
+                        "result_type": result_key,
+                    })
+                    break
+        return rows
 
     @staticmethod
     def _mutation_resource_name(response: dict) -> str:

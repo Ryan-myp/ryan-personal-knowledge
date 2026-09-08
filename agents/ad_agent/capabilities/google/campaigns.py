@@ -160,6 +160,7 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     local_campaign_setting=input_data.get("local_campaign_setting"),
                     travel_campaign_settings=input_data.get("travel_campaign_settings"),
                     local_services_campaign_settings=input_data.get("local_services_campaign_settings"),
+                    brand_guidelines_enabled=input_data.get("brand_guidelines_enabled"),
                     contains_eu_political_advertising=input_data.get(
                         "contains_eu_political_advertising"
                     ),

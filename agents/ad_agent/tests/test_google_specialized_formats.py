@@ -61,6 +61,7 @@ def test_google_specialized_campaign_settings_are_closed_and_provider_ready():
         "customer_id": "123", "campaign_name": "specialized", "daily_budget": 10,
         "bidding_strategy": "MAXIMIZE_CONVERSIONS",
         "advertising_channel_type": "DEMAND_GEN",
+        "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "demand_gen_campaign_settings": {"upgraded_targeting": True},
     }
     assert validate_tool_input(campaign.input_schema, valid, include_provider_contract=True) == []

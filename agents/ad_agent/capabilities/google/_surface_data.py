@@ -60,7 +60,7 @@ API_SURFACE = [
     {"resource": "asset_group", "action": "get", "method": "get_asset_group", "status": "implemented"},
     {"resource": "asset_group", "action": "create", "method": "create_pmax_asset_group", "status": "implemented"},
     {"resource": "asset_group", "action": "update", "method": "update_asset_group", "status": "implemented"},
-    {"resource": "asset_group", "action": "live_create", "status": "planned", "gap": "PMax Asset Group live 多步 AssetService mutate 尚未经过指定测试账户验证"},
+    {"resource": "asset_group", "action": "live_create", "method": "create_pmax_asset_group", "status": "implemented", "provider_operation": "GoogleAdsService.mutate: AssetService + AssetGroupService + AssetGroupAssetService atomic mutateOperations"},
     {"resource": "campaign", "action": "report", "method": "get_campaign_report", "status": "implemented"},
     {"resource": "ad_group", "action": "report", "method": "get_adgroup_report", "status": "implemented"},
     {"resource": "campaign_budget", "action": "list", "method": "list_campaign_budgets", "status": "implemented"},

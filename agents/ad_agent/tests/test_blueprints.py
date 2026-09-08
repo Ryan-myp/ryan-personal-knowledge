@@ -544,14 +544,16 @@ def test_blueprint_submission_composes_declared_parent_child_tools():
         platform_params={"google-ads": {
             "campaign_name": "Search draft",
             "advertising_channel_type": "SEARCH",
-            "bidding_strategy": "MAXIMIZE_CONVERSIONS",
-            "daily_budget": 50,
-            "google_create_campaign": {
-                "campaign_name": "Search draft",
-                "advertising_channel_type": "SEARCH",
                 "bidding_strategy": "MAXIMIZE_CONVERSIONS",
                 "daily_budget": 50,
-            },
+                "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                "google_create_campaign": {
+                "campaign_name": "Search draft",
+                "advertising_channel_type": "SEARCH",
+                    "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+                    "daily_budget": 50,
+                    "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                },
             "google_create_ad_group": {
                 "name": "Search group", "type": "SEARCH_STANDARD",
             },
@@ -633,6 +635,7 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
             "app_campaign_setting": {
                 "app_id": "com.example.app",
                 "app_store": "GOOGLE_APP_STORE",
+                "bidding_strategy_goal_type": "OPTIMIZE_INSTALLS_WITHOUT_TARGET_INSTALL_COST",
             },
             "bidding_strategy": "MAXIMIZE_CONVERSIONS",
             "daily_budget": 50,
@@ -644,14 +647,15 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
                 "app_campaign_setting": {
                     "app_id": "com.example.app",
                     "app_store": "GOOGLE_APP_STORE",
+                    "bidding_strategy_goal_type": "OPTIMIZE_INSTALLS_WITHOUT_TARGET_INSTALL_COST",
                 },
                 "bidding_strategy": "MAXIMIZE_CONVERSIONS",
                 "daily_budget": 50,
+                "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
             },
-            "google_create_app_ad_group": {
-                "name": "App group",
-                "type": "SEARCH_STANDARD",
-            },
+                "google_create_app_ad_group": {
+                    "name": "App group",
+                },
             "google_create_app_ad": {
                 "name": "App ad",
                 "headlines": ["Only one headline"],

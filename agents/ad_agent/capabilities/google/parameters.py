@@ -46,7 +46,7 @@ GOOGLE_ASSET_GROUP_ASSET_FIELD_TYPES = [
 GOOGLE_STATUSES = ["ENABLED", "PAUSED", "REMOVED"]
 GOOGLE_AD_GROUP_TYPES = [
     "SEARCH_STANDARD", "SEARCH_DYNAMIC_ADS", "DISPLAY_STANDARD",
-    "SHOPPING_PRODUCT", "VIDEO_TRUEVIEW_IN_STREAM", "VIDEO_BUMPER",
+    "SHOPPING_PRODUCT_ADS", "VIDEO_TRUEVIEW_IN_STREAM", "VIDEO_BUMPER",
 ]
 GOOGLE_ASSET_GROUP_TYPES = ["PERFORMANCE_MAX"]
 GOOGLE_TARGETING_NETWORKS = ["GOOGLE_SEARCH", "SEARCH_PARTNERS", "DISPLAY_NETWORK"]
@@ -604,9 +604,21 @@ def google_app_campaign_setting_schema() -> dict[str, Any]:
             "string", "App campaign optimization goal", enum=[
                 "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
                 "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
+                "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
+                "OPTIMIZE_RETURN_ON_ADVERTISING_SPEND",
+                "OPTIMIZE_PRE_REGISTRATION_CONVERSION_VOLUME",
+                "OPTIMIZE_INSTALLS_WITHOUT_TARGET_INSTALL_COST",
+                "OPTIMIZE_IN_APP_CONVERSIONS_WITHOUT_TARGET_CPA",
+                "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS",
             ], option_labels={
                 "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST": "优化安装量（目标安装成本）",
                 "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST": "优化应用内转化（目标安装成本）",
+                "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST": "优化应用内转化（目标转化成本）",
+                "OPTIMIZE_RETURN_ON_ADVERTISING_SPEND": "优化广告支出回报",
+                "OPTIMIZE_PRE_REGISTRATION_CONVERSION_VOLUME": "优化预注册量",
+                "OPTIMIZE_INSTALLS_WITHOUT_TARGET_INSTALL_COST": "最大化安装量",
+                "OPTIMIZE_IN_APP_CONVERSIONS_WITHOUT_TARGET_CPA": "最大化应用内转化量",
+                "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS": "最大化总转化价值",
             },
         ),
         "selective_optimization": _field(
@@ -617,7 +629,9 @@ def google_app_campaign_setting_schema() -> dict[str, Any]:
             selection_value_fields=["resource_name", "conversion_action_id", "id"],
             selection_label_fields=["name", "resource_name", "id"],
         ),
-    }, "Google App Campaign settings", required=["app_id", "app_store"])
+    }, "Google App Campaign settings", required=[
+        "app_id", "app_store", "bidding_strategy_goal_type",
+    ])
 
 
 def google_shopping_setting_schema() -> dict[str, Any]:
@@ -630,8 +644,36 @@ def google_shopping_setting_schema() -> dict[str, Any]:
                 "instructions": "请输入已关联到 Google Ads 账号的 Merchant Center ID；当前 Capability 没有 Merchant Center 列表接口。",
             },
         ),
+        "campaign_priority": _field(
+            "integer", "Shopping campaign priority (0-2)", minimum=0, maximum=2,
+        ),
+        "feed_label": _field(
+            "string", "Merchant Center feed label", minLength=1, maxLength=20,
+            pattern=r"[A-Za-z0-9_-]+",
+        ),
+        "enable_local": _field("boolean", "Include local products"),
+        "use_vehicle_inventory": _field(
+            "boolean", "Target vehicle listing inventory (legacy Smart Shopping only)",
+        ),
+        "advertising_partner_ids": _field(
+            "array", "Advertising partner Google Ads account IDs", minItems=1,
+            items={"type": "integer", "minimum": 1},
+            manual_entry={
+                "title": "合作方 Google Ads 账号 ID",
+                "instructions": "可选。请输入允许共享该 Shopping 广告系列的合作方 Google Ads 账号 ID 列表；多个账号分别填写，不要填写 MCC ID。",
+                "example": "1234567890",
+                "source": "operator_provided_account_ids",
+            },
+        ),
+        "ignore_brand_exclusion_in_shopping_ads": _field(
+            "boolean", "Ignore brand exclusions for Shopping ads",
+        ),
+        # Kept as hidden compatibility inputs for older saved drafts. They
+        # are never emitted to the v24 provider payload; feed_label is the
+        # current Google contract for feed selection.
         "sales_country": _field(
             "string", "Shopping sales country", minLength=2, maxLength=3,
+            ui_hidden=True,
             manual_entry={
                 "title": "销售国家/地区",
                 "instructions": "请输入 Merchant Center feed 中配置的国家/地区代码，例如 US、GB。",
@@ -639,14 +681,15 @@ def google_shopping_setting_schema() -> dict[str, Any]:
         ),
         "marketing_language": _field(
             "string", "Shopping marketing language", minLength=2, maxLength=5,
+            ui_hidden=True,
             manual_entry={
                 "title": "营销语言",
                 "instructions": "请输入 Merchant Center feed 支持的语言代码，例如 en、zh。",
             },
         ),
-        "priority": _field("integer", "Shopping campaign priority", minimum=0, maximum=100),
-        "exclude_offline_store_locations": _field("boolean", "Exclude offline store locations"),
-    }, "Google Shopping settings", required=["merchant_id", "sales_country", "marketing_language"])
+        "priority": _field("integer", "Shopping campaign priority (legacy alias)", minimum=0, maximum=2, ui_hidden=True),
+        "exclude_offline_store_locations": _field("boolean", "Exclude offline store locations", ui_hidden=True),
+    }, "Google Shopping settings", required=["merchant_id", "campaign_priority"])
 
 
 def google_video_setting_schema() -> dict[str, Any]:
@@ -762,19 +805,33 @@ def google_network_setting_schema() -> dict[str, Any]:
 
 
 def google_campaign_goal_setting_schema() -> dict[str, Any]:
-    """PMax goal metadata from the campaign creation contract."""
+    """PMax optimization goal setting mapped to Google's v24 contract.
+
+    Google v24 calls this resource ``optimizationGoalSetting`` and accepts a
+    list of ``optimizationGoalTypes``. ``goal_type`` remains a hidden legacy
+    alias so old drafts can be migrated at the provider boundary.
+    """
     return _object({
-        "goal_type": _field("string", "Performance Max campaign goal", enum=GOOGLE_PMAX_GOAL_TYPES),
-        "ecommerce_checkout_progress": _field(
-            "number", "E-commerce checkout progress", minimum=0, maximum=1,
+        "optimization_goal_types": _field(
+            "array", "Google optimization goal types", minItems=1,
+            items={"type": "string", "enum": [
+                "CALL_CLICKS", "DRIVING_DIRECTIONS", "APP_PRE_REGISTRATION",
+            ]},
         ),
-    }, "Performance Max campaign goal settings", required=["goal_type"])
+        "goal_type": _field(
+            "string", "Legacy PMax goal alias", enum=GOOGLE_PMAX_GOAL_TYPES,
+            ui_hidden=True,
+        ),
+    }, "Performance Max optimization goal settings")
 
 
 def google_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["customer_id", "campaign_name"],
-        "provider_required": ["advertising_channel_type", "bidding_strategy"],
+        "provider_required": [
+            "advertising_channel_type", "bidding_strategy",
+            "contains_eu_political_advertising",
+        ],
         "provider_any_of": [["daily_budget", "budget"]],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted here"),
@@ -860,6 +917,11 @@ def google_campaign_schema() -> dict[str, Any]:
                 **google_campaign_goal_setting_schema(),
                 **_ui_equals("advertising_channel_type", "PERFORMANCE_MAX"),
             },
+            "brand_guidelines_enabled": _field(
+                "boolean",
+                "Whether Google brand guidelines are enabled for Performance Max",
+                **_ui_equals("advertising_channel_type", "PERFORMANCE_MAX"),
+            ),
             "video_setting": {
                 **google_video_setting_schema(),
                 **_ui_equals("advertising_channel_type", "VIDEO"),
@@ -942,7 +1004,7 @@ def google_campaign_schema() -> dict[str, Any]:
              "message": "VIDEO requires video_setting"},
             {"id": "pmax_goal_setting_dependency", "if": {"advertising_channel_type": "PERFORMANCE_MAX"},
              "required": ["campaign_goal_setting"],
-             "message": "PERFORMANCE_MAX requires campaign_goal_setting"},
+             "message": "PERFORMANCE_MAX requires campaign_goal_setting (optional optimization goal selection)"},
             {"id": "demand_gen_setting_dependency", "if": {"advertising_channel_type": "DEMAND_GEN"},
              "required": ["demand_gen_campaign_settings"],
              "message": "DEMAND_GEN requires demand_gen_campaign_settings"},
@@ -1031,14 +1093,13 @@ def google_app_ad_group_schema() -> dict[str, Any]:
     """
     return {
         "required": ["campaign_id", "name"],
-        "provider_required": ["type"],
+        # App campaign ad groups do not accept the Search/Display ``type``
+        # enum. Keep this schema type-free so a generic AdGroup default cannot
+        # leak into the App mutation.
+        "provider_required": [],
         "properties": {
             "campaign_id": _field("string", "Parent App Campaign ID", minLength=1),
             "name": _field("string", "App campaign ad group name", maxLength=255),
-            "type": _field(
-                "string", "Google App campaign ad group type",
-                enum=["SEARCH_STANDARD"], default="SEARCH_STANDARD",
-            ),
             "status": _field("string", "Ad group status", enum=GOOGLE_STATUSES),
         },
     }
@@ -1225,7 +1286,10 @@ def google_product_group_schema() -> dict[str, Any]:
             "string", "Optional parent criterion ID or full resource name", minLength=1,
         ),
         "cpc_bid_micros": _field(
-            "integer", "Optional product partition CPC bid in micros", minimum=0,
+            "integer", "Product partition CPC bid in micros (required for UNIT)", minimum=1,
+        ),
+        "status": _field(
+            "string", "Product partition status", enum=GOOGLE_STATUSES[:2], default="PAUSED",
         ),
     }
     conditional_rules = [
@@ -1250,6 +1314,12 @@ def google_product_group_schema() -> dict[str, Any]:
             "if": {"product_group_type": "channel"},
             "allowed": {"value": GOOGLE_PRODUCT_CHANNELS},
             "message": "channel value must be ONLINE or LOCAL",
+        },
+        {
+            "id": "unit_cpc_bid_dependency",
+            "if": {"partition_type": "UNIT"},
+            "required": ["cpc_bid_micros"],
+            "message": "UNIT product groups require cpc_bid_micros",
         },
     ])
     return {
@@ -1687,8 +1757,8 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "coverage": "partial_dry_run",
             "tool_names": ["google_create_campaign", "google_create_pmax_asset_group"],
             "dependencies": ["asset_group", "assets", "audience_signals", "product_feed"],
-            "supported_fields": ["campaign_goal_setting", "headlines", "descriptions", "images", "videos", "logos"],
-            "gaps": ["live AssetService mutation approval", "audience signals", "listing groups/product targets"],
+            "supported_fields": ["campaign_goal_setting", "headlines", "long_headlines", "descriptions", "images", "square_marketing_images", "videos", "logos", "business_names"],
+            "gaps": ["audience signals", "listing groups/product targets"],
             "source_document": source_document,
         },
         {
@@ -1698,8 +1768,8 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "coverage": "partial_dry_run",
             "tool_names": ["google_create_pmax_asset_group"],
             "dependencies": ["asset_group", "assets", "audience_signals", "listing_group"],
-            "supported_fields": ["headlines", "descriptions", "images", "videos"],
-            "gaps": ["live AssetService mutation approval", "audience signal and listing group Tools"],
+            "supported_fields": ["headlines", "long_headlines", "descriptions", "images", "square_marketing_images", "videos", "logos", "business_names"],
+            "gaps": ["audience signal and listing group Tools"],
             "source_document": source_document,
         },
         {
@@ -2127,11 +2197,13 @@ def google_asset_group_schema() -> dict[str, Any]:
     return {
         "required": [
             "campaign_id", "name", "asset_group_type", "final_urls",
-            "headlines", "long_headlines", "descriptions",
+            "headlines", "long_headlines", "descriptions", "images",
+            "square_marketing_images", "logos", "business_names",
         ],
         "provider_required": [
             "asset_group_type", "final_urls", "headlines",
-            "long_headlines", "descriptions",
+            "long_headlines", "descriptions", "images",
+            "square_marketing_images", "logos", "business_names",
         ],
         "properties": {
             "campaign_id": _field("string", "Parent Performance Max Campaign ID"),
@@ -2142,9 +2214,15 @@ def google_asset_group_schema() -> dict[str, Any]:
             "headlines": _google_text_assets("Text headline assets or existing Asset references", min_items=3, max_items=15),
             "long_headlines": _google_text_assets("Long headline assets or existing Asset references", min_items=1, max_items=5),
             "descriptions": _google_text_assets("Description assets", min_items=2, max_items=5),
-            "images": _google_asset_refs("Performance Max image assets"),
+            "images": _google_asset_refs("Performance Max marketing image assets"),
+            "square_marketing_images": _google_asset_refs(
+                "Performance Max square marketing image assets"
+            ),
             "videos": _google_asset_refs("Performance Max video assets"),
             "logos": _google_asset_refs("Performance Max logo assets"),
+            "business_names": _google_text_assets(
+                "Performance Max business name text assets", min_items=1, max_items=5
+            ),
             "status": _field("string", "Asset group status", enum=GOOGLE_STATUSES),
         },
     }

@@ -64,13 +64,7 @@ class GoogleGetAssetGroupHandler(ToolHandler):
 
 
 class GoogleCreateAssetGroupHandler(ToolHandler):
-    """Create a PMax Asset Group plan.
-
-    The current Google client exposes only a placeholder adapter for this
-    multi-step Google Ads operation.  Runtime therefore intercepts this write
-    in dry-run mode and blocks it in live mode until a verified adapter is
-    explicitly approved.
-    """
+    """Create a PMax Asset Group through the Google provider adapter."""
 
     def __init__(self, api_client: Optional[GoogleAdsAPIClient] = None):
         self.client = api_client
@@ -88,14 +82,25 @@ class GoogleCreateAssetGroupHandler(ToolHandler):
                 headlines=input_data.get("headlines", []),
                 descriptions=input_data.get("descriptions", []),
                 images=input_data.get("images", []),
+                square_marketing_images=input_data.get("square_marketing_images", []),
                 videos=input_data.get("videos", []),
                 asset_group_type=input_data.get("asset_group_type", "PERFORMANCE_MAX"),
                 final_urls=input_data.get("final_urls"),
                 long_headlines=input_data.get("long_headlines"),
                 logos=input_data.get("logos"),
+                business_names=input_data.get("business_names"),
                 final_mobile_urls=input_data.get("final_mobile_urls"),
                 status=input_data.get("status", "PAUSED"),
+                live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
             )
+            if isinstance(asset_group_id, dict) and asset_group_id.get("mode") == "live":
+                return ToolResult.ok({
+                    "asset_group_id": asset_group_id.get("asset_group_id"),
+                    "asset_group_resource_name": asset_group_id.get("asset_group_resource_name"),
+                    "name": input_data.get("name"),
+                    "status": asset_group_id.get("status", "PAUSED"),
+                    "execution_status": "executed",
+                })
             return ToolResult.ok({
                 "asset_group_id": asset_group_id.get("asset_group_resource_name")
                 if isinstance(asset_group_id, dict) else asset_group_id,

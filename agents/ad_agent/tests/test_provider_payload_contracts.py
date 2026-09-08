@@ -1828,6 +1828,9 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
         descriptions=[{"text": "Description one"}, {"text": "Description two"}],
         long_headlines=[{"text": "A longer headline"}],
         images=[{"asset_id": "88"}],
+        square_marketing_images=[{"asset_id": "89"}],
+        logos=[{"asset_id": "90"}],
+        business_names=[{"text": "Example Shop"}],
         videos=[{"resource_name": "customers/123/assets/99"}],
         final_urls=["https://example.test/landing"],
     )
@@ -1842,7 +1845,6 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
         "resourceName": "customers/123/assetGroups/-1",
         "campaign": "customers/123/campaigns/42",
         "name": "Summer PMax",
-        "assetGroupType": "PERFORMANCE_MAX",
         "status": "PAUSED",
         "finalUrls": ["https://example.test/landing"],
     }
@@ -1857,7 +1859,8 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
         if operation["resource"] == "assetGroupAssets"
     ]
     assert {link["fieldType"] for link in links} == {
-        "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "MARKETING_IMAGE", "YOUTUBE_VIDEO",
+        "HEADLINE", "LONG_HEADLINE", "DESCRIPTION", "MARKETING_IMAGE",
+        "SQUARE_MARKETING_IMAGE", "LOGO", "BUSINESS_NAME", "YOUTUBE_VIDEO",
     }
     assert {link["asset"] for link in links if link["fieldType"] == "MARKETING_IMAGE"} == {
         "customers/123/assets/88"
@@ -1868,10 +1871,11 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
         for definition, _handler in create_google_capability().register_tools()
     }
     for name in ("google_create_pmax_asset_group", "google_create_asset_group"):
-        assert definitions[name].live_support is False
+        assert definitions[name].live_support is True
         assert definitions[name].input_schema.required == [
             "campaign_id", "name", "asset_group_type", "final_urls",
-            "headlines", "long_headlines", "descriptions",
+            "headlines", "long_headlines", "descriptions", "images",
+            "square_marketing_images", "logos", "business_names",
         ]
 
 
@@ -1990,12 +1994,186 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     }
     app_group = definitions["google_create_app_ad_group"]
     app_ad = definitions["google_create_app_ad"]
-    assert app_group.live_support is False
-    assert app_group.input_schema.properties["type"]["default"] == "SEARCH_STANDARD"
-    assert app_ad.live_support is False
+    assert app_group.live_support is True
+    assert app_group.input_schema.provider_required == []
+    assert "type" not in app_group.input_schema.properties
+    assert app_ad.live_support is True
     assert app_ad.input_schema.required == [
         "ad_group_id", "name", "headlines", "descriptions"
     ]
+
+
+def test_google_pmax_live_chain_uses_one_atomic_customer_mutate():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def fake_mutate(operations):
+        calls.append(operations)
+        assert operations[0]["assetOperation"]["create"]["resourceName"] == (
+            "customers/123/assets/-2"
+        )
+        assert operations[-1]["assetGroupAssetOperation"]["create"]["assetGroup"] == (
+            "customers/123/assetGroups/-1"
+        )
+        return {"data": {"mutateOperationResponses": [
+            {"assetResult": {"resourceName": "customers/123/assets/101"}},
+            {"assetResult": {"resourceName": "customers/123/assets/102"}},
+            {"assetResult": {"resourceName": "customers/123/assets/103"}},
+            {"assetResult": {"resourceName": "customers/123/assets/104"}},
+            {"assetResult": {"resourceName": "customers/123/assets/105"}},
+            {"assetResult": {"resourceName": "customers/123/assets/106"}},
+            {"assetResult": {"resourceName": "customers/123/assets/107"}},
+            {"assetGroupResult": {
+                "resourceName": "customers/123/assetGroups/200"
+            }},
+            *[
+                {"assetGroupAssetResult": {
+                    "resourceName": f"customers/123/assetGroupAssets/200~{index}~HEADLINE"
+                }}
+                for index in range(1, 11)
+            ],
+        ]}}
+
+    client._mutate_google_operations = fake_mutate
+    result = client.create_pmax_asset_group(
+        "42", "Live PMax", [
+            {"text": "Headline one"}, {"text": "Headline two"},
+            {"text": "Headline three"},
+        ],
+        descriptions=[{"text": "Description one"}, {"text": "Description two"}],
+        long_headlines=[{"text": "Long headline"}],
+        images=[{"resource_name": "customers/123/assets/88"}],
+        square_marketing_images=[{"resource_name": "customers/123/assets/89"}],
+        logos=[{"resource_name": "customers/123/assets/90"}],
+        business_names=[{"text": "Example Shop"}],
+        final_urls=["https://example.test/landing"],
+        status="PAUSED", live=True,
+    )
+
+    assert result["mode"] == "live"
+    assert result["execution_status"] == "executed"
+    assert result["asset_group_resource_name"] == "customers/123/assetGroups/200"
+    assert result["asset_group_asset_resource_names"] == [
+        f"customers/123/assetGroupAssets/200~{index}~HEADLINE"
+        for index in range(1, 11)
+    ]
+    assert len(calls) == 1
+    operations = calls[0]
+    assert len(operations) == 18
+    group_operation = next(
+        operation["assetGroupOperation"]["create"]
+        for operation in operations
+        if "assetGroupOperation" in operation
+    )
+    assert group_operation["status"] == "PAUSED"
+    assert all(
+        "assetOperation" in operation
+        or "assetGroupOperation" in operation
+        or "assetGroupAssetOperation" in operation
+        for operation in operations
+    )
+
+
+def test_google_customer_mutate_posts_cross_service_operations_and_normalizes_results():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def request_raw(method, url, data=None, **kwargs):
+        calls.append((method, url, data, kwargs))
+        return {
+            "status_code": 200,
+            "data": {
+                "mutateOperationResponses": [
+                    {"assetResult": {"resourceName": "customers/123/assets/9"}},
+                    {"assetGroupResult": {
+                        "resourceName": "customers/123/assetGroups/8"
+                    }},
+                ]
+            },
+        }
+
+    client.request_raw = request_raw
+    response = client._mutate_google_operations([
+        {"assetOperation": {"create": {"resourceName": "customers/123/assets/-2"}}},
+        {"assetGroupOperation": {"create": {
+            "resourceName": "customers/123/assetGroups/-1"
+        }}},
+    ])
+
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/customers/123/googleAds:mutate")
+    assert calls[0][2] == {
+        "mutateOperations": [
+            {"assetOperation": {
+                "create": {"resourceName": "customers/123/assets/-2"}
+            }},
+            {"assetGroupOperation": {"create": {
+                "resourceName": "customers/123/assetGroups/-1"
+            }}},
+        ]
+    }
+    assert calls[0][3]["retry_auth_on_401"] is True
+    assert client._google_mutation_rows(response) == [
+        {"resourceName": "customers/123/assets/9", "result_type": "assetResult"},
+        {
+            "resourceName": "customers/123/assetGroups/8",
+            "result_type": "assetGroupResult",
+        },
+    ]
+
+
+def test_google_app_live_chain_uses_inline_text_and_provider_valid_ad_status():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def fake_mutate(resource, operation):
+        calls.append((resource, operation))
+        if resource == "adGroupAds":
+            resource_name = "customers/123/adGroupAds/77~88"
+        else:
+            raise AssertionError(f"unexpected live resource: {resource}")
+        return {"results": [{"resourceName": resource_name}]}
+
+    client._mutate = fake_mutate
+    result = client.create_app_ad(
+        "77", "Live App Ad",
+        headlines=[{"text": "Install now"}, {"text": "Shop in the app"}],
+        descriptions=[{"text": "Fast checkout"}, {"text": "Download today"}],
+        images=[{"resource_name": "customers/123/assets/88"}],
+        status="PAUSED", live=True,
+    )
+
+    assert result == {
+        "mode": "live", "execution_status": "executed", "live_support": True,
+        "ad_resource_name": "customers/123/adGroupAds/77~88",
+        "ad_id": "88", "ad_group_id": "77", "status": "ENABLED",
+    }
+    assert [resource for resource, _operation in calls] == ["adGroupAds"]
+    ad_create = calls[-1][1]["create"]
+    assert ad_create["status"] == "ENABLED"
+    assert "cpcBidMicros" not in ad_create["ad"]["appAd"]
+    assert ad_create["adGroup"] == "customers/123/adGroups/77"
+    assert ad_create["ad"]["appAd"]["headlines"] == [
+        {"text": "Install now"}, {"text": "Shop in the app"}
+    ]
+
+
+def test_google_app_ad_group_omits_inapplicable_type_and_cpc_fields():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{"resourceName": "customers/123/adGroups/77"}]}
+        }
+    )
+
+    client.create_ad_group(
+        "42", "App group", cpc_bid_micros=None, type=None, status="PAUSED"
+    )
+    payload = operations[0][1]["create"]
+    assert payload["status"] == "PAUSED"
+    assert "type" not in payload
+    assert "cpcBidMicros" not in payload
 
 
 def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
@@ -3759,6 +3937,7 @@ def test_google_creation_options_are_mapped_to_rest_resources():
         start_date="2026-08-28", end_date="2026-09-04",
     )
     campaign = operations[1][1]["create"]
+    assert operations[0][1]["create"]["explicitlyShared"] is False
     assert campaign["startDate"] == "2026-08-28"
     assert campaign["endDate"] == "2026-09-04"
     assert campaign["networkSettings"]["targetGoogleSearch"] is True
@@ -3781,14 +3960,14 @@ def test_google_creation_options_are_mapped_to_rest_resources():
         app_campaign_setting={
             "app_id": "com.example.app",
             "app_store": "GOOGLE_APP_STORE",
-            "bidding_strategy_type": "TARGET_CPA",
+            "bidding_strategy_goal_type": "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
         },
     )
     app_campaign = operations[-1][1]["create"]
     assert app_campaign["appCampaignSetting"] == {
         "appId": "com.example.app",
         "appStore": "GOOGLE_APP_STORE",
-        "biddingStrategyType": "TARGET_CPA",
+        "biddingStrategyGoalType": "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
     }
 
     client.create_campaign(
@@ -3806,6 +3985,9 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     assert ad_group["cpcBidMicros"] == 123456
     assert ad_group["type"] == "SEARCH_STANDARD"
     assert ad_group["targetingSetting"] == {"targetRestrictions": []}
+
+    client.create_ad_group("c1", "Shopping group", type="SHOPPING_PRODUCT")
+    assert operations[-1][1]["create"]["type"] == "SHOPPING_PRODUCT_ADS"
 
     client.create_search_ad(
         "ag1", ["Headline 1", "Headline 2"], ["Description 1", "Description 2"],
@@ -3900,6 +4082,7 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
     valid_video = {
         "customer_id": "123", "campaign_name": "Video", "daily_budget": 10,
         "advertising_channel_type": "VIDEO", "bidding_strategy": "TARGET_CPM",
+        "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "target_cpm_micros": 2500000,
         "video_setting": {"smart_performance": False},
     }
@@ -3916,8 +4099,10 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
         "advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT",
         "app_campaign_setting": {
             "app_id": "com.example.app", "app_store": "GOOGLE_APP_STORE",
+            "bidding_strategy_goal_type": "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
         },
         "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
     }
     assert any("selective_optimization" in error for error in validate_tool_input(
         schema, engagement, include_provider_contract=True,
@@ -3959,6 +4144,21 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
     campaign = operations[1][1]["create"]
     assert campaign["targetCpm"] == {"targetCpmMicros": 2500000}
     assert campaign["networkSettings"] == {"targetContentNetwork": True}
+
+
+def test_google_pmax_campaign_defaults_brand_guidelines_to_disabled():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation)) or {
+            "data": {"results": [{"resourceName": f"customers/g1/{resource}/resource-1"}]}
+        }
+    )
+
+    client.create_campaign(
+        "PMax", "PERFORMANCE_MAX", "MAXIMIZE_CONVERSIONS", 10,
+    )
+    assert operations[1][1]["create"]["brandGuidelinesEnabled"] is False
 
 
 def test_google_keyword_creation_batches_criterion_operations():
@@ -4038,6 +4238,7 @@ def test_google_product_group_creation_builds_listing_group_criterion():
     assert resource == "adGroupCriteria"
     criterion = operations[0]["create"]
     assert criterion["adGroup"] == "customers/g1/adGroups/123"
+    assert criterion["status"] == "PAUSED"
     assert criterion["cpcBidMicros"] == 250000
     assert criterion["listingGroup"] == {
         "type": "SUBDIVISION",
@@ -4045,26 +4246,32 @@ def test_google_product_group_creation_builds_listing_group_criterion():
         "caseValue": {"productType": {"level": "LEVEL1", "value": "Shoes"}},
     }
 
-    client.create_product_group("123", "all_products")
+    client.create_product_group("123", "all_products", cpc_bid_micros=250000)
     assert calls[-1][1][0]["create"]["listingGroup"] == {"type": "UNIT"}
+    assert calls[-1][1][0]["create"]["cpcBidMicros"] == 250000
 
     client.create_product_group(
         "123", "brand", "Acme",
         parent_criterion_id="customers/g1/adGroupCriteria/123~111",
+        cpc_bid_micros=250000,
     )
     assert calls[-1][1][0]["create"]["listingGroup"]["parentAdGroupCriterion"] == (
         "customers/g1/adGroupCriteria/123~111"
     )
 
     client.create_product_group(
-        "123", "bidding_category", "1234", bidding_category_level="LEVEL3"
+        "123", "bidding_category", "1234", bidding_category_level="LEVEL3",
+        cpc_bid_micros=250000,
     )
     assert calls[-1][1][0]["create"]["listingGroup"]["caseValue"] == {
-        "productBiddingCategory": {"level": "LEVEL3", "id": 1234}
+        "productCategory": {"level": "LEVEL3", "categoryId": 1234}
     }
 
     with pytest.raises(ValueError, match="another customer|belong"):
-        client.create_product_group("123", "brand", "Acme", parent_criterion_id="999~1")
+        client.create_product_group(
+            "123", "brand", "Acme", parent_criterion_id="999~1",
+            cpc_bid_micros=250000,
+        )
 
 
 def test_google_product_group_queries_normalize_listing_group_rows():
@@ -4114,7 +4321,7 @@ def test_google_product_group_queries_normalize_listing_group_rows():
             "criterion_id": "790",
             "listing_group": {
                 "type": "UNIT",
-                "case_value": {"product_custom_label": {
+                    "case_value": {"product_custom_attribute": {
                     "index": "INDEX3", "value": "clearance"
                 }},
             },
@@ -4180,9 +4387,14 @@ def test_google_product_group_lifecycle_tools_are_scoped_and_dry_run_only():
     assert definitions["google_update_product_group"].input_schema.properties["updates"][
         "additionalProperties"
     ] is False
+    assert definitions["google_create_product_group"].is_write_tool
+    assert definitions["google_create_product_group"].live_support is True
+    assert definitions["google_create_product_group"].readback_tool == (
+        "google_get_product_group"
+    )
     assert all(
         definitions[name].is_write_tool and definitions[name].live_support is False
-        for name in expected
+        for name in expected - {"google_create_product_group"}
         if definitions[name].is_write_tool
     )
 

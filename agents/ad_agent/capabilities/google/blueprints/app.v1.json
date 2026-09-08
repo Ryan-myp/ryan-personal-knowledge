@@ -11,6 +11,7 @@
   "resources": ["campaign", "ad_group", "ad"],
   "fields": [
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.contains_eu_political_advertising", "tool_ref": "google_create_campaign.contains_eu_political_advertising", "label": "欧盟政治广告声明", "required": true, "source": "enum", "options": ["DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING", "CONTAINS_EU_POLITICAL_ADVERTISING"]},
     {"path": "campaign.campaign_type", "tool_ref": "google_create_campaign.campaign_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["APP"], "presentation": "derived_readonly"},
     {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "Google API 渠道类型（自动匹配）", "required": true, "source": "enum", "options": ["MULTI_CHANNEL"], "presentation": "derived_readonly"},
     {"path": "campaign.advertising_channel_sub_type", "tool_ref": "google_create_campaign.advertising_channel_sub_type", "label": "App Campaign 类型", "required": true, "source": "enum", "options": ["APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT"], "option_labels": {"APP_CAMPAIGN": "应用安装", "APP_CAMPAIGN_FOR_ENGAGEMENT": "应用互动"}},
@@ -20,7 +21,6 @@
     {"path": "campaign.target_roas", "tool_ref": "google_create_campaign.target_roas", "label": "目标 ROAS", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}},
     {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_group.name", "tool_ref": "google_create_app_ad_group.name", "label": "广告组名称", "required": true},
-    {"path": "ad_group.type", "tool_ref": "google_create_app_ad_group.type", "label": "广告组类型（自动匹配）", "required": true, "source": "enum", "options": ["SEARCH_STANDARD"], "presentation": "derived_readonly"},
     {"path": "ad.name", "tool_ref": "google_create_app_ad.name", "label": "广告名称", "required": true},
     {"path": "ad.headlines", "tool_ref": "google_create_app_ad.headlines", "label": "标题素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
     {"path": "ad.descriptions", "tool_ref": "google_create_app_ad.descriptions", "label": "描述素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},

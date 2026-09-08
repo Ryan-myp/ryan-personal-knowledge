@@ -609,7 +609,10 @@ def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
     assert "product_type_1" in product_group.input_schema.properties["product_group_type"]["enum"]
     assert validate_tool_input(
         product_group.input_schema,
-        {"ad_group_id": "123", "product_group_type": "brand", "value": "Acme"},
+        {
+            "ad_group_id": "123", "product_group_type": "brand", "value": "Acme",
+            "cpc_bid_micros": 250000,
+        },
         include_provider_contract=True,
     ) == []
     assert validate_tool_input(
