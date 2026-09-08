@@ -81,9 +81,10 @@ from .security import RuntimeSecurity
 from .tool_executor import ToolExecutor
 from .outbox import OutboxConsumer, OutboxPublisher
 from .task_executor import TaskExecutionContext, TaskExecutor
+from .scheduler import SchedulerService, next_run_at, validate_timezone, CronExpression
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
-from ..persistence.models import ToolCallRecord, ExecutionRunRecord
+from ..persistence.models import ToolCallRecord, ExecutionRunRecord, ScheduledTaskRecord, ScheduledTaskRunRecord
 from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
@@ -233,6 +234,10 @@ class AgentRuntime:
                     (PluginKind.FEATURE.value,),
                     description=f"Runtime feature {feature_name}",
                 )
+            register_intents = getattr(self.intent_parser, "register_intents", None)
+            feature_intents = getattr(feature, "INTENTS", ())
+            if callable(register_intents) and feature_intents:
+                register_intents(feature_intents)
         self.response_renderer: ResponseRenderer = (
             response_renderer or discover_response_renderer()
         )
@@ -437,6 +442,7 @@ class AgentRuntime:
         self.security = RuntimeSecurity(self)
         self.tool_executor = ToolExecutor(self.services)
         self.task_executor: Optional[TaskExecutor] = None
+        self.scheduler: Optional[SchedulerService] = None
         if persistence_store:
             self.task_executor = TaskExecutor(
                 persistence_store,
@@ -451,6 +457,10 @@ class AgentRuntime:
             # policy, account, approval, idempotency or audit gates.
             self.task_executor.register_handler("agent.turn", self._execute_agent_task)
             self.task_executor.start()
+            self.scheduler = SchedulerService(
+                persistence_store, self._submit_scheduled_task,
+            )
+            self.scheduler.start()
         if read_only_mode:
             logger.info("🔒 只读模式已启用，仅允许查询操作")
 
@@ -602,6 +612,9 @@ class AgentRuntime:
         consumer = self.outbox_consumer
         if consumer is not None:
             consumer.stop()
+        scheduler = self.scheduler
+        if scheduler is not None:
+            scheduler.stop(wait=wait)
         executor = self.task_executor
         if executor is not None:
             executor.shutdown(wait=wait)
@@ -3249,6 +3262,144 @@ class AgentRuntime:
         )
         return record.to_dict(), created
 
+    # -- Recurring schedule control plane ------------------------------
+
+    def create_schedule(
+        self, *, name: str, prompt: str, cron_expression: str,
+        timezone: str = "Asia/Shanghai", session_id: Optional[str] = None,
+        account_id: Optional[str] = None, platform_params: Optional[dict] = None,
+        principal: Optional[RequestPrincipal] = None,
+    ) -> dict[str, Any]:
+        store = self._persistence_store
+        if store is None or not callable(getattr(store, "create_scheduled_task", None)):
+            raise RuntimeError("scheduled task persistence is not configured")
+        expression = " ".join(str(cron_expression or "").strip().split())
+        CronExpression(expression)
+        timezone = validate_timezone(timezone)
+        prompt = str(prompt or "").strip()
+        name = str(name or prompt[:40] or "Scheduled Agent task").strip()[:120]
+        if not prompt:
+            raise ValueError("scheduled task prompt is required")
+        if len(prompt) > self.max_user_input_chars:
+            raise ValueError("scheduled task prompt exceeds input limit")
+        safe_prompt = self._redact_for_persistence(prompt)
+        if safe_prompt != prompt:
+            raise ValueError("定时任务指令不能包含凭证或认证材料")
+        safe_params = platform_params if platform_params is not None else {}
+        protected = self.security.validate_input_redline(safe_params)
+        if protected:
+            raise ValueError("定时任务包含禁止持久化的凭证/账户配置字段：" + ", ".join(protected))
+        effective_principal = principal or RequestPrincipal(
+            user_id="anonymous", tenant_id="default", permissions=self._granted_permissions,
+        )
+        # Scheduled execution never stores or reuses a live confirmation. A
+        # future run starts in the normal dry-run/approval boundary.
+        safe_payload = self._redact_for_persistence({
+            "user_input": safe_prompt,
+            "session_id": session_id,
+            "account_id": account_id,
+            "platform_params": safe_params,
+            "execution_mode": "dry_run",
+            "confirmed": False,
+            "confirmation_payload": None,
+        })
+        now = datetime.now().isoformat()
+        record = ScheduledTaskRecord(
+            schedule_id=str(uuid.uuid4()), tenant_id=str(effective_principal.tenant_id),
+            user_id=str(effective_principal.user_id), name=name, prompt=safe_prompt,
+            cron_expression=expression, timezone=timezone, status="active",
+            next_run_at=next_run_at(expression, timezone), payload=safe_payload,
+            metadata={
+                "principal": effective_principal.to_safe_dict(),
+                "account_id_present": bool(account_id),
+                "execution_mode": "dry_run",
+                "created_via": "runtime",
+            }, created_at=now, updated_at=now,
+        )
+        store.create_scheduled_task(record)
+        return record.to_dict()
+
+    def list_schedules(
+        self, *, user_id: Optional[str] = None, tenant_id: Optional[str] = None,
+        statuses: Optional[list[str]] = None, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        if self._persistence_store is None:
+            return []
+        records = self._persistence_store.list_scheduled_tasks(
+            tenant_id=tenant_id, user_id=user_id, statuses=statuses, limit=limit,
+        )
+        return [record.to_dict() for record in records]
+
+    def get_schedule(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
+        if self._persistence_store is None:
+            return None
+        record = self._persistence_store.get_scheduled_task(schedule_id, tenant_id=tenant_id, user_id=user_id)
+        return record.to_dict() if record else None
+
+    def pause_schedule(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
+        record = self.get_schedule(schedule_id, user_id=user_id, tenant_id=tenant_id)
+        if not record:
+            return None
+        updated = self._persistence_store.pause_scheduled_task(schedule_id)
+        return updated.to_dict() if updated else None
+
+    def resume_schedule(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
+        record = self.get_schedule(schedule_id, user_id=user_id, tenant_id=tenant_id)
+        if not record:
+            return None
+        updated = self._persistence_store.resume_scheduled_task(
+            schedule_id, next_run_at(record["cron_expression"], record["timezone"]),
+        )
+        return updated.to_dict() if updated else None
+
+    def delete_schedule(self, schedule_id: str, *, user_id: str, tenant_id: str) -> bool:
+        if not self.get_schedule(schedule_id, user_id=user_id, tenant_id=tenant_id):
+            return False
+        return bool(self._persistence_store.delete_scheduled_task(schedule_id))
+
+    def list_schedule_runs(
+        self, *, schedule_id: Optional[str] = None, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None, statuses: Optional[list[str]] = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        if self._persistence_store is None:
+            return []
+        return [
+            record.to_dict() for record in self._persistence_store.list_scheduled_task_runs(
+                schedule_id=schedule_id, tenant_id=tenant_id, user_id=user_id,
+                statuses=statuses, limit=limit,
+            )
+        ]
+
+    def get_schedule_metrics(self, *, user_id: Optional[str] = None, tenant_id: Optional[str] = None) -> dict[str, Any]:
+        if self._persistence_store is None:
+            return {}
+        return self._persistence_store.get_scheduled_task_metrics(tenant_id=tenant_id, user_id=user_id)
+
+    def run_schedule_now(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
+        record = self._persistence_store.get_scheduled_task(schedule_id, tenant_id=tenant_id, user_id=user_id)
+        if record is None:
+            return None
+        claims = record.metadata.get("principal") if isinstance(record.metadata, dict) else None
+        principal = RequestPrincipal.from_claims(claims) if isinstance(claims, dict) else RequestPrincipal(user_id=user_id, tenant_id=tenant_id, permissions=self._granted_permissions)
+        payload = dict(record.payload or {})
+        task, _created = self.submit_task(
+            "agent.turn", payload, principal=principal,
+            idempotency_key=f"schedule:{schedule_id}:manual:{uuid.uuid4().hex}",
+        )
+        return task
+
+    def _submit_scheduled_task(
+        self, schedule: ScheduledTaskRecord, occurrence: ScheduledTaskRunRecord,
+    ) -> dict[str, Any]:
+        claims = schedule.metadata.get("principal") if isinstance(schedule.metadata, dict) else None
+        principal = RequestPrincipal.from_claims(claims) if isinstance(claims, dict) else RequestPrincipal(user_id=schedule.user_id, tenant_id=schedule.tenant_id, permissions=self._granted_permissions)
+        task, _created = self.submit_task(
+            "agent.turn", dict(schedule.payload or {}), principal=principal,
+            idempotency_key=f"schedule:{schedule.schedule_id}:{occurrence.scheduled_for}",
+        )
+        return task
+
     def _execute_agent_task(self, context: TaskExecutionContext) -> dict[str, Any]:
         """Re-enter Runtime; this handler never resolves or calls a Provider."""
         if context.is_cancelled():
@@ -3320,6 +3471,7 @@ class AgentRuntime:
             "platform_count": len(self.registry.list_all_platforms()),
             "task_executor": task_executor.metrics() if task_executor else {"state": "disabled"},
             "outbox_consumer": outbox_consumer.metrics() if outbox_consumer else {"state": "disabled"},
+            "scheduler": self.scheduler.metrics() if self.scheduler else {"state": "disabled"},
         }
         return snapshot
 
@@ -3710,6 +3862,56 @@ class AgentRuntime:
                 "needs_confirmation": False,
                 "confirmation_payload": None,
                 "policy_errors": [error],
+            }
+        # Runtime control-plane Features (currently scheduling) are handled
+        # through the same parsed-intent boundary but do not enter provider
+        # Tool routing. Their eventual work is submitted back as agent.turn.
+        control_feature = self._feature_for_intent(intent)
+        control_handler = getattr(control_feature, "handle_turn", None)
+        if callable(control_handler):
+            feature_principal = RequestPrincipal(
+                user_id=str(user_id), tenant_id=str(tenant_id or "default"),
+                permissions=frozenset(effective_permissions),
+                account_scope=account_scope or {},
+            )
+            try:
+                control_result = control_handler(
+                    self, intent, session_id=session_id, user_id=str(user_id),
+                    tenant_id=str(tenant_id or "default"), account_id=account_id,
+                    platform_params=platform_params, principal=feature_principal,
+                )
+            except Exception as exc:
+                logger.exception("Runtime control feature failed")
+                control_result = {"success": False, "reply": self._redact_for_persistence(str(exc))}
+            reply = str(control_result.get("reply") or "已处理。")
+            success = bool(control_result.get("success"))
+            needs_input = bool(control_result.get("needs_input"))
+            trace.stage_status(
+                "control_feature", "系统能力", "succeeded" if success or needs_input else "failed",
+                subtitle="定时任务调度", safe_metadata={"feature": getattr(control_feature, "feature_name", "")},
+                safe_output=self._redact_for_persistence({
+                    "schedule": control_result.get("schedule"),
+                    "schedule_count": len(control_result.get("schedules", []) or []),
+                }),
+            )
+            trace.reply()
+            trace.done("awaiting_confirmation" if needs_input else "succeeded" if success else "failed")
+            self.persist_conversation_turn(session, turn_id, safe_user_input, reply, execution_trace=trace)
+            if durable_run:
+                try:
+                    self._session_manager.update_execution_run(
+                        run_id, status="awaiting_confirmation" if needs_input else "succeeded" if success else "failed",
+                    )
+                except Exception:
+                    logger.debug("failed to finalize control-plane execution run", exc_info=True)
+            return {
+                "session_id": session_id, "run_id": run_id, "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(), "intent": intent.to_dict(),
+                "tool_plan": {}, "execution_plan": {}, "tool_selection": None,
+                "results": [{"success": success, **{key: value for key, value in control_result.items() if key != "reply"}}],
+                "reply": reply, "needs_confirmation": needs_input,
+                "needs_input": needs_input, "confirmation_payload": None,
+                "workflow_id": None, "ui": {"type": "schedule", **control_result},
             }
         # Refresh advisory context with the parsed intent.  This changes only
         # the model-facing explanation/context; IntentRouter remains the sole

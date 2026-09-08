@@ -405,6 +405,18 @@ class TaskSubmitRequest(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, max_length=200)
 
 
+class ScheduleCreateRequest(BaseModel):
+    """Recurring, data-only Agent instruction."""
+
+    name: str = Field(min_length=1, max_length=120)
+    prompt: str = Field(min_length=1, max_length=12_000)
+    cron_expression: str = Field(min_length=9, max_length=120)
+    timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=80)
+    session_id: Optional[str] = Field(default=None, max_length=200)
+    account_id: Optional[str] = Field(default=None, max_length=200)
+    platform_params: Optional[dict] = None
+
+
 class MemoryWriteRequest(BaseModel):
     """Explicit user memory; identity and tenant come from the principal."""
 
@@ -951,6 +963,149 @@ async def cancel_task(
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
     return task
+
+
+@app.post("/schedules", tags=["schedules"])
+async def create_schedule(
+    body: ScheduleCreateRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Create a recurring Agent instruction; execution remains dry-run gated."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    if not runtime or not callable(getattr(runtime, "create_schedule", None)):
+        raise HTTPException(status_code=503, detail="定时任务服务未初始化")
+    try:
+        schedule = await run_in_threadpool(
+            runtime.create_schedule,
+            name=body.name, prompt=body.prompt,
+            cron_expression=body.cron_expression, timezone=body.timezone,
+            session_id=body.session_id, account_id=body.account_id,
+            platform_params=body.platform_params, principal=principal,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"schedule": schedule}
+
+
+@app.get("/schedules", tags=["schedules"])
+async def list_schedules(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    status: Optional[str] = Query(None, max_length=200),
+    limit: int = Query(100, ge=1, le=500),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    statuses = [item.strip() for item in status.split(",") if item.strip()] if status else None
+    schedules = await run_in_threadpool(
+        runtime.list_schedules, user_id=principal.user_id,
+        tenant_id=principal.tenant_id, statuses=statuses, limit=limit,
+    )
+    return {"schedules": schedules}
+
+
+@app.get("/schedules/{schedule_id}", tags=["schedules"])
+async def get_schedule(
+    schedule_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    schedule = await run_in_threadpool(
+        runtime.get_schedule, schedule_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id,
+    ) if runtime else None
+    if not schedule:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    runs = await run_in_threadpool(
+        runtime.list_schedule_runs, schedule_id=schedule_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id, limit=50,
+    )
+    return {"schedule": schedule, "runs": runs}
+
+
+@app.get("/schedules/{schedule_id}/runs", tags=["schedules"])
+async def list_schedule_runs(
+    schedule_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    schedule = await run_in_threadpool(runtime.get_schedule, schedule_id, user_id=principal.user_id, tenant_id=principal.tenant_id)
+    if not schedule:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    runs = await run_in_threadpool(
+        runtime.list_schedule_runs, schedule_id=schedule_id,
+        user_id=principal.user_id, tenant_id=principal.tenant_id, limit=limit,
+    )
+    return {"runs": runs}
+
+
+@app.post("/schedules/{schedule_id}/pause", tags=["schedules"])
+async def pause_schedule(
+    schedule_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    schedule = await run_in_threadpool(runtime.pause_schedule, schedule_id, user_id=principal.user_id, tenant_id=principal.tenant_id) if runtime else None
+    if not schedule:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    return {"schedule": schedule}
+
+
+@app.post("/schedules/{schedule_id}/resume", tags=["schedules"])
+async def resume_schedule(
+    schedule_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    schedule = await run_in_threadpool(runtime.resume_schedule, schedule_id, user_id=principal.user_id, tenant_id=principal.tenant_id) if runtime else None
+    if not schedule:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    return {"schedule": schedule}
+
+
+@app.post("/schedules/{schedule_id}/run-now", tags=["schedules"])
+async def run_schedule_now(
+    schedule_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    task = await run_in_threadpool(runtime.run_schedule_now, schedule_id, user_id=principal.user_id, tenant_id=principal.tenant_id) if runtime else None
+    if not task:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    return {"task": task}
+
+
+@app.delete("/schedules/{schedule_id}", tags=["schedules"])
+async def delete_schedule(
+    schedule_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    deleted = await run_in_threadpool(runtime.delete_schedule, schedule_id, user_id=principal.user_id, tenant_id=principal.tenant_id) if runtime else False
+    if not deleted:
+        raise HTTPException(status_code=404, detail="schedule not found")
+    return {"deleted": True}
 
 
 @app.get("/knowledge/search", tags=["knowledge"])

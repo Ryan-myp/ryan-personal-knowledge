@@ -22,7 +22,7 @@ from typing import Any, Optional, List
 from .models import (
     CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
     ExecutionRunRecord, TaskRecord, ToolCallRecord,
-    OutboxEvent,
+    OutboxEvent, ScheduledTaskRecord, ScheduledTaskRunRecord,
 )
 from .errors import PersistenceConflictError
 from ..core.memory import MemoryRecord
@@ -76,7 +76,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 9
+    SCHEMA_VERSION = 10
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -327,6 +327,55 @@ class AdAgentStore:
     CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(tenant_id, user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at ASC);
 
+    CREATE TABLE IF NOT EXISTS scheduled_tasks (
+        schedule_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        cron_expression TEXT NOT NULL,
+        timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+        status TEXT NOT NULL DEFAULT 'active',
+        next_run_at TEXT,
+        last_run_at TEXT,
+        last_run_status TEXT,
+        last_task_id TEXT,
+        run_count INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        payload TEXT NOT NULL DEFAULT '{}',
+        metadata TEXT NOT NULL DEFAULT '{}',
+        lease_owner TEXT,
+        lease_expires_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+        ON scheduled_tasks(status, next_run_at, lease_expires_at);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_scope
+        ON scheduled_tasks(tenant_id, user_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+        schedule_run_id TEXT PRIMARY KEY,
+        schedule_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        scheduled_for TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        task_id TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        error TEXT,
+        result TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (schedule_id, scheduled_for),
+        FOREIGN KEY (schedule_id) REFERENCES scheduled_tasks(schedule_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_scope
+        ON scheduled_task_runs(tenant_id, user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
+        ON scheduled_task_runs(status, created_at ASC);
+
     CREATE TABLE IF NOT EXISTS execution_runs (
         run_id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -557,6 +606,58 @@ class AdAgentStore:
         elif version == 9:
             cls._add_column_if_missing(conn, "sessions", "lease_owner", "TEXT")
             cls._add_column_if_missing(conn, "sessions", "lease_expires_at", "TEXT")
+        elif version == 10:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS scheduled_tasks (
+                    schedule_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    prompt TEXT NOT NULL,
+                    cron_expression TEXT NOT NULL,
+                    timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    next_run_at TEXT,
+                    last_run_at TEXT,
+                    last_run_status TEXT,
+                    last_task_id TEXT,
+                    run_count INTEGER NOT NULL DEFAULT 0,
+                    success_count INTEGER NOT NULL DEFAULT 0,
+                    failure_count INTEGER NOT NULL DEFAULT 0,
+                    payload TEXT NOT NULL DEFAULT '{}',
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
+                    ON scheduled_tasks(status, next_run_at, lease_expires_at);
+                CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_scope
+                    ON scheduled_tasks(tenant_id, user_id, updated_at DESC);
+                CREATE TABLE IF NOT EXISTS scheduled_task_runs (
+                    schedule_run_id TEXT PRIMARY KEY,
+                    schedule_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    scheduled_for TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'queued',
+                    task_id TEXT,
+                    started_at TEXT,
+                    finished_at TEXT,
+                    error TEXT,
+                    result TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (schedule_id, scheduled_for),
+                    FOREIGN KEY (schedule_id) REFERENCES scheduled_tasks(schedule_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_scope
+                    ON scheduled_task_runs(tenant_id, user_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
+                    ON scheduled_task_runs(status, created_at ASC);
+                """
+            )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -953,6 +1054,9 @@ class AdAgentStore:
             top_tools = sorted(by_tool.values(), key=lambda item: (-item["calls"], item["tool_name"]))[:12]
 
         queued_age = self._monitoring_age_seconds(queued_oldest, now)
+        schedule_metrics = self.get_scheduled_task_metrics(
+            tenant_id=tenant_id, user_id=user_id,
+        )
         alert_count = sum(
             value > 0 for value in (
                 task_statuses.get("recovery_required", 0),
@@ -990,6 +1094,7 @@ class AdAgentStore:
                 "claimed": outbox_statuses.get("claimed", 0),
                 "retrying": outbox_retrying,
             },
+            "schedules": schedule_metrics,
             "tools": {
                 "window_seconds": tool_window,
                 "total": tool_total,
@@ -1199,6 +1304,280 @@ class AdAgentStore:
                 )
             conn.commit()
             return len(rows)
+
+    # -- Recurring Agent schedules ------------------------------------
+
+    @staticmethod
+    def _scheduled_from_row(row: Any) -> Optional[ScheduledTaskRecord]:
+        return ScheduledTaskRecord.from_row(dict(row)) if row else None
+
+    @staticmethod
+    def _scheduled_run_from_row(row: Any) -> Optional[ScheduledTaskRunRecord]:
+        return ScheduledTaskRunRecord.from_row(dict(row)) if row else None
+
+    def create_scheduled_task(self, record: ScheduledTaskRecord) -> ScheduledTaskRecord:
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO scheduled_tasks
+                   (schedule_id, tenant_id, user_id, name, prompt, cron_expression,
+                    timezone, status, next_run_at, last_run_at, last_run_status,
+                    last_task_id, run_count, success_count, failure_count, payload,
+                    metadata, lease_owner, lease_expires_at, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    record.schedule_id, record.tenant_id, record.user_id, record.name,
+                    record.prompt, record.cron_expression, record.timezone, record.status,
+                    record.next_run_at, record.last_run_at, record.last_run_status,
+                    record.last_task_id, record.run_count, record.success_count,
+                    record.failure_count, json.dumps(record.payload or {}, ensure_ascii=False),
+                    json.dumps(record.metadata or {}, ensure_ascii=False), record.lease_owner,
+                    record.lease_expires_at, record.created_at, record.updated_at,
+                ),
+            )
+            conn.commit()
+        return record
+
+    def get_scheduled_task(
+        self, schedule_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[ScheduledTaskRecord]:
+        query = "SELECT * FROM scheduled_tasks WHERE schedule_id = ?"
+        params: list[Any] = [str(schedule_id)]
+        if tenant_id is not None:
+            query += " AND tenant_id = ?"
+            params.append(str(tenant_id))
+        if user_id is not None:
+            query += " AND user_id = ?"
+            params.append(str(user_id))
+        with self._lock:
+            return self._scheduled_from_row(self._get_conn().execute(query, params).fetchone())
+
+    def list_scheduled_tasks(
+        self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+        statuses: Optional[list[str]] = None, limit: int = 100,
+    ) -> list[ScheduledTaskRecord]:
+        query = "SELECT * FROM scheduled_tasks WHERE 1 = 1"
+        params: list[Any] = []
+        if tenant_id is not None:
+            query += " AND tenant_id = ?"; params.append(str(tenant_id))
+        if user_id is not None:
+            query += " AND user_id = ?"; params.append(str(user_id))
+        if statuses:
+            query += " AND status IN (" + ",".join("?" for _ in statuses) + ")"
+            params.extend(str(item) for item in statuses)
+        query += " ORDER BY COALESCE(next_run_at, updated_at) ASC LIMIT ?"
+        params.append(max(1, min(int(limit), 500)))
+        with self._lock:
+            rows = self._get_conn().execute(query, params).fetchall()
+            return [self._scheduled_from_row(row) for row in rows]
+
+    def update_scheduled_task(
+        self, schedule_id: str, *, status: Optional[str] = None,
+        next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,
+        last_run_status: Optional[str] = None, last_task_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        assignments = ["updated_at = ?"]
+        values: list[Any] = [datetime.now(timezone.utc).isoformat()]
+        for column, value in (
+            ("status", status), ("next_run_at", next_run_at),
+            ("last_run_at", last_run_at), ("last_run_status", last_run_status),
+            ("last_task_id", last_task_id),
+        ):
+            if value is not None:
+                assignments.append(f"{column} = ?"); values.append(value)
+        if metadata is not None:
+            assignments.append("metadata = ?"); values.append(json.dumps(metadata or {}, ensure_ascii=False))
+        values.append(str(schedule_id))
+        with self._lock:
+            cursor = self._get_conn().execute(
+                "UPDATE scheduled_tasks SET " + ", ".join(assignments)
+                + " WHERE schedule_id = ?", values,
+            )
+            self._get_conn().commit()
+            return cursor.rowcount > 0
+
+    def advance_scheduled_task(
+        self, schedule_id: str, expected_next_run_at: str, next_run_at: str,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE scheduled_tasks SET next_run_at = ?, lease_owner = NULL,
+                   lease_expires_at = NULL, updated_at = ?
+                   WHERE schedule_id = ? AND next_run_at = ?""",
+                (next_run_at, datetime.now(timezone.utc).isoformat(), str(schedule_id), expected_next_run_at),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def pause_scheduled_task(self, schedule_id: str) -> Optional[ScheduledTaskRecord]:
+        self.update_scheduled_task(schedule_id, status="paused")
+        with self._lock:
+            return self._scheduled_from_row(self._get_conn().execute(
+                "SELECT * FROM scheduled_tasks WHERE schedule_id = ?", (str(schedule_id),)
+            ).fetchone())
+
+    def resume_scheduled_task(self, schedule_id: str, next_run_at: str) -> Optional[ScheduledTaskRecord]:
+        self.update_scheduled_task(schedule_id, status="active", next_run_at=next_run_at)
+        with self._lock:
+            return self._scheduled_from_row(self._get_conn().execute(
+                "SELECT * FROM scheduled_tasks WHERE schedule_id = ?", (str(schedule_id),)
+            ).fetchone())
+
+    def delete_scheduled_task(self, schedule_id: str) -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute("DELETE FROM scheduled_tasks WHERE schedule_id = ?", (str(schedule_id),))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def claim_due_scheduled_tasks(
+        self, now: str, lease_owner: str, lease_seconds: float = 60.0,
+        limit: int = 20,
+    ) -> list[tuple[ScheduledTaskRecord, ScheduledTaskRunRecord]]:
+        if not lease_owner or float(lease_seconds) <= 0:
+            return []
+        now_value = str(now)
+        expires = (datetime.now(timezone.utc) + timedelta(seconds=float(lease_seconds))).isoformat()
+        claimed: list[tuple[ScheduledTaskRecord, ScheduledTaskRunRecord]] = []
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = conn.execute(
+                    """SELECT * FROM scheduled_tasks
+                       WHERE status = 'active' AND next_run_at IS NOT NULL
+                         AND next_run_at <= ?
+                         AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+                       ORDER BY next_run_at ASC LIMIT ?""",
+                    (now_value, now_value, max(1, min(int(limit), 100))),
+                ).fetchall()
+                for row in rows:
+                    schedule = self._scheduled_from_row(row)
+                    scheduled_for = str(schedule.next_run_at)
+                    conn.execute(
+                        """UPDATE scheduled_tasks SET lease_owner = ?, lease_expires_at = ?, updated_at = ?
+                           WHERE schedule_id = ?""",
+                        (str(lease_owner), expires, now_value, schedule.schedule_id),
+                    )
+                    run_row = conn.execute(
+                        """SELECT * FROM scheduled_task_runs
+                           WHERE schedule_id = ? AND scheduled_for = ?""",
+                        (schedule.schedule_id, scheduled_for),
+                    ).fetchone()
+                    if not run_row:
+                        run = ScheduledTaskRunRecord(
+                            schedule_run_id=str(uuid.uuid4()), schedule_id=schedule.schedule_id,
+                            tenant_id=schedule.tenant_id, user_id=schedule.user_id,
+                            scheduled_for=scheduled_for, created_at=now_value,
+                        )
+                        conn.execute(
+                            """INSERT INTO scheduled_task_runs
+                               (schedule_run_id, schedule_id, tenant_id, user_id, scheduled_for,
+                                status, task_id, started_at, finished_at, error, result, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (run.schedule_run_id, run.schedule_id, run.tenant_id, run.user_id,
+                             run.scheduled_for, run.status, run.task_id, run.started_at,
+                             run.finished_at, run.error, None, run.created_at),
+                        )
+                    else:
+                        run = self._scheduled_run_from_row(run_row)
+                    claimed.append((schedule, run))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return claimed
+
+    def attach_scheduled_task_run(self, schedule_run_id: str, task_id: str, status: str = "queued") -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "UPDATE scheduled_task_runs SET task_id = ?, status = ?, started_at = ?, error = NULL "
+                "WHERE schedule_run_id = ? AND status IN ('queued', 'running')",
+                (str(task_id), str(status), datetime.now(timezone.utc).isoformat(), str(schedule_run_id)),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def update_scheduled_task_run(
+        self, schedule_run_id: str, status: str, *, task_id: Optional[str] = None,
+        started_at: Optional[str] = None, finished_at: Optional[str] = None,
+        error: Optional[str] = None, result: Optional[dict] = None,
+    ) -> bool:
+        status = str(status)
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute("SELECT * FROM scheduled_task_runs WHERE schedule_run_id = ?", (str(schedule_run_id),)).fetchone()
+            if not row:
+                return False
+            current = str(row["status"])
+            if current in {"succeeded", "failed", "cancelled"} and status != current:
+                return False
+            assignments = ["status = ?"]
+            values: list[Any] = [status]
+            for column, value in (("task_id", task_id), ("started_at", started_at), ("finished_at", finished_at), ("error", error)):
+                if value is not None:
+                    assignments.append(f"{column} = ?"); values.append(value)
+            if result is not None:
+                assignments.append("result = ?"); values.append(json.dumps(result, ensure_ascii=False))
+            values.append(str(schedule_run_id))
+            conn.execute("UPDATE scheduled_task_runs SET " + ", ".join(assignments) + " WHERE schedule_run_id = ?", values)
+            if status in {"succeeded", "failed", "cancelled"} and current not in {"succeeded", "failed", "cancelled"}:
+                schedule_id = str(row["schedule_id"])
+                conn.execute(
+                    """UPDATE scheduled_tasks SET run_count = run_count + 1,
+                       success_count = success_count + ?, failure_count = failure_count + ?,
+                       last_run_at = ?, last_run_status = ?, last_task_id = COALESCE(?, last_task_id),
+                       lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+                       WHERE schedule_id = ?""",
+                    (int(status == "succeeded"), int(status != "succeeded"),
+                     finished_at or datetime.now(timezone.utc).isoformat(), status,
+                     task_id or row["task_id"], datetime.now(timezone.utc).isoformat(), schedule_id),
+                )
+            conn.commit()
+            return True
+
+    def list_scheduled_task_runs(
+        self, schedule_id: Optional[str] = None, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None, statuses: Optional[list[str]] = None,
+        limit: int = 100,
+    ) -> list[ScheduledTaskRunRecord]:
+        query = "SELECT * FROM scheduled_task_runs WHERE 1 = 1"
+        params: list[Any] = []
+        for column, value in (("schedule_id", schedule_id), ("tenant_id", tenant_id), ("user_id", user_id)):
+            if value is not None:
+                query += f" AND {column} = ?"; params.append(str(value))
+        if statuses:
+            query += " AND status IN (" + ",".join("?" for _ in statuses) + ")"
+            params.extend(str(item) for item in statuses)
+        query += " ORDER BY scheduled_for DESC LIMIT ?"; params.append(max(1, min(int(limit), 500)))
+        with self._lock:
+            return [self._scheduled_run_from_row(row) for row in self._get_conn().execute(query, params).fetchall()]
+
+    def get_scheduled_task_metrics(
+        self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        def scoped(table: str) -> tuple[str, list[Any]]:
+            clauses, params = [], []
+            for column, value in (("tenant_id", tenant_id), ("user_id", user_id)):
+                if value is not None:
+                    clauses.append(f"{column} = ?"); params.append(str(value))
+            return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
+        with self._lock:
+            conn = self._get_conn()
+            task_where, task_params = scoped("scheduled_tasks")
+            run_where, run_params = scoped("scheduled_task_runs")
+            task_rows = conn.execute("SELECT status, COUNT(*) AS count FROM scheduled_tasks" + task_where + " GROUP BY status", task_params).fetchall()
+            run_rows = conn.execute("SELECT status, COUNT(*) AS count FROM scheduled_task_runs" + run_where + " GROUP BY status", run_params).fetchall()
+            next_row = conn.execute("SELECT MIN(next_run_at) AS next_run_at FROM scheduled_tasks" + task_where + (" AND status = 'active'" if task_where else " WHERE status = 'active'"), task_params).fetchone()
+            return {
+                "tasks_by_status": {str(row["status"]): int(row["count"] or 0) for row in task_rows},
+                "runs_by_status": {str(row["status"]): int(row["count"] or 0) for row in run_rows},
+                "next_run_at": next_row["next_run_at"] if next_row else None,
+            }
 
     # -- Write idempotency -------------------------------------------------
 

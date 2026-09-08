@@ -775,6 +775,13 @@ class ParsedIntent:
     duration_days: Optional[int] = None
     date_range: Optional[Any] = None  # 报表查询日期范围
     creative_materials: list[dict] = field(default_factory=list)
+    # Runtime control-plane extensions may publish their own structured
+    # fields. Scheduling is generic and does not select a provider here.
+    schedule_name: Optional[str] = None
+    schedule_expression: Optional[str] = None
+    schedule_timezone: Optional[str] = None
+    schedule_prompt: Optional[str] = None
+    schedule_id: Optional[str] = None
     # 各平台需要的参数
     platform_params: dict[str, dict] = field(default_factory=dict)
     # 格式：{"meta": {"campaign_name": "...", ...}, "google": {...}}
@@ -789,6 +796,11 @@ class ParsedIntent:
             "duration_days": self.duration_days,
             "date_range": self.date_range,
             "creative_materials": self.creative_materials,
+            "schedule_name": self.schedule_name,
+            "schedule_expression": self.schedule_expression,
+            "schedule_timezone": self.schedule_timezone,
+            "schedule_prompt": self.schedule_prompt,
+            "schedule_id": self.schedule_id,
             "platform_params": self.platform_params,
         }
 

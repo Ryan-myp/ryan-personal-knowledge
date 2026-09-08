@@ -262,6 +262,49 @@ class PersistenceBackend(Protocol):
     def cancel_task(self, task_id: str) -> Optional[Any]: ...
     def recover_stale_tasks(self, stale_after_seconds: float = 300.0) -> int: ...
 
+    # -- Recurring Agent schedules ------------------------------------
+    def create_scheduled_task(self, record: Any) -> Any: ...
+    def get_scheduled_task(
+        self, schedule_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def list_scheduled_tasks(
+        self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+        statuses: Optional[list[str]] = None, limit: int = 100,
+    ) -> list[Any]: ...
+    def update_scheduled_task(
+        self, schedule_id: str, *, status: Optional[str] = None,
+        next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,
+        last_run_status: Optional[str] = None, last_task_id: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool: ...
+    def pause_scheduled_task(self, schedule_id: str) -> Optional[Any]: ...
+    def resume_scheduled_task(self, schedule_id: str, next_run_at: str) -> Optional[Any]: ...
+    def delete_scheduled_task(self, schedule_id: str) -> bool: ...
+    def claim_due_scheduled_tasks(
+        self, now: str, lease_owner: str, lease_seconds: float = 60.0,
+        limit: int = 20,
+    ) -> list[tuple[Any, Any]]: ...
+    def advance_scheduled_task(
+        self, schedule_id: str, expected_next_run_at: str, next_run_at: str,
+    ) -> bool: ...
+    def attach_scheduled_task_run(
+        self, schedule_run_id: str, task_id: str, status: str = "queued",
+    ) -> bool: ...
+    def update_scheduled_task_run(
+        self, schedule_run_id: str, status: str, *, task_id: Optional[str] = None,
+        started_at: Optional[str] = None, finished_at: Optional[str] = None,
+        error: Optional[str] = None, result: Optional[dict] = None,
+    ) -> bool: ...
+    def list_scheduled_task_runs(
+        self, schedule_id: Optional[str] = None, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None, statuses: Optional[list[str]] = None,
+        limit: int = 100,
+    ) -> list[Any]: ...
+    def get_scheduled_task_metrics(
+        self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+    ) -> dict[str, Any]: ...
+
     # -- Operational monitoring ---------------------------------------
     # This is a read-only aggregate seam.  It deliberately returns counts
     # and bounded summaries rather than raw payloads or credentials, so the

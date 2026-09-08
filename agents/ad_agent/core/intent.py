@@ -55,6 +55,11 @@ class LLMIntentParser(IntentParser):
   "creative_materials": [
     {{"type": "image", "description": "海报图"}}
   ],
+  "schedule_name": "可选的定时任务名称",
+  "schedule_expression": "五段 cron，如 0 9 * * *",
+  "schedule_timezone": "Asia/Shanghai",
+  "schedule_prompt": "到期后重新交给 Agent 执行的自然语言指令",
+  "schedule_id": "管理已有定时任务时填写",
   "platform_params": {{
     "<platform>": {{"<provider_field>": "<value>"}}
   }}
@@ -171,7 +176,7 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
 
     def _intent_candidates_prompt(self) -> str:
         """Return a bounded, deterministic intent catalog for the LLM."""
-        if not self._intent_catalog:
+        if not self._intent_catalog and not self._custom_intents:
             return "chat"
         rows: list[str] = []
         for intent in sorted(self._intent_catalog):
@@ -189,6 +194,11 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
                 "resources=" + ", ".join(resources[:4]) if resources else "",
             ) if part)
             rows.append(f"{intent}: {detail}" if detail else intent)
+        for intent in sorted(self._custom_intents):
+            if intent not in self._intent_catalog:
+                rows.append(
+                    f"{intent}: Runtime 控制能力；由对应 Feature 处理，不直接调用 Provider"
+                )
         rows.append("chat: 无匹配的已注册工具")
         return " | ".join(rows)[:8000]
 
@@ -1197,6 +1207,19 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
 
     def _detect_intent_type(self, text: str) -> str:
         """检测意图类型（注意顺序：更具体的规则放在前面）"""
+        schedule_markers = ["定时任务", "定时执行", "定期执行", "cron", "schedule", "每天", "每周", "每月"]
+        if any(marker in text for marker in schedule_markers):
+            if any(kw in text for kw in ["查询", "列表", "查看", "list", "show"]):
+                return "schedule_list"
+            if any(kw in text for kw in ["暂停", "停用", "pause"]):
+                return "schedule_pause"
+            if any(kw in text for kw in ["恢复", "启用", "resume"]):
+                return "schedule_resume"
+            if any(kw in text for kw in ["删除", "移除", "delete"]):
+                return "schedule_delete"
+            if any(kw in text for kw in ["立即执行", "现在执行", "run now"]):
+                return "schedule_run_now"
+            return "schedule_create"
         cross_markers = [
             "跨渠道", "跨平台", "全渠道", "各平台对比", "渠道对比",
             "cross-channel", "cross channel", "cross-platform", "cross platform",
@@ -1870,6 +1893,12 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
             data["campaign_type"] = str(data["campaign_type"]).upper()
         if not isinstance(data.get("creative_materials"), list):
             data["creative_materials"] = []
+        for field_name in (
+            "schedule_name", "schedule_expression", "schedule_timezone",
+            "schedule_prompt", "schedule_id",
+        ):
+            if data.get(field_name) is not None:
+                data[field_name] = str(data[field_name]).strip() or None
         
         # 确保 platform_params 有所有平台
         params = data.get("platform_params", {})
@@ -1928,6 +1957,8 @@ age_min、age_max 或其他未声明的 Provider 字段。对于平台只能提�
         allowed = {
             "intent_type", "raw_input", "platforms", "objective", "campaign_type", "budget",
             "duration_days", "date_range", "creative_materials", "platform_params",
+            "schedule_name", "schedule_expression", "schedule_timezone",
+            "schedule_prompt", "schedule_id",
         }
         return {key: value for key, value in data.items() if key in allowed}
         

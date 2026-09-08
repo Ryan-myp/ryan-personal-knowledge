@@ -302,3 +302,87 @@ class TaskRecord:
             elif value is None and default == {}:
                 data[key] = {}
         return cls(**data)
+
+
+@dataclass
+class ScheduledTaskRecord:
+    """Durable recurring instruction owned by the scheduler control plane."""
+
+    schedule_id: str
+    tenant_id: str
+    user_id: str
+    name: str
+    prompt: str
+    cron_expression: str
+    timezone: str = "Asia/Shanghai"
+    status: str = "active"
+    next_run_at: str | None = None
+    last_run_at: str | None = None
+    last_run_status: str | None = None
+    last_task_id: str | None = None
+    run_count: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    payload: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    lease_owner: str | None = None
+    lease_expires_at: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["payload"] = json.loads(json.dumps(self.payload or {}, ensure_ascii=False, default=str))
+        value["metadata"] = json.loads(json.dumps(self.metadata or {}, ensure_ascii=False, default=str))
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "ScheduledTaskRecord":
+        data = dict(row) if isinstance(row, dict) else dict(row)
+        for key in ("payload", "metadata"):
+            value = data.get(key)
+            if isinstance(value, str):
+                try:
+                    data[key] = json.loads(value or "{}")
+                except (TypeError, ValueError):
+                    data[key] = {}
+            elif not isinstance(value, dict):
+                data[key] = {}
+        return cls(**data)
+
+
+@dataclass
+class ScheduledTaskRunRecord:
+    """One immutable-ish occurrence of a recurring scheduled task."""
+
+    schedule_run_id: str
+    schedule_id: str
+    tenant_id: str
+    user_id: str
+    scheduled_for: str
+    status: str = "queued"
+    task_id: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    error: str | None = None
+    result: dict[str, Any] | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["result"] = (
+            json.loads(json.dumps(self.result, ensure_ascii=False, default=str))
+            if self.result is not None else None
+        )
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "ScheduledTaskRunRecord":
+        data = dict(row) if isinstance(row, dict) else dict(row)
+        value = data.get("result")
+        if isinstance(value, str):
+            try:
+                data["result"] = json.loads(value or "null")
+            except (TypeError, ValueError):
+                data["result"] = None
+        return cls(**data)
