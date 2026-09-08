@@ -1306,6 +1306,8 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         def aliases_for(field: str, spec: Mapping[str, Any]) -> list[str]:
             leaf = str(field).rsplit(".", 1)[-1]
             aliases = [leaf, leaf.replace("_", " "), str(field)]
+            if leaf in {"account_id", "advertiser_id", "customer_id"}:
+                aliases.extend(["账户 ID", "广告账户 ID", "advertiser ID", "customer ID"])
             declared = spec.get("input_aliases", [])
             if isinstance(declared, str):
                 declared = [declared]
@@ -1342,6 +1344,26 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                         return True
             return False
 
+        # Explicitly qualified campaign IDs are scoped to their provider. A
+        # bare campaign_id in a multi-channel request is intentionally ignored.
+        for platform in platforms:
+            aliases_for_platform = platform_aliases.get(platform, [platform])
+            platform_pattern = "|".join(
+                re.escape(alias)
+                for alias in sorted(aliases_for_platform, key=len, reverse=True)
+            )
+            match = _regex_search(
+                rf"(?:{platform_pattern})\s*(?:campaign|广告系列)[_-]?ids?\s*[=:：]\s*"
+                r"([A-Za-z0-9][\w-]*(?:\s*[,，]\s*[A-Za-z0-9][\w-]*)*)",
+                user_input,
+                re.IGNORECASE,
+            )
+            if match:
+                ids = [item.strip() for item in re.split(r"[,，]", match.group(1)) if item.strip()]
+                if ids:
+                    params[platform]["campaign_ids"] = list(dict.fromkeys(ids))
+                    params[platform].setdefault("campaign_id", ids[0])
+
         # Only an explicitly registered Tool schema can create a parameter.
         # The parser accepts a field's wire name, its provider-declared aliases,
         # or an explicitly qualified platform form. It never maps business
@@ -1375,6 +1397,22 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 match = qualified_platform or qualified
                 if match:
                     self._assign_parameter(params[platform], field, parse_value(match.group(1), field, raw_spec))
+
+        # Preserve explicitly typed provider keys for standalone parsing when
+        # a Tool schema has not been mounted yet. Runtime validates them later.
+        if len(platforms) == 1:
+            platform = platforms[0]
+            specs = self._platform_field_specs.get(platform, {})
+            for key, raw_value in _compiled_regex(
+                r"(?<![\w-])([A-Za-z][\w-]*)\s*[=:：]\s*([^\s,，、;；]+)"
+            ).findall(user_input):
+                if key in {"id", "action", "operation", "tool", "skill", "platform"}:
+                    continue
+                spec = specs.get(key, {})
+                self._assign_parameter(
+                    params[platform], key,
+                    parse_value(raw_value, key, spec if isinstance(spec, Mapping) else {}),
+                )
 
         self._semantic_parameter_values(user_input, platforms, params)
         
