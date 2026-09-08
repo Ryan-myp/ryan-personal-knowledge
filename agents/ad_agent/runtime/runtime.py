@@ -88,6 +88,10 @@ from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
 
+
+class SessionBusyError(RuntimeError):
+    """Another Runtime instance currently owns the mutable session lease."""
+
 # A request-scoped mode must not be read from mutable process-global state.
 # The Runtime value remains the deployment default; ``run`` installs the
 # effective principal/request mode in this context variable.
@@ -165,6 +169,7 @@ class AgentRuntime:
         max_task_queue: int = 32,
         task_timeout_seconds: float = 900.0,
         task_lease_seconds: float = 300.0,
+        session_lease_seconds: float = 300.0,
         outbox_delivery: Optional[Callable[[Any], None]] = None,
         outbox_poll_interval: float = 0.25,
     ):
@@ -371,6 +376,10 @@ class AgentRuntime:
         self._workflow_lease_owner = (
             f"runtime:{os.getpid()}:{id(self)}"
         )
+        if session_lease_seconds <= 0:
+            raise ValueError("session_lease_seconds must be positive")
+        self.session_lease_seconds = float(session_lease_seconds)
+        self._session_lease_owner = f"session:{os.getpid()}:{id(self)}"
         # Reconciliation is provider-owned. Built-in adapters use only
         # registered read tools; custom providers can replace/extend them
         # without adding provider branches to the Runtime.
@@ -3374,24 +3383,68 @@ class AgentRuntime:
         mode_token = _execution_mode_context.set(requested_mode)
         try:
             with lock:
-                return self._run_unlocked(
-                    user_input=user_input,
-                    session_id=session_id,
-                    user_id=effective_user_id,
-                    account_id=account_id,
-                    credentials=credentials,
-                    platform_params=platform_params,
-                    confirmed=confirmed,
-                    confirmation_payload=confirmation_payload,
-                    creation_blueprint_id=creation_blueprint_id,
-                    creation_blueprint_version=creation_blueprint_version,
-                    granted_permissions=effective_permissions,
-                    account_scope=effective_account_scope,
-                    tenant_id=effective_tenant_id,
-                    cancellation_event=cancellation_event,
-                    event_callback=event_callback,
-                    task_id=task_id,
+                normalized_session_id = session_id or str(uuid.uuid4())
+                # Materialize the session before claiming its durable lease.
+                # _run_unlocked calls this again, but that second call is a
+                # read/restore fast path and does not replace existing state.
+                self._ensure_session(
+                    normalized_session_id, effective_user_id, account_id,
+                    credentials, tenant_id=effective_tenant_id,
                 )
+                lease_store = self._session_manager
+                lease_acquired = False
+                lease_stop = threading.Event()
+                lease_thread: Optional[threading.Thread] = None
+                acquire_lease = getattr(lease_store, "acquire_session_lease", None)
+                heartbeat_lease = getattr(lease_store, "heartbeat_session_lease", None)
+                release_lease = getattr(lease_store, "release_session_lease", None)
+                if callable(acquire_lease) and callable(release_lease):
+                    lease_acquired = bool(acquire_lease(
+                        normalized_session_id, self._session_lease_owner,
+                        self.session_lease_seconds,
+                    ))
+                    if not lease_acquired:
+                        raise SessionBusyError(
+                            "session is busy on another Agent instance; retry shortly"
+                        )
+                    if callable(heartbeat_lease):
+                        def heartbeat() -> None:
+                            interval = min(max(self.session_lease_seconds / 3.0, 1.0), 10.0)
+                            while not lease_stop.wait(interval):
+                                if not heartbeat_lease(
+                                    normalized_session_id, self._session_lease_owner,
+                                    self.session_lease_seconds,
+                                ):
+                                    return
+                        lease_thread = threading.Thread(
+                            target=heartbeat, name="ad-agent-session-heartbeat", daemon=True
+                        )
+                        lease_thread.start()
+                try:
+                    return self._run_unlocked(
+                        user_input=user_input,
+                        session_id=normalized_session_id,
+                        user_id=effective_user_id,
+                        account_id=account_id,
+                        credentials=credentials,
+                        platform_params=platform_params,
+                        confirmed=confirmed,
+                        confirmation_payload=confirmation_payload,
+                        creation_blueprint_id=creation_blueprint_id,
+                        creation_blueprint_version=creation_blueprint_version,
+                        granted_permissions=effective_permissions,
+                        account_scope=effective_account_scope,
+                        tenant_id=effective_tenant_id,
+                        cancellation_event=cancellation_event,
+                        event_callback=event_callback,
+                        task_id=task_id,
+                    )
+                finally:
+                    if lease_acquired:
+                        lease_stop.set()
+                        if lease_thread:
+                            lease_thread.join(timeout=0.2)
+                        release_lease(normalized_session_id, self._session_lease_owner)
         finally:
             _execution_mode_context.reset(mode_token)
 
@@ -3474,8 +3527,11 @@ class AgentRuntime:
                     )
                 )
             except Exception:
-                durable_run = False
+                # Once a persistence backend is configured, a turn must not
+                # silently become an in-memory run. That would make a live
+                # provider side effect impossible to reconcile after a crash.
                 logger.exception("failed to create durable Agent run")
+                raise RuntimeError("durable Agent run persistence is unavailable")
         trace = ExecutionTrace(observe_trace if (durable_run or event_callback) else None, turn_id=turn_id)
         trace.start()
         input_error = self._validate_request_limits(user_input, platform_params)

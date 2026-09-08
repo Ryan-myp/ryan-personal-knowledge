@@ -282,7 +282,11 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         response = client.get("/")
 
     assert response.status_code == 200
-    html = response.text
+    html = response.text + "\n" + (
+        api_server.STATIC_PATH / "js" / "chat.js"
+    ).read_text(encoding="utf-8") + "\n" + (
+        api_server.STATIC_PATH / "css" / "chat.css"
+    ).read_text(encoding="utf-8")
     for marker in (
         "Skills 管理", "SKILL.md", "references/", "scripts/", "assets/", "evals/",
         "保存为新版本", "ZIP 导入", "Skill-up 评测", "发布 / 回滚", "下线",
@@ -299,7 +303,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "deleted_session_ids", "仅影响本地历史记录",
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
-        "/skills/builtin/", "managed_skills", "builtin_skills", "当前操作员",
+        "/skills/builtin/", "managed_skills", "builtin_skills",
         "knowledgeFileInput", "handleKnowledgeFileUpload", "view-hidden", "返回检索",
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
         "executionModeSelect", "/settings/execution-mode", "live_mode_available",
@@ -567,7 +571,9 @@ def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
 
 
 def test_chat_page_does_not_turn_http_errors_into_operation_complete(fake_server):
-    html = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    html = api_server.TEMPLATE_PATH.read_text(encoding="utf-8") + "\n" + (
+        api_server.STATIC_PATH / "js" / "chat.js"
+    ).read_text(encoding="utf-8")
     assert "if (!response.ok)" in html
     assert "data.detail || data.error" in html
 

@@ -28,6 +28,7 @@ from agents.ad_agent import (
     AgentRuntime,
     AdAgentStore,
 )
+from agents.ad_agent.persistence.factory import create_persistence_store
 
 
 def print_banner():
@@ -125,7 +126,7 @@ def main():
     database_path = Path(
         os.environ.get("AD_AGENT_DB_PATH", Path(__file__).parent / "ad_agent.db")
     ).expanduser().resolve()
-    store = AdAgentStore(str(database_path))
+    store = create_persistence_store(sqlite_path=database_path)
     runtime = AgentRuntime(
         persistence_store=store,
         read_only_mode=False,

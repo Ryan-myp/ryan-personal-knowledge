@@ -60,7 +60,7 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 │                                                                             │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ WhitelistValidator│ │ SessionManager  │  │ Persistence Store       │    │
-│  │ 账户白名单验证    │  │ 会话管理        │  │ SQLite 持久化            │    │
+│  │ 账户白名单验证    │  │ 会话管理        │  │ PersistenceBackend       │    │
 │  │ - 防止误操作     │  │ - 上下文传递    │  │ - 会话历史               │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -389,10 +389,10 @@ class SessionManager:
         """保存对话轮次"""
 ```
 
-### 2. AdAgentStore (SQLite)
+### 2. PersistenceBackend（SQLite 默认 / MySQL 可配置）
 ```python
 class AdAgentStore:
-    """数据存储层"""
+    """SQLite 单进程数据存储层"""
     
     # 表结构
     CREATE TABLE sessions (...)
@@ -400,6 +400,12 @@ class AdAgentStore:
     CREATE TABLE tool_calls (...)
 CREATE TABLE campaigns (...)  # 同步 Campaign 状态
 ```
+
+生产多实例通过 `AD_AGENT_DATABASE_URL=mysql+pymysql://...` 选择
+`persistence.mysql_store.MySQLStore`。它复用同一份领域 Store 契约，使用 InnoDB、事务、
+任务/Outbox 的行锁 claim、Session/Workflow lease 和 Run Event replay；Runtime 不包含
+SQLite/MySQL 分支。`tasks` 是 Agent 执行队列，`outbox_events` 是事件投递队列，二者都
+必须保持幂等消费和明确的恢复状态。
 
 ### 3. Markdown LLM Wiki
 
@@ -430,7 +436,7 @@ Memory 与 Wiki、Session 和 Tool Audit 的边界如下：
 | MemoryRecord | 用户/租户明确保存的事实和经验 | 仅显式写入 |
 
 `MemoryManager` 提供写入、召回和删除策略，`MemoryStore` 是后端接口，当前由
-`AdAgentStore` 的 SQLite `memories` 表实现。召回先做租户/用户/会话范围过滤，再做
+`AdAgentStore`/`MySQLStore` 的 `memories` 表实现。召回先做租户/用户/会话范围过滤，再做
 确定性词法排序；过期记录和删除墓碑不返回。召回内容只作为受限 LLM 上下文，不能改变
 Tool Registry、权限、账户范围或执行计划。
 

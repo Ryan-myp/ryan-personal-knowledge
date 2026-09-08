@@ -76,7 +76,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 8
+    SCHEMA_VERSION = 9
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -90,7 +90,9 @@ class AdAgentStore:
         account_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        metadata TEXT DEFAULT '{}'
+        metadata TEXT DEFAULT '{}',
+        lease_owner TEXT,
+        lease_expires_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS conversation_messages (
@@ -552,6 +554,9 @@ class AdAgentStore:
                     ON execution_run_events(run_id, seq ASC);
                 """
             )
+        elif version == 9:
+            cls._add_column_if_missing(conn, "sessions", "lease_owner", "TEXT")
+            cls._add_column_if_missing(conn, "sessions", "lease_expires_at", "TEXT")
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -2040,7 +2045,10 @@ class AdAgentStore:
         with self._lock:
             conn = self._get_conn()
             now = datetime.now().isoformat()
-            sql = "INSERT OR REPLACE INTO sessions (session_id, user_id, account_id, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
+            # Session creation is intentionally insert-once. Replacing a row
+            # would clear a cross-instance lease while another turn is using
+            # the session; metadata updates have their own method.
+            sql = "INSERT OR IGNORE INTO sessions (session_id, user_id, account_id, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
             conn.execute(sql, (session_id, user_id, account_id, now, now, json.dumps(metadata or {})))
             conn.commit()
     
@@ -2088,6 +2096,61 @@ class AdAgentStore:
                     "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?", (limit,)
                 ).fetchall()
             return [dict(r) for r in rows]
+
+    def acquire_session_lease(
+        self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        """Atomically reserve a session across Runtime instances."""
+        if not session_id or not lease_owner or float(lease_seconds) <= 0:
+            return False
+        now = datetime.now(timezone.utc)
+        now_text = now.isoformat()
+        expires_text = (now + timedelta(seconds=float(lease_seconds))).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE sessions
+                   SET lease_owner = ?, lease_expires_at = ?, updated_at = ?
+                   WHERE session_id = ?
+                     AND (lease_owner IS NULL OR lease_owner = ?
+                          OR lease_expires_at IS NULL OR lease_expires_at <= ?)""",
+                (
+                    str(lease_owner), expires_text, now_text, str(session_id),
+                    str(lease_owner), now_text,
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def heartbeat_session_lease(
+        self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        if not session_id or not lease_owner or float(lease_seconds) <= 0:
+            return False
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE sessions SET lease_expires_at = ?, updated_at = ?
+                   WHERE session_id = ? AND lease_owner = ?""",
+                (
+                    (now + timedelta(seconds=float(lease_seconds))).isoformat(),
+                    now.isoformat(), str(session_id), str(lease_owner),
+                ),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
+
+    def release_session_lease(self, session_id: str, lease_owner: str) -> bool:
+        if not session_id or not lease_owner:
+            return False
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE sessions SET lease_owner = NULL, lease_expires_at = NULL
+                   WHERE session_id = ? AND lease_owner = ?""",
+                (str(session_id), str(lease_owner)),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
 
     def record_conversation_message(self, record: ConversationMessageRecord) -> None:
         data = record.to_dict()

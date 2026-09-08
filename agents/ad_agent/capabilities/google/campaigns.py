@@ -23,11 +23,28 @@ class GoogleListCampaignsHandler(ToolHandler):
         if self.client and customer_id:
             try:
                 client = for_customer(self.client, customer_id)
-                campaigns = call_with_optional_page_size(
-                    client.list_campaigns,
-                    limit=input_data.get("limit", 100),
-                    parameter_names=("page_size", "limit"),
-                )
+                # A precise ID filter is provider-owned lookup behavior. It
+                # keeps the selection-token response bounded for large
+                # accounts while preserving the generic Runtime provenance
+                # gate for live parent-resource writes.
+                campaign_id = input_data.get("campaign_id")
+                filter_query = None
+                if campaign_id not in (None, ""):
+                    campaign_id = str(campaign_id).strip()
+                    if not campaign_id.isdigit():
+                        return ToolResult.error("campaign_id must be a numeric Google Ads ID")
+                    filter_query = f"campaign.id = {campaign_id}"
+                if filter_query:
+                    campaigns = client.list_campaigns(
+                        filter_query=filter_query,
+                        page_size=input_data.get("limit", 100),
+                    )
+                else:
+                    campaigns = call_with_optional_page_size(
+                        client.list_campaigns,
+                        limit=input_data.get("limit", 100),
+                        parameter_names=("page_size", "limit"),
+                    )
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": customer_id,
@@ -143,6 +160,9 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     local_campaign_setting=input_data.get("local_campaign_setting"),
                     travel_campaign_settings=input_data.get("travel_campaign_settings"),
                     local_services_campaign_settings=input_data.get("local_services_campaign_settings"),
+                    contains_eu_political_advertising=input_data.get(
+                        "contains_eu_political_advertising"
+                    ),
                     final_url_suffix=input_data.get("final_url_suffix"),
                     start_date=input_data.get("start_date"),
                     end_date=input_data.get("end_date"),

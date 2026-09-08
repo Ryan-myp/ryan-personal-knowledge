@@ -4555,8 +4555,11 @@ def test_google_and_dv360_existing_update_adapters_build_provider_mutations():
     assert operation["update"]["cpcBidMicros"] == 1_250_000
     assert operation["updateMask"] == {"paths": ["cpcBidMicros"]}
 
-    assert google.update_ad("43", {"status": "PAUSED"})["success"] is True
+    assert google.update_ad("42~43", {"status": "PAUSED"})["success"] is True
     assert operations[-1][0] == "adGroupAds"
+    assert operations[-1][1]["update"]["resourceName"] == (
+        "customers/123/adGroupAds/42~43"
+    )
     assert google.update_asset_group("44", {"name": "Assets"})["success"] is True
     assert operations[-1][0] == "assetGroups"
 

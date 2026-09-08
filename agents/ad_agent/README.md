@@ -6,7 +6,7 @@
 
 - **单 Agent + 多 Skills**：通过意图路由自动分发到对应平台的 Capability
 - **API 客户端**：封装真实 API 请求、重试、限流和错误分类；live 能力须逐平台验证
-- **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态、Agent Memory 和异步 Task；当前 SQLite 仅支持单进程
+- **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态、Agent Memory、Task、Outbox 和 Run Event；默认 SQLite 适合单进程，MySQL/InnoDB 可通过连接配置启用多实例共享状态
 - **结构化日志**：JSON 格式，便于 log aggregation
 - **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
 - **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
@@ -170,6 +170,12 @@ Runtime 的完整 LLM/Skill/Tool/权限/账户/dry-run/审计链路，不能直�
 任务状态的暂停/取消不代表外部广告平台状态已回滚；运行中的底层网络调用只能 cooperative
 cancel，超时或进程中断则进入 recovery_required，等待显式恢复/回查。
 
+这里要区分两条队列：`tasks` 是 Agent 执行队列，负责让 worker 重新进入统一
+`Runtime.run()`；`outbox_events` 是事务后的事件投递队列，负责向 SSE/Webhook/指标等
+sink 投递已落库事件，不能用 Outbox 代替 Task 执行。任务和 Outbox 都是持久化记录，
+各实例通过 lease/数据库 claim 竞争消费；因此服务重启后会重新扫描 `queued` Task，
+而已进入 Provider 操作但租约过期的 Task/Run 会进入 `recovery_required`，不会盲目重放写操作。
+
 身份、权限和恢复边界
 
 HTTP 请求不会信任 JSON/query 中的 `user_id`。服务端应通过已认证的 API Gateway
@@ -191,11 +197,33 @@ reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified
 检查 Runtime、必需的 LLM 和 Tool Registry 是否已完成初始化，不会调用 Provider，也不会
 返回凭证；ASGI 生命周期结束时会关闭 Runtime-owned TaskExecutor，避免热重载留下后台任务。
 
-Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；当前 SQLite
-实现由 `PersistenceBackend` 接口隔离，后续可替换 MySQL/PostgreSQL backend，不需要改 Runtime。
-当前 SQLite 连接由进程内锁保护，部署边界按单进程处理；多进程/多实例共享状态应在接入
-MySQL 等后端并补齐租约/并发控制后开启。运行中的 workflow 会 heartbeat，恢复 worker
-通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
+Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；Task、Outbox、
+Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 仍由
+进程内锁保护并明确限制为单进程；配置 `AD_AGENT_DATABASE_URL=mysql+pymysql://...`
+后使用 MySQL/InnoDB 的事务、`FOR UPDATE SKIP LOCKED` 和跨实例 Session lease，
+Runtime、Skill、Tool、Capability 代码无需修改。运行中的 workflow 会 heartbeat，恢复
+worker 通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
+
+### 存储后端与部署切换
+
+默认配置保持 SQLite：
+
+```bash
+AD_AGENT_DB_PATH=/path/to/ad_agent.db
+```
+
+多实例部署只需要改为：
+
+```bash
+AD_AGENT_DB_BACKEND=mysql
+AD_AGENT_DATABASE_URL='mysql+pymysql://user:password@db-host:3306/ad_agent?charset=utf8mb4'
+AD_AGENT_DB_POOL_SIZE=5
+AD_AGENT_DB_MAX_OVERFLOW=10
+```
+
+MySQL schema 使用 InnoDB，启动时执行版本化 schema baseline；任务抢占、Outbox 抢占、
+幂等键、Session lease 和 Run Event replay 使用同一个后端契约。SQLite 与 MySQL 的差异
+只存在于 `persistence/`，HTTP、Runtime 和 Provider Capability 不直接写 SQL。
 
 动态 Skill 可以提供 `skill.manifest.json`，其中包含插件文件 SHA-256；生产环境可
 通过 `AD_AGENT_REQUIRE_SKILL_MANIFEST=1` 和 `AD_AGENT_SKILL_MANIFEST_KEY` 要求签名。
@@ -290,7 +318,7 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 - Plugin 包控制面已支持租户隔离、版本不可变、摘要校验、依赖激活门禁和发布回滚；
   已支持标准 ZIP 导入和不执行代码的完整性/依赖健康检查；仍待补可信插件的沙箱/独立
   进程、签名来源策略的部署配置和生产级运行时探针。
-- SQLite 当前按单进程使用；未来 MySQL/PostgreSQL backend 需要实现同一接口的共享事务、幂等 reservation、lease 和 principal execution-mode preference 原子语义，并补多实例并发测试。
+- MySQL/InnoDB backend 已提供连接配置、版本化 schema、共享事务、幂等 reservation、Task/Outbox claim、Session/Workflow lease 和 principal execution-mode preference；仍需在正式部署前补压测、死锁重试策略和生产级指标告警。
 - Provider schema 目前以代码契约为准，已接入本地版本化快照和代码契约 drift gate；尚未接入 Provider API schema 拉取和真实测试账户 E2E。动态组合约束仍需按渠道逐项补齐。
 - 部分 workflow 只标记 `compensation_required` 并转人工复核，尚无经过 Provider 验证的自动补偿执行器；这属于刻意的安全降级，不是已完成能力。
 - live 还需要凭证轮换/授权中心、合作方级配额策略，以及 Provider 调用级别的真正可中断
@@ -351,6 +379,9 @@ Google Ads 当前使用 REST Client 而不是可选的 `google-ads` SDK。Client
 
 ## 架构设计
 
+可直接打开交互式架构图：[`docs/ad_agent_architecture.html`](../../docs/ad_agent_architecture.html)。
+图中标注了单 Agent、多 Skills、Tool Registry、Provider Capabilities，以及异步 Task、Outbox、Run Event、恢复和后续 MySQL 演进关系。
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        AgentRuntime                         │
@@ -406,7 +437,9 @@ ad_agent/
 │   ├── base.py              # 客户端基类（重试/限流）
 │   └── <platform>_client.py # 按约定可选的 Provider Client
 ├── persistence/
-│   ├── store.py             # SQLite 持久化
+│   ├── store.py             # SQLite 单进程 backend
+│   ├── mysql_store.py       # MySQL/InnoDB backend
+│   ├── factory.py           # 按环境选择 backend
 │   └── session_manager.py   # 会话管理器
 ├── logging/
 │   └── __init__.py          # 结构化日志

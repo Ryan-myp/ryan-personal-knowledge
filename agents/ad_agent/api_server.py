@@ -23,6 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -49,10 +50,12 @@ from agents.ad_agent.knowledge_management import (
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
 )
+from agents.ad_agent.persistence.factory import create_persistence_store
 
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "chat.html"
+STATIC_PATH = Path(__file__).parent / "static"
 BUILTIN_SKILLS_ROOT = Path(__file__).parent / "skills"
 # Deployment-owned catalog. It is read-only and intentionally independent of
 # tenant Skill persistence; the Runtime remains the execution source of truth.
@@ -186,8 +189,6 @@ def _init_runtime():
     global runtime
     runtime_status.update({"state": "initializing", "error": None})
     try:
-        from agents.ad_agent.persistence.store import AdAgentStore
-
         # Load the YAML once and make the execution contract explicit.  The
         # server remains dry-run by default; switching to live additionally
         # requires AD_AGENT_ENABLE_LIVE=1 and a non-empty code/config allowlist.
@@ -206,7 +207,7 @@ def _init_runtime():
             logger.warning("配置请求 live，但 AD_AGENT_ENABLE_LIVE 未显式开启；服务降级为 dry_run")
             execution_mode = "dry_run"
 
-        store = AdAgentStore(str(_database_path()))
+        store = create_persistence_store(sqlite_path=_database_path())
         runtime = AgentRuntime(
             persistence_store=store,
             read_only_mode=read_only_mode,
@@ -344,6 +345,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -772,6 +774,16 @@ async def chat(
         raise
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    except RuntimeError as e:
+        message = str(e)
+        if "session is busy" in message:
+            raise HTTPException(status_code=409, detail="会话正在其他实例执行，请稍后重试")
+        if "durable Agent run persistence" in message:
+            raise HTTPException(status_code=503, detail="运行状态存储暂不可用，请稍后重试")
+        return JSONResponse(
+            content={"success": False, "error": _safe_exception_text(e)},
+            status_code=500,
+        )
     except Exception as e:
         return JSONResponse(
             content={"success": False, "error": _safe_exception_text(e)},

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>广告投放 Agent 架构图</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --paper: #ffffff;
+      --ink: #182338;
+      --muted: #73829a;
+      --soft: #9aa8bb;
+      --rule: #d7deea;
+      --blue: #2f6fed;
+      --blue-soft: #edf4ff;
+      --green: #13a67a;
+      --green-soft: #ebfbf4;
+      --purple: #6756df;
+      --purple-soft: #f4f1ff;
+      --slate: #43536b;
+      --slate-soft: #f4f6f9;
+      --orange: #f2a23a;
+      --orange-soft: #fff5e7;
+      --sans: 'Geist', system-ui, sans-serif;
+      --serif: 'Instrument Serif', Georgia, serif;
+      --mono: 'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      min-height: 100vh;
+      padding: 40px 24px 32px;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--sans);
+    }
+    .frame { width: 100%; max-width: 1680px; margin: 0 auto; }
+    .eyebrow { margin-bottom: 8px; color: var(--muted); font: 500 8px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+    h1 { margin-bottom: 8px; text-align: center; font: 400 clamp(28px, 4vw, 44px)/1.1 var(--serif); letter-spacing: -.02em; }
+    .subtitle { margin: 0 auto 28px; color: var(--muted); font-size: 14px; line-height: 1.6; text-align: center; }
+    .diagram-wrap { overflow-x: auto; }
+    svg { display: block; width: 100%; min-width: 1260px; height: auto; }
+    .source { margin-top: 16px; padding-top: 12px; border-top: 1px solid #e1e6ee; color: var(--soft); font: 9px/1.6 var(--mono); }
+  </style>
+</head>
+<body>
+  <main class="frame">
+    <p class="eyebrow">Architecture · ad_agent · one agent / many skills</p>
+    <h1>广告投放 Agent 架构图</h1>
+    <p class="subtitle">一个 Agent · 按需加载多个业务 Skills · 通过标准 Tools 执行确定性动作</p>
+
+    <div class="diagram-wrap">
+      <svg viewBox="0 0 1600 1200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+        <title id="title">广告投放 Agent 架构图</title>
+        <desc id="desc">当前 ad_agent 的分层架构：接入与会话层进入单一 Agent Runtime，Runtime 按需加载 Skills，并通过统一 Tool Registry 调用 Provider Capabilities。Task、Workflow、Outbox、Run Event 和 Session 状态由 PersistenceBackend 持久化，治理列覆盖权限、安全、质量、审计与恢复。</desc>
+        <defs>
+          <marker id="arrow-blue" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#2f6fed"/></marker>
+          <marker id="arrow-purple" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#6756df"/></marker>
+          <marker id="arrow-slate" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#73829a"/></marker>
+          <marker id="arrow-orange" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#f2a23a"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#ffffff"/>
+
+        <!-- Left layer rail -->
+        <rect x="32" y="56" width="144" height="148" rx="20" fill="#6756df"/>
+        <text x="104" y="124" fill="#ffffff" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">接入与会话</text>
+        <text x="104" y="148" fill="rgba(255,255,255,.78)" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">入口 / 触发 / Session</text>
+
+        <rect x="32" y="224" width="144" height="280" rx="20" fill="#2f6fed"/>
+        <text x="104" y="344" fill="#ffffff" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent Runtime</text>
+        <text x="104" y="368" fill="rgba(255,255,255,.78)" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">单 Agent 编排</text>
+
+        <rect x="32" y="524" width="144" height="188" rx="20" fill="#13a67a"/>
+        <text x="104" y="612" fill="#ffffff" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Skills</text>
+        <text x="104" y="636" fill="rgba(255,255,255,.80)" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">业务知识 / 流程 / 契约</text>
+
+        <rect x="32" y="732" width="144" height="132" rx="20" fill="#3475cf"/>
+        <text x="104" y="792" fill="#ffffff" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Tools</text>
+        <text x="104" y="816" fill="rgba(255,255,255,.80)" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">确定性执行能力</text>
+
+        <rect x="32" y="884" width="144" height="236" rx="20" fill="#43536b"/>
+        <text x="104" y="984" fill="#ffffff" font-size="18" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">运行与数据</text>
+        <text x="104" y="1008" fill="rgba(255,255,255,.80)" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">状态 / 存储 / 恢复</text>
+
+        <!-- Main layer containers -->
+        <rect x="200" y="56" width="1120" height="148" rx="20" fill="#fbf9ff" stroke="#c7bcff" stroke-width="2"/>
+        <rect x="200" y="224" width="1120" height="280" rx="20" fill="#f4f8ff" stroke="#6fa4ff" stroke-width="2"/>
+        <rect x="200" y="524" width="1120" height="188" rx="20" fill="#effcf7" stroke="#36c49a" stroke-width="2"/>
+        <rect x="200" y="732" width="1120" height="132" rx="20" fill="#f4f8ff" stroke="#83b5ff" stroke-width="2"/>
+        <rect x="200" y="884" width="1120" height="236" rx="20" fill="#f7f9fb" stroke="#aab7c9" stroke-width="2"/>
+
+        <!-- Layer headings -->
+        <text x="228" y="88" fill="#182338" font-size="18" font-weight="600" font-family="'Geist', sans-serif">应用接入与会话层</text>
+        <text x="516" y="88" fill="#7b879b" font-size="11" font-family="'Geist', sans-serif">Chat 与 Task 双入口；统一鉴权、Session、消息历史和 Run 恢复</text>
+        <text x="228" y="256" fill="#182338" font-size="20" font-weight="600" font-family="'Geist', sans-serif">Agent Runtime 层</text>
+        <text x="516" y="256" fill="#73829a" font-size="11" font-family="'Geist', sans-serif">理解意图、选择 Skill、调用标准 Tool；不承载具体广告业务规则</text>
+        <text x="228" y="556" fill="#182338" font-size="20" font-weight="600" font-family="'Geist', sans-serif">Skills 层：一个 Agent，可扩展 N 个业务 Skills</text>
+        <text x="792" y="556" fill="#73829a" font-size="11" font-family="'Geist', sans-serif">Skill 封装领域知识、补充规则、流程约束和可用 Tools</text>
+        <text x="228" y="764" fill="#182338" font-size="20" font-weight="600" font-family="'Geist', sans-serif">Tools 层</text>
+        <text x="368" y="764" fill="#73829a" font-size="11" font-family="'Geist', sans-serif">由 Agent Runtime 统一调用；以 Schema、权限、Effect、幂等和审计约束确定性动作</text>
+        <text x="228" y="916" fill="#182338" font-size="20" font-weight="600" font-family="'Geist', sans-serif">运行与数据基础设施</text>
+
+        <!-- Top access cards: parallel entry points, not a serial business flow -->
+        <rect x="224" y="112" width="206" height="72" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="327" y="140" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Chat / Agent UI</text>
+        <text x="327" y="160" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">templates/chat.html · SSE</text>
+
+        <rect x="446" y="112" width="206" height="72" rx="12" fill="#fff8ed" stroke="#f2a23a" stroke-width="1.5"/>
+        <text x="549" y="140" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Task / Async API</text>
+        <text x="549" y="160" fill="#a27a42" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">POST /tasks · idempotency</text>
+
+        <rect x="668" y="112" width="206" height="72" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="771" y="140" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Web / Portal</text>
+        <text x="771" y="160" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">session · task · recovery</text>
+
+        <rect x="890" y="112" width="198" height="72" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="989" y="140" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent API Gateway</text>
+        <text x="989" y="160" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">/chat · /chat/stream</text>
+
+        <rect x="1104" y="112" width="200" height="72" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1204" y="140" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Session / Run</text>
+        <text x="1204" y="160" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">events · latest run · restore</text>
+
+        <!-- Runtime inner flow -->
+        <rect x="240" y="280" width="1040" height="68" rx="14" fill="#ffffff" stroke="#2f6fed" stroke-width="2.5"/>
+        <text x="272" y="321" fill="#182338" font-size="17" font-weight="600" font-family="'Geist', sans-serif">唯一主 Agent</text>
+        <text x="272" y="341" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace">识别用户意图 → 选择并加载 Skill → 生成 Tool Call → 读取结果 → 继续 Agent Loop</text>
+        <rect x="1148" y="298" width="104" height="28" rx="14" fill="#dceaff" stroke="#8bb9ff" stroke-width="1"/>
+        <text x="1200" y="317" fill="#2f5eae" font-size="10" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">ONE AGENT</text>
+
+        <rect x="248" y="376" width="248" height="92" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="372" y="406" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">意图识别与上下文</text>
+        <text x="372" y="428" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">IntentParser · SessionContext</text>
+        <text x="372" y="446" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">memory · summary · prior results</text>
+
+        <rect x="524" y="376" width="248" height="92" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="648" y="406" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Skill Selector / Loader</text>
+        <text x="648" y="428" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">SkillLoader · ToolSelector</text>
+        <text x="648" y="446" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">按需加载上下文，不执行上传脚本</text>
+
+        <rect x="784" y="360" width="496" height="124" rx="18" fill="none" stroke="#8caeff" stroke-width="1.8" stroke-dasharray="8,6"/>
+        <rect x="804" y="350" width="104" height="22" rx="11" fill="#e9efff" stroke="#8caeff" stroke-width="1"/>
+        <text x="856" y="365" fill="#3b63b5" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">AGENT LOOP</text>
+
+        <rect x="800" y="376" width="196" height="92" rx="12" fill="#ffffff" stroke="#6fa4ff" stroke-width="1.5"/>
+        <text x="898" y="406" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">模型 / Agent Loop</text>
+        <text x="898" y="428" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">plan · observe · respond</text>
+        <text x="898" y="446" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">confirmation · continue</text>
+
+        <rect x="1024" y="376" width="256" height="92" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5" stroke-dasharray="5,4"/>
+        <text x="1152" y="406" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Tools 调用</text>
+        <text x="1152" y="428" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">schema · policy · account scope</text>
+        <text x="1152" y="446" fill="#8b98aa" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">execute · result · audit</text>
+
+        <!-- Skills cards -->
+        <rect x="240" y="584" width="300" height="96" rx="12" fill="#ffffff" stroke="#13a67a" stroke-width="2"/>
+        <rect x="256" y="600" width="56" height="20" rx="10" fill="#d4f7e8"/>
+        <text x="284" y="614" fill="#087d5c" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">CURRENT</text>
+        <text x="390" y="620" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Provider Skills</text>
+        <text x="390" y="642" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">Meta · Google Ads · TikTok · DV360</text>
+        <text x="390" y="660" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">平台知识、参数契约、流程指导</text>
+
+        <rect x="568" y="584" width="300" height="96" rx="12" fill="#ffffff" stroke="#13a67a" stroke-width="2"/>
+        <rect x="584" y="600" width="56" height="20" rx="10" fill="#d4f7e8"/>
+        <text x="612" y="614" fill="#087d5c" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">CURRENT</text>
+        <text x="718" y="620" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Managed Skills</text>
+        <text x="718" y="642" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">tenant-owned · versioned · advisory</text>
+        <text x="718" y="660" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">不能注册 Provider Tool 或执行脚本</text>
+
+        <rect x="896" y="584" width="384" height="96" rx="12" fill="#f9fbfd" stroke="#aab7c9" stroke-width="1.5" stroke-dasharray="5,4"/>
+        <rect x="912" y="600" width="48" height="20" rx="10" fill="#e7ecf3"/>
+        <text x="936" y="614" fill="#73829a" font-size="9" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">NEXT</text>
+        <text x="1088" y="620" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">New Business Skill</text>
+        <text x="1088" y="642" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">新增 SKILL.md + references + evals</text>
+        <text x="1088" y="660" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">中心 Runtime / Router 不增加渠道分支</text>
+
+        <!-- Tools cards -->
+        <rect x="240" y="784" width="336" height="76" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="408" y="814" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Tool Registry</text>
+        <text x="408" y="836" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">ToolDefinition · intent · resource · schema</text>
+
+        <rect x="604" y="784" width="336" height="76" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="772" y="814" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Provider Capabilities</text>
+        <text x="772" y="836" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">registered handlers · API clients · read / write</text>
+
+        <rect x="968" y="784" width="312" height="76" rx="12" fill="#f9fbfd" stroke="#aab7c9" stroke-width="1.5" stroke-dasharray="5,4"/>
+        <text x="1124" y="814" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Future Tools</text>
+        <text x="1124" y="836" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">Report · Optimization · New provider</text>
+
+        <!-- Operations and data -->
+        <rect x="240" y="944" width="720" height="140" rx="12" fill="#ffffff" stroke="#f2a23a" stroke-width="1.5"/>
+        <text x="264" y="976" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif">状态与持久化</text>
+        <text x="264" y="996" fill="#a27a42" font-size="10" font-family="'Geist Mono', monospace">PersistenceBackend · SQLite default / MySQL configurable</text>
+        <rect x="264" y="1016" width="156" height="40" rx="8" fill="#fff5e7" stroke="#f6d49f" stroke-width="1"/>
+        <text x="342" y="1032" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">sessions</text>
+        <text x="342" y="1048" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">messages / metadata</text>
+        <rect x="436" y="1016" width="156" height="40" rx="8" fill="#fff5e7" stroke="#f6d49f" stroke-width="1"/>
+        <text x="514" y="1032" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">tasks / workflows</text>
+        <text x="514" y="1048" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">lease / checkpoint</text>
+        <rect x="608" y="1016" width="156" height="40" rx="8" fill="#fff5e7" stroke="#f6d49f" stroke-width="1"/>
+        <text x="686" y="1032" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">execution_runs</text>
+        <text x="686" y="1048" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">events / seq / replay</text>
+        <rect x="780" y="1016" width="156" height="40" rx="8" fill="#fff5e7" stroke="#f6d49f" stroke-width="1"/>
+        <text x="858" y="1032" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">outbox / approval</text>
+        <text x="858" y="1048" fill="#795c2c" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">idempotency / audit</text>
+
+        <rect x="984" y="944" width="296" height="140" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1008" y="976" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif">运行基础设施</text>
+        <text x="1008" y="1000" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace">TaskExecutor · WorkflowCoordinator</text>
+        <text x="1008" y="1018" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace">OutboxConsumer · ExecutionTrace</text>
+        <text x="1008" y="1046" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace">stale → recovery_required</text>
+        <text x="1008" y="1064" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace">Provider read-back / reconcile</text>
+
+        <!-- Governance column -->
+        <rect x="1352" y="56" width="216" height="1064" rx="20" fill="#f7f9fb" stroke="#9caac0" stroke-width="1.5"/>
+        <rect x="1352" y="56" width="216" height="72" rx="20" fill="#43536b"/>
+        <rect x="1352" y="108" width="216" height="20" fill="#43536b"/>
+        <text x="1460" y="100" fill="#ffffff" font-size="16" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">治理与研发</text>
+
+        <rect x="1376" y="156" width="168" height="100" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1460" y="184" fill="#182338" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">权限与安全</text>
+        <text x="1460" y="206" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">principal / account scope</text>
+        <text x="1460" y="224" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">approval / redaction</text>
+
+        <rect x="1376" y="288" width="168" height="100" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1460" y="316" fill="#182338" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">运行监控</text>
+        <text x="1460" y="338" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">session / run trace</text>
+        <text x="1460" y="356" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">latency / error / alert</text>
+
+        <rect x="1376" y="420" width="168" height="100" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1460" y="448" fill="#182338" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Skill 研发质量</text>
+        <text x="1460" y="470" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">version / evaluation</text>
+        <text x="1460" y="488" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">contract / regression</text>
+
+        <rect x="1376" y="552" width="168" height="100" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1460" y="580" fill="#182338" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Tool 治理</text>
+        <text x="1460" y="602" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">schema / permission</text>
+        <text x="1460" y="620" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">effect / replay / audit</text>
+
+        <rect x="1376" y="684" width="168" height="100" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1460" y="712" fill="#182338" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">运维与恢复</text>
+        <text x="1460" y="734" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">worker / schedule</text>
+        <text x="1460" y="752" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">run recovery / reconcile</text>
+
+        <rect x="1376" y="816" width="168" height="100" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
+        <text x="1460" y="844" fill="#182338" font-size="13" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">扩展约束</text>
+        <text x="1460" y="866" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">Skill 不注册 Tool</text>
+        <text x="1460" y="884" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">Tool 不绕过 Runtime</text>
+
+        <!-- Main arrows: parallel entry points converge into the runtime -->
+        <line x1="549" y1="184" x2="549" y2="224" stroke="#f2a23a" stroke-width="2.2" marker-end="url(#arrow-orange)"/>
+        <line x1="989" y1="184" x2="989" y2="224" stroke="#2f6fed" stroke-width="2.2" marker-end="url(#arrow-blue)"/>
+        <line x1="1204" y1="184" x2="1204" y2="224" stroke="#2f6fed" stroke-width="2.2" marker-end="url(#arrow-blue)"/>
+
+        <line x1="372" y1="348" x2="372" y2="376" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <line x1="648" y1="348" x2="648" y2="376" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <line x1="898" y1="348" x2="898" y2="376" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <line x1="996" y1="422" x2="1024" y2="422" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <line x1="772" y1="422" x2="800" y2="422" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <line x1="1024" y1="448" x2="996" y2="448" stroke="#6756df" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+        <path d="M 648 468 C 648 520 390 520 390 584" fill="none" stroke="#6756df" stroke-width="2" stroke-dasharray="8,6" marker-end="url(#arrow-purple)"/>
+        <path d="M 1152 468 C 1152 520 772 520 772 784" fill="none" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <line x1="408" y1="860" x2="408" y2="944" stroke="#73829a" stroke-width="2" marker-end="url(#arrow-slate)"/>
+        <line x1="772" y1="860" x2="772" y2="944" stroke="#73829a" stroke-width="2" marker-end="url(#arrow-slate)"/>
+        <line x1="576" y1="822" x2="604" y2="822" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+        <!-- Governance relations -->
+        <line x1="1320" y1="208" x2="1376" y2="208" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+        <line x1="1320" y1="340" x2="1376" y2="340" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+        <line x1="1320" y1="472" x2="1376" y2="472" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+        <line x1="1320" y1="604" x2="1376" y2="604" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+        <line x1="1320" y1="736" x2="1376" y2="736" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+        <line x1="1320" y1="868" x2="1376" y2="868" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+
+        <!-- Explanatory labels -->
+        <rect x="516" y="492" width="116" height="18" rx="9" fill="#ffffff"/><text x="574" y="505" fill="#6756df" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">按需加载 Skills</text>
+        <rect x="1040" y="492" width="96" height="18" rx="9" fill="#ffffff"/><text x="1088" y="505" fill="#2f6fed" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">调用 Tools</text>
+        <rect x="436" y="892" width="160" height="18" rx="9" fill="#ffffff"/><text x="516" y="905" fill="#73829a" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">状态持久化 / 运行支撑</text>
+        <rect x="816" y="1084" width="188" height="18" rx="9" fill="#ffffff"/><text x="910" y="1097" fill="#73829a" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">stale → recovery_required</text>
+
+        <!-- Legend -->
+        <line x1="32" y1="1144" x2="1568" y2="1144" stroke="#d7deea" stroke-width="1"/>
+        <text x="32" y="1168" fill="#73829a" font-size="9" font-family="'Geist Mono', monospace" letter-spacing=".16em">LEGEND</text>
+        <line x1="112" y1="1164" x2="148" y2="1164" stroke="#2f6fed" stroke-width="2" marker-end="url(#arrow-blue)"/>
+        <text x="160" y="1168" fill="#73829a" font-size="9" font-family="'Geist', sans-serif">主调用 / Tool 执行流</text>
+        <line x1="320" y1="1164" x2="356" y2="1164" stroke="#6756df" stroke-width="2" stroke-dasharray="8,6" marker-end="url(#arrow-purple)"/>
+        <text x="368" y="1168" fill="#73829a" font-size="9" font-family="'Geist', sans-serif">Skill 加载与约束</text>
+        <line x1="516" y1="1164" x2="552" y2="1164" stroke="#9aa8bb" stroke-width="1.5" stroke-dasharray="6,5" marker-end="url(#arrow-slate)"/>
+        <text x="564" y="1168" fill="#73829a" font-size="9" font-family="'Geist', sans-serif">治理 / 支撑关系</text>
+        <rect x="716" y="1156" width="16" height="12" rx="6" fill="#ffffff" stroke="#13a67a" stroke-width="2"/>
+        <text x="744" y="1168" fill="#73829a" font-size="9" font-family="'Geist', sans-serif">当前实现</text>
+        <rect x="832" y="1156" width="16" height="12" rx="6" fill="#f9fbfd" stroke="#aab7c9" stroke-width="1.5" stroke-dasharray="5,4"/>
+        <text x="860" y="1168" fill="#73829a" font-size="9" font-family="'Geist', sans-serif">扩展 / Future</text>
+      </svg>
+    </div>
+
+    <p class="source">Implementation anchors: agents/ad_agent/api_server.py · runtime/runtime.py · runtime/task_executor.py · runtime/workflow.py · runtime/outbox.py · persistence/interfaces.py · persistence/store.py · core/execution_trace.py</p>
+  </main>
+</body>
+</html>

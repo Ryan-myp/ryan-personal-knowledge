@@ -824,6 +824,14 @@ def google_campaign_schema() -> dict[str, Any]:
                 "number", "Daily budget alias", minimum=0, ui_hidden=True,
             ),
             "status": _field("string", "Campaign status", enum=GOOGLE_STATUSES),
+            "contains_eu_political_advertising": _field(
+                "string",
+                "EU political advertising declaration; required by Google Ads v24 for live creation",
+                enum=[
+                    "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                    "CONTAINS_EU_POLITICAL_ADVERTISING",
+                ],
+            ),
             "target_cpa_micros": _field(
                 "integer", "Target CPA in micros", minimum=1,
                 **_ui_equals("bidding_strategy", "TARGET_CPA"),

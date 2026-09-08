@@ -10,9 +10,11 @@ persistence/__init__.py - 持久化层
 from .interfaces import PersistenceBackend
 from .models import CampaignRecord, OutboxEvent, TaskRecord, ToolCallRecord
 from .store import AdAgentStore
+from .factory import create_persistence_store
+from .mysql_store import MySQLStore
 from .session_manager import SessionManager
 
 __all__ = [
-    "AdAgentStore", "CampaignRecord", "OutboxEvent", "TaskRecord", "ToolCallRecord", "PersistenceBackend",
+    "AdAgentStore", "MySQLStore", "create_persistence_store", "CampaignRecord", "OutboxEvent", "TaskRecord", "ToolCallRecord", "PersistenceBackend",
     "SessionManager",
 ]

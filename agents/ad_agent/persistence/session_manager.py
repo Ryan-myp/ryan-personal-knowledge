@@ -58,6 +58,19 @@ class SessionManager:
         """列出会话"""
         return self.store.list_sessions(user_id, limit)
 
+    def acquire_session_lease(
+        self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        return self.store.acquire_session_lease(session_id, lease_owner, lease_seconds)
+
+    def heartbeat_session_lease(
+        self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> bool:
+        return self.store.heartbeat_session_lease(session_id, lease_owner, lease_seconds)
+
+    def release_session_lease(self, session_id: str, lease_owner: str) -> bool:
+        return self.store.release_session_lease(session_id, lease_owner)
+
     def record_conversation_message(
         self, session_id: str, turn_id: str, role: str, content: str,
     ) -> None:

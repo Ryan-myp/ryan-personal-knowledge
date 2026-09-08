@@ -201,6 +201,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
     }
     ASSET_TYPES = {"TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE"}
     ASSET_MIME_TYPES = {"IMAGE_JPEG", "IMAGE_GIF", "IMAGE_PNG", "HTML5_AD_ZIP"}
+    EU_POLITICAL_ADVERTISING_STATUSES = {
+        "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "CONTAINS_EU_POLITICAL_ADVERTISING",
+    }
     # CampaignAsset and AssetGroupAsset both use the provider's FieldType
     # enum.  Keep the enum in the client because it is part of the v24
     # payload contract, not a workflow concern.
@@ -490,7 +494,46 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if status_code >= 400:
             error_msg = "Bad request"
             if isinstance(data, dict):
-                error_msg = data.get('error', {}).get('message', error_msg)
+                error_body = data.get('error', {})
+                error_msg = error_body.get('message', error_msg)
+                # Google Ads wraps actionable field-level diagnostics inside
+                # GoogleAdsFailure details. Preserve a bounded, secret-free
+                # summary so a failed live test can be corrected without
+                # logging the full provider response (or any credentials).
+                detail_messages = []
+                for detail in error_body.get('details', []) or []:
+                    if not isinstance(detail, dict):
+                        continue
+                    for failure in detail.get('errors', []) or []:
+                        if not isinstance(failure, dict):
+                            continue
+                        message = str(failure.get('message') or '').strip()
+                        error_code = failure.get('errorCode')
+                        code = ''
+                        if isinstance(error_code, dict):
+                            for key, value in error_code.items():
+                                if value not in (None, '', False):
+                                    code = str(key)
+                                    break
+                        location = failure.get('location')
+                        path = ''
+                        if isinstance(location, dict):
+                            elements = location.get('fieldPathElements') or []
+                            names = [
+                                str(item.get('fieldName'))
+                                for item in elements
+                                if isinstance(item, dict) and item.get('fieldName')
+                            ]
+                            path = '.'.join(names)
+                        parts = [item for item in (code, path, message) if item]
+                        if parts:
+                            detail_messages.append(' / '.join(parts))
+                        if len(detail_messages) >= 3:
+                            break
+                    if len(detail_messages) >= 3:
+                        break
+                if detail_messages:
+                    error_msg += ' [' + '; '.join(detail_messages) + ']'
             return APIError(
                 f"Google Ads HTTP {status_code}: {error_msg}",
                 status_code=status_code,
@@ -510,6 +553,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def list_campaigns(self, filter_query: str = None, page_size: int = 100) -> list:
         """获取 Campaign 列表"""
+        try:
+            page_size = max(1, min(int(page_size), 1000))
+        except (TypeError, ValueError):
+            page_size = 100
         query = (
             "SELECT campaign.id, campaign.name, campaign.status, "
             "campaign.advertising_channel_type, campaign.bidding_strategy "
@@ -517,6 +564,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         )
         if filter_query:
             query += f" WHERE {filter_query}"
+        # ``_search_all`` keeps the paging seam for providers that expose a
+        # page size, but Google Ads GAQL does not accept ``pageSize``.  Keep
+        # the public list contract bounded with GAQL LIMIT so a large account
+        # cannot overflow Runtime's result/output budget.
+        query += f" LIMIT {page_size}"
         results = self._search_all(query, page_size=page_size)
         # 解析嵌套结构：result['data']['results'][i]['campaign']
         campaigns = []
@@ -1669,11 +1721,16 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        try:
+            page_size = max(1, min(int(page_size), 1000))
+        except (TypeError, ValueError):
+            page_size = 100
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
                    ad_group.type
             FROM ad_group
             WHERE campaign.id = {campaign_id}
+            LIMIT {page_size}
         """
         results = self._search_all(query, page_size=page_size)
         # 解析嵌套结构：result['data']['results'][i]['adGroup']
@@ -1714,22 +1771,37 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
         """获取 Ad 列表"""
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
-        # Google Ads GAQL 需要使用 ad.ad_group 资源名
+        try:
+            page_size = max(1, min(int(page_size), 1000))
+        except (TypeError, ValueError):
+            page_size = 100
+        # Ads are exposed through the ``ad_group_ad`` association resource.
+        # ``ad.ad_group`` and ``ad.status`` are not valid v24 GAQL fields;
+        # the former implementation therefore failed against the real API.
         query = f"""
-            SELECT ad.id, ad.name, ad.status
-            FROM ad
-            WHERE ad.ad_group = 'customers/{self.customer_id}/adGroups/{ad_group_id}'
+            SELECT ad_group_ad.ad.id, ad_group_ad.ad.resource_name,
+                   ad_group_ad.ad.name, ad_group_ad.status
+            FROM ad_group_ad
+            WHERE ad_group.id = {ad_group_id}
+            LIMIT {page_size}
         """
         results = self._search_all(query, page_size=page_size)
         # 解析嵌套结构：result['data']['results'][i]['ad']
         ads = []
         for r in results:
-            ad = r.get('ad', {})
+            association = r.get('adGroupAd', r.get('ad_group_ad', {})) or {}
+            ad = association.get('ad', {}) or {}
+            ad_id = ad.get('id')
             ads.append({
-                'id': ad.get('id'),
-                'resource_name': ad.get('resourceName'),
+                # The mutable Google resource is AdGroupAd, not Ad. Return
+                # its composite key so later get/update calls can address
+                # the same resource without guessing the parent group.
+                'id': f"{ad_group_id}~{ad_id}" if ad_id else None,
+                'resource_name': association.get(
+                    'resourceName', ad.get('resourceName')
+                ),
                 'name': ad.get('name'),
-                'status': ad.get('status'),
+                'status': association.get('status'),
             })
         return ads
 
@@ -2511,23 +2583,36 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""
-        ad_id = self._numeric_id(ad_id, "ad_id")
+        raw_ad_id = str(ad_id or "").strip()
+        if re.fullmatch(r"\d+~\d+", raw_ad_id):
+            numeric_ad_id = raw_ad_id.rsplit("~", 1)[-1]
+        else:
+            numeric_ad_id = self._numeric_id(raw_ad_id, "ad_id")
         query = f"""
-            SELECT ad.id, ad.name, ad.status
-            FROM ad
-            WHERE ad.id = {ad_id}
+            SELECT ad_group_ad.ad.id, ad_group_ad.ad.resource_name,
+                   ad_group_ad.ad.name, ad_group_ad.status
+            FROM ad_group_ad
+            WHERE ad_group_ad.ad.id = {numeric_ad_id}
         """
         results = self._search(query)
         items = self._response_payload(results).get('results', [])
         if items:
-            ad = items[0].get('ad', {})
+            association = items[0].get(
+                'adGroupAd', items[0].get('ad_group_ad', {})
+            ) or {}
+            ad = association.get('ad', {}) or {}
+            association_resource_name = association.get('resourceName')
+            association_id = (
+                str(association_resource_name).rsplit('/', 1)[-1]
+                if association_resource_name else raw_ad_id
+            )
             return {
-                'id': ad.get('id'),
+                'id': association_id,
                 'resource_name': ad.get('resourceName'),
                 'name': ad.get('name'),
-                'status': ad.get('status'),
+                'status': association.get('status'),
             }
-        raise APIError(f"Google ad {ad_id} was not found")
+        raise APIError(f"Google ad {raw_ad_id} was not found")
     
     # ==================== PMax Asset Group 管理 ====================
     
@@ -3063,6 +3148,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         local_campaign_setting: dict = None,
         travel_campaign_settings: dict = None,
         local_services_campaign_settings: dict = None,
+        contains_eu_political_advertising: Optional[str] = None,
         final_url_suffix: str = None,
         start_date: str = None,
         end_date: str = None,
@@ -3105,6 +3191,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'status': status or 'PAUSED',
             'campaignBudget': budget_resource_name,
         }
+        if contains_eu_political_advertising is not None:
+            political_status = str(contains_eu_political_advertising).upper()
+            if political_status not in self.EU_POLITICAL_ADVERTISING_STATUSES:
+                raise ValueError(
+                    "contains_eu_political_advertising must be one of: "
+                    + ", ".join(sorted(self.EU_POLITICAL_ADVERTISING_STATUSES))
+                )
+            campaign_data['containsEuPoliticalAdvertising'] = political_status
 
         if advertising_channel_sub_type:
             campaign_data['advertisingChannelSubType'] = advertising_channel_sub_type
@@ -3285,7 +3379,18 @@ class GoogleAdsAPIClient(BasePlatformClient):
         result_key: str,
     ) -> dict:
         """Run one validated customer-level Google Ads update mutation."""
-        resource_id = self._numeric_id(resource_id, result_key)
+        if resource == "adGroupAds":
+            # Google identifies an AdGroupAd by the composite resource key
+            # ``{ad_group_id}~{ad_id}``. A bare ad ID is insufficient to
+            # address the mutable association resource.
+            resource_id = str(resource_id or "").strip()
+            if not re.fullmatch(r"\d+~\d+", resource_id):
+                raise ValueError(
+                    "ad_id must be a Google AdGroupAd key in the form "
+                    "{ad_group_id}~{ad_id}"
+                )
+        else:
+            resource_id = self._numeric_id(resource_id, result_key)
         if not isinstance(updates, dict) or not updates:
             raise ValueError("updates must be a non-empty object")
         unknown = set(updates) - allowed_fields
@@ -4510,7 +4615,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not isinstance(operations, list) or not operations:
             raise ValueError("mutate operations must be a non-empty list")
         url = f"{self.BASE_URL}/customers/{self.customer_id}/{resource}:mutate"
-        response = self.request_raw('POST', url, data={'operations': operations})
+        # A stale access token can be supplied by the credential store even
+        # when a refresh token is available.  Read-only GAQL already opts into
+        # the client's single refresh retry; customer mutate must do the same
+        # so a controlled write does not fail before OAuth refresh is tried.
+        # The retry is only for HTTP 401 and never for a generic POST failure.
+        response = self.request_raw(
+            'POST', url, data={'operations': operations}, retry_auth_on_401=True,
+        )
         status = response.get('status_code', 200)
         if status not in (200, 201, 202):
             raise APIError(

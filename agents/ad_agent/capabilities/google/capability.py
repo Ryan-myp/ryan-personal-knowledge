@@ -1144,6 +1144,7 @@ class GoogleCapability(BaseCapability):
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["create_search_ad"], traits=["write", "ad"], write=True,
+                live_support=True, readback_tool="google_get_ad",
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["headlines"], data["descriptions"], data["final_url"]), {
                     "ad_type": data.get("ad_type"), "path1": data.get("path1"), "path2": data.get("path2"),
                     "responsive_search_ad": data.get("responsive_search_ad"), "status": data.get("status"),
@@ -1777,7 +1778,14 @@ class GoogleCapability(BaseCapability):
             description="查询 Google Ads Campaign 列表。",
             input_schema=ToolSchema(
                 required=["customer_id"],
-                properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
+                properties={
+                    "customer_id": {"type": "string"},
+                    "campaign_id": {
+                        "type": "string",
+                        "description": "可选：精确查询一个 Campaign ID，适用于父资源选择",
+                    },
+                    "limit": {"type": "integer"},
+                },
             ),
             action="list", resource_type="campaign",
             intent_types=[
@@ -1818,12 +1826,17 @@ class GoogleCapability(BaseCapability):
             platform="google-ads",
             description="创建 Google Ads Campaign。",
             input_schema=ToolSchema(**google_campaign_schema()),
-            action="create", resource_type="campaign", intent_types=["create_campaign"],
+            action="create", resource_type="campaign",
+            intent_types=["create_campaign", "create_campaign_only"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "campaign"],
-            live_support=False,
+            # The v24 Campaign -> Ad Group -> Ad mutate adapter is verified
+            # for controlled test-account runs. Runtime still requires the
+            # deployment live fuse, tool allowlist and confirmation.
+            live_support=True,
+            readback_tool="google_get_campaign",
             resource_id_field="campaign_id",
         ), GoogleCreateCampaignHandler(api_client)))
 
@@ -1873,12 +1886,13 @@ class GoogleCapability(BaseCapability):
             description="创建 Google Ads Ad Group。",
             input_schema=ToolSchema(**google_ad_group_schema()),
             action="create", resource_type="ad_group", parent_resource_type="campaign",
-            intent_types=["create_campaign"],
+            intent_types=["create_campaign", "create_adgroup"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad_group"],
-            live_support=False,
+            live_support=True,
+            readback_tool="google_get_ad_group",
             resource_id_field="ad_group_id",
             parent_resource_id_field="campaign_id",
             activation_rules=[{
@@ -1937,12 +1951,13 @@ class GoogleCapability(BaseCapability):
             description="创建 Google Ads Ad。",
             input_schema=ToolSchema(**google_ad_schema()),
             action="create", resource_type="ad", parent_resource_type="ad_group",
-            intent_types=["create_campaign"],
+            intent_types=["create_campaign", "create_ad"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
             traits=["write", "ad"],
-            live_support=False,
+            live_support=True,
+            readback_tool="google_get_ad",
             resource_id_field="ad_id",
             parent_resource_id_field="ad_group_id",
             activation_rules=[{
@@ -2084,7 +2099,12 @@ class GoogleCapability(BaseCapability):
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
-                live_support=False,
+                live_support=(resource_type in {"campaign", "ad_group", "ad"}),
+                readback_tool={
+                    "campaign": "google_get_campaign",
+                    "ad_group": "google_get_ad_group",
+                    "ad": "google_get_ad",
+                }.get(resource_type),
                 resource_id_field=resource_id,
             ), CampaignUpdateHandler(
                 api_client, resource_type, _google_update_adapter,

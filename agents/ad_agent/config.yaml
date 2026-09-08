@@ -48,3 +48,10 @@ models:
 
 # 日志级别: DEBUG | INFO | WARNING | ERROR
 log_level: INFO
+
+# Storage is selected by environment so the checked-in default remains safe
+# for local single-process development. Set AD_AGENT_DATABASE_URL to enable
+# the MySQL/InnoDB backend for shared multi-instance deployment.
+# database:
+#   backend: mysql
+#   url: mysql+pymysql://user:password@127.0.0.1:3306/ad_agent

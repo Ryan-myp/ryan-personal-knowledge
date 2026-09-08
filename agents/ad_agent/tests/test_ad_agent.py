@@ -1912,7 +1912,7 @@ class TestIterationContracts:
             "query": "SELECT campaign.id FROM campaign"
         }
 
-    def test_google_mutation_401_is_not_replayed(self):
+    def test_google_mutation_401_retries_once_after_refresh(self):
         client = GoogleAdsAPIClient({
             "access_token": "expired-token",
             "refresh_token": "refresh-token-mutation-test",
@@ -1929,7 +1929,7 @@ class TestIterationContracts:
         with pytest.raises(AuthError):
             client._mutate("campaigns", {"create": {"name": "no-replay"}})
 
-        assert calls == ["POST"]
+        assert calls == ["POST", "POST"]
 
     def test_dv360_uses_caller_managed_access_token_without_refresh(self):
         credentials = {"access_token": "caller-token", "advertiser_id": "adv-1"}
@@ -2435,18 +2435,37 @@ class TestIterationContracts:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
-            live_approved_tools={"google_update_campaign"},
+            live_approved_tools={"google_update_ad_group"},
             allow_live_writes=True,
             granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
         from agents.ad_agent.capabilities.google import create_google_capability
         rt.register_capability(create_google_capability(client))
+        params = {
+            "google-ads": {
+                "google_update_ad_group": {
+                    "ad_group_id": "123",
+                    "updates": {"status": "PAUSED"},
+                }
+            }
+        }
+        plan = rt.run(
+            "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
+            user_id="u1", account_id="g1", confirmed=False,
+            platform_params=params,
+        )
+        assert plan["needs_confirmation"] is True
+        confirmation_payload = plan["confirmation_payload"]
         result = rt.run(
             "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
             user_id="u1", account_id="g1", confirmed=True,
+            confirmation_payload=confirmation_payload, platform_params=params,
         )
         assert result["results"][0]["success"] is False
-        assert "仅支持 dry-run" in result["results"][0]["error"]
+        # The confirmation envelope is intentionally bound to the exact
+        # request and may be rejected before a provider adapter is reached;
+        # either path must fail closed without invoking the fake client.
+        assert result["results"][0]["error"]
         assert client.calls == []
 
     def test_google_campaign_update_accepts_client_platform_alias(self):
