@@ -749,6 +749,12 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """解析用户输入为结构化意图"""
+        if self._llm and self._platform_field_specs:
+            value = str(user_input or "").casefold()
+            if any(marker in value for marker in ("创建", "新建", "create", "add")) and any(
+                marker in value for marker in ("=", "日预算", "daily budget", "名称为", "campaign name")
+            ):
+                return self._parse_with_rules(user_input)
         if not self._llm:
             if self.allow_rule_fallback:
                 return self._parse_with_rules(user_input)
@@ -1437,6 +1443,8 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _normalize_intent(self, data: dict) -> dict:
         """规范化解析结果"""
         data = dict(data or {})
+        if data.get("budget") in (None, "") and data.get("budget_daily") not in (None, ""):
+            data["budget"] = data.get("budget_daily")
         intent_type = data.get("intent_type")
         if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
