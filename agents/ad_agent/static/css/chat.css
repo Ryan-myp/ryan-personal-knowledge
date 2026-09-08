@@ -3396,3 +3396,28 @@
             .monitoring-donut-layout { grid-template-columns: 1fr; justify-items: center; }
             .monitoring-donut-legend { width: min(100%, 220px); }
         }
+
+        /* Keep the global command bar visible while workspace consoles open.
+           The old full-viewport overlays started at 0 and sat below the
+           command bar's z-index, which hid their title and close action. */
+        :root { --global-topbar-height: 60px; }
+        .skill-overlay, .knowledge-overlay, .blueprint-overlay, .monitoring-overlay {
+            top: var(--global-topbar-height);
+            right: 0;
+            bottom: 0;
+            left: 0;
+            inset-block: var(--global-topbar-height) 0;
+        }
+        .skill-console, .knowledge-console, .blueprint-console, .monitoring-console {
+            height: min(900px, calc(100vh - var(--global-topbar-height) - 48px));
+        }
+        @media (max-width: 760px) {
+            :root { --global-topbar-height: 56px; }
+            .skill-overlay, .knowledge-overlay, .blueprint-overlay, .monitoring-overlay {
+                padding: 0;
+            }
+            .skill-console, .knowledge-console, .blueprint-console, .monitoring-console {
+                height: calc(100vh - var(--global-topbar-height));
+                border-radius: 0;
+            }
+        }
