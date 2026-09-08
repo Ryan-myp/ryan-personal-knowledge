@@ -19,13 +19,13 @@
     </header>
     <section class="workspace-popover" id="modePopover" role="dialog" aria-label="执行模式说明">
         <div class="workspace-popover-header">
-            <div><div class="workspace-popover-title">执行模式</div><div class="workspace-popover-subtitle">选择当前服务实例的运行模式；live 是否可用由服务端安全配置决定。</div></div>
+            <div><div class="workspace-popover-title">本次会话运行模式</div><div class="workspace-popover-subtitle">切换后立即作用于当前会话，无需重启服务。</div></div>
             <button class="workspace-popover-close" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭执行模式说明">×</button>
         </div>
         <div class="workspace-mode-card">
             <strong id="workspaceModeTitle">正在读取服务模式…</strong>
             <p id="workspaceModeDescription">正在读取当前 Runtime 的执行策略。</p>
-            <label class="workspace-mode-select-label" for="executionModeSelect">当前模式
+            <label class="workspace-mode-select-label" for="executionModeSelect">选择执行模式
                 <select id="executionModeSelect" onchange="clearWorkspaceModeStatus()" disabled>
                     <option value="dry_run">dry-run · 安全预览</option>
                     <option value="live">live · 受控执行</option>
@@ -33,7 +33,7 @@
             </label>
             <div class="workspace-mode-actions">
                 <span class="workspace-mode-status" id="workspaceModeStatus" role="status" aria-live="polite"></span>
-                <button type="button" class="workspace-mode-apply" id="workspaceModeApply" onclick="applyWorkspaceMode()" disabled>应用模式</button>
+                <button type="button" class="workspace-mode-apply" id="workspaceModeApply" onclick="applyWorkspaceMode()" disabled>立即切换</button>
             </div>
         </div>
     </section>

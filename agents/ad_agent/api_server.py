@@ -207,7 +207,12 @@ def _init_runtime():
             logger.warning("配置请求 live，但 AD_AGENT_ENABLE_LIVE 未显式开启；服务降级为 dry_run")
             execution_mode = "dry_run"
 
-        store = create_persistence_store(sqlite_path=_database_path())
+        database_config = config.get("database", {}) or {}
+        store = create_persistence_store(
+            sqlite_path=_database_path(),
+            backend=database_config.get("backend"),
+            database_url=database_config.get("url"),
+        )
         runtime = AgentRuntime(
             persistence_store=store,
             read_only_mode=read_only_mode,

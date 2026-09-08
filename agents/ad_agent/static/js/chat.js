@@ -151,12 +151,12 @@
             }
             if (workspaceMode.mode === 'live') {
                 title.textContent = 'live 模式 · 受控执行';
-                description.textContent = '当前服务允许进入受控 live 流程；写操作仍需权限、测试账户白名单、幂等校验和显式确认。';
+                description.textContent = '受控写入；仍需权限、测试账户白名单和二次确认。';
                 if (toggleLabel) toggleLabel.textContent = 'live';
                 if (toggleIcon) toggleIcon.textContent = '●';
             } else {
                 title.textContent = 'dry-run 模式 · 安全预览';
-                description.textContent = '查询可以正常执行；创建、修改、暂停等写操作只生成预览，不会修改广告账户。执行模式由服务端配置，不能在页面上绕过安全门禁。';
+                description.textContent = '只生成计划与预览，不修改线上广告账户。';
                 if (toggleLabel) toggleLabel.textContent = 'dry-run';
                 if (toggleIcon) toggleIcon.textContent = '◈';
             }
@@ -239,7 +239,7 @@
                 workspaceMode.liveAvailable = Boolean(data.live_mode_available);
                 workspaceMode.liveReason = data.live_mode_reason || '';
                 if (status) {
-                    status.textContent = data.message || '模式已更新';
+                    status.textContent = data.message || '已切换当前会话模式，无需重启服务';
                     status.className = 'workspace-mode-status success';
                 }
             } catch (error) {

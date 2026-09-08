@@ -3128,6 +3128,12 @@
         .activity-dock { box-shadow: 0 -12px 28px rgba(0,0,0,.1); }
         .dock-ticker:empty::before { display: flex; align-items: center; min-height: 42px; color: var(--text-muted); content: '执行事件将在这里实时汇总'; font-size: 10px; }
         .workspace-mode-status.warning { color: #c18a24; }
+        .workspace-popover:has(.workspace-mode-card) { width: min(320px, calc(100vw - 32px)); padding: 15px; }
+        .workspace-popover:has(.workspace-mode-card) .workspace-popover-header { margin-bottom: 11px; }
+        .workspace-popover:has(.workspace-mode-card) .workspace-mode-card { padding: 12px; }
+        .workspace-popover:has(.workspace-mode-card) .workspace-mode-card p { margin-top: 5px; line-height: 1.45; }
+        .workspace-popover:has(.workspace-mode-card) .workspace-mode-select-label { margin-top: 12px; }
+        .workspace-popover:has(.workspace-mode-card) .workspace-mode-actions { margin-top: 10px; }
 
         .skill-console, .knowledge-console, .blueprint-console { box-shadow: 0 28px 90px rgba(0,0,0,.42); }
         .skill-console-header, .knowledge-console-header, .blueprint-console-header { min-height: 72px; }
