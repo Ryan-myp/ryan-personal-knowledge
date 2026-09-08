@@ -83,6 +83,16 @@ class OutboxConsumer:
         )
         self._thread.start()
 
+    def metrics(self) -> dict[str, Any]:
+        """Return process-local delivery state for the monitoring console."""
+        thread = self._thread
+        return {
+            "consumer_id": self.consumer_id,
+            "state": "running" if thread and thread.is_alive() else "stopped",
+            "poll_interval_seconds": self.poll_interval,
+            "batch_size": self.batch_size,
+        }
+
     def stop(self, timeout: float = 2.0) -> None:
         self._stop.set()
         if self._thread:

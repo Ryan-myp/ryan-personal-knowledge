@@ -3296,6 +3296,33 @@ class AgentRuntime:
             )
         ]
 
+    def get_monitoring_snapshot(
+        self, *, user_id: Optional[str] = None, tenant_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Build the read-only operational view used by the monitoring console."""
+        if self._persistence_store is None:
+            raise RuntimeError("monitoring requires a persistence-backed Runtime")
+        getter = getattr(self._persistence_store, "get_monitoring_snapshot", None)
+        if not callable(getter):
+            raise RuntimeError("persistence backend does not support monitoring")
+        snapshot = getter(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            stale_after_seconds=self.workflow_stale_after_seconds,
+        )
+        task_executor = self.task_executor
+        outbox_consumer = self.outbox_consumer
+        snapshot["instance"] = {
+            "process_id": os.getpid(),
+            "execution_mode": self.get_execution_mode(tenant_id, user_id)
+            if tenant_id and user_id else self.execution_mode,
+            "tool_count": len(self.registry.list_all()),
+            "platform_count": len(self.registry.list_all_platforms()),
+            "task_executor": task_executor.metrics() if task_executor else {"state": "disabled"},
+            "outbox_consumer": outbox_consumer.metrics() if outbox_consumer else {"state": "disabled"},
+        }
+        return snapshot
+
     def pause_task(
         self, task_id: str, *, user_id: str, tenant_id: str,
     ) -> Optional[dict[str, Any]]:

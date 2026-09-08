@@ -695,6 +695,277 @@ class AdAgentStore:
             rows = self._get_conn().execute(query, params).fetchall()
             return [self._task_from_row(row) for row in rows]
 
+    # -- Operational monitoring ---------------------------------------
+
+    @staticmethod
+    def _monitoring_age_seconds(value: Any, now: datetime) -> Optional[float]:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None and now.tzinfo is not None:
+                # Existing domain timestamps are intentionally backend-neutral
+                # local ISO strings. Compare them in the same wall-clock
+                # domain instead of interpreting them as UTC.
+                current = now.replace(tzinfo=None)
+            elif parsed.tzinfo is not None and now.tzinfo is None:
+                current = now.replace(tzinfo=parsed.tzinfo)
+            else:
+                current = now
+            return max(0.0, (current - parsed).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def _monitoring_duration_ms(started_at: Any, ended_at: Any) -> Optional[float]:
+        if not started_at or not ended_at:
+            return None
+        try:
+            started = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+            ended = datetime.fromisoformat(str(ended_at).replace("Z", "+00:00"))
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            if ended.tzinfo is None:
+                ended = ended.replace(tzinfo=timezone.utc)
+            return max(0.0, (ended - started).total_seconds() * 1000.0)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    def get_monitoring_snapshot(
+        self, *, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+        stale_after_seconds: float = 300.0,
+        lease_expiry_window_seconds: float = 60.0,
+        tool_window_seconds: float = 3600.0,
+    ) -> dict[str, Any]:
+        """Return a bounded, credential-free operational view of the store.
+
+        All filters are applied inside the persistence layer.  The HTTP layer
+        never loads raw task/tool payloads just to render the monitoring page.
+        SQL intentionally stays within the small common subset used by the
+        SQLite and MySQL adapters.
+        """
+        stale_after = max(1.0, float(stale_after_seconds))
+        lease_window = max(1.0, float(lease_expiry_window_seconds))
+        tool_window = max(1.0, float(tool_window_seconds))
+        now = datetime.now()
+        now_iso = now.isoformat()
+        stale_cutoff = (now - timedelta(seconds=stale_after)).isoformat()
+        lease_cutoff = (
+            now + timedelta(seconds=lease_window)
+        ).isoformat()
+        tool_cutoff = (
+            now - timedelta(seconds=tool_window)
+        ).isoformat()
+
+        def scope_clause(prefix: str = "") -> tuple[str, list[Any]]:
+            clauses: list[str] = []
+            params: list[Any] = []
+            if tenant_id is not None:
+                clauses.append(f"{prefix}tenant_id = ?")
+                params.append(str(tenant_id))
+            if user_id is not None:
+                clauses.append(f"{prefix}user_id = ?")
+                params.append(str(user_id))
+            return (" AND " + " AND ".join(clauses)) if clauses else "", params
+
+        def grouped(table: str, *, where: str = "", params: list[Any] | None = None) -> dict[str, int]:
+            rows = conn.execute(
+                f"SELECT status, COUNT(*) AS count FROM {table} WHERE 1 = 1{where} GROUP BY status",
+                params or [],
+            ).fetchall()
+            return {str(row["status"]): int(row["count"] or 0) for row in rows}
+
+        def scalar(statement: str, params: list[Any] | None = None) -> Any:
+            row = conn.execute(statement, params or []).fetchone()
+            return row[0] if row else None
+
+        with self._lock:
+            conn = self._get_conn()
+
+            task_scope, task_params = scope_clause()
+            task_statuses = grouped("tasks", where=task_scope, params=task_params)
+            task_active_where = (
+                f"{task_scope} AND status IN ('running', 'cancelling')"
+            )
+            task_active_params = list(task_params)
+            task_expired = int(scalar(
+                "SELECT COUNT(*) FROM tasks WHERE 1 = 1" + task_active_where
+                + " AND (lease_expires_at IS NULL OR lease_expires_at <= ?)",
+                task_active_params + [now_iso],
+            ) or 0)
+            task_expiring = int(scalar(
+                "SELECT COUNT(*) FROM tasks WHERE 1 = 1" + task_active_where
+                + " AND lease_expires_at > ? AND lease_expires_at <= ?",
+                task_active_params + [now_iso, lease_cutoff],
+            ) or 0)
+            task_stale = int(scalar(
+                "SELECT COUNT(*) FROM tasks WHERE 1 = 1" + task_scope
+                + " AND status IN ('running', 'cancelling') AND updated_at <= ?",
+                task_params + [stale_cutoff],
+            ) or 0)
+            queued_oldest = scalar(
+                "SELECT MIN(created_at) FROM tasks WHERE 1 = 1" + task_scope
+                + " AND status = 'queued'", task_params,
+            )
+            task_owners = conn.execute(
+                "SELECT lease_owner, COUNT(*) AS count FROM tasks WHERE 1 = 1"
+                + task_active_where + " AND lease_owner IS NOT NULL"
+                + " GROUP BY lease_owner ORDER BY count DESC LIMIT 20",
+                task_active_params,
+            ).fetchall()
+
+            run_scope, run_params = scope_clause()
+            run_statuses = grouped("execution_runs", where=run_scope, params=run_params)
+            run_stale = int(scalar(
+                "SELECT COUNT(*) FROM execution_runs WHERE 1 = 1" + run_scope
+                + " AND status = 'running' AND updated_at <= ?",
+                run_params + [stale_cutoff],
+            ) or 0)
+
+            # Workflows and sessions predate tenant_id on their tables.  They
+            # are therefore scoped by the trusted user identity where
+            # available; the query still remains useful for the configured
+            # service principal in a single-tenant deployment.
+            session_scope = ""
+            session_params: list[Any] = []
+            if user_id is not None:
+                session_scope = " AND s.user_id = ?"
+                session_params.append(str(user_id))
+            workflow_statuses = {
+                str(row["status"]): int(row["count"] or 0)
+                for row in conn.execute(
+                    "SELECT w.status, COUNT(*) AS count FROM workflows w "
+                    "JOIN sessions s ON s.session_id = w.session_id WHERE 1 = 1"
+                    + session_scope + " GROUP BY w.status", session_params,
+                ).fetchall()
+            }
+            workflow_expired = int(scalar(
+                "SELECT COUNT(*) FROM workflows w JOIN sessions s ON s.session_id = w.session_id "
+                "WHERE w.status = 'running'" + session_scope
+                + " AND (w.lease_expires_at IS NULL OR w.lease_expires_at <= ?)",
+                session_params + [now_iso],
+            ) or 0)
+            workflow_expiring = int(scalar(
+                "SELECT COUNT(*) FROM workflows w JOIN sessions s ON s.session_id = w.session_id "
+                "WHERE w.status = 'running'" + session_scope
+                + " AND w.lease_expires_at > ? AND w.lease_expires_at <= ?",
+                session_params + [now_iso, lease_cutoff],
+            ) or 0)
+            workflow_stale = int(scalar(
+                "SELECT COUNT(*) FROM workflows w JOIN sessions s ON s.session_id = w.session_id "
+                "WHERE w.status = 'running'" + session_scope + " AND w.updated_at <= ?",
+                session_params + [stale_cutoff],
+            ) or 0)
+            session_leases = int(scalar(
+                "SELECT COUNT(*) FROM sessions s WHERE s.lease_owner IS NOT NULL"
+                + (" AND s.user_id = ?" if user_id is not None else "")
+                + " AND s.lease_expires_at > ?",
+                ([str(user_id)] if user_id is not None else []) + [now_iso],
+            ) or 0)
+            session_expired = int(scalar(
+                "SELECT COUNT(*) FROM sessions s WHERE s.lease_owner IS NOT NULL"
+                + (" AND s.user_id = ?" if user_id is not None else "")
+                + " AND (s.lease_expires_at IS NULL OR s.lease_expires_at <= ?)",
+                ([str(user_id)] if user_id is not None else []) + [now_iso],
+            ) or 0)
+
+            outbox_where = ""
+            outbox_params: list[Any] = []
+            if user_id is not None:
+                outbox_where = (
+                    " AND EXISTS (SELECT 1 FROM workflows w JOIN sessions s "
+                    "ON s.session_id = w.session_id WHERE w.workflow_id = outbox_events.run_id "
+                    "AND s.user_id = ?)"
+                )
+                outbox_params.append(str(user_id))
+            outbox_statuses = grouped(
+                "outbox_events", where=outbox_where, params=outbox_params,
+            )
+            outbox_retrying = int(scalar(
+                "SELECT COUNT(*) FROM outbox_events WHERE status = 'pending'"
+                + outbox_where + " AND retry_count > 0", outbox_params,
+            ) or 0)
+
+            tool_rows = conn.execute(
+                "SELECT tc.tool_name, tc.platform, tc.success, tc.started_at, tc.ended_at "
+                "FROM tool_calls tc JOIN sessions s ON s.session_id = tc.session_id "
+                "WHERE tc.started_at >= ?"
+                + (" AND s.user_id = ?" if user_id is not None else "")
+                + " ORDER BY tc.started_at DESC LIMIT 2000",
+                [tool_cutoff] + ([str(user_id)] if user_id is not None else []),
+            ).fetchall()
+            tool_total = len(tool_rows)
+            tool_failed = sum(1 for row in tool_rows if not bool(row["success"]))
+            durations = [
+                duration for row in tool_rows
+                if (duration := self._monitoring_duration_ms(row["started_at"], row["ended_at"])) is not None
+            ]
+            by_tool: dict[str, dict[str, Any]] = {}
+            for row in tool_rows:
+                name = str(row["tool_name"] or "unknown")
+                item = by_tool.setdefault(name, {"tool_name": name, "platform": row["platform"], "calls": 0, "failed": 0})
+                item["calls"] += 1
+                item["failed"] += int(not bool(row["success"]))
+            top_tools = sorted(by_tool.values(), key=lambda item: (-item["calls"], item["tool_name"]))[:12]
+
+        queued_age = self._monitoring_age_seconds(queued_oldest, now)
+        alert_count = sum(
+            value > 0 for value in (
+                task_statuses.get("recovery_required", 0),
+                run_statuses.get("recovery_required", 0),
+                workflow_statuses.get("recovery_required", 0),
+                task_expired, workflow_expired, outbox_statuses.get("failed", 0),
+            )
+        )
+        warning_count = sum(value > 0 for value in (task_expiring, workflow_expiring, queued_age or 0))
+        overall_status = "critical" if alert_count else "attention" if warning_count else "healthy"
+        return {
+            "generated_at": now.astimezone().isoformat(),
+            "backend": getattr(self, "backend_name", "sqlite"),
+            "status": overall_status,
+            "scope": {"tenant_id": tenant_id, "user_id": user_id},
+            "tasks": {
+                "by_status": task_statuses,
+                "queued_depth": task_statuses.get("queued", 0),
+                "queued_oldest_at": queued_oldest,
+                "queued_oldest_age_seconds": round(queued_age, 3) if queued_age is not None else None,
+                "stale_running": task_stale,
+                "leases": {"expired": task_expired, "expiring_soon": task_expiring},
+                "lease_owners": [dict(row) for row in task_owners],
+            },
+            "runs": {"by_status": run_statuses, "stale_running": run_stale},
+            "workflows": {
+                "by_status": workflow_statuses,
+                "stale_running": workflow_stale,
+                "leases": {"expired": workflow_expired, "expiring_soon": workflow_expiring},
+            },
+            "sessions": {"active_leases": session_leases, "expired_leases": session_expired},
+            "outbox": {
+                "by_status": outbox_statuses,
+                "pending_depth": outbox_statuses.get("pending", 0),
+                "claimed": outbox_statuses.get("claimed", 0),
+                "retrying": outbox_retrying,
+            },
+            "tools": {
+                "window_seconds": tool_window,
+                "total": tool_total,
+                "failed": tool_failed,
+                "success_rate": round((tool_total - tool_failed) / tool_total, 4) if tool_total else None,
+                "avg_latency_ms": round(sum(durations) / len(durations), 2) if durations else None,
+                "top_tools": top_tools,
+            },
+            "alerts": {
+                "recovery_required": (
+                    task_statuses.get("recovery_required", 0)
+                    + run_statuses.get("recovery_required", 0)
+                    + workflow_statuses.get("recovery_required", 0)
+                ),
+                "expired_leases": task_expired + workflow_expired + session_expired,
+                "expiring_leases": task_expiring + workflow_expiring,
+                "failed_outbox": outbox_statuses.get("failed", 0),
+            },
+        }
+
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,
     ) -> Optional[TaskRecord]:

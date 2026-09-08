@@ -55,6 +55,8 @@
         let durableRunPollToken = 0;
         let activeDurableRunId = null;
         let durableRunSeq = 0;
+        let monitoringRefreshTimer = null;
+        let monitoringRequestToken = 0;
 
         function traceStatusLabel(status) {
             return TRACE_STATUS_LABELS[status] || '未知';
@@ -99,6 +101,144 @@
             document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'false');
             document.getElementById('blueprintOverlay')?.classList.remove('active');
             document.getElementById('blueprintOverlay')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('monitoringOverlay')?.classList.remove('active');
+            document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
+            if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
+            monitoringRefreshTimer = null;
+        }
+
+        function monitoringNumber(value) {
+            return Number.isFinite(Number(value)) ? Number(value).toLocaleString('zh-CN') : '—';
+        }
+
+        function monitoringAge(value) {
+            if (value === null || value === undefined) return '—';
+            const seconds = Number(value);
+            if (!Number.isFinite(seconds)) return '—';
+            if (seconds < 60) return `${Math.round(seconds)} 秒`;
+            if (seconds < 3600) return `${Math.round(seconds / 60)} 分钟`;
+            return `${(seconds / 3600).toFixed(1)} 小时`;
+        }
+
+        function monitoringStatusLabel(status) {
+            return ({ queued: '排队中', running: '运行中', cancelling: '取消中', paused: '已暂停', succeeded: '已成功', failed: '失败', cancelled: '已取消', recovery_required: '需恢复' })[status] || status;
+        }
+
+        function monitoringSetStatus(status, text) {
+            const banner = document.getElementById('monitoringStatusBanner');
+            const label = document.getElementById('monitoringStatusText');
+            if (!banner || !label) return;
+            banner.className = `monitoring-status-banner ${status === 'healthy' ? '' : status}`.trim();
+            label.textContent = text;
+        }
+
+        function renderMonitoring(snapshot) {
+            const tasks = snapshot.tasks || {};
+            const runs = snapshot.runs || {};
+            const workflows = snapshot.workflows || {};
+            const sessions = snapshot.sessions || {};
+            const outbox = snapshot.outbox || {};
+            const tools = snapshot.tools || {};
+            const alerts = snapshot.alerts || {};
+            const instance = snapshot.instance || {};
+            const taskStatuses = tasks.by_status || {};
+            const recovery = Number(alerts.recovery_required || 0);
+            const expired = Number(alerts.expired_leases || 0);
+            const expiring = Number(alerts.expiring_leases || 0);
+            const successRate = tools.success_rate === null || tools.success_rate === undefined ? null : `${Math.round(Number(tools.success_rate) * 100)}%`;
+
+            document.getElementById('monitoringQueueDepth').textContent = monitoringNumber(tasks.queued_depth || 0);
+            document.getElementById('monitoringQueueHint').textContent = tasks.queued_oldest_age_seconds === null || tasks.queued_oldest_age_seconds === undefined
+                ? '当前没有排队任务' : `最老任务已等 ${monitoringAge(tasks.queued_oldest_age_seconds)}`;
+            document.getElementById('monitoringLeaseRisk').textContent = monitoringNumber(expired + expiring);
+            document.getElementById('monitoringLeaseHint').textContent = `${monitoringNumber(expired)} 已过期 · ${monitoringNumber(expiring)} 即将过期`;
+            document.getElementById('monitoringRecoveryCount').textContent = monitoringNumber(recovery);
+            document.getElementById('monitoringRecoveryHint').textContent = `Task ${monitoringNumber(taskStatuses.recovery_required || 0)} · Run ${monitoringNumber(runs.by_status?.recovery_required || 0)} · Workflow ${monitoringNumber(workflows.by_status?.recovery_required || 0)}`;
+            document.getElementById('monitoringToolSuccess').textContent = successRate || '—';
+            document.getElementById('monitoringToolHint').textContent = `${monitoringNumber(tools.total || 0)} 次调用 · 平均 ${tools.avg_latency_ms == null ? '—' : `${Math.round(tools.avg_latency_ms)} ms`}`;
+
+            const counts = Object.entries(taskStatuses).sort((a, b) => Number(b[1]) - Number(a[1]));
+            const maxCount = Math.max(1, ...counts.map(([, value]) => Number(value)));
+            const bars = document.getElementById('monitoringTaskBars');
+            bars.innerHTML = counts.length ? counts.map(([status, count]) => `
+                <div class="monitoring-bar-row ${escapeHtml(status)}"><span>${escapeHtml(monitoringStatusLabel(status))}</span><div class="monitoring-bar-track"><div class="monitoring-bar-fill" style="width:${Math.max(3, Number(count) / maxCount * 100)}%"></div></div><strong class="monitoring-bar-count">${monitoringNumber(count)}</strong></div>
+            `).join('') : '<div class="monitoring-empty">暂无持久化任务</div>';
+            const executor = instance.task_executor || {};
+            document.getElementById('monitoringTaskSubstats').innerHTML = [
+                ['运行中', monitoringNumber(taskStatuses.running || 0)],
+                ['本机占用', executor.in_process_tasks === undefined ? '—' : `${monitoringNumber(executor.in_process_tasks)} / ${monitoringNumber(executor.max_workers || 0)}`],
+                ['最老排队', monitoringAge(tasks.queued_oldest_age_seconds)],
+            ].map(([label, value]) => `<div class="monitoring-substat"><span>${label}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+
+            const leaseItems = [
+                ['Task lease', tasks.leases?.expired || 0, tasks.leases?.expiring_soon || 0],
+                ['Workflow lease', workflows.leases?.expired || 0, workflows.leases?.expiring_soon || 0],
+                ['Session lease', sessions.expired_leases || 0, 0],
+                ['恢复待处理', recovery, 0],
+            ];
+            document.getElementById('monitoringLeaseList').innerHTML = leaseItems.map(([label, bad, soon]) => {
+                const value = Number(bad) + Number(soon);
+                const tone = Number(bad) ? 'danger' : Number(soon) ? 'warning' : '';
+                return `<div class="monitoring-lease-row ${tone}"><span>${label}</span><strong>${monitoringNumber(value)}${soon ? ` <small>· ${monitoringNumber(soon)} 将到期</small>` : ''}</strong></div>`;
+            }).join('');
+
+            const outboxStatuses = outbox.by_status || {};
+            document.getElementById('monitoringOutboxSummary').innerHTML = [
+                ['待投递', outboxStatuses.pending || 0], ['消费中', outboxStatuses.claimed || 0], ['失败', outboxStatuses.failed || 0], ['重试中', outbox.retrying || 0],
+            ].map(([label, value]) => `<span class="monitoring-event-chip"><strong>${monitoringNumber(value)}</strong>${label}</span>`).join('');
+            document.getElementById('monitoringRunSummary').textContent = `Run：${monitoringNumber(runs.by_status?.running || 0)} 个运行中，${monitoringNumber(runs.by_status?.recovery_required || 0)} 个需要恢复；Workflow：${monitoringNumber(workflows.by_status?.running || 0)} 个运行中。`;
+
+            const consumer = instance.outbox_consumer || {};
+            document.getElementById('monitoringInstanceList').innerHTML = [
+                ['Task worker', executor.state || '—', `${monitoringNumber(executor.in_process_tasks || 0)} 个执行中 · PID ${instance.process_id || '—'}`],
+                ['Outbox consumer', consumer.state || '—', consumer.state === 'running' ? `每 ${consumer.poll_interval_seconds || '—'} 秒轮询` : '未运行'],
+                ['Backend', snapshot.backend || '—', `${monitoringNumber(instance.platform_count || 0)} 个平台 · ${monitoringNumber(instance.tool_count || 0)} 个 Tool`],
+            ].map(([label, value, hint]) => `<div class="monitoring-instance-row"><span>${label}<small>${hint}</small></span><strong>${escapeHtml(String(value))}</strong></div>`).join('');
+
+            const toolRows = Array.isArray(tools.top_tools) ? tools.top_tools : [];
+            document.getElementById('monitoringToolRows').innerHTML = toolRows.length ? toolRows.map(item => `<tr><td>${escapeHtml(item.tool_name || 'unknown')}</td><td>${escapeHtml(item.platform || '—')}</td><td>${monitoringNumber(item.calls || 0)}</td><td class="${item.failed ? 'monitoring-tool-failed' : ''}">${monitoringNumber(item.failed || 0)}</td></tr>`).join('') : '<tr><td colspan="4" class="monitoring-empty">最近窗口暂无 Tool 调用</td></tr>';
+
+            const generated = snapshot.generated_at ? new Date(snapshot.generated_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
+            document.getElementById('monitoringUpdated').textContent = `更新于 ${generated} · ${snapshot.backend || 'store'}`;
+            const statusText = snapshot.status === 'critical' ? '需要处理：存在恢复项、已过期租约或失败事件' : snapshot.status === 'attention' ? '需要关注：存在排队、即将过期租约或轻微积压' : '运行平稳：当前权限范围内没有需要处理的运行风险';
+            monitoringSetStatus(snapshot.status || 'healthy', statusText);
+            const badge = document.getElementById('monitoringNavBadge');
+            const badgeCount = recovery + expired + Number(outboxStatuses.failed || 0);
+            if (badge) { badge.hidden = !badgeCount; badge.textContent = badgeCount > 99 ? '99+' : String(badgeCount); }
+        }
+
+        async function loadMonitoring(schedule = false) {
+            const token = ++monitoringRequestToken;
+            if (!document.getElementById('monitoringOverlay')?.classList.contains('active')) return;
+            try {
+                const snapshot = await apiFetch('/monitoring/overview');
+                if (token !== monitoringRequestToken) return;
+                renderMonitoring(snapshot);
+            } catch (error) {
+                if (token !== monitoringRequestToken) return;
+                monitoringSetStatus('critical', error?.message || '监控数据读取失败');
+                document.getElementById('monitoringUpdated').textContent = '读取失败';
+            } finally {
+                if (schedule && document.getElementById('monitoringOverlay')?.classList.contains('active')) {
+                    monitoringRefreshTimer = window.setTimeout(() => loadMonitoring(true), 15000);
+                }
+            }
+        }
+
+        function openMonitoring() {
+            closeWorkspacePopovers();
+            const overlay = document.getElementById('monitoringOverlay');
+            if (!overlay) return;
+            overlay.classList.add('active');
+            overlay.setAttribute('aria-hidden', 'false');
+            loadMonitoring(true);
+        }
+
+        function closeMonitoring() {
+            document.getElementById('monitoringOverlay')?.classList.remove('active');
+            document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
+            if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
+            monitoringRefreshTimer = null;
         }
 
         function applyTheme(theme) {
@@ -4450,7 +4590,7 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay')) {
                 closeWorkspacePopovers();
             }
         });
@@ -4470,8 +4610,15 @@
         document.getElementById('historyRenameOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'historyRenameOverlay') closeHistoryRenameDialog();
         });
+        document.getElementById('monitoringOverlay')?.addEventListener('click', (event) => {
+            if (event.target.id === 'monitoringOverlay') closeMonitoring();
+        });
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') return;
+            if (document.getElementById('monitoringOverlay')?.classList.contains('active')) {
+                closeMonitoring();
+                return;
+            }
             const renameOverlay = document.getElementById('historyRenameOverlay');
             if (renameOverlay?.classList.contains('active')) {
                 closeHistoryRenameDialog();

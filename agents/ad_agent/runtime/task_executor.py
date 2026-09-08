@@ -110,6 +110,28 @@ class TaskExecutor:
         with self._lock:
             return tuple(sorted(self._handlers))
 
+    def metrics(self) -> dict[str, Any]:
+        """Return process-local worker metrics without exposing task payloads."""
+        with self._lock:
+            handles = len(self._handles)
+            closed = self._closed
+            worker_id = self._worker_id
+            kinds = tuple(sorted(self._handlers))
+        try:
+            internal_queue = max(0, int(self._pool._work_queue.qsize()))
+        except (AttributeError, TypeError, ValueError):  # pragma: no cover - implementation detail
+            internal_queue = None
+        return {
+            "worker_id": worker_id,
+            "state": "closed" if closed else "running",
+            "max_workers": self.max_workers,
+            "max_queue": self.max_queue,
+            "in_process_tasks": handles,
+            "in_process_queued": internal_queue,
+            "admission_capacity": self.max_workers + self.max_queue,
+            "registered_kinds": list(kinds),
+        }
+
     @staticmethod
     def _now() -> str:
         return datetime.now().isoformat()

@@ -197,6 +197,12 @@ reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified
 检查 Runtime、必需的 LLM 和 Tool Registry 是否已完成初始化，不会调用 Provider，也不会
 返回凭证；ASGI 生命周期结束时会关闭 Runtime-owned TaskExecutor，避免热重载留下后台任务。
 
+运行监控入口位于页面左侧的“运行监控”，后端接口为 `GET /monitoring/overview`，沿用当前
+API Key 与 `ads.read` 权限。它返回当前 principal 范围内的 Durable Task 队列、Task/Workflow/
+Session lease、Run/Workflow recovery、Outbox 投递、Tool 调用成功率/平均延迟，以及当前进程
+worker/consumer 状态；页面每 15 秒刷新一次。共享 MySQL 部署中，队列和租约统计来自同一份
+InnoDB 状态，当前实例卡片只代表本机进程，不把 Outbox 误当成 Agent 执行队列。
+
 Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；Task、Outbox、
 Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 仍由
 进程内锁保护并明确限制为单进程；配置 `AD_AGENT_DATABASE_URL=mysql+pymysql://...`
@@ -314,7 +320,9 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 暂留的工程缺口：
 
-- 观察性只保留接入入口，尚未接入 trace、指标、告警和审计检索。
+- 当前监控页提供持久化运行态聚合和 Tool 审计摘要，尚未接入外部 metrics/trace/告警系统；
+  生产环境仍需把 `queue depth`、lease expiry、recovery count、Provider latency 等指标接入
+  统一监控平台，并补充按实例维度的心跳注册。
 - Plugin 包控制面已支持租户隔离、版本不可变、摘要校验、依赖激活门禁和发布回滚；
   已支持标准 ZIP 导入和不执行代码的完整性/依赖健康检查；仍待补可信插件的沙箱/独立
   进程、签名来源策略的部署配置和生产级运行时探针。

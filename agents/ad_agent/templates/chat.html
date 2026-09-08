@@ -25,7 +25,7 @@
         <div class="workspace-mode-card">
             <strong id="workspaceModeTitle">正在读取服务模式…</strong>
             <p id="workspaceModeDescription">正在读取当前 Runtime 的执行策略。</p>
-            <label class="workspace-mode-select-label" for="executionModeSelect">选择执行模式
+            <label class="workspace-mode-select-label" for="executionModeSelect">选择执行模式（应用模式）
                 <select id="executionModeSelect" onchange="clearWorkspaceModeStatus()" disabled>
                     <option value="dry_run">dry-run · 安全预览</option>
                     <option value="live">live · 受控执行</option>
@@ -148,6 +148,59 @@
             </div>
         </section>
     </div>
+    <div class="monitoring-overlay" id="monitoringOverlay" aria-hidden="true">
+        <section class="monitoring-console" role="dialog" aria-modal="true" aria-labelledby="monitoringConsoleTitle">
+            <header class="monitoring-console-header">
+                <div>
+                    <div class="monitoring-console-kicker">RUNTIME CONTROL ROOM</div>
+                    <div class="monitoring-console-title" id="monitoringConsoleTitle">运行监控</div>
+                    <div class="monitoring-console-subtitle">查看共享队列、租约、恢复状态和 Tool 审计；数据来自当前权限范围。</div>
+                </div>
+                <div class="monitoring-console-actions">
+                    <span class="monitoring-updated" id="monitoringUpdated">尚未读取</span>
+                    <button class="btn btn-secondary" type="button" onclick="loadMonitoring(true)">刷新</button>
+                    <button class="icon-btn" type="button" onclick="closeMonitoring()" aria-label="关闭运行监控">×</button>
+                </div>
+            </header>
+            <div class="monitoring-console-body">
+                <div class="monitoring-status-banner" id="monitoringStatusBanner" role="status">
+                    <span class="monitoring-status-dot"></span><span id="monitoringStatusText">正在读取监控数据…</span>
+                </div>
+                <div class="monitoring-stat-grid">
+                    <article class="monitoring-stat-card accent-cyan"><span>任务队列</span><strong id="monitoringQueueDepth">—</strong><small id="monitoringQueueHint">等待数据</small></article>
+                    <article class="monitoring-stat-card accent-amber"><span>租约风险</span><strong id="monitoringLeaseRisk">—</strong><small id="monitoringLeaseHint">已过期 / 即将过期</small></article>
+                    <article class="monitoring-stat-card accent-red"><span>需恢复</span><strong id="monitoringRecoveryCount">—</strong><small id="monitoringRecoveryHint">Task · Run · Workflow</small></article>
+                    <article class="monitoring-stat-card accent-violet"><span>Tool 成功率</span><strong id="monitoringToolSuccess">—</strong><small id="monitoringToolHint">最近 1 小时</small></article>
+                </div>
+                <div class="monitoring-grid monitoring-grid-main">
+                    <section class="monitoring-panel monitoring-queue-panel">
+                        <div class="monitoring-panel-heading"><div><h2>任务流转</h2><p>Durable queue 状态与本机线程池占用</p></div><span class="monitoring-panel-mark">01</span></div>
+                        <div class="monitoring-bars" id="monitoringTaskBars"><div class="monitoring-empty">等待数据…</div></div>
+                        <div class="monitoring-substats" id="monitoringTaskSubstats"></div>
+                    </section>
+                    <section class="monitoring-panel monitoring-lease-panel">
+                        <div class="monitoring-panel-heading"><div><h2>租约与恢复</h2><p>服务重启后，先看这里判断是否需要回查 Provider</p></div><span class="monitoring-panel-mark">02</span></div>
+                        <div class="monitoring-lease-list" id="monitoringLeaseList"><div class="monitoring-empty">等待数据…</div></div>
+                    </section>
+                </div>
+                <div class="monitoring-grid monitoring-grid-secondary">
+                    <section class="monitoring-panel">
+                        <div class="monitoring-panel-heading"><div><h2>事件投递</h2><p>Outbox 是事件消费链路，不负责执行 Agent Task</p></div><span class="monitoring-panel-mark">03</span></div>
+                        <div class="monitoring-event-summary" id="monitoringOutboxSummary"></div>
+                        <div class="monitoring-mini-note" id="monitoringRunSummary"></div>
+                    </section>
+                    <section class="monitoring-panel">
+                        <div class="monitoring-panel-heading"><div><h2>当前实例</h2><p>本机 worker 与 consumer；多机共享态见上方</p></div><span class="monitoring-panel-mark">04</span></div>
+                        <div class="monitoring-instance-list" id="monitoringInstanceList"><div class="monitoring-empty">等待数据…</div></div>
+                    </section>
+                </div>
+                <section class="monitoring-panel monitoring-tools-panel">
+                    <div class="monitoring-panel-heading"><div><h2>Tool 调用审计</h2><p>调用次数、失败次数与平均延迟；原始输入输出仍按现有审计权限查看</p></div><span class="monitoring-panel-mark">05</span></div>
+                    <div class="monitoring-tool-table-wrap"><table class="monitoring-tool-table"><thead><tr><th>Tool</th><th>平台</th><th>调用</th><th>失败</th></tr></thead><tbody id="monitoringToolRows"><tr><td colspan="4" class="monitoring-empty">等待数据…</td></tr></tbody></table></div>
+                </section>
+            </div>
+        </section>
+    </div>
     <!-- 左侧边栏 -->
     <aside class="sidebar">
         <button class="new-chat-btn" onclick="newChat()">
@@ -168,6 +221,11 @@
         <button class="new-chat-btn blueprint-nav-btn workspace-nav" onclick="openBlueprintManager()" aria-label="广告创建向导">
             <span class="nav-icon">◇</span>
             <span>广告创建向导</span>
+        </button>
+        <button class="new-chat-btn monitoring-nav-btn workspace-nav" id="monitoringNavButton" onclick="openMonitoring()" aria-label="运行监控">
+            <span class="nav-icon">◉</span>
+            <span>运行监控</span>
+            <span class="monitoring-nav-badge" id="monitoringNavBadge" hidden></span>
         </button>
 
         <div class="chat-history-header">

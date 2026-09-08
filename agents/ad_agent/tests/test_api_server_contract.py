@@ -308,6 +308,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
         "executionModeSelect", "/settings/execution-mode", "live_mode_available",
         "live_mode_reason", "应用模式", "live · 受控执行",
+        "运行监控", "/monitoring/overview", "monitoringTaskBars",
+        "monitoringLeaseList", "Tool 调用审计", "当前实例",
         "sidebar > .new-chat-btn", "nav-icon", "blueprintOverlay",
         "!event.target.closest('.blueprint-overlay')",
         "closeBlueprintManager()", "event.stopPropagation()",

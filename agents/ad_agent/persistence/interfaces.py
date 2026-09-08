@@ -262,6 +262,17 @@ class PersistenceBackend(Protocol):
     def cancel_task(self, task_id: str) -> Optional[Any]: ...
     def recover_stale_tasks(self, stale_after_seconds: float = 300.0) -> int: ...
 
+    # -- Operational monitoring ---------------------------------------
+    # This is a read-only aggregate seam.  It deliberately returns counts
+    # and bounded summaries rather than raw payloads or credentials, so the
+    # same contract works for SQLite and a shared MySQL deployment.
+    def get_monitoring_snapshot(
+        self, *, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+        stale_after_seconds: float = 300.0,
+        lease_expiry_window_seconds: float = 60.0,
+        tool_window_seconds: float = 3600.0,
+    ) -> dict[str, Any]: ...
+
     # -- Agent Memory -----------------------------------------------------
     # Memory is separate from session/tool audit state.  The contract keeps
     # Runtime independent of SQLite so a future MySQL/PostgreSQL backend can

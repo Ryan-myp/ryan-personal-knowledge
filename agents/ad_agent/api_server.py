@@ -495,6 +495,26 @@ async def readiness():
     return JSONResponse(status_code=200 if ready else 503, content=payload)
 
 
+@app.get("/monitoring/overview", tags=["monitoring"])
+async def monitoring_overview(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Return the scoped operational snapshot for the monitoring console."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "get_monitoring_snapshot", None)):
+        raise HTTPException(status_code=503, detail="监控数据存储未初始化")
+    try:
+        return await run_in_threadpool(
+            runtime.get_monitoring_snapshot,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
 def _live_mode_unavailable_reason() -> Optional[str]:
     """Return the deployment-owned reason live mode cannot be enabled."""
     if runtime is None:
