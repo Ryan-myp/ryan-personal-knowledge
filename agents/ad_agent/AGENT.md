@@ -141,6 +141,13 @@ Memory 不等同于会话历史、工具审计或 Campaign 状态。跨会话记
 显式记忆请求；不得把原始 Tool payload、凭证、账户配置或未脱敏异常写入 Memory。
 Memory 只能作为受限上下文辅助 LLM，不能成为 Tool、权限或账户范围的来源。
 
+LLM 上下文按三层构造：Stable 是不随请求变化的协议；Context 是当前 Registry 版本派生
+的 intent/platform 目录；Volatile 才放当前请求相关的 Tool/Skill/Wiki、Memory、历史摘要、
+最近工具结果和用户消息。Registry 刷新才会使前两层变化，从而保留 OpenAI 兼容模型的
+exact-prefix cache 命中机会。会话工作记忆同时受消息数和字符数双预算约束，超出窗口的
+内容写入双端保留摘要；完整脱敏对话仍在持久化消息表中，摘要不能作为权限、账户或工具
+执行依据。
+
 ### 3.2 新增 Provider API 能力
 
 如果确实需要新的外部动作，按以下顺序在渠道包内完成最小闭环：
@@ -266,13 +273,7 @@ reservation、workflow lease 和租户隔离语义。
 ## 7. 提交前门禁
 
 ```bash
-python3.13 -m compileall -q agents/ad_agent
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. \
-  python3.13 -m pytest agents/ad_agent/tests -q
-python3 agents/ad_agent/scripts/audit_capabilities.py
-python3 agents/ad_agent/scripts/validate_contracts.py \
-  --check-snapshot agents/ad_agent/contracts/builtin_tools.json
-git diff --check
+make ad-agent-check
 ```
 
 任何能力只有在 Client、Capability、Schema、Surface、测试和契约快照一致后，才算

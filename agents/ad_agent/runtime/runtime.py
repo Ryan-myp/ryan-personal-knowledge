@@ -173,6 +173,7 @@ class AgentRuntime:
         session_lease_seconds: float = 300.0,
         outbox_delivery: Optional[Callable[[Any], None]] = None,
         outbox_poll_interval: float = 0.25,
+        conversation_title_use_llm: bool = False,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -200,6 +201,12 @@ class AgentRuntime:
         self.skill_loader.load_all()
         self._llm = llm_client
         self.conversation_title_generator = ConversationTitleGenerator()
+        # A conversation title is presentation metadata and must never add a
+        # model round-trip to the user's execution request.  Keep the model
+        # implementation available for an explicitly configured asynchronous
+        # title worker, while using the bounded deterministic fallback on the
+        # request path by default.
+        self.conversation_title_use_llm = bool(conversation_title_use_llm)
         # A caller may inject an already-configured LLMIntentParser instead
         # of passing the model separately.  Treat that parser-owned model as
         # the same model-backed Agent dependency; otherwise the strict
@@ -286,7 +293,8 @@ class AgentRuntime:
             tuple[str, str], tuple[str, float]
         ] = OrderedDict()
         base_knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
-            Path(__file__).resolve().parent.parent / "knowledge_base"
+            Path(__file__).resolve().parent.parent / "knowledge_base",
+            search_index=persistence_store,
         )
         self.knowledge_provider = (
             ManagedKnowledgeProvider(base_knowledge_provider, persistence_store)
@@ -308,6 +316,10 @@ class AgentRuntime:
             self.registry,
             self.blueprint_cascade,
         )
+        # Blueprint context is declarative and changes only at registry
+        # lifecycle boundaries. Cache the bounded LLM view per provider scope
+        # so ordinary turns do not re-expand every creation schema twice.
+        self._creation_blueprint_context_cache: dict[tuple[str, ...], str] = {}
         # This is a metadata index, not a second executable routing table.
         # Each provider Capability owns and publishes its own entries.
         self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
@@ -360,7 +372,7 @@ class AgentRuntime:
         # data and build dry-run plans.  Passing an explicit empty set is
         # different: it intentionally denies every permissioned tool.  The
         # HTTP server always passes its configured principal permissions.
-        default_permissions = {"ads.read", "ads.plan"}
+        default_permissions = {"ads.read", "ads.plan", "memory.read", "memory.write"}
         self._granted_permissions = frozenset(
             str(permission)
             for permission in (
@@ -808,6 +820,7 @@ class AgentRuntime:
 
     def _refresh_parser_catalog(self) -> None:
         """Synchronize parser discovery data with the active Tool registry."""
+        self._creation_blueprint_context_cache.clear()
         refresh = getattr(self.intent_parser, "refresh_tool_catalog", None)
         definitions = self.registry.list_all()
         if callable(refresh):
@@ -1042,9 +1055,16 @@ class AgentRuntime:
             item.strip() for item in str(raw_platforms or "").split(",")
             if item.strip()
         ]
-        context["creation_blueprints"] = self.creation_card_builder.llm_context(
-            providers=provider_scope or None
-        )
+        provider_key = tuple(sorted(set(provider_scope)))
+        if provider_key not in self._creation_blueprint_context_cache:
+            self._creation_blueprint_context_cache[provider_key] = (
+                self.creation_card_builder.llm_context(
+                    providers=list(provider_key) or None
+                )
+            )
+        context["creation_blueprints"] = self._creation_blueprint_context_cache[
+            provider_key
+        ]
         return context
 
     def _optimize_tool_selection(
@@ -3233,8 +3253,38 @@ class AgentRuntime:
         """
         safe_user = self._redact_for_persistence(user_input)
         safe_reply = self._redact_for_persistence(reply)
-        session.add_message({"role": "user", "content": safe_user})
-        session.add_message({"role": "assistant", "content": safe_reply})
+        # SessionContext applies both message-count and character budgets and
+        # returns exactly what was evicted. Build the digest from that list so
+        # character-based compaction is recoverable too; the durable message
+        # table remains the complete source of truth.
+        evicted_messages = []
+        evicted_messages.extend(session.add_message({"role": "user", "content": safe_user}))
+        evicted_messages.extend(session.add_message({"role": "assistant", "content": safe_reply}))
+        if evicted_messages:
+            digest_lines = [
+                str(session.ctx.metadata.get("conversation_digest") or "").strip()
+            ]
+            for message in evicted_messages:
+                role = "用户" if message.get("role") == "user" else "助手"
+                content = self._redact_for_persistence(message.get("content", ""))
+                content = " ".join(str(content).split())
+                if len(content) > 360:
+                    content = content[:220] + "…[中间内容已折叠]…" + content[-110:]
+                if content:
+                    digest_lines.append(f"- {role}：{content}")
+            digest = "\n".join(line for line in digest_lines if line)
+            # Keep both the earliest durable constraints and the most recent
+            # state. A tail-only slice makes old decisions disappear exactly
+            # when repeated compaction is needed most.
+            digest_limit = 2400
+            if len(digest) > digest_limit:
+                marker = "\n…[较早摘要已折叠]…\n"
+                side = max(1, (digest_limit - len(marker)) // 2)
+                digest = digest[:side] + marker + digest[-side:]
+            session.ctx.metadata["conversation_digest"] = digest
+        session.ctx.metadata["conversation_turn_count"] = int(
+            session.ctx.metadata.get("conversation_turn_count", 0) or 0
+        ) + 1
         if not session.ctx.metadata.get("conversation_title"):
             first_user = next(
                 (
@@ -3245,7 +3295,8 @@ class AgentRuntime:
                 safe_user,
             )
             title, title_source = self.conversation_title_generator.generate(
-                first_user, self._llm
+                first_user,
+                self._llm if self.conversation_title_use_llm else None,
             )
             session.ctx.metadata["conversation_title"] = self._redact_for_persistence(title)
             session.ctx.metadata["conversation_title_source"] = title_source
@@ -3266,7 +3317,10 @@ class AgentRuntime:
                 "conversation_title_source", "fallback"
             ),
             "message_count": len(session.messages),
+            "conversation_turn_count": session.ctx.metadata["conversation_turn_count"],
             "messages": self._redact_for_persistence(session.messages[-20:]),
+            "conversation_digest": session.ctx.metadata.get("conversation_digest", ""),
+            "memory_updates": session.ctx.metadata.get("memory_updates", [])[-20:],
         }
         schedule_draft = session.ctx.metadata.get("schedule_draft")
         if isinstance(schedule_draft, dict):
@@ -3990,26 +4044,30 @@ class AgentRuntime:
         )
 
         # Memory is an advisory context layer, never an execution source.
-        # Only an explicit user request can create a long-lived record; normal
-        # tool results and chat history remain session/audit state.
+        # The manager only promotes explicit requests and high-confidence
+        # preference statements; normal tool results and chat history remain
+        # session/audit state.
         recalled_memories: list[dict[str, Any]] = []
+        memory_updates: list[dict[str, Any]] = []
         memory_context = ""
         if self._memory_manager:
             try:
-                explicit = self._memory_manager.explicit_memory_text(safe_user_input)
-                if explicit:
-                    self._memory_manager.remember(
-                        explicit,
+                for candidate in self._memory_manager.extract_candidates(safe_user_input):
+                    record = self._memory_manager.remember(
+                        candidate["content"],
                         tenant_id=tenant_id,
                         user_id=user_id,
-                        # An explicit user memory is long-lived by policy;
-                        # keep it user-scoped rather than tying it to the
-                        # current conversation session.
+                        # Long-lived memory is user-scoped rather than tied to
+                        # the current conversation session.
                         session_id=None,
-                        source="user_explicit",
-                        kind="semantic",
-                        importance=0.85,
+                        kind=candidate.get("kind", "semantic"),
+                        source=candidate.get("source", "auto_preference"),
+                        importance=candidate.get("importance", 0.7),
+                        confidence=candidate.get("confidence", 0.86),
+                        memory_key=candidate.get("memory_key"),
                     )
+                    memory_updates.append(record.to_context_dict())
+                session.ctx.metadata["memory_updates"] = memory_updates[-20:]
                 recalled_memories, memory_context = self._memory_manager.build_context(
                     safe_user_input,
                     tenant_id=tenant_id,
@@ -4042,6 +4100,9 @@ class AgentRuntime:
             skill_context["prior_tool_results"] = self._build_prior_tool_results_context(session)
             skill_context["memory"] = recalled_memories
             skill_context["memory_context"] = memory_context
+            skill_context["conversation_digest"] = session.ctx.metadata.get(
+                "conversation_digest", ""
+            )
             session.ctx.metadata["skill_context"] = skill_context
         except Exception as exc:
             logger.debug("构建 Skill 解析上下文失败: %s", exc)
@@ -4172,6 +4233,9 @@ class AgentRuntime:
             skill_context["prior_tool_results"] = self._build_prior_tool_results_context(session)
             skill_context["memory"] = recalled_memories
             skill_context["memory_context"] = memory_context
+            skill_context["conversation_digest"] = session.ctx.metadata.get(
+                "conversation_digest", ""
+            )
             session.ctx.metadata["skill_context"] = skill_context
         except Exception as exc:
             logger.debug("构建意图级 Skill/知识上下文失败: %s", exc)
@@ -4478,6 +4542,7 @@ class AgentRuntime:
                     "knowledge": tool_selection.get("knowledge", []),
                 },
                 "memory": recalled_memories,
+                "memory_updates": memory_updates,
                 "results": [],
                 "response_source": "creation_card",
                 "reply": reply,
@@ -5714,6 +5779,7 @@ class AgentRuntime:
                 "knowledge": tool_selection.get("knowledge", []),
             },
             "memory": recalled_memories,
+            "memory_updates": memory_updates,
             "response_source": response_source,
             "execution_plan": execution_plan.to_dict(),
             "results": results,
@@ -5849,6 +5915,27 @@ class AgentRuntime:
         except (TypeError, ValueError):
             pass
         documents = self.knowledge_provider.query(query, **kwargs)
+        return [document.to_dict() for document in documents]
+
+    def catalog_knowledge(
+        self, *, tenant_id: str = "default", platform: Optional[str] = None,
+        knowledge_type: Optional[str] = None, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List complete Wiki documents for navigation without chunk ranking."""
+        if self.knowledge_provider is None:
+            return []
+        kwargs: dict[str, Any] = {
+            "platforms": [platform] if platform else None,
+            "knowledge_types": [knowledge_type] if knowledge_type else None,
+            "limit": limit,
+        }
+        parameters = inspect.signature(self.knowledge_provider.catalog).parameters
+        if "tenant_id" in parameters or any(
+            item.kind == inspect.Parameter.VAR_KEYWORD
+            for item in parameters.values()
+        ):
+            kwargs["tenant_id"] = tenant_id
+        documents = self.knowledge_provider.catalog(**kwargs)
         return [document.to_dict() for document in documents]
 
     def summarize_knowledge(
@@ -6180,7 +6267,30 @@ class AgentRuntime:
             stored_schedule_draft = persisted_metadata.get("schedule_draft")
             if isinstance(stored_schedule_draft, dict):
                 ctx.metadata["schedule_draft"] = stored_schedule_draft
-            session.messages = persisted_metadata.get("messages", [])[-20:]
+            stored_digest = persisted_metadata.get("conversation_digest")
+            if isinstance(stored_digest, str):
+                ctx.metadata["conversation_digest"] = stored_digest[:2400]
+            ctx.metadata["conversation_turn_count"] = int(
+                persisted_metadata.get("conversation_turn_count", 0) or 0
+            )
+            session.replace_messages(persisted_metadata.get("messages", []))
+            # The normalized conversation table is the durable source of
+            # truth. Prefer it on restart so a crashed turn cannot leave the
+            # metadata window ahead of or behind the actual transcript.
+            if self._session_manager and persisted:
+                list_messages = getattr(self._session_manager, "list_conversation_messages", None)
+                if callable(list_messages):
+                    try:
+                        records = list_messages(
+                            session_id, limit=SessionContext.MAX_MESSAGES
+                        )
+                        if records:
+                            session.replace_messages([
+                                {"role": str(record.role), "content": str(record.content)}
+                                for record in records
+                            ])
+                    except Exception:
+                        logger.debug("failed to restore durable conversation window", exc_info=True)
             ctx.messages = list(session.messages)
             if self._session_manager and persisted:
                 for record in reversed(self._session_manager.get_session_history(session_id, limit=20)):
