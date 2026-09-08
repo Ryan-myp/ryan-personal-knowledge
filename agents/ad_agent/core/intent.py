@@ -119,6 +119,12 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         # serialized form so each turn does not rebuild the same prompt prefix.
         # It is invalidated whenever Tool definitions are refreshed.
         self._intent_catalog_prompt_cache: dict[tuple[str, ...], str] = {}
+        # Standalone parsing can use Skill-declared identity aliases before
+        # Runtime mounts its active Tool registry. This is advisory metadata
+        # and never registers executable capability.
+        for platform in sorted(declared_platforms()):
+            self.register_platform_aliases(platform, recognition_aliases(platform))
+
     def register_tool_definitions(self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]) -> None:
         """Publish Tool-owned intent metadata to the LLM parser.
 
@@ -377,6 +383,8 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             text = str(alias or "").strip().casefold()
             if text:
                 self._platform_aliases[text] = canonical
+                self._platform_aliases.setdefault(normalize_platform(text), canonical)
+                self._platform_aliases.setdefault(normalize_platform(text), canonical)
                 self._platform_aliases.setdefault(normalize_platform(text), canonical)
                 self._platform_aliases.setdefault(normalize_platform(text), canonical)
                 self._platform_aliases.setdefault(normalize_platform(text), canonical)
@@ -1154,11 +1162,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         return result
     
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
-        """Parse only vocabulary and fields published by the active catalog.
-
-        This mode is explicit offline development support. It is not a second
-        business router: every value still comes from the active Tool schema.
-        """
+        """Parse only vocabulary and fields published by the active catalog."""
         text = str(user_input or "").casefold()
         platforms = self._detect_platforms(text)
         normalized = self._normalize_intent({
@@ -1341,18 +1345,13 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _normalize_intent(self, data: dict) -> dict:
         """规范化解析结果"""
         data = dict(data or {})
-        # Preserve the early public spelling at the parser boundary while
-        # exposing only the current ParsedIntent field. Provider-specific
-        # budget fields remain owned by their Tool schemas.
-        if data.get("budget") in (None, "") and data.get("budget_daily") not in (None, ""):
-            data["budget"] = data.get("budget_daily")
         intent_type = data.get("intent_type")
         if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
-        elif self._intent_catalog:
-            # Once Runtime publishes its active Registry, it is the only
-            # authority for executable intent names. Unknown model labels are
-            # made repairable instead of being allowed to look executable.
+        else:
+            # The active Tool/Feature catalog is the only executable intent
+            # authority. A parser used without a catalog can preserve no
+            # model-proposed operation, even if the label looks plausible.
             allowed_intents = set(self._intent_catalog) | self._custom_intents | {"chat"}
             if intent_type.strip() not in allowed_intents:
                 data["intent_type"] = "chat"
