@@ -197,11 +197,12 @@ reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified
 检查 Runtime、必需的 LLM 和 Tool Registry 是否已完成初始化，不会调用 Provider，也不会
 返回凭证；ASGI 生命周期结束时会关闭 Runtime-owned TaskExecutor，避免热重载留下后台任务。
 
-运行监控入口位于页面左侧的“运行监控”，后端接口为 `GET /monitoring/overview`，沿用当前
-API Key 与 `ads.read` 权限。它返回当前 principal 范围内的 Durable Task 队列、Task/Workflow/
-Session lease、Run/Workflow recovery、Outbox 投递、Tool 调用成功率/平均延迟，以及当前进程
-worker/consumer 状态；页面每 15 秒刷新一次。共享 MySQL 部署中，队列和租约统计来自同一份
-InnoDB 状态，当前实例卡片只代表本机进程，不把 Outbox 误当成 Agent 执行队列。
+运行监控入口位于页面顶部“系统运维”菜单中的“运行监控”，后端接口为
+`GET /monitoring/overview`，沿用当前 API Key 与 `ads.read` 权限。它返回当前 principal
+范围内的 Durable Task 队列、Task/Workflow/Session lease、Run/Workflow recovery、Outbox
+投递、Tool 调用成功率/平均延迟，以及当前进程 worker/consumer 状态；页面每 15 秒刷新一次。
+共享 MySQL 部署中，队列和租约统计来自同一份 InnoDB 状态，当前实例卡片只代表本机进程，
+不把 Outbox 误当成 Agent 执行队列。
 
 Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；Task、Outbox、
 Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 仍由

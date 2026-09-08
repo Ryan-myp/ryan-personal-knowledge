@@ -3197,6 +3197,32 @@
         .monitoring-nav-btn:hover { background: #163b4a; border-color: #58e6d0; }
         .monitoring-nav-badge { display: inline-grid; place-items: center; min-width: 17px; height: 17px; margin-left: auto; padding: 0 4px; border-radius: 999px; color: #071d24; background: #f4b24c; font-size: 9px; font-weight: 800; }
         .monitoring-nav-badge[hidden] { display: none; }
+        .system-ops-wrap { position: relative; }
+        .system-ops-trigger { min-width: 92px; }
+        .system-ops-icon { color: #58e6d0; font-size: 14px; line-height: 1; }
+        .system-ops-chevron { margin-left: 1px; color: #668797; font-size: 14px; line-height: 1; transform: translateY(-1px); }
+        .system-ops-menu { position: absolute; top: calc(100% + 11px); right: 0; z-index: 1000; display: none; width: 286px; padding: 8px; border: 1px solid #2b5065; border-radius: 12px; background: #0b1a29; box-shadow: 0 20px 54px rgba(0,0,0,.35); }
+        .system-ops-menu.active { display: block; animation: opsMenuIn .16s ease both; }
+        .system-ops-menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 9px 10px; border-bottom: 1px solid #203b4d; }
+        .system-ops-menu-head strong { color: #e7f5f2; font-size: 12px; }
+        .system-ops-menu-head span { color: #668797; font-size: 9px; }
+        .system-ops-item { display: flex; align-items: center; width: 100%; gap: 10px; margin-top: 4px; padding: 10px 9px; border: 1px solid transparent; border-radius: 8px; color: #9bb4be; background: transparent; cursor: pointer; text-align: left; }
+        .system-ops-item:hover, .system-ops-item:focus-visible { border-color: #2a596a; background: #102b3a; outline: none; }
+        .system-ops-item.active .system-ops-item-icon { color: #58e6d0; }
+        .system-ops-item.disabled { cursor: not-allowed; opacity: .48; }
+        .system-ops-item-icon { display: grid; place-items: center; width: 24px; height: 24px; flex: 0 0 24px; border-radius: 7px; color: #7d9cac; background: #13293a; font-size: 13px; }
+        .system-ops-item > span:nth-child(2) { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+        .system-ops-item strong { color: #dceceb; font-size: 11px; font-weight: 650; }
+        .system-ops-item small { overflow: hidden; color: #6f8c9a; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+        .system-ops-item-arrow { color: #58e6d0; font-size: 18px; line-height: 1; }
+        body.light-theme .system-ops-menu { border-color: #b8ced1; background: #fff; box-shadow: 0 20px 54px rgba(31,76,82,.18); }
+        body.light-theme .system-ops-menu-head { border-bottom-color: #d8e7e8; }
+        body.light-theme .system-ops-menu-head strong, body.light-theme .system-ops-item strong { color: #244650; }
+        body.light-theme .system-ops-menu-head span, body.light-theme .system-ops-item small { color: #78939a; }
+        body.light-theme .system-ops-item { color: #52727a; }
+        body.light-theme .system-ops-item:hover, body.light-theme .system-ops-item:focus-visible { border-color: #b8d7d5; background: #eef8f7; }
+        body.light-theme .system-ops-item-icon { color: #64808a; background: #eef7f7; }
+        @keyframes opsMenuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
         .monitoring-overlay { position: fixed; inset: 0; z-index: 80; display: none; padding: 22px; background: rgba(3, 11, 18, .78); backdrop-filter: blur(12px); }
         .monitoring-overlay.active { display: grid; place-items: center; }
         .monitoring-console { display: flex; flex-direction: column; width: min(1180px, 100%); height: min(900px, 100%); overflow: hidden; border: 1px solid #2b5065; border-radius: 18px; color: #d7e7e9; background: #091522; box-shadow: 0 30px 100px rgba(0,0,0,.45); }

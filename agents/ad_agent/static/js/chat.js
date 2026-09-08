@@ -101,10 +101,26 @@
             document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'false');
             document.getElementById('blueprintOverlay')?.classList.remove('active');
             document.getElementById('blueprintOverlay')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('systemOpsMenu')?.classList.remove('active');
+            document.getElementById('systemOpsButton')?.classList.remove('active');
+            document.getElementById('systemOpsButton')?.setAttribute('aria-expanded', 'false');
             document.getElementById('monitoringOverlay')?.classList.remove('active');
             document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
             if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
             monitoringRefreshTimer = null;
+        }
+
+        function toggleSystemOpsMenu() {
+            const menu = document.getElementById('systemOpsMenu');
+            const button = document.getElementById('systemOpsButton');
+            if (!menu || !button) return;
+            const open = menu.classList.contains('active');
+            closeWorkspacePopovers();
+            if (!open) {
+                menu.classList.add('active');
+                button.classList.add('active');
+                button.setAttribute('aria-expanded', 'true');
+            }
         }
 
         function monitoringNumber(value) {
@@ -216,7 +232,12 @@
                 renderMonitoring(snapshot);
             } catch (error) {
                 if (token !== monitoringRequestToken) return;
-                monitoringSetStatus('critical', error?.message || '监控数据读取失败');
+                const message = error?.status === 404
+                    ? '当前服务进程尚未加载监控接口（404）。请重启 ad-agent 服务后再刷新。'
+                    : error?.status === 401 || error?.status === 403
+                        ? '没有读取系统运维数据的权限，请检查服务 API Key 或 ads.read 权限。'
+                        : error?.message || '监控数据读取失败';
+                monitoringSetStatus('critical', message);
                 document.getElementById('monitoringUpdated').textContent = '读取失败';
             } finally {
                 if (schedule && document.getElementById('monitoringOverlay')?.classList.contains('active')) {
@@ -1583,7 +1604,9 @@
                 if (response.status === 401 || response.status === 403) {
                     showSkillNotice('请求未授权。请填写当前 ad-agent 服务 API Key；它不是任何渠道的 Provider Token。', true);
                 }
-                throw new Error(data.detail || data.error || `请求失败（${response.status}）`);
+                const error = new Error(data.detail || data.error || `请求失败（${response.status}）`);
+                error.status = response.status;
+                throw error;
             }
             return data;
         }
@@ -4590,7 +4613,7 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('.system-ops-wrap')) {
                 closeWorkspacePopovers();
             }
         });

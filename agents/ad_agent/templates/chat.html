@@ -14,6 +14,15 @@
         <div class="global-actions">
             <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span id="modeToggleIcon">◈</span> <span id="modeToggleLabel">dry-run</span></button>
             <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
+            <div class="system-ops-wrap">
+                <button class="global-action system-ops-trigger" id="systemOpsButton" type="button" onclick="toggleSystemOpsMenu()" aria-label="系统运维" aria-expanded="false"><span class="system-ops-icon" aria-hidden="true">⌘</span><span class="global-action-label">系统运维</span><span class="monitoring-nav-badge" id="monitoringNavBadge" hidden></span><span class="system-ops-chevron" aria-hidden="true">⌄</span></button>
+                <div class="system-ops-menu" id="systemOpsMenu" role="menu" aria-label="系统运维菜单">
+                    <div class="system-ops-menu-head"><strong>系统运维</strong><span>服务状态与运行现场</span></div>
+                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openMonitoring()"><span class="system-ops-item-icon">◉</span><span><strong>运行监控</strong><small>队列、租约、恢复与 Tool 审计</small></span><span class="system-ops-item-arrow">›</span></button>
+                    <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">◇</span><span><strong>服务健康</strong><small>健康检查与依赖状态 · 即将支持</small></span></button>
+                    <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">≋</span><span><strong>事件投递</strong><small>Outbox 消费与失败重试 · 即将支持</small></span></button>
+                </div>
+            </div>
             <button class="global-action theme-toggle" id="themeToggleButton" type="button" onclick="toggleTheme()" aria-label="切换主题"><span id="themeToggleIcon" aria-hidden="true">☼</span><span class="global-action-label" id="themeToggleLabel">浅色</span></button>
         </div>
     </header>
@@ -221,11 +230,6 @@
         <button class="new-chat-btn blueprint-nav-btn workspace-nav" onclick="openBlueprintManager()" aria-label="广告创建向导">
             <span class="nav-icon">◇</span>
             <span>广告创建向导</span>
-        </button>
-        <button class="new-chat-btn monitoring-nav-btn workspace-nav" id="monitoringNavButton" onclick="openMonitoring()" aria-label="运行监控">
-            <span class="nav-icon">◉</span>
-            <span>运行监控</span>
-            <span class="monitoring-nav-badge" id="monitoringNavBadge" hidden></span>
         </button>
 
         <div class="chat-history-header">
