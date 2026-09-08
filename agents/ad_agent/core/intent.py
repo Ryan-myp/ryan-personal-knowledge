@@ -20,12 +20,7 @@ from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
     ToolDefinition, ToolRegistry
 )
-from .platform import (
-    declared_platforms,
-    normalize_platform,
-    parser_platform,
-    recognition_aliases,
-)
+from .platform import normalize_platform
 
 
 logger = logging.getLogger(__name__)
