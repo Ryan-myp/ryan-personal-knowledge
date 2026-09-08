@@ -711,6 +711,15 @@ class TikTokAPIClient(BasePlatformClient):
             "ad": normalized_updates,
         }
         return self.request("POST", "ad/update/", data=data)
+
+    def delete_ad(self, advertiser_id: str, ad_id: str) -> dict:
+        """Delete an Ad through TikTok's advertiser-scoped endpoint."""
+        self.acquire_rate_limit(self._rate_limiter)
+        data = {
+            "advertiser_id": str(advertiser_id),
+            "ad_ids": [int(ad_id)],
+        }
+        return self.request("POST", "ad/delete/", data=data)
     
     def pause_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """暂停 Ad Group"""
@@ -1948,6 +1957,28 @@ class TikTokAPIClient(BasePlatformClient):
             ),
             {},
         )
+
+    def create_creative(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, creative: dict
+    ) -> str:
+        """Create a logical Creative through TikTok's ``ad/create`` contract.
+
+        TikTok v1.3 does not expose an independent Creative create resource;
+        creative fields are submitted in the ``creatives`` member of an Ad
+        create request.  This provider fact stays in the adapter while the
+        Capability exposes a stable logical Creative lifecycle surface.
+        """
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, creative)
+
+    def update_creative(
+        self, advertiser_id: str, adgroup_id: str, creative_id: str, updates: dict
+    ) -> dict:
+        """Update a logical Creative through TikTok's ``ad/update`` endpoint."""
+        return self.update_ad(advertiser_id, adgroup_id, creative_id, updates)
+
+    def delete_creative(self, advertiser_id: str, creative_id: str) -> dict:
+        """Delete a logical Creative through TikTok's ``ad/delete`` endpoint."""
+        return self.delete_ad(advertiser_id, creative_id)
     
     def list_videos(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
         """获取广告素材库视频列表。

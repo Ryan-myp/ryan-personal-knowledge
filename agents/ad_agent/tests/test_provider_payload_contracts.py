@@ -412,6 +412,73 @@ def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_
     ) == []
 
 
+def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract():
+    """TikTok Creative CRUD must be explicit without inventing creative/* APIs."""
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, **_kwargs):
+        calls.append((method, endpoint, data))
+        if endpoint == "ad/create/":
+            return {"data": {"ad_id": "301"}}
+        return {"data": {"ad_id": "301"}}
+
+    client.request = request
+    creative = {
+        "name": "Install creative",
+        "identity_id": "identity-1",
+        "media": [{"type": "VIDEO", "video_id": "video-1"}],
+        "landing_page_url": "https://example.test/app",
+    }
+
+    assert client.create_creative("123", "101", "201", creative) == "301"
+    assert client.update_creative("123", "201", "301", {"name": "Updated creative"}) == {
+        "data": {"ad_id": "301"}
+    }
+    assert client.delete_creative("123", "301") == {"data": {"ad_id": "301"}}
+    assert [endpoint for _method, endpoint, _data in calls] == [
+        "ad/create/", "ad/update/", "ad/delete/"
+    ]
+    assert calls[0][2]["creatives"][0]["ad_name"] == "Install creative"
+    assert calls[1][2] == {
+        "advertiser_id": "123", "ad_group_id": 201, "ad_id": 301,
+        "ad": {"name": "Updated creative"},
+    }
+    assert calls[2][2] == {"advertiser_id": "123", "ad_ids": [301]}
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability(client).register_tools()
+    }
+    assert {
+        "tiktok_create_creative", "tiktok_update_creative", "tiktok_delete_creative"
+    } <= definitions.keys()
+    assert definitions["tiktok_create_creative"].live_support is False
+    assert definitions["tiktok_update_creative"].live_support is False
+    assert definitions["tiktok_delete_creative"].live_support is False
+    assert definitions["tiktok_create_creative"].resource_type == "creative"
+    assert definitions["tiktok_create_creative"].parent_resource_type == "ad_group"
+    assert definitions["tiktok_update_creative"].input_schema.required == [
+        "account_id", "adgroup_id", "creative_id", "updates"
+    ]
+    assert validate_tool_input(
+        definitions["tiktok_create_creative"].input_schema,
+        {
+            "account_id": "123", "campaign_id": "101", "adgroup_id": "201",
+            **creative,
+        },
+        include_provider_contract=True,
+    ) == []
+    assert validate_tool_input(
+        definitions["tiktok_update_creative"].input_schema,
+        {
+            "account_id": "123", "adgroup_id": "201", "creative_id": "301",
+            "updates": {"name": "Updated creative"},
+        },
+        include_provider_contract=True,
+    ) == []
+
+
 def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []

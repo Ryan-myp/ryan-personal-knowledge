@@ -1336,6 +1336,25 @@ def tiktok_ad_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_creative_schema() -> dict[str, Any]:
+    """Schema for TikTok's logical Creative lifecycle.
+
+    TikTok v1.3 models an ad's creative payload inside ``ad/create`` rather
+    than exposing a standalone Creative create endpoint.  Reuse the complete
+    provider-owned ad creative field catalog, but make the hierarchy explicit
+    for a Creative Tool so the UI/LLM asks for the Campaign and Ad Group that
+    will own the resulting ad-backed creative.
+    """
+    base = tiktok_ad_schema()
+    return {
+        "required": ["campaign_id", "adgroup_id", "name"],
+        "provider_required": ["campaign_id", "adgroup_id", "identity_id"],
+        "provider_any_of": list(base.get("provider_any_of", [])),
+        "properties": dict(base["properties"]),
+        "conditional_rules": list(base.get("conditional_rules", [])),
+    }
+
+
 def tiktok_product_sales_adgroup_schema() -> dict[str, Any]:
     """Schema for the Product Sales ad-group composition path.
 

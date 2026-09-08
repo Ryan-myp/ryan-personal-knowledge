@@ -42,6 +42,7 @@ from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,
     tiktok_ad_schema,
+    tiktok_creative_schema,
     tiktok_product_sales_adgroup_schema,
     tiktok_product_sales_ad_schema,
     tiktok_lead_ad_schema,
@@ -345,6 +346,8 @@ class TikTokCapability(BaseCapability):
         "update_ad": ["tiktok_update_ad"], "pause_adgroup": ["tiktok_pause_adgroup"],
         "list_ads": ["tiktok_list_ads"], "get_ad": ["tiktok_get_ad"],
         "create_ad": ["tiktok_create_ad"], "create_product_sales_ad": ["tiktok_create_product_sales_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
+        "create_creative": ["tiktok_create_creative"], "update_creative": ["tiktok_update_creative"],
+        "delete_creative": ["tiktok_delete_creative"], "delete_ad": ["tiktok_delete_ad"],
         "create_single_video_ad": ["tiktok_create_single_video_ad"],
         "create_single_image_ad": ["tiktok_create_single_image_ad"],
         "create_carousel_ad": ["tiktok_create_carousel_ad"],
@@ -1258,6 +1261,23 @@ class TikTokCapability(BaseCapability):
             traits=["read", "ad"],
         ), TikTokGetAdHandler(api_client)))
 
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_delete_ad",
+            description="删除 TikTok Ads Ad；默认仅生成 dry-run 计划。",
+            method_name="delete_ad", result_key="ad_result",
+            properties={
+                "account_id": {"type": "string", "minLength": 1},
+                "ad_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "ad_id"], provider_required=["ad_id"],
+            action="delete", resource_type="ad", resource_id_field="ad_id",
+            intent_types=["delete_ad"], traits=["write", "ad"],
+            write=True, live_support=False, provider_api_version="v1.3",
+            required_permissions=["ads.plan"],
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["ad_id"]), {}),
+        ))
+
         # Create Ad
         tools.append((ToolDefinition(
             name="tiktok_create_ad",
@@ -1610,6 +1630,89 @@ class TikTokCapability(BaseCapability):
             action="get", resource_type="creative",
             resource_id_field="creative_id",
             intent_types=["get_creative"], traits=["read", "creative"],
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["creative_id"]
+            ), {}),
+        ))
+
+        # TikTok v1.3 has no independent Creative write resource. Its
+        # Creative object is the payload carried by an Ad, so these logical
+        # Creative Tools deliberately call the provider's ad/* endpoints.
+        # Keeping the translation here makes the boundary discoverable to the
+        # planner without pretending that creative/create exists upstream.
+        creative_schema = tiktok_creative_schema()
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_creative",
+            description=(
+                "创建 TikTok 广告创意；TikTok v1.3 会将创意作为 Ad 的 creatives 载荷创建，"
+                "需要提供所属 Campaign、Ad Group 和素材/文案，默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_creative", result_key="creative_id",
+            properties={"account_id": {"type": "string", "minLength": 1}, **creative_schema["properties"]},
+            required=["account_id"] + creative_schema["required"],
+            provider_required=creative_schema["provider_required"],
+            provider_any_of=creative_schema["provider_any_of"],
+            conditional_rules=creative_schema["conditional_rules"],
+            action="create", resource_type="creative", parent_resource_type="ad_group",
+            resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
+            intent_types=["create_creative"], traits=["write", "creative", "ad_backed"],
+            write=True, live_support=False, contract_version="2", provider_api_version="v1.3",
+            required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: data[key] for key in creative_schema["properties"]
+                    if key not in {"campaign_id", "adgroup_id"} and key in data
+                }
+            ), {}),
+        ))
+
+        creative_update_schema = tiktok_updates("ad")
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_update_creative",
+            description=(
+                "更新 TikTok 广告创意；实际通过所属 Ad 的 ad/update 接口修改创意字段，"
+                "需要明确提供 Ad Group ID 和 Creative（对应 Ad）ID，默认仅生成 dry-run 计划。"
+            ),
+            method_name="update_creative", result_key="creative_result",
+            properties={
+                "account_id": {"type": "string", "minLength": 1},
+                "adgroup_id": {"type": "string", "minLength": 1},
+                "creative_id": {"type": "string", "minLength": 1},
+                "updates": creative_update_schema,
+            },
+            required=["account_id", "adgroup_id", "creative_id", "updates"],
+            provider_required=["adgroup_id", "creative_id", "updates"],
+            action="update", resource_type="creative", parent_resource_type="ad_group",
+            resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
+            intent_types=["update_creative"], traits=["write", "creative", "ad_backed"],
+            write=True, live_support=False, contract_version="2", provider_api_version="v1.3",
+            required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["adgroup_id"], data["creative_id"], data["updates"]
+            ), {}),
+        ))
+
+        tools.append(method_tool(
+            platform="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_delete_creative",
+            description=(
+                "删除 TikTok 广告创意；TikTok 将其作为 Ad 删除，Creative ID 应填写对应的 Ad ID，"
+                "默认仅生成 dry-run 计划。"
+            ),
+            method_name="delete_creative", result_key="creative_result",
+            properties={
+                "account_id": {"type": "string", "minLength": 1},
+                "creative_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "creative_id"],
+            provider_required=["creative_id"],
+            action="delete", resource_type="creative",
+            resource_id_field="creative_id", intent_types=["delete_creative"],
+            traits=["write", "creative", "ad_backed"], write=True, live_support=False,
+            contract_version="2", provider_api_version="v1.3",
+            required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["creative_id"]
             ), {}),

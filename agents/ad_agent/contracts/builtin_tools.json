@@ -1,5 +1,5 @@
 {
-  "digest": "67722d6f3dd287d645139152b933c1654e903262cc6507c39817efbc99c8aa4a",
+  "digest": "305f029a8d19858e884a8a41c0db373a141a190d3c0335769c22625c712c2909",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -26912,8 +26912,8 @@
       ]
     },
     "tiktok": {
-      "digest": "19ea6a524466109b07c416bb644147ebda77e535c9f9104d04df023041a2296b",
-      "tool_count": 83,
+      "digest": "542b040c064a137f3884b09b1a66e4c9d7c7b7dae4395de3daaee7b3275fa6f2",
+      "tool_count": 87,
       "tools": [
         {
           "action": "create",
@@ -30866,6 +30866,638 @@
             "write",
             "ad",
             "carousel"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [],
+          "contract_hash": "305f043d8b8dd548cf338d608100c570419772c64fd2d33e196bc1ef7627e031",
+          "contract_version": "2",
+          "description": "创建 TikTok 广告创意；TikTok v1.3 会将创意作为 Ad 的 creatives 载荷创建，需要提供所属 Campaign、Ad Group 和素材/文案，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "ad_format": {
+                "description": "Ad format",
+                "enum": [
+                  "SINGLE_VIDEO",
+                  "SINGLE_IMAGE",
+                  "CAROUSEL",
+                  "SPARK_AD"
+                ],
+                "type": "string"
+              },
+              "ad_text": {
+                "description": "Provider ad text",
+                "type": "string"
+              },
+              "adgroup_id": {
+                "description": "Parent ad group ID",
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "adgroups",
+                "lookup_tool": "tiktok_list_adgroups",
+                "selection_label_fields": [
+                  "adgroup_name",
+                  "ad_group_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "adgroup_id",
+                  "ad_group_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "call_to_action": {
+                "description": "Call to action",
+                "manual_entry": {
+                  "instructions": "可用行动号召由 TikTok 广告目标、地区和素材格式决定；请从卡片中的可用值或 Ads Manager 选择。",
+                  "source": "provider_cta_option",
+                  "title": "行动号召"
+                },
+                "type": "string"
+              },
+              "call_to_action_id": {
+                "description": "Provider call-to-action ID",
+                "manual_entry": {
+                  "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
+                  "source": "external_provider_identifier",
+                  "title": "TikTok 行动号召 ID"
+                },
+                "type": "string"
+              },
+              "campaign_id": {
+                "description": "Parent campaign ID",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "tiktok_list_campaigns",
+                "selection_label_fields": [
+                  "campaign_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "campaign_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "catalog_id": {
+                "description": "TikTok catalog ID",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "catalog_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "click_tracking_url": {
+                "description": "Click tracking URL",
+                "type": "string"
+              },
+              "conversion_id": {
+                "description": "Conversion event ID",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "minimum": 0,
+                "selection_label_fields": [
+                  "conversion_name",
+                  "name",
+                  "event_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "id"
+                ],
+                "type": "integer"
+              },
+              "creative_type": {
+                "description": "Provider creative type",
+                "enum": [
+                  "SINGLE_IMAGE",
+                  "SINGLE_VIDEO",
+                  "LIVE_CONTENT"
+                ],
+                "type": "string"
+              },
+              "creatives": {
+                "description": "Creative list",
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "ad_text": {
+                      "description": "Primary ad text",
+                      "maxLength": 100,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "call_to_action": {
+                      "description": "Call to action",
+                      "type": "string"
+                    },
+                    "creative_type": {
+                      "description": "Creative type",
+                      "enum": [
+                        "SINGLE_IMAGE",
+                        "SINGLE_VIDEO",
+                        "LIVE_CONTENT"
+                      ],
+                      "type": "string"
+                    },
+                    "display_name": {
+                      "description": "Creative display name",
+                      "maxLength": 512,
+                      "type": "string"
+                    },
+                    "identity_id": {
+                      "description": "TikTok identity ID",
+                      "lookup_result_key": "identities",
+                      "lookup_tool": "tiktok_list_identities",
+                      "minLength": 1,
+                      "selection_label_fields": [
+                        "display_name",
+                        "name",
+                        "id"
+                      ],
+                      "selection_value_fields": [
+                        "identity_id",
+                        "id"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "manual_entry": {
+                  "instructions": "优先使用页面上的素材、文案和身份选择；只有 Provider 版本需要额外 creative 字段时才编辑此列表。",
+                  "source": "provider_creative_payload",
+                  "title": "高级 Creative 列表"
+                },
+                "minItems": 1,
+                "presentation": "object_editor",
+                "type": "array"
+              },
+              "deeplink": {
+                "description": "App deep link",
+                "type": "string"
+              },
+              "deeplink_type": {
+                "description": "Deep link behavior",
+                "type": "string"
+              },
+              "dynamic_destination": {
+                "description": "Dynamic landing page destination",
+                "type": "string"
+              },
+              "dynamic_format": {
+                "description": "Dynamic creative format",
+                "type": "string"
+              },
+              "identity_id": {
+                "description": "TikTok identity ID",
+                "lookup_result_key": "identities",
+                "lookup_tool": "tiktok_list_identities",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "display_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "identity_id",
+                  "id"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "identity_type": {
+                "description": "TikTok identity type",
+                "enum": [
+                  "CUSTOMIZED_USER",
+                  "AUTH_CODE",
+                  "TT_USER"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "image_ids": {
+                "description": "Image asset IDs",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "lookup_result_key": "images",
+                "lookup_tool": "tiktok_list_images",
+                "selection_label_fields": [
+                  "file_name",
+                  "image_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "image_id",
+                  "id"
+                ],
+                "type": "array",
+                "ui_visible_when": {
+                  "field": "ad_format",
+                  "in": [
+                    "SINGLE_IMAGE",
+                    "CAROUSEL"
+                  ]
+                }
+              },
+              "impression_tracking_url": {
+                "description": "Impression tracking URL",
+                "type": "string"
+              },
+              "instant_product_page_used": {
+                "description": "Use TikTok instant product page",
+                "type": "boolean"
+              },
+              "item_duet_status": {
+                "description": "Spark duet status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "item_group_ids": {
+                "description": "Shopping item group IDs",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "manual_entry": {
+                  "instructions": "请从商品目录或 TikTok Shop 复制商品组 ID；不会根据商品名称猜测。",
+                  "source": "external_provider_identifier",
+                  "title": "TikTok 商品组 ID"
+                },
+                "type": "array",
+                "ui_visible_when": {
+                  "field": "ad_format",
+                  "in": [
+                    "SINGLE_VIDEO",
+                    "SINGLE_IMAGE",
+                    "CAROUSEL"
+                  ]
+                }
+              },
+              "item_stitch_status": {
+                "description": "Spark stitch status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "landing_page_url": {
+                "description": "Landing page URL",
+                "type": "string"
+              },
+              "media": {
+                "description": "TikTok media asset payload",
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "image_id": {
+                      "description": "Uploaded TikTok image ID",
+                      "lookup_result_key": "images",
+                      "lookup_tool": "tiktok_list_images",
+                      "minLength": 1,
+                      "selection_label_fields": [
+                        "file_name",
+                        "image_name",
+                        "name",
+                        "id"
+                      ],
+                      "selection_value_fields": [
+                        "image_id",
+                        "id"
+                      ],
+                      "type": "string"
+                    },
+                    "image_url": {
+                      "description": "Provider-accessible image URL",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": {
+                      "description": "Media type",
+                      "enum": [
+                        "IMAGE",
+                        "VIDEO"
+                      ],
+                      "type": "string"
+                    },
+                    "video_id": {
+                      "description": "Uploaded TikTok video ID",
+                      "lookup_result_key": "videos",
+                      "lookup_tool": "tiktok_list_videos",
+                      "minLength": 1,
+                      "selection_label_fields": [
+                        "file_name",
+                        "video_name",
+                        "name",
+                        "id"
+                      ],
+                      "selection_value_fields": [
+                        "video_id",
+                        "id"
+                      ],
+                      "type": "string"
+                    },
+                    "video_url": {
+                      "description": "Provider-accessible video URL",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "manual_entry": {
+                  "instructions": "优先选择 video_id/image_ids 或先上传素材；仅当 TikTok 版本要求额外 media 字段时填写此高级对象。URL 必须可被 TikTok 访问。",
+                  "source": "provider_media_payload",
+                  "title": "高级素材对象"
+                },
+                "minItems": 1,
+                "presentation": "asset_picker",
+                "type": "array"
+              },
+              "name": {
+                "description": "Ad name",
+                "type": "string"
+              },
+              "operation_status": {
+                "description": "Provider ad status",
+                "enum": [
+                  "ENABLE",
+                  "DISABLE"
+                ],
+                "type": "string"
+              },
+              "page_id": {
+                "description": "TikTok Instant Page or Instant Form page ID",
+                "manual_entry": {
+                  "instructions": "当前能力未接入页面目录查询，请粘贴 TikTok Ads Manager 中的页面/表单 ID。",
+                  "source": "external_provider_identifier",
+                  "title": "TikTok 页面或表单 ID"
+                },
+                "minLength": 1,
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "LEAD_FORM",
+                  "field": "ad_format"
+                }
+              },
+              "playable_url": {
+                "description": "Playable ad URL",
+                "type": "string"
+              },
+              "product_set_id": {
+                "description": "TikTok product set ID",
+                "lookup_dependencies": [
+                  {
+                    "input_field": "catalog_id",
+                    "label": "所属商品目录",
+                    "required": true,
+                    "value_path": "catalog_id"
+                  }
+                ],
+                "lookup_result_key": "product_sets",
+                "lookup_tool": "tiktok_list_product_sets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_set_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "product_set_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "product_specific_type": {
+                "description": "Shopping product selection mode",
+                "type": "string"
+              },
+              "promotional_music_disabled": {
+                "description": "Disable promotional music for Spark creative",
+                "type": "boolean",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "shopping_ads_deeplink_type": {
+                "description": "Shopping ads deep link behavior",
+                "type": "string"
+              },
+              "shopping_ads_fallback_type": {
+                "description": "Shopping ads fallback behavior",
+                "type": "string"
+              },
+              "shopping_ads_video_package_id": {
+                "description": "Shopping ads video package ID",
+                "manual_entry": {
+                  "instructions": "请从 TikTok Shopping Ads 创意资产中复制视频包 ID；当前能力没有独立的视频包目录接口。",
+                  "source": "external_provider_identifier",
+                  "title": "TikTok Shopping 视频包 ID"
+                },
+                "type": "string"
+              },
+              "shopping_ads_word_set": {
+                "description": "Shopping ads word set IDs",
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              "sku_ids": {
+                "description": "Shopping SKU IDs",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "manual_entry": {
+                  "instructions": "请从已选择的商品目录/店铺导出或复制 SKU；当前能力没有商品 SKU 列表接口。",
+                  "source": "external_provider_identifier",
+                  "title": "TikTok 商品 SKU"
+                },
+                "type": "array",
+                "ui_visible_when": {
+                  "field": "ad_format",
+                  "in": [
+                    "SINGLE_VIDEO",
+                    "SINGLE_IMAGE",
+                    "CAROUSEL"
+                  ]
+                }
+              },
+              "spark_post_id": {
+                "description": "Spark post ID",
+                "manual_entry": {
+                  "instructions": "请粘贴已授权的 Spark 帖子标识（通常为 post_id@user_id）；不会根据名称猜测。",
+                  "source": "external_provider_identifier",
+                  "title": "Spark 帖子 ID"
+                },
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "status": {
+                "description": "Ad status: 1 active, 0 paused",
+                "enum": [
+                  0,
+                  1
+                ],
+                "type": "integer"
+              },
+              "text": {
+                "additionalProperties": true,
+                "description": "Ad copy payload",
+                "presentation": "object_editor",
+                "properties": {
+                  "ad_text": {
+                    "description": "Primary ad text",
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "call_to_action": {
+                    "description": "Call to action",
+                    "type": "string"
+                  },
+                  "display_name": {
+                    "description": "Creative display name",
+                    "maxLength": 512,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "tiktok_item_id": {
+                "description": "Owned TikTok post ID for Spark creative",
+                "manual_entry": {
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
+                  "source": "external_provider_identifier",
+                  "title": "TikTok 帖子 ID"
+                },
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SPARK_AD",
+                  "field": "ad_format"
+                }
+              },
+              "video_id": {
+                "description": "Video asset ID",
+                "lookup_result_key": "videos",
+                "lookup_tool": "tiktok_list_videos",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "file_name",
+                  "video_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "video_id",
+                  "id"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "SINGLE_VIDEO",
+                  "field": "ad_format"
+                }
+              },
+              "video_view_tracking_url": {
+                "description": "Video view tracking URL",
+                "type": "string"
+              }
+            },
+            "provider_any_of": [
+              [
+                "media",
+                "creatives"
+              ]
+            ],
+            "provider_required": [
+              "campaign_id",
+              "adgroup_id",
+              "identity_id"
+            ],
+            "required": [
+              "account_id",
+              "campaign_id",
+              "adgroup_id",
+              "name"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_create_creative",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": "tiktok_get_creative",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "ad_backed"
           ]
         },
         {
@@ -34844,6 +35476,81 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "contract_hash": "6ee0f3ec2c0e54815b43dd4f04adc6d189f48e69877ce5fa91ab5ed668f4e8c2",
+          "contract_version": "1.3.0",
+          "description": "删除 TikTok Ads Ad；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "ad_id": {
+                "lookup_dependencies": [
+                  {
+                    "input_field": "adgroup_id",
+                    "label": "所属 Ad Group",
+                    "required": true,
+                    "value_path": "adgroup_id"
+                  }
+                ],
+                "lookup_result_key": "ads",
+                "lookup_tool": "tiktok_list_ads",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "ad_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "ad_id",
+                  "id"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "ad_id"
+            ],
+            "required": [
+              "account_id",
+              "ad_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_ad"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_delete_ad",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
           "contract_hash": "68473df40bdf92025ea6f95e4d19752a68bc40bbf5aa71e7952a126019a53d86",
           "contract_version": "1.3.0",
           "description": "删除 TikTok Custom Audience；默认仅生成 dry-run 计划。",
@@ -34968,6 +35675,63 @@
           "traits": [
             "write",
             "campaign"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
+          "contract_hash": "f7f083828551a5a911eeb40bc2dbcea519acfc9a1397cf7b143019a0ebf85f4f",
+          "contract_version": "2",
+          "description": "删除 TikTok 广告创意；TikTok 将其作为 Ad 删除，Creative ID 应填写对应的 Ad ID，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "creative_id": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "creative_id"
+            ],
+            "required": [
+              "account_id",
+              "creative_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_delete_creative",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": "tiktok_get_creative",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "ad_backed"
           ]
         },
         {
@@ -40777,6 +41541,133 @@
         {
           "action": "update",
           "activation_rules": [],
+          "contract_hash": "6dd1463af311740721c74ba40b900ed580060bc665c5a456e9186380dcb872b3",
+          "contract_version": "2",
+          "description": "更新 TikTok 广告创意；实际通过所属 Ad 的 ad/update 接口修改创意字段，需要明确提供 Ad Group ID 和 Creative（对应 Ad）ID，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "adgroup_id": {
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "adgroups",
+                "lookup_tool": "tiktok_list_adgroups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "adgroup_name",
+                  "ad_group_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "adgroup_id",
+                  "ad_group_id",
+                  "id"
+                ],
+                "type": "string"
+              },
+              "creative_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Allowed TikTok ad update fields",
+                "intent_defaults": {
+                  "cross_channel_batch_pause": {
+                    "status": "PAUSED"
+                  },
+                  "cross_channel_batch_resume": {
+                    "status": "ACTIVE"
+                  },
+                  "pause_campaign": {
+                    "status": "PAUSED"
+                  },
+                  "resume_campaign": {
+                    "status": "ACTIVE"
+                  }
+                },
+                "properties": {
+                  "landing_page_url": {
+                    "description": "Landing page URL",
+                    "type": "string"
+                  },
+                  "name": {
+                    "description": "Resource name",
+                    "type": "string"
+                  },
+                  "status": {
+                    "description": "Ad status",
+                    "enum": [
+                      0,
+                      1
+                    ],
+                    "type": "integer"
+                  },
+                  "text": {
+                    "description": "Ad text payload",
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "adgroup_id",
+              "creative_id",
+              "updates"
+            ],
+            "required": [
+              "account_id",
+              "adgroup_id",
+              "creative_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_creative"
+          ],
+          "live_support": false,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_update_creative",
+          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_type": "ad_group",
+          "platform": "tiktok",
+          "provider_api_version": "v1.3",
+          "readback_tool": "tiktok_get_creative",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "creative_id",
+          "resource_type": "creative",
+          "risk_level": "medium",
+          "skill": "tiktok-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "creative",
+            "ad_backed"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
           "contract_hash": "b1bfecfc47d8e2225c1db3a86b52b54f445a7eddc695e37e94f5f555d419b002",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Pixel 名称；默认仅生成 dry-run 计划。",
@@ -44164,6 +45055,18 @@
         "status": "implemented"
       },
       {
+        "action": "delete",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "delete_ad",
+        "provider": "tiktok",
+        "resource": "ad",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
         "action": "create_single_video",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
@@ -44503,6 +45406,48 @@
         "inventory_scope": "official_open_api_baseline",
         "method": "get_creative",
         "provider": "tiktok",
+        "resource": "creative",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "create_creative",
+        "notes": "Creative fields are submitted as an Ad creatives payload.",
+        "provider": "tiktok",
+        "provider_operation": "ad/create",
+        "resource": "creative",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "update_creative",
+        "notes": "Creative updates are applied to the owning Ad.",
+        "provider": "tiktok",
+        "provider_operation": "ad/update",
+        "resource": "creative",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "delete_creative",
+        "notes": "Creative deletion deletes the owning Ad-backed creative.",
+        "provider": "tiktok",
+        "provider_operation": "ad/delete",
         "resource": "creative",
         "source_url": "https://business-api.tiktok.com/portal/docs",
         "status": "implemented"
@@ -44896,18 +45841,6 @@
         "api_version": "v1.3",
         "evidence_level": "code_contract",
         "execution_status": "not_supported",
-        "gap": "TikTok 创意对象由广告创建接口生成，尚缺独立创意管理/编辑能力",
-        "inventory_scope": "official_open_api_baseline",
-        "provider": "tiktok",
-        "resource": "creative",
-        "source_url": "https://business-api.tiktok.com/portal/docs",
-        "status": "planned"
-      },
-      {
-        "action": "crud",
-        "api_version": "v1.3",
-        "evidence_level": "code_contract",
-        "execution_status": "not_supported",
         "gap": "Instant Form/Page 由 TikTok Instant Page Editor SDK 管理，不属于当前 Ads API CRUD；广告创建通过 page_id 引用",
         "inventory_scope": "official_open_api_baseline",
         "provider": "tiktok",
@@ -45015,5 +45948,5 @@
       ]
     }
   },
-  "tool_count": 300
+  "tool_count": 304
 }
