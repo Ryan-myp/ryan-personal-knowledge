@@ -80,8 +80,7 @@ TIKTOK_ALL_IN_ONE_SPARK_OBJECTIVES = [
     "REACH", "VIDEO_VIEWS", "ENGAGEMENT",
 ]
 TIKTOK_ALL_IN_ONE_SPARK_GOALS = [
-    "REACH", "CLICK", "TRAFFIC_LANDING_PAGE_VIEW", "ENGAGED_VIEW",
-    "FOLLOWERS", "PAGE_VISIT",
+    "REACH", "ENGAGED_VIEW", "FOLLOWERS", "PAGE_VISIT",
 ]
 
 # TikTok's current Upgraded Smart+ API uses a three-resource workflow.  The
@@ -1633,20 +1632,25 @@ def tiktok_all_in_one_spark_ad_schema() -> dict[str, Any]:
                 "required": ["frequency", "frequency_schedule"],
             },
             {
-                "if": {"optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW"},
-                "required": ["landing_page_url", "call_to_action"],
-            },
-            {
-                "if": {"optimization_goal": "CLICK"},
-                "required": ["landing_page_url", "call_to_action"],
-            },
-            {
                 "if": {"optimization_goal": "PAGE_VISIT"},
-                "required": ["call_to_action"],
+                "required": ["call_to_action", "landing_page_url"],
             },
             {
                 "if": {"bid_type": "BID_TYPE_CUSTOM"},
                 "required": ["bid_price"],
+            },
+            {
+                "if": {
+                    "all": [
+                        {"field": "optimization_goal", "equals": "FOLLOWERS"},
+                        {"field": "bid_type", "equals": "BID_TYPE_CUSTOM"},
+                    ]
+                },
+                "required": ["conversion_bid_price"],
+            },
+            {
+                "if": {"call_to_action": {"exists": True}},
+                "required": ["landing_page_url"],
             },
             {
                 "if": {"identity_type": "BC_AUTH_TT"},
@@ -1775,9 +1779,19 @@ def tiktok_all_in_one_spark_ad_schema() -> dict[str, Any]:
             "tiktok_item_id": _field(
                 "string", "Authorized TikTok post ID used by Spark Ads",
                 minLength=1,
+                manual_entry={
+                    "title": "已授权 TikTok 帖子 ID",
+                    "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
+                    "source": "provider_authorized_item",
+                },
             ),
             "call_to_action": _field(
                 "string", "TikTok call-to-action enum value",
+                manual_entry={
+                    "title": "行动号召值",
+                    "instructions": "请填写 TikTok 当前账户和推广目标允许的 CTA 值；当前没有独立且稳定的 CTA 列表接口，系统不会根据中文文案猜测。",
+                    "source": "provider_enum_manual",
+                },
             ),
             "landing_page_url": _field(
                 "string", "Landing page URL",
@@ -1863,7 +1877,12 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             "promotion_type": _field("string", "Optimization location", enum=["APP_ANDROID", "APP_IOS", "WEBSITE", "CATALOG", "TIKTOK_SHOP", "MINI_APP", "MINI_GAME", "NATIVE_SERIES", "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE", "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"]),
             "promotion_target_type": _field("string", "Lead optimization location", enum=["INSTANT_PAGE", "EXTERNAL_WEBSITE"]),
             "optimization_goal": _field("string", "Optimization goal", enum=TIKTOK_SMART_PLUS_OPTIMIZATION_GOALS),
-            "optimization_event": _field("string", "Pixel or app optimization event"),
+            "optimization_event": _field(
+                "string", "Pixel or app optimization event",
+                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
+                selection_value_fields=["conversion_id", "event_id", "id", "event_name"],
+                selection_label_fields=["conversion_name", "event_name", "name", "id"],
+            ),
             "app_attribution_source": _field("string", "App attribution source", enum=["MMP", "SAN"]),
             "app_data_source": _field("string", "App data source"),
             "app_id": _field(
@@ -1873,7 +1892,16 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 selection_label_fields=["app_name", "name", "display_name", "id"],
             ),
             "catalog_id": _field("string", "Catalog ID returned by tiktok_list_catalogs", minLength=1, lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs"),
-            "product_set_id": _field("string", "Product set ID", minLength=1),
+            "product_set_id": _field(
+                "string", "Product set ID returned by tiktok_list_product_sets", minLength=1,
+                lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
+                lookup_dependencies=[{
+                    "input_field": "catalog_id", "value_path": "catalog_id",
+                    "label": "所属商品目录", "required": True,
+                }],
+                selection_value_fields=["product_set_id", "id"],
+                selection_label_fields=["product_set_name", "name", "id"],
+            ),
             "location_ids": _field("array", "TikTok location IDs", minItems=1, items={"type": "string"}, lookup_tool="tiktok_list_regions", lookup_result_key="regions", selection_value_fields=["location_id", "id", "country_code", "code"], selection_label_fields=["location_name", "name", "country_name", "country_code"]),
             "saved_audience_id": _field("string", "Saved Audience ID", minLength=1, lookup_tool="tiktok_list_audiences", lookup_result_key="audiences"),
             "gender": _field("string", "Gender", enum=TIKTOK_GENDERS),
@@ -1935,16 +1963,22 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
 def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised TikTok formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
+    smart_plus_chain = [
+        "tiktok_smart_plus_create_campaign",
+        "tiktok_smart_plus_create_adgroup",
+        "tiktok_smart_plus_create_ad",
+    ]
+    all_in_one_spark = ["tiktok_create_all_in_one_spark_ad"]
     return [
         {
             "format_id": "product_sales",
             "category": "product_sales",
             "resource_type": "campaign",
             "coverage": "supported_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_product_sales_adgroup", "tiktok_create_product_sales_ad"],
-            "payload_adapter": "TikTokAPIClient.create_product_sales_adgroup/create_product_sales_ad",
-            "dependencies": ["PRODUCT_SALES", "ad_group", "product_or_landing_destination"],
-            "supported_fields": ["objective_type", "budget_mode", "promotion_type", "product_source", "catalog_id", "product_set_id", "store_id", "targeting", "media"],
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
+            "dependencies": ["PRODUCT_SALES", "sales_destination", "optimization_goal", "product selection"],
+            "supported_fields": ["objective_type", "sales_destination", "catalog_enabled", "catalog_type", "promotion_type", "catalog_id", "product_set_id", "optimization_goal", "optimization_event", "location_ids", "age_groups", "video_id", "image_ids", "ad_text"],
             "gaps": ["live mutation approval", "catalog feed health diagnostics"],
             "source_document": source_document,
         },
@@ -1953,11 +1987,11 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "product_sales",
             "resource_type": "ad_group",
             "coverage": "supported_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_product_sales_adgroup", "tiktok_create_product_sales_ad", "tiktok_validate_product_selection"],
-            "payload_adapter": "TikTokAPIClient.create_product_sales_adgroup/create_product_sales_ad",
+            "tool_names": smart_plus_chain + ["tiktok_list_catalogs", "tiktok_validate_product_selection"],
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
             "dependencies": ["PRODUCT_SALES", "catalog_id", "product_set_id", "tiktok_validate_product_selection"],
-            "supported_fields": ["catalog_id", "product_set_id", "promotion_type", "product_source", "store_id"],
-            "gaps": ["live mutation approval", "catalog feed health diagnostics"],
+            "supported_fields": ["catalog_id", "product_set_id", "promotion_type", "optimization_goal", "optimization_event", "location_ids", "video_id", "image_ids"],
+            "gaps": ["live mutation approval", "catalog feed health diagnostics", "Shop/store identifier lookup"],
             "source_document": source_document,
         },
         {
@@ -1965,11 +1999,35 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "spark",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
-            "tool_names": ["tiktok_spark_ads_create"],
-            "payload_adapter": "TikTokAPIClient.create_spark_ad",
-            "dependencies": ["campaign", "ad_group", "spark_post_id", "creator authorization"],
-            "supported_fields": ["spark_post_id"],
-            "gaps": ["live mutation approval", "authorization lookup"],
+            "tool_names": all_in_one_spark,
+            "payload_adapter": "TikTokAPIClient.create_all_in_one_spark_ad",
+            "dependencies": ["REACH|VIDEO_VIEWS|ENGAGEMENT", "spark_post_id", "creator authorization"],
+            "supported_fields": ["objective_type", "optimization_goal", "location_ids", "frequency", "spark_post_id"],
+            "gaps": ["live mutation approval", "authorization lookup", "CTA catalog lookup"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "traffic",
+            "category": "traffic",
+            "resource_type": "campaign",
+            "coverage": "supported_dry_run",
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
+            "dependencies": ["TRAFFIC", "sales_destination=WEBSITE", "CLICK|TRAFFIC_LANDING_PAGE_VIEW"],
+            "supported_fields": ["objective_type", "sales_destination", "optimization_goal", "landing_page_url", "call_to_action_id"],
+            "gaps": ["live mutation approval", "CTA catalog lookup"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "sales",
+            "category": "sales",
+            "resource_type": "campaign",
+            "coverage": "supported_dry_run",
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
+            "dependencies": ["SALES|PRODUCT_SALES", "sales_destination", "CONVERT|VALUE"],
+            "supported_fields": ["objective_type", "sales_destination", "catalog_enabled", "optimization_goal", "optimization_event"],
+            "gaps": ["live mutation approval", "catalog/product-set validation for every destination"],
             "source_document": source_document,
         },
         {
@@ -2037,8 +2095,8 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_app_ad"],
-            "payload_adapter": "TikTokAPIClient.create_app_ad",
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
             "dependencies": ["APP_PROMOTION", "app_id", "operating_systems", "deep_bid_type"],
             "supported_fields": ["objective_type", "app_promotion_type", "app_id", "operating_systems"],
             "gaps": ["app event/deep link validation", "live mutation approval"],
@@ -2049,8 +2107,8 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "app",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
-            "tool_names": ["tiktok_create_adgroup", "tiktok_create_app_ad"],
-            "payload_adapter": "TikTokAPIClient.create_app_ad",
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
             "dependencies": ["APP_PROMOTION", "APP_ANDROID_or_APP_IOS", "app_id"],
             "supported_fields": ["promotion_type", "app_id", "operating_systems"],
             "gaps": ["app event/deep link validation", "live mutation approval"],
@@ -2061,10 +2119,11 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "brand",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_ad"],
-            "dependencies": ["REACH_or_VIDEO_VIEWS", "brand creative", "placement"],
-            "supported_fields": ["objective_type", "budget_mode", "media", "targeting"],
-            "gaps": ["brand takeover/TopView-specific contract", "CPM/CPV compatibility validation"],
+            "tool_names": all_in_one_spark,
+            "payload_adapter": "TikTokAPIClient.create_all_in_one_spark_ad",
+            "dependencies": ["REACH|VIDEO_VIEWS|ENGAGEMENT", "brand creative", "placement"],
+            "supported_fields": ["objective_type", "optimization_goal", "frequency", "tiktok_item_id", "targeting"],
+            "gaps": ["live mutation approval", "brand takeover/TopView-specific contract", "CTA catalog lookup"],
             "source_document": source_document,
         },
         {

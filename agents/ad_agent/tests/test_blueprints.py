@@ -43,6 +43,29 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 
+def test_tiktok_spark_blueprint_uses_current_all_in_one_surface():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+
+    blueprint = runtime.creation_blueprints.get("tiktok.spark")
+    assert blueprint is not None
+    assert blueprint.version == "2.0.0"
+    assert blueprint.tools == ("tiktok_create_all_in_one_spark_ad",)
+    assert blueprint.selector["values"] == ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"]
+
+    result = runtime.evaluate_creation_blueprint(
+        "tiktok.spark",
+        {
+            "campaign.objective_type": "VIDEO_VIEWS",
+            "ad_group.optimization_goal": "ENGAGED_VIEW",
+        },
+    )
+    states = {item["path"]: item for item in result["fields"]}
+    assert states["ad_group.optimization_goal"]["options"] == ["ENGAGED_VIEW"]
+    assert states["ad_group.frequency"]["required"] is False
+    assert states["ad.tiktok_item_id"]["required"] is True
+
+
 def test_blueprint_registry_resolves_each_provider_entry_dimension_without_router_branches():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
     for factory in (create_meta_capability, create_tiktok_capability, create_google_capability):

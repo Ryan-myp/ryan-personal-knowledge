@@ -231,7 +231,7 @@ TIKTOK_LOOKUP_CONTRACTS = {
         "tiktok_item_id": {
             "manual_entry": {
                 "title": "TikTok 帖子 ID",
-                "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                 "source": "external_provider_identifier",
             },
         },
@@ -1038,6 +1038,7 @@ class TikTokCapability(BaseCapability):
         smart_plus_objectives = [
             "APP_PROMOTION", "WEB_CONVERSIONS", "TRAFFIC", "SALES", "PRODUCT_SALES",
         ]
+        all_in_one_objectives = ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"]
 
         # List Campaigns
         tools.append((ToolDefinition(
@@ -1100,6 +1101,7 @@ class TikTokCapability(BaseCapability):
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": [
                         "APP_PROMOTION", "TRAFFIC", "SALES", "PRODUCT_SALES", "WEB_CONVERSIONS",
+                        *all_in_one_objectives,
                     ]},
                 },
             }],
@@ -1166,6 +1168,7 @@ class TikTokCapability(BaseCapability):
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": [
                         "APP_PROMOTION", "TRAFFIC", "SALES", "PRODUCT_SALES", "WEB_CONVERSIONS", "sales",
+                        *all_in_one_objectives,
                     ]},
                     "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
                     "catalog_id": {"exists": False},
@@ -1284,6 +1287,7 @@ class TikTokCapability(BaseCapability):
                         "leads", "LEAD_GENERATION", "APP_PROMOTION", "APP_INSTALL", "app",
                         "TRAFFIC", "SALES", "WEB_CONVERSIONS",
                         "PRODUCT_SALES", "sales",
+                        *all_in_one_objectives,
                     ]},
                     "promotion_type": {"not_in": ["LEAD_FORM", "APP_ANDROID", "APP_IOS"]},
                     "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": False},
@@ -1357,7 +1361,7 @@ class TikTokCapability(BaseCapability):
                         "ad_format": {"aliases": ["creative_type"], "in": [format_name]},
                         "objective": {
                             "aliases": ["objective_type"],
-                            "not_in": smart_plus_objectives,
+                            "not_in": [*smart_plus_objectives, *all_in_one_objectives],
                         },
                     },
                 }],
@@ -1419,7 +1423,7 @@ class TikTokCapability(BaseCapability):
             name="tiktok_create_all_in_one_spark_ad",
             description=(
                 "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；"
-                "覆盖 Reach、Traffic、Video views、Community interaction。默认仅生成 dry-run 计划。"
+                "覆盖 Reach、Video views、Community interaction。默认仅生成 dry-run 计划。"
             ),
             method_name="create_all_in_one_spark_ad", result_key="creation",
             properties={"account_id": {"type": "string"}, **all_in_one_schema["properties"]},
@@ -1548,7 +1552,7 @@ class TikTokCapability(BaseCapability):
                     "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": True},
                     "objective": {
                         "aliases": ["objective_type"],
-                        "not_in": smart_plus_objectives,
+                        "not_in": [*smart_plus_objectives, *all_in_one_objectives],
                     },
                 },
             }, {

@@ -1,5 +1,5 @@
 {
-  "digest": "b58d253538b2ceb5987a0e710adb7e1f850dec3e6bc23e018b1ae674d0c3545c",
+  "digest": "67722d6f3dd287d645139152b933c1654e903262cc6507c39817efbc99c8aa4a",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -26912,7 +26912,7 @@
       ]
     },
     "tiktok": {
-      "digest": "be4a9faa664bab7b7746254b5b0d2c5cb080b0e782d03de97afda51e42c4c335",
+      "digest": "19ea6a524466109b07c416bb644147ebda77e535c9f9104d04df023041a2296b",
       "tool_count": 83,
       "tools": [
         {
@@ -26949,7 +26949,10 @@
                     "SALES",
                     "WEB_CONVERSIONS",
                     "PRODUCT_SALES",
-                    "sales"
+                    "sales",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 },
                 "product_set_id": {
@@ -27525,7 +27528,7 @@
               "tiktok_item_id": {
                 "description": "Owned TikTok post ID for Spark creative",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -27621,7 +27624,10 @@
                     "SALES",
                     "PRODUCT_SALES",
                     "WEB_CONVERSIONS",
-                    "sales"
+                    "sales",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 },
                 "product_set_id": {
@@ -28981,9 +28987,9 @@
               ]
             }
           ],
-          "contract_hash": "5595d10b916153da4fbcb65c38502d061e94693f1c87904aa8125f8eaa747dfa",
+          "contract_hash": "840a4594c794ac5dea80b073d9f1ad405ad89c74a34c7ce81844c94e245de8a8",
           "contract_version": "1.3.0",
-          "description": "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；覆盖 Reach、Traffic、Video views、Community interaction。默认仅生成 dry-run 计划。",
+          "description": "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；覆盖 Reach、Video views、Community interaction。默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
@@ -29000,28 +29006,11 @@
               },
               {
                 "if": {
-                  "optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW"
-                },
-                "required": [
-                  "landing_page_url",
-                  "call_to_action"
-                ]
-              },
-              {
-                "if": {
-                  "optimization_goal": "CLICK"
-                },
-                "required": [
-                  "landing_page_url",
-                  "call_to_action"
-                ]
-              },
-              {
-                "if": {
                   "optimization_goal": "PAGE_VISIT"
                 },
                 "required": [
-                  "call_to_action"
+                  "call_to_action",
+                  "landing_page_url"
                 ]
               },
               {
@@ -29030,6 +29019,33 @@
                 },
                 "required": [
                   "bid_price"
+                ]
+              },
+              {
+                "if": {
+                  "all": [
+                    {
+                      "equals": "FOLLOWERS",
+                      "field": "optimization_goal"
+                    },
+                    {
+                      "equals": "BID_TYPE_CUSTOM",
+                      "field": "bid_type"
+                    }
+                  ]
+                },
+                "required": [
+                  "conversion_bid_price"
+                ]
+              },
+              {
+                "if": {
+                  "call_to_action": {
+                    "exists": true
+                  }
+                },
+                "required": [
+                  "landing_page_url"
                 ]
               },
               {
@@ -29132,6 +29148,11 @@
               },
               "call_to_action": {
                 "description": "TikTok call-to-action enum value",
+                "manual_entry": {
+                  "instructions": "请填写 TikTok 当前账户和推广目标允许的 CTA 值；当前没有独立且稳定的 CTA 列表接口，系统不会根据中文文案猜测。",
+                  "source": "provider_enum_manual",
+                  "title": "行动号召值"
+                },
                 "type": "string"
               },
               "campaign_name": {
@@ -29288,8 +29309,6 @@
                 "description": "Optimization goal; options depend on objective",
                 "enum": [
                   "REACH",
-                  "CLICK",
-                  "TRAFFIC_LANDING_PAGE_VIEW",
                   "ENGAGED_VIEW",
                   "FOLLOWERS",
                   "PAGE_VISIT"
@@ -29330,7 +29349,7 @@
               "tiktok_item_id": {
                 "description": "Authorized TikTok post ID used by Spark Ads",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -29908,7 +29927,10 @@
                     "TRAFFIC",
                     "SALES",
                     "PRODUCT_SALES",
-                    "WEB_CONVERSIONS"
+                    "WEB_CONVERSIONS",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 }
               }
@@ -30217,7 +30239,10 @@
                     "WEB_CONVERSIONS",
                     "TRAFFIC",
                     "SALES",
-                    "PRODUCT_SALES"
+                    "PRODUCT_SALES",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 }
               }
@@ -30764,7 +30789,7 @@
               "tiktok_item_id": {
                 "description": "Owned TikTok post ID for Spark creative",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -32046,7 +32071,7 @@
               "tiktok_item_id": {
                 "description": "Owned TikTok post ID for Spark creative",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -33534,7 +33559,10 @@
                     "WEB_CONVERSIONS",
                     "TRAFFIC",
                     "SALES",
-                    "PRODUCT_SALES"
+                    "PRODUCT_SALES",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 }
               }
@@ -34081,7 +34109,7 @@
               "tiktok_item_id": {
                 "description": "Owned TikTok post ID for Spark creative",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -34182,7 +34210,10 @@
                     "WEB_CONVERSIONS",
                     "TRAFFIC",
                     "SALES",
-                    "PRODUCT_SALES"
+                    "PRODUCT_SALES",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 }
               }
@@ -34729,7 +34760,7 @@
               "tiktok_item_id": {
                 "description": "Authorized TikTok post/item ID used as the video source",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -38740,7 +38771,7 @@
               "tiktok_item_id": {
                 "description": "Authorized TikTok post ID",
                 "manual_entry": {
-                  "instructions": "当前未接入帖子目录查询，请从 TikTok Ads Manager 复制帖子 ID。",
+                  "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
                   "source": "external_provider_identifier",
                   "title": "TikTok 帖子 ID"
                 },
@@ -38828,7 +38859,7 @@
               ]
             }
           ],
-          "contract_hash": "791e20b2a60dd6cc5fc368ec2a67be1d369f9e648082e109877f7eedadb5de30",
+          "contract_hash": "1c6a960f4f57070c0a44967bccf41d2df9e6780c6cee6426ea8a0b75fb9198b9",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，默认只生成 dry-run 计划。",
           "effect_class": "write",
@@ -39105,6 +39136,20 @@
               },
               "optimization_event": {
                 "description": "Pixel or app optimization event",
+                "lookup_result_key": "conversions",
+                "lookup_tool": "tiktok_list_conversions",
+                "selection_label_fields": [
+                  "conversion_name",
+                  "event_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "conversion_id",
+                  "event_id",
+                  "id",
+                  "event_name"
+                ],
                 "type": "string"
               },
               "optimization_goal": {
@@ -39160,7 +39205,7 @@
                 "type": "array"
               },
               "product_set_id": {
-                "description": "Product set ID",
+                "description": "Product set ID returned by tiktok_list_product_sets",
                 "lookup_dependencies": [
                   {
                     "input_field": "catalog_id",
@@ -39602,7 +39647,10 @@
                     "WEB_CONVERSIONS",
                     "TRAFFIC",
                     "SALES",
-                    "PRODUCT_SALES"
+                    "PRODUCT_SALES",
+                    "REACH",
+                    "VIDEO_VIEWS",
+                    "ENGAGEMENT"
                   ]
                 },
                 "spark_post_id": {

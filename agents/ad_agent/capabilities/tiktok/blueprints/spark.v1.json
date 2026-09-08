@@ -1,44 +1,58 @@
 {
   "id": "tiktok.spark",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "provider": "tiktok",
   "ad_format": "SPARK_AD",
   "title": "TikTok Spark Ads",
-  "description": "使用已授权的 TikTok 帖子创建 Spark Ads；帖子 ID 不会由名称推断。",
+  "description": "使用已授权的 TikTok 帖子，通过当前一步接口创建 Reach、Video Views 或 Community Interaction Spark Ads；帖子 ID 不会由名称推断。",
   "match_terms": ["Spark Ads", "Spark 广告", "达人帖子广告", "原生帖子推广"],
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective_type",
-    "values": ["VIDEO_VIEWS", "ENGAGEMENT"],
+    "values": ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"],
     "label": "TikTok 推广目标",
     "options": [
+      {"value": "REACH", "label": "覆盖"},
       {"value": "VIDEO_VIEWS", "label": "视频观看"},
       {"value": "ENGAGEMENT", "label": "互动"}
     ]
   },
-  "tools": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_spark_ads_create"],
+  "tools": ["tiktok_create_all_in_one_spark_ad"],
   "resources": ["campaign", "ad_group", "ad"],
   "fields": [
-    {"path": "campaign.name", "tool_ref": "tiktok_create_campaign.name", "label": "Campaign 名称", "required": true},
-    {"path": "campaign.objective_type", "tool_ref": "tiktok_create_campaign.objective_type", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["VIDEO_VIEWS", "ENGAGEMENT"], "presentation": "derived_readonly"},
-    {"path": "campaign.campaign_type", "tool_ref": "tiktok_create_campaign.campaign_type", "label": "Campaign 类型", "required": true, "source": "enum", "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]},
-    {"path": "campaign.budget_mode", "tool_ref": "tiktok_create_campaign.budget_mode", "label": "预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"]},
-    {"path": "campaign.daily_budget", "tool_ref": "tiktok_create_campaign.daily_budget", "label": "日预算", "required_when": {"field": "campaign.budget_mode", "equals": "BUDGET_MODE_DAY"}},
-    {"path": "ad_group.name", "tool_ref": "tiktok_create_adgroup.name", "label": "广告组名称", "required": true},
-    {"path": "ad_group.campaign_id", "tool_ref": "tiktok_create_adgroup.campaign_id", "label": "所属 Campaign", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_campaigns"},
-    {"path": "ad_group.promotion_type", "tool_ref": "tiktok_create_adgroup.promotion_type", "label": "推广方式", "required": true, "source": "enum", "options": ["WEBSITE_OR_DISPLAY"]},
-    {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_create_adgroup.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["VIDEO_VIEW", "ENGAGEMENT"], "options_from": ["campaign.objective_type"], "option_rules": [{"when": {"field": "campaign.objective_type", "equals": "VIDEO_VIEWS"}, "options": ["VIDEO_VIEW"]}, {"when": {"field": "campaign.objective_type", "equals": "ENGAGEMENT"}, "options": ["ENGAGEMENT"]}]},
-    {"path": "ad_group.billing_event", "tool_ref": "tiktok_create_adgroup.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["CPV", "CPM", "CPC"]},
-    {"path": "ad_group.budget_mode", "tool_ref": "tiktok_create_adgroup.budget_mode", "label": "广告组预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_INFINITE"]},
-    {"path": "ad_group.budget", "tool_ref": "tiktok_create_adgroup.budget", "label": "广告组预算", "required": true},
-    {"path": "ad_group.schedule_type", "tool_ref": "tiktok_create_adgroup.schedule_type", "label": "投放时间设置", "required": true, "source": "enum", "options": ["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]},
-    {"path": "ad_group.schedule_start_time", "tool_ref": "tiktok_create_adgroup.schedule_start_time", "label": "开始投放时间", "required": true},
-    {"path": "ad_group.location_ids", "tool_ref": "tiktok_create_adgroup.location_ids", "label": "投放地区", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_regions"},
-    {"path": "ad_group.placement_type", "tool_ref": "tiktok_create_adgroup.placement_type", "label": "版位模式", "required": true, "source": "enum", "options": ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]},
-    {"path": "ad_group.bid_type", "tool_ref": "tiktok_create_adgroup.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM", "BID_TYPE_MAX_CONVERSION"]},
-    {"path": "ad.spark_post_id", "tool_ref": "tiktok_spark_ads_create.spark_post_id", "label": "Spark 帖子授权标识", "required": true, "presentation": "text_list"}
+    {"path": "campaign.campaign_name", "tool_ref": "tiktok_create_all_in_one_spark_ad.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective_type", "tool_ref": "tiktok_create_all_in_one_spark_ad.objective_type", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"], "presentation": "derived_readonly"},
+    {"path": "ad_group.adgroup_name", "tool_ref": "tiktok_create_all_in_one_spark_ad.adgroup_name", "label": "广告组名称", "required": true},
+    {"path": "ad_group.budget_mode", "tool_ref": "tiktok_create_all_in_one_spark_ad.budget_mode", "label": "预算模式", "required": true, "source": "enum", "options": ["BUDGET_MODE_DAY", "BUDGET_MODE_TOTAL"]},
+    {"path": "ad_group.budget", "tool_ref": "tiktok_create_all_in_one_spark_ad.budget", "label": "预算", "required": true},
+    {"path": "ad_group.schedule_type", "tool_ref": "tiktok_create_all_in_one_spark_ad.schedule_type", "label": "投放时间设置", "required": true, "source": "enum", "options": ["SCHEDULE_FROM_NOW", "SCHEDULE_START_END"]},
+    {"path": "ad_group.schedule_start_time", "tool_ref": "tiktok_create_all_in_one_spark_ad.schedule_start_time", "label": "开始投放时间", "required": true},
+    {"path": "ad_group.schedule_end_time", "tool_ref": "tiktok_create_all_in_one_spark_ad.schedule_end_time", "label": "结束投放时间", "required_when": {"field": "ad_group.schedule_type", "equals": "SCHEDULE_START_END"}},
+    {"path": "ad_group.location_ids", "tool_ref": "tiktok_create_all_in_one_spark_ad.location_ids", "label": "投放地区", "required": false, "source": "lookup", "lookup_tool": "tiktok_list_regions"},
+    {"path": "ad_group.saved_audience_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.saved_audience_id", "label": "Saved Audience（可选）", "source": "lookup", "lookup_tool": "tiktok_list_audiences"},
+    {"path": "ad_group.gender", "tool_ref": "tiktok_create_all_in_one_spark_ad.gender", "label": "性别", "source": "enum", "options": ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]},
+    {"path": "ad_group.age_groups", "tool_ref": "tiktok_create_all_in_one_spark_ad.age_groups", "label": "年龄段", "source": "enum", "options": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"]},
+    {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_create_all_in_one_spark_ad.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["REACH", "ENGAGED_VIEW", "FOLLOWERS", "PAGE_VISIT"], "options_from": ["campaign.objective_type"], "option_rules": [
+      {"when": {"field": "campaign.objective_type", "equals": "REACH"}, "options": ["REACH"]},
+      {"when": {"field": "campaign.objective_type", "equals": "VIDEO_VIEWS"}, "options": ["ENGAGED_VIEW"]},
+      {"when": {"field": "campaign.objective_type", "equals": "ENGAGEMENT"}, "options": ["FOLLOWERS", "PAGE_VISIT"]}
+    ], "option_labels": {"REACH": "覆盖", "ENGAGED_VIEW": "有效观看", "FOLLOWERS": "关注", "PAGE_VISIT": "主页访问"}},
+    {"path": "ad_group.frequency", "tool_ref": "tiktok_create_all_in_one_spark_ad.frequency", "label": "频次上限", "required_when": {"field": "campaign.objective_type", "equals": "REACH"}},
+    {"path": "ad_group.frequency_schedule", "tool_ref": "tiktok_create_all_in_one_spark_ad.frequency_schedule", "label": "频次周期（天）", "required_when": {"field": "campaign.objective_type", "equals": "REACH"}},
+    {"path": "ad_group.bid_type", "tool_ref": "tiktok_create_all_in_one_spark_ad.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"]},
+    {"path": "ad_group.bid_price", "tool_ref": "tiktok_create_all_in_one_spark_ad.bid_price", "label": "出价", "required_when": {"field": "ad_group.bid_type", "equals": "BID_TYPE_CUSTOM"}},
+    {"path": "ad_group.conversion_bid_price", "tool_ref": "tiktok_create_all_in_one_spark_ad.conversion_bid_price", "label": "目标成本", "required_when": {"all": [{"field": "ad_group.optimization_goal", "equals": "FOLLOWERS"}, {"field": "ad_group.bid_type", "equals": "BID_TYPE_CUSTOM"}]}},
+    {"path": "ad.ad_name", "tool_ref": "tiktok_create_all_in_one_spark_ad.ad_name", "label": "广告名称", "required": true},
+    {"path": "ad.identity_type", "tool_ref": "tiktok_create_all_in_one_spark_ad.identity_type", "label": "广告身份类型", "required": true, "source": "enum", "options": ["AUTH_CODE", "TT_USER", "BC_AUTH_TT"]},
+    {"path": "ad.identity_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.identity_id", "label": "广告身份", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_identities"},
+    {"path": "ad.identity_authorized_bc_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.identity_authorized_bc_id", "label": "Business Center ID", "required_when": {"field": "ad.identity_type", "equals": "BC_AUTH_TT"}},
+    {"path": "ad.tiktok_item_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.tiktok_item_id", "label": "已授权 TikTok 帖子", "required": true},
+    {"path": "ad.call_to_action", "tool_ref": "tiktok_create_all_in_one_spark_ad.call_to_action", "label": "行动号召", "required_when": {"field": "ad_group.optimization_goal", "in": ["PAGE_VISIT"]}},
+    {"path": "ad.landing_page_url", "tool_ref": "tiktok_create_all_in_one_spark_ad.landing_page_url", "label": "落地页链接", "required_when": {"field": "ad_group.optimization_goal", "in": ["PAGE_VISIT"]}}
   ],
   "rules": [
-    {"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.optimization_goal", "ad_group.billing_event"]}
+    {"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.optimization_goal", "ad_group.frequency", "ad_group.frequency_schedule", "ad_group.conversion_bid_price"]},
+    {"id": "optimization_goal_changed", "when": {"field": "ad_group.optimization_goal", "changed": true}, "reset": ["ad_group.conversion_bid_price", "ad.call_to_action", "ad.landing_page_url"]},
+    {"id": "schedule_type_changed", "when": {"field": "ad_group.schedule_type", "changed": true}, "reset": ["ad_group.schedule_end_time"]}
   ]
 }

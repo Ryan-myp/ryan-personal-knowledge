@@ -1851,9 +1851,19 @@ async def chat_stream(
                     if key in item
                 })
             run_id = result.get("run_id") if isinstance(result, dict) else None
-            if not run_id and isinstance(result, dict) and result.get("session_id"):
+            # Runtime implementations that do not persist runs (for example
+            # an embedded/test runtime) may legitimately omit this optional
+            # readback API. The stream already has the authoritative result;
+            # only enrich it with a run id when the capability is available.
+            get_latest_run = getattr(runtime, "get_latest_run", None)
+            if (
+                not run_id
+                and isinstance(result, dict)
+                and result.get("session_id")
+                and callable(get_latest_run)
+            ):
                 latest = await run_in_threadpool(
-                    runtime.get_latest_run,
+                    get_latest_run,
                     session_id=result.get("session_id"),
                     user_id=principal.user_id,
                     tenant_id=principal.tenant_id,

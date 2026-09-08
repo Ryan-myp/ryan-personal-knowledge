@@ -241,6 +241,21 @@ def test_google_app_campaign_chain_is_dry_run_ready():
                     "tiktok_smart_plus_create_ad",
                 ],
         ),
+        (
+            "tiktok",
+            {"objective_type": "REACH"},
+            ["tiktok_create_all_in_one_spark_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "VIDEO_VIEWS", "ad_format": "SINGLE_VIDEO"},
+            ["tiktok_create_all_in_one_spark_ad"],
+        ),
+        (
+            "tiktok",
+            {"objective_type": "ENGAGEMENT", "spark_post_id": "post-1"},
+            ["tiktok_create_all_in_one_spark_ad"],
+        ),
     ],
 )
 def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
@@ -843,3 +858,44 @@ def test_live_mode_alone_cannot_enable_provider_writes():
     )
     assert result["results"][0]["success"] is False
     assert "allow_live_writes" in result["results"][0]["error"]
+
+
+def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    definition = runtime.registry.get("tiktok_create_all_in_one_spark_ad")[0]
+
+    assert definition.input_schema.required[:2] == ["account_id", "campaign_name"]
+    assert definition.input_schema.properties["tiktok_item_id"]["manual_entry"]["source"] == (
+        "external_provider_identifier"
+    )
+    assert "不会根据名称猜测" in definition.input_schema.properties["tiktok_item_id"]["manual_entry"]["instructions"]
+    assert definition.input_schema.properties["call_to_action"]["manual_entry"]
+    assert definition.input_schema.properties["optimization_goal"]["enum"] == [
+        "REACH", "ENGAGED_VIEW", "FOLLOWERS", "PAGE_VISIT"
+    ]
+
+    for objective in ("REACH", "VIDEO_VIEWS", "ENGAGEMENT"):
+        routed = runtime.intent_router.route(
+            ParsedIntent(
+                "create_campaign", "create", ["tiktok"],
+                platform_params={"tiktok": {"objective_type": objective}},
+            ),
+            runtime.registry,
+        )
+        assert [item.name for item in routed["tiktok"]] == [
+            "tiktok_create_all_in_one_spark_ad"
+        ]
+
+
+def test_tiktok_smart_plus_product_fields_publish_lookup_contracts():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    definition = runtime.registry.get("tiktok_smart_plus_create_adgroup")[0]
+    properties = definition.input_schema.properties
+
+    assert properties["app_id"]["lookup_tool"] == "tiktok_list_apps"
+    assert properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
+    assert properties["product_set_id"]["lookup_tool"] == "tiktok_list_product_sets"
+    assert properties["product_set_id"]["lookup_dependencies"][0]["input_field"] == "catalog_id"
+    assert properties["optimization_event"]["lookup_tool"] == "tiktok_list_conversions"
