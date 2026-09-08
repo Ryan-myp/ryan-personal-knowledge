@@ -1,6 +1,6 @@
 # Skills 实现指南
 
-> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 269 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 312 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
 
 ## 架构分层
 
@@ -21,7 +21,7 @@ skills/
 | runtime/skill.py (加载层) | ✅ 完成 | 自动解析 SKILL.md 和可选 plugin |
 | core/tool_registry.py (注册层) | ✅ 完成 | 统一注册与执行前 Schema 校验 |
 | core/tool_selector.py (选择层) | ✅ 完成 | 动态选择相关工具 |
-| core/context_optimizer.py (优化层) | ✅ 完成 | 构建精简 LLM 上下文 |
+| runtime/runtime.py + core/intent.py | ✅ | 构建 Stable/Context/Volatile 分层上下文 |
 | capabilities/ (实现层) | ✅ | 当前 Runtime 的实际 Handler/API Client 入口 |
 
 ## 如何补充实现
@@ -69,7 +69,7 @@ DynamicToolSelector 筛选
     │   └─ bidding_strategies.md, report_metrics.md
     │
     ▼
-ContextOptimizer 构建 Prompt
+Runtime 上下文构造器构建 Prompt
     │
     ├─ system prompt 只包含 7 个工具
     ├─ 注入专家知识摘要
@@ -128,7 +128,7 @@ Capability 的 `ToolDefinition` 自己声明 `action`、`resource_type`、参数
 
 ```bash
 # 无需修改其他代码，自动加载
-python agents/ad_agent/api_server.py
+make ad-agent-run
 ```
 
 ## 当前推荐的可执行扩展契约（仅仓库内受信任源码）

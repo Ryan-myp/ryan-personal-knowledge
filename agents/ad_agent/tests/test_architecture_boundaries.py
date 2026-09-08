@@ -125,8 +125,8 @@ def test_execution_plan_is_provider_neutral_and_validates_dependencies():
         cyclic.validate()
 
 
-def test_new_skill_intent_and_objective_are_not_filtered_by_core():
-    """A new Skill can publish its own vocabulary without editing Core."""
+def test_unpublished_intent_is_not_executable():
+    """An intent becomes executable only after its publisher registers it."""
     parser = LLMIntentParser()
 
     normalized = parser._normalize_intent({
@@ -135,7 +135,7 @@ def test_new_skill_intent_and_objective_are_not_filtered_by_core():
         "objective": "retention",
     })
 
-    assert normalized["intent_type"] == "create_partner_bundle"
+    assert normalized["intent_type"] == "chat"
     assert normalized["objective"] == "retention"
 
 

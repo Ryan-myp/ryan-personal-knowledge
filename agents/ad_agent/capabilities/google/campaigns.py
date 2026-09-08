@@ -167,6 +167,7 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     final_url_suffix=input_data.get("final_url_suffix"),
                     start_date=input_data.get("start_date"),
                     end_date=input_data.get("end_date"),
+                    live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
                 )
                 return ToolResult.ok({
                     "campaign_id": campaign_id,

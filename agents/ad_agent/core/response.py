@@ -58,6 +58,12 @@ class LLMResponseSynthesizer:
         r"authorization|password|credentials?|bc[_ -]?id|mcc|partner[_ -]?id)"
         r"\s*[:=]\s*[^\s,;]+"
     )
+    STABLE_SYSTEM_PROMPT = (
+        "[STABLE] 你是一个严谨、可审计的广告 Agent 回复助手。"
+        "只基于已提供的用户问题、意图、知识引用、受控 Memory 和已执行结果回答；"
+        "不调用工具、不编造平台数据、不改变执行状态。"
+        "这是给广告投放人员看的最终答复，优先使用中文并保留关键数量、状态和时间范围。"
+    )
 
     @classmethod
     def _safe_payload(cls, value: Any, max_chars: int = 12000) -> str:
@@ -117,25 +123,27 @@ class LLMResponseSynthesizer:
     ) -> str | None:
         if llm is None or needs_confirmation:
             return None
-        prompt = (
-            "你是广告 Agent 的最终回复助手。只基于给定的用户问题、已执行结果、"
-            "知识引用和兜底答案回答，不调用工具、不编造平台数据、不改变执行状态。"
-            "这是给广告投放人员看的最终答复，禁止出现 Runtime、Tool、schema、"
-            "intent、Provider、dry-run、API 等开发术语。预览类操作请说‘已生成预览，"
-            "尚未修改广告账户’；查询失败要说明现状和下一步。优先用中文，回答简洁，"
-            "保留关键数量、状态和时间范围。\n\n"
+        context_prompt = (
+            "[CONTEXT] 当前请求与可引用依据：\n"
             f"用户问题：{str(user_input)[:4000]}\n"
             f"意图：{self._safe_payload(getattr(intent, 'to_dict', lambda: intent)())[:2000]}\n"
+            f"知识引用：{self._safe_payload(knowledge or [], 5000)}"
+        )
+        volatile_prompt = (
+            "[VOLATILE] 本轮执行数据与呈现约束：\n"
             f"已执行结果：{self._safe_payload(results)}\n"
-            f"知识引用：{self._safe_payload(knowledge or [], 5000)}\n"
             f"受控 Memory：{self._safe_payload(memory or [], 3000)}\n"
             f"分析结果：{self._safe_payload(analysis or {}, 5000)}\n"
-            f"兜底答案：{str(fallback_reply)[:4000]}"
+            f"兜底答案：{str(fallback_reply)[:4000]}\n\n"
+            "禁止出现 Runtime、Tool、schema、intent、Provider、dry-run、API 等开发术语。"
+            "预览类操作请说‘已生成预览，尚未修改广告账户’；查询失败要说明现状和下一步。"
         )
         try:
             answer = llm.call([
-                {"role": "system", "content": "你是一个严谨、可审计的广告 Agent 回复助手。"},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": self.STABLE_SYSTEM_PROMPT},
+                {"role": "system", "content": context_prompt},
+                {"role": "system", "content": volatile_prompt},
+                {"role": "user", "content": "请根据以上 Stable、Context、Volatile 内容生成最终用户答复。"},
             ])
         except Exception:
             return None

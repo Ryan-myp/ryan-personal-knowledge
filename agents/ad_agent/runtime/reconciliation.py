@@ -24,28 +24,20 @@ class ToolReadbackReconciler(ProviderReconciler):
     names, resource names, or a fixed list of advertising objects.
     """
 
-    def __init__(self, platform: str, readback_tools: Mapping[str, str] | None = None):
+    def __init__(self, platform: str):
         self.platform = platform
-        # This is an optional compatibility seam for providers with an
-        # exceptional write->read edge. The mapping is still provider-owned;
-        # Runtime never derives it from a Tool name.
-        self.readback_tools = dict(readback_tools or {})
 
     def reconcile(self, context: ReconciliationContext) -> ReconciliationObservation:
         sequence = int(context.item.get("sequence"))
         write_tool = str(context.item.get("tool_name") or "")
-        read_tool = self.readback_tools.get(write_tool)
-        read_definition = None
-
-        if read_tool and context.resolve_tool:
-            try:
-                read_definition = context.resolve_tool(read_tool)
-            except (KeyError, TypeError):
-                read_definition = None
-        if not read_tool and context.resolve_read_tool:
-            read_definition = context.resolve_read_tool(write_tool)
-            if read_definition is not None:
-                read_tool = str(getattr(read_definition, "name", read_definition))
+        read_definition = (
+            context.resolve_read_tool(write_tool)
+            if context.resolve_read_tool else None
+        )
+        read_tool = (
+            str(getattr(read_definition, "name", read_definition))
+            if read_definition is not None else ""
+        )
         if not read_tool or read_definition is None:
             return self._unknown(
                 sequence,

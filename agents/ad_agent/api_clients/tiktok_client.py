@@ -12,6 +12,7 @@ import hashlib
 from pathlib import Path
 from datetime import date, timedelta
 from typing import Any, Optional
+from urllib.parse import urlsplit
 import requests
 
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
@@ -59,6 +60,26 @@ class TikTokAPIClient(BasePlatformClient):
         "APP_PROMOTION": {"INSTALL", "IN_APP_EVENT", "VALUE"},
         "WEB_CONVERSIONS": {"CLICK", "CONVERT", "TRAFFIC_LANDING_PAGE_VIEW", "VALUE"},
         "LEAD_GENERATION": {"LEAD_GENERATION", "CLICK", "CONVERSATION"},
+    }
+    SMART_PLUS_CAMPAIGN_BUDGET_MODES = {
+        "BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL",
+    }
+    SMART_PLUS_MIN_BUDGET = 20.0
+    SMART_PLUS_UPDATE_FIELDS = {
+        "campaign": {
+            "name", "status", "operation_status", "budget_mode", "budget",
+            "budget_auto_adjust_strategy",
+        },
+        "adgroup": {
+            "name", "status", "operation_status", "promotion_type", "optimization_goal",
+            "bid_type", "bid_price", "conversion_bid_price", "billing_event",
+            "budget_mode", "budget", "schedule_start_time", "schedule_end_time",
+            "location_ids", "saved_audience_id",
+        },
+        "ad": {
+            "name", "status", "operation_status", "ad_text", "landing_page_url",
+            "call_to_action_id", "dark_post_status",
+        },
     }
     
     def __init__(
@@ -293,17 +314,26 @@ class TikTokAPIClient(BasePlatformClient):
     # ==================== 账户管理 ====================
     
     def list_accounts(self, advertiser_ids: list[str]) -> list:
-        """获取广告账户信息"""
+        """获取广告账户信息 through TikTok's advertiser info endpoint."""
+        if not isinstance(advertiser_ids, list) or not advertiser_ids:
+            raise ValueError("advertiser_ids must be a non-empty list")
+        normalized_ids = [str(value or "").strip() for value in advertiser_ids]
+        if any(not value.isdigit() for value in normalized_ids):
+            raise ValueError("advertiser_ids must contain digits only")
         self.acquire_rate_limit(self._rate_limiter)
-        data = {'advertiser_ids': advertiser_ids}
-        result = self.request('POST', 'account/get/', data=data)
+        # v1.3 expects the array as a JSON-encoded query value. Sending a
+        # Python list through requests produces repeated query keys, which
+        # TikTok parses as an invalid list. ``advertiser/info/`` is the
+        # supported read endpoint; ``account/get/`` returns 404 on v1.3.
+        params = {'advertiser_ids': json.dumps(normalized_ids, separators=(",", ":"))}
+        result = self.request('GET', 'advertiser/info/', params=params)
         payload = self._data_section(result)
         if isinstance(payload, dict):
             return payload.get('advertisers', payload.get('list', []))
         return payload
 
     def get_account(self, advertiser_id: str) -> dict:
-        """Get one TikTok advertiser through the existing account/get endpoint."""
+        """Get one TikTok advertiser through ``advertiser/info/``."""
         advertiser_id = str(advertiser_id or "").strip()
         if not advertiser_id.isdigit():
             raise ValueError("advertiser_id must contain digits only")
@@ -339,14 +369,23 @@ class TikTokAPIClient(BasePlatformClient):
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
-        # TikTok API 不支持 filtering，直接查询所有 campaign 并过滤
-        result = self.list_campaigns(advertiser_id)
+        # Scope the read to the requested ID.  The advertiser can contain
+        # thousands of campaigns; an account-wide scan is both slow and can
+        # exhaust the provider quota during Runtime read-back.
+        result = self.list_campaigns(
+            advertiser_id,
+            filtering=[{
+                "field": "CAMPAIGN_IDS", "operator": "IN",
+                "values": [str(campaign_id)],
+            }],
+            page_size=100,
+        )
         for camp in result:
             if str(camp.get('campaign_id')) == str(campaign_id):
                 return camp
         raise APIError(f"TikTok campaign {campaign_id} was not found")
     
-    def create_campaign(self, advertiser_id: str, campaign: dict) -> str:
+    def create_campaign(self, advertiser_id: str, campaign: dict, live: bool = False) -> str:
         """创建 Campaign
         
         必需字段:
@@ -362,7 +401,9 @@ class TikTokAPIClient(BasePlatformClient):
         - daily_budget: 每日预算（账户货币；TikTok v1.3 的 wire 字段为 budget）
         - app_promotion_type: APP 推广类型 (APP_RETARGETING, APP_ACQUISITION)
         """
-        self.acquire_rate_limit(self._rate_limiter)
+        requested_status = self._normalize_status(campaign.get('status', 0))
+        if live and requested_status != 0:
+            raise ValueError("TikTok live creation only allows paused Campaigns")
         data = {
             'advertiser_id': str(advertiser_id),
             'campaign_name': campaign.get('name', 'Untitled Campaign'),
@@ -372,9 +413,7 @@ class TikTokAPIClient(BasePlatformClient):
             # endpoint. campaign_group_status is an older update-era field
             # and is silently ignored by the current provider contract.
             'operation_status': (
-                'DISABLE'
-                if self._normalize_status(campaign.get('status', 0)) == 0
-                else 'ENABLE'
+                'DISABLE' if requested_status == 0 else 'ENABLE'
             ),
             'budget_restriction': campaign.get('budget_restriction', 'NO_LIMITATION'),
             'budget_mode': campaign.get('budget_mode', 'BUDGET_MODE_INFINITE'),
@@ -398,14 +437,22 @@ class TikTokAPIClient(BasePlatformClient):
             if key in campaign and campaign[key] not in (None, ''):
                 data[key] = campaign[key]
         
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "campaign_id": None, "advertiser_id": str(advertiser_id),
+                "operation": {"campaign/create/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
         result = self.request('POST', 'campaign/create/', data=data)
         payload = self._data_section(result)
         resource_id = payload.get('campaign_id') if isinstance(payload, dict) else None
         return self.require_resource_id(resource_id, "TikTok campaign create")
     
-    def update_campaign(self, advertiser_id: str, campaign_id: str, updates: dict) -> dict:
+    def update_campaign(
+        self, advertiser_id: str, campaign_id: str, updates: dict, live: bool = False
+    ) -> dict:
         """更新 Campaign"""
-        self.acquire_rate_limit(self._rate_limiter)
         normalized_updates = {key: value for key, value in updates.items() if value is not None}
         daily_budget = normalized_updates.pop('daily_budget', None)
         budget = normalized_updates.pop('budget', None)
@@ -421,6 +468,13 @@ class TikTokAPIClient(BasePlatformClient):
             'campaign_id': str(campaign_id),
             'campaign': normalized_updates,
         }
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "campaign_id": str(campaign_id), "advertiser_id": str(advertiser_id),
+                "operation": {"campaign/update/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
         return self.request('POST', 'campaign/update/', data=data)
     
     def pause_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
@@ -488,7 +542,7 @@ class TikTokAPIClient(BasePlatformClient):
                 return ag
         raise APIError(f"TikTok ad group {adgroup_id} was not found")
     
-    def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict) -> str:
+    def create_adgroup(self, advertiser_id: str, campaign_id: str, adgroup: dict, live: bool = False) -> str:
         """创建 Ad Group。
 
         TikTok v1.3's ``adgroup/create`` request is a flat provider payload;
@@ -497,8 +551,10 @@ class TikTokAPIClient(BasePlatformClient):
         invisible to TikTok and made the dry-run contract diverge from live
         behavior.
         """
-        self.acquire_rate_limit(self._rate_limiter)
         budget_mode = adgroup.get('budget_mode')
+        requested_status = self._normalize_status(adgroup.get('status', 0))
+        if live and requested_status != 0:
+            raise ValueError("TikTok live creation only allows paused Ad Groups")
         data = {
             'advertiser_id': str(advertiser_id),
             # Hierarchy IDs are opaque strings in TikTok v1.3 create
@@ -506,9 +562,7 @@ class TikTokAPIClient(BasePlatformClient):
             'campaign_id': str(campaign_id),
             'adgroup_name': adgroup['name'],
             'operation_status': (
-                'DISABLE'
-                if adgroup.get('status', 0) in (0, '0', 'PAUSED', 'DISABLE')
-                else 'ENABLE'
+                'DISABLE' if requested_status == 0 else 'ENABLE'
             ),
         }
         daily_budget = adgroup.get('daily_budget')
@@ -557,6 +611,13 @@ class TikTokAPIClient(BasePlatformClient):
         if adgroup.get('targeting'):
             data['targeting'] = adgroup['targeting']
         
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "adgroup_id": None, "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_id), "operation": {"adgroup/create/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
         result = self.request('POST', 'adgroup/create/', data=data)
         payload = self._data_section(result)
         resource_id = (
@@ -566,7 +627,7 @@ class TikTokAPIClient(BasePlatformClient):
         return self.require_resource_id(resource_id, "TikTok ad group create")
 
     def create_product_sales_adgroup(
-        self, advertiser_id: str, campaign_id: str, adgroup: dict
+        self, advertiser_id: str, campaign_id: str, adgroup: dict, live: bool = False
     ) -> str:
         """Create a Product Sales ad group through the regular v1.3 endpoint.
 
@@ -590,11 +651,13 @@ class TikTokAPIClient(BasePlatformClient):
                 raise ValueError("Product Sales catalog destination requires product_set_id")
         if product_source == "STORE" and not str(normalized.get("store_id") or "").strip():
             raise ValueError("Product Sales Shop destination requires store_id")
-        return self.create_adgroup(advertiser_id, campaign_id, normalized)
+        return self.create_adgroup(advertiser_id, campaign_id, normalized, live=live)
     
-    def update_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict) -> dict:
+    def update_adgroup(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict,
+        live: bool = False,
+    ) -> dict:
         """更新 Ad Group"""
-        self.acquire_rate_limit(self._rate_limiter)
         normalized_updates = {key: value for key, value in updates.items() if value is not None}
         daily_budget = normalized_updates.pop('daily_budget', None)
         budget = normalized_updates.pop('budget', None)
@@ -608,6 +671,13 @@ class TikTokAPIClient(BasePlatformClient):
             'ad_group_id': str(adgroup_id),
             'ad_group': normalized_updates,
         }
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "adgroup_id": str(adgroup_id), "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_id), "operation": {"adgroup/update/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
         return self.request('POST', 'adgroup/update/', data=data)
 
     def update_adgroup_targeting(
@@ -696,9 +766,11 @@ class TikTokAPIClient(BasePlatformClient):
         }
         return self.request("POST", "adgroup/update/", data=data)
 
-    def update_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict) -> dict:
+    def update_ad(
+        self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict,
+        live: bool = False,
+    ) -> dict:
         """Update an Ad using TikTok's advertiser/ad-group scoped endpoint."""
-        self.acquire_rate_limit(self._rate_limiter)
         normalized_updates = {
             key: value for key, value in updates.items() if value is not None
         }
@@ -710,6 +782,13 @@ class TikTokAPIClient(BasePlatformClient):
             "ad_id": int(ad_id),
             "ad": normalized_updates,
         }
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "ad_id": str(ad_id), "advertiser_id": str(advertiser_id),
+                "adgroup_id": str(adgroup_id), "operation": {"ad/update/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
         return self.request("POST", "ad/update/", data=data)
 
     def delete_ad(self, advertiser_id: str, ad_id: str) -> dict:
@@ -762,14 +841,13 @@ class TikTokAPIClient(BasePlatformClient):
                 return ad
         raise APIError(f"TikTok ad {ad_id} was not found")
     
-    def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict) -> str:
+    def create_ad(self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict, live: bool = False) -> str:
         """创建 Ad using TikTok v1.3's creative-list payload.
 
         TikTok's ``ad/create/`` endpoint has a flat request envelope, but the
         actual ad fields are required inside ``creatives``. The public Tool
         input stays flat and this client performs the provider translation.
         """
-        self.acquire_rate_limit(self._rate_limiter)
         creative = {}
         supplied_creatives = ad.get('creatives')
         if isinstance(supplied_creatives, list) and supplied_creatives:
@@ -779,11 +857,14 @@ class TikTokAPIClient(BasePlatformClient):
         elif isinstance(supplied_creatives, dict):
             creative = dict(supplied_creatives)
 
+        requested_status = self._normalize_status(ad.get('status', 0))
+        if live and requested_status != 0:
+            raise ValueError("TikTok live creation only allows paused Ads")
         creative.update({
             'ad_name': ad.get('name', creative.get('ad_name', 'Untitled Ad')),
             'operation_status': ad.get(
                 'operation_status',
-                'DISABLE' if ad.get('status', 0) in (0, '0', 'PAUSED', 'DISABLE') else 'ENABLE',
+                'DISABLE' if requested_status == 0 else 'ENABLE',
             ),
         })
         if ad.get('landing_page_url'):
@@ -830,6 +911,14 @@ class TikTokAPIClient(BasePlatformClient):
             'adgroup_id': str(adgroup_id),
             'creatives': [creative],
         }
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "ad_id": None, "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_id), "adgroup_id": str(adgroup_id),
+                "operation": {"ad/create/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
         result = self.request('POST', 'ad/create/', data=data)
         payload = self._data_section(result)
         resource_id = None
@@ -847,7 +936,8 @@ class TikTokAPIClient(BasePlatformClient):
         return self.require_resource_id(resource_id, "TikTok ad create")
 
     def create_product_sales_ad(
-        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict,
+        live: bool = False,
     ) -> str:
         """Create a typed Product Sales ad through ``ad/create/``."""
         if not isinstance(ad, dict):
@@ -872,7 +962,7 @@ class TikTokAPIClient(BasePlatformClient):
                     "SINGLE_IMAGE": ("image_ids", "media", "creatives"),
                     "CAROUSEL": ("image_ids", "media", "creatives"),
                 }[ad_format],
-                min_image_count=2 if ad_format == "CAROUSEL" else 0,
+                min_image_count=2 if ad_format == "CAROUSEL" else 0, live=live,
             )
         if not any(
             normalized.get(field) not in (None, "", {}, [])
@@ -884,7 +974,7 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError(
                 "Product Sales ad requires media, creatives, an asset ID, or product selection"
             )
-        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized, live=live)
 
     def _create_format_ad(
         self,
@@ -895,6 +985,7 @@ class TikTokAPIClient(BasePlatformClient):
         format_name: str,
         asset_fields: tuple[str, ...],
         min_image_count: int = 0,
+        live: bool = False,
     ) -> str:
         """Create a typed ad after validating its format-specific asset shape."""
         if not isinstance(ad, dict):
@@ -913,33 +1004,34 @@ class TikTokAPIClient(BasePlatformClient):
                 raise ValueError(
                     f"{format_name} ad image_ids must contain at least {min_image_count} items"
                 )
-        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized, live=live)
 
     def create_single_video_ad(
-        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict, live: bool = False
     ) -> str:
         """Create a single-video ad through TikTok's ad-create endpoint."""
         return self._create_format_ad(
             advertiser_id, campaign_id, adgroup_id, ad, "SINGLE_VIDEO",
-            ("video_id", "tiktok_item_id", "media", "creatives"),
+            ("video_id", "tiktok_item_id", "media", "creatives"), live=live,
         )
 
     def create_single_image_ad(
-        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict, live: bool = False
     ) -> str:
         """Create a single-image ad through TikTok's ad-create endpoint."""
         return self._create_format_ad(
             advertiser_id, campaign_id, adgroup_id, ad, "SINGLE_IMAGE",
-            ("image_ids", "media", "creatives"),
+            ("image_ids", "media", "creatives"), live=live,
         )
 
     def create_carousel_ad(
-        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, ad: dict,
+        live: bool = False,
     ) -> str:
         """Create a carousel ad with at least two image IDs when image IDs are used."""
         return self._create_format_ad(
             advertiser_id, campaign_id, adgroup_id, ad, "CAROUSEL",
-            ("image_ids", "media", "creatives"), min_image_count=2,
+            ("image_ids", "media", "creatives"), min_image_count=2, live=live,
         )
 
     def create_lead_ad(
@@ -948,6 +1040,7 @@ class TikTokAPIClient(BasePlatformClient):
         campaign_id: str,
         adgroup_id: str,
         ad: dict,
+        live: bool = False,
     ) -> str:
         """Create a Lead Generation ad bound to a TikTok Instant Page.
 
@@ -964,7 +1057,7 @@ class TikTokAPIClient(BasePlatformClient):
         normalized["page_id"] = int(page_id)
         normalized.pop("form_id", None)
         normalized.pop("promote_object", None)
-        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized, live=live)
 
     def create_app_ad(
         self,
@@ -972,6 +1065,7 @@ class TikTokAPIClient(BasePlatformClient):
         campaign_id: str,
         adgroup_id: str,
         ad: dict,
+        live: bool = False,
     ) -> str:
         """Create a TikTok App Promotion install/event ad."""
         if not isinstance(ad, dict):
@@ -993,7 +1087,7 @@ class TikTokAPIClient(BasePlatformClient):
         normalized["promote_object"] = {
             "app_install": {"app_id": app_id},
         }
-        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized)
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, normalized, live=live)
     
     # ==================== Spark Ads（达人原生广告）====================
     
@@ -1050,8 +1144,51 @@ class TikTokAPIClient(BasePlatformClient):
             raise APIError(f"TikTok Smart+ {resource} create returned an invalid response")
         return data
 
+    def _smart_plus_image_uris(
+        self, values: Any, advertiser_id: str, *, live: bool,
+    ) -> list[str]:
+        """Normalize Smart+ image selections to provider ``web_uri`` values.
+
+        The creation card can return either a library image ID or the URI
+        exposed by the image lookup.  TikTok's Smart+ creative contract only
+        accepts ``image_info[].web_uri``.  Resolve IDs at this Provider
+        boundary in live mode; dry-run deliberately performs no network lookup
+        and keeps the selected value in the preview payload.
+        """
+        if not isinstance(values, list):
+            raise ValueError("TikTok Smart+ image selections must be an array")
+        normalized: list[str] = []
+        for raw_value in values:
+            value = str(raw_value or "").strip()
+            if not value:
+                continue
+            parsed = urlsplit(value)
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                normalized.append(value)
+                continue
+            if not live:
+                normalized.append(value)
+                continue
+            image = self.get_image(str(advertiser_id), value)
+            uri = next(
+                (
+                    str(image.get(key) or "").strip()
+                    for key in ("web_uri", "image_url", "url")
+                    if isinstance(image, dict) and str(image.get(key) or "").strip()
+                ),
+                "",
+            )
+            if not uri or urlsplit(uri).scheme not in {"http", "https"}:
+                raise ValueError(
+                    f"TikTok image {value} lookup did not return a valid web_uri"
+                )
+            normalized.append(uri)
+        if not normalized:
+            raise ValueError("TikTok Smart+ requires at least one non-empty image")
+        return normalized
+
     def create_smart_plus_campaign(
-        self, advertiser_id: str, campaign: dict[str, Any]
+        self, advertiser_id: str, campaign: dict[str, Any], live: bool = False
     ) -> dict[str, Any]:
         """Create an Upgraded Smart+ campaign using the current endpoint."""
         if not isinstance(campaign, dict):
@@ -1060,6 +1197,8 @@ class TikTokAPIClient(BasePlatformClient):
             campaign.get("objective_type") or campaign.get("objective")
         )
         campaign = {**campaign, "request_id": str(campaign.get("request_id") or time.time_ns())}
+        if live and self._smart_plus_status(campaign) != "DISABLE":
+            raise ValueError("TikTok Smart+ live creation only allows a paused campaign")
         for field in ("request_id", "campaign_name"):
             if campaign.get(field) in (None, ""):
                 raise ValueError(f"TikTok Smart+ campaign requires {field}")
@@ -1074,6 +1213,22 @@ class TikTokAPIClient(BasePlatformClient):
             if not destination:
                 raise ValueError("WEB_CONVERSIONS requires sales_destination")
             campaign = {**campaign, "sales_destination": destination}
+
+        budget_mode = str(campaign.get("budget_mode") or "").upper()
+        if budget_mode and budget_mode not in self.SMART_PLUS_CAMPAIGN_BUDGET_MODES:
+            raise ValueError(
+                "TikTok Smart+ campaign budget_mode must be "
+                "BUDGET_MODE_DYNAMIC_DAILY_BUDGET or BUDGET_MODE_TOTAL"
+            )
+        if campaign.get("budget") not in (None, ""):
+            try:
+                budget = float(campaign["budget"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("TikTok Smart+ campaign budget must be numeric") from exc
+            if budget < self.SMART_PLUS_MIN_BUDGET:
+                raise ValueError(
+                    "TikTok Smart+ campaign budget must be at least 20 in the account currency"
+                )
 
         wire_fields = {
             "request_id", "operation_status", "objective_type", "app_promotion_type",
@@ -1093,6 +1248,15 @@ class TikTokAPIClient(BasePlatformClient):
         data["operation_status"] = self._smart_plus_status(campaign)
         if public_objective == "TRAFFIC":
             data["sales_destination"] = "WEBSITE"
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "campaign_id": None,
+                "advertiser_id": str(advertiser_id),
+                "operation": {"smart_plus/campaign/create/": {"create": data}},
+            }
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("POST", "smart_plus/campaign/create/", data=data)
         response = self._smart_plus_response(result, "campaign")
@@ -1101,19 +1265,32 @@ class TikTokAPIClient(BasePlatformClient):
         return response
 
     def create_smart_plus_adgroup(
-        self, advertiser_id: str, campaign_id: str, adgroup: dict[str, Any]
+        self, advertiser_id: str, campaign_id: str, adgroup: dict[str, Any],
+        live: bool = False,
     ) -> dict[str, Any]:
         """Create an Upgraded Smart+ ad group using the current endpoint."""
         if not isinstance(adgroup, dict):
             raise ValueError("TikTok Smart+ ad group payload must be an object")
         adgroup = {**adgroup, "request_id": str(adgroup.get("request_id") or time.time_ns())}
+        if live and self._smart_plus_status(adgroup) != "DISABLE":
+            raise ValueError("TikTok Smart+ live creation only allows a paused ad group")
         for field in (
             "request_id", "adgroup_name", "promotion_type", "optimization_goal",
             "bid_type", "billing_event", "schedule_type", "schedule_start_time",
         ):
             if adgroup.get(field) in (None, "", []):
                 raise ValueError(f"TikTok Smart+ ad group requires {field}")
-        objective = str(adgroup.get("objective_type") or "WEB_CONVERSIONS").upper()
+        promotion_type = str(adgroup.get("promotion_type") or "").upper()
+        objective_hint = adgroup.get("objective_type")
+        if objective_hint in (None, ""):
+            if promotion_type in {"APP_ANDROID", "APP_IOS"}:
+                objective_hint = "APP_PROMOTION"
+            elif promotion_type in {
+                "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE",
+                "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE",
+            }:
+                objective_hint = "LEAD_GENERATION"
+        objective = str(objective_hint or "WEB_CONVERSIONS").upper()
         public_objective, provider_objective = self._smart_plus_objective(objective)
         goal = str(adgroup.get("optimization_goal") or "").upper()
         allowed = self.SMART_PLUS_GOALS[provider_objective]
@@ -1123,16 +1300,39 @@ class TikTokAPIClient(BasePlatformClient):
                 f"expected one of {sorted(allowed)}"
             )
         if public_objective == "APP_PROMOTION":
-            if adgroup.get("promotion_type") not in {"APP_ANDROID", "APP_IOS"}:
+            if promotion_type not in {"APP_ANDROID", "APP_IOS"}:
                 raise ValueError("APP_PROMOTION requires promotion_type=APP_ANDROID or APP_IOS")
             if adgroup.get("app_id") in (None, "", []):
                 raise ValueError("APP_PROMOTION requires app_id")
+            operating_systems = adgroup.get("operating_systems")
+            expected_os = "ANDROID" if promotion_type == "APP_ANDROID" else "IOS"
+            if not isinstance(operating_systems, list) or expected_os not in operating_systems:
+                raise ValueError(
+                    f"{promotion_type} requires operating_systems to include {expected_os}"
+                )
             if adgroup.get("billing_event") != "OCPM":
                 raise ValueError("APP_PROMOTION requires billing_event=OCPM")
             if goal == "IN_APP_EVENT" and adgroup.get("optimization_event") in (None, ""):
                 raise ValueError("IN_APP_EVENT requires optimization_event")
-        elif public_objective == "TRAFFIC" and adgroup.get("promotion_type") != "WEBSITE":
+        elif public_objective == "TRAFFIC" and promotion_type != "WEBSITE":
             raise ValueError("TRAFFIC requires promotion_type=WEBSITE")
+        elif public_objective == "LEAD_GENERATION":
+            if promotion_type not in {
+                "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE",
+                "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE",
+            }:
+                raise ValueError("LEAD_GENERATION requires a lead promotion_type")
+            if adgroup.get("promotion_target_type") in (None, ""):
+                raise ValueError("LEAD_GENERATION requires promotion_target_type")
+        if (
+            public_objective in {"SALES", "PRODUCT_SALES", "WEB_CONVERSIONS"}
+            and str(adgroup.get("promotion_type") or "").upper() == "WEBSITE"
+            and not adgroup.get("pixel_id")
+            and not adgroup.get("tracking_pixel_id")
+        ):
+            raise ValueError(
+                f"{public_objective} website promotion requires pixel_id or tracking_pixel_id"
+            )
         locations = adgroup.get("location_ids")
         if not adgroup.get("saved_audience_id") and (
             not isinstance(locations, list) or not locations
@@ -1142,18 +1342,37 @@ class TikTokAPIClient(BasePlatformClient):
             bid_field = "conversion_bid_price" if goal in {"CONVERT", "TRAFFIC_LANDING_PAGE_VIEW"} else "bid_price"
             if adgroup.get(bid_field) in (None, ""):
                 raise ValueError(f"BID_TYPE_CUSTOM requires {bid_field}")
+        if adgroup.get("budget") not in (None, ""):
+            try:
+                budget = float(adgroup["budget"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("TikTok Smart+ ad group budget must be numeric") from exc
+            if budget < self.SMART_PLUS_MIN_BUDGET:
+                raise ValueError(
+                    "TikTok Smart+ ad group budget must be at least 20 in the account currency"
+                )
         if adgroup.get("schedule_type") == "SCHEDULE_START_END" and not adgroup.get("schedule_end_time"):
             raise ValueError("SCHEDULE_START_END requires schedule_end_time")
+
+        targeting_fields = {
+            "location_ids", "saved_audience_id", "gender", "age_groups",
+            "operating_systems", "placement_type", "placements",
+            "targeting_optimization_mode", "frequency", "frequency_schedule",
+        }
+        targeting_spec = dict(adgroup.get("targeting_spec") or {})
+        for key in targeting_fields:
+            if adgroup.get(key) not in (None, "", []):
+                targeting_spec[key] = adgroup[key]
+        if not targeting_spec:
+            raise ValueError("TikTok Smart+ ad group requires targeting_spec")
 
         wire_fields = {
             "request_id", "operation_status", "adgroup_name", "catalog_id", "product_set_id",
             "promotion_type", "promotion_target_type", "optimization_goal", "optimization_event",
-            "app_attribution_source", "app_data_source", "app_id", "location_ids",
-            "saved_audience_id", "gender", "age_groups", "operating_systems", "placement_type",
-            "placements", "targeting_optimization_mode", "bid_type", "bid_price",
+            "app_attribution_source", "app_data_source", "app_id", "bid_type", "bid_price",
             "conversion_bid_price", "deep_bid_type", "roas_bid", "billing_event", "budget_mode",
             "budget", "schedule_type", "schedule_start_time", "schedule_end_time", "frequency",
-            "frequency_schedule", "identity_type", "identity_id", "identity_authorized_bc_id",
+            "identity_type", "identity_id", "identity_authorized_bc_id",
             "pixel_id", "tracking_pixel_id",
         }
         data = {"advertiser_id": str(advertiser_id), "campaign_id": str(campaign_id)}
@@ -1161,7 +1380,18 @@ class TikTokAPIClient(BasePlatformClient):
             key: value for key, value in adgroup.items()
             if key in wire_fields and value not in (None, "", [])
         })
+        data["targeting_spec"] = targeting_spec
         data["operation_status"] = self._smart_plus_status(adgroup)
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "adgroup_id": None,
+                "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_id),
+                "operation": {"smart_plus/adgroup/create/": {"create": data}},
+            }
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("POST", "smart_plus/adgroup/create/", data=data)
         response = self._smart_plus_response(result, "adgroup")
@@ -1171,27 +1401,181 @@ class TikTokAPIClient(BasePlatformClient):
 
     def create_smart_plus_ad(
         self, advertiser_id: str, campaign_id: str, adgroup_id: str,
-        ad: dict[str, Any],
+        ad: dict[str, Any], live: bool = False,
     ) -> dict[str, Any]:
-        """Create an Upgraded Smart+ ad with a closed creative contract."""
+        """Create an Upgraded Smart+ ad with TikTok's nested creative contract.
+
+        The public Tool keeps convenient flat aliases for the creation card,
+        but TikTok's current endpoint requires ``creative_list[].creative_info``
+        and ``ad_configuration``.  This adapter is the only place that
+        composes those provider objects, so a Blueprint/LLM cannot
+        accidentally send a legacy flat payload to Smart+.
+        """
         if not isinstance(ad, dict):
             raise ValueError("TikTok Smart+ ad payload must be an object")
         ad = {**ad, "request_id": str(ad.get("request_id") or time.time_ns())}
+        if live and self._smart_plus_status(ad) != "DISABLE":
+            raise ValueError("TikTok Smart+ live creation only allows a paused ad")
         for field in ("request_id", "ad_name"):
             if ad.get(field) in (None, ""):
                 raise ValueError(f"TikTok Smart+ ad requires {field}")
-        if not any(ad.get(field) not in (None, "", []) for field in ("tiktok_item_id", "video_id", "image_ids")):
-            raise ValueError("TikTok Smart+ ad requires tiktok_item_id, video_id or image_ids")
-        if ad.get("identity_type") in {"TT_USER", "BC_AUTH_TT", "AUTH_CODE"} and not ad.get("identity_id"):
-            raise ValueError("Spark Ads require identity_id")
-        if ad.get("identity_type") == "BC_AUTH_TT" and not ad.get("identity_authorized_bc_id"):
-            raise ValueError("identity_type=BC_AUTH_TT requires identity_authorized_bc_id")
+        creative_list = ad.get("creative_list")
+        if creative_list in (None, "", []):
+            creative_info = {
+                key: ad[key]
+                for key in (
+                    "ad_format", "tiktok_item_id", "identity_type", "identity_id",
+                    "identity_authorized_bc_id", "music_info", "aigc_disclosure_type",
+                )
+                if ad.get(key) not in (None, "", [])
+            }
+            # The Smart+ API does not accept the legacy flat video_id/image_ids
+            # aliases inside creative_info.  It expects video_info.video_id or
+            # image_info[].web_uri.  Keep the aliases for the UI, but translate
+            # them only at this Provider boundary.
+            if ad.get("video_id") not in (None, "", []):
+                creative_info["video_info"] = {
+                    "video_id": str(ad["video_id"]),
+                    **({"file_name": ad["video_file_name"]}
+                       if ad.get("video_file_name") not in (None, "") else {}),
+                }
+            image_values = ad.get("image_web_uris")
+            if image_values in (None, "", []):
+                image_values = ad.get("image_ids")
+            if image_values not in (None, "", []):
+                if not isinstance(image_values, list):
+                    raise ValueError("TikTok Smart+ image selections must be an array")
+                creative_info["image_info"] = [
+                    {"web_uri": str(uri)} for uri in image_values
+                    if str(uri or "").strip()
+                ]
+            creative_list = [{"creative_info": creative_info}]
+        if not isinstance(creative_list, list) or not creative_list:
+            raise ValueError("TikTok Smart+ ad requires a non-empty creative_list")
+        normalized_creative_list = []
+        for item in creative_list:
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("creative_info"), dict)
+                or not item.get("creative_info")
+            ):
+                raise ValueError("TikTok Smart+ creative_list items require creative_info")
+            creative_info = dict(item["creative_info"])
+            # Accept the creation-card aliases even when the caller supplied
+            # an explicit creative_list.  The outgoing object remains the
+            # exact Smart+ media_info contract from TikTok's SDK schema.
+            if creative_info.get("video_id") not in (None, "", []):
+                creative_info["video_info"] = {
+                    "video_id": str(creative_info.pop("video_id")),
+                    **({"file_name": creative_info.pop("video_file_name")}
+                       if creative_info.get("video_file_name") not in (None, "") else {}),
+                }
+            image_ids = creative_info.pop("image_ids", None)
+            image_web_uris = creative_info.pop("image_web_uris", None)
+            if image_web_uris in (None, "", []) and image_ids not in (None, "", []):
+                image_web_uris = image_ids
+            if image_web_uris not in (None, "", []):
+                if not isinstance(image_web_uris, list):
+                    raise ValueError("TikTok Smart+ image selections must be an array")
+                creative_info["image_info"] = [
+                    {"web_uri": str(uri)} for uri in image_web_uris
+                    if str(uri or "").strip()
+                ]
+            # These fields belong to the top-level title/external-url/CTA
+            # lists, not to creative_info.
+            creative_info.pop("ad_text", None)
+            creative_info.pop("landing_page_url", None)
+            creative_info.pop("call_to_action_id", None)
+            creative_info.pop("material_name", None)
+            if not any(
+                creative_info.get(field) not in (None, "", [])
+                for field in ("tiktok_item_id", "video_info", "image_info")
+            ):
+                raise ValueError(
+                    "TikTok Smart+ creative_info requires tiktok_item_id, video_info or image_info"
+                )
+            asset_format = str(creative_info.get("ad_format") or ad.get("ad_format") or "").upper()
+            if not creative_info.get("tiktok_item_id"):
+                if asset_format == "SINGLE_VIDEO" and not creative_info.get("video_info"):
+                    raise ValueError("SINGLE_VIDEO requires video_id")
+                if asset_format == "SINGLE_IMAGE" and not creative_info.get("image_info"):
+                    raise ValueError("SINGLE_IMAGE requires image_ids or image_web_uris")
+                if asset_format == "CAROUSEL_ADS" and len(creative_info.get("image_info") or []) < 2:
+                    raise ValueError("CAROUSEL_ADS requires at least two images")
+            identity_type = str(creative_info.get("identity_type") or "").upper()
+            if identity_type in {"TT_USER", "BC_AUTH_TT", "AUTH_CODE"} and not creative_info.get("identity_id"):
+                raise ValueError("TikTok Smart+ creative_info requires identity_id")
+            if identity_type == "BC_AUTH_TT" and not creative_info.get("identity_authorized_bc_id"):
+                raise ValueError(
+                    "TikTok Smart+ creative_info requires identity_authorized_bc_id for BC_AUTH_TT"
+                )
+            normalized_creative_list.append({"creative_info": creative_info})
+        creative_list = normalized_creative_list
+
+        # Resolve every image selection after the creative list has been
+        # normalized.  This covers both the flat creation-card aliases and an
+        # explicitly supplied Smart+ creative_list, while keeping all lookup
+        # traffic inside the Provider client.
+        for item in creative_list:
+            creative_info = item["creative_info"]
+            image_info = creative_info.get("image_info")
+            if image_info in (None, "", []):
+                continue
+            if not isinstance(image_info, list):
+                raise ValueError("TikTok Smart+ image_info must be an array")
+            image_values = [
+                entry.get("web_uri")
+                for entry in image_info
+                if isinstance(entry, dict) and entry.get("web_uri") not in (None, "")
+            ]
+            creative_info["image_info"] = [
+                {"web_uri": uri}
+                for uri in self._smart_plus_image_uris(
+                    image_values, advertiser_id, live=live,
+                )
+            ]
+
+        objective = str(ad.get("objective_type") or "").upper()
+        if objective == "LEAD_GENERATION" and ad.get("page_list") in (None, "", []):
+            raise ValueError("LEAD_GENERATION Smart+ ads require page_list")
+
+        configuration = ad.get("ad_configuration")
+        if configuration in (None, ""):
+            configuration = {}
+        if not isinstance(configuration, dict):
+            raise ValueError("TikTok Smart+ ad_configuration must be an object")
+        else:
+            configuration = dict(configuration)
+        if ad.get("call_to_action_id") not in (None, ""):
+            configuration.setdefault("call_to_action_id", ad["call_to_action_id"])
+        tracking = dict(configuration.get("tracking_info") or {})
+        for key in ("tracking_app_id", "click_tracking_url", "impression_tracking_url"):
+            if ad.get(key) not in (None, ""):
+                tracking.setdefault(key, ad[key])
+        if tracking:
+            configuration["tracking_info"] = tracking
+        # TikTok accepts a few optional configuration blocks. Keep them
+        # explicit; arbitrary JSON must not become an undocumented escape hatch.
+        if ad.get("product_info") not in (None, ""):
+            configuration.setdefault("product_info", ad["product_info"])
+        if ad.get("catalog_creative_info") not in (None, ""):
+            configuration.setdefault("catalog_creative_info", ad["catalog_creative_info"])
+        tracking = configuration.get("tracking_info")
+        if tracking is not None:
+            if not isinstance(tracking, dict) or any(
+                tracking.get(key) in (None, "")
+                for key in ("tracking_app_id", "click_tracking_url", "impression_tracking_url")
+            ):
+                raise ValueError(
+                    "TikTok Smart+ ad_configuration.tracking_info requires "
+                    "tracking_app_id, click_tracking_url and impression_tracking_url "
+                    "when tracking_info is provided"
+                )
 
         wire_fields = {
-            "request_id", "operation_status", "ad_name", "ad_format", "tiktok_item_id",
-            "video_id", "image_ids", "ad_text", "identity_type", "identity_id",
-            "identity_authorized_bc_id", "call_to_action_id", "landing_page_url", "deeplink",
-            "dark_post_status",
+            "request_id", "operation_status", "ad_name", "creative_list",
+            "ad_configuration", "deeplink_list", "landing_page_url_list",
+            "ad_text_list", "call_to_action_list", "page_list",
         }
         data = {
             "advertiser_id": str(advertiser_id),
@@ -1202,7 +1586,62 @@ class TikTokAPIClient(BasePlatformClient):
             key: value for key, value in ad.items()
             if key in wire_fields and value not in (None, "", [])
         })
+        data["creative_list"] = creative_list
+        data["ad_configuration"] = configuration
+        # Smart+ keeps destination URLs, titles and CTA values in separate
+        # top-level lists.  Sending landing_page_url inside creative_info is
+        # silently ignored by the provider and results in "Please enter the
+        # landing page URL" even though the user supplied one.
+        landing_pages = ad.get("landing_page_url_list")
+        if landing_pages in (None, "", []) and ad.get("landing_page_url") not in (None, ""):
+            landing_pages = [{"landing_page_url": str(ad["landing_page_url"])}]
+        if landing_pages not in (None, "", []):
+            if not isinstance(landing_pages, list):
+                raise ValueError("TikTok Smart+ landing_page_url_list must be an array")
+            data["landing_page_url_list"] = landing_pages
+        text_list = ad.get("ad_text_list")
+        if text_list in (None, "", []) and ad.get("ad_text") not in (None, ""):
+            text_list = [{"ad_text": str(ad["ad_text"])}]
+        if text_list not in (None, "", []):
+            if not isinstance(text_list, list):
+                raise ValueError("TikTok Smart+ ad_text_list must be an array")
+            data["ad_text_list"] = text_list
+        cta_list = ad.get("call_to_action_list")
+        if cta_list in (None, "", []) and ad.get("call_to_action") not in (None, ""):
+            cta_list = [{"call_to_action": str(ad["call_to_action"])}]
+        if cta_list not in (None, "", []):
+            if not isinstance(cta_list, list):
+                raise ValueError("TikTok Smart+ call_to_action_list must be an array")
+            data["call_to_action_list"] = cta_list
+        if ad.get("page_list") not in (None, "", []):
+            if not isinstance(ad["page_list"], list):
+                raise ValueError("TikTok Smart+ page_list must be an array")
+            data["page_list"] = ad["page_list"]
+        if ad.get("deeplink_list") not in (None, "", []):
+            if not isinstance(ad["deeplink_list"], list):
+                raise ValueError("TikTok Smart+ deeplink_list must be an array")
+            data["deeplink_list"] = ad["deeplink_list"]
+        elif ad.get("deeplink") not in (None, ""):
+            data["deeplink_list"] = [{
+                "deeplink": ad["deeplink"],
+                "deeplink_type": (
+                    "DEFERRED_DEEPLINK"
+                    if ad.get("deeplink_type") == "DEFERRED"
+                    else ad.get("deeplink_type", "NORMAL")
+                ),
+            }]
         data["operation_status"] = self._smart_plus_status(ad)
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "smart_plus_ad_id": None,
+                "advertiser_id": str(advertiser_id),
+                "campaign_id": str(campaign_id),
+                "adgroup_id": str(adgroup_id),
+                "operation": {"smart_plus/ad/create/": {"create": data}},
+            }
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("POST", "smart_plus/ad/create/", data=data)
         response = self._smart_plus_response(result, "ad")
@@ -1210,8 +1649,56 @@ class TikTokAPIClient(BasePlatformClient):
             raise APIError("TikTok Smart+ ad response missing smart_plus_ad_id")
         return response
 
+    def _update_smart_plus(
+        self, resource: str, advertiser_id: str, resource_id: str, updates: dict[str, Any],
+        *, parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Call the versioned Smart+ update endpoint with a closed payload."""
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("Smart+ updates must be a non-empty object")
+        allowed = self.SMART_PLUS_UPDATE_FIELDS[resource]
+        unknown = set(updates) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unsupported TikTok Smart+ {resource} update fields: {sorted(unknown)}"
+            )
+        normalized = dict(updates)
+        if "status" in normalized and "operation_status" not in normalized:
+            normalized["operation_status"] = normalized.pop("status")
+        if "operation_status" in normalized:
+            normalized["operation_status"] = self._smart_plus_status(normalized)
+        data = {"advertiser_id": str(advertiser_id)}
+        id_field = "adgroup_id" if resource == "adgroup" else f"{resource}_id"
+        data[id_field] = str(resource_id)
+        if parent_id:
+            data["campaign_id" if resource == "adgroup" else "adgroup_id"] = str(parent_id)
+        data[resource] = normalized
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("POST", f"smart_plus/{resource}/update/", data=data)
+        payload = self._data_section(result)
+        return payload if isinstance(payload, dict) else {"result": payload}
+
+    def update_smart_plus_campaign(
+        self, advertiser_id: str, campaign_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self._update_smart_plus("campaign", advertiser_id, campaign_id, updates)
+
+    def update_smart_plus_adgroup(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self._update_smart_plus(
+            "adgroup", advertiser_id, adgroup_id, updates, parent_id=campaign_id
+        )
+
+    def update_smart_plus_ad(
+        self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self._update_smart_plus(
+            "ad", advertiser_id, ad_id, updates, parent_id=adgroup_id
+        )
+
     def create_all_in_one_spark_ad(
-        self, advertiser_id: str, payload: dict[str, Any]
+        self, advertiser_id: str, payload: dict[str, Any], live: bool = False
     ) -> dict[str, Any]:
         """Create a current TikTok all-in-one Spark Ads campaign.
 
@@ -1230,6 +1717,8 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("TikTok all-in-one Spark Ads payload must be an object")
 
         normalized = dict(payload)
+        if live and self._smart_plus_status(normalized) != "DISABLE":
+            raise ValueError("TikTok Spark live creation only allows paused resources")
         objective = str(normalized.get("objective_type") or "").upper()
         goals = self.ALL_IN_ONE_SPARK_OBJECTIVES.get(objective)
         if goals is None:
@@ -1346,6 +1835,17 @@ class TikTokAPIClient(BasePlatformClient):
             key: value for key, value in normalized.items()
             if key in wire_fields and value not in (None, "", [])
         })
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "campaign_id": None,
+                "adgroup_id": None,
+                "ad_id": None,
+                "advertiser_id": str(advertiser_id),
+                "operation": {"business/spark_ad/create/": {"create": data}},
+            }
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("POST", "business/spark_ad/create/", data=data)
         payload_data = self._data_section(result)
@@ -1959,7 +2459,8 @@ class TikTokAPIClient(BasePlatformClient):
         )
 
     def create_creative(
-        self, advertiser_id: str, campaign_id: str, adgroup_id: str, creative: dict
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str, creative: dict,
+        live: bool = False,
     ) -> str:
         """Create a logical Creative through TikTok's ``ad/create`` contract.
 
@@ -1968,13 +2469,16 @@ class TikTokAPIClient(BasePlatformClient):
         create request.  This provider fact stays in the adapter while the
         Capability exposes a stable logical Creative lifecycle surface.
         """
-        return self.create_ad(advertiser_id, campaign_id, adgroup_id, creative)
+        return self.create_ad(advertiser_id, campaign_id, adgroup_id, creative, live=live)
 
     def update_creative(
-        self, advertiser_id: str, adgroup_id: str, creative_id: str, updates: dict
+        self, advertiser_id: str, adgroup_id: str, creative_id: str, updates: dict,
+        live: bool = False,
     ) -> dict:
         """Update a logical Creative through TikTok's ``ad/update`` endpoint."""
-        return self.update_ad(advertiser_id, adgroup_id, creative_id, updates)
+        return self.update_ad(
+            advertiser_id, adgroup_id, creative_id, updates, live=live
+        )
 
     def delete_creative(self, advertiser_id: str, creative_id: str) -> dict:
         """Delete a logical Creative through TikTok's ``ad/delete`` endpoint."""
@@ -2285,15 +2789,25 @@ class TikTokAPIClient(BasePlatformClient):
             pixel_ids = [str(value or "").strip() for value in pixel_ids]
             if any(not value for value in pixel_ids):
                 raise ValueError("pixel_ids must contain non-empty values")
+        try:
+            page_size = int(page_size)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("page_size must be between 1 and 20") from exc
+        if not 1 <= page_size <= 20:
+            raise ValueError("page_size must be between 1 and 20")
         data = {"advertiser_id": advertiser_id, "page_size": page_size}
         if pixel_ids:
             data["pixel_ids"] = pixel_ids
         self.acquire_rate_limit(self._rate_limiter)
-        result = self.request("GET", "pixel/get/", params=data)
+        # TikTok v1.3 exposes advertiser Pixel discovery at pixel/list.  The
+        # older pixel/get path returns HTTP 404 for this account and is not a
+        # valid lookup source for creation cards.
+        result = self.request("GET", "pixel/list/", params=data)
         payload = self._data_section(result)
         if not isinstance(payload, dict):
             return []
-        return payload.get("list", []) if isinstance(payload.get("list"), list) else []
+        pixels = payload.get("pixels", payload.get("list", []))
+        return pixels if isinstance(pixels, list) else []
 
     def get_pixel(self, advertiser_id: str, pixel_id: str) -> dict:
         """Get one TikTok Pixel and keep the advertiser scope explicit."""
@@ -2631,6 +3145,13 @@ class TikTokAPIClient(BasePlatformClient):
             'advertiser_id': advertiser_id,
             'page_size': page_size,
         }
+        # Catalog discovery is Business Center scoped in TikTok v1.3.  The
+        # Business Center ID is trusted credential/configuration data, not a
+        # user-editable Tool field and therefore never comes from request
+        # text or platform_params.
+        bc_id = str(self.credentials.get("bc_id") or "").strip()
+        if bc_id:
+            data['bc_id'] = bc_id
         if filtering:
             data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'catalog/get/', params=data)
@@ -2740,15 +3261,24 @@ class TikTokAPIClient(BasePlatformClient):
     
     # ==================== 应用信息查询 ====================
     
-    def list_apps(self, filtering: list = None, page_size: int = 20) -> list:
-        """获取应用列表"""
+    def list_apps(
+        self, advertiser_id: str = None, filtering: list = None, page_size: int = 20
+    ) -> list:
+        """获取当前 advertiser 可投放的应用列表。"""
         self.acquire_rate_limit(self._rate_limiter)
-        data = {'page_size': page_size}
+        advertiser_id = str(
+            advertiser_id or self.credentials.get("advertiser_id") or ""
+        ).strip()
+        if not advertiser_id:
+            raise ValueError("TikTok list_apps requires advertiser_id in the scoped client credentials")
+        data = {'advertiser_id': advertiser_id, 'page_size': page_size}
         if filtering:
             data['filtering'] = self._encode_filtering(filtering)
-        result = self.request('GET', 'app/get/', params=data)
+        result = self.request('GET', 'app/list/', params=data)
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        if isinstance(payload, dict):
+            return payload.get('apps', payload.get('list', []))
+        return payload if isinstance(payload, list) else []
     
     # ==================== 品牌安全查询 ====================
     

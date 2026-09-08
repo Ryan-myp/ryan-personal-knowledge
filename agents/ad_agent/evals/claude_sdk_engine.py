@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Anthropic Claude SDK adapter for skill-up.
 
 This is a platform-owned adapter.  It evaluates a standard Skill directory

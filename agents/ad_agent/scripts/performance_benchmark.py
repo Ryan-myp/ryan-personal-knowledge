@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Bounded, no-network Runtime benchmark for local regression checks.
 
 This is intentionally a smoke benchmark, not a production capacity claim.

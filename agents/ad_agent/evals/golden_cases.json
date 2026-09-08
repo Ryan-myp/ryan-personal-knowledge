@@ -9,13 +9,13 @@
     "id": "cross_channel_compare",
     "input": "比较 Meta 和 Google 的 campaign 报表",
     "intent_type": "cross_channel_compare",
-    "platforms": ["meta", "google"]
+    "platforms": ["meta", "google-ads"]
   },
   {
     "id": "cross_channel_pause",
     "input": "批量暂停 Meta campaign_ids=101,102 和 Google campaign_ids=201",
     "intent_type": "cross_channel_batch_pause",
-    "platforms": ["meta", "google"]
+    "platforms": ["meta", "google-ads"]
   },
   {
     "id": "tiktok_reference_lookup",

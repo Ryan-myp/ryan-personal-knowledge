@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import json
+import threading
 import uuid
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
@@ -43,7 +44,7 @@ _MAX_CONTENT_CHARS = 60_000
 _KNOWLEDGE_TYPES = {
     "hierarchy", "constraint", "parameter", "workflow", "best_practice",
     "error_pattern", "case_study", "tip", "general", "bidding_strategy",
-    "targeting_strategy", "creative_guide",
+    "targeting_strategy", "creative_guide", "business_strategy",
 }
 
 
@@ -193,6 +194,76 @@ class ManagedKnowledgeManager:
             ) from exc
         return self._public(saved, include_content=True)
 
+    def update_document(
+        self, tenant_id: str, document_id: str, payload: Mapping[str, Any], created_by: str,
+    ) -> Optional[dict[str, Any]]:
+        existing = self.store.get_knowledge_document(
+            document_id, tenant_id=str(tenant_id or "default")
+        )
+        if not existing:
+            return None
+        data = self.validate_payload(payload)
+        siblings = self.store.list_knowledge_documents(
+            str(tenant_id or "default"), limit=500
+        )
+        if any(
+            item.document_id != existing.document_id
+            and item.title == data["title"]
+            and item.version == data["version"]
+            and item.status != "deprecated"
+            for item in siblings
+        ):
+            raise KnowledgeDocumentError(
+                "同一知识标题的版本已存在，请递增 version 后再保存"
+            )
+        if existing.status == "published":
+            now = datetime.now().isoformat()
+            new_id = uuid.uuid4().hex
+            if not data["source_ref"] or data["source_ref"].startswith("managed://"):
+                data["source_ref"] = f"managed://{new_id}"
+            record = KnowledgeDocumentRecord(
+                document_id=new_id,
+                tenant_id=str(tenant_id or "default"),
+                created_by=str(created_by),
+                status="draft",
+                created_at=now,
+                updated_at=now,
+                **data,
+            )
+            try:
+                saved = self.store.create_knowledge_document(record)
+            except PersistenceConflictError as exc:
+                raise KnowledgeDocumentError(
+                    "同一知识标题的版本已存在，请递增 version 后再保存"
+                ) from exc
+            result = self._public(saved, include_content=True)
+            result["versioned_from"] = existing.document_id
+            result["version_mode"] = "new_draft"
+            return result
+        updated = self.store.update_knowledge_document(
+            document_id, tenant_id=str(tenant_id or "default"), data=data
+        )
+        return self._public(updated, include_content=True) if updated else None
+
+    def delete_document(
+        self, tenant_id: str, document_id: str,
+    ) -> Optional[dict[str, Any]]:
+        existing = self.store.get_knowledge_document(
+            document_id, tenant_id=str(tenant_id or "default")
+        )
+        if not existing:
+            return None
+        result = self.store.delete_knowledge_document(
+            document_id, tenant_id=str(tenant_id or "default")
+        )
+        if not result:
+            return None
+        response = self._public(result, include_content=False)
+        response["deleted"] = True
+        response["archived"] = existing.status == "published"
+        response["hard_deleted"] = existing.status != "published"
+        return response
+
     def list_documents(
         self, tenant_id: str, status: Optional[str] = None, limit: int = 100,
     ) -> list[dict[str, Any]]:
@@ -226,6 +297,13 @@ class ManagedKnowledgeProvider:
     def __init__(self, base: MarkdownWikiKnowledgeProvider, store: Any):
         self.base = base
         self.store = store
+        self._tenant_cache: dict[str, tuple[tuple[tuple[str, str, str], ...], list[KnowledgeDocument], list[KnowledgeDocument]]] = {}
+        self._tenant_cache_lock = threading.RLock()
+        self.base.search_index = store
+        self.base._fts_scope = "builtin"
+        self.base._fts_available = self.base._rebuild_search_index(
+            self.base.chunks, scope=self.base._fts_scope
+        )
 
     @property
     def documents(self):
@@ -244,10 +322,91 @@ class ManagedKnowledgeProvider:
             title=record.title,
             layer=record.layer,
             knowledge_type=record.knowledge_type,
+            category=MarkdownWikiKnowledgeProvider._derive_category(
+                (), record.title, record.layer, record.knowledge_type,
+            ),
+            subcategory=MarkdownWikiKnowledgeProvider._derive_subcategory(
+                record.title, record.knowledge_type,
+            ),
             source_ref=record.source_ref,
             tags=tuple(record.tags),
             status=record.status,
         )
+
+    def catalog(
+        self,
+        *,
+        platforms: Optional[Iterable[str]] = None,
+        knowledge_types: Optional[Iterable[str]] = None,
+        limit: int = 100,
+        tenant_id: Optional[str] = None,
+    ) -> list[KnowledgeDocument]:
+        """Return complete built-in and tenant documents for the Wiki catalog."""
+        if limit <= 0:
+            return []
+        documents = self.base.catalog(
+            platforms=platforms, knowledge_types=knowledge_types, limit=limit
+        )
+        if tenant_id:
+            records = self.store.list_knowledge_documents(
+                str(tenant_id), status="published", limit=limit
+            )
+            managed = [self._managed_document(record) for record in records]
+            allowed_platforms = {
+                MarkdownWikiKnowledgeProvider._normalize_platform(item)
+                for item in (platforms or [])
+                if item and MarkdownWikiKnowledgeProvider._normalize_platform(item) != "all"
+            }
+            allowed_types = {
+                str(item).strip().lower()
+                for item in (knowledge_types or [])
+                if item
+            }
+            managed = [
+                document for document in managed
+                if (not allowed_platforms or document.platform in allowed_platforms)
+                and (not allowed_types or document.knowledge_type in allowed_types)
+            ]
+            documents.extend(managed)
+        return documents[:limit]
+
+    def _published_tenant_context(
+        self, tenant_id: str,
+    ) -> tuple[list[KnowledgeDocument], list[KnowledgeDocument]]:
+        """Build tenant chunks once per document revision, then reuse them."""
+        tenant_key = str(tenant_id or "default")
+        records = self.store.list_knowledge_documents(
+            tenant_key, status="published", limit=500
+        )
+        signature = tuple(
+            sorted(
+                (
+                    str(record.document_id),
+                    str(record.updated_at),
+                    str(record.version),
+                )
+                for record in records
+            )
+        )
+        with self._tenant_cache_lock:
+            cached = self._tenant_cache.get(tenant_key)
+            if cached and cached[0] == signature:
+                return cached[1], cached[2]
+            managed = [self._managed_document(record) for record in records]
+            managed_chunks = [
+                chunk
+                for document in managed
+                for chunk in MarkdownWikiKnowledgeProvider._chunk_document(
+                    document, scope=f"tenant:{tenant_key}"
+                )
+            ]
+            fts_available = self.base._rebuild_search_index(
+                managed_chunks, scope=f"tenant:{tenant_key}"
+            )
+            if fts_available:
+                self.base._fts_available = True
+            self._tenant_cache[tenant_key] = (signature, managed, managed_chunks)
+            return managed, managed_chunks
 
     def query(
         self, query: str, *, platforms: Optional[Iterable[str]] = None,
@@ -262,74 +421,25 @@ class ManagedKnowledgeProvider:
                 knowledge_types=knowledge_types, limit=limit,
                 max_excerpt_chars=max_excerpt_chars,
             )
-        records = self.store.list_knowledge_documents(
-            str(tenant_id), status="published", limit=500
-        )
-        managed = [self._managed_document(record) for record in records]
+        managed, managed_chunks = self._published_tenant_context(str(tenant_id))
         all_documents = [*self.base.documents, *managed]
-        allowed = MarkdownWikiKnowledgeProvider._effective_platforms(
-            query, all_documents, platforms
-        )
-        base_results = self.base.query(
-            query, platforms=sorted(allowed) if allowed else platforms,
-            intent_type=intent_type, knowledge_types=knowledge_types, limit=limit,
-            max_excerpt_chars=max_excerpt_chars,
-        )
-        allowed_types = {
-            str(item).strip().lower() for item in (knowledge_types or []) if item
-        }
-        # Provider implementations are allowed to be compatibility adapters;
-        # enforce the resolved platform boundary once more before summarizing.
-        if allowed:
-            base_results = [
-                document for document in base_results
-                if MarkdownWikiKnowledgeProvider._normalize_platform(document.platform)
-                in allowed
-                or (
-                    MarkdownWikiKnowledgeProvider._normalize_platform(document.platform) == "all"
-                    and allowed_types == {"error_pattern"}
-                )
-            ]
-        terms = MarkdownWikiKnowledgeProvider._terms(query, intent_type)
-        phrase = str(query or "").strip().lower()
-        ranked: list[tuple[float, KnowledgeDocument]] = []
-        for document in managed:
-            platform = MarkdownWikiKnowledgeProvider._normalize_platform(document.platform)
-            # Platform-scoped searches must not fall back to cross-channel
-            # documents: their mixed sections can leak another platform into
-            # the result and into the LLM summary.
-            universal_error_reference = (
-                platform == "all" and allowed_types == {"error_pattern"}
-            )
-            if allowed and platform not in allowed and not universal_error_reference:
-                continue
-            if allowed_types and document.knowledge_type not in allowed_types:
-                continue
-            searchable = " ".join(
-                (document.title, document.topic, document.excerpt, *document.tags)
-            ).lower()
-            score = (4.0 if phrase and phrase in searchable else 0.0)
-            score += sum(1.0 for term in terms if term in searchable)
-            if allowed and platform in allowed:
-                score += 1.0
-            if not terms and not phrase:
-                score = 0.1
-            if score > 0:
-                ranked.append((score * max(document.confidence, 0.01), document))
-        ranked.sort(key=lambda item: (-item[0], item[1].document_id))
-        managed_results = [
-            KnowledgeDocument(
-                **{
-                    **document.__dict__,
-                    "excerpt": MarkdownWikiKnowledgeProvider._SENSITIVE_TERMS.sub(
-                        "<redacted>", document.excerpt[:max_excerpt_chars]
-                    ),
-                    "score": round(score, 6),
-                }
-            )
-            for score, document in ranked[:limit]
+        managed_scope = f"tenant:{tenant_id}"
+        all_chunks = [
+            *self.base.chunks,
+            *managed_chunks,
         ]
-        return sorted(
-            base_results + managed_results,
-            key=lambda item: (-item.score, item.document_id),
-        )[:limit]
+        terms = MarkdownWikiKnowledgeProvider._terms(query, intent_type)
+        fts_hits = self.base._search_index_hits(
+            query, terms, scopes=["builtin", managed_scope]
+        )
+        return MarkdownWikiKnowledgeProvider._query_chunks(
+            all_chunks,
+            all_documents,
+            query,
+            platforms=platforms,
+            intent_type=intent_type,
+            knowledge_types=knowledge_types,
+            limit=limit,
+            max_excerpt_chars=max_excerpt_chars,
+            fts_hits=fts_hits,
+        )

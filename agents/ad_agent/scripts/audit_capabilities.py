@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Audit metadata-driven ad-agent capabilities without provider I/O.
 
 The audit discovers packages by the same convention as Runtime:

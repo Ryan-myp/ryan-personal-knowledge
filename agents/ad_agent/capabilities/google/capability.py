@@ -547,6 +547,7 @@ class GoogleCapability(BaseCapability):
                 required=["campaign_id"], provider_required=["campaign_id"],
                 action="delete", resource_type="campaign", resource_id_field="campaign_id",
                 intent_types=["delete_campaign", "cross_channel_batch_delete"],
+                intent_aliases=["删除 Google Ads campaign", "删除 Google campaign"],
                 traits=["write", "campaign"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
             ),
@@ -723,6 +724,7 @@ class GoogleCapability(BaseCapability):
                 provider_required=["campaign_id", "asset_id", "field_type"],
                 action="create", resource_type="campaign_asset",
                 parent_resource_type="campaign",
+                resource_id_field="campaign_asset_id",
                 parent_resource_id_field="campaign_id",
                 intent_types=["create_campaign_asset"],
                 traits=["write", "asset", "campaign_asset"], write=True,
@@ -740,6 +742,7 @@ class GoogleCapability(BaseCapability):
                 provider_required=["campaign_id", "asset_id", "field_type"],
                 action="delete", resource_type="campaign_asset",
                 parent_resource_type="campaign",
+                resource_id_field="campaign_asset_id",
                 parent_resource_id_field="campaign_id",
                 intent_types=["delete_campaign_asset"],
                 traits=["write", "asset", "campaign_asset"], write=True,
@@ -756,6 +759,7 @@ class GoogleCapability(BaseCapability):
                 required=["customer_id", "asset_group_id"],
                 action="list", resource_type="asset_group_asset",
                 parent_resource_type="asset_group",
+                resource_id_field="asset_group_asset_id",
                 parent_resource_id_field="asset_group_id",
                 intent_types=["list_asset_group_assets"],
                 traits=["read", "asset", "asset_group_asset", "pmax"],
@@ -773,6 +777,7 @@ class GoogleCapability(BaseCapability):
                 provider_required=["asset_group_id", "asset_id", "field_type"],
                 action="create", resource_type="asset_group_asset",
                 parent_resource_type="asset_group",
+                resource_id_field="asset_group_asset_id",
                 parent_resource_id_field="asset_group_id",
                 intent_types=["create_asset_group_asset"],
                 traits=["write", "asset", "asset_group_asset", "pmax"], write=True,
@@ -790,6 +795,7 @@ class GoogleCapability(BaseCapability):
                 provider_required=["asset_group_id", "asset_id", "field_type"],
                 action="delete", resource_type="asset_group_asset",
                 parent_resource_type="asset_group",
+                resource_id_field="asset_group_asset_id",
                 parent_resource_id_field="asset_group_id",
                 intent_types=["delete_asset_group_asset"],
                 traits=["write", "asset", "asset_group_asset", "pmax"], write=True,
@@ -1191,7 +1197,9 @@ class GoogleCapability(BaseCapability):
                 provider_required=google_keyword_schema()["provider_required"],
                 action="create", resource_type="keyword", parent_resource_type="ad_group",
                 resource_id_field="keyword_ids", parent_resource_id_field="ad_group_id",
-                intent_types=["create_keywords"], traits=["write", "keyword"], write=True,
+                intent_types=["create_keywords"],
+                intent_aliases=["创建 Google 关键词", "添加 Google 关键词"],
+                traits=["write", "keyword"], write=True,
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["keywords"]), {}),
             ),
             method_tool(
@@ -1323,6 +1331,7 @@ class GoogleCapability(BaseCapability):
                 parent_resource_type="ad_group", resource_id_field="product_group_id",
                 parent_resource_id_field="ad_group_id", intent_types=["update_product_group"],
                 traits=["write", "product_group", "shopping"], write=True,
+                live_support=True, readback_tool="google_get_product_group",
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["product_group_id"], data["updates"]
                 ), {}),
@@ -1470,7 +1479,9 @@ class GoogleCapability(BaseCapability):
                     "field": "campaign_type", "aliases": ["advertising_channel_type"],
                     "in": ["DISPLAY"],
                 }],
-                traits=["write", "ad", "display"], write=True,
+                traits=["write", "ad", "display"], write=True, live_support=True,
+                readback_tool="google_get_ad", provider_api_version="v24",
+                required_permissions=["ads.plan"],
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["name"], data["final_url"]), {
                     "headlines": data["headlines"], "long_headline": data["long_headline"],
                     "descriptions": data["descriptions"], "business_name": data["business_name"],
@@ -1498,7 +1509,9 @@ class GoogleCapability(BaseCapability):
                     "field": "campaign_type", "aliases": ["advertising_channel_type"],
                     "in": ["VIDEO"],
                 }],
-                traits=["write", "ad", "video"], write=True,
+                traits=["write", "ad", "video"], write=True, live_support=True,
+                readback_tool="google_get_ad", provider_api_version="v24",
+                required_permissions=["ads.plan"],
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["name"], data["video_ad_format"],
                     data["video_id"], data["final_url"],
@@ -1583,11 +1596,13 @@ class GoogleCapability(BaseCapability):
                 "field": "campaign_type", "aliases": ["advertising_channel_type"],
                 "in": ["DEMAND_GEN", "HOTEL", "LOCAL", "SMART", "TRAVEL"],
             }],
-            traits=["write", "ad_group", "specialized_campaign"], write=True, live_support=False,
+            traits=["write", "ad_group", "specialized_campaign"], write=True,
+            live_support=True, readback_tool="google_get_ad_group",
+            provider_api_version="v24", required_permissions=["ads.plan"],
             argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"]), {
                 "cpc_bid_micros": data.get("cpc_bid_micros") or int(float(data.get("cpc_bid", 0.5)) * 1_000_000),
                 "type": ({
-                    "DEMAND_GEN": "SEARCH_STANDARD",
+                    "DEMAND_GEN": "DISPLAY_STANDARD",
                     "HOTEL": "HOTEL_ADS",
                     "LOCAL": "SMART_CAMPAIGN_ADS",
                     "SMART": "SMART_CAMPAIGN_ADS",
@@ -1617,7 +1632,9 @@ class GoogleCapability(BaseCapability):
                     "field": "campaign_type", "aliases": ["advertising_channel_type"],
                     "in": channel_types,
                 }],
-                traits=["write", "ad", "specialized_campaign"], write=True, live_support=False,
+                traits=["write", "ad", "specialized_campaign"], write=True,
+                live_support=True, readback_tool="google_get_ad",
+                provider_api_version="v24", required_permissions=["ads.plan"],
                 argument_builder=lambda _ctx, data, p=positional, o=optional: _build_specialized_ad_args(
                     data, p, o, name
                 ),
@@ -1790,6 +1807,7 @@ class GoogleCapability(BaseCapability):
                 provider_required=["feed_id", "attribute_values"],
                 action="create", resource_type="feed_item",
                 parent_resource_type="feed", parent_resource_id_field="feed_id",
+                resource_id_field="feed_item_id",
                 intent_types=["create_feed_item"], traits=["write", "feed", "feed_item"],
                 write=True,
                 argument_builder=lambda _ctx, data: (
@@ -1816,6 +1834,7 @@ class GoogleCapability(BaseCapability):
                 required=["customer_id", "feed_item_resource_name", "updates"],
                 provider_required=["feed_item_resource_name", "updates"],
                 action="update", resource_type="feed_item",
+                resource_id_field="feed_item_resource_name",
                 intent_types=["update_feed_item"], traits=["write", "feed", "feed_item"],
                 write=True,
                 argument_builder=lambda _ctx, data: (
@@ -1830,6 +1849,7 @@ class GoogleCapability(BaseCapability):
                 properties=feed_schema["properties"],
                 required=["customer_id", "feed_item_resource_name"],
                 action="delete", resource_type="feed_item",
+                resource_id_field="feed_item_resource_name",
                 intent_types=["delete_feed_item"], traits=["write", "feed", "feed_item"],
                 write=True,
                 argument_builder=lambda _ctx, data: (
@@ -1861,6 +1881,7 @@ class GoogleCapability(BaseCapability):
                 required=["customer_id", "category", "origin", "updates"],
                 provider_required=["category", "origin", "updates"],
                 action="update", resource_type="customer_conversion_goal",
+                resource_id_field="category",
                 intent_types=["update_customer_conversion_goal"],
                 traits=["write", "conversion_goal"],
                 write=True,
@@ -1897,6 +1918,7 @@ class GoogleCapability(BaseCapability):
                 action="update", resource_type="campaign_conversion_goal",
                 parent_resource_type="campaign",
                 parent_resource_id_field="campaign_id",
+                resource_id_field="category",
                 intent_types=["update_campaign_conversion_goal"],
                 traits=["write", "conversion_goal"],
                 write=True,
@@ -1943,6 +1965,13 @@ class GoogleCapability(BaseCapability):
                 "cross_channel_performance_insights", "cross_channel_optimize_budget",
                 "cross_channel_export_report",
             ],
+            intent_aliases=[
+                "列出 Google 广告系列", "查询 Google Ads 广告系列",
+                "列出 Google Ads campaign 列表", "列出 Google Ads campaign",
+                "查询 Google Ads campaign 列表",
+            ],
+            result_items_key="campaigns",
+            result_id_fields=["id", "campaign_id", "resource_name"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1963,6 +1992,10 @@ class GoogleCapability(BaseCapability):
             ),
             action="get", resource_type="campaign", resource_id_field="campaign_id",
             intent_types=["get_campaign"],
+            intent_aliases=[
+                "查询 Google campaign 详情", "查看 Google campaign 详情",
+                "查询 Google Ads campaign 详情", "查询 Google Ads 广告系列详情",
+            ],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1978,6 +2011,9 @@ class GoogleCapability(BaseCapability):
             input_schema=ToolSchema(**google_campaign_schema()),
             action="create", resource_type="campaign",
             intent_types=["create_campaign", "create_campaign_only"],
+            intent_aliases=[
+                "创建 Google 广告系列", "创建 Google App 广告", "创建 Google campaign",
+            ],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -2017,10 +2053,18 @@ class GoogleCapability(BaseCapability):
             description="查询 Google Ads Ad Group 详情。",
             input_schema=ToolSchema(
                 required=["ad_group_id"],
-                properties={"ad_group_id": {"type": "string"}},
+                properties={
+                    "ad_group_id": {"type": "string"},
+                    # The parent is part of the routing contract.  Google can
+                    # resolve a resource by its own ID, so it remains
+                    # optional for direct lookups while still being explicit
+                    # to planners, validators and readback reconciliation.
+                    "campaign_id": {"type": "string"},
+                },
             ),
             action="get", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="ad_group_id",
+            parent_resource_id_field="campaign_id",
             intent_types=["get_adgroup"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -2082,10 +2126,14 @@ class GoogleCapability(BaseCapability):
             description="查询 Google Ads Ad 详情。",
             input_schema=ToolSchema(
                 required=["ad_id"],
-                properties={"ad_id": {"type": "string"}},
+                properties={
+                    "ad_id": {"type": "string"},
+                    "ad_group_id": {"type": "string"},
+                },
             ),
             action="get", resource_type="ad", parent_resource_type="ad_group",
             resource_id_field="ad_id",
+            parent_resource_id_field="ad_group_id",
             intent_types=["get_ad"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -2129,6 +2177,7 @@ class GoogleCapability(BaseCapability):
                 properties={"campaign_id": {"type": "string"}, "limit": {"type": "integer"}},
             ),
             action="list", resource_type="asset_group", parent_resource_type="campaign",
+            parent_resource_id_field="campaign_id",
             intent_types=["list_asset_groups"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -2144,10 +2193,14 @@ class GoogleCapability(BaseCapability):
             description="查询 PMax Asset Group 详情。",
             input_schema=ToolSchema(
                 required=["asset_group_id"],
-                properties={"asset_group_id": {"type": "string"}},
+                properties={
+                    "asset_group_id": {"type": "string"},
+                    "campaign_id": {"type": "string"},
+                },
             ),
             action="get", resource_type="asset_group", parent_resource_type="campaign",
             resource_id_field="asset_group_id",
+            parent_resource_id_field="campaign_id",
             intent_types=["get_asset_group"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -2189,6 +2242,12 @@ class GoogleCapability(BaseCapability):
             ),
             action="report", resource_type="report",
             intent_types=["get_campaign_report", "download_report"],
+            intent_aliases=[
+                "查询 Google Ads 报表", "查询 Google campaign 报表",
+                "查看 Google 广告系列表现",
+            ],
+            related_resource_type="campaign",
+            related_resource_id_fields=["campaign_ids", "campaign_id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -2230,6 +2289,11 @@ class GoogleCapability(BaseCapability):
                     required=[resource_id, "updates"],
                     properties={
                         resource_id: {"type": "string"},
+                        **({
+                            "campaign_id": {"type": "string"},
+                        } if resource_type in {"ad_group", "asset_group"} else {
+                            "ad_group_id": {"type": "string"},
+                        } if resource_type == "ad" else {}),
                         "updates": google_updates(resource_type),
                     },
                 ),
@@ -2246,20 +2310,39 @@ class GoogleCapability(BaseCapability):
                     "ad_group": ["update_adgroup"], "ad": ["update_ad"],
                     "asset_group": ["update_asset_group"],
                 }[resource_type],
+                intent_aliases=(
+                    ["更新 Google campaign", "更新 Google Ads campaign"]
+                    if resource_type == "campaign" else
+                    ["更新 Google ad group", "更新 Google Ads ad group"]
+                    if resource_type == "ad_group" else []
+                ),
                 risk_level=RiskLevel.MEDIUM,
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
-                live_support=(resource_type in {"campaign", "ad_group", "ad"}),
+                # AssetGroup is a first-class mutable PMax child resource.
+                # Product groups and listing filters have their own explicit
+                # Tools above; this generic adapter covers the Campaign,
+                # AdGroup, Ad and PMax AssetGroup lifecycle.
+                live_support=(resource_type in {"campaign", "ad_group", "ad", "asset_group"}),
                 readback_tool={
                     "campaign": "google_get_campaign",
                     "ad_group": "google_get_ad_group",
                     "ad": "google_get_ad",
+                    "asset_group": "google_get_asset_group",
                 }.get(resource_type),
                 resource_id_field=resource_id,
+                parent_resource_id_field={
+                    "ad_group": "campaign_id", "ad": "ad_group_id",
+                    "asset_group": "campaign_id",
+                }.get(resource_type),
             ), CampaignUpdateHandler(
                 api_client, resource_type, _google_update_adapter,
                 resource_id_field=resource_id,
+                parent_resource_id_field={
+                    "ad_group": "campaign_id", "ad": "ad_group_id",
+                    "asset_group": "campaign_id",
+                }.get(resource_type),
             )))
 
         tools.extend(self._extended_provider_tools(api_client))

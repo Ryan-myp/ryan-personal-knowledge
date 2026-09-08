@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 Meta 知识库初始化脚本
 基于官方文档和 API 实测数据

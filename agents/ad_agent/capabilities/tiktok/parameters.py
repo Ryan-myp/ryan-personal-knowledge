@@ -1884,8 +1884,8 @@ def tiktok_smart_plus_campaign_schema() -> dict[str, Any]:
             "operation_status": _field("string", "Create status", enum=["DISABLE", "ENABLE"], default="DISABLE"),
             "app_promotion_type": _field("string", "App promotion type", enum=["APP_INSTALL", "APP_RETARGETING", "MINIS"]),
             "sales_destination": _field("string", "Sales destination", enum=["WEBSITE", "APP", "WEB_AND_APP", "TIKTOK_SHOP"]),
-            "is_search_campaign": _field("boolean", "Create a Search Ads campaign", default=False),
-            "catalog_enabled": _field("boolean", "Use a product catalog", default=False),
+            "is_search_campaign": _field("boolean", "Create a Search Ads campaign"),
+            "catalog_enabled": _field("boolean", "Use a product catalog"),
             "catalog_type": _field("string", "Catalog type", enum=["ECOMMERCE", "TRAVEL_ENTERTAINMENT", "MINI_SERIES", "GENERIC", "ONLINE_TO_OFFLINE"]),
             "campaign_type": _field("string", "Campaign type", enum=["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]),
             "app_id": _field(

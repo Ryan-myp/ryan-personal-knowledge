@@ -130,6 +130,23 @@ def test_markdown_wiki_weights_title_and_heading_matches_without_vectors(tmp_pat
     assert all(item.retrieval_method == "lexical_bm25" for item in result)
 
 
+def test_markdown_wiki_exposes_match_evidence_for_result_quality(tmp_path):
+    (tmp_path / "meta.md").write_text(
+        "---\nid: meta-insights\ntitle: Meta Insights 报表诊断\n"
+        "platform: meta\nstatus: published\ntags: [insights, report]\n---\n\n"
+        "检查日期、字段、归因窗口和数据延迟。",
+        encoding="utf-8",
+    )
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+
+    result = provider.query("Meta Insights 报表", limit=1)
+
+    assert result[0].matched_terms
+    assert "insights" in result[0].matched_terms
+    assert 0 < result[0].match_coverage <= 1
+    assert result[0].to_dict()["matched_terms"] == list(result[0].matched_terms)
+
+
 def test_markdown_wiki_uses_sqlite_fts5_when_a_store_is_available(tmp_path):
     (tmp_path / "google.md").write_text(
         "---\nid: google-search\ntitle: Google Search 广告\ncategory: measurement\nsubcategory: conversion\nplatform: google\nstatus: published\n---\n\n"

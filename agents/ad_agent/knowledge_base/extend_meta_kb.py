@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 扩展 Meta 知识库 - 添加约束规则和工作流
 """

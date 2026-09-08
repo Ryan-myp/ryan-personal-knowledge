@@ -20,6 +20,7 @@ from ..core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
 )
 from ..core.platform import normalize_platform
+from ..core.plugins import normalize_plugin_version
 
 
 logger = logging.getLogger(__name__)
@@ -58,12 +59,17 @@ class SkillCapability:
     parent_resource_id_field: Optional[str] = None
     readback_tool: Optional[str] = None
     intent_types: list[str] = field(default_factory=list)
+    intent_aliases: list[str] = field(default_factory=list)
     replay_policy: str = ""
     traits: list[str] = field(default_factory=list)
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
     contract_version: str = "1"
     provider_api_version: Optional[str] = None
+    result_items_key: Optional[str] = None
+    result_id_fields: list[str] = field(default_factory=list)
+    related_resource_type: Optional[str] = None
+    related_resource_id_fields: list[str] = field(default_factory=list)
 
 
 class SkillContract:
@@ -76,7 +82,7 @@ class SkillContract:
     def __init__(self, skill_dir: str):
         self.skill_dir = skill_dir
         self.name: str = ""
-        self.version: str = "1.0"
+        self.version: str = "1.0.0"
         self.description: str = ""
         self.platform: str = ""
         self.platform_aliases: list[str] = []
@@ -238,6 +244,16 @@ class SkillContract:
                 raise ValueError(f"Skill tool {name}.{field_name} must be a string")
             return value.strip()
 
+        result_items_key = optional_string("result_items_key")
+        result_id_fields = cls._string_list(
+            spec.get("result_id_fields", []), f"tool {name}.result_id_fields"
+        )
+        related_resource_type = optional_string("related_resource_type")
+        related_resource_id_fields = cls._string_list(
+            spec.get("related_resource_id_fields", []),
+            f"tool {name}.related_resource_id_fields",
+        )
+
         return SkillCapability(
             name=name.strip(), description=description,
             required_params=required_params, optional_params=optional_params,
@@ -252,12 +268,19 @@ class SkillContract:
             intent_types=cls._string_list(
                 spec.get("intent_types", []), f"tool {name}.intent_types"
             ),
+            intent_aliases=cls._string_list(
+                spec.get("intent_aliases", []), f"tool {name}.intent_aliases"
+            ),
             replay_policy=replay_policy, traits=traits,
             timeout_seconds=float(timeout_seconds), max_output_bytes=max_output_bytes,
             contract_version=str(contract_version),
             provider_api_version=(
                 str(provider_api_version) if provider_api_version is not None else None
             ),
+            result_items_key=result_items_key,
+            result_id_fields=result_id_fields,
+            related_resource_type=related_resource_type,
+            related_resource_id_fields=related_resource_id_fields,
         )
     
     def load(self) -> "SkillContract":
@@ -348,12 +371,12 @@ class SkillContract:
             )
             if not isinstance(platform, str) or not platform.strip():
                 raise ValueError("Skill frontmatter.platform must be a non-empty string")
-            version = metadata.get("version", "1.0")
+            version = metadata.get("version", "1.0.0")
             if not isinstance(version, (str, int, float)) or isinstance(version, bool):
                 raise ValueError("Skill frontmatter.version must be scalar")
 
             self.name = name.strip()
-            self.version = str(version)
+            self.version = normalize_plugin_version(version)
             self.description = description
             self.platform = platform.strip().lower()
 
@@ -410,7 +433,9 @@ class SkillContract:
             self.raw_yaml = yaml.safe_load(f) or {}
         if not isinstance(self.raw_yaml, dict):
             raise ValueError("Skill contract must be an object")
-        self.version = str(self.raw_yaml.get('version', self.version))
+        self.version = normalize_plugin_version(
+            self.raw_yaml.get("version", self.version)
+        )
         
         # 合并到 capabilities
         tools = self.raw_yaml.get('tools', {})
@@ -509,6 +534,11 @@ class BaseSkill(Skill):
         return list(self._contract.platform_aliases)
 
     @property
+    def triggers(self) -> list[SkillTrigger]:
+        """Expose declarative context triggers to the bounded selector."""
+        return list(self._contract.triggers)
+
+    @property
     def expert_knowledge(self) -> dict[str, str]:
         return self._contract.expert_knowledge
 
@@ -567,12 +597,17 @@ class BaseSkill(Skill):
                 parent_resource_id_field=cap.parent_resource_id_field,
                 readback_tool=cap.readback_tool,
                 intent_types=list(cap.intent_types),
+                intent_aliases=list(cap.intent_aliases),
                 replay_policy=self._parse_replay_policy(cap.replay_policy, cap.effect),
                 traits=list(cap.traits),
                 timeout_seconds=cap.timeout_seconds,
                 max_output_bytes=cap.max_output_bytes,
                 contract_version=cap.contract_version,
                 provider_api_version=cap.provider_api_version,
+                result_items_key=cap.result_items_key,
+                result_id_fields=list(cap.result_id_fields),
+                related_resource_type=cap.related_resource_type,
+                related_resource_id_fields=list(cap.related_resource_id_fields),
             ))
         return tools
     

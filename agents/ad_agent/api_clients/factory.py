@@ -54,19 +54,6 @@ def discover_client_factory(platform: str):
     return None
 
 
-def _call_factory(factory: Any, credentials: dict[str, Any]) -> Any:
-    """Invoke a provider factory without masking its internal TypeError."""
-    try:
-        signature = inspect.signature(factory)
-    except (TypeError, ValueError):
-        return factory(credentials)
-    try:
-        signature.bind(credentials)
-    except TypeError:
-        return factory()
-    return factory(credentials)
-
-
 def create_platform_client(platform: str, credentials: Optional[dict[str, Any]] = None):
     """Create the requested platform client without mutating ``credentials``.
 
@@ -81,5 +68,5 @@ def create_platform_client(platform: str, credentials: Optional[dict[str, Any]] 
     platform = normalize_platform(platform)
     discovered = discover_client_factory(platform)
     if callable(discovered):
-        return _call_factory(discovered, credentials)
+        return discovered(credentials)
     return None

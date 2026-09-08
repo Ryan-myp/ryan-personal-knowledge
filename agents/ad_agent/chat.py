@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 chat.py - ad-agent 对话入口（CLI 交互模式）
 
 启动方式：
-    python agents/ad_agent/chat.py
+    ./scripts/ad-agent-python agents/ad_agent/chat.py
     
 或者从根目录：
-    python -m agents.ad_agent.chat
+    ./scripts/ad-agent-python -m agents.ad_agent.chat
 """
 
 import sys
@@ -15,6 +15,12 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+
+if sys.version_info[:2] != (3, 13):
+    raise RuntimeError(
+        "ad-agent requires Python 3.13; use ./scripts/ad-agent-python "
+        "or make ad-agent-run"
+    )
 
 # 添加项目根目录到路径
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

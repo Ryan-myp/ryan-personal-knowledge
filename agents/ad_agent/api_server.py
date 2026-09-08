@@ -1,3 +1,4 @@
+#!/usr/bin/env python3.13
 """
 api_server.py - ad-agent HTTP API 服务（FastAPI）
 """
@@ -12,6 +13,12 @@ import queue
 import inspect
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+if sys.version_info[:2] != (3, 13):
+    raise RuntimeError(
+        "ad-agent requires Python 3.13; use ./scripts/ad-agent-python "
+        "or make ad-agent-run"
+    )
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -49,6 +56,10 @@ from agents.ad_agent.skill_management import (
 from agents.ad_agent.knowledge_management import (
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
+)
+from agents.ad_agent.creation_templates import (
+    CreationTemplateError,
+    CreationTemplateManager,
 )
 from agents.ad_agent.persistence.factory import create_persistence_store
 
@@ -425,6 +436,7 @@ class MemoryWriteRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    memory_key: Optional[str] = Field(default=None, max_length=120)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -1116,6 +1128,7 @@ async def search_knowledge(
     platform: Optional[str] = Query(None, max_length=64),
     knowledge_type: Optional[str] = Query(None, max_length=64),
     limit: int = Query(10, ge=1, le=50),
+    summarize: bool = Query(False, description="是否额外调用 LLM 生成总结；默认关闭以保证检索低延迟"),
 ):
     """Search the published Markdown LLM Wiki through the Runtime provider."""
     principal = _authorize_request(x_api_key, http_request)
@@ -1131,8 +1144,74 @@ async def search_knowledge(
         limit=limit,
         max_excerpt_chars=1200,
     )
-    summary = await run_in_threadpool(runtime.summarize_knowledge, query, documents)
-    return {"query": query, "summary": summary, "results": documents}
+    summary = await run_in_threadpool(
+        runtime.summarize_knowledge, query, documents, use_llm=summarize
+    )
+    return {
+        "query": query,
+        "summary": summary,
+        "summary_mode": "llm" if summarize else "lexical",
+        "results": documents,
+    }
+
+
+@app.get("/knowledge/catalog", tags=["knowledge"])
+async def catalog_knowledge(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    platform: Optional[str] = Query(None, max_length=64),
+    knowledge_type: Optional[str] = Query(None, max_length=64),
+    limit: int = Query(100, ge=1, le=200),
+):
+    """List published Wiki knowledge without invoking the LLM summarizer."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "catalog_knowledge", None)):
+        raise HTTPException(status_code=503, detail="知识库未初始化")
+    documents = await run_in_threadpool(
+        runtime.catalog_knowledge,
+        tenant_id=principal.tenant_id,
+        platform=platform,
+        knowledge_type=knowledge_type,
+        limit=limit,
+    )
+    tree: dict[str, dict[str, Any]] = {}
+    for document in documents:
+        provider = str(document.get("platform") or "all")
+        category = str(document.get("category") or document.get("layer") or "general")
+        subcategory = str(document.get("subcategory") or document.get("knowledge_type") or "general")
+        provider_node = tree.setdefault(provider, {"key": provider, "count": 0, "categories": {}})
+        provider_node["count"] += 1
+        category_node = provider_node["categories"].setdefault(
+            category, {"key": category, "count": 0, "documents": []}
+        )
+        category_node["count"] += 1
+        category_node["documents"].append({
+            "document_id": document.get("document_id"),
+            "title": document.get("title") or document.get("topic"),
+            "subcategory": subcategory,
+            "knowledge_type": document.get("knowledge_type") or "general",
+        })
+    tree_payload = []
+    for provider_key in sorted(tree):
+        provider_node = tree[provider_key]
+        categories = []
+        for category_key in sorted(provider_node["categories"]):
+            category_node = provider_node["categories"][category_key]
+            category_node["documents"].sort(key=lambda item: str(item.get("title") or ""))
+            categories.append(category_node)
+        tree_payload.append({
+            "key": provider_node["key"],
+            "count": provider_node["count"],
+            "categories": categories,
+        })
+    return {
+        "platform": platform or "",
+        "knowledge_type": knowledge_type or "",
+        "count": len(documents),
+        "documents": documents,
+        "tree": tree_payload,
+    }
 
 
 class KnowledgeDocumentRequest(BaseModel):
@@ -1150,10 +1229,203 @@ class KnowledgeDocumentRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=20)
 
 
+class CreationTemplateRequest(BaseModel):
+    """A data-only preset captured from the creation wizard."""
+
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    provider: str = Field(default="", max_length=64)
+    blueprint_id: str = Field(min_length=1, max_length=200)
+    blueprint_version: Optional[str] = Field(default=None, max_length=80)
+    ad_format: str = Field(default="", max_length=100)
+    scope_type: Literal["general", "account", "region"] = "general"
+    account_id: str = Field(default="", max_length=200)
+    region: str = Field(default="", max_length=120)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    values: dict[str, object] = Field(default_factory=dict)
+    status: Literal["active", "inactive", "archived"] = "active"
+    is_default: bool = False
+
+
+class CreationTemplateUpdateRequest(BaseModel):
+    """Mutable fields for an existing user template."""
+
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=500)
+    blueprint_id: Optional[str] = Field(default=None, max_length=200)
+    blueprint_version: Optional[str] = Field(default=None, max_length=80)
+    provider: Optional[str] = Field(default=None, max_length=64)
+    ad_format: Optional[str] = Field(default=None, max_length=100)
+    scope_type: Optional[Literal["general", "account", "region"]] = None
+    account_id: Optional[str] = Field(default=None, max_length=200)
+    region: Optional[str] = Field(default=None, max_length=120)
+    tags: Optional[list[str]] = Field(default=None, max_length=20)
+    values: Optional[dict[str, object]] = None
+    status: Optional[Literal["active", "inactive", "archived"]] = None
+    is_default: Optional[bool] = None
+
+
+class CreationTemplateDuplicateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+
+
 def _knowledge_manager_or_503() -> ManagedKnowledgeManager:
     if not runtime or not getattr(runtime, "persistence_store", None):
         raise HTTPException(status_code=503, detail="知识库存储未初始化")
     return ManagedKnowledgeManager(runtime.persistence_store)
+
+
+def _creation_template_manager_or_503() -> CreationTemplateManager:
+    if not runtime or not getattr(runtime, "persistence_store", None):
+        raise HTTPException(status_code=503, detail="创建模板存储未初始化")
+
+    def get_blueprint(blueprint_id: str, version: Optional[str] = None) -> Optional[dict]:
+        registry = getattr(runtime, "creation_blueprints", None)
+        getter = getattr(registry, "get", None)
+        if not callable(getter):
+            return None
+        blueprint = getter(str(blueprint_id), version or None)
+        if blueprint is None:
+            return None
+        builder = getattr(runtime, "creation_card_builder", None)
+        expand = getattr(builder, "expand_blueprint", None)
+        if callable(expand):
+            blueprint = expand(blueprint)
+        to_dict = getattr(blueprint, "to_dict", None)
+        return to_dict() if callable(to_dict) else blueprint if isinstance(blueprint, dict) else None
+
+    return CreationTemplateManager(runtime.persistence_store, get_blueprint)
+
+
+@app.get("/creation-templates", tags=["creation-templates"])
+async def list_creation_templates(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    provider: Optional[str] = Query(None, max_length=64),
+    blueprint_id: Optional[str] = Query(None, max_length=200),
+    status: Optional[str] = Query(None, max_length=16),
+    query: Optional[str] = Query(None, max_length=120),
+    limit: int = Query(100, ge=1, le=200),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if status and status not in {"active", "inactive", "archived"}:
+        raise HTTPException(status_code=422, detail="模板状态不合法")
+    return {
+        "tenant_id": principal.tenant_id,
+        "user_id": principal.user_id,
+        "templates": _creation_template_manager_or_503().list(
+            principal.tenant_id, principal.user_id,
+            provider=provider, blueprint_id=blueprint_id, status=status,
+            query=query, limit=limit,
+        ),
+    }
+
+
+@app.post("/creation-templates", tags=["creation-templates"])
+async def create_creation_template(
+    body: CreationTemplateRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    try:
+        result = _creation_template_manager_or_503().create(
+            principal.tenant_id, principal.user_id, body.model_dump()
+        )
+    except CreationTemplateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.get("/creation-templates/{template_id}", tags=["creation-templates"])
+async def get_creation_template(
+    template_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    result = _creation_template_manager_or_503().get(
+        principal.tenant_id, principal.user_id, template_id
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="创建模板不存在或无权访问")
+    return result
+
+
+@app.patch("/creation-templates/{template_id}", tags=["creation-templates"])
+async def update_creation_template(
+    template_id: str,
+    body: CreationTemplateUpdateRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    try:
+        result = _creation_template_manager_or_503().update(
+            principal.tenant_id, principal.user_id, template_id, body.model_dump(exclude_unset=True)
+        )
+    except CreationTemplateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="创建模板不存在或无权访问")
+    return result
+
+
+@app.delete("/creation-templates/{template_id}", tags=["creation-templates"])
+async def delete_creation_template(
+    template_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    result = _creation_template_manager_or_503().delete(
+        principal.tenant_id, principal.user_id, template_id
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="创建模板不存在或无权访问")
+    return result
+
+
+@app.post("/creation-templates/{template_id}/duplicate", tags=["creation-templates"])
+async def duplicate_creation_template(
+    template_id: str,
+    body: CreationTemplateDuplicateRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    try:
+        result = _creation_template_manager_or_503().duplicate(
+            principal.tenant_id, principal.user_id, template_id, body.name
+        )
+    except CreationTemplateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="创建模板不存在或无权访问")
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.post("/creation-templates/{template_id}/apply", tags=["creation-templates"])
+async def apply_creation_template(
+    template_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Record usage without bypassing the Blueprint evaluation or write gates."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    result = _creation_template_manager_or_503().apply(
+        principal.tenant_id, principal.user_id, template_id
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="模板不存在、已停用或无权访问")
+    return result
 
 
 @app.get("/knowledge/documents", tags=["knowledge"])
@@ -1201,6 +1473,44 @@ async def get_knowledge_document(
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "knowledge.read")
     result = _knowledge_manager_or_503().get_document(principal.tenant_id, document_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="知识文档不存在或无权访问")
+    return result
+
+
+@app.put("/knowledge/documents/{document_id}", tags=["knowledge"])
+async def update_knowledge_document(
+    document_id: str,
+    body: KnowledgeDocumentRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Update a draft, or create a new draft version from a published document."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.write")
+    try:
+        result = _knowledge_manager_or_503().update_document(
+            principal.tenant_id, document_id, body.model_dump(), principal.user_id
+        )
+    except KnowledgeDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if not result:
+        raise HTTPException(status_code=404, detail="知识文档不存在、已废弃或无权访问")
+    return result
+
+
+@app.delete("/knowledge/documents/{document_id}", tags=["knowledge"])
+async def delete_knowledge_document(
+    document_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Delete a draft or archive a published document for auditability."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.write")
+    result = _knowledge_manager_or_503().delete_document(
+        principal.tenant_id, document_id
+    )
     if not result:
         raise HTTPException(status_code=404, detail="知识文档不存在或无权访问")
     return result
@@ -1279,6 +1589,7 @@ async def write_memory(
             tags=body.tags,
             importance=body.importance,
             confidence=body.confidence,
+            memory_key=body.memory_key,
             source="api_explicit",
         )
     except ValueError as exc:

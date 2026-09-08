@@ -1,7 +1,7 @@
 ---
 business:
   name: ecommerce
-  version: "1.0"
+  version: "1.0.0"
   description: "电商平台广告投放 Skill - 专注于商品推广、销售转化"
   allowed_channels:
     - meta

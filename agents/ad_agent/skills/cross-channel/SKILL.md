@@ -1,7 +1,7 @@
 ---
 skill:
   name: cross-channel-campaign-manager
-  version: "1.1"
+  version: "1.1.0"
   description: "跨渠道 Campaign 管理器 - 统一管理多平台投放"
   platform: cross-channel
   author: "Ryan"

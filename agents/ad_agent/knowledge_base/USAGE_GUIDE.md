@@ -1,229 +1,80 @@
-# LLM Wiki 知识库使用指南
+# LLM Wiki 使用指南
 
-## 快速开始
+## 这套知识库解决什么问题
 
-### 1. 命令行查询
+它为单 Agent 提供广告业务上下文：识别平台对象与层级，补齐创建前依赖，解释预算/出价/受众/素材选择，诊断报表异常，并把平台指标连接到真实业务结果。它不是 API 文档的替代品，也不是可执行工作流或凭证存储。
+
+## 查询示例
+
+### CLI
 
 ```bash
-# 查看知识库统计
-python3 tools/wiki_query.py --action stats
-
-# 查询 TikTok Campaign 层级结构
-python3 tools/wiki_query.py --platform tiktok --action hierarchy --level campaign
-
-# 查询业务策略
-python3 tools/wiki_query.py --action strategy --business-type ecommerce
-
-# 获取最佳实践
-python3 tools/wiki_query.py --action best_practices --limit 5
-
-# 获取错误解决方案
-python3 tools/wiki_query.py --action errors --query "BUDGET_TOO_LOW"
-
-# 搜索知识
-python3 tools/wiki_query.py --action search --query "campaign objective"
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py --action stats
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py --action search --query "Meta CAPI 去重"
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py --action search --query "DV360 Line Item 预算"
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py --action search --query "TikTok Spark 授权"
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py --action search --query "Google PMax 商品分组"
 ```
 
-### 2. Python API
+### Python
 
 ```python
-from knowledge_base import get_wiki_kb
+from agents.ad_agent.tools.wiki_query import get_wiki_loader
 
-kb = get_wiki_kb('knowledge_base')
-
-# 搜索知识
-results = kb.search("campaign")
-for r in results:
-    print(f"{r.entry_id}: {r.content.get('description')}")
-
-# 获取参数建议
-suggestions = kb.get_parameter_suggestions(
-    "tiktok", "campaign",
-    {"objective_type": "TRAFFIC"}
+loader = get_wiki_loader()
+results = loader.search(
+    "电商 purchase 事件和 ROAS 优化",
+    platforms=["meta"],
+    limit=5,
 )
-print(f"必需参数: {[p['name'] for p in suggestions['required_params']]}")
-
-# 验证创建流程
-validation = kb.validate_creation_flow(
-    "tiktok",
-    {
-        "campaign": {"objective_type": "TRAFFIC"},
-        "ad_group": {"promotion_type": "WEBSITE"}
-    }
-)
-if not validation['valid']:
-    print(f"验证失败: {validation['errors']}")
-
-# 获取 API 工作流
-workflow = kb.get_api_workflow("tiktok")
-for wf in workflow.get('workflows', []):
-    print(f"{wf['type']}: {len(wf['steps'])} 步")
+for result in results:
+    print(result.content["title"])
+    print(result.content["raw_content"][:800])
 ```
 
-### 3. Agent 集成示例
+Runtime 通过 `KnowledgeProvider` 读取同一批 Markdown。查询结果是有界 excerpt，并携带文档版本、更新时间、来源、章节和 citation；不会把整库无上限注入 Prompt。
 
-```python
-async def create_campaign_with_knowledge(platform: str, params: Dict):
-    """使用知识库辅助创建广告"""
-    kb = get_wiki_kb()
-    
-    # 1. 验证参数
-    validation = kb.validate_creation_flow(platform, {"campaign": params})
-    if not validation['valid']:
-        return {
-            'success': False,
-            'errors': validation['errors'],
-            'suggestions': validation.get('suggestions', [])
-        }
-    
-    # 2. 获取业务策略建议
-    strategy = kb.get_best_practices(platform, params.get('business_type'))
-    
-    # 3. 检查已知错误
-    error_solution = kb.get_error_solutions(params.get('error_code'), platform)
-    
-    # 4. 执行创建
-    result = await api_client.create_campaign(platform, params)
-    
-    return {
-        'success': True,
-        'result': result,
-        'strategy_tips': strategy,
-        'error_prevention': error_solution
-    }
+## 推荐的回答顺序
+
+1. 识别平台、业务目标、账户/advertiser/partner scope、市场、时区和预算周期。
+2. 检索 `cross-platform-hierarchy` 与对应平台的 hierarchy/constraint 文档。
+3. 对创建或修改，核对当前 Registry Tool schema、动态 lookup、权限、风险、dry-run/live 和幂等。
+4. 对优化，检索行业打法、预算出价、受众、创意和诊断文档，先解释假设再给动作。
+5. 对数据，注明 level、日期、时区、归因窗口、币种、数据延迟、平台口径与后端口径。
+6. 输出主指标、保护指标、观察窗口、停止/回滚条件；不要承诺固定结果。
+
+## 内容目录
+
+| 目录 | 适合问题 |
+|---|---|
+| `platforms/google` | Search、Shopping/PMax、Video/App、GAQL、转化和 Google 诊断 |
+| `platforms/meta` | ODAX、Ad Set、Catalog、特殊类别、Pixel/CAPI、Insights |
+| `platforms/tiktok` | Smart+、Spark、Commerce、素材事件、定向和报表 |
+| `platforms/dv360` | IO/Line Item、采购、定向 assignment、创意审批、异步报告 |
+| `business` | 层级对照、行业打法、预算、受众、创意、归因增量 |
+| `expertise` | 全链路诊断、实验设计、最佳实践和错误模式 |
+
+## 新增或修改文档
+
+新文档必须使用 [`SCHEMA.md`](SCHEMA.md) 中的 frontmatter，至少包含稳定 `id`、`title`、`layer`、`knowledge_type`、`platform`、`source_ref`、`version`、`confidence`、`updated_at` 和 `status`。平台事实应写来源和版本；运营经验应写适用条件、样本边界和失效条件。
+
+发布前检查：
+
+```bash
+python3.13 -m compileall -q agents/ad_agent
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. python3.13 -m pytest agents/ad_agent/tests/test_knowledge_memory.py -q
+make ad-agent-audit
+git diff --check
 ```
 
-## 知识库结构
+## 检索实现
 
-```
-knowledge_base/
-├── tiktok/           # TikTok 平台知识 (9 条)
-│   ├── hierarchy.json    # 3 条: Campaign/AdGroup/Ad 层级
-│   ├── constraints.json  # 4 条: 层级间约束规则
-│   └── workflows.json    # 2 条: 创建流程
-│
-├── meta/             # Meta 平台知识 (8 条)
-│   ├── hierarchy.json    # 3 条: Campaign/AdSet/Ad 层级
-│   ├── constraints.json  # 3 条: 特殊广告类别约束等
-│   └── workflows.json    # 2 条: 创建流程
-│
-├── google/           # Google Ads 简化版 (1 条)
-├── dv360/            # DV360 简化版 (1 条)
-│
-├── business/         # 业务层知识 (12 条)
-│   ├── strategy.json     # 3 条: 电商/游戏/App 策略
-│   ├── bidding.json      # 3 条: 出价策略
-│   ├── targeting.json    # 3 条: 定向策略
-│   └── creative.json     # 3 条: 素材指南
-│
-├── expertise/        # 经验层知识 (17 条)
-│   ├── best_practices.json  # 3 条: 最佳实践
-│   ├── case_studies.json    # 3 条: 案例研究
-│   ├── error_patterns.json  # 8 条: 错误模式
-│   └── tips.json          # 3 条: 实用技巧
-│
-└── dynamic/          # 动态知识 (3 条)
-    └── performance.json    # 3 条: 性能基准
-```
+Markdown 按标题章节切块，使用 SQLite FTS5 做召回并用 BM25 风格排序；标题、章节和标签有额外权重。SQLite 不带 FTS5 时自动回退到进程内词法排序，因此不需要单独部署向量数据库或 Embedding 服务。未来若更换检索实现，文档格式、发布门禁和单 Agent 安全边界保持不变。
 
-## 使用场景
+## 禁止事项
 
-### 场景 1: 创建广告前的参数验证
-
-```python
-# 用户输入
-params = {
-    "platform": "tiktok",
-    "campaign": {
-        "objective_type": "APP_PROMOTION",
-        "budget_mode": "BUDGET_MODE_INFINITE"
-    },
-    "ad_group": {
-        "promotion_type": "APP_ANDROID"
-    }
-}
-
-# 知识库验证
-kb = get_wiki_kb()
-validation = kb.validate_creation_flow("tiktok", params)
-
-if not validation['valid']:
-    print(f"❌ 验证失败: {validation['errors']}")
-    print(f"💡 建议: {validation['suggestions']}")
-else:
-    print("✅ 参数验证通过")
-```
-
-### 场景 2: 获取业务策略建议
-
-```python
-# 用户询问电商投放策略
-kb = get_wiki_kb()
-strategies = kb.get_best_practices(platform="tiktok", business_type="ecommerce")
-
-for s in strategies:
-    print(f"【{s.get('title')}】")
-    print(f"推荐: {s.get('recommendations')}")
-    print()
-```
-
-### 场景 3: 错误预防
-
-```python
-# 创建前检查可能的错误
-kb = get_wiki_kb()
-errors = kb.expertise_kbs['error_patterns']
-
-for entry in errors.entries.values():
-    if entry.platform == platform or entry.platform == 'all':
-        # 检查是否可能触发该错误
-        if check_error_risk(entry.content, params):
-            print(f"⚠️ 可能触发错误: {entry.content['error_message']}")
-            print(f"💡 解决方案: {entry.content['solutions']}")
-```
-
-### 场景 4: 性能基准参考
-
-```python
-# 获取 TikTok 性能基准
-perf_kb = kb.dynamic_kbs['performance']
-for entry in perf_kb.entries.values():
-    if entry.platform == "tiktok":
-        benchmarks = entry.content['benchmarks']
-        print(f"TikTok CTR 基准: {benchmarks['ctr']['video_ads']['avg']}%")
-        print(f"TikTok CPC 范围: ${benchmarks['cpc']['app_installs']['min']}-${benchmarks['cpc']['app_installs']['max']}")
-```
-
-## 扩展知识库
-
-### 添加新平台知识
-
-1. 创建初始化脚本 `init_{platform}_kb.py`
-2. 定义层级、约束、工作流知识条目
-3. 运行脚本生成 JSON 文件
-
-### 添加业务知识
-
-编辑 `init_business_kb.py`，添加新的业务策略、出价策略、定向策略或素材指南。
-
-### 添加经验知识
-
-编辑 `init_expertise_kb.py`，添加最佳实践、案例研究、错误模式或实用技巧。
-
-## 知识来源说明
-
-| 来源 | 标识 | 说明 |
-|------|------|------|
-| 官方文档 | `official_docs` | 来自各平台官方 API 文档 |
-| API 实测 | `api_test` | 通过实际 API 调用验证 |
-| 专家经验 | `manual_expert` | 基于 Ryan 专家经验整理 |
-| 历史数据 | `historical_data` | 基于历史投放数据分析 |
-
-## 版本历史
-
-- v1.0.0 (2026-08-24): 初始版本，33 条知识
-- v1.1.0 (2026-08-24): 扩展至 51 条知识
-  - 新增 TikTok/Meta 约束规则
-  - 新增案例研究 3 条
-  - 新增错误模式 5 条
-  - 新增性能基准 3 条
+- 不在 Wiki 中写 access token、secret、用户原始 PII 或内部权限材料。
+- 不在 Skill/知识文档中注册 Tool、调用 Provider 或执行脚本。
+- 不把知识文档中的字段/枚举当作当前 Tool 的事实来源。
+- 不把 API 接收成功、对象创建成功、审核通过、开始投放和最终归因混成一个状态。
+- 不把平台归因 ROAS、固定 benchmark 或短期前后对比直接解释为真实增量。

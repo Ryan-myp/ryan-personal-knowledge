@@ -349,7 +349,13 @@ class MetaAPIClient(BasePlatformClient):
             f"/act_{clean_id}/customaudiences",
             {
                 'limit': limit,
-                'fields': 'id,name,subtype,approximate_count,delivery_status',
+                # ``approximate_count`` was removed from the current Graph
+                # custom-audience projection.  Keeping it here makes an
+                # otherwise valid lookup fail with Graph error #100, which in
+                # turn prevents the creation card from offering audience
+                # choices.  Counts are optional metadata; the stable fields
+                # below are sufficient for selection and auditing.
+                'fields': 'id,name,subtype,delivery_status',
             },
         )
 
@@ -1318,7 +1324,7 @@ class MetaAPIClient(BasePlatformClient):
                 return True
         return False
     
-    def create_campaign(self, account_id: str, campaign: dict) -> dict:
+    def create_campaign(self, account_id: str, campaign: dict, live: bool = False) -> dict:
         """创建 Campaign
         
         Meta Graph API 要求：
@@ -1356,6 +1362,11 @@ class MetaAPIClient(BasePlatformClient):
         if "NONE" in special_ad_categories and len(special_ad_categories) > 1:
             raise ValueError("Meta special_ad_categories=NONE cannot be combined with another category")
 
+        requested_status = str(campaign.get('status') or 'PAUSED').upper()
+        if requested_status not in {'PAUSED', 'ACTIVE'}:
+            raise ValueError("Meta Campaign status must be PAUSED or ACTIVE")
+        if live and requested_status != 'PAUSED':
+            raise ValueError("Meta live creation only allows PAUSED Campaigns")
         data = {
             'name': campaign['name'],
             'objective': objective,
@@ -1366,8 +1377,7 @@ class MetaAPIClient(BasePlatformClient):
         }
         if campaign.get('buying_type') is not None:
             data['buying_type'] = campaign['buying_type']
-        if 'status' in campaign:
-            data['status'] = campaign['status']
+        data['status'] = requested_status
         daily_budget = campaign.get('daily_budget', campaign.get('budget'))
         if daily_budget is not None:
             data['daily_budget'] = str(int(float(daily_budget) * 100))  # 转为分
@@ -1384,16 +1394,30 @@ class MetaAPIClient(BasePlatformClient):
                 value = campaign[field_name]
                 data[field_name] = json.dumps(value) if isinstance(value, (dict, list)) else value
         
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "campaign_id": None,
+                "account_id": str(account_id),
+                "operation": {self._ad_account_edge(account_id, "campaigns"): {"create": data}},
+            }
         result = self.request('POST', self._ad_account_edge(account_id, "campaigns"), data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta campaign create")
     
-    def update_campaign(self, campaign_id: str, updates: dict) -> dict:
+    def update_campaign(self, campaign_id: str, updates: dict, live: bool = False) -> dict:
         """更新 Campaign"""
         data = {k: v for k, v in updates.items() if v is not None}
         daily_budget = data.pop('daily_budget', data.pop('budget', None))
         if daily_budget is not None:
             data['daily_budget'] = str(int(float(daily_budget) * 100))
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "campaign_id": str(campaign_id), "operation": {f"/{campaign_id}": {"update": data}},
+            }
         return self.request('POST', f"/{campaign_id}", data=data)
     
     def pause_campaign(self, campaign_id: str) -> dict:
@@ -1437,7 +1461,7 @@ class MetaAPIClient(BasePlatformClient):
             "Meta ad set get",
         )
     
-    def create_adset(self, account_id: str, campaign_id: str, adset: dict) -> str:
+    def create_adset(self, account_id: str, campaign_id: str, adset: dict, live: bool = False) -> str:
         """创建 Ad Set
         
         Meta Graph API 要求：
@@ -1468,21 +1492,25 @@ class MetaAPIClient(BasePlatformClient):
             )
         if bid_strategy == "LOWEST_COST_WITH_MIN_ROAS" and adset.get("roas_average_floor") is None:
             raise ValueError("Meta LOWEST_COST_WITH_MIN_ROAS requires roas_average_floor")
+        requested_status = str(adset.get('status') or 'PAUSED').upper()
+        if requested_status not in {'PAUSED', 'ACTIVE'}:
+            raise ValueError("Meta Ad Set status must be PAUSED or ACTIVE")
+        if live and requested_status != 'PAUSED':
+            raise ValueError("Meta live creation only allows PAUSED Ad Sets")
         data = {
             'name': adset['name'],
             'campaign_id': campaign_id,
             'optimization_goal': adset.get('optimization_goal', 'REACH'),
             'billing_event': adset.get('billing_event', 'IMPRESSIONS'),
             'targeting': targeting,
-            'status': adset.get('status', 'PAUSED'),
+            'status': requested_status,
         }
-        # Meta's LOWEST_COST_WITHOUT_CAP is the account/API default. Sending
-        # that value explicitly on this test account makes Graph require a
-        # bid_amount even though the strategy has no cap. Keep accepting the
-        # canonical input, but omit the default strategy on the wire. All
-        # capped/targeted strategies remain explicit and are validated below.
-        if bid_strategy != "LOWEST_COST_WITHOUT_CAP":
-            data['bid_strategy'] = bid_strategy
+        # Always preserve the selected strategy on the wire.  The test
+        # account can carry a different account-level default (including a
+        # bid-cap strategy); omitting the field therefore does not mean
+        # "lowest cost without cap" to Graph.  The input validation above
+        # still prevents capped strategies without their required amount.
+        data['bid_strategy'] = bid_strategy
         if bid_amount is not None:
             data['bid_amount'] = str(bid_amount)
         # ``promoted_object`` is required by several conversion/app/catalog
@@ -1507,11 +1535,21 @@ class MetaAPIClient(BasePlatformClient):
             data['start_time'] = adset['start_time']
         if 'end_time' in adset:
             data['end_time'] = adset['end_time']
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "adset_id": None,
+                "account_id": str(account_id),
+                "campaign_id": str(campaign_id),
+                "operation": {self._ad_account_edge(account_id, "adsets"): {"create": data}},
+            }
         result = self.request('POST', self._ad_account_edge(account_id, "adsets"), data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta ad set create")
     
-    def update_adset(self, adset_id: str, updates: dict) -> dict:
+    def update_adset(self, adset_id: str, updates: dict, live: bool = False) -> dict:
         """更新 Ad Set"""
         data = {k: v for k, v in updates.items() if v is not None}
         # Accept the historical client-side alias while normalizing the
@@ -1524,6 +1562,11 @@ class MetaAPIClient(BasePlatformClient):
             data['daily_budget'] = str(int(float(data['daily_budget']) * 100))
         if isinstance(data.get('targeting'), dict):
             data['targeting'] = json.dumps(data['targeting'])
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "adset_id": str(adset_id), "operation": {f"/{adset_id}": {"update": data}},
+            }
         return self.request('POST', f"/{adset_id}", data=data)
     
     def pause_adset(self, adset_id: str) -> dict:
@@ -1565,7 +1608,7 @@ class MetaAPIClient(BasePlatformClient):
             "Meta ad get",
         )
     
-    def create_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+    def create_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """创建 Ad
         
         Meta Graph API 要求：
@@ -1591,6 +1634,11 @@ class MetaAPIClient(BasePlatformClient):
                 "object_story_spec"
             )
         
+        requested_status = str(ad.get('status') or 'PAUSED').upper()
+        if requested_status not in {'PAUSED', 'ACTIVE'}:
+            raise ValueError("Meta Ad status must be PAUSED or ACTIVE")
+        if live and requested_status != 'PAUSED':
+            raise ValueError("Meta live creation only allows PAUSED Ads")
         data = {
             'name': ad.get('name', 'Untitled Ad'),
             'adset_id': adset_id,
@@ -1599,7 +1647,7 @@ class MetaAPIClient(BasePlatformClient):
             'title': ad.get('title', ''),
             'description': ad.get('description', ''),
             'url_tags': ad.get('url_tags', ''),
-            'status': ad.get('status', 'PAUSED'),
+            'status': requested_status,
         }
         # 素材
         if ad.get('media') or ad.get('image_url'):
@@ -1611,11 +1659,21 @@ class MetaAPIClient(BasePlatformClient):
                 raise ValueError("Meta Ad media requires a non-empty url")
             data['creative'] = json.dumps({'attachment_link': media_url})
         
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "ad_id": None,
+                "account_id": str(account_id),
+                "adset_id": str(adset_id),
+                "operation": {self._ad_account_edge(account_id, "ads"): {"create": data}},
+            }
         result = self.request('POST', self._ad_account_edge(account_id, "ads"), data=data)
         resource_id = result.get('id') if isinstance(result, dict) else None
         return self.require_resource_id(resource_id, "Meta ad create")
 
-    def create_lead_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+    def create_lead_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """Create a Lead Ads ad wired to an existing Instant Form.
 
         The form is selected by its account/page-scoped ID; form discovery and
@@ -1651,9 +1709,10 @@ class MetaAPIClient(BasePlatformClient):
                 "status": ad.get("status", "PAUSED"),
                 "object_story_spec": {"page_id": page_id, "link_data": link_data},
             },
+            live=live,
         )
 
-    def create_catalog_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+    def create_catalog_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """Create a Catalog/Dynamic Product Ad provider payload."""
         if not isinstance(ad, dict):
             raise ValueError("catalog ad must be an object")
@@ -1693,9 +1752,10 @@ class MetaAPIClient(BasePlatformClient):
                     "template_data": template_data,
                 },
             },
+            live=live,
         )
     
-    def create_messaging_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+    def create_messaging_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """Create a click-to-message ad with a provider-shaped story spec."""
         if not isinstance(ad, dict):
             raise ValueError("messaging ad must be an object")
@@ -1727,9 +1787,10 @@ class MetaAPIClient(BasePlatformClient):
                     "link_data": link_data,
                 },
             },
+            live=live,
         )
 
-    def create_link_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+    def create_link_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """Create a website-link image or video ad."""
         if not isinstance(ad, dict):
             raise ValueError("link ad must be an object")
@@ -1780,9 +1841,10 @@ class MetaAPIClient(BasePlatformClient):
                 "status": ad.get("status", "PAUSED"),
                 "object_story_spec": creative_spec,
             },
+            live=live,
         )
 
-    def create_engagement_ad(self, account_id: str, adset_id: str, ad: dict) -> str:
+    def create_engagement_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """Create a post-engagement or video-views ad."""
         if not isinstance(ad, dict):
             raise ValueError("engagement ad must be an object")
@@ -1823,11 +1885,17 @@ class MetaAPIClient(BasePlatformClient):
                 "status": ad.get("status", "PAUSED"),
                 "object_story_spec": creative_spec,
             },
+            live=live,
         )
 
-    def update_ad(self, ad_id: str, updates: dict) -> dict:
+    def update_ad(self, ad_id: str, updates: dict, live: bool = False) -> dict:
         """更新 Ad"""
         data = {k: v for k, v in updates.items() if v is not None}
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "ad_id": str(ad_id), "operation": {f"/{ad_id}": {"update": data}},
+            }
         return self.request('POST', f"/{ad_id}", data=data)
     
     def pause_ad(self, ad_id: str) -> dict:
@@ -1848,10 +1916,14 @@ class MetaAPIClient(BasePlatformClient):
     
     # ==================== Creative 管理 ====================
     
-    def create_creative(self, account_id: str, creative: dict) -> str:
-        """创建 Creative"""
+    def create_creative(self, account_id: str, creative: dict, live: bool = False) -> dict | str:
+        """Build or create a Creative.
+
+        Creative creation is a write operation and must obey the same
+        provider-boundary live switch as Campaign/Ad Set/Ad creation.  The
+        dry-run branch deliberately performs no Graph request.
+        """
         account_id = self._clean_meta_id(account_id, "account_id")
-        self.acquire_rate_limit(self._get_account_limiter(account_id))
         story_spec = {
             'page_id': creative.get('page_id', ''),
             'link_data': {
@@ -1876,6 +1948,18 @@ class MetaAPIClient(BasePlatformClient):
         if creative.get('image_url'):
             story_spec['link_data']['image_url'] = creative['image_url']
             data['object_story_spec'] = json.dumps(story_spec, separators=(',', ':'))
+
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "creative_id": None,
+                "account_id": account_id,
+                "operation": {f"/act_{account_id}/adcreatives": {"create": data}},
+            }
+
+        self.acquire_rate_limit(self._get_account_limiter(account_id))
         
         # Meta's account edge is named ``adcreatives`` for both listing and
         # creation. ``creatives`` is not a writable ad-account edge.
@@ -1915,7 +1999,11 @@ class MetaAPIClient(BasePlatformClient):
             "GET", f"/act_{account_id}/adimages",
             extra_params={
                 "limit": limit,
-                "fields": "hash,url,name,original_width,original_height,created_time",
+                # Picker/creation flows only need a stable asset reference and
+                # display metadata.  Do not pull the provider's signed image
+                # URLs into Runtime context; they can be very large and are
+                # not needed to submit an image-hash creative.
+                "fields": "hash,name,original_width,original_height,created_time",
             },
         )
         # Meta's adimages edge returns an object keyed by filename/hash rather
@@ -1928,10 +2016,10 @@ class MetaAPIClient(BasePlatformClient):
                     asset = dict(value)
                     asset.setdefault("name", key)
                     assets.append(asset)
-            return assets
+            return assets[:limit]
         if isinstance(result, dict) and isinstance(result.get("data"), list):
-            return result["data"]
-        return result if isinstance(result, list) else []
+            return result["data"][:limit]
+        return result[:limit] if isinstance(result, list) else []
 
     def upload_image_asset(self, account_id: str, asset: dict) -> dict:
         """Upload one remotely hosted image and return its provider hash."""

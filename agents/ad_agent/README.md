@@ -24,18 +24,18 @@
 
 | 平台 | Skill | API 客户端 | 工具数量 |
 |------|-------|-----------|---------|
-| Meta | meta-marketing-api-expert | meta_client.py | 76（账户、Business Manager、Page/Pixel 详情/列表、Image/Video Asset 上传与列表、Custom Conversion CRUD、Lead Form 与 Lead 列表/详情、Audience/Lookalike Audience CRUD、Catalog/Product Set CRUD、层级资源、Traffic/Conversion/Lead/Engagement/Catalog/Messaging Ads、报表与生命周期接口） |
-| Google Ads | google-ads-api-expert | google_ads_client.py | 108（层级资源完整 CRUD、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、Conversion Goal、Feed/FeedItem 列表/详情/生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、Campaign/Asset Group Asset 关联、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、关键词完整生命周期、Product Group、PMax、Experiment 读写与生命周期、Experiment Arm 查询、报表与生命周期接口） |
-| TikTok | tiktok-ads-api-expert | tiktok_client.py | 79（账户列表/详情、层级资源、Ad Group 定向更新、Lead/App/Spark/Product Sales 广告、Creative/Video/Image/Catalog/Product Set 列表与详情、Identity 列表/详情、Creative Portfolio 创建/查询/预览、图片/视频 Asset Library、受众 CRUD、官方定向参考数据、Pixel 生命周期、Pixel 事件、报表与生命周期接口） |
+| Meta | meta-marketing-api-expert | meta_client.py | 78（账户、Business Manager、Page/Pixel 详情/列表、Image/Video Asset 上传与列表、Custom Conversion CRUD、Lead Form 与 Lead 列表/详情、Audience/Lookalike Audience CRUD、Catalog/Product Set CRUD、层级资源、Traffic/Conversion/Lead/Engagement/Catalog/Messaging Ads、报表与生命周期接口） |
+| Google Ads | google-ads-api-expert | google_ads_client.py | 113（层级资源完整 CRUD、CampaignBudget、CampaignCriterion 定向、Conversion Action 生命周期、Conversion Goal、Feed/FeedItem 列表/详情/生命周期、User List 生命周期与 Customer Match 哈希数据上传、BiddingStrategy 生命周期与优化参数、可复用文本/图片/YouTube/HTML5 Asset 创建/移除、Campaign/Asset Group Asset 关联、Search Ad、Responsive Display Ad、Video Ad、Demand Gen、Hotel、Local、Smart、Travel、关键词完整生命周期、Product Group、PMax、Experiment 读写与生命周期、Experiment Arm 查询、报表与生命周期接口） |
+| TikTok | tiktok-ads-api-expert | tiktok_client.py | 90（账户列表/详情、层级资源、Ad Group 定向更新、Lead/App/Spark/Product Sales 广告、Creative/Video/Image/Catalog/Product Set 列表与详情、Identity 列表/详情、Creative Portfolio 创建/查询/预览、图片/视频 Asset Library、受众 CRUD、官方定向参考数据、Pixel 生命周期、Pixel 事件、报表与生命周期接口） |
 | DV360 | dv360-expert | dv360_client.py | 31（Advertiser、Campaign 查询、IO、Line Item、Creative、定向与异步报表接口） |
-| **合计** |  |  | **294** |
+| **合计** |  |  | **312** |
 
-> 294 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。Meta 图片/视频素材当前提供 HTTPS URL 上传与列表，未伪造删除或任意文件上传；DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
+> 312 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。Meta 图片/视频素材当前提供 HTTPS URL 上传与列表，未伪造删除或任意文件上传；DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
 
 能力完整度要以审计报告为准，而不是 Tool 数量。运行：
 
 ```bash
-python3 agents/ad_agent/scripts/audit_capabilities.py
+make ad-agent-audit
 ```
 
 报告分别输出 `api surface`（代码实现覆盖）和 `official inventory`（已登记官方基线覆盖）。
@@ -69,10 +69,20 @@ Max。每个 Blueprint 仍只引用同一渠道已注册的 Tool schema，动态
 ## 安装
 
 ```bash
-pip install -r requirements.txt
+make ad-agent-install
 ```
 
 ## 快速开始
+
+本项目统一使用 Python 3.13。请从仓库根目录执行 Make 命令，或使用
+scripts/ad-agent-python；不要直接使用 macOS 系统的 python3。包装器会在启动前校验
+解释器版本，避免 3.9/3.11 环境导入代码时出现难以定位的语法错误。
+
+常用命令：
+
+    make ad-agent-python-version
+    make ad-agent-run
+    make ad-agent-check
 
 ```python
 import os
@@ -254,7 +264,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 294 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 312 个工具数或单元测试通过当成 Provider live 已验证。
 
 #### 发布就绪门禁与证据分层
 
@@ -270,19 +280,19 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 本地默认门禁：
 
 ```bash
-python3 agents/ad_agent/scripts/release_readiness.py --profile local
+./scripts/ad-agent-python agents/ad_agent/scripts/release_readiness.py --profile local
 ```
 
 本地 Provider contract harness 使用记录型 Client，不产生任何外部请求：
 
 ```bash
-python3 agents/ad_agent/scripts/provider_contract_harness.py
+./scripts/ad-agent-python agents/ad_agent/scripts/provider_contract_harness.py
 ```
 
 `release` profile 会要求后两层证据；在尚未接入受控 Provider E2E 证据前，失败是预期的，不能通过改 Tool 数量或把本地 stub 标成 live 来绕过：
 
 ```bash
-python3 agents/ad_agent/scripts/release_readiness.py --profile release
+./scripts/ad-agent-python agents/ad_agent/scripts/release_readiness.py --profile release
 ```
 
 门禁规则位于 [`contracts/readiness_policy.json`](./contracts/readiness_policy.json)，Provider 本地场景位于 [`contracts/provider_contract_scenarios.json`](./contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Capability、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
@@ -297,11 +307,11 @@ python3 agents/ad_agent/scripts/release_readiness.py --profile release
 管理端还支持 `POST /plugins/packages/archive` 导入标准 ZIP，并提供版本级 `health` 检查；
 健康检查只验证摘要、声明一致性和租户内依赖，不进行代码探针。
 
-可用 `python3 agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
+可用 `./scripts/ad-agent-python agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
 Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
 渠道注册表。
 
-创建参数还可用 `python3 agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided`
+创建参数还可用 `./scripts/ad-agent-python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided`
 做发布前审计。它会逐字段报告 `enum` 固定选项、`lookup` 动态查询、`manual_entry` 人工
 录入、`upload` 素材上传、`context` 账户/父级上下文、`inherited` 级联继承、`free_text`
 自由输入和 `structured` 结构化输入，并检查资源字段是否缺少受控来源、Lookup 是否为同
@@ -340,7 +350,7 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 因此下一阶段应优先做“Provider schema 对照 + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。代码契约漂移可先通过以下 release gate：
 
 ```bash
-python3 agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
+./scripts/ad-agent-python agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
 ```
 
 更新操作同样使用渠道拥有的嵌套 Schema：Meta、Google Ads、TikTok、DV360 的 `updates` 只允许当前适配器声明的字段，未知字段会在计划阶段报错，不会静默丢弃或带入 live 请求。缺少带 `lookup_tool` 的动态字段时，返回结果中的 `confirmation_payload.lookup_tools` 会告诉调用方应先调用哪个查询工具。通用目标（sales/leads/traffic/brand）由各 Skill 的字段元数据映射为 Provider 枚举，不由 Runtime 维护一张不可扩展的渠道表。
@@ -499,8 +509,8 @@ MCP 或其他代码文件不会被 Runtime 导入或执行。
 LLM 结果规范化会读取当前已注册的平台集合。新增渠道的自然语言别名可以由其
 平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或品牌别名，
 直接在渠道 Skill 的 frontmatter `aliases` 中声明即可，平台身份解析会自动发现，
-不需要修改 Core、中心 Router 或渠道表。`parser_platform` 仅用于兼容外部解析结果的
-展示标签，不创建 Tool，也不参与权限判断。
+不需要修改 Core、中心 Router 或渠道表。平台显示别名由 Skill frontmatter 声明，只有
+注册到当前 Runtime 的 Skill/Capability 才会进入解析与执行上下文。
 Skill 包遵循标准目录约定：至少包含 `SKILL.md`，可包含 `references/`、`scripts/`、
 `assets/`、`evals/` 和其他包文件。管理系统负责保存、版本化和评测这些文件；
 `scripts/`、`assets/`、`evals/` 及 `workflow.yaml` 都不是 Runtime 的自动执行入口。

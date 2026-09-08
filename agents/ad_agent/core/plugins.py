@@ -32,7 +32,10 @@ logger = logging.getLogger(__name__)
 PLUGIN_API_VERSION = "1"
 _PLUGIN_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._:/-]{1,127}$")
 _VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
-_VERSION_PART_RE = re.compile(r"^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+].*)?$")
+_VERSION_INPUT_RE = re.compile(
+    r"^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?"
+    r"((?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$"
+)
 _PROTECTED_METADATA_FIELDS = {
     "access_token", "refresh_token", "developer_token", "client_secret",
     "app_secret", "private_key", "api_key", "password", "authorization",
@@ -65,24 +68,44 @@ class PluginState(str, Enum):
 
 
 def _normalise_version(value: Any) -> str:
-    """Normalise the legacy ``1``/``1.0`` form to strict semver."""
+    """Validate and canonicalize a plugin version as complete semver.
 
+    Manifests historically used ``1``/``1.2`` shorthand. Accepting that
+    input and storing ``1.0.0``/``1.2.0`` preserves package compatibility while
+    keeping the immutable PluginManifest contract in full MAJOR.MINOR.PATCH
+    form.
+    """
     raw = str(value or "").strip()
-    match = _VERSION_PART_RE.fullmatch(raw)
+    if _VERSION_RE.fullmatch(raw):
+        return raw
+    match = _VERSION_INPUT_RE.fullmatch(raw)
     if not match:
-        raise ValueError(f"invalid plugin version: {value!r}")
-    major, minor, patch = (int(part or 0) for part in match.groups())
-    # Preserve prerelease/build suffixes after the numeric portion.
-    suffix = ""
-    # The regex consumes the suffix in group 0.  Extract it from the first
-    # hyphen/plus so ``1.2.3-rc1`` remains semver-compatible.
-    suffix_match = re.search(r"[-+].*$", raw)
-    if suffix_match:
-        suffix = suffix_match.group(0)
-    result = f"{major}.{minor}.{patch}{suffix}"
-    if not _VERSION_RE.fullmatch(result):
-        raise ValueError(f"invalid plugin version: {value!r}")
-    return result
+        raise ValueError(
+            f"invalid plugin version: {value!r}; expected MAJOR.MINOR.PATCH"
+        )
+    major, minor, patch, suffix = match.groups()
+    normalized = f"{major}.{minor or 0}.{patch or 0}{suffix or ''}"
+    if not _VERSION_RE.fullmatch(normalized):
+        raise ValueError(
+            f"invalid plugin version: {value!r}; expected MAJOR.MINOR.PATCH"
+        )
+    return normalized
+
+
+def normalize_plugin_version(value: Any) -> str:
+    """Public validator shared by Skill and Plugin package loaders."""
+    return _normalise_version(value)
+
+
+def _constraint_version_tuple(value: Any) -> tuple[int, int, int]:
+    """Parse a semver range base without weakening manifest version rules."""
+    raw = str(value or "").strip()
+    if _VERSION_RE.fullmatch(raw):
+        return _version_tuple(raw)
+    match = re.fullmatch(r"(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?", raw)
+    if not match:
+        raise ValueError(f"invalid plugin dependency version: {value!r}")
+    return tuple(int(part or 0) for part in match.groups())
 
 
 def _version_tuple(value: str) -> tuple[int, int, int]:
@@ -114,14 +137,14 @@ def _satisfies(version: str, constraint: str) -> bool:
         return True
     actual = _version_tuple(version)
     if constraint.startswith("^"):
-        base = _version_tuple(_normalise_version(constraint[1:]))
+        base = _constraint_version_tuple(constraint[1:])
         return actual >= base and actual[0] == base[0]
     if constraint.startswith("~"):
-        base = _version_tuple(_normalise_version(constraint[1:]))
+        base = _constraint_version_tuple(constraint[1:])
         return actual >= base and actual[:2] == base[:2]
     for operator in (">=", "<=", ">", "<", "="):
         if constraint.startswith(operator):
-            expected = _version_tuple(_normalise_version(constraint[len(operator):]))
+            expected = _constraint_version_tuple(constraint[len(operator):])
             return {
                 ">=": actual >= expected,
                 "<=": actual <= expected,

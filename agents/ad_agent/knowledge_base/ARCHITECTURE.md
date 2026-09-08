@@ -1,8 +1,15 @@
 # LLM Wiki 通用知识库系统架构
 
+> 当前规范：业务 Markdown 是运行时唯一内置知识源，SQLite FTS5/BM25 负责稀疏检索；Wiki
+> 索引/日志/架构/规范文件仅供维护者阅读，历史 JSON 初始化脚本不参与 Runtime 检索。
+
 ## 概述
 
 LLM Wiki 是一个**通用型广告平台知识库系统**，支持多层级知识管理：
+
+LLM Wiki 描述的是知识组织方式，不限定底层检索技术。当前 Runtime 使用章节级 Markdown
+稀疏索引和 BM25 风格排序，不依赖向量数据库；如果未来需要语义检索，可以替换
+`KnowledgeProvider` 实现而不改变文档格式、发布门禁和单 Agent 安全边界。
 - **平台层**：层级结构、约束规则、工作流
 - **业务层**：业务策略、出价策略、定向策略、素材指南
 - **经验层**：最佳实践、案例研究、错误模式、实用技巧
@@ -37,29 +44,13 @@ LLM Wiki 是一个**通用型广告平台知识库系统**，支持多层级知�
 │  │                        知识库存储结构                                 │    │
 │  │                                                                      │    │
 │  │  knowledge_base/                                                     │    │
-│  │  ├── meta/                 # Meta 平台知识                           │    │
-│  │  │   ├── hierarchy.json     # Campaign/AdSet/Ad 层级参数              │    │
-│  │  │   ├── constraints.json  # 层级间约束规则                         │    │
-│  │  │   └── workflows.json    # API 工作流                             │    │
-│  │  ├── tiktok/               # TikTok 平台知识                         │    │
-│  │  │   ├── hierarchy.json     # 3 entries                              │    │
-│  │  │   ├── constraints.json  # 1 entry                                │    │
-│  │  │   └── workflows.json    # 1 entry                                │    │
-│  │  ├── google/               # Google Ads 平台知识                     │    │
-│  │  ├── dv360/                # DV360 平台知识                          │    │
-│  │  ├── business/             # 业务层知识                              │    │
-│  │  │   ├── strategy.json      # 业务策略（电商/游戏/App）              │    │
-│  │  │   ├── bidding.json       # 出价策略                               │    │
-│  │  │   ├── targeting.json     # 定向策略                               │    │
-│  │  │   └── creative.json      # 素材指南                               │    │
-│  │  ├── expertise/            # 经验层知识                              │    │
-│  │  │   ├── best_practices.json # 最佳实践（3 entries）                 │    │
-│  │  │   ├── case_studies.json  # 案例研究                               │    │
-│  │  │   ├── error_patterns.json # 错误模式（3 entries）                 │    │
-│  │  │   └── tips.json          # 实用技巧（3 entries）                  │    │
-│  │  └── dynamic/              # 动态知识                                │    │
-│  │      ├── api_changes.json   # API 变更日志                          │    │
-│  │      └── performance.json   # 性能数据                               │    │
+│  │  ├── platforms/<platform>/*.md   # 层级、约束、工作流、优化、诊断    │    │
+│  │  ├── business/*.md               # 行业与跨平台运营方法              │    │
+│  │  ├── expertise/*.md              # 经验、实验、错误与最佳实践         │    │
+│  │  ├── index.md                    # 导航、检索入口与统计               │    │
+│  │  ├── SCHEMA.md                   # frontmatter 与发布规范             │    │
+│  │  ├── QUALITY_STANDARD.md          # 内容与检索质量门禁                 │    │
+│  │  └── log.md                      # 内容与契约变更日志                 │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
@@ -166,7 +157,7 @@ class ParameterDefinition:
 ### 1. 查询层级结构
 
 ```bash
-python3 tools/wiki_query.py \
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py \
   --platform tiktok \
   --action hierarchy \
   --level campaign
@@ -175,7 +166,7 @@ python3 tools/wiki_query.py \
 ### 2. 查询约束规则
 
 ```bash
-python3 tools/wiki_query.py \
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py \
   --platform tiktok \
   --action constraints \
   --source-level campaign \
@@ -185,7 +176,7 @@ python3 tools/wiki_query.py \
 ### 3. 获取参数建议
 
 ```bash
-python3 tools/wiki_query.py \
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py \
   --platform tiktok \
   --action suggest \
   --level campaign \
@@ -195,7 +186,7 @@ python3 tools/wiki_query.py \
 ### 4. 获取业务策略
 
 ```bash
-python3 tools/wiki_query.py \
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py \
   --action strategy \
   --business-type ecommerce
 ```
@@ -203,7 +194,7 @@ python3 tools/wiki_query.py \
 ### 5. 获取最佳实践
 
 ```bash
-python3 tools/wiki_query.py \
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py \
   --action best_practices \
   --limit 5
 ```
@@ -211,7 +202,7 @@ python3 tools/wiki_query.py \
 ### 6. 获取错误解决方案
 
 ```bash
-python3 tools/wiki_query.py \
+./scripts/ad-agent-python agents/ad_agent/tools/wiki_query.py \
   --action errors \
   --query "BUDGET_TOO_LOW"
 ```
@@ -315,26 +306,21 @@ async def prevent_errors(platform: str, params: Dict):
 
 | 类别 | 条目数 | 说明 |
 |------|--------|------|
-| TikTok 平台层 | 5 | hierarchy(3) + constraints(1) + workflows(1) |
-| Meta 平台层 | 5 | hierarchy(3) + constraints(1) + workflows(1) |
-| Google 平台层 | 1 | hierarchy(1) - 简化版 |
-| DV360 平台层 | 0 | 待填充 |
-| 业务策略 | 3 | ecommerce/gaming/app |
-| 出价策略 | 3 | cost_efficiency/target_roas/cost_cap |
-| 定向策略 | 3 | interest/lookalike/retargeting |
-| 素材指南 | 3 | video/image/best_practices |
-| 最佳实践 | 3 | structure/budget/creative |
-| 错误模式 | 3 | invalid_objective/budget_too_low/api_limitation |
-| 实用技巧 | 3 | naming/learning-phase/audience-overlap |
-| **总计** | **32** | 持续增长中 |
+| Google 平台层 | 13 | 层级、约束、Search/PMax、Campaign/Search Runbook、价值出价、转化、GAQL、报表、配额与版本 |
+| Meta 平台层 | 11 | 层级目标、预算定向、Campaign/Ad Set Runbook、ODAX、Catalog/Lead、Pixel/CAPI、事件质量、Insights、权限与版本 |
+| TikTok 平台层 | 11 | 层级目标、Campaign/Ad Group Runbook、Smart+/Spark、素材、App/Commerce、Events API、事件归因、报表、限流与排障 |
+| DV360 平台层 | 11 | 购买层级、IO/Line Item Runbook、Deal/竞价、Floodlight、采购质量、报告诊断、审批与异步恢复 |
+| 跨平台业务 | 14 | 四平台总览、行业、层级、预算节奏、边际效率、受众、创意、数据契约、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
+| 经验文档 | 4 | 诊断、实验、最佳实践、错误 |
+| **总计** | **64** | Runtime 业务 Markdown；维护文档不计入 |
 
 ## 扩展指南
 
 ### 添加新平台知识
 
-1. 创建初始化脚本: `init_{platform}_kb.py`
-2. 填充层级、约束、工作流数据
-3. 运行脚本生成 JSON 文件
+1. 在 `platforms/<platform>/` 新增标准 Markdown 文档。
+2. 添加完整 frontmatter、官方/本地来源、适用条件和能力边界。
+3. 运行元数据校验与检索 smoke test，再更新 `index.md` 和 `log.md`。
 
 ### 添加业务知识
 

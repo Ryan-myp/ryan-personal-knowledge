@@ -40,6 +40,75 @@ class CrossChannelFeature:
         "cross_channel_export_report",
     })
 
+    _INTENT_DESCRIPTORS = {
+        "cross_channel_overview": {
+            "description": "查看多个已注册渠道的广告概览",
+            "aliases": [
+                "跨渠道概览", "跨平台概览", "跨渠道查询", "跨平台查询",
+                "channel overview", "cross channel overview",
+            ],
+        },
+        "cross_channel_compare": {
+            "description": "比较多个已注册渠道的广告表现",
+            "priority": 100,
+            "aliases": [
+                "跨渠道对比", "跨平台比较", "比较多个渠道", "比较多个平台",
+                "比较渠道", "对比渠道", "比较",
+                "channel comparison", "cross channel compare",
+            ],
+        },
+        "cross_channel_performance_insights": {
+            "description": "生成多个渠道的表现洞察和优化建议",
+            "priority": 100,
+            "aliases": ["跨渠道分析", "跨平台洞察", "performance insights", "cross channel analysis"],
+        },
+        "cross_channel_optimize_budget": {
+            "description": "在多个渠道之间制定预算优化建议",
+            "priority": 100,
+            "aliases": [
+                "跨渠道预算优化", "跨渠道优化预算", "跨平台预算分配",
+                "budget optimization",
+            ],
+        },
+        "cross_channel_export_report": {
+            "description": "导出多个渠道的汇总报表",
+            "priority": 100,
+            "aliases": [
+                "跨渠道导出报表", "跨渠道导出", "跨平台报表导出",
+                "export cross channel report",
+            ],
+        },
+        "cross_channel_batch_pause": {
+            "description": "批量暂停多个渠道的资源",
+            "priority": 100,
+            "aliases": [
+                "跨渠道批量暂停", "跨平台批量停用", "跨渠道暂停", "跨平台暂停",
+                "批量暂停", "批量停用", "batch pause",
+            ],
+        },
+        "cross_channel_batch_resume": {
+            "description": "批量恢复多个渠道的资源",
+            "priority": 100,
+            "aliases": ["跨渠道批量恢复", "跨平台批量启用", "跨渠道恢复", "批量恢复", "批量启用", "batch resume"],
+        },
+        "cross_channel_batch_update_budget": {
+            "description": "批量更新多个渠道的预算",
+            "priority": 100,
+            "aliases": ["跨渠道批量更新预算", "跨平台预算更新", "批量更新预算", "batch update budget"],
+        },
+        "cross_channel_batch_delete": {
+            "description": "批量删除多个渠道的资源",
+            "priority": 100,
+            "aliases": ["跨渠道批量删除", "跨平台批量移除", "跨渠道删除", "批量删除", "batch delete"],
+        },
+    }
+
+    def intent_descriptors(self) -> dict[str, dict[str, Any]]:
+        return {
+            intent: {**descriptor, "aliases": list(descriptor.get("aliases", []))}
+            for intent, descriptor in self._INTENT_DESCRIPTORS.items()
+        }
+
     def can_handle(self, intent: Any) -> bool:
         intent_type = str(getattr(intent, "intent_type", "") or "")
         if intent_type in self.BATCH_INTENTS or intent_type in self.ANALYSIS_INTENTS:
@@ -99,8 +168,7 @@ class CrossChannelFeature:
         candidates = [
             tool for tool in (tools or [])
             if str(getattr(tool, "action", "") or "").lower() == batch_action
-            and str(getattr(tool, "resource_type", "") or "").lower()
-            in {"campaign", "campaigns"}
+            and str(getattr(tool, "resource_type", "") or "").lower() == "campaign"
         ]
         exact = [
             tool for tool in candidates
@@ -611,7 +679,9 @@ class CrossChannelFeature:
             item.get("platform"): item
             for item in results
             if item.get("success")
-            and item.get("tool", "").endswith("list_campaigns")
+            and item.get("action") == "list"
+            and item.get("resource_type") == "campaign"
+            and item.get("result_items_key")
         }
         for platform, listing in listing_results.items():
             report_def = cls._find_campaign_report_tool(services, platform)
@@ -621,15 +691,21 @@ class CrossChannelFeature:
                 listing.get("data")
                 if isinstance(listing.get("data"), dict) else {}
             )
-            campaigns = listing_data.get("campaigns") or []
-            campaign_ids = []
+            result_key = str(listing.get("result_items_key") or "").strip()
+            campaigns = listing_data.get(result_key) or []
+            result_id_fields = [
+                str(field).strip()
+                for field in (listing.get("result_id_fields") or [])
+                if str(field).strip()
+            ]
+            campaign_ids: list[str] = []
             for campaign in campaigns if isinstance(campaigns, list) else []:
                 if not isinstance(campaign, dict):
                     continue
-                campaign_id = (
-                    campaign.get("id")
-                    or campaign.get("campaign_id")
-                    or campaign.get("campaign_group_id")
+                campaign_id = next(
+                    (campaign.get(field) for field in result_id_fields
+                     if campaign.get(field) not in (None, "")),
+                    None,
                 )
                 if campaign_id is not None and str(campaign_id) not in campaign_ids:
                     campaign_ids.append(str(campaign_id))
@@ -670,10 +746,7 @@ class CrossChannelFeature:
                 key: value
                 for key, value in platform_params.items()
                 if key in report_def.input_schema.properties
-                and key not in {
-                    "campaign_id", "campaign_ids", "account_id",
-                    "customer_id", "advertiser_id",
-                }
+                and key not in set(report_def.related_resource_id_fields or [])
             }
             if getattr(intent, "date_range", None):
                 if "date_range" in report_def.input_schema.properties:
@@ -685,10 +758,28 @@ class CrossChannelFeature:
                             platform, intent.date_range, report_def, "date_preset"
                         ),
                     )
-            if "campaign_ids" in report_def.input_schema.properties:
-                report_input["campaign_ids"] = campaign_ids
-            elif "campaign_id" in report_def.input_schema.properties:
-                report_input["campaign_id"] = campaign_ids[0]
+            related_fields = [
+                str(field).strip()
+                for field in (report_def.related_resource_id_fields or [])
+                if str(field).strip() in report_def.input_schema.properties
+            ]
+            if not related_fields:
+                results.append({
+                    "tool": report_def.name,
+                    "platform": platform,
+                    "success": False,
+                    "error": "报表 Tool 未声明关联资源 ID 输入字段",
+                })
+                continue
+            related_field = related_fields[0]
+            related_schema = report_def.input_schema.properties.get(related_field, {})
+            related_type = (
+                related_schema.get("type")
+                if isinstance(related_schema, dict) else None
+            )
+            report_input[related_field] = (
+                campaign_ids if related_type == "array" else campaign_ids[0]
+            )
             for account_key in ("account_id", "advertiser_id", "customer_id"):
                 if account_key in report_def.input_schema.properties:
                     report_input[account_key] = per_platform_account
@@ -775,23 +866,16 @@ class CrossChannelFeature:
             if not definition.is_read_tool:
                 continue
             properties = getattr(definition.input_schema, "properties", {}) or {}
-            if not ({"campaign_id", "campaign_ids"} & set(properties)):
+            if str(getattr(definition, "related_resource_type", "") or "") != "campaign":
                 continue
-            action = str(getattr(definition, "action", "")).lower()
-            resource = str(getattr(definition, "resource_type", "")).lower()
-            if action not in {"report", "export", "download"} and resource != "report":
+            if not any(
+                str(field).strip() in properties
+                for field in (getattr(definition, "related_resource_id_fields", []) or [])
+            ):
                 continue
             candidates.append(definition)
         if not candidates:
             return None
-        preferred = [
-            definition for definition in candidates
-            if "get_campaign_report" in (
-                getattr(definition, "intent_types", []) or []
-            )
-        ]
-        if len(preferred) == 1:
-            return preferred[0]
         return candidates[0] if len(candidates) == 1 else None
 
     @classmethod

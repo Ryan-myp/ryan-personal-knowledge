@@ -70,7 +70,7 @@ CI 在 `.github/workflows/ad-agent-harness.yml` 中固定了 skill-up commit，
 依赖 skill-up 的 Go 内部包，因此不会被内部重构绑定。
 
 真实 Provider 测试前先运行仓库根目录的
-`python3 agents/ad_agent/scripts/provider_preflight.py --platform <platform> --tool <tool> --account-id <test-account>`。
+`./scripts/ad-agent-python agents/ad_agent/scripts/provider_preflight.py --platform <platform> --tool <tool> --account-id <test-account>`。
 该命令只检查本地注册表、白名单、权限、凭证配置和 live/reconciliation 门禁，
 输出中的 `provider_calls` 固定为 0，不会访问渠道。插件部署可用
 `agents/ad_agent/scripts/plugin_preflight.py` 检查完整性与签名要求；离线路径

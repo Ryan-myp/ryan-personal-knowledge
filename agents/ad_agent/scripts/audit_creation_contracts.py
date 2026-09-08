@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Audit declarative ad-creation contracts without provider I/O.
 
 This is the creation-form counterpart to ``audit_capabilities.py``.  It

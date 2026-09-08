@@ -335,12 +335,12 @@ class AdAgentResponseRenderer:
         if any(keyword in text for keyword in ("你好", "hello", "hi", "在吗")):
             return (
                 "你好！我是 ad-agent，您的广告投放专家助手。\n\n"
-                "我可以帮您创建、查询和分析各广告平台 Campaign，"
+                "我可以基于当前已注册的 Skills 和 Tools，帮您创建、查询和分析广告资源，"
                 "也可以生成跨渠道预算建议。"
             )
         if any(keyword in text for keyword in ("帮助", "help", "你能做什么", "怎么使用")):
             return (
-                "我是广告投放专家助手，支持 Meta、TikTok、Google Ads 和 DV360 "
-                "的 Campaign 查询、参数校验、dry-run 创建计划、报表分析与跨渠道管理。"
+                "我是广告投放专家助手，支持当前已注册能力提供的资源查询、参数校验、"
+                "dry-run 创建计划、报表分析与跨渠道管理。具体能力以当前 Skills 和 Tools 为准。"
             )
         return "我还没完全理解你的需求。你可以告诉我想查询或管理哪个平台的什么内容。"

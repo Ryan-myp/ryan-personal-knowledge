@@ -220,6 +220,7 @@ class WorkflowCoordinator:
             resource_id_field = str(
                 item.get("resource_id_field")
                 or self.services.resource_id_field(definition)
+                or ""
             )
             raw_resource_id = data.get(resource_id_field)
             if raw_resource_id in (None, ""):

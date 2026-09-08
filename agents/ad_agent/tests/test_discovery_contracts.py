@@ -80,6 +80,27 @@ def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
     assert by_name["dv360_create_line_item"].parent_resource_id_field == "io_id"
 
 
+def test_cross_channel_tools_publish_result_relationship_metadata():
+    definitions = []
+    for capability in (
+        create_meta_capability(), create_google_capability(),
+        create_tiktok_capability(), create_dv360_capability(),
+    ):
+        definitions.extend(definition for definition, _ in capability.register_tools())
+
+    by_name = {definition.name: definition for definition in definitions}
+    for name in ("meta_list_campaigns", "google_list_campaigns",
+                 "tiktok_list_campaigns", "dv360_list_campaigns"):
+        definition = by_name[name]
+        assert definition.result_items_key == "campaigns"
+        assert definition.result_id_fields
+    for name in ("meta_get_campaign_report", "google_get_campaign_report",
+                 "tiktok_get_campaign_report"):
+        definition = by_name[name]
+        assert definition.related_resource_type == "campaign"
+        assert definition.related_resource_id_fields
+
+
 @pytest.mark.parametrize(
     "campaign_type, expected_tools",
     [
@@ -153,14 +174,14 @@ def test_google_app_campaign_route_selects_app_hierarchy_chain():
     }
 
 
-def test_google_app_campaign_chain_is_dry_run_ready():
+def test_google_app_campaign_requires_declared_parameters_before_execution():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["123"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
     runtime.register_capability(create_google_capability())
 
     result = runtime.run(
-        "创建 Google App campaign 名称=app-dry-run",
+        "创建 Google App 广告 名称=app-dry-run",
         user_id="app-chain-test",
         account_id="123",
         platform_params={
@@ -182,11 +203,14 @@ def test_google_app_campaign_chain_is_dry_run_ready():
         },
     )
 
+    assert result["intent"]["intent_type"] == "create_campaign"
     assert result["results"] == []
     assert result["workflow_id"] is None
+    assert result["needs_input"] is True
     assert result["ui"]["cards"]
     assert result["tool_plan"] == {}
-    assert all(item["success"] and item["data"]["simulated"] for item in result["results"])
+    assert result["ui"]["cards"][0]["ready"] is False
+    assert result["ui"]["cards"][0]["missing_fields"]
 
 
 @pytest.mark.parametrize(

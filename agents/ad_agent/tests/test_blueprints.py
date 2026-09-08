@@ -38,9 +38,77 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
     assert versions["tiktok.app_conversion_video"] == "2.0.0"
+    assert versions["tiktok.lead_generation"] == "2.0.0"
     assert versions["tiktok.product_sales_video"] == "2.0.0"
     assert versions["tiktok.traffic_video"] == "3.0.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
+
+
+def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    blueprint = runtime.creation_blueprints.get("tiktok.lead_generation")
+
+    assert blueprint is not None
+    assert blueprint.version == "2.0.0"
+    assert blueprint.tools == (
+        "tiktok_smart_plus_create_campaign",
+        "tiktok_smart_plus_create_adgroup",
+        "tiktok_smart_plus_create_ad",
+    )
+    fields = {field["path"]: field for field in blueprint.fields}
+    assert fields["ad.page_list"]["required"] is True
+    assert fields["ad.page_list"]["manual_entry"]["source"] == "provider_instant_page"
+
+
+def test_tiktok_optional_boolean_defaults_are_materialized_in_creation_card():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    intent = ParsedIntent(
+        "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
+        platform_params={"tiktok": {"objective_type": "TRAFFIC"}},
+    )
+
+    card = runtime.build_creation_ui(intent)["cards"][0]
+    fields = {field["path"]: field for field in card["fields"]}
+
+    assert fields["campaign.is_search_campaign"]["value"] is False
+    assert fields["campaign.catalog_enabled"]["value"] is False
+    assert "campaign.catalog_enabled" not in card["missing_fields"]
+
+
+def test_creation_card_separates_safe_defaults_from_account_context_inputs():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
+        platform_params={"tiktok": {"objective": "TRAFFIC"}},
+    ))["cards"][0]
+    fields = {field["path"]: field for field in card["fields"]}
+
+    assert card["auto_filled_count"] >= 8
+    assert fields["campaign.campaign_name"]["input_mode"] == "auto_default"
+    assert fields["campaign.campaign_name"]["user_required"] is False
+    assert fields["ad_group.budget_mode"]["value"] == "BUDGET_MODE_DYNAMIC_DAILY_BUDGET"
+    assert fields["ad_group.location_ids"]["input_mode"] == "context_required"
+    assert fields["ad_group.location_ids"]["user_required"] is True
+    assert fields["ad_group.budget"]["user_required"] is True
+
+
+def test_meta_creation_card_materializes_objective_dependent_defaults():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 Meta 流量广告", ["meta"],
+        platform_params={"meta": {"objective": "OUTCOME_TRAFFIC"}},
+    ))["cards"][0]
+    fields = {field["path"]: field for field in card["fields"]}
+
+    assert fields["campaign.buying_type"]["value"] == "AUCTION"
+    assert fields["ad_set.optimization_goal"]["value"] == "LANDING_PAGE_VIEWS"
+    assert fields["ad_set.billing_event"]["value"] == "IMPRESSIONS"
+    assert fields["ad_set.bid_strategy"]["value"] == "LOWEST_COST_WITHOUT_CAP"
+    assert fields["ad.link"]["user_required"] is True
 
 
 def test_tiktok_spark_blueprint_uses_current_all_in_one_surface():
@@ -514,7 +582,8 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
         platform_params={"tiktok": {"objective": "LEAD_GENERATION"}},
     ))["cards"][0]
     lead_fields = {item["path"]: item for item in lead["fields"]}
-    assert lead_fields["ad.tracking_pixel_id"]["control"] == "lookup"
+    assert lead_fields["ad.video_id"]["control"] == "asset_picker"
+    assert lead_fields["ad.page_list"]["presentation"] == "advanced_json"
 
     sales = tiktok.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 商品广告", ["tiktok"],
@@ -594,6 +663,122 @@ def test_incomplete_creation_returns_card_without_failed_tool_result():
     assert result["response_source"] == "creation_card"
     assert result.get("workflow_id") is None
     assert "请提供要操作的" in result["reply"]
+
+
+def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
+    events = []
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+
+    result = runtime.run(
+        "创建 TikTok 广告系列",
+        session_id="ambiguous-tiktok-creation",
+        user_id="test-user",
+        event_callback=events.append,
+    )
+
+    assert result["results"] == []
+    assert result["response_source"] == "creation_clarification"
+    assert result["ui"]["cards"] == []
+    assert result["ui"]["clarification"]["kind"] == "creation_clarification"
+    assert {item["label"] for item in result["ui"]["clarification"]["options"]} >= {
+        "流量", "应用推广", "潜在客户"
+    }
+    assert result["tool_plan"] == {}
+    assert result["execution_plan"] == {}
+    assert not any(
+        event.get("type") == "plan" for event in events
+    )
+    assert not any(
+        event.get("type") in {"node_started", "node_status", "confirmation"}
+        for event in events
+    )
+
+
+def test_creation_follow_up_adopts_persisted_selector_and_then_shows_full_form():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+    session_id = "follow-up-tiktok-creation"
+
+    first = runtime.run(
+        "创建 TikTok 广告系列", session_id=session_id, user_id="test-user"
+    )
+    second = runtime.run(
+        "流量广告", session_id=session_id, user_id="test-user"
+    )
+
+    assert first["ui"]["cards"] == []
+    assert second["intent"]["intent_type"] == "create_campaign"
+    assert second["intent"]["platforms"] == ["tiktok"]
+    assert second["intent"]["platform_params"]["tiktok"]["objective_type"] == "TRAFFIC"
+    assert second["response_source"] == "creation_card"
+    assert second["ui"]["cards"][0]["blueprint_id"] == "tiktok.traffic_video"
+    assert second["tool_plan"] == {}
+    assert second["execution_plan"] == {}
+
+
+def test_incomplete_update_asks_for_resource_before_materializing_tool_plan():
+    events = []
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_meta_capability())
+
+    result = runtime.run(
+        "更新 Meta campaign 状态为暂停",
+        session_id="incomplete-update",
+        user_id="test-user",
+        account_id="meta-test-account",
+        event_callback=events.append,
+    )
+
+    assert result["response_source"] == "action_clarification"
+    assert result["results"] == []
+    assert result["tool_plan"] == {}
+    assert result["execution_plan"] == {}
+    assert result["workflow_id"] is None
+    assert result["ui"]["clarification"]["kind"] == "action_clarification"
+    assert any(item["path"] == "campaign_id" for item in result["ui"]["clarification"]["fields"])
+    assert not any(event.get("type") == "plan" for event in events)
+    assert not any(event.get("type") in {"node_started", "node_status", "confirmation"} for event in events)
+
+
+def test_action_clarification_draft_survives_restart_and_merges_short_follow_up():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    store = AdAgentStore(":memory:")
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["meta-test-account"]}
+    runtime = AgentRuntime(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=store,
+        whitelist_validator=validator,
+    )
+    runtime.register_capability(create_meta_capability())
+    first = runtime.run(
+        "删除 Meta campaign",
+        session_id="restart-action-draft",
+        user_id="test-user",
+        account_id="meta-test-account",
+    )
+    assert first["ui"]["clarification"]["kind"] == "action_clarification"
+
+    restarted = AgentRuntime(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=store,
+        whitelist_validator=validator,
+    )
+    restarted.register_capability(create_meta_capability())
+    second = restarted.run(
+        "campaign_id=campaign-123",
+        session_id="restart-action-draft",
+        user_id="test-user",
+        account_id="meta-test-account",
+    )
+
+    assert second["intent"]["intent_type"] == "delete_campaign"
+    assert second["intent"]["platform_params"]["meta"]["campaign_id"] == "campaign-123"
+    assert second["response_source"] != "action_clarification"
 
 
 def test_explicit_blueprint_submission_waits_for_required_fields_before_execution():

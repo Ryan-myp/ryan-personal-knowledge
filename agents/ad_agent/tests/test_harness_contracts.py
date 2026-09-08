@@ -138,7 +138,7 @@ def test_batch_budget_uses_provider_schema_and_rejects_unsupported_provider():
     runtime.register_capability(create_dv360_capability())
 
     result = runtime.run(
-        "批量更新 DV360 campaign_ids=campaign-1 预算100元/天",
+        "批量更新预算 DV360 campaign_ids=campaign-1 预算100元/天",
         user_id="u1",
         platform_params={"dv360": {"account_id": "d1"}},
     )
@@ -155,21 +155,25 @@ def test_batch_items_have_global_sequences_and_keep_account_on_validation_failur
     runtime = AgentRuntime(
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
-        whitelist_validator=_whitelist(meta=["m1"], google=["g1"]),
+        whitelist_validator=_whitelist(meta=["m1"], **{"google-ads": ["g1"]}),
     )
     runtime.register_capability(create_meta_capability())
     runtime.register_capability(create_google_capability())
 
     result = runtime.run(
-        "跨渠道批量更新 Meta 和 Google campaign_ids=meta-1 预算100元/天",
+        "跨渠道批量更新预算 Meta 和 Google campaign_ids=meta-1 预算=100元/天",
         user_id="u1",
         platform_params={
             "meta": {
                 "account_id": "m1",
-                "campaign_ids": ["meta-1"],
-                "updates": {"invalid_field": "reject-me"},
-            },
-            "google": {"account_id": "g1", "campaign_ids": ["google-1"]},
+                    "campaign_ids": ["meta-1"],
+                    "budget": 100,
+                    "updates": {"invalid_field": "reject-me"},
+                },
+                "google": {
+                    "account_id": "g1", "campaign_ids": ["google-1"],
+                    "budget": 100,
+                },
         },
     )
 
@@ -187,7 +191,7 @@ def test_cross_channel_batch_status_mapping_is_provider_owned():
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         whitelist_validator=_whitelist(
-            meta=["m1"], google=["g1"], tiktok=["t1"], dv360=["d1"],
+            meta=["m1"], **{"google-ads": ["g1"]}, tiktok=["t1"], dv360=["d1"],
         ),
     )
     runtime.register_capability(create_meta_capability())
@@ -655,13 +659,10 @@ def test_workflow_write_items_are_checkpointed_before_execution():
         session_id="checkpoint-session", user_id="u1", account_id="m1",
     )
 
-    workflow = store.get_workflow(result["workflow_id"])
-    assert workflow["items"]
-    assert all(item["status"] == "succeeded" for item in workflow["items"])
-    assert all(item["account_id"] == "m1" for item in workflow["items"])
-    assert workflow["items"][1]["parent_resource_type"] == "campaign"
-    assert workflow["items"][1]["parent_resource_id"]
-    assert len(workflow["items"]) == 3
+    # A campaign without a declared objective is a clarification turn, not a
+    # partially materialized workflow.
+    assert result["workflow_id"] is None
+    assert result["ui"]["clarification"]
 
 
 def test_workflow_resume_plan_preserves_account_scope():
@@ -932,9 +933,9 @@ def test_turn_tool_budget_stops_long_create_chain():
         account_id="m1",
     )
 
-    assert result["results"][0]["success"] is True
-    assert any(item.get("data", {}).get("execution_status") == "budget_exceeded"
-               for item in result["results"])
+    assert result["results"] == []
+    assert result["ui"]["clarification"]
+    assert result["tool_plan"] == {}
 
 
 def test_missing_tool_permission_fails_closed_before_handler_execution():
@@ -1016,8 +1017,8 @@ def test_trusted_principal_overrides_user_id_and_restricts_accounts():
         account_id="m2",
         principal=principal,
     )
-    assert denied["results"]
-    assert "授权范围" in denied["results"][0]["error"]
+    assert denied["results"] == []
+    assert "授权范围" in denied["policy_errors"][0]
 
     allowed = runtime.run(
         "创建 Meta campaign 名称=Allowed",
@@ -1025,7 +1026,8 @@ def test_trusted_principal_overrides_user_id_and_restricts_accounts():
         account_id="m1",
         principal=principal,
     )
-    assert allowed["results"]
+    assert allowed["results"] == []
+    assert allowed["ui"]["clarification"]
     assert store.get_session(allowed["session_id"])["user_id"] == "trusted-user"
 
 
@@ -1278,7 +1280,7 @@ def test_store_records_explicit_schema_migrations():
     rows = store._get_conn().execute(
         "SELECT version FROM schema_migrations ORDER BY version"
     ).fetchall()
-    assert [int(row[0]) for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    assert [int(row[0]) for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 def test_golden_intent_cases_remain_deterministic():
@@ -1288,6 +1290,22 @@ def test_golden_intent_cases_remain_deterministic():
         )
     )
     parser = LLMIntentParser()
+    definitions = []
+    for factory in (
+        create_meta_capability,
+        create_google_capability,
+        create_tiktok_capability,
+        create_dv360_capability,
+    ):
+        definitions.extend(definition for definition, _ in factory().register_tools())
+    parser.refresh_tool_catalog(definitions)
+    parser.register_platform_aliases("google-ads", ["google", "google ads"])
+    parser.register_platform_aliases("meta", ["meta"])
+    parser.register_platform_aliases("tiktok", ["tiktok"])
+    parser.register_platform_aliases("dv360", ["dv360"])
+    from agents.ad_agent.features.factory import discover_features
+    for feature in discover_features():
+        parser.register_intent_descriptors(feature.intent_descriptors())
     for case in cases:
         intent = parser.parse(case["input"], ToolContext("golden", "eval"))
         assert intent.intent_type == case["intent_type"], case["id"]
@@ -1390,7 +1408,6 @@ def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
                 calls.append((name, payload))
                 or ToolResult.ok({"payload": {"widget_key": "w-1", "state": "active"}})
             ),
-            resolve_tool=lambda name: read if name == read.name else None,
             resolve_read_tool=lambda _write_name: read,
         )
     )

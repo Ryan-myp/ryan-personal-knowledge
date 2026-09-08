@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 业务层知识库初始化脚本
 包含：业务策略、出价策略、定向策略、素材指南

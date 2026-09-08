@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Run the no-network Provider -> Tool -> Runtime contract harness.
 
 The harness uses the public Capability factories and a recording client.  It

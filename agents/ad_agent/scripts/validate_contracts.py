@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Validate the executable ad-agent tool contract without provider I/O.
 
 This is intentionally a release gate rather than a unit-test helper.  It

@@ -1,3 +1,8 @@
+[tool.ad_agent]
+# Keep the interpreter contract discoverable to editors and local tooling.
+# The executable enforcement lives in scripts/ad-agent-python and setup.py.
+python_version = "3.13"
+
 [tool.pytest.ini_options]
 testpaths = ["agents/ad_agent/tests"]
 python_files = ["test_*.py"]

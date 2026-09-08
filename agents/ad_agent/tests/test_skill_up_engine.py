@@ -58,12 +58,13 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
 
     assert result["exit_code"] == 0
     assert "tiktok_smart_plus_create_campaign" in result["final_message"]
-    assert '"mode": "dry_run"' in result["final_message"]
+    assert '"needs_input": true' in result["final_message"]
     assert (tmp_path / "outputs" / "ad-agent-runtime-result.json").exists()
     persisted = json.loads(
         (tmp_path / "outputs" / "ad-agent-runtime-result.json").read_text()
     )
-    assert persisted["results"][0]["data"]["simulated"] is True
+    assert persisted["results"] == []
+    assert persisted["ui"]["needs_input"] is True
 
 
 def test_skill_up_adapter_does_not_accept_credentials_from_case_kwargs(tmp_path):

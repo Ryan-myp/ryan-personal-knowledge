@@ -121,7 +121,7 @@ business:
 ### 步骤 3：自动生效
 ```bash
 # 无需修改其他代码，自动加载
-python agents/ad_agent/api_server.py
+make ad-agent-run
 ```
 
 ## 与渠道层的关系

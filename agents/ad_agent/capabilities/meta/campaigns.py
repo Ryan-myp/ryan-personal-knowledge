@@ -137,6 +137,7 @@ class MetaCreateCampaignHandler(ToolHandler):
                 campaign_id = self.client.create_campaign(
                     account_id=account_id,
                     campaign=input_data,
+                    live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
                 )
                 return ToolResult.ok({
                     "campaign_id": campaign_id,

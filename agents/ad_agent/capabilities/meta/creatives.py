@@ -21,17 +21,21 @@ class MetaCreateCreativeHandler(ToolHandler):
         if not self.client or not ctx.account_id:
             return ToolResult.error("Meta client not configured or account_id missing")
         try:
-            creative_id = self.client.create_creative(
+            result = self.client.create_creative(
                 ctx.account_id,
                 {
                     key: value
                     for key, value in input_data.items()
                     if key != "account_id"
                 },
+                live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
             )
+            if isinstance(result, dict) and result.get("execution_status") == "planned":
+                return ToolResult.ok({**result, "name": input_data.get("name")})
             return ToolResult.ok({
-                "creative_id": creative_id,
+                "creative_id": result,
                 "name": input_data.get("name"),
+                "status": "PAUSED",
             })
         except Exception as exc:
             return ToolResult.error(f"Failed to create Meta creative: {exc}")

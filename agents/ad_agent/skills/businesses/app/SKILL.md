@@ -1,7 +1,7 @@
 ---
 business:
   name: app
-  version: "1.0"
+  version: "1.0.0"
   description: "App 推广投放 Skill - 专注于应用安装、激活、留存"
   allowed_channels:
     - google

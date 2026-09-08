@@ -4,7 +4,7 @@ id: google-campaign-hierarchy
 title: Google Ads Campaign 层级结构
 layer: platform
 knowledge_type: hierarchy
-platform: google
+platform: google-ads
 source: Google Ads 官方文档 + API 实测
 source_ref: platforms/google/campaigns.md
 version: "1.0.0"

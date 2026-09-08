@@ -54,7 +54,7 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ 294 tools              │    │
+│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ 312 tools              │    │
 │  │ - 上下文反馈         │ │ - 确定性执行   │  │ - 受控 Runtime gates     │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
@@ -267,7 +267,7 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单（当前 Capability 共 294 个工具）
+## 三、工具清单（当前 Capability 共 312 个工具）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
@@ -308,7 +308,7 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 
 ### Provider 接口与版本演进
 
-当前 294 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
+当前 312 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
 官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
 参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
 发布门禁。
@@ -566,7 +566,7 @@ runtime.auto_load_skills(
 |------|------|------|
 | **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
 | **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 294 个） |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 312 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）

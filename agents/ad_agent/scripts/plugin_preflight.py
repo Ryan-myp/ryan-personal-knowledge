@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Run package integrity/trust preflight without importing Plugin code."""
 
 from __future__ import annotations

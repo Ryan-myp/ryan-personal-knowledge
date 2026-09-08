@@ -201,6 +201,48 @@ def tiktok_updates(resource_type: str) -> dict[str, Any]:
     )
 
 
+def tiktok_smart_plus_updates(resource_type: str) -> dict[str, Any]:
+    """Closed update contract for TikTok's current Upgraded Smart+ API."""
+    common = {
+        "name": _field("string", "Resource name"),
+        "status": _field("string", "Compatibility status; normalized to operation_status", enum=["ACTIVE", "ENABLED", "PAUSED", "DISABLE", "ENABLE"]),
+        "operation_status": _field(
+            "string", "Smart+ delivery status", enum=["DISABLE", "ENABLE"],
+        ),
+    }
+    if resource_type == "campaign":
+        common.update({
+            "budget_mode": _field("string", "Campaign budget mode"),
+            "budget": _field("number", "Campaign budget", minimum=0),
+            "budget_auto_adjust_strategy": _field("string", "Automatic budget adjustment"),
+        })
+    elif resource_type == "adgroup":
+        common.update({
+            "promotion_type": _field("string", "Optimization location"),
+            "optimization_goal": _field("string", "Optimization goal"),
+            "bid_type": _field("string", "Bid mode"),
+            "bid_price": _field("number", "Bid price", minimum=0),
+            "conversion_bid_price": _field("number", "Conversion bid price", minimum=0),
+            "billing_event": _field("string", "Billing event"),
+            "budget_mode": _field("string", "Ad group budget mode"),
+            "budget": _field("number", "Ad group budget", minimum=0),
+            "schedule_start_time": _field("string", "Schedule start time"),
+            "schedule_end_time": _field("string", "Schedule end time"),
+            "location_ids": _field("array", "Target locations", items={"type": "string"}),
+            "saved_audience_id": _field("string", "Saved audience ID"),
+        })
+    elif resource_type == "ad":
+        common.update({
+            "ad_text": _field("string", "Primary ad text"),
+            "landing_page_url": _field("string", "Landing page URL"),
+            "call_to_action_id": _field("string", "Call to action ID"),
+            "dark_post_status": _field("string", "Dark post status"),
+        })
+    else:
+        raise ValueError(f"Unsupported Smart+ update resource: {resource_type}")
+    return _object(common, f"Allowed TikTok Smart+ {resource_type} update fields")
+
+
 def dv360_updates(resource_type: str) -> dict[str, Any]:
     # DV360 write adapters are intentionally dry-run only.  Keep the shape
     # bounded for obvious metadata fields, while allowing provider payload

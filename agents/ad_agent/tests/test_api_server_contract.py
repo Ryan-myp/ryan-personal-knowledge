@@ -304,7 +304,9 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
         "/skills/builtin/", "managed_skills", "builtin_skills",
-        "knowledgeFileInput", "handleKnowledgeFileUpload", "view-hidden", "返回检索",
+        "knowledgeFileInput", "handleKnowledgeFileUpload", "view-hidden", "返回目录",
+        "knowledgeCatalogToggle", "knowledge-reader-actions", "复制为我的草稿", "编辑文档", "管理文档",
+        "knowledge-table-wrap", "knowledge-task", "knowledge-render-v3",
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
         "executionModeSelect", "/settings/execution-mode", "live_mode_available",
         "live_mode_reason", "应用模式", "live · 受控执行",
@@ -567,6 +569,20 @@ def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
             )
             assert managed_result["title"] == "团队 Meta 投放经验"
             assert after_publish.json()["summary"]
+            assert after_publish.json()["summary_mode"] == "lexical"
+
+            catalog = client.get("/knowledge/catalog", headers=headers)
+            assert catalog.status_code == 200
+            assert catalog.json()["count"] >= 1
+            assert any(
+                item["document_id"] == f"managed:{document_id}"
+                for item in catalog.json()["documents"]
+            )
+            builtin = next(
+                item for item in catalog.json()["documents"]
+                if item["document_id"] == "google-campaign-hierarchy"
+            )
+            assert "AdGroup" in builtin["excerpt"]
     finally:
         managed_runtime.task_executor.shutdown(wait=True)
         store.close()

@@ -21,6 +21,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -981,7 +982,10 @@ class ManagedSkillManager:
                         "response_format": "session_result",
                         "timeout_seconds": timeout,
                         "local": {
-                            "command": "python3",
+                            # Reuse the interpreter that owns the managed
+                            # evaluation process; never fall back to the
+                            # host's system Python.
+                            "command": sys.executable,
                             "args": [
                                 str(adapter), "--input", "${input_file}",
                                 "--output", "${output_file}",

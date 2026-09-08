@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 DV360 知识库初始化脚本（简化版）
 基于官方文档

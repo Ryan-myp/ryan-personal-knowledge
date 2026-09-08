@@ -1,5 +1,12 @@
 # ad-agent 专属开发约束
 
+## Python 解释器约束
+
+Agent 运行时、测试、评测、审计和知识库维护脚本统一使用 Python 3.13。请从仓库根目录
+使用 `make ad-agent-*`，或使用 `./scripts/ad-agent-python` 包装器；不要直接调用系统
+`python`/`python3`。包装器会在真正导入 Agent 代码前拒绝错误版本，`.python-version`
+则为 pyenv/asdf 等本地工具提供默认版本提示。
+
 ## 不可改变的模型
 
 本模块采用“单 Agent + 多 Skills + Tools”：
@@ -65,9 +72,7 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 ## 修改完成前检查
 
 ```bash
-python3.13 -m compileall -q agents/ad_agent
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. python3.13 -m pytest agents/ad_agent/tests -q
-python3 agents/ad_agent/scripts/audit_capabilities.py
+make ad-agent-check
 git diff --check
 ```
 

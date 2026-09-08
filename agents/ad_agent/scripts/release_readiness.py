@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Produce the ad-agent release-readiness report.
 
 This is the single local quality gate for the harness. It deliberately keeps

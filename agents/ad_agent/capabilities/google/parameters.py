@@ -10,12 +10,23 @@ GOOGLE_CHANNEL_TYPES = [
     # ``MAX`` and ``APP`` are intentionally not advertised here: they are
     # terminology used by older internal examples, not provider enum values.
     "SEARCH", "DISPLAY", "SHOPPING", "HOTEL", "VIDEO", "MULTI_CHANNEL",
-    "LOCAL", "SMART", "DEMAND_GEN", "PERFORMANCE_MAX", "TRAVEL",
-    "LOCAL_SERVICES",
+    "LOCAL", "SMART", "DEMAND_GEN", "PERFORMANCE_MAX", "TRAVEL", "LOCAL_SERVICES",
 ]
 GOOGLE_CHANNEL_INPUT_TYPES = [*GOOGLE_CHANNEL_TYPES, "MAX", "APP"]
 GOOGLE_CHANNEL_TYPE_INTENT_MAP = {"MAX": "PERFORMANCE_MAX", "APP": "MULTI_CHANNEL"}
-GOOGLE_CHANNEL_SUB_TYPES = ["APP_CAMPAIGN", "APP_CAMPAIGN_FOR_ENGAGEMENT"]
+# Google Ads v24 Campaign.advertising_channel_sub_type is a single provider
+# enum shared by several campaign families.  The old contract only exposed
+# App values, which made valid Video/Local/Smart/Travel campaign requests fail
+# before reaching the provider.
+GOOGLE_CHANNEL_SUB_TYPES = [
+    "SEARCH_MOBILE_APP", "DISPLAY_MOBILE_APP", "SEARCH_EXPRESS", "DISPLAY_EXPRESS",
+    "SHOPPING_SMART_ADS", "DISPLAY_GMAIL_AD", "DISPLAY_SMART_CAMPAIGN",
+    "VIDEO_ACTION", "VIDEO_NON_SKIPPABLE", "APP_CAMPAIGN",
+    "APP_CAMPAIGN_FOR_ENGAGEMENT", "LOCAL_CAMPAIGN",
+    "SHOPPING_COMPARISON_LISTING_ADS", "SMART_CAMPAIGN", "VIDEO_SEQUENCE",
+    "APP_CAMPAIGN_FOR_PRE_REGISTRATION", "VIDEO_REACH_TARGET_FREQUENCY",
+    "TRAVEL_ACTIVITIES", "YOUTUBE_AUDIO",
+]
 GOOGLE_BIDDING_STRATEGIES = [
     "MANUAL_CPC", "MAXIMIZE_CLICKS", "MAXIMIZE_CONVERSIONS", "TARGET_CPA",
     "TARGET_ROAS", "MAXIMIZE_CONVERSION_VALUE", "TARGET_IMPRESSION_SHARE",
@@ -861,6 +872,7 @@ def google_campaign_schema() -> dict[str, Any]:
                     "DEMAND_GEN": ["demand gen", "demand generation", "需求开发"],
                     "PERFORMANCE_MAX": ["performance max", "pmax", "效果最大化"],
                     "TRAVEL": ["travel campaign", "旅游广告"],
+                    "LOCAL_SERVICES": ["local services campaign", "本地服务广告", "本地生活服务广告"],
                 },
                 input_aliases=["campaign_type"], default="SEARCH",
                 intent_field="campaign_type",

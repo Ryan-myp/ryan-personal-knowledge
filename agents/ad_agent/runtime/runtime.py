@@ -204,9 +204,9 @@ class AgentRuntime:
         # validated platform aliases to the parser before the first turn;
         # Parser/Core must not scan the filesystem independently.
         for skill in self.skill_loader.list_all().values():
-            self.intent_parser.register_platform_aliases(
-                skill.platform, skill.platform_aliases or []
-            )
+            register_aliases = getattr(self.intent_parser, "register_platform_aliases", None)
+            if callable(register_aliases):
+                register_aliases(skill.platform, skill.platform_aliases or [])
         self._llm = llm_client
         self.conversation_title_generator = ConversationTitleGenerator()
         # A conversation title is presentation metadata and must never add a
@@ -221,7 +221,9 @@ class AgentRuntime:
         # startup gate would reject a valid LLM configuration while checking
         # only the Runtime field.
         if self._llm is None:
-            self._llm = self.intent_parser.model_client()
+            model_client = getattr(self.intent_parser, "model_client", None)
+            if callable(model_client):
+                self._llm = model_client()
         self._sessions: dict[str, "SessionContext"] = {}
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.RLock()
@@ -249,9 +251,11 @@ class AgentRuntime:
                     (PluginKind.FEATURE.value,),
                     description=f"Runtime feature {feature_name}",
                 )
-            self.intent_parser.register_intent_descriptors(
-                feature.intent_descriptors()
+            register_descriptors = getattr(
+                self.intent_parser, "register_intent_descriptors", None
             )
+            if callable(register_descriptors):
+                register_descriptors(feature.intent_descriptors())
         self.response_renderer: ResponseRenderer = (
             response_renderer or discover_response_renderer()
         )
@@ -1026,12 +1030,12 @@ class AgentRuntime:
         }:
             return {
                 "status": "needs_input", "missing": ["action"],
-                "reason": "请明确到期后要执行的业务动作，例如查询 Campaign performance 或创建广告系列。",
+                "reason": "请明确到期后要执行的业务动作，例如查询资源 performance 或创建资源。",
             }
         if not candidate.platforms:
             return {
                 "status": "needs_input", "missing": ["platform"],
-                "reason": "请明确执行渠道，例如 Meta、Google Ads、TikTok、DV360 或跨渠道。",
+                "reason": "请明确一个当前已注册的执行渠道，或说明需要跨渠道处理。",
                 "intent_type": candidate.intent_type,
             }
         plan = self.intent_router.route(candidate, self.registry)
@@ -1187,19 +1191,23 @@ class AgentRuntime:
         """Synchronize parser discovery data with the active Tool registry."""
         self._creation_blueprint_context_cache.clear()
         definitions = self.registry.list_all()
-        self.intent_parser.refresh_tool_catalog(definitions)
+        refresh_catalog = getattr(self.intent_parser, "refresh_tool_catalog", None)
+        if callable(refresh_catalog):
+            refresh_catalog(definitions)
         for feature in self.features:
-            self.intent_parser.register_intent_descriptors(
-                feature.intent_descriptors()
+            register_descriptors = getattr(
+                self.intent_parser, "register_intent_descriptors", None
             )
+            if callable(register_descriptors):
+                register_descriptors(feature.intent_descriptors())
 
         # Skill aliases are context metadata, but they must follow the same
         # lifecycle as their active Skill.  Provider identity itself remains
         # discovered from Tool metadata; aliases never create Tools.
         for skill in list(self._skill_objects.values()):
-            self.intent_parser.register_platform_aliases(
-                skill.platform, skill.platform_aliases or []
-            )
+            register_aliases = getattr(self.intent_parser, "register_platform_aliases", None)
+            if callable(register_aliases):
+                register_aliases(skill.platform, skill.platform_aliases or [])
 
     @staticmethod
     def _canonical_platform(platform: str) -> str:
@@ -1207,6 +1215,41 @@ class AgentRuntime:
         from ..capabilities.factory import normalize_platform
 
         return normalize_platform(platform)
+
+    def _resolve_platform_identifier(self, platform: str) -> str:
+        """Resolve a caller-facing platform alias from active Skill metadata.
+
+        Canonicalization only normalizes separators. Alias resolution belongs
+        to the active Skill/Capability lifecycle, so structured continuation
+        payloads such as ``platform_params={"google": ...}`` can converge on
+        the registered ``google-ads`` key without a Core provider map.
+        """
+        raw = str(platform or "").strip().casefold()
+        normalized = self._canonical_platform(raw)
+        if not raw:
+            return ""
+        for skill in self.skill_loader.list_all().values():
+            canonical = self._canonical_platform(getattr(skill, "platform", ""))
+            aliases = {
+                str(getattr(skill, "platform", "") or "").strip().casefold(),
+                canonical,
+                canonical.replace("-", " "),
+            }
+            aliases.update(
+                str(alias or "").strip().casefold()
+                for alias in (getattr(skill, "platform_aliases", []) or [])
+            )
+            aliases.update(
+                self._canonical_platform(alias)
+                for alias in list(aliases)
+            )
+            if raw in aliases or normalized in aliases:
+                return canonical
+        for definition in self.registry.list_all():
+            canonical = self._canonical_platform(getattr(definition, "platform", ""))
+            if normalized == canonical:
+                return canonical
+        return normalized
 
     @property
     def persistence_store(self):
@@ -1414,9 +1457,16 @@ class AgentRuntime:
         available_tools: list, tenant_id: str,
     ) -> dict:
         """Optimize the current Tool context through the selector contract."""
-        return self.tool_selector.optimize_for_llm(
-            user_input, intent, available_tools, tenant_id=tenant_id
-        )
+        optimizer = self.tool_selector.optimize_for_llm
+        try:
+            parameters = inspect.signature(optimizer).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        if "tenant_id" in parameters:
+            return optimizer(
+                user_input, intent, available_tools, tenant_id=tenant_id
+            )
+        return optimizer(user_input, intent, available_tools)
 
     def _build_prior_tool_results_context(
         self, session: "SessionContext", max_results: int = 8, max_chars: int = 4000
@@ -1687,7 +1737,9 @@ class AgentRuntime:
         # Keep the Parser's language catalog derived from the actual Registry
         # rather than from a central intent table.  Custom parsers may ignore
         # this optional extension seam.
-        self.intent_parser.register_tool_definitions(self.registry.list_all())
+        register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
+        if callable(register_tools):
+            register_tools(self.registry.list_all())
 
         # Register executable tools supplied by the Capability.  Tool metadata
         # is the routing contract; no workflow file is consulted here.
@@ -2526,9 +2578,9 @@ class AgentRuntime:
 
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
-        self.intent_parser.register_platform_aliases(
-            skill.platform, skill.platform_aliases or []
-        )
+        register_aliases = getattr(self.intent_parser, "register_platform_aliases", None)
+        if callable(register_aliases):
+            register_aliases(skill.platform, skill.platform_aliases or [])
         registered_names: list[str] = []
         for tool_def in skill.get_tools():
             skill_platform = self._canonical_platform(skill.platform)
@@ -2553,9 +2605,9 @@ class AgentRuntime:
             keys = self._skill_keys_by_platform.setdefault(platform_key, [])
             if skill_key not in keys:
                 keys.append(skill_key)
-            self.intent_parser.register_tool_definitions(
-                [self.registry.get(name)[0] for name in registered_names]
-            )
+            register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
+            if callable(register_tools):
+                register_tools([self.registry.get(name)[0] for name in registered_names])
     
     # ─── Skill 动态注册 ────────────────────────────────────────
     
@@ -2687,7 +2739,9 @@ class AgentRuntime:
             return False
 
         self._validate_parameter_lookup_contract()
-        self.intent_parser.register_tool_definitions(self.registry.list_all())
+        register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
+        if callable(register_tools):
+            register_tools(self.registry.list_all())
 
         # 保存 Skill 和平台映射
         self._skill_tool_names[skill_key] = [tool_def.name for tool_def, _ in tools]
@@ -4361,6 +4415,32 @@ class AgentRuntime:
             else frozenset(granted_permissions)
         )
 
+        text_protected_paths = self.security.validate_text_redline(user_input)
+        if text_protected_paths:
+            error = (
+                "请求包含禁止传入的凭证/账户配置字段："
+                + ", ".join(text_protected_paths)
+            )
+            trace.error(reason="protected_input")
+            trace.done("failed", safe_metadata={"reason": "protected_input"})
+            self.persist_conversation_turn(
+                session, turn_id, safe_user_input, error, execution_trace=trace,
+            )
+            return {
+                "session_id": session_id,
+                "run_id": run_id,
+                "turn_id": turn_id,
+                "timestamp": datetime.now().isoformat(),
+                "intent": None,
+                "tool_plan": {},
+                "tool_selection": None,
+                "results": [],
+                "reply": "❌ 参数契约阻止本次请求：" + error,
+                "needs_confirmation": False,
+                "confirmation_payload": None,
+                "policy_errors": [error],
+            }
+
         # Memory is an advisory context layer, never an execution source.
         # The manager only promotes explicit requests and high-confidence
         # preference statements; normal tool results and chat history remain
@@ -4584,13 +4664,22 @@ class AgentRuntime:
                 }
             merged_params = copy.deepcopy(intent.platform_params or {})
             for platform, values in platform_params.items():
-                if isinstance(values, dict) and isinstance(merged_params.get(platform), dict):
-                    merged_params[platform] = {
-                        **merged_params[platform],
+                canonical_platform = self._resolve_platform_identifier(platform)
+                target_platform = next(
+                    (
+                        existing_platform
+                        for existing_platform in merged_params
+                        if self._resolve_platform_identifier(existing_platform) == canonical_platform
+                    ),
+                    canonical_platform or str(platform),
+                )
+                if isinstance(values, dict) and isinstance(merged_params.get(target_platform), dict):
+                    merged_params[target_platform] = {
+                        **(merged_params.get(target_platform) or {}),
                         **self._redact_for_persistence(values),
                     }
                 else:
-                    merged_params[platform] = self._redact_for_persistence(values)
+                    merged_params[target_platform] = self._redact_for_persistence(values)
             intent.platform_params = merged_params
 
         # A creation follow-up is often intentionally short (for example
@@ -4650,10 +4739,10 @@ class AgentRuntime:
             # Clarification must not become a way to probe or operate outside
             # the caller's account scope.
             for provider in list(getattr(intent, "platforms", []) or []):
-                canonical_provider = self._canonical_platform(provider)
+                canonical_provider = self._resolve_platform_identifier(provider)
                 provider_values: Mapping[str, Any] = {}
                 for raw_provider, values in (getattr(intent, "platform_params", {}) or {}).items():
-                    if self._canonical_platform(raw_provider) == canonical_provider and isinstance(values, Mapping):
+                    if self._resolve_platform_identifier(raw_provider) == canonical_provider and isinstance(values, Mapping):
                         provider_values = values
                         break
                 explicit_account = account_id
@@ -5315,13 +5404,13 @@ class AgentRuntime:
             elif has_structured_request:
                 no_tool_reply = (
                     "我理解你想查询广告数据，但还无法确定具体的查询对象。"
-                    "请补充平台和对象，例如：查询 Google Ads Campaign 列表，"
-                    "或查询最近 7 天的 Google Ads 报表。"
+                    "请补充当前已注册的执行渠道、资源对象和操作，例如查询某个资源列表，"
+                    "或查询最近一段时间的报表。"
                 )
             else:
                 no_tool_reply = (
                     "这次请求还没有匹配到可用的广告能力。请说明平台、对象和操作，"
-                    "例如查询某个广告账户的 Campaign 列表。"
+                    "例如查询某个广告账户下的资源列表。"
                 )
             # There is no provider evidence at this point. Structured
             # requests must use the deterministic message; sending an empty
@@ -5401,6 +5490,7 @@ class AgentRuntime:
                 "reply": no_tool_reply,
                 "needs_confirmation": False,
                 "confirmation_payload": None,
+                "workflow_id": None,
                 "ui": creation_ui,
             }
         
@@ -6128,6 +6218,17 @@ class AgentRuntime:
                     "resource_id_field": resource_id_field,
                     "parent_resource_type": parent_type,
                     "parent_resource_id_field": parent_field,
+                    "action": getattr(tool_def, "action", ""),
+                    "result_items_key": getattr(tool_def, "result_items_key", None),
+                    "result_id_fields": list(
+                        getattr(tool_def, "result_id_fields", []) or []
+                    ),
+                    "related_resource_type": getattr(
+                        tool_def, "related_resource_type", None
+                    ),
+                    "related_resource_id_fields": list(
+                        getattr(tool_def, "related_resource_id_fields", []) or []
+                    ),
                     "parent_resource_id": (
                         str(parent_id) if parent_id not in (None, "") else None
                     ),

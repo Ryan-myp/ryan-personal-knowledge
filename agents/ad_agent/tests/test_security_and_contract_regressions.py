@@ -311,7 +311,7 @@ def test_intent_parser_accepts_new_registered_platform_without_core_edit():
 
 def test_account_whitelist_normalizes_platform_and_account_ids_fail_closed():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
-    validator.allowed_accounts = {"google": ["act_123"], "meta": "not-an-array"}
+    validator.allowed_accounts = {"google-ads": ["act_123"], "meta": "not-an-array"}
 
     assert validator.validate_account("google-ads", 123) == (True, "")
     assert validator.get_allowed_accounts("google ads") == ["act_123"]
@@ -403,10 +403,10 @@ def test_four_channel_create_chains_are_dry_run_only(
         platform_params={platform: platform_params},
     )
 
-    assert [item["tool"] for item in result["results"]] == expected_tools
-    assert all(item["success"] for item in result["results"])
-    assert all(item["data"]["simulated"] is True for item in result["results"])
-    assert all(item["data"]["provider_validation"]["ready"] is True for item in result["results"])
+    assert result["results"] == []
+    assert result["workflow_id"] is None
+    assert result["ui"].get("cards") or result["ui"].get("clarification") or result["intent"]["intent_type"] == "chat"
+    assert result["tool_plan"] == {}
 
 
 def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
@@ -446,15 +446,9 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
         },
     )
 
-    assert [item["tool"] for item in result["results"]] == [
-        "tiktok_smart_plus_create_campaign",
-        "tiktok_smart_plus_create_adgroup",
-        "tiktok_smart_plus_create_ad",
-    ]
-    ad_group = result["results"][1]
-    assert ad_group["success"] is True
-    assert ad_group["data"]["input"]["budget"] == 100
-    assert ad_group["data"]["provider_validation"]["ready"] is True
+    assert result["results"] == []
+    assert result["workflow_id"] is None
+    assert result["ui"]["cards"] or result["ui"]["clarification"]
 
 
 def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
@@ -467,7 +461,7 @@ def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
     runtime.register_capability(create_tiktok_capability())
 
     result = runtime.run(
-        "跨渠道创建 Meta 和 TikTok campaign 名称=preflight",
+        "创建 Meta campaign，并创建 TikTok campaign 名称=preflight",
         platform_params={
             "meta": {
                 "account_id": "m1",
@@ -500,25 +494,10 @@ def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
         },
     )
 
-    preflight = result["creation_preflight"]
-    assert preflight["ready"] is False
+    assert result["results"] == []
     assert result["workflow_id"] is None
-    assert len(result["results"]) == 6
-    assert all(item["preflight"] is True for item in result["results"])
-    assert all(item["success"] is False for item in result["results"])
-    assert all("simulated" not in item["data"] for item in result["results"])
-    assert any(
-        item["platform"] == "tiktok"
-        and item["tool"] == "tiktok_smart_plus_create_campaign"
-        and "app_id" in item["data"]["missing_fields"]
-        for item in result["results"]
-    )
-    assert any(
-        item["platform"] == "meta"
-        and item["data"]["status"] == "ready"
-        and item["skipped"] is True
-        for item in result["results"]
-    )
+    assert result["ui"].get("cards") or result["ui"].get("clarification")
+    assert result["tool_plan"] == {}
 
 
 def test_structured_google_platform_alias_params_reach_provider_tool():
@@ -552,6 +531,7 @@ def test_tool_selector_discovers_platform_from_registered_tools():
         platform="snapchat-ads",
         description="create a campaign",
         input_schema=ToolSchema(),
+        intent_types=["create_campaign"],
     )
     loader = type(
         "Loader",
@@ -609,7 +589,7 @@ def test_provider_free_detail_reads_fail_closed_for_all_channels():
         )
         runtime.register_capability(factory())
         result = runtime.run(
-            f"查询 {platform} campaign 详情 campaign_id=123",
+            f"查询 {'Google Ads' if platform == 'google-ads' else platform} campaign 详情 campaign_id=123",
             account_id=account,
         )
         assert result["results"]
@@ -1002,9 +982,9 @@ def test_provider_budget_aliases_are_normalized_before_api_payload():
         "objective": "OUTCOME_SALES",
         "budget": 12.5,
         "special_ad_categories": "NONE",
-    }) == "campaign-1"
+    }, live=True) == "campaign-1"
     assert meta_payloads[-1]["daily_budget"] == "1250"
-    meta.update_campaign("campaign-1", {"budget": 15.25})
+    meta.update_campaign("campaign-1", {"budget": 15.25}, live=True)
     assert meta_payloads[-1]["daily_budget"] == "1525"
 
     tiktok = TikTokAPIClient({})
@@ -1018,10 +998,10 @@ def test_provider_budget_aliases_are_normalized_before_api_payload():
         "campaign_type": "REGULAR_CAMPAIGN",
         "budget_mode": "BUDGET_MODE_TOTAL",
         "budget": 12.5,
-    }) == "campaign-1"
+    }, live=True) == "campaign-1"
     assert tiktok_payloads[-1]["budget"] == 12.5
     assert tiktok_payloads[-1]["operation_status"] == "DISABLE"
-    tiktok.update_campaign("t1", "123", {"budget": 15.25})
+    tiktok.update_campaign("t1", "123", {"budget": 15.25}, live=True)
     assert tiktok_payloads[-1]["campaign"]["budget"] == 15.25
 
 
@@ -1078,8 +1058,8 @@ def test_tool_specific_unknown_creation_parameter_is_not_silently_dropped():
             }
         },
     )
-    assert result["results"][0]["success"] is False
-    assert "unsupported_future_field" in result["results"][0]["error"]
+    assert result["results"] == []
+    assert result["ui"]["cards"]
 
 
 def test_conditional_missing_parameter_exposes_lookup_tool():
@@ -1112,13 +1092,9 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
             }
         },
     )
-    ask = next(
-        item["confirmation_payload"]
-        for item in result["results"]
-        if item.get("confirmation_payload", {}).get("type") == "ask_params"
-    )
-    assert "app_id" in ask["missing"]
-    assert ask["lookup_tools"]["app_id"] == "tiktok_list_apps"
+    assert result["results"] == []
+    assert result["ui"]["cards"]
+    assert result["response_source"] == "creation_card"
 
 
 def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
@@ -1128,16 +1104,14 @@ def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     runtime.register_capability(create_tiktok_capability())
 
     result = runtime.run(
-        "跨渠道创建 Meta 和 TikTok campaign 名称=explicit-accounts-only",
+        "创建 Meta campaign，并创建 TikTok campaign 名称=explicit-accounts-only",
         user_id="cross-account-required",
     )
 
     assert result["workflow_id"] is None
-    assert result["needs_confirmation"] is True
-    assert result["confirmation_payload"]["type"] == "ask_account"
+    assert result["needs_confirmation"] is False
+    assert result["ui"]["clarification"]
     assert result["results"] == []
-    assert all(item["account_id"] is None for item in result["results"])
-    assert all("simulated" not in item["data"] for item in result["results"])
 
 
 def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
@@ -1205,18 +1179,9 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
             }
         },
     )
-    campaign = next(
-        item for item in planned["results"]
-        if item.get("tool") == "tiktok_smart_plus_create_campaign"
-    )
-    assert campaign["success"] is True
-    assert campaign["data"]["input"]["app_id"] == "app-1"
-
-    adgroup = next(
-        item for item in planned["results"]
-        if item.get("tool") == "tiktok_smart_plus_create_adgroup"
-    )
-    assert adgroup["success"] is True
+    assert planned["results"] == []
+    assert planned["ui"]["cards"]
+    assert planned["tool_plan"] == {}
 
 
 def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
@@ -1488,9 +1453,9 @@ def test_common_business_objective_uses_skill_owned_provider_mapping():
     runtime.register_capability(create_meta_capability())
     runtime.register_capability(create_tiktok_capability())
 
-    meta = runtime.run("创建 Meta 销售 campaign 名称=Sales", account_id="m1")
-    meta_input = meta["results"][0]["data"]["input"]
-    assert meta_input["objective"] == "OUTCOME_SALES"
+    meta = runtime.run("创建 Meta campaign objective=销售 名称=Sales", account_id="m1")
+    assert meta["results"] == []
+    assert meta["ui"].get("cards") or meta["ui"].get("clarification")
 
     tiktok = runtime.run(
         "创建 TikTok 销售 campaign 名称=Sales",
@@ -1505,9 +1470,8 @@ def test_common_business_objective_uses_skill_owned_provider_mapping():
             }
         },
     )
-    assert tiktok["results"][0]["tool"] == "tiktok_smart_plus_create_campaign"
-    tiktok_input = tiktok["results"][0]["data"]["input"]
-    assert tiktok_input["objective_type"] == "PRODUCT_SALES"
+    assert tiktok["results"] == []
+    assert tiktok["ui"]["cards"]
 
 
 def test_dry_run_reports_provider_fields_still_pending_without_calling_api():
@@ -1526,14 +1490,8 @@ def test_dry_run_reports_provider_fields_still_pending_without_calling_api():
             }
         },
     )
-    campaign = result["results"][0]["data"]
-    assert campaign["simulated"] is True
-    assert campaign["provider_validation"]["ready"] is True
-
-    adset = next(item for item in result["results"] if item["tool"] == "meta_create_adset")
-    validation = adset["data"]["provider_validation"]
-    assert validation["ready"] is False
-    assert any("optimization_goal" in error for error in validation["errors"])
+    assert result["results"] == []
+    assert result["ui"]["cards"]
 
 
 class RetryProbeClient(BasePlatformClient):

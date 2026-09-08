@@ -88,6 +88,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         "MAX": "PERFORMANCE_MAX",
         "APP": "MULTI_CHANNEL",
     }
+    SUPPORTED_CHANNEL_TYPES = {
+        "SEARCH", "DISPLAY", "SHOPPING", "HOTEL", "VIDEO", "MULTI_CHANNEL",
+        "LOCAL", "SMART", "DEMAND_GEN", "PERFORMANCE_MAX", "TRAVEL",
+        "LOCAL_SERVICES",
+    }
     AD_GROUP_TYPE_ALIASES = {
         # Google Ads v24 uses SHOPPING_PRODUCT_ADS. Keep accepting the old
         # saved-blueprint alias at the provider boundary, but never emit it.
@@ -2001,6 +2006,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         cpc_bid_micros: int = None,
         bidding_category_level: str = "LEVEL1",
         status: str = "PAUSED",
+        live: bool = False,
     ) -> dict[str, Any]:
         """Create one Shopping product partition criterion.
 
@@ -2017,6 +2023,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status = str(status or "PAUSED").strip().upper()
         if status not in {"PAUSED", "ENABLED"}:
             raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError("Google live creation only allows PAUSED Product Groups")
 
         supported_types = {
             "all_products",
@@ -2263,7 +2271,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """Build/validate a customer-scoped PMax filter resource name."""
         asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
         raw_id = str(listing_group_filter_id or "").strip()
-        customer = self._numeric_id(self.customer_id, "customer_id")
+        customer = str(self.customer_id or "").strip()
         if re.fullmatch(r"\d+", raw_id):
             return (
                 f"customers/{customer}/assetGroupListingGroupFilters/"
@@ -2285,7 +2293,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def _shared_set_resource_name(self, value: Any) -> str:
         """Normalize a SharedSet ID/resource for Retail listing filters."""
         raw = str(value or "").strip()
-        customer = self._numeric_id(self.customer_id, "customer_id")
+        customer = str(self.customer_id or "").strip()
+        if live:
+            customer = self._numeric_id(customer, "customer_id")
         if re.fullmatch(r"\d+", raw):
             return f"customers/{customer}/sharedSets/{raw}"
         match = re.fullmatch(r"customers/(\d+)/sharedSets/(\d+)", raw)
@@ -3629,6 +3639,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         target_cpm_micros: int = None,
         target_cpv_micros: int = None,
         status: str = None,
+        live: bool = False,
         networks: list[str] = None,
         app_campaign_setting: dict = None,
         advertising_channel_sub_type: str = None,
@@ -3660,6 +3671,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("daily_budget must be a positive number") from exc
         if daily_budget <= 0:
             raise ValueError("daily_budget must be greater than 0")
+        advertising_channel_type = self.CHANNEL_TYPE_ALIASES.get(
+            str(advertising_channel_type or "").upper(),
+            str(advertising_channel_type or "").upper(),
+        )
+        if advertising_channel_type not in self.SUPPORTED_CHANNEL_TYPES:
+            raise ValueError(
+                "Unsupported Google advertising_channel_type: "
+                f"{advertising_channel_type}"
+            )
         if brand_guidelines_enabled is not None and not isinstance(
             brand_guidelines_enabled, bool
         ):
@@ -3667,7 +3687,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
         # Google Ads REST writes go through the customer-level mutate
         # endpoints.  Resource-level POST/PUT endpoints look plausible but
         # are not Google Ads API contracts.
-        # Step 1: 创建预算
+        customer = str(self.customer_id or "").strip()
+        if live:
+            customer = self._numeric_id(customer, "customer_id")
+        # Keep a deterministic temporary reference in dry-run.  No provider
+        # mutation is allowed until the caller explicitly passes live=True.
+        budget_resource_name = f"customers/{customer}/campaignBudgets/-1"
+
+        # Step 1: 创建预算 (live only)
         budget_name = f"Budget for {name}"
         budget_amount_micros = int(daily_budget * 1_000_000)
         budget_data = {
@@ -3679,24 +3706,23 @@ class GoogleAdsAPIClient(BasePlatformClient):
             # campaign, so it must be explicitly non-shared.
             'explicitlyShared': False,
         }
-        budget_resp = self._mutate('campaignBudgets', {'create': budget_data})
-        budget_resource_name = self._mutation_resource_name(budget_resp)
 
         # Step 2: 创建 Campaign（初始状态 PAUSED）
-        advertising_channel_type = self.CHANNEL_TYPE_ALIASES.get(
-            str(advertising_channel_type or "").upper(),
-            str(advertising_channel_type or "").upper(),
-        )
         # v24 treats omitted PMax brand-guideline configuration as enabled in
         # this account state. The no-brand-guidelines path is the safe default
         # for the generic campaign Tool; opting into guidelines requires a
         # separate CampaignAsset flow with a business name and square logo.
         if advertising_channel_type == "PERFORMANCE_MAX" and brand_guidelines_enabled is None:
             brand_guidelines_enabled = False
+        requested_status = str(status or 'PAUSED').upper()
+        if requested_status not in {'PAUSED', 'ENABLED'}:
+            raise ValueError("Google Campaign status must be PAUSED or ENABLED")
+        if live and requested_status != 'PAUSED':
+            raise ValueError("Google live creation only allows PAUSED Campaigns")
         campaign_data = {
             'name': name,
             'advertisingChannelType': advertising_channel_type,
-            'status': status or 'PAUSED',
+            'status': requested_status,
             'campaignBudget': budget_resource_name,
         }
         if contains_eu_political_advertising is not None:
@@ -3710,11 +3736,30 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
         if advertising_channel_sub_type:
             campaign_data['advertisingChannelSubType'] = advertising_channel_sub_type
+        else:
+            # These subtypes are required by the v24 Campaign contract for
+            # the corresponding channel families.  Keep the user-facing
+            # campaign type simple and derive only the provider-required
+            # refinement at this boundary.
+            default_subtypes = {
+                "VIDEO": "VIDEO_ACTION",
+                "LOCAL": "LOCAL_CAMPAIGN",
+                "SMART": "SMART_CAMPAIGN",
+                "TRAVEL": "TRAVEL_ACTIVITIES",
+            }
+            if advertising_channel_type in default_subtypes:
+                campaign_data['advertisingChannelSubType'] = default_subtypes[
+                    advertising_channel_type
+                ]
         if brand_guidelines_enabled is not None:
             campaign_data['brandGuidelinesEnabled'] = brand_guidelines_enabled
         for field_name, value in (
             ('shoppingSetting', shopping_setting),
-            ('videoSetting', video_setting),
+            # v24 calls this subresource VideoCampaignSettings.  The public
+            # input remains ``video_setting`` so saved blueprints stay
+            # provider-neutral, but the wire name must match the current
+            # Google Ads Campaign schema.
+            ('videoCampaignSettings', video_setting),
             ('targetingSetting', targeting_setting),
             ('demandGenCampaignSettings', demand_gen_campaign_settings),
             ('hotelSetting', hotel_setting),
@@ -3726,6 +3771,51 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 if not isinstance(value, dict):
                     raise ValueError(f"{field_name} must be an object")
                 campaign_data[field_name] = self._camel_case_keys(value)
+
+        # ``video_setting`` is a stable product-facing name, while v24 uses
+        # the provider resource ``videoCampaignSettings``.  Older blueprints
+        # used a display-oriented preference list; translate the only
+        # currently representable restriction and ignore legacy presentation
+        # hints that have no v24 wire field.  Unknown provider additions are
+        # rejected rather than silently forwarded by the adapter.
+        if video_setting is not None:
+            if not isinstance(video_setting, dict):
+                raise ValueError("video_setting must be an object")
+            allowed_video_fields = {
+                "video_ad_format_control", "video_ad_inventory_control",
+                "video_ad_sequence", "reservation_ad_category_self_disclosure",
+                # Compatibility input retained for existing blueprints.
+                "smart_performance", "video_ad_format_preference",
+            }
+            unknown_video_fields = set(video_setting) - allowed_video_fields
+            if unknown_video_fields:
+                raise ValueError(
+                    "Unsupported video_setting fields: "
+                    + ", ".join(sorted(unknown_video_fields))
+                )
+            normalized_video: dict[str, Any] = {}
+            for public_name, wire_name in (
+                ("video_ad_format_control", "videoAdFormatControl"),
+                ("video_ad_inventory_control", "videoAdInventoryControl"),
+                ("video_ad_sequence", "videoAdSequence"),
+                ("reservation_ad_category_self_disclosure", "reservationAdCategorySelfDisclosure"),
+            ):
+                value = video_setting.get(public_name)
+                if value is not None:
+                    if not isinstance(value, dict):
+                        raise ValueError(f"video_setting.{public_name} must be an object")
+                    normalized_video[wire_name] = self._camel_case_keys(value)
+            preferences = video_setting.get("video_ad_format_preference") or []
+            if preferences and "NON_TRUE_VIEW_IN_STREAM" in preferences:
+                normalized_video.setdefault("videoAdFormatControl", {})[
+                    "formatRestriction"
+                ] = "NON_SKIPPABLE_IN_STREAM"
+            # ``smart_performance`` is an old UI hint and has no v24 Campaign
+            # field.  It intentionally does not get emitted.
+            if normalized_video:
+                campaign_data["videoCampaignSettings"] = normalized_video
+            else:
+                campaign_data.pop("videoCampaignSettings", None)
 
         # Google Ads v24 exposes this as OptimizationGoalSetting, not the
         # older/nonexistent CampaignGoalSetting shape. Keep the public input
@@ -3851,7 +3941,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'targetRoas': 4.0 if target_roas is None else target_roas
             }
         elif strategy == 'MAXIMIZE_CLICKS':
-            campaign_data['maximizeClicks'] = {}
+            # Google Ads v24 removed the former ``maximizeClicks`` Campaign
+            # field from the REST resource.  The UI's "Maximize clicks"
+            # strategy is represented by the provider's TargetSpend
+            # strategy, which keeps the spend within the campaign budget.
+            # Keep accepting the product-facing strategy name, but emit only
+            # the v24 wire contract here at the Provider boundary.
+            campaign_data['targetSpend'] = {}
         elif strategy == 'MAXIMIZE_CONVERSION_VALUE':
             campaign_data['maximizeConversionValue'] = {}
             if target_roas is not None:
@@ -3881,6 +3977,25 @@ class GoogleAdsAPIClient(BasePlatformClient):
             }
         else:
             campaign_data['maximizeConversions'] = {}
+
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "campaign_id": f"customers/{customer}/campaigns/-1",
+                "budget_id": budget_resource_name,
+                "operation": {
+                    "campaignBudgets": {"create": budget_data},
+                    "campaigns": {"create": campaign_data},
+                },
+            }
+
+        budget_resp = self._mutate('campaignBudgets', {'create': budget_data})
+        budget_resource_name = self._mutation_resource_name(budget_resp)
+        if not budget_resource_name:
+            raise APIError(f"Campaign budget mutate returned no resource name: {budget_resp}")
+        campaign_data['campaignBudget'] = budget_resource_name
 
         try:
             campaign_resp = self._mutate('campaigns', {'create': campaign_data})
@@ -4059,11 +4174,17 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status: str = None,
         targeting: dict = None,
         demand_gen_ad_group_settings: dict = None,
+        live: bool = False,
     ) -> str:
         """创建 Ad Group"""
+        requested_status = str(status or 'PAUSED').upper()
+        if requested_status not in {'PAUSED', 'ENABLED'}:
+            raise ValueError("Google Ad Group status must be PAUSED or ENABLED")
+        if live and requested_status != 'PAUSED':
+            raise ValueError("Google live creation only allows PAUSED Ad Groups")
         ad_group_data = {
             'name': name,
-            'status': status or 'PAUSED',
+            'status': requested_status,
             'campaign': f'customers/{self.customer_id}/campaigns/{campaign_id}',
         }
         if type not in (None, ""):
@@ -4090,6 +4211,16 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 demand_gen_ad_group_settings
             )
         
+        if not live:
+            customer = str(self.customer_id or "").strip()
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "ad_group_id": f"customers/{customer}/adGroups/-1",
+                "operation": {"adGroups": {"create": ad_group_data}},
+            }
+
         resp = self._mutate('adGroups', {'create': ad_group_data})
         resource_name = self._mutation_resource_name(resp)
         if not resource_name:
@@ -4105,8 +4236,16 @@ class GoogleAdsAPIClient(BasePlatformClient):
         *,
         final_url: str = None,
         status: str = None,
+        live: bool = False,
     ) -> dict[str, Any]:
-        """Build a standard v24 AdGroupAd plan for a specialized Ad payload."""
+        """Build or execute a standard v24 AdGroupAd mutation.
+
+        Google Ads uses the same customer-level ``AdGroupAd`` mutate
+        resource for channel-specific formats.  Keeping the live switch at
+        this provider boundary means the Skill/Blueprint and shared Runtime
+        do not need a separate branch for every ad format.  The Runtime
+        injects ``live=True`` only after its normal live gates have passed.
+        """
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         if not str(name or "").strip():
             raise ValueError("name is required")
@@ -4130,6 +4269,23 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 }
             }
         }
+        if live:
+            response = self._mutate("adGroupAds", {"create": operation["adGroupAds"]["create"]})
+            resource_name = self._mutation_resource_name(response)
+            if not resource_name:
+                raise APIError(
+                    f"Google {ad_field} AdGroupAd mutate returned no resource name: {response}"
+                )
+            return {
+                "mode": "live",
+                "execution_status": "executed",
+                "live_support": True,
+                "ad_resource_name": resource_name,
+                "ad_id": str(resource_name).rsplit("~", 1)[-1],
+                "ad_group_id": ad_group_id,
+                "format": ad_field,
+                "status": status,
+            }
         return {
             "ad_resource_name": f"customers/{customer}/ads/-1",
             "ad_group_id": ad_group_id,
@@ -4137,8 +4293,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "operation": operation,
             "execution_status": "planned",
             "mode": "dry_run",
-            "live_support": False,
-            "requires_verified_live_adapter": True,
+            # The Tool contract is the authorization source; this result
+            # reports that the same adapter also has an explicit live branch.
+            # ``execution_status`` remains the authoritative status for this
+            # invocation.
+            "live_support": True,
         }
 
     def create_demand_gen_multi_asset_ad(
@@ -4147,7 +4306,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         marketing_images: list[Any] = None, square_marketing_images: list[Any] = None,
         portrait_marketing_images: list[Any] = None, tall_portrait_marketing_images: list[Any] = None,
         classic_display_images: list[Any] = None, logo_images: list[Any] = None,
-        call_to_action_text: str = None, status: str = None,
+        call_to_action_text: str = None, status: str = None, live: bool = False,
     ) -> dict[str, Any]:
         if not isinstance(headlines, list) or not headlines:
             raise ValueError("headlines must be a non-empty list")
@@ -4172,14 +4331,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
             payload["callToActionText"] = call_to_action_text
         return self._specialized_ad_plan(
             ad_group_id, name, "demandGenMultiAssetAd", payload,
-            final_url=final_url, status=status,
+            final_url=final_url, status=status, live=live,
         )
 
     def create_demand_gen_carousel_ad(
         self, ad_group_id: str, name: str, final_url: str,
         headline: str, description: str, carousel_cards: list[dict[str, Any]],
         business_name: str = None, logo_image: Any = None,
-        call_to_action_text: str = None, status: str = None,
+        call_to_action_text: str = None, status: str = None, live: bool = False,
     ) -> dict[str, Any]:
         if not isinstance(carousel_cards, list) or len(carousel_cards) < 2:
             raise ValueError("carousel_cards must contain at least 2 cards")
@@ -4211,7 +4370,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             payload["callToActionText"] = call_to_action_text
         return self._specialized_ad_plan(
             ad_group_id, name, "demandGenCarouselAd", payload,
-            final_url=final_url, status=status,
+            final_url=final_url, status=status, live=live,
         )
 
     def create_demand_gen_video_responsive_ad(
@@ -4220,7 +4379,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         final_url: str = None, long_headlines: list[Any] = None,
         logo_images: list[Any] = None, companion_banners: list[Any] = None,
         call_to_actions: list[Any] = None, breadcrumb1: str = None,
-        breadcrumb2: str = None, status: str = None,
+        breadcrumb2: str = None, status: str = None, live: bool = False,
     ) -> dict[str, Any]:
         if not isinstance(videos, list) or not videos:
             raise ValueError("videos must be a non-empty list")
@@ -4246,14 +4405,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 payload[wire_name] = value
         return self._specialized_ad_plan(
             ad_group_id, name, "demandGenVideoResponsiveAd", payload,
-            final_url=final_url, status=status,
+            final_url=final_url, status=status, live=live,
         )
 
     def create_demand_gen_product_ad(
         self, ad_group_id: str, name: str, headline: Any, description: Any,
         business_name: Any, logo_image: Any, call_to_action: Any,
         final_url: str = None, breadcrumb1: str = None, breadcrumb2: str = None,
-        status: str = None,
+        status: str = None, live: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "headline": self._text_asset(headline),
@@ -4267,12 +4426,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 payload[wire_name] = value
         return self._specialized_ad_plan(
             ad_group_id, name, "demandGenProductAd", payload,
-            final_url=final_url, status=status,
+            final_url=final_url, status=status, live=live,
         )
 
-    def create_hotel_ad(self, ad_group_id: str, name: str, status: str = None) -> dict[str, Any]:
+    def create_hotel_ad(
+        self, ad_group_id: str, name: str, status: str = None, live: bool = False
+    ) -> dict[str, Any]:
         return self._specialized_ad_plan(
-            ad_group_id, name, "hotelAd", {}, status=status,
+            ad_group_id, name, "hotelAd", {}, status=status, live=live,
         )
 
     def create_local_ad(
@@ -4280,7 +4441,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         headlines: list[Any], descriptions: list[Any], path1: str = None,
         path2: str = None, logo_images: list[Any] = None, videos: list[Any] = None,
         marketing_images: list[Any] = None, call_to_actions: list[Any] = None,
-        status: str = None,
+        status: str = None, live: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "headlines": [self._text_asset(item) for item in headlines],
@@ -4297,12 +4458,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 payload[wire_name] = [self._asset_reference(item) for item in values]
         return self._specialized_ad_plan(
             ad_group_id, name, "localAd", payload,
-            final_url=final_url, status=status,
+            final_url=final_url, status=status, live=live,
         )
 
     def create_smart_campaign_ad(
         self, ad_group_id: str, name: str, final_url: str,
         headlines: list[Any], descriptions: list[Any], status: str = None,
+        live: bool = False,
     ) -> dict[str, Any]:
         payload = {
             "headlines": [self._text_asset(item) for item in headlines],
@@ -4310,12 +4472,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
         }
         return self._specialized_ad_plan(
             ad_group_id, name, "smartCampaignAd", payload,
-            final_url=final_url, status=status,
+            final_url=final_url, status=status, live=live,
         )
 
-    def create_travel_ad(self, ad_group_id: str, name: str, status: str = None) -> dict[str, Any]:
+    def create_travel_ad(
+        self, ad_group_id: str, name: str, status: str = None, live: bool = False
+    ) -> dict[str, Any]:
         return self._specialized_ad_plan(
-            ad_group_id, name, "travelAd", {}, status=status,
+            ad_group_id, name, "travelAd", {}, status=status, live=live,
         )
 
     def create_app_ad(
@@ -4428,8 +4592,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "operation": operation,
             "execution_status": "planned",
             "mode": "dry_run",
-            "live_support": False,
-            "requires_verified_live_adapter": True,
+            "live_support": True,
         }
     
     # ==================== Ad 管理 ====================
@@ -4445,12 +4608,18 @@ class GoogleAdsAPIClient(BasePlatformClient):
         path2: str = None,
         responsive_search_ad: dict = None,
         status: str = None,
+        live: bool = False,
     ) -> str:
         """创建响应式搜索广告"""
         if ad_type and str(ad_type).upper() != "RESPONSIVE_SEARCH_AD":
             raise ValueError(
                 "Google create_search_ad currently supports only RESPONSIVE_SEARCH_AD"
             )
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError("Google live creation only allows PAUSED Search Ads")
         ad_data = {
             'adGroup': f'customers/{self.customer_id}/adGroups/{ad_group_id}',
             'status': status or 'PAUSED',
@@ -4468,6 +4637,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 rsa['path1'] = path1
             if path2:
                 rsa['path2'] = path2
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "ad_id": f"customers/{self.customer_id}/adGroupAds/-1~-1",
+                "operation": {"adGroupAds": {"create": ad_data}},
+            }
         resp = self._mutate('adGroupAds', {'create': ad_data})
         resource_name = self._mutation_resource_name(resp)
         if not resource_name:
@@ -4494,6 +4671,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         allow_flexible_color: bool = None,
         ad_type: str = None,
         status: str = None,
+        live: bool = False,
     ) -> str:
         """Create a Google Responsive Display AdGroupAd mutation."""
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
@@ -4534,6 +4712,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             if value is not None:
                 display_info[field_name] = value
 
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError("Google live creation only allows PAUSED Display Ads")
         ad_data = {
             "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
             "status": status or "PAUSED",
@@ -4543,6 +4726,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "responsiveDisplayAd": display_info,
             },
         }
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "ad_id": f"customers/{self.customer_id}/adGroupAds/-1~-1",
+                "operation": {"adGroupAds": {"create": ad_data}},
+            }
         response = self._mutate("adGroupAds", {"create": ad_data})
         resource_name = self._mutation_resource_name(response)
         if not resource_name:
@@ -4562,6 +4753,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         companion_banner: dict = None,
         ad_type: str = None,
         status: str = None,
+        live: bool = False,
     ) -> str:
         """Build a Google Video Ad mutation for the selected video format.
 
@@ -4602,6 +4794,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
                     self._camel_case_keys(value) if isinstance(value, dict) else value
                 )
 
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError("Google live creation only allows PAUSED Video Ads")
         ad_data = {
             "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
             "status": status or "PAUSED",
@@ -4611,6 +4808,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "videoAd": video_ad,
             },
         }
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "ad_id": f"customers/{self.customer_id}/adGroupAds/-1~-1",
+                "operation": {"adGroupAds": {"create": ad_data}},
+            }
         response = self._mutate("adGroupAds", {"create": ad_data})
         resource_name = self._mutation_resource_name(response)
         if not resource_name:
@@ -4721,6 +4926,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status = str(status or "PAUSED").upper()
         if status not in {"PAUSED", "ENABLED"}:
             raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError("Google live creation only allows PAUSED Asset Groups")
         if not isinstance(final_urls, list) or not final_urls:
             raise ValueError("final_urls must be a non-empty list")
         if not isinstance(headlines, list) or len(headlines) < 3:
@@ -4914,8 +5121,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         return {
             "mode": "dry_run",
             "execution_status": "planned",
-            "live_support": False,
-            "requires_verified_live_adapter": True,
+            "live_support": True,
             "asset_group_resource_name": asset_group_resource,
             "operations": operations,
         }

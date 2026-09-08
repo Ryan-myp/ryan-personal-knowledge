@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 经验层知识库初始化脚本
 包含：最佳实践、案例研究、错误模式、实用技巧

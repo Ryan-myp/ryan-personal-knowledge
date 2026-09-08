@@ -1,7 +1,7 @@
 ---
 business:
   name: social
-  version: "1.0"
+  version: "1.0.0"
   description: "社交媒体广告投放 Skill - 专注于品牌曝光、用户互动"
   allowed_channels:
     - meta

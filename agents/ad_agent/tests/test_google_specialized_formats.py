@@ -90,7 +90,7 @@ def test_google_specialized_campaign_settings_are_closed_and_provider_ready():
         ) == []
 
 
-def test_google_specialized_ad_tools_are_dry_run_only_and_closed():
+def test_google_specialized_ad_tools_are_live_capable_and_closed():
     definitions = _definitions()
     names = {
         "google_create_specialized_ad_group",
@@ -103,7 +103,7 @@ def test_google_specialized_ad_tools_are_dry_run_only_and_closed():
     }
     assert names <= definitions.keys()
     for name in names:
-        assert definitions[name].live_support is False
+        assert definitions[name].live_support is True
         assert definitions[name].input_schema.additional_properties is False
 
 
@@ -133,7 +133,7 @@ def test_google_specialized_provider_plans_use_v24_adgroup_ad_payloads():
         operation = plan["operation"]["adGroupAds"]["create"]
         assert operation["ad"][payload_name] is not None
         assert plan["mode"] == "dry_run"
-        assert plan["live_support"] is False
+        assert plan["live_support"] is True
 
 
 def test_google_demand_gen_ad_group_and_campaign_settings_map_to_wire_fields():
@@ -147,6 +147,7 @@ def test_google_demand_gen_ad_group_and_campaign_settings_map_to_wire_fields():
     client.create_campaign(
         "Demand Gen", "DEMAND_GEN", "MAXIMIZE_CONVERSIONS", 10,
         demand_gen_campaign_settings={"upgraded_targeting": True},
+        live=True,
     )
     campaign = operations[1][1]["create"]
     assert campaign["demandGenCampaignSettings"] == {"upgradedTargeting": True}
@@ -157,6 +158,7 @@ def test_google_demand_gen_ad_group_and_campaign_settings_map_to_wire_fields():
         demand_gen_ad_group_settings={
             "channel_controls": {"channel_config": "SELECTED_CHANNELS"}
         },
+        live=True,
     )
     ad_group = operations[0][1]["create"]
     assert ad_group["demandGenAdGroupSettings"] == {

@@ -1,5 +1,6 @@
 """TikTok reference-data and conversion query handlers."""
 
+import inspect
 from typing import Optional
 
 from ...api_clients.tiktok_client import TikTokAPIClient
@@ -37,10 +38,24 @@ class _TikTokReferenceHandler(ToolHandler):
                         rf_campaign_type=input_data.get("rf_campaign_type"),
                     )
                 elif self.method_name == "list_apps":
-                    value = method(
-                        filtering=input_data.get("filtering"),
-                        page_size=input_data.get("limit", 20),
-                    )
+                    # App lookup is explicitly portable: the provider client
+                    # may use an advertiser ID from trusted credentials, while
+                    # lightweight injected clients often expose only the
+                    # documented filtering/page_size arguments.  Select the
+                    # compatible call shape without catching a provider
+                    # TypeError raised from inside the method.
+                    kwargs = {
+                        "filtering": input_data.get("filtering"),
+                        "page_size": input_data.get("limit", 20),
+                    }
+                    try:
+                        inspect.signature(method).bind(
+                            advertiser_id=ctx.account_id, **kwargs
+                        )
+                    except (TypeError, ValueError):
+                        value = method(**kwargs)
+                    else:
+                        value = method(advertiser_id=ctx.account_id, **kwargs)
                 else:
                     value = method()
                 return ToolResult.ok({self.result_key: value, "data_status": "live"})

@@ -79,6 +79,7 @@ class TikTokCreateAdGroupHandler(ToolHandler):
                     advertiser_id=ctx.account_id,
                     campaign_id=campaign_id,
                     adgroup=input_data,
+                    live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
                 )
                 return ToolResult.ok({
                     "adgroup_id": adgroup_id,

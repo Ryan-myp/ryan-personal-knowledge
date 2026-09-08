@@ -84,6 +84,7 @@ class GoogleCreateAdGroupHandler(ToolHandler):
                     status=input_data.get("status"),
                     targeting=input_data.get("targeting"),
                     demand_gen_ad_group_settings=input_data.get("demand_gen_ad_group_settings"),
+                    live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
                 )
                 return ToolResult.ok({
                     "ad_group_id": ad_group_id,

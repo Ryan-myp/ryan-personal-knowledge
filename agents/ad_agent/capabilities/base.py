@@ -52,6 +52,30 @@ def call_with_optional_page_size(
     return method(*args, **{name: limit})
 
 
+def resource_was_created_in_current_run(
+    ctx: ToolContext, resource_type: str, resource_id: Any
+) -> bool:
+    """Return whether a parent resource was created earlier in this run.
+
+    Provider ownership lookups are deliberately retained for caller-supplied
+    IDs.  A just-created parent can, however, be absent from an eventually
+    consistent account listing for a short period.  Runtime records only
+    successful live creates in this bounded, per-turn map, allowing a
+    hierarchy chain to continue without weakening cross-account checks.
+    """
+    if ctx is None or not resource_type or resource_id in (None, ""):
+        return False
+    created = (getattr(ctx, "metadata", {}) or {}).get(
+        "runtime_created_resource_ids", {}
+    )
+    if not isinstance(created, dict):
+        return False
+    values = created.get(str(resource_type), ())
+    if isinstance(values, (str, bytes)):
+        values = (values,)
+    return str(resource_id) in {str(value) for value in (values or ())}
+
+
 def apply_lookup_contracts(
     tools: list[tuple[ToolDefinition, ToolHandler]],
     contracts: dict[str, dict[str, dict[str, Any]]],
@@ -550,8 +574,25 @@ class CampaignUpdateHandler(ToolHandler):
                     self.resource_type, ctx.account_id, resource_id, parent_id, updates
                 )
             else:
-                value = self.update_adapter(
-                    self.client, ctx, self.resource_type, resource_id, parent_id, updates
+                adapter = self.update_adapter
+                # Provider update adapters may expose the same explicit live
+                # switch as create adapters.  Inspect the fixed Capability
+                # callback signature instead of passing Runtime state through
+                # user-controlled input or assuming every custom adapter has
+                # the new keyword.
+                try:
+                    adapter_parameters = inspect.signature(adapter).parameters
+                except (TypeError, ValueError):
+                    adapter_parameters = {}
+                adapter_kwargs = {}
+                if "live" in adapter_parameters:
+                    adapter_kwargs["live"] = (
+                        str(getattr(ctx, "metadata", {}).get("execution_mode", "dry_run"))
+                        == "live"
+                    )
+                value = adapter(
+                    self.client, ctx, self.resource_type, resource_id, parent_id,
+                    updates, **adapter_kwargs
                 )
             return ToolResult.ok({"resource_id": resource_id, "result": value})
         except Exception as exc:

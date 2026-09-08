@@ -240,6 +240,57 @@ class KnowledgeDocumentRecord:
 
 
 @dataclass
+class CreationTemplateRecord:
+    """A user-owned, data-only campaign creation preset."""
+
+    template_id: str
+    tenant_id: str
+    user_id: str
+    name: str
+    description: str = ""
+    provider: str = ""
+    blueprint_id: str = ""
+    blueprint_version: str = ""
+    ad_format: str = ""
+    scope_type: str = "general"
+    account_id: str = ""
+    region: str = ""
+    tags: list[str] = field(default_factory=list)
+    values: dict[str, Any] = field(default_factory=dict)
+    status: str = "active"
+    is_default: bool = False
+    usage_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+    last_used_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["tags"] = list(self.tags or [])
+        value["values"] = json.loads(
+            json.dumps(self.values or {}, ensure_ascii=False, default=str)
+        )
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "CreationTemplateRecord":
+        data = dict(row) if isinstance(row, dict) else dict(row)
+        if "values" not in data and "template_values" in data:
+            data["values"] = data.pop("template_values")
+        for key, default in (("tags", []), ("values", {})):
+            value = data.get(key)
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value or ("[]" if key == "tags" else "{}"))
+                except (TypeError, ValueError):
+                    value = default
+            data[key] = value if isinstance(value, type(default)) else default
+        data["usage_count"] = int(data.get("usage_count") or 0)
+        data["is_default"] = bool(data.get("is_default"))
+        return cls(**data)
+
+
+@dataclass
 class TaskRecord:
     """Durable, backend-neutral record for one asynchronous Agent task.
 

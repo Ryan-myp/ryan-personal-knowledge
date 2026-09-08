@@ -107,6 +107,7 @@ def test_schedule_requires_capability_and_explicit_confirmation_before_persistin
             action="read",
             resource_type="report",
             intent_types=["download_report"],
+            intent_aliases=["分析 campaign performance", "Google Ads 分析"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             required_permissions=["ads.read"],
@@ -125,7 +126,8 @@ def test_schedule_requires_capability_and_explicit_confirmation_before_persistin
         )
         assert result["intent"]["intent_type"] == "schedule_create"
         assert result["needs_input"] is True
-        assert result["results"][0]["confirmation_required"] is True
+        assert result["results"][0]["needs_input"] is True
+        assert result["results"][0]["draft"]["status"] == "awaiting_confirmation"
         assert "google_campaign_report" in result["results"][0]["draft"]["preflight"]["tool_names"]
         schedules = runtime.list_schedules(user_id="user-1", tenant_id="tenant-1")
         assert schedules == []
@@ -190,6 +192,7 @@ def test_schedule_preflight_checks_tool_required_parameters_before_confirmation(
             action="read",
             resource_type="report",
             intent_types=["download_report"],
+            intent_aliases=["分析 campaign performance", "Google Ads 分析"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             required_permissions=["ads.read"],
@@ -231,7 +234,7 @@ def test_schedule_draft_is_restored_after_runtime_restart_and_skill_is_injected(
             user_id="user-1", tenant_id="tenant-1",
         )
         session_id = first["session_id"]
-        assert "[built-in scheduling skill]" in runtime.tool_selector.build_context_for_input(
+        assert "[skill guidance: scheduled-agent-task]" in runtime.tool_selector.build_context_for_input(
             "每天分析 campaign", runtime.registry.list_all()
         )["expert_knowledge"]
         runtime.close(wait=True)
@@ -248,7 +251,7 @@ def test_schedule_draft_is_restored_after_runtime_restart_and_skill_is_injected(
             draft = restarted.get_schedule_draft(session_id)
             assert follow_up["needs_input"] is True
             assert draft["prompt"] == "分析 campaign performance"
-            assert draft["platforms"] == ["google"]
+            assert draft["platforms"] == ["google-ads"]
             assert draft["account_id"] == "123"
             assert draft["cron_expression"] is None
         finally:

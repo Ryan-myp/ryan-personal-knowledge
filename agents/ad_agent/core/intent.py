@@ -20,7 +20,7 @@ from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
     ToolDefinition, ToolRegistry
 )
-from .platform import declared_platforms, normalize_platform, parser_platform, recognition_aliases
+from .platform import normalize_platform
 
 
 logger = logging.getLogger(__name__)
@@ -119,15 +119,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         # serialized form so each turn does not rebuild the same prompt prefix.
         # It is invalidated whenever Tool definitions are refreshed.
         self._intent_catalog_prompt_cache: dict[tuple[str, ...], str] = {}
-        for platform in sorted(declared_platforms()):
-            self.register_platform_aliases(platform, recognition_aliases(platform))
-
-    def register_intents(self, intents: set[str] | list[str]) -> None:
-        """Register non-executable intent metadata for compatibility callers."""
-        self._intent_catalog_prompt_cache.clear()
-        self._custom_intents.update(
-            str(intent).strip() for intent in (intents or []) if str(intent).strip()
-        )
     def register_tool_definitions(self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]) -> None:
         """Publish Tool-owned intent metadata to the LLM parser.
 
@@ -369,7 +360,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def register_platforms(self, platforms: set[str] | list[str]) -> None:
         """Publish platform identifiers from registered Capabilities/Skills."""
         for platform in platforms or []:
-            canonical = parser_platform(str(platform or ""))
+            canonical = normalize_platform(str(platform or ""))
             if not canonical:
                 continue
             self._known_platforms.add(canonical)
@@ -378,7 +369,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
 
     def register_platform_aliases(self, platform: str, aliases: list[str] | set[str]) -> None:
         """Publish Skill-owned natural-language aliases for a platform."""
-        canonical = parser_platform(str(platform or ""))
+        canonical = normalize_platform(str(platform or ""))
         if not canonical:
             return
         self.register_platforms([canonical])
@@ -386,10 +377,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             text = str(alias or "").strip().casefold()
             if text:
                 self._platform_aliases[text] = canonical
-                self._platform_aliases.setdefault(normalize_platform(text), canonical)
-                self._platform_aliases.setdefault(normalize_platform(text), canonical)
-                self._platform_aliases.setdefault(normalize_platform(text), canonical)
-                self._platform_aliases.setdefault(normalize_platform(text), canonical)
                 self._platform_aliases.setdefault(normalize_platform(text), canonical)
                 self._platform_aliases.setdefault(normalize_platform(text), canonical)
 
@@ -651,9 +638,12 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                     continue
                 if is_array_item_path(field):
                     continue
-                # Hidden schema fields remain available to the structured
-                # builder, but are not inferred from conversational text.
-                if spec.get("ui_hidden") is True:
+                # Hidden fields remain unavailable as free-form UI inputs,
+                # but a provider may explicitly declare one as the canonical
+                # destination for a generic ParsedIntent value (for example
+                # an objective). That metadata-owned bridge is safe to infer;
+                # other hidden fields still require structured input.
+                if spec.get("ui_hidden") is True and not spec.get("intent_field"):
                     continue
                 options = self._schema_options(spec)
                 if not options or field in params[platform]:
@@ -749,12 +739,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     
     def parse(self, user_input: str, context: ToolContext) -> ParsedIntent:
         """解析用户输入为结构化意图"""
-        if self._llm and self._platform_field_specs:
-            value = str(user_input or "").casefold()
-            if any(marker in value for marker in ("创建", "新建", "create", "add")) and any(
-                marker in value for marker in ("=", "日预算", "daily budget", "名称为", "campaign name")
-            ):
-                return self._parse_with_rules(user_input)
         if not self._llm:
             if self.allow_rule_fallback:
                 return self._parse_with_rules(user_input)
@@ -794,7 +778,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 normalized, user_input
             )
             intent = ParsedIntent(**normalized)
-            if self._needs_intent_repair(intent):
+            if (self._intent_catalog or self._custom_intents) and self._needs_intent_repair(intent):
                 repaired = self._repair_intent_with_llm(
                     user_input,
                     context,
@@ -1118,10 +1102,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     ) -> dict[str, Any]:
         """Complete an LLM result with only declared, explicit user values."""
         result = dict(normalized or {})
-        if result.get("budget") in (None, ""):
-            budget = self._extract_budget(user_input)
-            if budget is not None:
-                result["budget"] = budget
         platforms = list(result.get("platforms") or [])
         if not platforms:
             # Platform aliases are published by Skills/Capabilities. This is
@@ -1178,15 +1158,10 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         """Parse only vocabulary and fields published by the active catalog."""
         text = str(user_input or "").casefold()
         platforms = self._detect_platforms(text)
-        if not platforms and any(marker in text for marker in ("跨渠道", "跨平台", "全渠道", "cross-channel", "cross channel", "cross-platform", "cross platform", "all channels")):
-            platforms = sorted(self._known_platforms)
         normalized = self._normalize_intent({
             "intent_type": self._detect_intent_type(text),
             "raw_input": user_input,
             "platforms": platforms,
-            "budget": self._extract_budget(text),
-            "date_range": self._extract_date_range(text),
-            "creative_materials": self._extract_materials(user_input),
             "platform_params": self._extract_params_from_input(user_input, platforms),
         })
         return ParsedIntent(**self._enrich_intent_from_user_input(normalized, user_input))
@@ -1194,105 +1169,33 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _detect_intent_type(self, text: str) -> str:
         """Resolve an offline intent using only registered publisher metadata."""
         normalized = str(text or "").casefold()
-        if not self._intent_catalog and not self._custom_intents:
-            return self._detect_compat_intent_type(normalized)
-        matches: list[tuple[int, str]] = []
+        matches: list[tuple[int, int, str]] = []
         candidates = set(self._intent_catalog) | set(self._custom_intents)
         for intent in candidates:
             descriptor = self._feature_intent_descriptors.get(intent)
             values = list(descriptor.get("aliases", [])) if descriptor else []
             values.extend(self._intent_aliases.get(intent, set()))
             values.append(str(intent).replace("_", " "))
+            priority = int(descriptor.get("priority", 0) or 0) if descriptor else 0
             for value in values:
                 phrase = (
                     str(value or "").strip().casefold()
                     .replace("_", " ").replace("-", " ")
                 )
                 if phrase and phrase in normalized:
-                    matches.append((len(phrase), intent))
+                    matches.append((priority, len(phrase), intent))
         if not matches:
             return "chat"
-        longest = max(length for length, _intent in matches)
-        winners = sorted({intent for length, intent in matches if length == longest})
+        best_priority = max(priority for priority, _length, _intent in matches)
+        longest = max(
+            length for priority, length, _intent in matches
+            if priority == best_priority
+        )
+        winners = sorted({
+            intent for priority, length, intent in matches
+            if priority == best_priority and length == longest
+        })
         return winners[0] if len(winners) == 1 else "chat"
-
-    def _detect_compat_intent_type(self, text: str) -> str:
-        """Small offline vocabulary for standalone development callers."""
-        value = str(text or "").casefold()
-        has = lambda *terms: any(term in value for term in terms)
-        platforms = self._detect_platforms(value)
-        if len(platforms) >= 2 and has("对比", "比较", "compare"):
-            return "cross_channel_compare"
-        cross = ("跨渠道", "跨平台", "全渠道", "cross-channel", "cross channel", "cross-platform", "cross platform", "all channels")
-        if has(*cross):
-            if has("创建", "新建", "create", "launch", "投放"): return "create_campaign"
-            if has("删除", "移除", "delete", "remove"): return "cross_channel_batch_delete"
-            if has("暂停", "停用", "pause", "disable"): return "cross_channel_batch_pause"
-            if has("恢复", "启用", "resume", "enable"): return "cross_channel_batch_resume"
-            if has("更新", "修改", "编辑", "update", "modify", "edit"): return "update_campaign"
-            return "cross_channel_overview"
-        if has("批量", "多个", "多条", "bulk", "batch"):
-            if has("删除", "移除", "delete", "remove"): return "cross_channel_batch_delete"
-            if has("暂停", "停用", "pause", "disable"): return "cross_channel_batch_pause"
-            if has("恢复", "启用", "resume", "enable"): return "cross_channel_batch_resume"
-            if has("预算", "budget"): return "cross_channel_batch_update_budget"
-        if has("报表", "report", "下载", "查看数据", "performance", "统计"): return "download_report"
-        if has("line item", "line_item", "行项目"):
-            if has("详情", "detail", "get "): return "get_line_item"
-            if has("列出", "列表", "查询", "查看", "list", "query"): return "list_line_items"
-        if has("insertion order", "insertion_order", "订单"):
-            if has("详情", "detail", "get "): return "get_io"
-            if has("列出", "列表", "查询", "查看", "list", "query"): return "list_ios"
-        if has("更新", "修改", "编辑", "update", "modify", "edit"):
-            if has("关键词", "keyword", "keywords"): return "update_keyword"
-            if has("广告组", "ad group", "adgroup", "adset", "ad set"): return "update_adgroup"
-            if has("广告系列", "campaign"): return "update_campaign"
-            if has("广告", " ad", "ad "): return "update_ad"
-        if has("删除", "移除", "delete", "remove"):
-            if has("关键词", "keyword", "keywords"): return "delete_keyword"
-            if has("campaign", "广告系列"): return "delete_campaign"
-        if has("暂停", "停用", "pause", "disable"): return "pause_campaign"
-        if has("恢复", "启用", "resume", "enable"): return "resume_campaign"
-        if has("关键词", "keyword", "keywords") and has("创建", "新建", "create", "add"): return "create_keywords"
-        if has("创建", "新建", "create", "add"):
-            if has("创意", "creative", "素材"): return "create_creative"
-            return "create_campaign"
-        if has("兴趣类别", "interest", "兴趣"): return "list_interests"
-        if has("地域", "location", "地区"): return "list_locations"
-        if has("设备", "device"): return "list_devices"
-        if has("人群包", "audience", "受众"): return "list_audiences"
-        if has("关键词", "keyword", "keywords"): return "list_keywords"
-        if has("广告集", "adset", "ad set"): return "list_adsets"
-        if has("广告组", "ad group", "adgroup"): return "list_adgroups"
-        if has("详情", "detail", "information", "信息", "get ") and has("campaign", "广告系列"): return "get_campaign"
-        if has("列出", "列表", "查询", "查看", "list", "query", "search", "获取") and has("campaign", "广告系列"): return "list_campaigns"
-        if has("创意", "creative", "素材"): return "list_creatives"
-        if has("应用", "app ", "apps"): return "list_apps"
-        if has("商品目录", "catalog"): return "list_catalogs"
-        return "chat"
-
-    @staticmethod
-    def _extract_budget(text: str) -> Optional[float]:
-        match = _regex_search(r"(?:日预算|每天预算|预算|daily budget|budget)\s*(?:是|为|=|:|：)?\s*([0-9]+(?:\.[0-9]+)?)", str(text or ""), re.IGNORECASE)
-        return float(match.group(1)) if match else None
-
-    @staticmethod
-    def _extract_date_range(text: str) -> Optional[str]:
-        value = str(text or "").casefold()
-        if _regex_search(r"最近\s*7\s*天|过去\s*7\s*天|last\s*7\s*days", value): return "LAST_7_DAYS"
-        if _regex_search(r"最近\s*30\s*天|过去\s*30\s*天|last\s*30\s*days", value): return "LAST_30_DAYS"
-        if _regex_search(r"今天|今日|today", value): return "TODAY"
-        if _regex_search(r"昨天|昨日|yesterday", value): return "YESTERDAY"
-        return None
-
-    @staticmethod
-    def _extract_materials(text: str) -> list[dict[str, str]]:
-        value = str(text or "").casefold()
-        materials = []
-        if any(marker in value for marker in ("图片", "海报", "image", "photo")): materials.append({"type": "image"})
-        if any(marker in value for marker in ("视频", "video")): materials.append({"type": "video"})
-        if any(marker in value for marker in ("轮播", "carousel")): materials.append({"type": "carousel"})
-        return materials
 
     def _extract_params_from_input(self, user_input: str, platforms: list[str]) -> dict:
         """
@@ -1306,8 +1209,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         def aliases_for(field: str, spec: Mapping[str, Any]) -> list[str]:
             leaf = str(field).rsplit(".", 1)[-1]
             aliases = [leaf, leaf.replace("_", " "), str(field)]
-            if leaf in {"account_id", "advertiser_id", "customer_id"}:
-                aliases.extend(["账户 ID", "广告账户 ID", "advertiser ID", "customer ID"])
             declared = spec.get("input_aliases", [])
             if isinstance(declared, str):
                 declared = [declared]
@@ -1321,10 +1222,22 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             if field_type == "array" or isinstance(spec.get("items"), Mapping):
                 return [item.strip().strip("'\"") for item in re.split(r"[,，]", value) if item.strip()]
             if field_type in {"number", "integer"}:
-                try:
-                    return float(value) if field_type == "number" or "." in value else int(value)
-                except ValueError:
-                    return value
+                # Natural-language numeric values commonly carry a declared
+                # unit, e.g. ``预算=100元/天``.  The field type still comes
+                # from the active Tool schema; only the presentation suffix
+                # is discarded here.  Do not coerce arbitrary text into a
+                # number when the value does not start with a numeric token.
+                numeric = re.fullmatch(
+                    r"\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*[^\d]*\s*",
+                    value,
+                )
+                if numeric:
+                    token = numeric.group(1)
+                    try:
+                        return float(token) if field_type == "number" or "." in token else int(token)
+                    except ValueError:
+                        pass
+                return value
             if field_type == "boolean":
                 lowered = value.casefold()
                 if lowered in {"true", "yes", "是"}:
@@ -1344,26 +1257,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                         return True
             return False
 
-        # Explicitly qualified campaign IDs are scoped to their provider. A
-        # bare campaign_id in a multi-channel request is intentionally ignored.
-        for platform in platforms:
-            aliases_for_platform = platform_aliases.get(platform, [platform])
-            platform_pattern = "|".join(
-                re.escape(alias)
-                for alias in sorted(aliases_for_platform, key=len, reverse=True)
-            )
-            match = _regex_search(
-                rf"(?:{platform_pattern})\s*(?:campaign|广告系列)[_-]?ids?\s*[=:：]\s*"
-                r"([A-Za-z0-9][\w-]*(?:\s*[,，]\s*[A-Za-z0-9][\w-]*)*)",
-                user_input,
-                re.IGNORECASE,
-            )
-            if match:
-                ids = [item.strip() for item in re.split(r"[,，]", match.group(1)) if item.strip()]
-                if ids:
-                    params[platform]["campaign_ids"] = list(dict.fromkeys(ids))
-                    params[platform].setdefault("campaign_id", ids[0])
-
         # Only an explicitly registered Tool schema can create a parameter.
         # The parser accepts a field's wire name, its provider-declared aliases,
         # or an explicitly qualified platform form. It never maps business
@@ -1373,15 +1266,61 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             for field, raw_spec in field_specs.items():
                 if not isinstance(raw_spec, Mapping) or is_array_item_path(field, field_specs):
                     continue
+                # Several Tools may publish the same conversational alias
+                # for different wire fields (for example ``campaign name``
+                # and ``name``). Keep the first, more specific schema match
+                # instead of allowing a later generic alias to overwrite it.
+                if field in params[platform]:
+                    continue
                 aliases = aliases_for(field, raw_spec)
                 alias_pattern = "|".join(re.escape(alias) for alias in sorted(aliases, key=len, reverse=True))
+                alias_boundary = r"(?<![A-Za-z0-9_])"
+                alias_end_boundary = r"(?![A-Za-z0-9_])"
                 separator = (
                     r"\s*(?:是|为|=|:|：)?\s*"
                     if self._is_dynamic_provider_field(field, raw_spec)
                     else r"\s*(?:是|为|=|:|：)\s*"
                 )
+                # Stop a value at the next schema-qualified assignment. A
+                # greedy punctuation-only capture used to turn
+                # ``objective_type=APP_PROMOTION campaign_type=...`` into one
+                # invalid enum value. The boundary is deliberately based on
+                # assignment shape, not on a provider/business field list.
+                value_punctuation = (
+                    r"[^\n;；。]+?" if raw_spec.get("type") == "array"
+                    or isinstance(raw_spec.get("items"), Mapping)
+                    else r"[^\n,，、;；。]+?"
+                )
+                single_boundary = (
+                    r"\s+[A-Za-z_][\w.-]*\s*(?:是|为|=|:|：)|"
+                    r"\s+[\u3400-\u9fff][^,，、;；。]{0,20}\s*"
+                    r"(?:是|为|=|:|：)|[;；。]|$"
+                )
+                if not (
+                    raw_spec.get("type") == "array"
+                    or isinstance(raw_spec.get("items"), Mapping)
+                ):
+                    single_boundary = (
+                        r"\s+[A-Za-z_][\w.-]*\s*(?:是|为|=|:|：)|"
+                        r"\s+[\u3400-\u9fff][^,，、;；。]{0,20}\s*"
+                        r"(?:是|为|=|:|：)|[,，、;；。]|$"
+                    )
+                if self._is_dynamic_provider_field(field, raw_spec):
+                    # Resource identifiers are provider-owned values and do
+                    # not contain natural-language whitespace. Stop an
+                    # explicitly supplied ID before a following Chinese
+                    # instruction (for example ``line_item_id=li-1 最近7天``)
+                    # without teaching Core any provider-specific field list.
+                    single_boundary = (
+                        r"\s+[\u3400-\u9fff]|" + single_boundary
+                    )
+                single_value = (
+                    rf"({value_punctuation})(?=\s+[A-Za-z_][\w.-]*\s*"
+                    rf"(?:是|为|=|:|：)|{single_boundary})"
+                )
                 qualified = _regex_search(
-                    rf"(?:{alias_pattern}){separator}([^\n,，、;；。]+)",
+                    rf"{alias_boundary}(?:{alias_pattern}){alias_end_boundary}"
+                    rf"{separator}{single_value}",
                     user_input,
                     re.IGNORECASE,
                 ) if len(platforms) == 1 else None
@@ -1389,30 +1328,38 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 platform_pattern = "|".join(
                     re.escape(alias) for alias in sorted(platform_aliases_for_platform, key=len, reverse=True)
                 )
+                all_platform_aliases = sorted(
+                    {
+                        alias
+                        for requested_platform in platforms
+                        for alias, canonical_platform in self._platform_aliases.items()
+                        if canonical_platform == requested_platform
+                    }
+                    | set(platforms),
+                    key=len,
+                    reverse=True,
+                )
+                all_platform_pattern = "|".join(
+                    re.escape(alias) for alias in all_platform_aliases
+                )
+                multi_boundary = (
+                    rf"\s+(?:and|和)\s+(?:{all_platform_pattern})\s+|[;；。]|$"
+                    if raw_spec.get("type") == "array"
+                    or isinstance(raw_spec.get("items"), Mapping)
+                    else rf"\s+(?:and|和)\s+(?:{all_platform_pattern})\s+|[,，、;；。]|$"
+                )
+                multi_value = rf"({value_punctuation})(?={multi_boundary})"
+                qualified_value = single_value if len(platforms) == 1 else multi_value
                 qualified_platform = _regex_search(
-                    rf"(?:{platform_pattern})\s+(?:{alias_pattern})\s*(?:是|为|=|:|：)\s*([^\n,，、;；。]+)",
+                    rf"(?:{platform_pattern})\s+{alias_boundary}(?:{alias_pattern})"
+                    rf"{alias_end_boundary}\s*"
+                    rf"(?:是|为|=|:|：)\s*{qualified_value}",
                     user_input,
                     re.IGNORECASE,
                 )
                 match = qualified_platform or qualified
                 if match:
                     self._assign_parameter(params[platform], field, parse_value(match.group(1), field, raw_spec))
-
-        # Preserve explicitly typed provider keys for standalone parsing when
-        # a Tool schema has not been mounted yet. Runtime validates them later.
-        if len(platforms) == 1:
-            platform = platforms[0]
-            specs = self._platform_field_specs.get(platform, {})
-            for key, raw_value in _compiled_regex(
-                r"(?<![\w-])([A-Za-z][\w-]*)\s*[=:：]\s*([^\s,，、;；]+)"
-            ).findall(user_input):
-                if key in {"id", "action", "operation", "tool", "skill", "platform"}:
-                    continue
-                spec = specs.get(key, {})
-                self._assign_parameter(
-                    params[platform], key,
-                    parse_value(raw_value, key, spec if isinstance(spec, Mapping) else {}),
-                )
 
         self._semantic_parameter_values(user_input, platforms, params)
         
@@ -1481,16 +1428,16 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _normalize_intent(self, data: dict) -> dict:
         """规范化解析结果"""
         data = dict(data or {})
-        if data.get("budget") in (None, "") and data.get("budget_daily") not in (None, ""):
-            data["budget"] = data.get("budget_daily")
         intent_type = data.get("intent_type")
         if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
         else:
-            if self._intent_catalog or self._custom_intents:
-                allowed_intents = set(self._intent_catalog) | self._custom_intents | {"chat"}
-                if intent_type.strip() not in allowed_intents:
-                    data["intent_type"] = "chat"
+            # The active Tool/Feature catalog is the only executable intent
+            # authority. A parser used without a catalog can preserve no
+            # model-proposed operation, even if the label looks plausible.
+            allowed_intents = set(self._intent_catalog) | self._custom_intents | {"chat"}
+            if intent_type.strip() not in allowed_intents:
+                data["intent_type"] = "chat"
 
         # 确保 platforms 是列表，并限制为实际注册体系支持的平台。
         platforms = data.get("platforms", [])

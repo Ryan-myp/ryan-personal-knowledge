@@ -113,7 +113,7 @@ def _mysql_schema(sql: str) -> str:
     sql = re.sub(r"\bREAL\b", "DOUBLE", sql)
     sql = re.sub(r"\bINTEGER\b", "BIGINT", sql)
     large_columns = {
-        "metadata", "content", "tags", "input_data", "output_data", "files",
+        "metadata", "content", "tags", "template_values", "input_data", "output_data", "files",
         "manifest", "evaluation_report", "report", "payload", "result", "error",
     }
     for column in large_columns:
@@ -315,6 +315,55 @@ class MySQLStore(AdAgentStore):
                     ON scheduled_task_runs(tenant_id, user_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
                     ON scheduled_task_runs(status, created_at);
+                """
+            ))
+        elif version == 11:
+            self._add_mysql_column_if_missing(conn, "memories", "memory_key", "VARCHAR(191)")
+            self._add_mysql_column_if_missing(conn, "memories", "superseded_by", "VARCHAR(191)")
+            conn.executescript(_mysql_schema(
+                """
+                CREATE INDEX IF NOT EXISTS idx_memories_key
+                    ON memories(tenant_id, user_id, memory_key, status, updated_at);
+                """
+            ))
+        elif version == 12:
+            conn.executescript(_mysql_schema(
+                """
+                CREATE TABLE IF NOT EXISTS creation_templates (
+                    template_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    provider TEXT NOT NULL,
+                    blueprint_id TEXT NOT NULL,
+                    blueprint_version TEXT NOT NULL,
+                    ad_format TEXT NOT NULL,
+                    scope_type TEXT NOT NULL DEFAULT 'general',
+                    account_id TEXT NOT NULL DEFAULT '',
+                    region TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    template_values TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    usage_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_creation_templates_scope
+                    ON creation_templates(tenant_id, user_id, status, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_creation_templates_blueprint
+                    ON creation_templates(tenant_id, user_id, blueprint_id, status);
+                """
+            ))
+        elif version == 13:
+            self._add_mysql_column_if_missing(
+                conn, "creation_templates", "is_default", "BIGINT NOT NULL DEFAULT 0"
+            )
+            conn.executescript(_mysql_schema(
+                """
+                CREATE INDEX IF NOT EXISTS idx_creation_templates_default
+                    ON creation_templates(tenant_id, user_id, blueprint_id, scope_type, is_default);
                 """
             ))
 

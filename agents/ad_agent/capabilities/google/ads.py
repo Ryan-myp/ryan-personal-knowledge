@@ -88,6 +88,7 @@ class GoogleCreateAdHandler(ToolHandler):
                     path2=input_data.get("path2"),
                     responsive_search_ad=input_data.get("responsive_search_ad"),
                     status=input_data.get("status"),
+                    live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
                 )
                 return ToolResult.ok({
                     "ad_id": ad_id,

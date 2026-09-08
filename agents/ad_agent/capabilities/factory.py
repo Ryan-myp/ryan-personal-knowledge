@@ -87,23 +87,6 @@ def discover_capability_factory(platform: str):
     )
 
 
-def _call_factory(factory: Any, api_client: Optional[Any]) -> Any:
-    """Call either the one-argument or zero-argument package factory.
-
-    Inspecting the signature avoids treating a real TypeError inside a
-    provider factory as evidence that it does not accept ``api_client``.
-    """
-    try:
-        signature = inspect.signature(factory)
-    except (TypeError, ValueError):
-        return factory(api_client)
-    try:
-        signature.bind(api_client)
-    except TypeError:
-        return factory()
-    return factory(api_client)
-
-
 def create_capability(platform: str, api_client: Optional[Any] = None):
     """Create a platform Capability through its public factory.
 
@@ -119,9 +102,4 @@ def create_capability(platform: str, api_client: Optional[Any] = None):
             "Add capabilities/<platform>/capability.py with a "
             "create_<platform>_capability factory."
         )
-    return _call_factory(factory, api_client)
-
-
-def capability_platform(platform: str) -> str:
-    """Compatibility helper used by Skill binding code."""
-    return normalize_platform(platform)
+    return factory(api_client)

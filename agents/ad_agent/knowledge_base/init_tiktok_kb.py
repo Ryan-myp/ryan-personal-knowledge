@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """
 TikTok 知识库初始化脚本
 基于官方文档和API实测数据

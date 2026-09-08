@@ -4,6 +4,7 @@ capabilities/tiktok/capability.py - TikTok Capability 定义
 from __future__ import annotations
 
 import logging
+import inspect
 from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
@@ -76,7 +77,7 @@ from .parameters import (
     TIKTOK_INTEREST_KEYWORD_MODES,
     TIKTOK_INTEREST_AUDIENCE_TYPES,
 )
-from ..update_contracts import tiktok_updates
+from ..update_contracts import tiktok_updates, tiktok_smart_plus_updates
 
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,9 @@ TIKTOK_LOOKUP_CONTRACTS = {
 }
 
 
-def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, updates):
+def _tiktok_update_adapter(
+    client, ctx, resource_type, resource_id, parent_id, updates, *, live=False
+):
     """Adapt TikTok's advertiser- and parent-scoped update methods."""
     if resource_type == "campaign":
         method = getattr(client, "update_campaign", None)
@@ -326,7 +329,11 @@ def _tiktok_update_adapter(client, ctx, resource_type, resource_id, parent_id, u
         raise ValueError("TikTok ad group update requires campaign_id")
     if resource_type == "ad" and not parent_id:
         raise ValueError("TikTok ad update requires adgroup_id")
-    return method(*args)
+    try:
+        supports_live = "live" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        supports_live = False
+    return method(*args, **({"live": live} if supports_live else {}))
 
 
 class TikTokCapability(BaseCapability):
@@ -356,6 +363,9 @@ class TikTokCapability(BaseCapability):
         "create_smart_plus_campaign": ["tiktok_smart_plus_create_campaign"],
         "create_smart_plus_adgroup": ["tiktok_smart_plus_create_adgroup"],
         "create_smart_plus_ad": ["tiktok_smart_plus_create_ad"],
+        "update_smart_plus_campaign": ["tiktok_smart_plus_update_campaign"],
+        "update_smart_plus_adgroup": ["tiktok_smart_plus_update_adgroup"],
+        "update_smart_plus_ad": ["tiktok_smart_plus_update_ad"],
         "create_spark_ad": ["tiktok_spark_ads_create"],
         "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
         "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
@@ -994,6 +1004,7 @@ class TikTokCapability(BaseCapability):
                             "date_preset": {"type": "string"}, "date_range": {"type": "object"}},
                 required=["account_id"], action="report", resource_type="report",
                 intent_types=["download_report"], traits=["read", "report"],
+                intent_aliases=["查询 TikTok 广告报表", "查看 TikTok campaign 表现"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "report_type": data.get("report_type", "CAMPAIGN"),
                     "date_preset": data.get("date_preset", "LAST_7_DAYS"),
@@ -1021,6 +1032,14 @@ class TikTokCapability(BaseCapability):
                 intent_types=(
                     ["provider_delete_campaign", "cross_channel_batch_delete"]
                     if intent == "delete_campaign" else [f"provider_{intent}"]
+                ),
+                intent_aliases=(
+                    ["删除 TikTok campaign", "删除 TikTok 广告系列"]
+                    if intent == "delete_campaign" else
+                    [f"暂停 TikTok campaign", "暂停 TikTok 广告系列"]
+                    if intent == "pause_campaign" else
+                    [f"恢复 TikTok campaign", "恢复 TikTok 广告系列"]
+                    if intent == "resume_campaign" else []
                 ),
                 traits=["write", resource_type], write=True,
                 argument_builder=(
@@ -1059,6 +1078,12 @@ class TikTokCapability(BaseCapability):
                 "cross_channel_performance_insights", "cross_channel_optimize_budget",
                 "cross_channel_export_report",
             ],
+            intent_aliases=[
+                "列出 TikTok 广告系列", "列出 TikTok campaign 列表",
+                "查询 TikTok campaign 列表",
+            ],
+            result_items_key="campaigns",
+            result_id_fields=["campaign_id", "id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1079,6 +1104,7 @@ class TikTokCapability(BaseCapability):
             ),
             action="get", resource_type="campaign", resource_id_field="campaign_id",
             intent_types=["get_campaign"],
+            intent_aliases=["查询 TikTok campaign 详情", "查看 TikTok campaign 详情", "查询 TikTok 广告系列详情"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1093,6 +1119,11 @@ class TikTokCapability(BaseCapability):
             description="创建 TikTok Ads Campaign。",
             input_schema=ToolSchema(**tiktok_campaign_schema()),
             action="create", resource_type="campaign", intent_types=["create_campaign"],
+            intent_aliases=[
+                "创建 TikTok 广告系列", "创建 TikTok campaign",
+                "TikTok 销售广告系列", "TikTok 销售 campaign",
+                "TikTok 流量广告", "TikTok 流量 campaign",
+            ],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -1103,7 +1134,7 @@ class TikTokCapability(BaseCapability):
             activation_rules=[{
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": [
-                        "APP_PROMOTION", "TRAFFIC", "SALES", "PRODUCT_SALES", "WEB_CONVERSIONS",
+                        "APP_PROMOTION", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
                         *all_in_one_objectives,
                     ]},
                 },
@@ -1121,6 +1152,7 @@ class TikTokCapability(BaseCapability):
                 properties={"campaign_id": {"type": "string"}, "limit": {"type": "integer"}},
             ),
             action="list", resource_type="ad_group", parent_resource_type="campaign",
+            parent_resource_id_field="campaign_id",
             intent_types=["list_adgroups"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -1170,7 +1202,7 @@ class TikTokCapability(BaseCapability):
             activation_rules=[{
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": [
-                        "APP_PROMOTION", "TRAFFIC", "SALES", "PRODUCT_SALES", "WEB_CONVERSIONS", "sales",
+                        "APP_PROMOTION", "app", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
                         *all_in_one_objectives,
                     ]},
                     "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
@@ -1232,6 +1264,7 @@ class TikTokCapability(BaseCapability):
                 properties={"adgroup_id": {"type": "string"}, "limit": {"type": "integer"}},
             ),
             action="list", resource_type="ad", parent_resource_type="ad_group",
+            parent_resource_id_field="adgroup_id",
             intent_types=["list_ads"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -1416,6 +1449,12 @@ class TikTokCapability(BaseCapability):
             ),
             action="report", resource_type="report",
             intent_types=["get_campaign_report", "download_report"],
+            intent_aliases=[
+                "查询 TikTok 报表", "查询 TikTok campaign 报表",
+                "查看 TikTok 广告系列表现",
+            ],
+            related_resource_type="campaign",
+            related_resource_id_fields=["campaign_ids", "campaign_id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1443,7 +1482,7 @@ class TikTokCapability(BaseCapability):
             name="tiktok_create_all_in_one_spark_ad",
             description=(
                 "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；"
-                "覆盖 Reach、Video views、Community interaction。默认仅生成 dry-run 计划。"
+                "覆盖 Reach、Video views、Community interaction。live 仅允许暂停状态。"
             ),
             method_name="create_all_in_one_spark_ad", result_key="creation",
             properties={"account_id": {"type": "string"}, **all_in_one_schema["properties"]},
@@ -1458,8 +1497,8 @@ class TikTokCapability(BaseCapability):
                 "in": ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"],
             }],
             traits=["write", "campaign", "ad_group", "ad", "spark", "smart_plus", "business/spark_ad/create"],
-            write=True, live_support=False, provider_api_version="v1.3",
-            readback_tool="tiktok_list_campaigns",
+            write=True, live_support=True, provider_api_version="v1.3",
+            readback_tool="tiktok_get_campaign",
             argument_builder=lambda ctx, data: ((account(ctx, data), {
                 key: data[key] for key in all_in_one_schema["properties"] if key in data
             }), {}),
@@ -1476,7 +1515,7 @@ class TikTokCapability(BaseCapability):
             name="tiktok_smart_plus_create_campaign",
             description=(
                 "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、"
-                "Sales 和 Product Sales，默认生成暂停状态的 dry-run 计划。"
+                "Sales 和 Product Sales，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_campaign", result_key="campaign",
             properties={"account_id": {"type": "string"}, **smart_plus_campaign["properties"]},
@@ -1485,9 +1524,9 @@ class TikTokCapability(BaseCapability):
             conditional_rules=smart_plus_campaign["conditional_rules"],
             action="create", resource_type="campaign", resource_id_field="campaign_id",
             intent_types=["create_smart_plus_campaign", "create_campaign"],
-            activation_rules=[{"field": "objective_type", "in": smart_plus_objectives}],
+            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
             traits=["write", "campaign", "smart_plus", "smart_plus/campaign/create"],
-            write=True, live_support=False, provider_api_version="v1.3",
+            write=True, live_support=True, provider_api_version="v1.3",
             readback_tool="tiktok_get_campaign",
             argument_builder=lambda ctx, data: ((account(ctx, data), {
                 key: data[key] for key in smart_plus_campaign["properties"] if key in data
@@ -1500,7 +1539,7 @@ class TikTokCapability(BaseCapability):
             name="tiktok_smart_plus_create_adgroup",
             description=(
                 "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、"
-                "出价和排期由渠道级联规则校验，默认只生成 dry-run 计划。"
+                "出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_adgroup", result_key="adgroup",
             properties={"account_id": {"type": "string"}, **smart_plus_adgroup["properties"]},
@@ -1510,9 +1549,9 @@ class TikTokCapability(BaseCapability):
             action="create", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
             intent_types=["create_smart_plus_adgroup", "create_campaign", "create_adgroup"],
-            activation_rules=[{"field": "objective_type", "in": smart_plus_objectives}],
+            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
             traits=["write", "ad_group", "smart_plus", "smart_plus/adgroup/create"],
-            write=True, live_support=False, provider_api_version="v1.3",
+            write=True, live_support=True, provider_api_version="v1.3",
             readback_tool="tiktok_get_adgroup",
             argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], {
                 key: data[key] for key in smart_plus_adgroup["properties"] if key in data
@@ -1525,7 +1564,7 @@ class TikTokCapability(BaseCapability):
             name="tiktok_smart_plus_create_ad",
             description=(
                 "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、"
-                "图片等渠道素材引用，默认只生成 dry-run 计划。"
+                "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
@@ -1535,9 +1574,9 @@ class TikTokCapability(BaseCapability):
             action="create", resource_type="ad", parent_resource_type="ad_group",
             resource_id_field="smart_plus_ad_id", parent_resource_id_field="adgroup_id",
             intent_types=["create_smart_plus_ad", "create_campaign", "create_ad"],
-            activation_rules=[{"field": "objective_type", "in": smart_plus_objectives}],
+            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
             traits=["write", "ad", "smart_plus", "smart_plus/ad/create"],
-            write=True, live_support=False, provider_api_version="v1.3",
+            write=True, live_support=True, provider_api_version="v1.3",
             readback_tool="tiktok_get_ad",
             argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
                 key: data[key] for key in smart_plus_ad["properties"] if key in data
@@ -1624,11 +1663,17 @@ class TikTokCapability(BaseCapability):
             method_name="get_creative", result_key="creative",
             properties={
                 "account_id": {"type": "string"},
+                # TikTok's Creative read endpoint is account-scoped, but a
+                # logical Creative Tool is backed by an Ad and therefore
+                # needs its owning Ad Group for an unambiguous live write
+                # read-back contract.
+                "adgroup_id": {"type": "string", "minLength": 1},
                 "creative_id": {"type": "string", "minLength": 1},
             },
-            required=["account_id", "creative_id"],
-            action="get", resource_type="creative",
+            required=["account_id", "adgroup_id", "creative_id"],
+            action="get", resource_type="creative", parent_resource_type="ad_group",
             resource_id_field="creative_id",
+            parent_resource_id_field="adgroup_id",
             intent_types=["get_creative"], traits=["read", "creative"],
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["creative_id"]
@@ -1657,7 +1702,7 @@ class TikTokCapability(BaseCapability):
             action="create", resource_type="creative", parent_resource_type="ad_group",
             resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
             intent_types=["create_creative"], traits=["write", "creative", "ad_backed"],
-            write=True, live_support=False, contract_version="2", provider_api_version="v1.3",
+            write=True, live_support=True, contract_version="2", provider_api_version="v1.3",
             required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["campaign_id"], data["adgroup_id"], {
@@ -1687,7 +1732,7 @@ class TikTokCapability(BaseCapability):
             action="update", resource_type="creative", parent_resource_type="ad_group",
             resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
             intent_types=["update_creative"], traits=["write", "creative", "ad_backed"],
-            write=True, live_support=False, contract_version="2", provider_api_version="v1.3",
+            write=True, live_support=True, contract_version="2", provider_api_version="v1.3",
             required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["adgroup_id"], data["creative_id"], data["updates"]
@@ -1781,6 +1826,12 @@ class TikTokCapability(BaseCapability):
             if account_scope == "account":
                 properties["account_id"] = {"type": "string"}
                 required = ["account_id"]
+            elif resource_name == "apps":
+                # TikTok App discovery can be resolved from the configured
+                # advertiser context; do not make users type an account just
+                # to populate a picker.  When a caller supplies one, Runtime
+                # still validates it against the principal/whitelist.
+                properties["account_id"] = {"type": "string"}
             tools.append((ToolDefinition(
                 name=f"tiktok_list_{resource_name}",
                 skill="tiktok-ads-api-expert",
@@ -1796,6 +1847,10 @@ class TikTokCapability(BaseCapability):
                     "devices": ["list_devices"], "apps": ["list_apps"],
                     "brand_safety": ["list_brand_safety"],
                 }[resource_name],
+                intent_aliases=(
+                    ["查询 TikTok apps", "查询 TikTok 可用应用列表", "列出 TikTok 应用"]
+                    if resource_name == "apps" else []
+                ),
                 risk_level=RiskLevel.LOW,
                 effect_class=ToolEffect.READ,
                 replay_policy=ReplayPolicy.SAFE,
@@ -1832,11 +1887,22 @@ class TikTokCapability(BaseCapability):
                     ],
                     "ad_group": ["update_adgroup"], "ad": ["update_ad"],
                 }[resource_type],
+                intent_aliases=(
+                    ["更新 TikTok campaign", "更新 TikTok 广告系列"]
+                    if resource_type == "campaign" else []
+                ),
                 risk_level=RiskLevel.MEDIUM,
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
-                live_support=False,
+                live_support=True,
+                readback_tool={
+                    "campaign": "tiktok_get_campaign",
+                    "ad_group": "tiktok_get_adgroup",
+                    "ad": "tiktok_get_ad",
+                }[resource_type],
+                required_permissions=["ads.plan"],
+                provider_api_version="v1.3",
                 resource_id_field=resource_id,
                 parent_resource_id_field=parent_field,
             ), CampaignUpdateHandler(
@@ -1844,6 +1910,58 @@ class TikTokCapability(BaseCapability):
                 resource_id_field=resource_id,
                 parent_resource_id_field=parent_field,
             )))
+
+        smart_update_specs = [
+            ("campaign", "campaign_id", "update_smart_plus_campaign", "tiktok_smart_plus_update_campaign", None),
+            ("ad_group", "adgroup_id", "update_smart_plus_adgroup", "tiktok_smart_plus_update_adgroup", "campaign_id"),
+            ("ad", "ad_id", "update_smart_plus_ad", "tiktok_smart_plus_update_ad", "adgroup_id"),
+        ]
+        for resource_type, resource_id, method_name, tool_name, parent_field in smart_update_specs:
+            provider_resource = "adgroup" if resource_type == "ad_group" else resource_type
+            update_schema = tiktok_smart_plus_updates(provider_resource)
+            properties = {
+                "account_id": {"type": "string", "minLength": 1},
+                resource_id: {"type": "string", "minLength": 1},
+                "objective_type": {"type": "string", "enum": smart_plus_objectives, "ui_hidden": True},
+                "updates": update_schema,
+            }
+            required = ["account_id", resource_id, "updates"]
+            if parent_field:
+                properties[parent_field] = {"type": "string", "minLength": 1}
+                required.insert(1, parent_field)
+            if resource_type == "campaign":
+                argument_builder = lambda ctx, data: (
+                    (account(ctx, data), data["campaign_id"], data["updates"]), {}
+                )
+            elif resource_type == "ad_group":
+                argument_builder = lambda ctx, data: (
+                    (account(ctx, data), data["campaign_id"], data["adgroup_id"], data["updates"]), {}
+                )
+            else:
+                argument_builder = lambda ctx, data: (
+                    (account(ctx, data), data["adgroup_id"], data["ad_id"], data["updates"]), {}
+                )
+            tools.append(method_tool(
+                platform="tiktok", skill="tiktok-ads-api-expert",
+                name=tool_name,
+                description=f"更新 TikTok Upgraded Smart+ {resource_type}；仅允许在测试账号和确认后执行。",
+                method_name=method_name, result_key=f"{provider_resource}_result",
+                properties=properties, required=required,
+                provider_required=[resource_id, "updates"], action="update",
+                resource_type=resource_type,
+                parent_resource_type={"ad_group": "campaign", "ad": "ad_group"}.get(resource_type),
+                resource_id_field=resource_id, parent_resource_id_field=parent_field,
+                intent_types=[method_name],
+                traits=["write", resource_type, "smart_plus"], write=True,
+                live_support=True, provider_api_version="v1.3",
+                required_permissions=["ads.plan"],
+                readback_tool={
+                    "campaign": "tiktok_get_campaign",
+                    "ad_group": "tiktok_get_adgroup",
+                    "ad": "tiktok_get_ad",
+                }[resource_type],
+                argument_builder=argument_builder,
+            ))
 
         tools.extend(self._extended_provider_tools(api_client))
 

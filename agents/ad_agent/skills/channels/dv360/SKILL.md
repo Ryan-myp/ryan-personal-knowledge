@@ -6,7 +6,6 @@ author: Ryan
 created: 2026-09-08
 tags: [dv360, display-video, programmatic, insertion-order, line-item, targeting, creative, reporting]
 aliases: [display video 360, display & video 360, dv 360]
-parser_platform: dv360
 ---
 
 # Display & Video 360 专家 Skill

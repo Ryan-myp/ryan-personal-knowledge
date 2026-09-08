@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The ad-agent source uses Python 3.10+ syntax and is tested against 3.13.
+# Do not silently run it with macOS's system Python (often 3.9).
+python_bin="${AD_AGENT_PYTHON:-}"
+if [ -z "$python_bin" ]; then
+    python_bin="$(command -v python3.13 || true)"
+fi
+
+if [ -z "$python_bin" ]; then
+    echo "ad-agent requires Python 3.13. Install it or set AD_AGENT_PYTHON to a Python 3.13 executable." >&2
+    exit 127
+fi
+
+if ! version="$("$python_bin" -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")' 2>/dev/null)"; then
+    echo "Unable to execute AD_AGENT_PYTHON=$python_bin" >&2
+    exit 126
+fi
+
+if [ "$version" != "3.13" ]; then
+    echo "ad-agent requires Python 3.13, got Python $version ($python_bin)." >&2
+    echo "Use ./scripts/ad-agent-python ... or set AD_AGENT_PYTHON to a Python 3.13 executable." >&2
+    exit 2
+fi
+
+exec "$python_bin" "$@"

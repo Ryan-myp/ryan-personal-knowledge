@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20260908-overlay-layout">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20260908-creation-studio-v16">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -20,6 +21,7 @@
                     <div class="system-ops-menu-head"><strong>系统运维</strong><span>服务状态与运行现场</span></div>
                     <button class="system-ops-item active" type="button" role="menuitem" onclick="openMonitoring()"><span class="system-ops-item-icon">◉</span><span><strong>运行监控</strong><small>队列、租约、恢复与 Tool 审计</small></span><span class="system-ops-item-arrow">›</span></button>
                     <button class="system-ops-item active" type="button" role="menuitem" onclick="openSchedules()"><span class="system-ops-item-icon">◷</span><span><strong>定时任务</strong><small>调度列表、执行记录与暂停恢复</small></span><span class="system-ops-item-arrow">›</span></button>
+                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openMemoryManager()"><span class="system-ops-item-icon">✦</span><span><strong>用户记忆</strong><small>偏好、事实与记忆生命周期</small></span><span class="system-ops-item-arrow">›</span></button>
                     <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">◇</span><span><strong>服务健康</strong><small>健康检查与依赖状态 · 即将支持</small></span></button>
                     <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">≋</span><span><strong>事件投递</strong><small>Outbox 消费与失败重试 · 即将支持</small></span></button>
                 </div>
@@ -87,27 +89,60 @@
                             <input id="knowledgeQuery" type="search" maxlength="2000" placeholder="例如：TikTok 报表、Google OAuth" onkeydown="if (event.key === 'Enter') searchKnowledge()">
                         </label>
                         <label class="workspace-form">平台
-                            <select id="knowledgePlatform"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
+                            <select id="knowledgePlatform" onchange="if (!document.getElementById('knowledgeQuery')?.value.trim()) loadKnowledgeCatalog()"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
                         </label>
                         <label class="workspace-form">服务 API Key（如服务开启鉴权）
                             <input id="knowledgeApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内" oninput="serviceApiKey = this.value.trim()">
                         </label>
+                        <label class="knowledge-smart-toggle">
+                            <span><input id="knowledgeSmartSummary" type="checkbox"> 智能总结</span>
+                            <small>更完整，但响应会稍慢</small>
+                        </label>
                     </div>
-                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">输入关键词后搜索已发布知识。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
-                    <div class="workspace-form-actions" style="margin-top:10px;">
+                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">打开时自动展示已发布知识目录。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
+                    <div class="knowledge-view-switcher">
                         <span class="workspace-filter-summary">知识文档发布后才会被 Agent 使用</span>
-                        <button type="button" id="knowledgeComposeToggle" onclick="toggleKnowledgeComposer()">写入知识库</button>
+                        <div class="knowledge-view-actions">
+                            <button type="button" id="knowledgeCatalogToggle" class="active" aria-pressed="true" onclick="showKnowledgeSearchView()">知识目录</button>
+                            <button type="button" id="knowledgeComposeToggle" aria-pressed="false" onclick="toggleKnowledgeComposer()">管理文档</button>
+                        </div>
                     </div>
                 </div>
-                <div class="knowledge-results" id="knowledgeResults"></div>
+                <div class="knowledge-results" id="knowledgeResults">
+                    <aside class="knowledge-library" aria-label="知识目录">
+                        <div class="knowledge-library-header">
+                            <div>
+                                <span class="knowledge-library-kicker">知识导航</span>
+                                <strong id="knowledgeCatalogCount">已发布知识</strong>
+                            </div>
+                            <button class="knowledge-refresh" type="button" onclick="loadKnowledgeCatalog()" aria-label="刷新知识目录">↻</button>
+                        </div>
+                        <div class="knowledge-library-note">选择一篇知识，在右侧阅读完整章节与来源。</div>
+                        <div class="knowledge-list" id="knowledgeList"></div>
+                    </aside>
+                    <main class="knowledge-reader" id="knowledgeReader" aria-live="polite">
+                        <div class="knowledge-reader-empty"><span class="knowledge-reader-empty-mark">✦</span><strong>正在准备知识目录</strong><span>打开后自动加载已发布知识</span></div>
+                    </main>
+                </div>
                 <div class="knowledge-compose" id="knowledgeComposer">
+                    <section class="knowledge-managed-panel">
+                        <div class="knowledge-managed-header">
+                            <div>
+                                <span class="knowledge-library-kicker">CONTENT OPERATIONS</span>
+                                <strong>我管理的知识</strong>
+                                <p>草稿可直接编辑；已发布内容编辑后会生成新版本，删除则进入归档。</p>
+                            </div>
+                            <button class="knowledge-refresh" type="button" onclick="loadManagedKnowledgeDocuments()" aria-label="刷新我管理的知识">↻</button>
+                        </div>
+                        <div class="knowledge-managed-list" id="knowledgeManagedList"><div class="knowledge-managed-empty">正在加载知识文档…</div></div>
+                    </section>
                     <div class="knowledge-compose-grid">
                         <label>标题<input id="knowledgeTitle" maxlength="200" placeholder="例如：Meta 广告类型选择规则"></label>
                         <label>平台
                             <select id="knowledgeWritePlatform"><option value="all">通用</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
                         </label>
                         <label>知识类型
-                            <select id="knowledgeWriteType"><option value="general">通用</option><option value="hierarchy">层级</option><option value="constraint">约束</option><option value="parameter">参数</option><option value="workflow">流程</option><option value="best_practice">最佳实践</option><option value="error_pattern">错误模式</option><option value="case_study">案例</option><option value="tip">提示</option></select>
+                            <select id="knowledgeWriteType"><option value="general">通用</option><option value="hierarchy">层级</option><option value="constraint">约束</option><option value="parameter">参数</option><option value="workflow">流程</option><option value="best_practice">最佳实践</option><option value="error_pattern">错误模式</option><option value="case_study">案例</option><option value="tip">提示</option><option value="business_strategy">业务策略</option></select>
                         </label>
                         <label>版本<input id="knowledgeVersion" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
                         <label>标签<input id="knowledgeTags" maxlength="500" placeholder="用逗号分隔，例如：Meta,广告类型"></label>
@@ -120,8 +155,34 @@
                     </div>
                     <label>来源<input id="knowledgeSource" maxlength="200" value="user" placeholder="例如：投放团队经验"></label>
                     <label>正文（支持 Markdown）<textarea id="knowledgeContent" maxlength="60000" placeholder="# 规则说明\n\n写下可复用的业务规则、例子和边界。"></textarea></label>
-                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeWriteStatus">保存后先作为草稿，不会立即影响 Agent。</span><div class="knowledge-compose-actions"><button type="button" onclick="saveKnowledgeDocument(false)">保存草稿</button><button type="button" onclick="saveKnowledgeDocument(true)">保存并发布</button></div></div>
+                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeWriteStatus">保存后先作为草稿，不会立即影响 Agent。</span><div class="knowledge-compose-actions"><button type="button" id="knowledgeCancelEditButton" onclick="resetKnowledgeEditor()" hidden>取消编辑</button><button type="button" id="knowledgeSaveDraftButton" onclick="saveKnowledgeDocument(false)">保存草稿</button><button type="button" id="knowledgeSavePublishButton" onclick="saveKnowledgeDocument(true)">保存并发布</button></div></div>
                 </div>
+            </div>
+        </section>
+    </div>
+    <div class="memory-overlay" id="memoryOverlay" aria-hidden="true">
+        <section class="memory-console" role="dialog" aria-modal="true" aria-labelledby="memoryConsoleTitle">
+            <header class="memory-console-header">
+                <div><div class="memory-console-kicker">AGENT MEMORY</div><div class="memory-console-title" id="memoryConsoleTitle">用户记忆</div><div class="memory-console-subtitle">记忆只作为当前用户的辅助上下文，不能授予工具、权限、账户范围或凭证。</div></div>
+                <div class="memory-console-actions"><span class="memory-updated" id="memoryUpdated">尚未读取</span><button class="btn btn-secondary" type="button" onclick="loadMemories()">刷新</button><button class="icon-btn" type="button" onclick="closeMemoryManager()" aria-label="关闭用户记忆">×</button></div>
+            </header>
+            <div class="memory-console-body">
+                <section class="memory-toolbar">
+                    <label>检索记忆<input id="memoryQuery" type="search" maxlength="2000" placeholder="例如：默认平台、报告格式" onkeydown="if (event.key === 'Enter') loadMemories()"></label>
+                    <button class="btn btn-secondary" type="button" onclick="loadMemories()">搜索</button>
+                </section>
+                <section class="memory-compose">
+                    <div class="memory-section-heading"><div><h2>新增一条记忆</h2><p>适合保存稳定偏好或明确事实；敏感凭证会被自动清理。</p></div><span>WRITE</span></div>
+                    <div class="memory-compose-grid">
+                        <label class="memory-field-wide">内容<input id="memoryContent" maxlength="4000" placeholder="例如：默认使用中文回答，并优先给出 dry-run 计划"></label>
+                        <label>类型<select id="memoryKind"><option value="semantic">语义事实</option><option value="procedural">工作习惯</option><option value="episodic">事件记忆</option><option value="working">临时记忆</option></select></label>
+                        <label>逻辑 Key（可选）<input id="memoryKey" maxlength="120" placeholder="例如：response.language"></label>
+                        <label>重要性<input id="memoryImportance" type="number" min="0" max="1" step="0.1" value="0.7"></label>
+                        <label class="memory-field-wide">标签<input id="memoryTags" maxlength="500" placeholder="用逗号分隔，例如：偏好,语言"></label>
+                    </div>
+                    <div class="memory-compose-footer"><span id="memoryWriteStatus" role="status"></span><button class="btn btn-primary" type="button" onclick="saveMemory()">保存记忆</button></div>
+                </section>
+                <section class="memory-list-panel"><div class="memory-section-heading"><div><h2>当前有效记忆</h2><p>旧版本不会被静默覆盖；被修正的记录会保留在审计历史中。</p></div><span id="memoryCount">—</span></div><div class="memory-list" id="memoryList"><div class="memory-empty">等待数据…</div></div></section>
             </div>
         </section>
     </div>
@@ -448,7 +509,7 @@
             <header class="blueprint-console-header">
                 <div>
                     <div class="blueprint-console-title" id="blueprintConsoleTitle">广告创建向导</div>
-                    <div class="blueprint-console-subtitle">按渠道和广告类型逐步填写，字段联动由平台蓝图自动计算；当前仅生成参数草稿，不调用渠道接口。</div>
+                    <div class="blueprint-console-subtitle">选择渠道与投放目标，按业务阶段完成参数；系统会实时校验联动关系，当前只生成草稿。</div>
                 </div>
                 <button class="icon-btn" type="button" onclick="closeBlueprintManager()" aria-label="关闭">×</button>
             </header>
@@ -462,28 +523,63 @@
                             <div class="blueprint-editor-title" id="blueprintEditorTitle">选择一个广告类型</div>
                             <div class="blueprint-editor-meta" id="blueprintEditorMeta">Blueprint · —</div>
                         </div>
-                        <span class="blueprint-dry-run-badge">DRY-RUN</span>
+                        <div class="blueprint-editor-actions">
+                            <span class="blueprint-dry-run-badge">DRY-RUN</span>
+                            <button class="btn btn-secondary blueprint-template-save-trigger" id="blueprintTemplateSaveButton" type="button" onclick="toggleCreationTemplatePanel(true, true)">保存为模板</button>
+                            <button class="btn btn-secondary blueprint-template-action" id="blueprintTemplateUpdateButton" type="button" onclick="updateSelectedCreationTemplate()" hidden>更新模板</button>
+                            <button class="btn btn-secondary blueprint-template-action" id="blueprintTemplateDuplicateButton" type="button" onclick="duplicateSelectedCreationTemplate()" hidden>复制</button>
+                            <button class="btn btn-secondary blueprint-template-action" id="blueprintTemplateStatusButton" type="button" onclick="toggleSelectedCreationTemplateStatus()" hidden>停用</button>
+                            <button class="btn btn-secondary blueprint-template-action danger" id="blueprintTemplateDeleteButton" type="button" onclick="deleteSelectedCreationTemplate()" hidden>删除</button>
+                        </div>
                     </div>
-                    <div class="blueprint-selector" id="blueprintSelector"></div>
-                    <div class="blueprint-account">
-                        <label for="blueprintAccountInput">广告账户 ID <span class="blueprint-required">*</span></label>
-                        <input id="blueprintAccountInput" type="text" autocomplete="off" placeholder="请输入本次要操作的广告账户 ID">
-                        <small>账户必须由你明确填写；平台不会替你猜测或自动选择账户。</small>
-                    </div>
-                    <div class="blueprint-notice" id="blueprintNotice" role="status"></div>
-                    <div class="blueprint-fields" id="blueprintFields">
-                        <div class="blueprint-empty">选择左侧蓝图后开始填写。</div>
-                    </div>
-                    <div class="blueprint-editor-footer">
-                        <span class="blueprint-readiness" id="blueprintReadiness">等待选择蓝图</span>
-                        <button class="btn btn-secondary" type="button" onclick="resetBlueprintDraft()">清空草稿</button>
-                        <button class="btn btn-primary" type="button" onclick="useBlueprintInChat()">带入对话</button>
+                    <div class="blueprint-flowbar" id="blueprintFlowbar" aria-label="创建步骤"></div>
+                    <div class="blueprint-workbench">
+                        <aside class="blueprint-field-nav" id="blueprintFieldNav" aria-label="参数填写目录">
+                            <div class="blueprint-empty">选择蓝图后显示填写目录。</div>
+                        </aside>
+                        <div class="blueprint-editor-main">
+                            <div class="blueprint-context-grid">
+                                <div class="blueprint-selector" id="blueprintSelector"></div>
+                                <div class="blueprint-account">
+                                    <label for="blueprintAccountInput">广告账户 ID <span class="blueprint-required">*</span></label>
+                                    <input id="blueprintAccountInput" type="text" autocomplete="off" placeholder="请输入本次要操作的广告账户 ID">
+                                    <small>账户必须由你明确填写；平台不会替你猜测或自动选择账户。</small>
+                                </div>
+                            </div>
+                            <div class="blueprint-notice" id="blueprintNotice" role="status"></div>
+                            <div class="blueprint-template-panel" id="blueprintTemplatePanel" hidden>
+                                <div class="blueprint-template-panel-heading">
+                                    <div><strong id="blueprintTemplatePanelTitle">保存当前参数为模板</strong><span>只保存当前蓝图允许的参数值，账号与地区可作为适用范围。</span></div>
+                                    <button class="icon-btn" type="button" onclick="toggleCreationTemplatePanel(false)" aria-label="关闭模板表单">×</button>
+                                </div>
+                                <div class="blueprint-template-form">
+                                    <label><span>模板名称</span><input id="creationTemplateName" type="text" maxlength="120" placeholder="例如：北美 · Leads · 稳定获客"></label>
+                                    <label><span>适用范围</span><select id="creationTemplateScope"><option value="general">个人通用</option><option value="account">指定账户</option><option value="region">指定地区</option></select></label>
+                                    <label><span>适用账户</span><input id="creationTemplateAccount" type="text" maxlength="200" placeholder="可留空，使用时再选择"></label>
+                                    <label><span>适用地区</span><input id="creationTemplateRegion" type="text" maxlength="120" placeholder="例如：US / North America"></label>
+                                    <label class="blueprint-template-checkbox"><input id="creationTemplateDefault" type="checkbox"><span>设为该范围的默认模板</span></label>
+                                    <label class="wide"><span>标签</span><input id="creationTemplateTags" type="text" maxlength="500" placeholder="用逗号分隔，例如：lead、北美、稳定版"></label>
+                                    <label class="wide"><span>说明</span><textarea id="creationTemplateDescription" maxlength="500" rows="2" placeholder="记录这份模板适合什么业务场景"></textarea></label>
+                                </div>
+                                <div class="blueprint-template-panel-footer"><small>模板保存后仍可修改；应用模板只会填充草稿，不会直接创建广告。</small><button class="btn btn-primary" id="creationTemplateSubmitButton" type="button" onclick="saveCreationTemplate()">保存模板</button></div>
+                            </div>
+                            <div class="blueprint-summary" id="blueprintSummary" aria-live="polite"></div>
+                            <div class="blueprint-fields" id="blueprintFields">
+                                <div class="blueprint-empty">选择左侧蓝图后开始填写。</div>
+                            </div>
+                            <div class="blueprint-editor-footer">
+                                <span class="blueprint-readiness" id="blueprintReadiness">等待选择蓝图</span>
+                                <button class="btn btn-secondary blueprint-focus-action" type="button" onclick="focusBlueprintIssue()">定位待填项</button>
+                                <button class="btn btn-secondary" type="button" onclick="resetBlueprintDraft()">清空草稿</button>
+                                <button class="btn btn-primary" type="button" onclick="useBlueprintInChat()">带入对话</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
     </div>
     
-    <script src="/static/js/chat.js" defer></script>
+    <script src="/static/js/chat.js?v=20260908-creation-studio-v17" defer></script>
 </body>
 </html>

@@ -6,7 +6,6 @@ author: Ryan
 created: 2026-09-08
 tags: [tiktok, ads, smart-plus, spark-ads, ecommerce, app, lead-generation, pixel, reporting]
 aliases: [tiktok ads, tiktok, douyin, 抖音]
-parser_platform: tiktok
 ---
 
 # TikTok Ads 专家 Skill

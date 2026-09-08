@@ -5,11 +5,17 @@ on:
     paths:
       - "agents/ad_agent/**"
       - "pyproject.toml"
+      - "Makefile"
+      - ".python-version"
+      - "scripts/ad-agent-python"
       - ".github/workflows/ad-agent-harness.yml"
   pull_request:
     paths:
       - "agents/ad_agent/**"
       - "pyproject.toml"
+      - "Makefile"
+      - ".python-version"
+      - "scripts/ad-agent-python"
       - ".github/workflows/ad-agent-harness.yml"
 
 permissions:
@@ -28,25 +34,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: agents/ad_agent/requirements.txt
       - name: Install dependencies
-        run: python -m pip install -r agents/ad_agent/requirements.txt
+        run: ./scripts/ad-agent-python -m pip install -r agents/ad_agent/requirements.txt
+      - name: Verify Python version
+        run: ./scripts/ad-agent-python --version
       - name: Compile Python sources
-        run: python -m compileall -q agents/ad_agent
+        run: ./scripts/ad-agent-python -m compileall -q agents/ad_agent
       - name: Validate executable tool contracts
-        run: python agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
+        run: ./scripts/ad-agent-python agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
       - name: Audit provider capability coverage
-        run: python agents/ad_agent/scripts/audit_capabilities.py
+        run: ./scripts/ad-agent-python agents/ad_agent/scripts/audit_capabilities.py
       - name: Audit creation blueprints and lookup sources
-        run: python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided
+        run: ./scripts/ad-agent-python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided
       - name: Run evidence-based local readiness gate
-        run: python agents/ad_agent/scripts/release_readiness.py --profile local
+        run: ./scripts/ad-agent-python agents/ad_agent/scripts/release_readiness.py --profile local
       - name: Run contract and golden tests
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
-        run: python -m pytest agents/ad_agent/tests -q
+        run: ./scripts/ad-agent-python -m pytest agents/ad_agent/tests -q
       - name: Check patch whitespace
         run: git diff --check
 
@@ -63,14 +71,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: pip
           cache-dependency-path: agents/ad_agent/requirements.txt
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
       - name: Install ad-agent dependencies
-        run: python -m pip install -r agents/ad_agent/requirements.txt
+        run: ./scripts/ad-agent-python -m pip install -r agents/ad_agent/requirements.txt
+      - name: Verify Python version
+        run: ./scripts/ad-agent-python --version
       - name: Build pinned skill-up CLI
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/alibaba/skill-up.git /tmp/skill-up

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from datetime import datetime, timedelta
 from typing import Any, Optional
@@ -48,6 +49,41 @@ class RuntimeSecurity:
 
         visit(value)
         return list(dict.fromkeys(paths))[:10]
+
+    def validate_text_redline(self, value: str) -> list[str]:
+        """Reject credential-shaped assignments before intent parsing.
+
+        Natural language is not a structured Tool payload, so a request that
+        only contains a credential field would otherwise be invisible to the
+        schema-driven parser when no Capability is loaded. Inspect only the
+        field name and return no value; the caller redacts the original text
+        before persistence or model use.
+        """
+        text = str(value or "")
+        found: list[str] = []
+        def field_expression(field: str) -> str:
+            # Structured red-line names are normalized (``accesstoken``),
+            # while chat text commonly uses ``access_token`` or ``access
+            # token``. Allow separators only inside a declared protected
+            # field; this does not create a business vocabulary.
+            return r"[_\s-]*".join(re.escape(char) for char in str(field))
+
+        field_pattern = "|".join(
+            field_expression(field)
+            for field in sorted(self.PROTECTED_INPUT_FIELDS, key=len, reverse=True)
+        )
+        for match in re.finditer(
+            rf"(?<![A-Za-z0-9_])(?P<field>{field_pattern})(?![A-Za-z0-9_])"
+            r"\s*(?:=|:|：|是|为)",
+            text,
+            re.IGNORECASE,
+        ):
+            field = match.group("field")
+            if field not in found:
+                found.append(field)
+            if len(found) >= 10:
+                break
+        return found
 
     def sanitize_result(self, result: ToolResult) -> ToolResult:
         """Redact a Tool result before it leaves the Runtime boundary.
@@ -117,6 +153,70 @@ class RuntimeSecurity:
             "preview": preview_payload,
         }
 
+    @staticmethod
+    def confirmation_chain_plan(
+        session_id: str,
+        user_id: str,
+        account_id: str,
+        platform: str,
+        tool_defs: list[Any],
+        request_context: dict[str, Any],
+        preview: Optional[dict] = None,
+    ) -> dict[str, Any]:
+        """Create one approval binding for a dependent creation chain.
+
+        A Campaign -> child-resource chain is one operator decision even
+        though it contains several write Tools.  The approval binds the
+        complete declarative request and ordered Tool contract set; generated
+        parent IDs are deliberately not part of the request context because
+        they are provider output, not operator input.
+        """
+        tools = [str(getattr(tool, "name", "")) for tool in tool_defs]
+        contract_hash = sha256_json([
+            {
+                "name": str(getattr(tool, "name", "")),
+                "contract_hash": str(getattr(tool, "contract_hash", "") or ""),
+            }
+            for tool in tool_defs
+        ])
+        manifest = {
+            "platform": str(platform),
+            "tools": tools,
+            "request": request_context,
+        }
+        normalized = canonical_json(manifest)
+        input_digest = sha256_json(manifest)
+        request_digest = request_hash(str(platform), account_id, "__creation_plan__", input_digest)
+        idempotency_key = hashlib.sha256(
+            f"{user_id}:__creation_plan__:{normalized}".encode("utf-8")
+        ).hexdigest()[:16]
+        fingerprint = hashlib.sha256(
+            "|".join((
+                str(session_id), str(account_id or ""), str(platform),
+                normalized, idempotency_key,
+            )).encode("utf-8")
+        ).hexdigest()
+        token = hashlib.sha256(
+            f"ad-agent-confirm-chain-v1:{fingerprint}".encode("utf-8")
+        ).hexdigest()
+        return {
+            "type": "confirm_write_plan",
+            "session_id": str(session_id),
+            "user_id": str(user_id),
+            "account_id": str(account_id or ""),
+            "platform": str(platform),
+            "tool": "__creation_plan__",
+            "tools": tools,
+            "plan_fingerprint": fingerprint,
+            "confirmation_token": token,
+            "idempotency_key": idempotency_key,
+            "input_hash": input_digest,
+            "preview_hash": sha256_json(preview if preview is not None else manifest),
+            "request_hash": request_digest,
+            "contract_hash": contract_hash,
+            "preview": preview if preview is not None else manifest,
+        }
+
     def prepare_confirmation(
         self, expected: dict[str, Any], create: bool = False,
         ttl_seconds: int = 600,
@@ -168,16 +268,23 @@ class RuntimeSecurity:
     def confirmation_matches(
         payload: Optional[dict], expected: dict[str, Any]
     ) -> bool:
-        if not isinstance(payload, dict) or payload.get("type") != "confirm_write":
+        if not isinstance(payload, dict):
             return False
-        return all(
+        expected_type = "confirm_write_plan" if expected.get("type") == "confirm_write_plan" else "confirm_write"
+        if payload.get("type") != expected_type:
+            return False
+        if not all(
             str(payload.get(key, "")) == str(expected.get(key, ""))
             for key in (
                 "session_id", "user_id", "account_id", "tool",
                 "plan_fingerprint", "confirmation_token", "idempotency_key",
                 "input_hash", "preview_hash", "request_hash", "contract_hash",
             )
-        )
+        ):
+            return False
+        if expected_type == "confirm_write_plan":
+            return payload.get("platform") == expected.get("platform") and payload.get("tools") == expected.get("tools")
+        return True
 
     def apply_read_data_boundary(
         self, tool_name: str, result: ToolResult

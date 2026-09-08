@@ -25,7 +25,7 @@ engine:
     local:
       # Set AD_AGENT_REPO_ROOT when invoking skill-up. Keeping this as an
       # environment reference makes the suite portable across checkouts.
-      command: python3
+      command: python3.13
       args:
         - ${AD_AGENT_REPO_ROOT}/agents/ad_agent/evals/skill_up_engine.py
         - --input

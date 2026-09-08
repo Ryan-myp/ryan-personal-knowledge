@@ -17,6 +17,7 @@
         const creationCardState = new Map();
         const creationCardEvaluationTimers = new Map();
         const creationCardEvaluationRevisions = new Map();
+        const creationDirectoryCollapseState = new Map();
         let pendingBlueprintRequest = null;
         let pendingCreationReview = null;
         const skillState = {
@@ -43,7 +44,14 @@
             selectionTokens: {},
             selectionTokenTools: {},
             lookupOptions: {},
+            listQuery: '',
+            listProvider: 'all',
+            templates: [],
+            selectedTemplateId: '',
+            templatePanelOpen: false,
+            templateSaveAsNew: false,
         };
+        const knowledgeState = { items: [], selectedKey: '', summary: '', summaryMode: 'lexical', managedItems: [], editingDocumentId: '' };
 
         const TRACE_STATUS_LABELS = {
             planned: '计划中', running: '运行中', succeeded: '已成功',
@@ -108,6 +116,8 @@
             document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('scheduleOverlay')?.classList.remove('active');
             document.getElementById('scheduleOverlay')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('memoryOverlay')?.classList.remove('active');
+            document.getElementById('memoryOverlay')?.setAttribute('aria-hidden', 'true');
             if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
             monitoringRefreshTimer = null;
         }
@@ -576,9 +586,78 @@
                 overlay.setAttribute('aria-hidden', 'false');
                 document.getElementById('knowledgeNavButton')?.classList.add('active');
                 document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'true');
+                loadKnowledgeCatalog();
+                loadManagedKnowledgeDocuments();
             }
             const keyInput = document.getElementById('knowledgeApiKey');
             if (keyInput && !keyInput.value) keyInput.value = serviceApiKey;
+        }
+
+        function renderMemories(items) {
+            const list = document.getElementById('memoryList');
+            const count = document.getElementById('memoryCount');
+            if (count) count.textContent = `${items.length} 条有效记忆`;
+            if (!list) return;
+            if (!items.length) {
+                list.innerHTML = '<div class="memory-empty">还没有匹配的有效记忆。你也可以在对话中说“请记住……”来保存。</div>';
+                return;
+            }
+            list.innerHTML = items.map(item => {
+                const tags = (item.tags || []).map(tag => `<span>${escapeHtml(tag)}</span>`).join('');
+                const score = Number(item.score || 0).toFixed(2);
+                return `<article class="memory-item"><div class="memory-item-head"><span class="memory-kind">${escapeHtml(item.kind || 'semantic')}</span><time>${escapeHtml(conversationTime(item.updated_at) || item.updated_at || '—')}</time><button class="memory-delete" type="button" onclick="deleteMemory('${escapeHtml(item.memory_id || '')}')">删除</button></div><p>${escapeHtml(item.content || '')}</p><div class="memory-item-meta"><span>来源 ${escapeHtml(item.source || 'unknown')}</span><span>置信度 ${Number(item.confidence || 0).toFixed(2)}</span><span>相关度 ${score}</span>${item.memory_key ? `<code>${escapeHtml(item.memory_key)}</code>` : ''}</div><div class="memory-tags">${tags}</div></article>`;
+            }).join('');
+        }
+
+        async function loadMemories() {
+            const list = document.getElementById('memoryList');
+            if (list) list.innerHTML = '<div class="memory-empty">正在读取记忆…</div>';
+            try {
+                const query = document.getElementById('memoryQuery')?.value.trim() || '';
+                const data = await apiFetch(`/memory?query=${encodeURIComponent(query)}&limit=20`);
+                renderMemories(data.memories || []);
+                const updated = document.getElementById('memoryUpdated');
+                if (updated) updated.textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
+            } catch (error) {
+                if (list) list.innerHTML = `<div class="memory-empty error">${escapeHtml(error.message || '记忆读取失败')}</div>`;
+            }
+        }
+
+        async function saveMemory() {
+            const status = document.getElementById('memoryWriteStatus');
+            const content = document.getElementById('memoryContent')?.value.trim() || '';
+            if (!content) { if (status) status.textContent = '请先填写记忆内容'; return; }
+            if (status) status.textContent = '正在保存…';
+            try {
+                await apiFetch('/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                    content, kind: document.getElementById('memoryKind')?.value || 'semantic',
+                    memory_key: document.getElementById('memoryKey')?.value.trim() || null,
+                    importance: Number(document.getElementById('memoryImportance')?.value || 0.7),
+                    confidence: 1, tags: (document.getElementById('memoryTags')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
+                }) });
+                document.getElementById('memoryContent').value = '';
+                if (status) status.textContent = '已保存；相同 Key 的旧版本会保留为 superseded。';
+                await loadMemories();
+            } catch (error) { if (status) status.textContent = error.message || '保存失败'; }
+        }
+
+        async function deleteMemory(memoryId) {
+            if (!memoryId || !window.confirm('确认删除这条记忆？删除后不会再被召回。')) return;
+            try { await apiFetch(`/memory/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }); await loadMemories(); }
+            catch (error) { window.alert(`删除失败：${error.message || '请稍后重试'}`); }
+        }
+
+        function openMemoryManager() {
+            closeWorkspacePopovers();
+            const overlay = document.getElementById('memoryOverlay');
+            if (!overlay) return;
+            overlay.classList.add('active'); overlay.setAttribute('aria-hidden', 'false');
+            loadMemories();
+        }
+
+        function closeMemoryManager() {
+            document.getElementById('memoryOverlay')?.classList.remove('active');
+            document.getElementById('memoryOverlay')?.setAttribute('aria-hidden', 'true');
         }
 
         function traceNodeMatchesFilter(node) {
@@ -635,13 +714,35 @@
         function toggleKnowledgeComposer() {
             const composer = document.getElementById('knowledgeComposer');
             const results = document.getElementById('knowledgeResults');
-            const toggle = document.getElementById('knowledgeComposeToggle');
             if (!composer || !results) return;
             const active = !composer.classList.contains('active');
+            if (active) {
+                showKnowledgeManagementView();
+                return;
+            }
             composer.classList.toggle('active', active);
             results.classList.toggle('view-hidden', active);
-            if (toggle) toggle.textContent = active ? '返回检索' : '写入知识库';
-            if (active) document.getElementById('knowledgeTitle')?.focus();
+            const toggle = document.getElementById('knowledgeComposeToggle');
+            if (toggle) toggle.textContent = active ? '返回目录' : '管理文档';
+            const catalogToggle = document.getElementById('knowledgeCatalogToggle');
+            catalogToggle?.classList.toggle('active', !active);
+            catalogToggle?.setAttribute('aria-pressed', String(!active));
+            toggle?.classList.toggle('active', active);
+            toggle?.setAttribute('aria-pressed', String(active));
+        }
+
+        function showKnowledgeManagementView(focusTitle = true) {
+            const composer = document.getElementById('knowledgeComposer');
+            const results = document.getElementById('knowledgeResults');
+            const toggle = document.getElementById('knowledgeComposeToggle');
+            if (!composer || !results) return;
+            composer.classList.add('active');
+            results.classList.add('view-hidden');
+            if (toggle) { toggle.textContent = '返回目录'; toggle.classList.add('active'); toggle.setAttribute('aria-pressed', 'true'); }
+            document.getElementById('knowledgeCatalogToggle')?.classList.remove('active');
+            document.getElementById('knowledgeCatalogToggle')?.setAttribute('aria-pressed', 'false');
+            loadManagedKnowledgeDocuments();
+            if (focusTitle) document.getElementById('knowledgeTitle')?.focus();
         }
 
         function showKnowledgeSearchView() {
@@ -650,7 +751,139 @@
             const toggle = document.getElementById('knowledgeComposeToggle');
             composer?.classList.remove('active');
             results?.classList.remove('view-hidden');
-            if (toggle) toggle.textContent = '写入知识库';
+            if (toggle) toggle.textContent = '管理文档';
+            document.getElementById('knowledgeCatalogToggle')?.classList.add('active');
+            document.getElementById('knowledgeCatalogToggle')?.setAttribute('aria-pressed', 'true');
+            toggle?.classList.remove('active');
+            toggle?.setAttribute('aria-pressed', 'false');
+        }
+
+        function setKnowledgeEditorMode(documentId = '') {
+            knowledgeState.editingDocumentId = documentId || '';
+            const editing = Boolean(knowledgeState.editingDocumentId);
+            const cancel = document.getElementById('knowledgeCancelEditButton');
+            const draftButton = document.getElementById('knowledgeSaveDraftButton');
+            const publishButton = document.getElementById('knowledgeSavePublishButton');
+            if (cancel) cancel.hidden = !editing;
+            if (draftButton) draftButton.textContent = editing ? '保存修改' : '保存草稿';
+            if (publishButton) publishButton.textContent = editing ? '保存并发布新版本' : '保存并发布';
+        }
+
+        function resetKnowledgeEditor() {
+            setKnowledgeEditorMode('');
+            for (const id of ['knowledgeTitle', 'knowledgeTags', 'knowledgeSource', 'knowledgeContent']) {
+                const field = document.getElementById(id);
+                if (field) field.value = id === 'knowledgeSource' ? 'user' : '';
+            }
+            const version = document.getElementById('knowledgeVersion');
+            if (version) version.value = '1.0.0';
+            const platform = document.getElementById('knowledgeWritePlatform');
+            if (platform) platform.value = 'all';
+            const type = document.getElementById('knowledgeWriteType');
+            if (type) type.value = 'general';
+            setKnowledgeWriteStatus('已清空编辑器；可以新增一篇知识。');
+        }
+
+        function renderManagedKnowledgeDocuments(items) {
+            const list = document.getElementById('knowledgeManagedList');
+            if (!list) return;
+            knowledgeState.managedItems = Array.isArray(items) ? items : [];
+            const toggle = document.getElementById('knowledgeComposeToggle');
+            if (toggle && !document.getElementById('knowledgeComposer')?.classList.contains('active')) {
+                toggle.textContent = knowledgeState.managedItems.length ? `管理文档 · ${knowledgeState.managedItems.length}` : '管理文档';
+            }
+            list.replaceChildren();
+            if (!knowledgeState.managedItems.length) {
+                const empty = document.createElement('div');
+                empty.className = 'knowledge-managed-empty';
+                empty.textContent = '当前没有自建文档。内置知识为只读；回到知识目录点击“复制为我的草稿”即可编辑并发布。';
+                list.appendChild(empty);
+                return;
+            }
+            knowledgeState.managedItems.forEach(item => {
+                const row = document.createElement('article');
+                row.className = 'knowledge-managed-item';
+                const main = document.createElement('div');
+                const title = document.createElement('strong');
+                title.textContent = item.title || '未命名知识';
+                const meta = document.createElement('span');
+                meta.textContent = [item.status === 'published' ? '已发布' : item.status === 'deprecated' ? '已归档' : '草稿', item.platform || 'all', `v${item.version || '1.0.0'}`].join(' · ');
+                main.append(title, meta);
+                const actions = document.createElement('div');
+                actions.className = 'knowledge-managed-actions';
+                if (item.status !== 'deprecated') {
+                    const edit = document.createElement('button');
+                    edit.type = 'button'; edit.textContent = '编辑';
+                    edit.onclick = () => editKnowledgeDocument(item.document_id);
+                    actions.appendChild(edit);
+                }
+                if (item.status === 'draft') {
+                    const publish = document.createElement('button');
+                    publish.type = 'button'; publish.textContent = '发布';
+                    publish.onclick = () => changeKnowledgePublication(item.document_id, true);
+                    actions.appendChild(publish);
+                } else if (item.status === 'published') {
+                    const unpublish = document.createElement('button');
+                    unpublish.type = 'button'; unpublish.textContent = '下线';
+                    unpublish.onclick = () => changeKnowledgePublication(item.document_id, false);
+                    actions.appendChild(unpublish);
+                }
+                const remove = document.createElement('button');
+                remove.type = 'button'; remove.className = 'danger'; remove.textContent = item.status === 'published' ? '归档' : '删除';
+                remove.onclick = () => deleteKnowledgeDocument(item.document_id, item.status);
+                actions.appendChild(remove);
+                row.append(main, actions);
+                list.appendChild(row);
+            });
+        }
+
+        async function loadManagedKnowledgeDocuments() {
+            const list = document.getElementById('knowledgeManagedList');
+            if (list && !knowledgeState.managedItems.length) list.innerHTML = '<div class="knowledge-managed-empty">正在加载知识文档…</div>';
+            try {
+                const data = await apiFetch('/knowledge/documents?limit=100');
+                renderManagedKnowledgeDocuments(data.documents || []);
+            } catch (error) {
+                if (list) list.innerHTML = `<div class="knowledge-managed-empty error">${escapeHtml(error.message || '知识文档读取失败')}</div>`;
+            }
+        }
+
+        async function editKnowledgeDocument(documentId) {
+            try {
+                const item = await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}`);
+                document.getElementById('knowledgeTitle').value = item.title || '';
+                document.getElementById('knowledgeContent').value = item.content || '';
+                document.getElementById('knowledgeWritePlatform').value = item.platform || 'all';
+                document.getElementById('knowledgeWriteType').value = item.knowledge_type || 'general';
+                document.getElementById('knowledgeVersion').value = item.version || '1.0.0';
+                document.getElementById('knowledgeTags').value = (item.tags || []).join(', ');
+                document.getElementById('knowledgeSource').value = item.source || 'user';
+                setKnowledgeEditorMode(documentId);
+                setKnowledgeWriteStatus(item.status === 'published' ? '正在编辑已发布版本；保存会生成新的草稿版本。' : '正在编辑草稿。');
+                showKnowledgeManagementView(false);
+                document.getElementById('knowledgeContent')?.focus();
+            } catch (error) {
+                setKnowledgeWriteStatus(error.message || '知识文档读取失败。', true);
+            }
+        }
+
+        async function changeKnowledgePublication(documentId, publish) {
+            try {
+                await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' });
+                setKnowledgeWriteStatus(publish ? '知识已发布，Agent 后续可以检索。' : '知识已下线，Agent 不会再检索。');
+                await Promise.all([loadManagedKnowledgeDocuments(), loadKnowledgeCatalog()]);
+            } catch (error) { window.alert(`${publish ? '发布' : '下线'}失败：${error.message || '请稍后重试'}`); }
+        }
+
+        async function deleteKnowledgeDocument(documentId, status) {
+            const prompt = status === 'published' ? '确认归档这篇已发布知识？归档后仍保留历史记录，但不再参与检索。' : '确认删除这篇草稿？删除后不可恢复。';
+            if (!documentId || !window.confirm(prompt)) return;
+            try {
+                await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
+                if (knowledgeState.editingDocumentId === documentId) resetKnowledgeEditor();
+                setKnowledgeWriteStatus(status === 'published' ? '知识已归档。' : '草稿已删除。');
+                await Promise.all([loadManagedKnowledgeDocuments(), loadKnowledgeCatalog()]);
+            } catch (error) { window.alert(`操作失败：${error.message || '请稍后重试'}`); }
         }
 
         async function handleKnowledgeFileUpload(event) {
@@ -683,89 +916,330 @@
         }
 
         function formatKnowledgeMarkdown(markdown) {
-            if (!markdown) return '<span class="knowledge-empty">暂无正文</span>';
-            let source = escapeHtml(String(markdown));
-            const codeBlocks = [];
-            source = source.replace(/```(?:[a-zA-Z0-9_-]+)?\n?([\s\S]*?)```/g, (_, code) => {
-                const token = `@@KNOWLEDGE_CODE_${codeBlocks.length}@@`;
-                codeBlocks.push(`<pre>${code.trim()}</pre>`);
-                return token;
-            });
+            if (!String(markdown || '').trim()) return '<span class="knowledge-empty">暂无正文</span>';
+            let source = String(markdown).replace(/\r\n?/g, '\n');
+            if (/^---\s*\n/.test(source)) {
+                source = source.replace(/^---\s*\n[\s\S]*?\n---\s*(?:\n|$)/, '');
+            }
             const lines = source.split('\n');
             const output = [];
-            let inList = false;
-            for (let line of lines) {
-                const trimmed = line.trim();
-                if (/^[-*]\s+/.test(trimmed)) {
-                    if (!inList) { output.push('<ul>'); inList = true; }
-                    line = `<li>${trimmed.replace(/^[-*]\s+/, '')}</li>`;
-                } else {
-                    if (inList) { output.push('</ul>'); inList = false; }
-                    if (/^###\s+/.test(trimmed)) line = `<h4>${trimmed.replace(/^###\s+/, '')}</h4>`;
-                    else if (/^##\s+/.test(trimmed)) line = `<h3>${trimmed.replace(/^##\s+/, '')}</h3>`;
-                    else if (/^#\s+/.test(trimmed)) line = `<h3>${trimmed.replace(/^#\s+/, '')}</h3>`;
+            const inline = value => {
+                let html = escapeHtml(String(value || ''));
+                const codeTokens = [];
+                html = html.replace(/`([^`]+)`/g, (_, code) => {
+                    const token = `@@KNOWLEDGE_INLINE_CODE_${codeTokens.length}@@`;
+                    codeTokens.push(`<code>${code}</code>`);
+                    return token;
+                });
+                html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+                html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+                html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
+                html = html.replace(/_([^_\n]+)_/g, '<em>$1</em>');
+                return html.replace(/@@KNOWLEDGE_INLINE_CODE_(\d+)@@/g, (_, index) => codeTokens[Number(index)] || '');
+            };
+            const splitTableRow = line => {
+                let value = String(line || '').trim().replace(/^\s{0,3}/, '');
+                if (value.startsWith('|')) value = value.slice(1);
+                if (value.endsWith('|')) value = value.slice(0, -1);
+                const cells = [];
+                let cell = '';
+                let escaped = false;
+                let inCode = false;
+                for (let index = 0; index < value.length; index += 1) {
+                    const character = value[index];
+                    if (escaped) {
+                        cell += character;
+                        escaped = false;
+                    } else if (character === '\\') {
+                        escaped = true;
+                    } else if (character === '`') {
+                        inCode = !inCode;
+                        cell += character;
+                    } else if (character === '|' && !inCode) {
+                        cells.push(cell.trim());
+                        cell = '';
+                    } else {
+                        cell += character;
+                    }
                 }
-                line = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-                line = line.replace(/`([^`]+)`/g, '<code>$1</code>');
-                line = line.replace(/@@KNOWLEDGE_CODE_(\d+)@@/g, (_, index) => codeBlocks[Number(index)]);
-                output.push(line);
+                if (escaped) cell += '\\';
+                cells.push(cell.trim());
+                return cells;
+            };
+            const isTableDivider = line => {
+                const cells = splitTableRow(line);
+                return cells.length > 0 && cells.every(cell => /^:?-{1,}:?$/.test(cell));
+            };
+            const tableAlignment = cell => {
+                const value = String(cell || '').trim();
+                if (value.startsWith(':') && value.endsWith(':')) return 'center';
+                if (value.endsWith(':')) return 'right';
+                return 'left';
+            };
+            const renderTable = (headerLine, dividerLine, rows) => {
+                const headers = splitTableRow(headerLine);
+                const dividers = splitTableRow(dividerLine);
+                const body = rows.map(splitTableRow);
+                const alignments = headers.map((_, index) => tableAlignment(dividers[index] || ''));
+                const cellAttrs = index => ` style="text-align:${alignments[index] || 'left'}"`;
+                const headerHtml = headers.map((cell, index) => `<th${cellAttrs(index)}>${inline(cell)}</th>`).join('');
+                const bodyHtml = body.map(row => {
+                    const cells = headers.map((_, index) => `<td${cellAttrs(index)}>${inline(row[index] || '')}</td>`).join('');
+                    return `<tr>${cells}</tr>`;
+                }).join('');
+                return `<div class="knowledge-table-wrap"><table class="knowledge-table"><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`;
+            };
+            const fenceMatch = line => String(line || '').trim().match(/^(`{3,}|~{3,})\s*([^ ]*)?\s*$/);
+            let index = 0;
+            while (index < lines.length) {
+                const rawLine = lines[index];
+                const trimmed = rawLine.trim();
+                if (!trimmed) { index += 1; continue; }
+                const fence = fenceMatch(trimmed);
+                if (fence) {
+                    const marker = fence[1][0];
+                    const markerLength = fence[1].length;
+                    const language = String(fence[2] || '').replace(/[^a-zA-Z0-9_-]/g, '');
+                    const codeLines = [];
+                    index += 1;
+                    while (index < lines.length && !new RegExp(`^${marker}{${markerLength},}\\s*$`).test(lines[index].trim())) codeLines.push(lines[index++]);
+                    if (index < lines.length) index += 1;
+                    const languageClass = language ? ` class="language-${language}"` : '';
+                    output.push(`<pre><code${languageClass}>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+                    continue;
+                }
+                if (index + 1 < lines.length && trimmed.includes('|') && isTableDivider(lines[index + 1])) {
+                    const tableRows = [];
+                    index += 2;
+                    while (index < lines.length && lines[index].trim() && lines[index].includes('|')) tableRows.push(lines[index++]);
+                    output.push(renderTable(rawLine, lines[index - tableRows.length - 1], tableRows));
+                    continue;
+                }
+                const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+                if (heading) {
+                    const level = Math.min(4, heading[1].length);
+                    output.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+                    index += 1;
+                    continue;
+                }
+                if (/^([-*_])(?:\s*\1){2,}\s*$/.test(trimmed)) {
+                    output.push('<hr>');
+                    index += 1;
+                    continue;
+                }
+                if (/^>\s?/.test(trimmed)) {
+                    const quoteLines = [];
+                    while (index < lines.length && /^>\s?/.test(lines[index].trim())) {
+                        quoteLines.push(inline(lines[index].trim().replace(/^>\s?/, '')));
+                        index += 1;
+                    }
+                    output.push(`<blockquote>${quoteLines.join('<br>')}</blockquote>`);
+                    continue;
+                }
+                if (/^(?:[-*+]\s+|\d+[.)]\s+)/.test(trimmed)) {
+                    const ordered = /^\d+[.)]\s+/.test(trimmed);
+                    const items = [];
+                    while (index < lines.length) {
+                        const itemLine = lines[index].trim();
+                        const match = ordered ? itemLine.match(/^\d+[.)]\s+(.+)$/) : itemLine.match(/^[-*+]\s+(.+)$/);
+                        if (!match) break;
+                        const task = match[1].match(/^\[([ xX])\]\s+(.+)$/);
+                        const content = task ? `<span class="knowledge-task${task[1].toLowerCase() === 'x' ? ' complete' : ''}">${task[1].toLowerCase() === 'x' ? '✓' : '○'}</span>${inline(task[2])}` : inline(match[1]);
+                        items.push(`<li>${content}</li>`);
+                        index += 1;
+                    }
+                    output.push(`<${ordered ? 'ol' : 'ul'}>${items.join('')}</${ordered ? 'ol' : 'ul'}>`);
+                    continue;
+                }
+                const paragraph = [trimmed];
+                index += 1;
+                while (index < lines.length && lines[index].trim()
+                    && !/^(`{3,}|~{3,})|^#{1,6}\s+|^>\s?|^(?:[-*+]\s+|\d+[.)]\s+)/.test(lines[index].trim())
+                    && !(lines[index].trim().includes('|') && index + 1 < lines.length && isTableDivider(lines[index + 1])) ) {
+                    paragraph.push(lines[index].trim());
+                    index += 1;
+                }
+                output.push(`<p>${paragraph.map(inline).join('<br>')}</p>`);
             }
-            if (inList) output.push('</ul>');
-            return output.join('<br>');
+            return output.join('');
         }
 
-        function renderKnowledgeResults(results, summary = '') {
-            const container = document.getElementById('knowledgeResults');
-            if (!container) return;
-            container.replaceChildren();
-            if (!results.length) {
-                const empty = document.createElement('div');
-                empty.className = 'knowledge-empty';
-                empty.textContent = '没有匹配的已发布知识。可以换一个关键词或平台。';
-                container.appendChild(empty);
-                return;
-            }
-            if (summary) {
+        function knowledgeItemKey(item, index) {
+            return String(item.document_id || item.source_ref || item.title || index);
+        }
+
+        const knowledgeCategoryLabels = {
+            system: '系统规范',
+            platform_foundation: '平台基础',
+            campaign_operations: '投放配置',
+            optimization: '优化方法',
+            measurement: '测量与报表',
+            industry_playbooks: '行业打法',
+            budget_bidding: '预算与出价',
+            audience_targeting: '受众与定向',
+            creative: '创意与素材',
+            cross_platform_foundation: '跨平台基础',
+            diagnostics: '诊断与排障',
+            experimentation: '实验与学习',
+            general: '通用知识',
+        };
+
+        function knowledgeCategoryLabel(value) {
+            const key = String(value || 'general');
+            return knowledgeCategoryLabels[key] || key.replace(/[-_]/g, ' ');
+        }
+
+        function selectKnowledgeResult(key) {
+            const item = knowledgeState.items.find((entry, index) => knowledgeItemKey(entry, index) === key);
+            const reader = document.getElementById('knowledgeReader');
+            if (!item || !reader) return;
+            knowledgeState.selectedKey = key;
+            document.querySelectorAll('#knowledgeList .knowledge-list-item').forEach(node => {
+                node.classList.toggle('active', node.dataset.key === key);
+            });
+            reader.replaceChildren();
+            if (knowledgeState.summary) {
                 const summaryCard = document.createElement('section');
                 summaryCard.className = 'knowledge-summary';
-                summaryCard.innerHTML = '<div class="knowledge-summary-label">检索总结</div>';
+                const summaryLabel = document.createElement('div');
+                summaryLabel.className = 'knowledge-summary-label';
+                summaryLabel.textContent = knowledgeState.summaryMode === 'llm' ? '检索总结 · 智能总结' : '检索总结 · 快速结论';
                 const summaryBody = document.createElement('div');
                 summaryBody.className = 'knowledge-summary-body';
-                // Summary is LLM-generated Markdown too; escape first inside
-                // formatKnowledgeMarkdown so formatting cannot introduce HTML.
-                summaryBody.innerHTML = formatKnowledgeMarkdown(summary);
-                summaryCard.appendChild(summaryBody);
-                container.appendChild(summaryCard);
+                summaryBody.innerHTML = formatKnowledgeMarkdown(knowledgeState.summary);
+                summaryCard.append(summaryLabel, summaryBody);
+                reader.appendChild(summaryCard);
             }
-            for (const item of results) {
-                const card = document.createElement('article');
-                card.className = 'knowledge-result';
-                const head = document.createElement('div');
-                head.className = 'knowledge-result-head';
-                const title = document.createElement('div');
-                title.className = 'knowledge-result-title';
+            const header = document.createElement('header');
+            header.className = 'knowledge-reader-header';
+            const kicker = document.createElement('div');
+            kicker.className = 'knowledge-reader-kicker';
+            kicker.textContent = [item.platform || '通用', knowledgeCategoryLabel(item.category), item.knowledge_type || item.layer || 'general'].filter(Boolean).join(' / ');
+            const title = document.createElement('h1');
+            title.textContent = item.title || item.topic || item.document_id || '未命名知识';
+            const badge = document.createElement('span');
+            badge.className = 'knowledge-reader-badge';
+            badge.textContent = item.confidence != null ? `可信度 ${Math.round(Number(item.confidence) * 100)}%` : '已发布';
+            const meta = document.createElement('div');
+            meta.className = 'knowledge-reader-meta';
+            meta.textContent = [item.source_ref || item.source, item.version ? `v${item.version}` : '', item.updated_at ? `更新于 ${String(item.updated_at).slice(0, 10)}` : ''].filter(Boolean).join('  ·  ');
+            header.append(kicker, title, badge, meta);
+            const context = document.createElement('div');
+            context.className = 'knowledge-reader-context';
+            const headingPath = Array.isArray(item.heading_path) ? item.heading_path.filter(Boolean).join(' / ') : '';
+            const chunkLabel = Number(item.chunk_count) > 1 ? `章节片段 ${Number(item.chunk_index || 0) + 1} / ${Number(item.chunk_count)}` : '完整章节';
+            const matchedTerms = Array.isArray(item.matched_terms) ? item.matched_terms.filter(Boolean) : [];
+            const coverage = Number(item.match_coverage || 0);
+            const matchLabel = matchedTerms.length
+                ? `命中 ${matchedTerms.length} 个词 · ${Math.round(coverage * 100)}%`
+                : '';
+            context.textContent = [headingPath || '文档正文', chunkLabel, matchLabel].filter(Boolean).join('  ·  ');
+            const body = document.createElement('article');
+            body.className = 'knowledge-reader-body';
+            body.innerHTML = formatKnowledgeMarkdown(item.excerpt || '暂无正文');
+            const actions = document.createElement('div');
+            actions.className = 'knowledge-reader-actions';
+            const isManaged = String(item.document_id || '').startsWith('managed:');
+            if (isManaged) {
+                const managedId = String(item.document_id).slice('managed:'.length);
+                const edit = document.createElement('button');
+                edit.type = 'button'; edit.textContent = '编辑文档';
+                edit.onclick = () => editKnowledgeDocument(managedId);
+                const unpublish = document.createElement('button');
+                unpublish.type = 'button'; unpublish.textContent = '下线';
+                unpublish.onclick = () => changeKnowledgePublication(managedId, false);
+                const archive = document.createElement('button');
+                archive.type = 'button'; archive.className = 'danger'; archive.textContent = '归档';
+                archive.onclick = () => deleteKnowledgeDocument(managedId, 'published');
+                actions.append(edit, unpublish, archive);
+            } else {
+                const readOnly = document.createElement('span');
+                readOnly.className = 'knowledge-reader-readonly';
+                readOnly.textContent = '内置 · 只读';
+                const clone = document.createElement('button');
+                clone.type = 'button'; clone.textContent = '复制为我的草稿';
+                clone.onclick = () => cloneKnowledgeDocument(item);
+                actions.append(readOnly, clone);
+            }
+            const footer = document.createElement('footer');
+            footer.className = 'knowledge-reader-footer';
+            footer.textContent = '仅作为 Agent 业务上下文使用，不会直接调用广告渠道接口。';
+            header.append(actions);
+            reader.append(header, context, body, footer);
+        }
+
+        function cloneKnowledgeDocument(item) {
+            const platform = document.getElementById('knowledgeWritePlatform');
+            const platformValue = String(item.platform || 'all');
+            const platformOption = platform && Array.from(platform.options).some(option => option.value === platformValue) ? platformValue : 'all';
+            document.getElementById('knowledgeTitle').value = `${item.title || item.topic || '未命名知识'}（我的版本）`;
+            document.getElementById('knowledgeContent').value = item.excerpt || '';
+            document.getElementById('knowledgeWritePlatform').value = platformOption;
+            document.getElementById('knowledgeWriteType').value = item.knowledge_type || 'general';
+            document.getElementById('knowledgeVersion').value = '1.0.0';
+            document.getElementById('knowledgeTags').value = (item.tags || []).join(', ');
+            document.getElementById('knowledgeSource').value = item.source || 'user';
+            setKnowledgeEditorMode('');
+            setKnowledgeWriteStatus('已复制内置知识，请检查内容后保存为我的草稿。');
+            showKnowledgeManagementView(false);
+            document.getElementById('knowledgeContent')?.focus();
+        }
+
+        function renderKnowledgeResults(results, summary = '', summaryMode = 'lexical') {
+            const container = document.getElementById('knowledgeResults');
+            const list = document.getElementById('knowledgeList');
+            const reader = document.getElementById('knowledgeReader');
+            const count = document.getElementById('knowledgeCatalogCount');
+            if (!container || !list || !reader) return;
+            knowledgeState.items = Array.isArray(results) ? results : [];
+            knowledgeState.summary = summary || '';
+            knowledgeState.summaryMode = summaryMode || 'lexical';
+            knowledgeState.selectedKey = '';
+            list.replaceChildren();
+            if (count) count.textContent = `${knowledgeState.items.length} 条已发布知识`;
+            if (!knowledgeState.items.length) {
+                const emptyList = document.createElement('div');
+                emptyList.className = 'knowledge-list-empty';
+                emptyList.textContent = '没有匹配的已发布知识';
+                list.appendChild(emptyList);
+                reader.innerHTML = '<div class="knowledge-reader-empty"><span class="knowledge-reader-empty-mark">⌕</span><strong>没有找到相关知识</strong><span>换个关键词或平台试试</span></div>';
+                return;
+            }
+            const groups = new Map();
+            knowledgeState.items.forEach((item, index) => {
+                const groupKey = `${item.platform || 'all'}::${item.category || item.layer || 'general'}`;
+                if (!groups.has(groupKey)) groups.set(groupKey, []);
+                groups.get(groupKey).push({ item, index });
+            });
+            groups.forEach((groupItems, groupKey) => {
+                const [platform, category] = groupKey.split('::');
+                const groupHeader = document.createElement('div');
+                groupHeader.className = 'knowledge-list-group';
+                const groupTitle = document.createElement('strong');
+                groupTitle.textContent = `${platform === 'all' ? '通用' : platform} · ${knowledgeCategoryLabel(category)}`;
+                const groupCount = document.createElement('span');
+                groupCount.textContent = `${groupItems.length}`;
+                groupHeader.append(groupTitle, groupCount);
+                list.appendChild(groupHeader);
+                groupItems.forEach(({ item, index }) => {
+                const key = knowledgeItemKey(item, index);
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'knowledge-list-item';
+                button.dataset.key = key;
+                button.onclick = () => selectKnowledgeResult(key);
+                const title = document.createElement('strong');
                 title.textContent = item.title || item.topic || item.document_id || '未命名知识';
-                const badge = document.createElement('span');
-                badge.className = 'knowledge-result-badge';
-                badge.textContent = item.confidence != null ? `可信度 ${Math.round(Number(item.confidence) * 100)}%` : '已发布';
-                head.append(title, badge);
-                const meta = document.createElement('div');
-                meta.className = 'knowledge-result-meta';
-                meta.textContent = [item.platform || '通用', item.knowledge_type || item.layer || 'general', item.source_ref || item.source].filter(Boolean).join(' · ');
-                const excerpt = document.createElement('div');
-                excerpt.className = 'knowledge-result-excerpt';
-                excerpt.innerHTML = formatKnowledgeMarkdown(item.excerpt || '暂无正文');
-                const details = document.createElement('details');
-                details.className = 'knowledge-result-details';
-                const detailsSummary = document.createElement('summary');
-                detailsSummary.textContent = '查看 Markdown 摘要';
-                const fullContent = document.createElement('div');
-                fullContent.className = 'knowledge-markdown';
-                fullContent.innerHTML = formatKnowledgeMarkdown(item.excerpt || '暂无正文');
-                details.append(detailsSummary, fullContent);
-                card.append(head, meta, excerpt, details);
-                container.appendChild(card);
-            }
+                const meta = document.createElement('span');
+                meta.textContent = [item.subcategory || item.knowledge_type || item.layer || 'general', item.version ? `v${item.version}` : ''].filter(Boolean).join(' · ');
+                const section = document.createElement('small');
+                section.textContent = Array.isArray(item.heading_path) && item.heading_path.length ? item.heading_path.join(' / ') : '文档正文';
+                button.append(title, meta, section);
+                list.appendChild(button);
+                });
+            });
+            selectKnowledgeResult(knowledgeItemKey(knowledgeState.items[0], 0));
         }
 
         async function searchKnowledge() {
@@ -773,15 +1247,15 @@
             const query = document.getElementById('knowledgeQuery')?.value.trim() || '';
             const platform = document.getElementById('knowledgePlatform')?.value || '';
             if (!query) {
-                setKnowledgeStatus('请输入要搜索的关键词。', true);
-                renderKnowledgeResults([]);
+                await loadKnowledgeCatalog();
                 return;
             }
             const keyInput = document.getElementById('knowledgeApiKey');
             if (keyInput?.value.trim()) serviceApiKey = keyInput.value.trim();
             setKnowledgeStatus('正在检索已发布知识…');
             try {
-                const params = new URLSearchParams({ query, limit: '10' });
+                const summarize = document.getElementById('knowledgeSmartSummary')?.checked || false;
+                const params = new URLSearchParams({ query, limit: '10', summarize: String(summarize) });
                 if (platform) params.set('platform', platform);
                 const response = await authenticatedFetch(`/knowledge/search?${params.toString()}`);
                 const text = await response.text();
@@ -789,11 +1263,33 @@
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
                 if (!response.ok) throw new Error(data.detail || data.error || `知识库请求失败（${response.status}）`);
                 const results = Array.isArray(data.results) ? data.results : [];
-                renderKnowledgeResults(results, data.summary || '');
-                setKnowledgeStatus(`找到 ${results.length} 条已发布知识，已生成业务总结。`);
+                renderKnowledgeResults(results, data.summary || '', data.summary_mode || 'lexical');
+                setKnowledgeStatus(summarize
+                    ? `找到 ${results.length} 条已发布知识 · 已完成 BM25 检索与智能总结。`
+                    : `找到 ${results.length} 条已发布知识 · 本地 BM25 快速检索完成。`);
             } catch (error) {
                 renderKnowledgeResults([]);
                 setKnowledgeStatus(error.message || '知识库暂时不可用。', true);
+            }
+        }
+
+        async function loadKnowledgeCatalog() {
+            const platform = document.getElementById('knowledgePlatform')?.value || '';
+            setKnowledgeStatus('正在加载已发布知识目录…');
+            try {
+                const params = new URLSearchParams({ limit: '100' });
+                if (platform) params.set('platform', platform);
+                const response = await authenticatedFetch(`/knowledge/catalog?${params.toString()}`);
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                if (!response.ok) throw new Error(data.detail || data.error || `知识目录请求失败（${response.status}）`);
+                const results = Array.isArray(data.documents) ? data.documents : [];
+                renderKnowledgeResults(results);
+                setKnowledgeStatus(`知识目录 · ${Number(data.count ?? results.length)} 条已发布知识`);
+            } catch (error) {
+                renderKnowledgeResults([]);
+                setKnowledgeStatus(error.message || '知识目录暂时不可用。', true);
             }
         }
 
@@ -818,8 +1314,9 @@
                 confidence: 0.8,
             };
             try {
-                const created = await apiFetch('/knowledge/documents', {
-                    method: 'POST',
+                const editingId = knowledgeState.editingDocumentId;
+                const created = await apiFetch(editingId ? `/knowledge/documents/${encodeURIComponent(editingId)}` : '/knowledge/documents', {
+                    method: editingId ? 'PUT' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
@@ -827,12 +1324,13 @@
                     await apiFetch(`/knowledge/documents/${encodeURIComponent(created.document_id)}/publish`, { method: 'POST' });
                     setKnowledgeWriteStatus('已保存并发布；后续检索和 Agent 对话可以使用这份知识。');
                 } else {
-                    setKnowledgeWriteStatus('已保存为草稿；发布后才会进入检索和 Agent 上下文。');
+                    setKnowledgeWriteStatus(created.version_mode === 'new_draft' ? '已生成新版本草稿；发布后才会进入检索和 Agent 上下文。' : '已保存为草稿；发布后才会进入检索和 Agent 上下文。');
                 }
+                setKnowledgeEditorMode(publishNow || !created.version_mode ? '' : created.document_id);
                 if (document.getElementById('knowledgeQuery')?.value.trim()) await searchKnowledge();
-                document.getElementById('knowledgeTitle').value = '';
-                document.getElementById('knowledgeContent').value = '';
-                document.getElementById('knowledgeTags').value = '';
+                else await loadKnowledgeCatalog();
+                await loadManagedKnowledgeDocuments();
+                if (publishNow || !editingId) resetKnowledgeEditor();
             } catch (error) {
                 setKnowledgeWriteStatus(error.message || '知识文档保存失败，请检查权限和内容。', true);
             }
@@ -1776,6 +2274,19 @@
             document.getElementById('blueprintOverlay')?.setAttribute('aria-hidden', 'true');
         }
 
+        function focusBlueprintIssue() {
+            const account = document.getElementById('blueprintAccountInput');
+            if (!String(account?.value || '').trim()) {
+                account?.focus();
+                account?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const issue = document.querySelector('#blueprintFields .blueprint-field.invalid:not(.hidden), #blueprintFields .blueprint-field.missing:not(.hidden)');
+            if (!issue) return;
+            scrollCreationTarget(issue);
+            issue.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled])')?.focus({ preventScroll: true });
+        }
+
         function blueprintToolFieldSchema(toolRef) {
             const parts = String(toolRef || '').split('.');
             const toolName = parts.shift();
@@ -1787,6 +2298,22 @@
                 schema = schema?.[part] || {};
             }
             return { toolName, fieldPath, schema: schema || {} };
+        }
+
+        function blueprintFieldDefault(field) {
+            if (field && Object.prototype.hasOwnProperty.call(field, 'default')) return field.default;
+            const schema = blueprintToolFieldSchema(field?.tool_ref).schema || {};
+            if (Object.prototype.hasOwnProperty.call(schema, 'default')) return schema.default;
+            return schema.type === 'boolean' ? false : undefined;
+        }
+
+        function blueprintDefaultValues(blueprint) {
+            const values = {};
+            (blueprint?.fields || []).forEach(field => {
+                const value = blueprintFieldDefault(field);
+                if (value !== undefined) values[field.path] = value;
+            });
+            return values;
         }
 
         function blueprintOptions(field, evaluatedState = null) {
@@ -2276,7 +2803,16 @@
                 const specHint = schemaConstraintHint(spec);
                 const specDescription = [spec.description, specHint ? `参数限制：${specHint}` : '']
                     .filter(Boolean).join('；');
-                label.textContent = specDescription ? `${name} · ${specDescription}` : name;
+                const friendlyName = spec.title || {
+                    age_groups: '年龄段', operating_systems: '操作系统', placement_type: '版位方式',
+                    placements: '投放版位', targeting_optimization_mode: '定向优化方式',
+                    billing_event: '计费事件', optimization_event: '优化事件',
+                }[name] || name.replace(/[_-]+/g, ' ').replace(/\b\w/g, character => character.toUpperCase());
+                label.textContent = friendlyName;
+                const key = document.createElement('span');
+                key.className = 'structured-object-key';
+                key.textContent = name;
+                label.appendChild(key);
                 if (spec.required) {
                     const required = document.createElement('span');
                     required.className = 'required';
@@ -2284,6 +2820,12 @@
                     label.appendChild(required);
                 }
                 row.appendChild(label);
+                if (specDescription) {
+                    const help = document.createElement('div');
+                    help.className = 'structured-object-help';
+                    help.textContent = specDescription;
+                    row.appendChild(help);
+                }
                 let control;
                 const options = Array.isArray(spec.enum)
                     ? spec.enum
@@ -2355,21 +2897,28 @@
                         ? '请先完成上游选择…' : '当前组合暂无可用选项';
                     control.appendChild(waiting);
                 } else if (options.length) {
-                    control = document.createElement('select');
-                    if (spec.type === 'array') control.multiple = true;
-                    const empty = document.createElement('option');
-                    if (spec.type !== 'array') {
+                    const useChoiceTiles = spec.type === 'array' || options.length <= 6;
+                    if (useChoiceTiles) {
+                        const multiple = spec.type === 'array';
+                        control = renderChoiceTiles(options, current[name], multiple, option => spec.option_labels?.[String(option)] || '', selected => {
+                            if (selected === '' || (Array.isArray(selected) && !selected.length)) delete current[name];
+                            else current[name] = selected;
+                            onChange({ ...current });
+                        });
+                        control.dataset.customChoice = 'true';
+                    } else {
+                        control = document.createElement('select');
+                        const empty = document.createElement('option');
                         empty.value = ''; empty.textContent = spec.required ? '请选择…' : '不设置';
                         control.appendChild(empty);
+                        options.forEach(option => {
+                            const item = document.createElement('option');
+                            item.value = String(option);
+                            item.textContent = spec.option_labels?.[String(option)] || String(option);
+                            control.appendChild(item);
+                        });
+                        control.value = current[name] === undefined ? '' : String(current[name]);
                     }
-                    options.forEach(option => {
-                        const item = document.createElement('option');
-                        item.value = String(option);
-                        item.textContent = spec.option_labels?.[String(option)] || String(option);
-                        if (spec.type === 'array' && Array.isArray(current[name]) && current[name].map(String).includes(String(option))) item.selected = true;
-                        control.appendChild(item);
-                    });
-                    if (spec.type !== 'array') control.value = current[name] === undefined ? '' : String(current[name]);
                 } else if (spec.type === 'boolean') {
                     control = document.createElement('input');
                     control.type = 'checkbox'; control.checked = Boolean(current[name]);
@@ -2384,6 +2933,23 @@
                     control = document.createElement('input');
                     control.type = spec.type === 'number' || spec.type === 'integer' ? 'number' : 'text';
                     control.value = current[name] === undefined ? '' : String(current[name]);
+                }
+                let controlNode = control;
+                let checkboxState = null;
+                if (spec.type === 'boolean') {
+                    const checkboxLabel = document.createElement('label');
+                    checkboxLabel.className = 'checkbox-control';
+                    const visual = document.createElement('span');
+                    visual.className = 'checkbox-visual';
+                    const copy = document.createElement('span');
+                    copy.className = 'checkbox-copy';
+                    const title = document.createElement('strong');
+                    title.textContent = '启用该设置';
+                    checkboxState = document.createElement('small');
+                    checkboxState.textContent = control.checked ? '已开启' : '未开启';
+                    copy.append(title, checkboxState);
+                    checkboxLabel.append(control, visual, copy);
+                    controlNode = checkboxLabel;
                 }
                 if (spec.manual_entry && typeof spec.manual_entry === 'object') {
                     const help = document.createElement('div');
@@ -2401,15 +2967,16 @@
                             ? Array.from(control.selectedOptions).map(option => option.value)
                             : parseStructuredObjectChild(spec, control.value.trim());
                     if (value === undefined) delete current[name]; else current[name] = value;
+                    if (checkboxState) checkboxState.textContent = control.checked ? '已开启' : '未开启';
                     onChange({ ...current });
                 };
-                if (!(
+                if (!control.dataset.customChoice && !(
                     (spec.type === 'object' && spec.properties && typeof spec.properties === 'object')
                     || (spec.type === 'array' && spec.items?.properties)
                 )) {
                     control.addEventListener(control.type === 'checkbox' || control.tagName === 'SELECT' ? 'change' : 'input', commit);
                 }
-                row.appendChild(control);
+                row.appendChild(controlNode);
                 editor.appendChild(row);
             });
             if (!Object.keys(properties).length) {
@@ -2429,6 +2996,7 @@
                 if (field.visible === false) continue;
                 let value = blueprintState.values[field.path];
                 if (value === undefined) value = evaluated.get(field.path)?.value;
+                if (value === undefined) value = blueprintFieldDefault(field);
                 const options = blueprintOptions(field, evaluated.get(field.path));
                 if (value === undefined && field.presentation === 'derived_readonly' && options.length === 1) value = options[0];
                 if (value === undefined || value === null || value === '') continue;
@@ -2465,6 +3033,407 @@
                 }
             }
             return [...options].map(([value, label]) => ({ value, label }));
+        }
+
+        const CREATION_FIELD_GROUPS = [
+            { id: 'campaign', title: '系列基础', description: '先确定账户、目标、预算与投放节奏。', tokens: ['campaign', 'objective', 'budget', 'bid', 'schedule', 'start', 'end', 'name', 'status', 'optimization'] },
+            { id: 'audience', title: '受众与版位', description: '控制广告展示给谁，以及出现在哪里。', tokens: ['audience', 'target', 'location', 'region', 'country', 'city', 'age', 'gender', 'interest', 'behavior', 'placement', 'device', 'language', 'geo'] },
+            { id: 'creative', title: '素材与落地页', description: '配置素材、文案、行动按钮和最终到达地址。', tokens: ['creative', 'asset', 'image', 'video', 'headline', 'title', 'body', 'text', 'copy', 'url', 'landing', 'page', 'call_to_action', 'cta', 'thumbnail', 'identity'] },
+            { id: 'measurement', title: '转化与追踪', description: '补充 Pixel、事件、归因与数据回传设置。', tokens: ['conversion', 'pixel', 'event', 'tracking', 'track', 'attribution', 'measurement', 'promoted', 'catalog', 'app', 'optimization_goal'] },
+            { id: 'advanced', title: '高级设置', description: '仅在需要覆盖默认行为时展开，保持主流程清爽。', tokens: ['advanced', 'json', 'payload', 'custom', 'extra', 'spec', 'raw'] },
+            { id: 'other', title: '其他设置', description: '平台特有或暂未归类的参数。', tokens: [] },
+        ];
+
+        function fieldSearchText(field) {
+            return [field?.path, field?.label, field?.description, field?.control, field?.presentation]
+                .filter(Boolean).join(' ').toLowerCase();
+        }
+
+        function creationFieldGroup(field) {
+            const text = fieldSearchText(field);
+            return CREATION_FIELD_GROUPS.find(group => group.tokens.some(token => text.includes(token)))?.id || 'other';
+        }
+
+        function creationFieldGroups(fields) {
+            const grouped = new Map(CREATION_FIELD_GROUPS.map(group => [group.id, { ...group, fields: [] }]));
+            (fields || []).forEach(field => {
+                if (field.visible === false) return;
+                grouped.get(creationFieldGroup(field)).fields.push(field);
+            });
+            return CREATION_FIELD_GROUPS.map(group => grouped.get(group.id)).filter(group => group.fields.length);
+        }
+
+        function creationDirectoryHierarchy(field) {
+            return creationHierarchyLabel(field) || '通用设置';
+        }
+
+        function creationDirectoryHierarchyGroups(fields) {
+            const grouped = new Map();
+            (fields || []).forEach(field => {
+                const hierarchy = creationDirectoryHierarchy(field);
+                if (!grouped.has(hierarchy)) grouped.set(hierarchy, []);
+                grouped.get(hierarchy).push(field);
+            });
+            return [...grouped.entries()];
+        }
+
+        function creationFieldValue(field, value = field?.value) {
+            return value === undefined && field?.control === 'checkbox' ? false : value;
+        }
+
+        function creationFieldDisplayValue(field, value = field?.value) {
+            const normalized = creationFieldValue(field, value);
+            if (field?.control === 'checkbox') return normalized ? '已开启' : '未开启';
+            return blueprintDisplayValue(normalized);
+        }
+
+        function creationFieldNeedsUserInput(field) {
+            if (field?.user_required !== undefined) return Boolean(field.user_required);
+            return Boolean(field?.required);
+        }
+
+        function creationFieldIsAuto(field) {
+            return ['auto_default', 'auto_derived'].includes(String(field?.input_mode || '').toLowerCase());
+        }
+
+        function creationFieldModeLabel(field) {
+            if (field?.auto_filled) return '系统已填 · 可修改';
+            if (field?.input_mode === 'context_required') return '需要从账户或业务上下文确认';
+            if (field?.input_mode === 'asset_required') return '需要选择素材或素材资源';
+            if (creationFieldIsAuto(field)) return '系统将按当前目标自动处理';
+            return '';
+        }
+
+        function fieldGroupProgress(fields) {
+            const visible = (fields || []).filter(field => field.visible !== false);
+            const required = visible.filter(creationFieldNeedsUserInput);
+            const missing = required.filter(field => creationCardValueEmpty(creationFieldValue(field)) || field.local_error || field.state === 'invalid');
+            return { total: visible.length, missing: missing.length, complete: required.length - missing.length };
+        }
+
+        function blueprintFieldEvaluation(field, evaluation) {
+            const evaluated = evaluation?.fields?.find(item => item.path === field.path) || {};
+            const rawValue = evaluated.value !== undefined
+                ? evaluated.value
+                : blueprintState.values[field.path] !== undefined
+                    ? blueprintState.values[field.path] : blueprintFieldDefault(field);
+            const value = creationFieldValue(field, rawValue);
+            const required = evaluated.required !== undefined ? evaluated.required : Boolean(field.required);
+            const visible = evaluated.visible !== false && field.visible !== false;
+            const invalid = evaluated.state === 'invalid' || evaluated.local_error;
+            const empty = creationCardValueEmpty(value);
+            const status = invalid ? 'invalid' : required && empty ? 'missing' : empty ? 'empty' : 'complete';
+            return { ...evaluated, value, required, visible, status };
+        }
+
+        function blueprintDisplayValue(value) {
+            if (creationCardValueEmpty(value)) return '未填写';
+            if (Array.isArray(value)) {
+                const values = value.map(item => {
+                    if (item && typeof item === 'object') return item.name || item.label || item.text || item.asset_id || item.local_file || '已选择';
+                    return String(item);
+                });
+                return values.length > 2 ? `${values.slice(0, 2).join('、')} +${values.length - 2}` : values.join('、');
+            }
+            if (typeof value === 'object') {
+                const entries = Object.entries(value).slice(0, 2).map(([key, item]) => `${key}: ${blueprintDisplayValue(item)}`);
+                return entries.join(' · ') || '已填写';
+            }
+            const text = String(value);
+            return text.length > 42 ? `${text.slice(0, 42)}…` : text;
+        }
+
+        function creationHierarchyLabel(field) {
+            const path = String(field?.path || '').toLowerCase();
+            if (/^(campaign|campaigns)\./.test(path)) return 'Campaign 层级';
+            if (/^(ad_set|adset)\./.test(path)) return 'Ad Set 层级';
+            if (/^(ad_group|adgroup)\./.test(path)) return 'Ad Group 层级';
+            if (/^ad\./.test(path)) return 'Ad 层级';
+            if (/^insertion_order\./.test(path)) return 'Insertion Order 层级';
+            if (/^line_item\./.test(path)) return 'Line Item 层级';
+            if (/^creative\./.test(path)) return 'Creative 层级';
+            return '';
+        }
+
+        function setCreationSectionExpanded(section, expanded) {
+            if (!section) return;
+            section.classList.toggle('is-collapsed', !expanded);
+            const toggle = section.querySelector('.creation-section-toggle');
+            if (toggle) {
+                toggle.textContent = expanded ? '收起' : '展开';
+                toggle.setAttribute('aria-expanded', String(expanded));
+            }
+        }
+
+        function scrollCreationTarget(target) {
+            if (!target) return;
+            const container = target.closest('.blueprint-fields, .creation-card-fields');
+            if (!container) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                return;
+            }
+            const targetRect = target.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const offset = targetRect.top - containerRect.top;
+            const delta = targetRect.height <= containerRect.height
+                ? offset - (containerRect.height - targetRect.height) / 2
+                : offset - 12;
+            container.scrollBy({ top: delta, behavior: 'smooth' });
+        }
+
+        function blueprintScrollTo(target, activeNode = null) {
+            if (!target) return;
+            const section = target.closest('.blueprint-field-group, .creation-card-section');
+            if (section) setCreationSectionExpanded(section, true);
+            scrollCreationTarget(target);
+            const focusable = target.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])');
+            focusable?.focus({ preventScroll: true });
+            document.querySelectorAll('.blueprint-nav-item.active, .blueprint-nav-group.active').forEach(node => node.classList.remove('active'));
+            activeNode?.classList.add('active');
+        }
+
+        function renderBlueprintFieldNav(blueprint, evaluation) {
+            const container = document.getElementById('blueprintFieldNav');
+            if (!container || !blueprint) return;
+            container.replaceChildren();
+
+            const header = document.createElement('div');
+            header.className = 'blueprint-field-nav-header';
+            header.innerHTML = '<span>填写目录</span><small>点击字段快速定位</small>';
+            container.appendChild(header);
+
+            const groups = creationFieldGroups(blueprint.fields || []);
+            groups.forEach((group, groupIndex) => {
+                const states = group.fields.map(field => blueprintFieldEvaluation(field, evaluation));
+                const visibleFields = group.fields.filter((field, index) => states[index].visible);
+                if (!visibleFields.length) return;
+                const progress = fieldGroupProgress(group.fields.map((field, index) => ({
+                    ...field,
+                    ...states[index],
+                    value: states[index].value,
+                })));
+
+                const groupButton = document.createElement('button');
+                groupButton.type = 'button';
+                groupButton.className = 'blueprint-nav-group';
+                groupButton.dataset.step = group.id;
+                const groupCopy = document.createElement('span');
+                groupCopy.className = 'blueprint-nav-group-copy';
+                const groupTitle = document.createElement('strong');
+                groupTitle.textContent = group.title;
+                const groupMeta = document.createElement('small');
+                groupMeta.textContent = progress.missing ? `待填 ${progress.missing} · 共 ${progress.total} 项` : `已就绪 · 共 ${progress.total} 项`;
+                groupCopy.append(groupTitle, groupMeta);
+                const groupStatus = document.createElement('span');
+                groupStatus.className = `blueprint-nav-status${progress.missing ? ' missing' : ' complete'}`;
+                groupStatus.textContent = progress.missing ? '!' : '✓';
+                groupButton.append(groupStatus, groupCopy);
+                groupButton.addEventListener('click', () => {
+                    blueprintScrollTo(document.querySelector(`#blueprintFields [data-step="${CSS.escape(group.id)}"]`), groupButton);
+                });
+                container.appendChild(groupButton);
+
+                const fieldList = document.createElement('div');
+                fieldList.className = 'blueprint-nav-fields';
+                creationDirectoryHierarchyGroups(visibleFields).forEach(([hierarchy, hierarchyFields]) => {
+                    const branch = document.createElement('div');
+                    branch.className = 'blueprint-nav-hierarchy';
+                    const branchKey = `blueprint:${blueprint.id || blueprint.provider}:${group.id}:${hierarchy}`;
+                    const collapsed = creationDirectoryCollapseState.get(branchKey) === true;
+                    if (collapsed) branch.classList.add('is-collapsed');
+                    const branchButton = document.createElement('button');
+                    branchButton.type = 'button';
+                    branchButton.className = 'blueprint-nav-hierarchy-toggle';
+                    branchButton.setAttribute('aria-expanded', String(!collapsed));
+                    const branchMarker = document.createElement('span');
+                    branchMarker.className = 'blueprint-nav-hierarchy-marker';
+                    branchMarker.textContent = collapsed ? '›' : '⌄';
+                    const branchCopy = document.createElement('span');
+                    branchCopy.className = 'blueprint-nav-hierarchy-copy';
+                    const branchTitle = document.createElement('strong');
+                    branchTitle.textContent = hierarchy;
+                    const branchCount = document.createElement('small');
+                    branchCount.textContent = `${hierarchyFields.length} 项`;
+                    branchCopy.append(branchTitle, branchCount);
+                    branchButton.append(branchMarker, branchCopy);
+                    const hierarchyList = document.createElement('div');
+                    hierarchyList.className = 'blueprint-nav-hierarchy-fields';
+                    branchButton.addEventListener('click', () => {
+                        const nextCollapsed = !branch.classList.contains('is-collapsed');
+                        branch.classList.toggle('is-collapsed', nextCollapsed);
+                        creationDirectoryCollapseState.set(branchKey, nextCollapsed);
+                        branchButton.setAttribute('aria-expanded', String(!nextCollapsed));
+                        branchMarker.textContent = nextCollapsed ? '›' : '⌄';
+                    });
+                    hierarchyFields.forEach(field => {
+                        const state = blueprintFieldEvaluation(field, evaluation);
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = `blueprint-nav-item${state.status === 'missing' ? ' missing' : ''}${state.status === 'invalid' ? ' invalid' : ''}${state.status === 'complete' ? ' complete' : ''}`;
+                        button.dataset.fieldPath = field.path;
+                        const status = document.createElement('span');
+                        status.className = 'blueprint-nav-field-status';
+                        status.textContent = state.status === 'invalid' ? '!' : state.status === 'missing' ? '•' : state.status === 'complete' ? '✓' : '·';
+                        const copy = document.createElement('span');
+                        copy.className = 'blueprint-nav-item-copy';
+                        const label = document.createElement('span');
+                        label.textContent = field.label || field.path;
+                        const value = document.createElement('small');
+                        value.textContent = creationFieldDisplayValue(field, state.value);
+                        copy.append(label, value);
+                        button.append(status, copy);
+                        button.addEventListener('click', () => {
+                            blueprintScrollTo(document.querySelector(`#blueprintFields [data-field-path="${CSS.escape(field.path)}"]`), button);
+                        });
+                        hierarchyList.appendChild(button);
+                    });
+                    branch.append(branchButton, hierarchyList);
+                    fieldList.appendChild(branch);
+                });
+                container.appendChild(fieldList);
+            });
+        }
+
+        function renderBlueprintSummary(blueprint, evaluation) {
+            const container = document.getElementById('blueprintSummary');
+            if (!container || !blueprint) return;
+            container.replaceChildren();
+            const fields = (blueprint.fields || []).filter(field => blueprintFieldEvaluation(field, evaluation).visible);
+            const completed = fields.filter(field => !creationCardValueEmpty(blueprintFieldEvaluation(field, evaluation).value));
+            const totalRequired = fields.filter(field => blueprintFieldEvaluation(field, evaluation).required).length;
+            const missing = evaluation?.missing_fields?.length || fields.filter(field => blueprintFieldEvaluation(field, evaluation).status === 'missing').length;
+
+            const heading = document.createElement('div');
+            heading.className = 'blueprint-summary-heading';
+            heading.innerHTML = '<span>实时摘要</span><small>滚动填写时始终可见</small>';
+            const progress = document.createElement('span');
+            progress.className = `blueprint-summary-progress${missing ? ' pending' : ' ready'}`;
+            progress.textContent = missing ? `待补 ${missing} 项` : `${Math.min(completed.length, totalRequired || completed.length)}/${totalRequired || completed.length} 项就绪`;
+            heading.appendChild(progress);
+            container.appendChild(heading);
+
+            const items = document.createElement('div');
+            items.className = 'blueprint-summary-items';
+            const accountItem = document.createElement('button');
+            accountItem.type = 'button';
+            accountItem.className = `blueprint-summary-item${blueprintState.accountId ? ' filled' : ' pending'}`;
+            accountItem.innerHTML = `<span class="blueprint-summary-item-label">${escapeHtml(creationAccountLabel(blueprint.provider))}</span><strong>${escapeHtml(blueprintState.accountId || '未填写')}</strong>`;
+            accountItem.addEventListener('click', () => document.getElementById('blueprintAccountInput')?.focus());
+            items.appendChild(accountItem);
+
+            const selectedFields = fields.filter(field => !creationCardValueEmpty(blueprintFieldEvaluation(field, evaluation).value)).slice(0, 6);
+            selectedFields.forEach(field => {
+                const state = blueprintFieldEvaluation(field, evaluation);
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = `blueprint-summary-item${state.status === 'invalid' ? ' invalid' : ' filled'}`;
+                item.innerHTML = `<span class="blueprint-summary-item-label">${escapeHtml(field.label || field.path)}</span><strong>${escapeHtml(creationFieldDisplayValue(field, state.value))}</strong>`;
+                item.addEventListener('click', () => {
+                    blueprintScrollTo(document.querySelector(`#blueprintFields [data-field-path="${CSS.escape(field.path)}"]`));
+                });
+                items.appendChild(item);
+            });
+            const remaining = completed.length - selectedFields.length;
+            if (remaining > 0) {
+                const more = document.createElement('span');
+                more.className = 'blueprint-summary-more';
+                more.textContent = `还有 ${remaining} 项已填写`;
+                items.appendChild(more);
+            }
+            container.appendChild(items);
+        }
+
+        function choiceDisplayLabel(value, label = '') {
+            if (label && String(label) !== String(value)) return String(label);
+            const text = String(value ?? '');
+            const known = {
+                ANDROID: 'Android', IOS: 'iOS',
+                PLACEMENT_TIKTOK: 'TikTok 信息流', PLACEMENT_PANGLE: 'Pangle',
+                PLACEMENT_GLOBAL_APP_BUNDLE: 'Global App Bundle',
+                AGE_13_17: '13–17 岁', AGE_18_24: '18–24 岁', AGE_25_34: '25–34 岁',
+                AGE_35_44: '35–44 岁', AGE_45_54: '45–54 岁', AGE_55_64: '55–64 岁', 'AGE_65+': '65 岁以上',
+            };
+            if (known[text]) return known[text];
+            return text.toLowerCase().split(/[_-]+/).map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ');
+        }
+
+        function renderChoiceTiles(options, selectedValues, multiple, labelFor, onChange) {
+            const control = document.createElement('div');
+            control.className = `choice-tiles${multiple ? ' multiple' : ''}`;
+            const groupName = `choice-${Math.random().toString(36).slice(2)}`;
+            const selected = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues])
+                .filter(value => value !== undefined && value !== null && value !== '').map(String));
+            options.forEach(option => {
+                const value = typeof option === 'object' ? String(option.value ?? '') : String(option);
+                if (!value) return;
+                const suppliedLabel = typeof option === 'object' ? (option.label || labelFor?.(option.value) || '') : (labelFor?.(option) || '');
+                const label = choiceDisplayLabel(value, suppliedLabel);
+                const item = document.createElement('label');
+                item.className = `choice-tile${selected.has(value) ? ' selected' : ''}`;
+                const input = document.createElement('input');
+                input.type = multiple ? 'checkbox' : 'radio';
+                input.name = groupName;
+                input.value = value;
+                input.checked = selected.has(value);
+                input.addEventListener('change', () => {
+                    if (multiple) {
+                        item.classList.toggle('selected', input.checked);
+                        const values = Array.from(control.querySelectorAll('input:checked')).map(node => node.value);
+                        onChange(values);
+                    } else if (input.checked) {
+                        control.querySelectorAll('.choice-tile').forEach(node => node.classList.remove('selected'));
+                        item.classList.add('selected');
+                        onChange(value);
+                    }
+                });
+                const copy = document.createElement('span');
+                copy.className = 'choice-copy';
+                const title = document.createElement('strong');
+                title.textContent = label;
+                copy.appendChild(title);
+                if (label !== value) {
+                    const raw = document.createElement('small');
+                    raw.textContent = value;
+                    copy.appendChild(raw);
+                }
+                item.append(input, copy);
+                control.appendChild(item);
+            });
+            return control;
+        }
+
+        function renderBlueprintFlowbar(blueprint, evaluation) {
+            const container = document.getElementById('blueprintFlowbar');
+            if (!container || !blueprint) return;
+            const groups = creationFieldGroups(blueprint.fields || []);
+            container.replaceChildren();
+            groups.forEach((group, index) => {
+                const progress = fieldGroupProgress(group.fields.map(field => {
+                    const state = evaluation?.fields?.find(item => item.path === field.path);
+                    return {
+                        ...field,
+                        required: state?.required ?? field.required,
+                        state: state?.state,
+                        value: state?.value ?? blueprintState.values[field.path],
+                    };
+                }));
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `blueprint-flow-step${index === 0 ? ' active' : ''}${progress.missing ? ' has-missing' : ''}`;
+                button.dataset.step = group.id;
+                button.innerHTML = `<span class="blueprint-flow-index">${index + 1}</span><span class="blueprint-flow-copy"><strong>${escapeHtml(group.title)}</strong><small>${progress.missing ? `待填 ${progress.missing}` : '已就绪'}</small></span>`;
+                button.addEventListener('click', () => {
+                    blueprintScrollTo(document.querySelector(`#blueprintFields [data-step="${CSS.escape(group.id)}"]`));
+                    container.querySelectorAll('.blueprint-flow-step').forEach(node => node.classList.toggle('active', node === button));
+                });
+                container.appendChild(button);
+            });
+            if (evaluation) {
+                const summary = document.createElement('span');
+                summary.className = 'blueprint-flow-summary';
+                summary.textContent = evaluation.missing_fields?.length ? `${evaluation.missing_fields.length} 项待补充` : '必填参数已齐';
+                container.appendChild(summary);
+            }
         }
 
         function renderBlueprintSelector() {
@@ -2515,12 +3484,14 @@
             const list = document.getElementById('blueprintList');
             if (list) list.innerHTML = '<div class="blueprint-empty">正在加载广告创建蓝图…</div>';
             try {
-                const [blueprints, tools] = await Promise.all([
+                const [blueprints, tools, templates] = await Promise.all([
                     apiFetch('/creation-blueprints'),
                     apiFetch('/tools'),
+                    apiFetch('/creation-templates').catch(() => ({ templates: [] })),
                 ]);
                 blueprintState.items = Array.isArray(blueprints.blueprints) ? blueprints.blueprints : [];
                 blueprintState.tools = Array.isArray(tools.tools) ? tools.tools : [];
+                blueprintState.templates = Array.isArray(templates.templates) ? templates.templates : [];
                 renderBlueprintList();
                 const target = selectId || blueprintState.selected?.id || blueprintState.items[0]?.id;
                 if (target) selectBlueprint(target);
@@ -2539,54 +3510,286 @@
             const list = document.getElementById('blueprintList');
             if (!list) return;
             list.replaceChildren();
-            if (!blueprintState.items.length) {
-                const empty = document.createElement('div');
-                empty.className = 'blueprint-empty';
-                empty.textContent = '当前还没有可用的广告创建蓝图。';
-                list.appendChild(empty);
-                return;
-            }
-            let lastProvider = '';
-            for (const item of blueprintState.items) {
-                if (item.provider !== lastProvider) {
-                    const group = document.createElement('div');
-                    group.className = 'blueprint-list-meta';
-                    group.textContent = item.provider;
-                    list.appendChild(group);
-                    lastProvider = item.provider;
-                }
+            const toolbar = document.createElement('div');
+            toolbar.className = 'blueprint-list-toolbar';
+            const toolbarTitle = document.createElement('div');
+            toolbarTitle.className = 'blueprint-list-toolbar-title';
+            toolbarTitle.innerHTML = '<strong>创建工作台</strong><span>先选我的模板，也可以从系统蓝图开始</span>';
+            const search = document.createElement('input');
+            search.type = 'search';
+            search.className = 'blueprint-list-search';
+            search.placeholder = '搜索广告类型…';
+            search.value = blueprintState.listQuery || '';
+            search.setAttribute('aria-label', '搜索广告创建模板');
+            search.addEventListener('input', () => {
+                blueprintState.listQuery = search.value;
+                renderBlueprintList();
+                const next = document.querySelector('.blueprint-list-search');
+                next?.focus({ preventScroll: true });
+                if (next) next.setSelectionRange(blueprintState.listQuery.length, blueprintState.listQuery.length);
+            });
+            const providers = [...new Set(blueprintState.items.map(item => item.provider))];
+            const filter = document.createElement('select');
+            filter.className = 'blueprint-list-filter';
+            filter.setAttribute('aria-label', '按广告平台筛选');
+            [['all', '全部渠道'], ...providers.map(provider => [provider, creationProviderLabel(provider)])].forEach(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                option.selected = value === (blueprintState.listProvider || 'all');
+                filter.appendChild(option);
+            });
+            filter.addEventListener('change', () => {
+                blueprintState.listProvider = filter.value;
+                renderBlueprintList();
+            });
+            toolbar.append(toolbarTitle, search, filter);
+            list.appendChild(toolbar);
+            const items = document.createElement('div');
+            items.className = 'blueprint-list-items';
+            list.appendChild(items);
+            const query = String(blueprintState.listQuery || '').trim().toLowerCase();
+            const matches = item => {
+                if (blueprintState.listProvider !== 'all' && item.provider !== blueprintState.listProvider) return false;
+                if (!query) return true;
+                return [item.title, item.name, item.id, item.provider, item.ad_format, item.scope_label, item.selector?.label]
+                    .filter(Boolean).join(' ').toLowerCase().includes(query);
+            };
+            const visibleTemplates = blueprintState.templates.filter(matches);
+            const visibleItems = blueprintState.items.filter(matches);
+            const renderSection = (title, subtitle, values, renderItem) => {
+                if (!values.length) return;
+                const section = document.createElement('section');
+                section.className = 'blueprint-list-section';
+                const heading = document.createElement('div');
+                heading.className = 'blueprint-list-section-heading';
+                heading.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span>`;
+                section.appendChild(heading);
+                values.forEach(item => section.appendChild(renderItem(item)));
+                items.appendChild(section);
+            };
+            renderSection('我的模板', '可按账户与地区复用', visibleTemplates, template => {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = `blueprint-list-item${blueprintState.selected?.id === item.id ? ' active' : ''}`;
+                button.className = `blueprint-list-item blueprint-template-item${blueprintState.selectedTemplateId === template.template_id ? ' active' : ''}`;
+                button.onclick = () => selectCreationTemplate(template.template_id);
+                const title = document.createElement('span');
+                title.className = 'blueprint-list-title';
+                title.textContent = template.name || '未命名模板';
+                const meta = document.createElement('span');
+                meta.className = 'blueprint-list-meta';
+                meta.textContent = `${creationProviderLabel(template.provider)} · ${template.scope_label || '个人通用'}${template.is_default ? ' · 默认' : ''} · ${template.covered_fields || 0} 项`;
+                button.append(title, meta);
+                return button;
+            });
+            renderSection('系统蓝图', '平台维护的字段与联动规则', visibleItems, item => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = `blueprint-list-item${!blueprintState.selectedTemplateId && blueprintState.selected?.id === item.id ? ' active' : ''}`;
                 button.onclick = () => selectBlueprint(item.id);
                 const title = document.createElement('span');
                 title.className = 'blueprint-list-title';
                 title.textContent = item.title || item.id;
                 const meta = document.createElement('span');
                 meta.className = 'blueprint-list-meta';
-                meta.textContent = `${item.provider} · ${item.ad_format} · v${item.version}`;
+                meta.textContent = `${creationProviderLabel(item.provider)} · ${item.ad_format} · v${item.version}`;
                 button.append(title, meta);
-                list.appendChild(button);
+                return button;
+            });
+            if (!visibleTemplates.length && !visibleItems.length) {
+                const empty = document.createElement('div');
+                empty.className = 'blueprint-empty';
+                empty.textContent = '没有匹配的模板或广告类型，换个关键词试试。';
+                items.appendChild(empty);
             }
         }
 
-        function selectBlueprint(blueprintId, selectorValue = null) {
+        function selectBlueprint(blueprintId, selectorValue = null, template = null) {
             const item = blueprintState.items.find(value => value.id === blueprintId);
             if (!item) return;
+            if (!template) {
+                template = blueprintState.templates.find(candidate => candidate.status === 'active'
+                    && candidate.is_default
+                    && candidate.blueprint_id === item.id
+                    && (!candidate.blueprint_version || candidate.blueprint_version === item.version)
+                    && (candidate.scope_type === 'general'
+                        || (candidate.scope_type === 'account' && candidate.account_id === blueprintState.accountId))
+                ) || null;
+            }
             blueprintState.selected = item;
-            blueprintState.values = {};
+            blueprintState.values = blueprintDefaultValues(item);
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
             blueprintState.localFiles = {};
             blueprintState.selectionTokens = {};
             blueprintState.selectionTokenTools = {};
             blueprintState.lookupOptions = {};
+            blueprintState.selectedTemplateId = template?.template_id || '';
             const selector = item.selector;
             const initialValue = selectorValue || selector?.values?.[0];
             if (selector?.field && initialValue !== undefined) blueprintState.values[selector.field] = initialValue;
+            if (template?.values && typeof template.values === 'object') {
+                Object.assign(blueprintState.values, template.values);
+                if (template.account_id) blueprintState.accountId = template.account_id;
+            }
+            const templatePanel = document.getElementById('blueprintTemplatePanel');
+            if (templatePanel) templatePanel.hidden = true;
+            blueprintState.templatePanelOpen = false;
+            blueprintState.templateSaveAsNew = false;
             renderBlueprintList();
             renderBlueprintEditor();
+            if (template) showBlueprintNotice(`已应用“${template.name || '我的模板'}”，你仍可修改本次投放参数。`);
             if (selector?.field) evaluateBlueprintDraft(selector.field);
+        }
+
+        function selectCreationTemplate(templateId) {
+            const template = blueprintState.templates.find(item => item.template_id === templateId);
+            if (!template) return;
+            const blueprint = blueprintState.items.find(item => item.id === template.blueprint_id && (
+                !template.blueprint_version || item.version === template.blueprint_version
+            )) || blueprintState.items.find(item => item.id === template.blueprint_id);
+            if (!blueprint) {
+                showBlueprintNotice('模板依赖的系统蓝图已升级或下线，请复制模板后重新配置。');
+                return;
+            }
+            selectBlueprint(blueprint.id, null, template);
+            if (template.status === 'active') {
+                apiFetch(`/creation-templates/${encodeURIComponent(templateId)}/apply`, { method: 'POST' }).catch(() => {});
+            } else {
+                showBlueprintNotice('这是已停用模板，仅用于查看和编辑；重新启用后才能带入对话。');
+            }
+        }
+
+        function toggleCreationTemplatePanel(force, saveAsNew = false) {
+            const panel = document.getElementById('blueprintTemplatePanel');
+            if (!panel) return;
+            const open = force === undefined ? panel.hidden : Boolean(force);
+            panel.hidden = !open;
+            blueprintState.templatePanelOpen = open;
+            blueprintState.templateSaveAsNew = open && saveAsNew;
+            if (!open) return;
+            const template = !blueprintState.templateSaveAsNew
+                ? blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId)
+                : null;
+            const fields = {
+                creationTemplateName: template?.name || '',
+                creationTemplateScope: template?.scope_type || 'general',
+                creationTemplateAccount: template?.account_id || blueprintState.accountId || '',
+                creationTemplateRegion: template?.region || '',
+                creationTemplateTags: Array.isArray(template?.tags) ? template.tags.join(', ') : '',
+                creationTemplateDescription: template?.description || '',
+            };
+            Object.entries(fields).forEach(([id, value]) => {
+                const control = document.getElementById(id);
+                if (control) control.value = value;
+            });
+            const title = document.getElementById('blueprintTemplatePanelTitle');
+            if (title) title.textContent = template ? '更新当前模板' : '保存当前参数为模板';
+            const submit = document.getElementById('creationTemplateSubmitButton');
+            if (submit) submit.textContent = template ? '保存修改' : '保存模板';
+            const defaultInput = document.getElementById('creationTemplateDefault');
+            if (defaultInput) defaultInput.checked = Boolean(template?.is_default);
+        }
+
+        function creationTemplatePayload() {
+            const blueprint = blueprintState.selected;
+            if (!blueprint) return null;
+            return {
+                name: document.getElementById('creationTemplateName')?.value.trim() || '',
+                description: document.getElementById('creationTemplateDescription')?.value.trim() || '',
+                provider: blueprint.provider,
+                blueprint_id: blueprint.id,
+                blueprint_version: blueprint.version,
+                ad_format: blueprint.ad_format,
+                scope_type: document.getElementById('creationTemplateScope')?.value || 'general',
+                account_id: document.getElementById('creationTemplateAccount')?.value.trim() || '',
+                region: document.getElementById('creationTemplateRegion')?.value.trim() || '',
+                tags: (document.getElementById('creationTemplateTags')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
+                values: { ...(blueprintState.values || {}) },
+                status: 'active',
+                is_default: Boolean(document.getElementById('creationTemplateDefault')?.checked),
+            };
+        }
+
+        async function saveCreationTemplate(forceCreate = false) {
+            const payload = creationTemplatePayload();
+            if (!payload) return;
+            if (!payload.name) {
+                showBlueprintNotice('请先填写模板名称。');
+                document.getElementById('creationTemplateName')?.focus();
+                return;
+            }
+            const templateId = forceCreate || blueprintState.templateSaveAsNew ? '' : blueprintState.selectedTemplateId;
+            try {
+                const result = await apiFetch(templateId
+                    ? `/creation-templates/${encodeURIComponent(templateId)}`
+                    : '/creation-templates', {
+                        method: templateId ? 'PATCH' : 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                const index = blueprintState.templates.findIndex(item => item.template_id === result.template_id);
+                if (index >= 0) blueprintState.templates[index] = result;
+                else blueprintState.templates.unshift(result);
+                blueprintState.selectedTemplateId = result.template_id;
+                toggleCreationTemplatePanel(false);
+                renderBlueprintList();
+                renderBlueprintEditor();
+                showBlueprintNotice(`模板“${result.name}”已保存，可在左侧“我的模板”中复用。`);
+            } catch (error) {
+                showBlueprintNotice(error.message || '模板保存失败。');
+            }
+        }
+
+        function updateSelectedCreationTemplate() {
+            if (!blueprintState.selectedTemplateId) return;
+            toggleCreationTemplatePanel(true);
+        }
+
+        async function duplicateSelectedCreationTemplate() {
+            const templateId = blueprintState.selectedTemplateId;
+            if (!templateId) return;
+            const source = blueprintState.templates.find(item => item.template_id === templateId);
+            const name = window.prompt('请输入副本名称', `${source?.name || '创建模板'} · 副本`);
+            if (!name) return;
+            try {
+                const result = await apiFetch(`/creation-templates/${encodeURIComponent(templateId)}/duplicate`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+                });
+                blueprintState.templates.unshift(result);
+                blueprintState.selectedTemplateId = result.template_id;
+                renderBlueprintList();
+                renderBlueprintEditor();
+                showBlueprintNotice(`模板副本“${result.name}”已创建。`);
+            } catch (error) { showBlueprintNotice(error.message || '模板复制失败。'); }
+        }
+
+        async function toggleSelectedCreationTemplateStatus() {
+            const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
+            if (!template) return;
+            const nextStatus = template.status === 'active' ? 'inactive' : 'active';
+            try {
+                const result = await apiFetch(`/creation-templates/${encodeURIComponent(template.template_id)}`, {
+                    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: nextStatus }),
+                });
+                const index = blueprintState.templates.findIndex(item => item.template_id === result.template_id);
+                if (index >= 0) blueprintState.templates[index] = result;
+                renderBlueprintList();
+                renderBlueprintEditor();
+                showBlueprintNotice(nextStatus === 'active' ? '模板已重新启用。' : '模板已停用，不会再出现在可应用模板中。');
+            } catch (error) { showBlueprintNotice(error.message || '模板状态更新失败。'); }
+        }
+
+        async function deleteSelectedCreationTemplate() {
+            const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
+            if (!template || !window.confirm(`确定删除模板“${template.name}”吗？`)) return;
+            try {
+                await apiFetch(`/creation-templates/${encodeURIComponent(template.template_id)}`, { method: 'DELETE' });
+                blueprintState.templates = blueprintState.templates.filter(item => item.template_id !== template.template_id);
+                blueprintState.selectedTemplateId = '';
+                selectBlueprint(blueprintState.selected?.id || blueprintState.items[0]?.id);
+                showBlueprintNotice('模板已删除。');
+            } catch (error) { showBlueprintNotice(error.message || '模板删除失败。'); }
         }
 
         function renderBlueprintEditor() {
@@ -2594,18 +3797,39 @@
             const title = document.getElementById('blueprintEditorTitle');
             const meta = document.getElementById('blueprintEditorMeta');
             if (!blueprint) return;
+            const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
             if (title) title.textContent = blueprint.title || blueprint.id;
-            if (meta) meta.textContent = `${blueprint.provider} · ${blueprint.ad_format} · Blueprint v${blueprint.version}`;
+            if (meta) meta.textContent = `${creationProviderLabel(blueprint.provider)} · ${blueprint.ad_format} · 蓝图 v${blueprint.version}${template ? ` · 已应用模板：${template.name}` : ''}`;
+            const saveButton = document.getElementById('blueprintTemplateSaveButton');
+            const updateButton = document.getElementById('blueprintTemplateUpdateButton');
+            const duplicateButton = document.getElementById('blueprintTemplateDuplicateButton');
+            const statusButton = document.getElementById('blueprintTemplateStatusButton');
+            const deleteButton = document.getElementById('blueprintTemplateDeleteButton');
+            if (saveButton) saveButton.textContent = template ? '另存为模板' : '保存为模板';
+            if (updateButton) updateButton.hidden = !template;
+            if (duplicateButton) duplicateButton.hidden = !template;
+            if (statusButton) {
+                statusButton.hidden = !template;
+                statusButton.textContent = template?.status === 'active' ? '停用' : '启用';
+            }
+            if (deleteButton) deleteButton.hidden = !template;
             const accountInput = document.getElementById('blueprintAccountInput');
+            const accountLabel = document.querySelector('label[for="blueprintAccountInput"]');
+            if (accountLabel) accountLabel.innerHTML = `${escapeHtml(creationAccountLabel(blueprint.provider))} <span class="blueprint-required">*</span>`;
             if (accountInput) {
+                accountInput.placeholder = `请输入本次要操作的${creationAccountLabel(blueprint.provider)}`;
                 accountInput.value = blueprintState.accountId || '';
                 accountInput.oninput = () => {
                     blueprintState.accountId = accountInput.value.trim();
                     refreshLookupAccountState(document.getElementById('blueprintFields'));
+                    renderBlueprintSummary(blueprint, blueprintState.evaluation);
                 };
             }
             renderBlueprintSelector();
+            renderBlueprintFlowbar(blueprint, blueprintState.evaluation);
             renderBlueprintFields(blueprintState.evaluation);
+            renderBlueprintFieldNav(blueprint, blueprintState.evaluation);
+            renderBlueprintSummary(blueprint, blueprintState.evaluation);
         }
 
         function renderBlueprintFields(evaluation) {
@@ -2614,7 +3838,31 @@
             if (!container || !blueprint) return;
             container.replaceChildren();
             const stateMap = new Map((evaluation?.fields || []).map(item => [item.path, item]));
-            for (const field of (blueprint.fields || [])) {
+            const groups = creationFieldGroups(blueprint.fields || []);
+            groups.forEach((group, groupIndex) => {
+                const section = document.createElement('section');
+                section.className = `blueprint-field-group${groupIndex === 0 ? ' active' : ''}`;
+                if (['advanced', 'other'].includes(group.id)) section.classList.add('is-collapsed');
+                section.dataset.step = group.id;
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'blueprint-field-group-header';
+                sectionHeader.innerHTML = `<div><span class="blueprint-field-group-index">${String(groupIndex + 1).padStart(2, '0')}</span><div><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml(group.description)}</p></div></div><span class="blueprint-field-group-count">${group.fields.length} 项</span>`;
+                const sectionToggle = document.createElement('button');
+                sectionToggle.type = 'button';
+                sectionToggle.className = 'creation-section-toggle';
+                sectionToggle.setAttribute('aria-expanded', String(!section.classList.contains('is-collapsed')));
+                sectionToggle.textContent = section.classList.contains('is-collapsed') ? '展开' : '收起';
+                sectionToggle.addEventListener('click', event => {
+                    event.stopPropagation();
+                    setCreationSectionExpanded(section, section.classList.contains('is-collapsed'));
+                });
+                sectionHeader.appendChild(sectionToggle);
+                section.appendChild(sectionHeader);
+                const sectionFields = document.createElement('div');
+                sectionFields.className = 'blueprint-field-group-fields';
+                section.appendChild(sectionFields);
+                container.appendChild(section);
+                for (const field of group.fields) {
                 const fieldRef = blueprintToolFieldSchema(field.tool_ref);
                 const schema = fieldRef.schema || {};
                 const sourceTool = (blueprintState.tools || []).find(item => item.name === fieldRef.toolName);
@@ -2642,7 +3890,11 @@
                     state: 'optional',
                 };
                 const wrapper = document.createElement('div');
-                wrapper.className = `blueprint-field${state.visible === false ? ' hidden' : ''}${state.state === 'missing' ? ' missing' : ''}${state.state === 'invalid' ? ' invalid' : ''}`;
+                const wideField = fieldView.source === 'lookup'
+                    || ['asset_picker', 'file_reference', 'text_list', 'object_editor'].includes(fieldView.presentation)
+                    || schema.type === 'object' || schema.type === 'array' || Array.isArray(schema.type);
+                wrapper.className = `blueprint-field${wideField ? ' wide' : ''}${state.visible === false ? ' hidden' : ''}${state.state === 'missing' ? ' missing' : ''}${state.state === 'invalid' ? ' invalid' : ''}`;
+                wrapper.dataset.fieldPath = field.path;
                 const label = document.createElement('label');
                 label.className = 'blueprint-field-label';
                 label.textContent = field.label || field.path;
@@ -2651,6 +3903,13 @@
                     required.className = 'blueprint-required';
                     required.textContent = '*';
                     label.appendChild(required);
+                }
+                const hierarchy = creationHierarchyLabel(field);
+                if (hierarchy) {
+                    const badge = document.createElement('span');
+                    badge.className = 'creation-hierarchy-badge';
+                    badge.textContent = hierarchy;
+                    label.appendChild(badge);
                 }
                 wrapper.appendChild(label);
                 const fieldHint = schemaConstraintHint(schema);
@@ -2663,8 +3922,10 @@
                     wrapper.appendChild(help);
                 }
                 const options = blueprintOptions(fieldView, state);
+                const defaultValue = blueprintFieldDefault(field);
                 const displayValue = state.value !== undefined && state.value !== null
-                    ? state.value : blueprintState.values[field.path];
+                    ? state.value : blueprintState.values[field.path] !== undefined
+                        ? blueprintState.values[field.path] : defaultValue;
                 let control;
                 if (fieldView.presentation === 'file_reference') {
                     control = document.createElement('div');
@@ -2790,7 +4051,13 @@
                     control.className = 'asset-text-list';
                     control.placeholder = '每行填写一条';
                 } else if (options.length) {
-                    control = document.createElement('select');
+                    const arraySchema = schema.type === 'array' || (Array.isArray(schema.type) && schema.type.includes('array'));
+                    const useChoiceTiles = arraySchema || options.length <= 6;
+                    if (useChoiceTiles) {
+                        control = renderChoiceTiles(options, displayValue, arraySchema, option => blueprintOptionLabel(field, option), value => updateBlueprintField(field, value));
+                        control.dataset.customChoice = 'true';
+                    } else {
+                        control = document.createElement('select');
                     const placeholder = document.createElement('option');
                     placeholder.value = '';
                     placeholder.textContent = state.required ? '请选择…' : '不设置';
@@ -2801,6 +4068,7 @@
                         optionNode.textContent = blueprintOptionLabel(field, option);
                         control.appendChild(optionNode);
                     }
+                    }
                 } else if (schema.type === 'object' || schema.type === 'array' || Array.isArray(schema.type)) {
                     control = document.createElement('textarea');
                     control.placeholder = schema.type === 'array' ? '[...]' : '{...}';
@@ -2808,7 +4076,7 @@
                     control = document.createElement('input');
                     control.type = schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text';
                 }
-                if (field.presentation !== 'asset_picker' && field.presentation !== 'file_reference' && field.presentation !== 'derived_readonly' && schema.type !== 'object') {
+                if (!control.dataset.customChoice && field.presentation !== 'asset_picker' && field.presentation !== 'file_reference' && field.presentation !== 'derived_readonly' && schema.type !== 'object') {
                     control.value = field.presentation === 'text_list'
                         ? presentedLines(displayValue)
                         : displayValue === undefined
@@ -2833,8 +4101,9 @@
                             : schema.type === 'object' ? '按字段填写，系统会按 Tool Schema 组装'
                             : field.presentation === 'text_list' ? '每行填写一条' : '可直接填写';
                 wrapper.appendChild(source);
-                container.appendChild(wrapper);
-            }
+                sectionFields.appendChild(wrapper);
+                }
+            });
             const readiness = document.getElementById('blueprintReadiness');
             if (readiness) {
                 const missing = evaluation?.missing_fields || [];
@@ -2887,7 +4156,10 @@
                     await evaluateBlueprintDraft(changedPath, false);
                     return;
                 }
+                renderBlueprintFlowbar(blueprint, evaluation);
                 renderBlueprintFields(evaluation);
+                renderBlueprintFieldNav(blueprint, evaluation);
+                renderBlueprintSummary(blueprint, evaluation);
             } catch (error) {
                 showBlueprintNotice(error.message || '参数校验失败。');
             }
@@ -2901,7 +4173,7 @@
         }
 
         function resetBlueprintDraft() {
-            blueprintState.values = {};
+            blueprintState.values = blueprintDefaultValues(blueprintState.selected);
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
             blueprintState.localFiles = {};
@@ -3591,15 +4863,16 @@
             const values = {};
             const scopedSelectionTokens = {};
             (card.fields || []).forEach(field => {
-                if (field.visible === false || field.value === undefined || field.value === null || field.value === '') return;
-                setCreationNestedValue(values, field.provider_field || field.path, field.value);
+                const value = creationFieldValue(field);
+                if (field.visible === false || value === undefined || value === null || value === '') return;
+                setCreationNestedValue(values, field.provider_field || field.path, value);
                 // Keep a tool-scoped copy for repeated fields such as name or
                 // app_id. The top-level copy remains available to the
                 // provider-neutral activation predicates; the authoritative
                 // Tool builder uses the scoped value for its own schema.
                 if (field.tool) {
                     values[field.tool] = values[field.tool] || {};
-                    setCreationNestedValue(values[field.tool], field.provider_field || field.path, field.value);
+                    setCreationNestedValue(values[field.tool], field.provider_field || field.path, value);
                 }
             });
             Object.entries(card.selection_tokens || {}).forEach(([fieldName, token]) => {
@@ -3618,7 +4891,8 @@
         function creationCardDraftValues(card) {
             const values = {};
             (card.fields || []).forEach(field => {
-                if (field.value !== undefined && field.value !== null && field.value !== '') values[field.path] = field.value;
+                const value = creationFieldValue(field);
+                if (value !== undefined && value !== null && value !== '') values[field.path] = value;
             });
             return values;
         }
@@ -3746,10 +5020,10 @@
             const pending = [];
             if (!String(card.account_id || '').trim()) pending.push('广告账户 ID');
             (card.fields || []).forEach(field => {
-                if (field.visible === false || !field.required) return;
+                if (field.visible === false || !creationFieldNeedsUserInput(field)) return;
                 const label = field.label || field.path || '参数';
                 if (invalidPaths.has(field.path) || field.state === 'invalid') return;
-                if (creationCardValueEmpty(field.value) && !pending.includes(label)) pending.push(label);
+                if (creationCardValueEmpty(creationFieldValue(field)) && !pending.includes(label)) pending.push(label);
             });
             return pending;
         }
@@ -3793,8 +5067,8 @@
         }
 
         function creationCardProgress(card) {
-            const requiredFields = (card.fields || []).filter(field => field.visible !== false && field.required);
-            const completedFields = requiredFields.filter(field => !creationCardValueEmpty(field.value) && !field.local_error && field.state !== 'invalid' && !(card.invalid_fields || []).includes(field.path)).length;
+            const requiredFields = (card.fields || []).filter(field => field.visible !== false && creationFieldNeedsUserInput(field));
+            const completedFields = requiredFields.filter(field => !creationCardValueEmpty(creationFieldValue(field)) && !field.local_error && field.state !== 'invalid' && !(card.invalid_fields || []).includes(field.path)).length;
             const accountCompleted = String(card.account_id || '').trim() ? 1 : 0;
             const total = requiredFields.length + 1;
             const completed = completedFields + accountCompleted;
@@ -3827,17 +5101,230 @@
                 progressBar.style.width = `${progress.percent}%`;
                 progressBar.setAttribute('aria-valuenow', String(progress.percent));
             }
+            wrapper.querySelectorAll('.creation-card-section').forEach(section => {
+                const group = creationFieldGroups(card.fields || []).find(item => item.id === section.dataset.step);
+                if (!group) return;
+                const groupProgress = fieldGroupProgress(group.fields);
+                const count = section.querySelector('.creation-card-section-count');
+                if (count) {
+                    count.classList.toggle('has-missing', Boolean(groupProgress.missing));
+                    count.textContent = groupProgress.missing ? `待填 ${groupProgress.missing}` : `${groupProgress.total} 项`;
+                }
+            });
+            wrapper.querySelectorAll('.creation-card-step').forEach(step => {
+                const group = creationFieldGroups(card.fields || []).find(item => item.id === step.dataset.step);
+                const groupProgress = group ? fieldGroupProgress(group.fields) : { missing: 0 };
+                step.classList.toggle('has-missing', Boolean(groupProgress.missing));
+                const copy = step.querySelector('small');
+                if (copy) copy.textContent = groupProgress.missing ? `待填 ${groupProgress.missing}` : '已就绪';
+            });
             const submitButton = wrapper.querySelector('[data-creation-action="submit_create"]');
             if (submitButton) submitButton.disabled = !creationCardCanSubmit(card);
+            const focusButton = wrapper.querySelector('.creation-card-focus-action');
+            if (focusButton) {
+                const hasIssue = !String(card.account_id || '').trim() || creationCardPendingLabels(card).length || creationCardInvalidLabels(card).length;
+                focusButton.hidden = !hasIssue;
+                focusButton.textContent = creationCardInvalidLabels(card).length ? '查看问题' : '定位待填项';
+            }
+            renderCreationCardFieldNav(card, wrapper);
+            renderCreationCardSummary(card, wrapper);
+            renderCreationCardAutomation(card, wrapper);
+        }
+
+        function focusCreationCardIssue(card, wrapper = null) {
+            const root = wrapper || document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
+            if (!root) return;
+            if (!String(card.account_id || '').trim()) {
+                const account = root.querySelector('.creation-card-account input');
+                account?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                account?.focus({ preventScroll: true });
+                return;
+            }
+            const issue = root.querySelector('.creation-card-field.invalid:not(.hidden), .creation-card-field.missing:not(.hidden)');
+            if (!issue) return;
+            scrollCreationTarget(issue);
+            issue.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button')?.focus({ preventScroll: true });
+        }
+
+        function creationCardFieldState(field) {
+            const invalid = field.local_error || field.state === 'invalid';
+            const value = creationFieldValue(field);
+            const empty = creationCardValueEmpty(value);
+            return {
+                visible: field.visible !== false,
+                required: creationFieldNeedsUserInput(field),
+                value,
+                status: invalid ? 'invalid' : creationFieldNeedsUserInput(field) && empty ? 'missing' : empty ? 'empty' : 'complete',
+            };
+        }
+
+        function creationCardScrollTo(wrapper, target, activeNode = null) {
+            if (!target) return;
+            const section = target.closest('.blueprint-field-group, .creation-card-section');
+            if (section) setCreationSectionExpanded(section, true);
+            scrollCreationTarget(target);
+            target.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true });
+            wrapper.querySelectorAll('.creation-card-nav-item.active, .creation-card-nav-group.active').forEach(node => node.classList.remove('active'));
+            activeNode?.classList.add('active');
+        }
+
+        function renderCreationCardFieldNav(card, wrapper) {
+            const container = wrapper?.querySelector('.creation-card-field-nav');
+            if (!container) return;
+            container.replaceChildren();
+            const header = document.createElement('div');
+            header.className = 'creation-card-field-nav-header';
+            header.innerHTML = '<span>填写目录</span><small>点击字段快速定位</small>';
+            container.appendChild(header);
+            creationFieldGroups(card.fields || []).forEach((group, groupIndex) => {
+                const states = group.fields.map(creationCardFieldState);
+                const fields = group.fields.filter((field, index) => states[index].visible && (!card.focus_mode || !field.advanced));
+                if (!fields.length) return;
+                const progress = fieldGroupProgress(group.fields);
+                const groupButton = document.createElement('button');
+                groupButton.type = 'button';
+                groupButton.className = `creation-card-nav-group${progress.missing ? ' missing' : ' complete'}`;
+                const marker = document.createElement('span');
+                marker.className = 'creation-card-nav-status';
+                marker.textContent = progress.missing ? '!' : '✓';
+                const copy = document.createElement('span');
+                copy.className = 'creation-card-nav-group-copy';
+                copy.innerHTML = `<strong>${escapeHtml(group.title)}</strong><small>${progress.missing ? `待填 ${progress.missing} · 共 ${progress.total} 项` : `已就绪 · 共 ${progress.total} 项`}</small>`;
+                groupButton.append(marker, copy);
+                groupButton.addEventListener('click', () => creationCardScrollTo(wrapper, wrapper.querySelector(`.creation-card-section[data-step="${CSS.escape(group.id)}"]`), groupButton));
+                container.appendChild(groupButton);
+                const fieldList = document.createElement('div');
+                fieldList.className = 'creation-card-nav-fields';
+                creationDirectoryHierarchyGroups(fields).forEach(([hierarchy, hierarchyFields]) => {
+                    const branch = document.createElement('div');
+                    branch.className = 'creation-card-nav-hierarchy';
+                    const branchKey = `card:${card.id}:${group.id}:${hierarchy}`;
+                    const collapsed = creationDirectoryCollapseState.get(branchKey) === true;
+                    if (collapsed) branch.classList.add('is-collapsed');
+                    const branchButton = document.createElement('button');
+                    branchButton.type = 'button';
+                    branchButton.className = 'creation-card-nav-hierarchy-toggle';
+                    branchButton.setAttribute('aria-expanded', String(!collapsed));
+                    const branchMarker = document.createElement('span');
+                    branchMarker.className = 'creation-card-nav-hierarchy-marker';
+                    branchMarker.textContent = collapsed ? '›' : '⌄';
+                    const branchCopy = document.createElement('span');
+                    branchCopy.className = 'creation-card-nav-hierarchy-copy';
+                    const branchTitle = document.createElement('strong');
+                    branchTitle.textContent = hierarchy;
+                    const branchCount = document.createElement('small');
+                    branchCount.textContent = `${hierarchyFields.length} 项`;
+                    branchCopy.append(branchTitle, branchCount);
+                    branchButton.append(branchMarker, branchCopy);
+                    const hierarchyList = document.createElement('div');
+                    hierarchyList.className = 'creation-card-nav-hierarchy-fields';
+                    branchButton.addEventListener('click', () => {
+                        const nextCollapsed = !branch.classList.contains('is-collapsed');
+                        branch.classList.toggle('is-collapsed', nextCollapsed);
+                        creationDirectoryCollapseState.set(branchKey, nextCollapsed);
+                        branchButton.setAttribute('aria-expanded', String(!nextCollapsed));
+                        branchMarker.textContent = nextCollapsed ? '›' : '⌄';
+                    });
+                    hierarchyFields.forEach(field => {
+                        const state = creationCardFieldState(field);
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = `creation-card-nav-item${state.status === 'missing' ? ' missing' : ''}${state.status === 'invalid' ? ' invalid' : ''}${state.status === 'complete' ? ' complete' : ''}`;
+                        const status = document.createElement('span');
+                        status.className = 'creation-card-nav-field-status';
+                        status.textContent = state.status === 'invalid' ? '!' : state.status === 'missing' ? '•' : state.status === 'complete' ? '✓' : '·';
+                        const itemCopy = document.createElement('span');
+                        itemCopy.className = 'creation-card-nav-item-copy';
+                        itemCopy.innerHTML = `<span>${escapeHtml(field.label || field.path)}</span><small>${escapeHtml(creationFieldDisplayValue(field))}</small>`;
+                        button.append(status, itemCopy);
+                        button.addEventListener('click', () => creationCardScrollTo(wrapper, wrapper.querySelector(`.creation-card-field[data-field-path="${CSS.escape(field.path)}"]`), button));
+                        hierarchyList.appendChild(button);
+                    });
+                    branch.append(branchButton, hierarchyList);
+                    fieldList.appendChild(branch);
+                });
+                container.appendChild(fieldList);
+            });
+            if (!container.querySelector('.creation-card-nav-group')) {
+                const empty = document.createElement('div');
+                empty.className = 'creation-card-nav-empty';
+                empty.textContent = '选择创建类型后显示字段目录。';
+                container.appendChild(empty);
+            }
+        }
+
+        function renderCreationCardSummary(card, wrapper) {
+            const container = wrapper?.querySelector('.creation-card-summary');
+            if (!container) return;
+            container.replaceChildren();
+            const progress = creationCardProgress(card);
+            const heading = document.createElement('div');
+            heading.className = 'creation-card-summary-heading';
+            heading.innerHTML = '<span>实时摘要</span><small>填写时始终可见</small>';
+            const progressValue = document.createElement('span');
+            progressValue.className = `creation-card-summary-progress${progress.percent >= 100 ? ' ready' : ''}`;
+            progressValue.textContent = `${progress.completed}/${progress.total} 项已填`;
+            heading.appendChild(progressValue);
+            container.appendChild(heading);
+            const items = document.createElement('div');
+            items.className = 'creation-card-summary-items';
+            const account = document.createElement('button');
+            account.type = 'button';
+            account.className = `creation-card-summary-item${card.account_id ? ' filled' : ' pending'}`;
+            account.innerHTML = `<span>广告账户</span><strong>${escapeHtml(card.account_id || '未填写')}</strong>`;
+            account.addEventListener('click', () => wrapper.querySelector('.creation-card-account input')?.focus());
+            items.appendChild(account);
+            const filled = (card.fields || []).filter(field => field.visible !== false && !creationCardValueEmpty(creationFieldValue(field)) && creationFieldNeedsUserInput(field));
+            filled.slice(0, 5).forEach(field => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'creation-card-summary-item filled';
+                item.innerHTML = `<span>${escapeHtml(field.label || field.path)}</span><strong>${escapeHtml(creationFieldDisplayValue(field))}</strong>`;
+                item.addEventListener('click', () => creationCardScrollTo(wrapper, wrapper.querySelector(`.creation-card-field[data-field-path="${CSS.escape(field.path)}"]`)));
+                items.appendChild(item);
+            });
+            const remaining = filled.length - Math.min(filled.length, 5);
+            if (remaining > 0) {
+                const more = document.createElement('span');
+                more.className = 'creation-card-summary-more';
+                more.textContent = `还有 ${remaining} 项已填写`;
+                items.appendChild(more);
+            }
+            container.appendChild(items);
+        }
+
+        function renderCreationCardAutomation(card, wrapper) {
+            const container = wrapper?.querySelector('.creation-card-automation');
+            if (!container) return;
+            const count = Number(card.auto_filled_count || 0);
+            const autoText = count ? `系统已按平台规则填好 ${count} 项` : '系统会按平台规则生成安全默认值';
+            const missing = creationCardPendingLabels(card).filter(label => label !== '广告账户 ID').length;
+            container.querySelector('.creation-card-automation-copy strong').textContent = autoText;
+            container.querySelector('.creation-card-automation-copy small').textContent = missing ? `还需要你确认 ${missing} 项；账户、素材和链接仍需使用真实资源` : '你可以直接修改任何默认值，最终会按当前内容提交';
+            const toggle = container.querySelector('.creation-card-automation-toggle');
+            if (toggle) {
+                toggle.textContent = card.focus_mode ? '显示全部参数' : '只看需要确认';
+                toggle.setAttribute('aria-pressed', String(Boolean(card.focus_mode)));
+            }
         }
 
         function creationReviewRows(card) {
-            return (card.fields || []).filter(field => field.visible !== false && field.value !== undefined && field.value !== null && field.value !== '').slice(0, 80).map(field => {
-                const value = field.control === 'text_list' ? presentedLines(field.value)
-                    : field.control === 'asset_picker' ? (Array.isArray(field.value) ? field.value.map(item => item?.local_file || item?.name || item?.asset || '已选素材').join('、') : '')
-                    : field.control === 'object_editor' ? structuredObjectValueText(field.value)
-                    : creationCardValueText(field.value);
-                return `<div><span>${escapeHtml(field.label || field.path)}</span><strong>${escapeHtml(value || '已填写')}</strong></div>`;
+            const fields = (card.fields || []).filter(field => {
+                const value = creationFieldValue(field);
+                return field.visible !== false && value !== undefined && value !== null && value !== '';
+            }).slice(0, 80);
+            return creationDirectoryHierarchyGroups(fields).map(([hierarchy, hierarchyFields]) => {
+                const rows = hierarchyFields.map(field => {
+                    const fieldValue = creationFieldValue(field);
+                    const rawValue = field.control === 'checkbox' ? creationFieldDisplayValue(field, fieldValue)
+                        : field.control === 'text_list' ? presentedLines(fieldValue)
+                        : field.control === 'asset_picker' ? (Array.isArray(fieldValue) ? fieldValue.map(item => item?.local_file || item?.name || item?.asset || '已选素材').join('、') : '')
+                        : field.control === 'object_editor' ? structuredObjectValueText(fieldValue)
+                        : creationCardValueText(fieldValue);
+                    const value = String(rawValue || '已填写');
+                    return `<div class="creation-review-row"><span>${escapeHtml(field.label || field.path)}</span><strong title="${escapeHtml(value)}">${escapeHtml(value.length > 180 ? `${value.slice(0, 180)}…` : value)}</strong></div>`;
+                }).join('');
+                return `<section class="creation-review-group"><div class="creation-review-group-head"><strong>${escapeHtml(hierarchy)}</strong><small>${hierarchyFields.length} 项</small></div>${rows}</section>`;
             }).join('');
         }
 
@@ -3847,7 +5334,8 @@
             const review = document.createElement('div');
             review.className = 'creation-card-review';
             review.dataset.cardReview = card.id;
-            review.innerHTML = `<strong>参数预览</strong><div>广告账户：${escapeHtml(card.account_id || '未填写')}</div>${creationReviewRows(card)}<div>这里只是预览，不会产生线上变化；确认后才会继续创建。</div>`;
+            const modeLabel = workspaceMode.mode === 'live' ? 'LIVE · 确认后提交' : 'DRY-RUN · 不修改线上';
+            review.innerHTML = `<div class="creation-review-head"><div><strong>参数预览</strong><small>按广告层级汇总已填写内容</small></div><span>${modeLabel}</span></div><div class="creation-review-account"><span>广告账户</span><strong>${escapeHtml(card.account_id || '未填写')}</strong></div><div class="creation-review-groups">${creationReviewRows(card) || '<div class="creation-review-empty">暂无已填写参数</div>'}</div><div class="creation-review-note">这里只是预览，不会产生线上变化；确认后才会继续创建。</div>`;
             const target = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"] .creation-card-footer`);
             if (target) target.parentElement.insertBefore(review, target);
         }
@@ -3925,10 +5413,11 @@
             (card.fields || []).forEach(field => {
                 const item = wrapper.querySelector(`[data-field-path="${CSS.escape(field.path)}"]`);
                 if (!item) return;
-                const invalid = Boolean(field.local_error) || field.state === 'invalid' || (card.invalid_fields || []).includes(field.path);
-                item.classList.toggle('missing', field.state === 'missing');
+                const state = creationCardFieldState(field);
+                const invalid = state.status === 'invalid' || (card.invalid_fields || []).includes(field.path);
+                item.classList.toggle('missing', state.status === 'missing');
                 item.classList.toggle('invalid', invalid);
-                item.classList.toggle('hidden', field.visible === false);
+                item.classList.toggle('hidden', !state.visible);
                 let error = item.querySelector('.creation-card-field-error');
                 if (field.local_error) {
                     if (!error) {
@@ -3946,7 +5435,7 @@
         function renderCreationCard(card) {
             creationCardState.set(card.id, card);
             const wrapper = document.createElement('section');
-            wrapper.className = `creation-card ${creationCardStatusKind(card)}`;
+            wrapper.className = `creation-card ${creationCardStatusKind(card)}${card.focus_mode ? ' focus-mode' : ''}`;
             wrapper.dataset.cardId = card.id;
 
             const header = document.createElement('div');
@@ -3998,6 +5487,19 @@
             header.appendChild(next);
             wrapper.appendChild(header);
 
+            const workbench = document.createElement('div');
+            workbench.className = 'creation-card-workbench';
+            const fieldNav = document.createElement('aside');
+            fieldNav.className = 'creation-card-field-nav';
+            fieldNav.setAttribute('aria-label', '参数填写目录');
+            const main = document.createElement('div');
+            main.className = 'creation-card-main';
+            workbench.append(fieldNav, main);
+            wrapper.appendChild(workbench);
+            const contextGrid = document.createElement('div');
+            contextGrid.className = 'creation-card-context-grid';
+            main.appendChild(contextGrid);
+
             const account = document.createElement('div');
             account.className = 'creation-card-account';
             const accountLabel = document.createElement('label');
@@ -4034,28 +5536,113 @@
             const accountHint = document.createElement('small');
             accountHint.textContent = '请填写你确认过的账户；系统不会替你猜测或自动选择。';
             account.append(accountLabel, accountInput, accountHint);
-            wrapper.appendChild(account);
+            contextGrid.appendChild(account);
 
             const progress = creationCardProgress(card);
             const progressBox = document.createElement('div');
             progressBox.className = 'creation-card-progress';
             progressBox.innerHTML = `<div class="creation-card-progress-head"><strong>必填项完成度</strong><span class="creation-card-progress-value">${progress.completed} / ${progress.total} · ${progress.percent}%</span></div><div class="creation-card-progress-track" role="progressbar" aria-label="必填项完成度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}"><div class="creation-card-progress-bar" style="width:${progress.percent}%"></div></div>`;
-            wrapper.appendChild(progressBox);
+            contextGrid.appendChild(progressBox);
+            const summary = document.createElement('div');
+            summary.className = 'creation-card-summary';
+            main.appendChild(summary);
+
+            const automation = document.createElement('div');
+            automation.className = 'creation-card-automation';
+            const automationCopy = document.createElement('div');
+            automationCopy.className = 'creation-card-automation-copy';
+            const automationTitle = document.createElement('strong');
+            const automationHint = document.createElement('small');
+            automationCopy.append(automationTitle, automationHint);
+            const automationToggle = document.createElement('button');
+            automationToggle.type = 'button';
+            automationToggle.className = 'creation-card-automation-toggle';
+            automationToggle.setAttribute('aria-pressed', String(Boolean(card.focus_mode)));
+            automationToggle.addEventListener('click', () => {
+                card.focus_mode = !card.focus_mode;
+                wrapper.classList.toggle('focus-mode', card.focus_mode);
+                renderCreationCardAutomation(card, wrapper);
+                renderCreationCardFieldNav(card, wrapper);
+            });
+            automation.append(automationCopy, automationToggle);
+            main.appendChild(automation);
+
+            const groups = creationFieldGroups(card.fields || []);
+            const stepbar = document.createElement('div');
+            stepbar.className = 'creation-card-stepbar';
+            groups.forEach((group, index) => {
+                const groupProgress = fieldGroupProgress(group.fields);
+                const step = document.createElement('button');
+                step.type = 'button';
+                step.className = `creation-card-step${index === 0 ? ' active' : ''}${groupProgress.missing ? ' has-missing' : ''}`;
+                step.dataset.step = group.id;
+                step.innerHTML = `<span class="creation-card-step-dot">${index + 1}</span><span><strong>${escapeHtml(group.title)}</strong><small>${groupProgress.missing ? `待填 ${groupProgress.missing}` : '已就绪'}</small></span>`;
+                step.addEventListener('click', () => {
+                    const target = wrapper.querySelector(`.creation-card-section[data-step="${CSS.escape(group.id)}"]`);
+                    creationCardScrollTo(wrapper, target);
+                    stepbar.querySelectorAll('.creation-card-step').forEach(node => node.classList.toggle('active', node === step));
+                });
+                stepbar.appendChild(step);
+            });
+            main.appendChild(stepbar);
 
             const fields = document.createElement('div');
             fields.className = 'creation-card-fields';
-            (card.fields || []).forEach(field => {
+            groups.forEach(group => {
+                const section = document.createElement('section');
+                section.className = `creation-card-section${group.id === 'advanced' ? ' collapsible' : ''}`;
+                if (['advanced', 'other'].includes(group.id)) section.classList.add('is-collapsed');
+                section.dataset.step = group.id;
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'creation-card-section-header';
+                const sectionTitle = document.createElement('div');
+                sectionTitle.innerHTML = `<span class="creation-card-section-icon">${group.id === 'campaign' ? '◎' : group.id === 'audience' ? '◌' : group.id === 'creative' ? '▧' : group.id === 'measurement' ? '⌁' : '⋯'}</span><span><strong>${escapeHtml(group.title)}</strong><small>${escapeHtml(group.description)}</small></span>`;
+                const sectionProgress = fieldGroupProgress(group.fields);
+                const sectionCount = document.createElement('span');
+                sectionCount.className = `creation-card-section-count${sectionProgress.missing ? ' has-missing' : ''}`;
+                sectionCount.textContent = sectionProgress.missing ? `待填 ${sectionProgress.missing}` : `${sectionProgress.total} 项`;
+                const sectionToggle = document.createElement('button');
+                sectionToggle.type = 'button';
+                sectionToggle.className = 'creation-section-toggle';
+                sectionToggle.setAttribute('aria-expanded', String(!section.classList.contains('is-collapsed')));
+                sectionToggle.textContent = section.classList.contains('is-collapsed') ? '展开' : '收起';
+                sectionToggle.addEventListener('click', event => {
+                    event.stopPropagation();
+                    setCreationSectionExpanded(section, section.classList.contains('is-collapsed'));
+                });
+                sectionHeader.append(sectionTitle, sectionCount, sectionToggle);
+                section.appendChild(sectionHeader);
+                const sectionFields = document.createElement('div');
+                sectionFields.className = 'creation-card-section-fields';
+                section.appendChild(sectionFields);
+                fields.appendChild(section);
+                group.fields.forEach(field => {
+                const fieldState = creationCardFieldState(field);
                 const item = document.createElement('div');
                 item.dataset.fieldPath = field.path;
-                const wideField = ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json', 'advanced_json'].includes(field.control);
-                item.className = `creation-card-field${wideField ? ' wide' : ''}${field.visible === false ? ' hidden' : ''}${field.state === 'missing' ? ' missing' : ''}${field.state === 'invalid' || field.local_error ? ' invalid' : ''}`;
+                const wideField = field.control === 'lookup' || ['asset_picker', 'file_reference', 'text_list', 'object_editor', 'json', 'advanced_json'].includes(field.control);
+                item.className = `creation-card-field${wideField ? ' wide' : ''}${field.advanced ? ' auto-field' : ''}${field.auto_filled ? ' auto-filled' : ''}${fieldState.visible ? '' : ' hidden'}${fieldState.status === 'missing' ? ' missing' : ''}${fieldState.status === 'invalid' ? ' invalid' : ''}`;
                 const label = document.createElement('label');
                 label.textContent = field.label || field.path;
-                if (field.required) {
+                if (creationFieldNeedsUserInput(field)) {
                     const required = document.createElement('span');
                     required.className = 'required';
                     required.textContent = '*';
                     label.appendChild(required);
+                }
+                const modeLabel = creationFieldModeLabel(field);
+                if (modeLabel) {
+                    const mode = document.createElement('span');
+                    mode.className = `creation-field-mode${field.auto_filled ? ' auto' : ''}`;
+                    mode.textContent = modeLabel;
+                    label.appendChild(mode);
+                }
+                const hierarchy = creationHierarchyLabel(field);
+                if (hierarchy) {
+                    const badge = document.createElement('span');
+                    badge.className = 'creation-hierarchy-badge';
+                    badge.textContent = hierarchy;
+                    label.appendChild(badge);
                 }
                 item.appendChild(label);
                 if (field.description) {
@@ -4127,8 +5714,19 @@
                     control.disabled = true;
                     control.value = creationCardValueText(field.value || options[0]);
                 } else if (field.control === 'select' || field.control === 'multiselect') {
+                    const useChoiceTiles = field.control === 'multiselect'
+                        || (options.length > 0 && options.length <= 6 && field.options_state !== 'awaiting_dependency' && field.options_state !== 'no_matching_rule');
+                    if (useChoiceTiles) {
+                        const multiple = field.control === 'multiselect';
+                        control = renderChoiceTiles(options, field.value, multiple, option => field.option_labels?.[String(option.value)] || '', value => {
+                            field.value = multiple && !value.length ? undefined : value;
+                            creationCardState.set(card.id, card);
+                            scheduleCreationCardEvaluation(card, field.path);
+                            updateCreationCardIndicators(wrapper, card);
+                        });
+                        control.dataset.customChoice = 'true';
+                    } else {
                     control = document.createElement('select');
-                    if (field.control === 'multiselect') control.multiple = true;
                     if (field.control === 'select') {
                         const empty = document.createElement('option');
                         empty.value = '';
@@ -4149,6 +5747,7 @@
                         if (Array.isArray(field.value) ? field.value.map(String).includes(node.value) : String(field.value ?? '') === node.value) node.selected = true;
                         control.appendChild(node);
                     });
+                    }
                 } else if (field.control === 'lookup') {
                     if (!card.selection_tokens) card.selection_tokens = {};
                     if (!card.selection_token_tools) card.selection_token_tools = {};
@@ -4233,6 +5832,23 @@
                     control.type = field.control === 'number' ? 'number' : 'text';
                     control.value = creationCardValueText(field.value);
                 }
+                let controlNode = control;
+                let checkboxState = null;
+                if (field.control === 'checkbox') {
+                    const checkboxLabel = document.createElement('label');
+                    checkboxLabel.className = 'checkbox-control';
+                    const visual = document.createElement('span');
+                    visual.className = 'checkbox-visual';
+                    const copy = document.createElement('span');
+                    copy.className = 'checkbox-copy';
+                    const title = document.createElement('strong');
+                    title.textContent = '启用该设置';
+                    checkboxState = document.createElement('small');
+                    checkboxState.textContent = control.checked ? '已开启' : '未开启';
+                    copy.append(title, checkboxState);
+                    checkboxLabel.append(control, visual, copy);
+                    controlNode = checkboxLabel;
+                }
                 control.dataset.path = field.path;
                 const updateValue = () => {
                     if (field.control === 'asset_picker' || field.control === 'file_reference' || field.control === 'derived_readonly') return;
@@ -4240,19 +5856,28 @@
                     if (field.control === 'checkbox') value = control.checked;
                     else if (field.control === 'multiselect') value = Array.from(control.selectedOptions).map(option => option.value);
                     else value = parseCreationCardValue(field, control.value.trim());
+                    if (checkboxState) checkboxState.textContent = control.checked ? '已开启' : '未开启';
                     field.value = value;
-                    item.classList.toggle('missing', field.required && (value === undefined || value === null || value === ''));
+                    item.classList.toggle('missing', creationFieldNeedsUserInput(field) && (value === undefined || value === null || value === ''));
                     creationCardState.set(card.id, card);
                     scheduleCreationCardEvaluation(card, field.path);
                     const status = wrapper.querySelector('.creation-card-status');
                     updateCreationCardIndicators(wrapper, card);
                 };
-                if (field.control !== 'asset_picker' && field.control !== 'file_reference' && field.control !== 'derived_readonly' && field.control !== 'object_editor' && field.control !== 'lookup') control.addEventListener('change', updateValue);
+                if (!control.dataset.customChoice && field.control !== 'asset_picker' && field.control !== 'file_reference' && field.control !== 'derived_readonly' && field.control !== 'object_editor' && field.control !== 'lookup') control.addEventListener('change', updateValue);
                 if (field.control === 'text' || field.control === 'text_list' || field.control === 'number' || field.control === 'advanced_json') control.addEventListener('input', updateValue);
-                item.appendChild(control);
+                item.appendChild(controlNode);
+                if (field.auto_filled && field.default_reason) {
+                    const defaultNote = document.createElement('div');
+                    defaultNote.className = 'creation-card-default-note';
+                    defaultNote.textContent = `默认逻辑：${field.default_reason}`;
+                    item.appendChild(defaultNote);
+                }
                 const source = document.createElement('div');
                 source.className = 'source';
-                source.textContent = field.control === 'derived_readonly'
+                source.textContent = field.auto_filled
+                    ? '系统默认值 · 可直接修改'
+                    : field.control === 'derived_readonly'
                     ? '由当前广告系列类型自动匹配'
                     : field.source === 'lookup' || field.control === 'lookup' ? '需要从指定账户中选择'
                         : (field.control === 'asset_picker' || field.control === 'file_reference') ? '本地素材草稿'
@@ -4274,9 +5899,10 @@
                     error.textContent = field.local_error;
                     item.appendChild(error);
                 }
-                fields.appendChild(item);
+                sectionFields.appendChild(item);
+                });
             });
-            wrapper.appendChild(fields);
+            main.appendChild(fields);
 
             const footer = document.createElement('div');
             footer.className = 'creation-card-footer';
@@ -4284,6 +5910,13 @@
             status.className = 'creation-card-status';
             status.textContent = creationCardStatus(card);
             footer.appendChild(status);
+            const focusAction = document.createElement('button');
+            focusAction.type = 'button';
+            focusAction.className = 'creation-card-focus-action';
+            focusAction.textContent = creationCardInvalidLabels(card).length ? '查看问题' : '定位待填项';
+            focusAction.hidden = !(!String(card.account_id || '').trim() || creationCardPendingLabels(card).length || creationCardInvalidLabels(card).length);
+            focusAction.addEventListener('click', () => focusCreationCardIssue(card, wrapper));
+            footer.appendChild(focusAction);
             const actions = document.createElement('div');
             actions.className = 'creation-card-actions';
             (card.actions || []).forEach(action => {
@@ -4297,7 +5930,10 @@
                 actions.appendChild(button);
             });
             footer.appendChild(actions);
-            wrapper.appendChild(footer);
+            main.appendChild(footer);
+            renderCreationCardFieldNav(card, wrapper);
+            renderCreationCardSummary(card, wrapper);
+            renderCreationCardAutomation(card, wrapper);
             return wrapper;
         }
 
@@ -4366,6 +6002,31 @@
                 `).join('')}</div>`;
             }
             if (ui?.cards?.length) bodyHtml += '<div class="message-ui-cards"></div>';
+            if (ui?.clarification?.options?.length) {
+                const options = ui.clarification.options
+                    .filter(option => option && (option.label || option.value))
+                    .slice(0, 12);
+                if (options.length) {
+                    bodyHtml += `<div class="message-clarification-options">${options.map(option => {
+                        const answer = String(option.label || option.value);
+                        return `<button type="button" class="clarification-option" data-answer="${escapeHtml(answer)}">${escapeHtml(answer)}</button>`;
+                    }).join('')}</div>`;
+                }
+            }
+            if (ui?.clarification?.fields?.length) {
+                const fields = ui.clarification.fields
+                    .filter(field => field && (field.label || field.path))
+                    .slice(0, 12);
+                if (fields.length) {
+                    bodyHtml += `<div class="message-clarification-fields">${fields.map(field => {
+                        const source = field.source === 'lookup'
+                            ? '从资源列表选择'
+                            : field.source === 'enum' ? '从可选值中选择' : '直接补充';
+                        const hint = field.hint ? ` · ${field.hint}` : '';
+                        return `<div class="clarification-field-row"><span class="clarification-field-label">${escapeHtml(field.label || field.path)}</span><span class="clarification-field-source">${escapeHtml(source)}${escapeHtml(hint)}</span></div>`;
+                    }).join('')}</div>`;
+                }
+            }
 
             msg.innerHTML = `
                 <div class="message-avatar">${type === 'user' ? '👤' : '🤖'}</div>
@@ -4378,7 +6039,17 @@
                 </div>
             `;
 
-            if (ui?.cards?.length) msg.querySelector('.message-ui-cards').appendChild(renderUiCards(ui));
+            if (ui?.cards?.length) {
+                msg.classList.add('has-ui-cards');
+                msg.querySelector('.message-ui-cards').appendChild(renderUiCards(ui));
+            }
+            msg.querySelectorAll('.clarification-option').forEach(button => {
+                button.addEventListener('click', () => {
+                    if (isSending) return;
+                    setInput(button.dataset.answer || '');
+                    sendMessage();
+                });
+            });
 
             container.appendChild(msg);
             document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
@@ -4446,6 +6117,20 @@
                         <label>📝 缺失参数: ${payload.missing.join(', ')}</label>
                         <input type="text" id="confirmParamInput" placeholder="例如: campaign_id=12345" autofocus>
                     </div>
+                `;
+            } else if (payload.type === 'confirm_write_plan') {
+                const steps = Array.isArray(payload.preview?.steps) ? payload.preview.steps : [];
+                const stepHtml = steps.length
+                    ? `<div class="confirm-plan-steps">${steps.map((step, index) => `
+                        <div class="confirm-plan-step">
+                            <span class="confirm-plan-index">${index + 1}</span>
+                            <span><strong>${escapeHtml(step.resource_type || '广告资源')}</strong><small>${escapeHtml(step.tool || '')}${step.parent_resource_type ? ` · 依赖 ${escapeHtml(step.parent_resource_type)}` : ''}</small></span>
+                        </div>`).join('')}</div>`
+                    : '';
+                inputHtml = `
+                    <div class="confirm-plan-intro">将按以下顺序提交，全部资源会以安全初始状态创建：</div>
+                    ${stepHtml}
+                    <div class="confirm-plan-account">${escapeHtml(payload.platform || '平台')} · 账户 ${escapeHtml(payload.account_id || '已校验')}</div>
                 `;
             }
 
@@ -4755,7 +6440,7 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('#scheduleOverlay') && !event.target.closest('.system-ops-wrap')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('#scheduleOverlay') && !event.target.closest('#memoryOverlay') && !event.target.closest('.system-ops-wrap')) {
                 closeWorkspacePopovers();
             }
         });
@@ -4781,6 +6466,9 @@
         document.getElementById('scheduleOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'scheduleOverlay') closeSchedules();
         });
+        document.getElementById('memoryOverlay')?.addEventListener('click', (event) => {
+            if (event.target.id === 'memoryOverlay') closeMemoryManager();
+        });
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') return;
             if (document.getElementById('monitoringOverlay')?.classList.contains('active')) {
@@ -4789,6 +6477,10 @@
             }
             if (document.getElementById('scheduleOverlay')?.classList.contains('active')) {
                 closeSchedules();
+                return;
+            }
+            if (document.getElementById('memoryOverlay')?.classList.contains('active')) {
+                closeMemoryManager();
                 return;
             }
             const renameOverlay = document.getElementById('historyRenameOverlay');

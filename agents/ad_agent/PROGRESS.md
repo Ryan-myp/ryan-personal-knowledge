@@ -2,10 +2,10 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
-## 当前契约（2026-08-31）
+## 当前契约（2026-09-08）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前共 294 个工具：Meta 76、Google Ads 108、TikTok 79、DV360 31。Capability 和按约定命名的 Provider Client 均自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建尚未建设，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
-- 所有 Campaign 及下级资源创建/更新默认 dry-run；当前不会因工具已注册就调用真实写 API。
+- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前合同快照为 312 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 所有 Campaign 及下级资源创建/更新默认 dry-run；live 只在测试账号白名单、显式模式、权限和二次确认同时满足时执行。三渠道指定测试账号的真实验证证据见 `contracts/provider_e2e_evidence.json`，未验证项不推断为成功。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 只读查询在白名单只有一个账户时允许兼容性自动选择；创建、更新、删除、暂停/恢复及批量写必须由当前请求显式指定目标账户，多账户同样必须显式指定。
 - 创建工具已支持参数目录：固定枚举/数组元素/条件依赖进入 ToolSchema，TikTok App 与地域等动态字段关联现有 lookup 工具，`/tools` 返回完整 Schema。
@@ -164,7 +164,7 @@ ad_agent/
 
 ### 安装
 ```bash
-pip install -r requirements.txt
+make ad-agent-install
 ```
 
 ### 离线契约评测模式（无需凭证）
@@ -211,11 +211,11 @@ runtime.register_capability(capability)
 ## 测试覆盖
 
 ```bash
-python -m pytest agents/ad_agent/tests/ -v
+make ad-agent-test
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：453 passed（另有 1 条本机依赖弃用 warning）。
+- 当前 `agents/ad_agent/tests/`：738 passed（另有 1 条本机依赖弃用 warning）。
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -464,7 +464,7 @@ curl -X POST http://localhost:8765/chat \
   - 内容结构建议：角色定位 + 核心能力 + 可用 Tools + 参考文档 + 最佳实践 + FAQ
 - **当前状态**:
   - ✅ 4 个 Channel Skills 已符合标准格式
-  - ✅ Service 正常运行，加载 39 个工具
+  - ✅ Service 正常运行，当前契约加载 312 个工具
   - ✅ 已修复 meta Skill tags 拼写错误
 
 ### 9. 修复 Google Ads 报表查询 bug
@@ -488,3 +488,19 @@ curl -X POST http://localhost:8765/chat \
 - **问题**: 查询报表时报"需要确认账户ID"
 - **原因**: Intent 使用 `google`，但工具注册为 `google-ads`，导致账户验证失败
 - **修复**: 添加 `platform_name_map` 映射 `google` → `google-ads`
+
+## 2026-09-08 指定测试账户真实验证增量
+
+| Provider | Campaign | 下层级 | 更新 | 结论 |
+|---|---|---|---|---|
+| Meta | Traffic Campaign + Ad Set + Ad | ✅ | ✅ | 全链路 live 成功，回查均为 PAUSED |
+| TikTok | Smart+ Traffic、Lead Generation | Campaign ✅；Traffic/Lead Ad Group ✅ | Traffic/Lead Campaign 与 Ad Group ✅ | Ad 创建仍受 Smart+ 落地页/素材契约阻塞 |
+| TikTok | Smart+ App Promotion | ❌（账号返回通用错误） | 未执行 | 测试账号/所选 App 组合限制，未伪造成功 |
+| TikTok | Smart+ Sales、Product Sales | Campaign ✅ | Ad Group 被 Pixel 前置条件拒绝 | 代码已增加网站转化必须选择 Pixel 的前置校验 |
+| Google Ads | PMax、Shopping、App | ✅ | 既有 live 证据保留 | 指定 Customer 下资源均创建为暂停；PMax Listing Group 契约已实现 |
+
+TikTok Smart+ 本轮还修正了两个会导致真实请求失败的契约问题：Campaign 不再允许
+Provider 拒绝的 `BUDGET_MODE_DAY`，预算输入在提交前校验最低 20；Smart+ Ad 的追踪信息
+不再被误判为无条件必填，且落地页字段会进入 Provider 适配层。当前 Smart+ Ad 仍需用
+真实可授权素材和正确的落地页字段完成最后一轮 live 回归，状态以
+`contracts/provider_e2e_evidence.json` 为准。

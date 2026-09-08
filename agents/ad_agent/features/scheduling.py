@@ -37,6 +37,45 @@ class SchedulingFeature:
         re.I,
     )
 
+    _INTENT_DESCRIPTORS = {
+        "schedule_create": {
+            "description": "创建并管理一个按周期重新交给 Agent 执行的任务",
+            "priority": 200,
+            "aliases": ["定时任务", "定时执行", "定期执行", "scheduled task", "schedule"],
+        },
+        "schedule_list": {
+            "description": "查看当前租户可见的定时任务列表",
+            "priority": 200,
+            "aliases": ["定时任务列表", "查看定时任务", "list schedules"],
+        },
+        "schedule_pause": {
+            "description": "暂停一个已存在的定时任务",
+            "priority": 200,
+            "aliases": ["暂停定时任务", "停用定时任务", "pause schedule"],
+        },
+        "schedule_resume": {
+            "description": "恢复一个已暂停的定时任务",
+            "priority": 200,
+            "aliases": ["恢复定时任务", "启用定时任务", "resume schedule"],
+        },
+        "schedule_delete": {
+            "description": "删除一个已存在的定时任务",
+            "priority": 200,
+            "aliases": ["删除定时任务", "移除定时任务", "delete schedule"],
+        },
+        "schedule_run_now": {
+            "description": "立即触发一个已存在的定时任务",
+            "priority": 200,
+            "aliases": ["立即执行定时任务", "现在执行定时任务", "run schedule now"],
+        },
+    }
+
+    def intent_descriptors(self) -> dict[str, dict[str, Any]]:
+        return {
+            intent: {**descriptor, "aliases": list(descriptor.get("aliases", []))}
+            for intent, descriptor in self._INTENT_DESCRIPTORS.items()
+        }
+
     def can_handle(self, intent: Any) -> bool:
         return str(getattr(intent, "intent_type", "") or "") in self.INTENTS
 

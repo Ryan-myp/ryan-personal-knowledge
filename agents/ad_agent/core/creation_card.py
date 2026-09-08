@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import json
+from datetime import datetime
 from typing import Any, Mapping, Optional
 
 from .blueprint import (
@@ -33,6 +34,12 @@ _PRESENTATIONS = {
     "text_list", "asset_picker", "file_reference", "derived_readonly",
     "object_editor", "advanced_json",
 }
+
+_INPUT_MODES = {
+    "user_required", "user_optional", "auto_default", "auto_derived",
+    "context_required", "asset_required",
+}
+_USER_INPUT_MODES = {"user_required", "context_required", "asset_required"}
 
 
 def _json_shape(field: Mapping[str, Any], schema: Mapping[str, Any]) -> Optional[str]:
@@ -204,6 +211,141 @@ def _option_label(field: Mapping[str, Any], option: Any) -> str:
         if label:
             return str(label)
     return str(option)
+
+
+def _field_name(field: Mapping[str, Any], schema: Mapping[str, Any]) -> str:
+    return str(
+        field.get("provider_field")
+        or field.get("path", "").rsplit(".", 1)[-1]
+        or schema.get("title", "")
+    ).strip().lower()
+
+
+def _generated_name(intent: ParsedIntent, provider_values: Mapping[str, Any], field: Mapping[str, Any]) -> str:
+    """Generate a readable, editable resource name without provider guesses."""
+    objective = (
+        getattr(intent, "objective", None)
+        or provider_values.get("objective")
+        or provider_values.get("objective_type")
+        or provider_values.get("campaign_type")
+        or "广告"
+    )
+    resource = str(field.get("path", "resource")).split(".", 1)[0]
+    resource_label = {
+        "campaign": "Campaign", "ad_group": "Ad Group", "ad_set": "Ad Set",
+        "ad": "Ad", "line_item": "Line Item", "insertion_order": "Insertion Order",
+    }.get(resource, resource.replace("_", " ").title())
+    date_label = datetime.now().strftime("%Y%m%d")
+    return f"{str(objective).replace('_', ' ')} · {resource_label} · {date_label}"
+
+
+def _safe_default(
+    intent: ParsedIntent,
+    provider_values: Mapping[str, Any],
+    field: Mapping[str, Any],
+    schema: Mapping[str, Any],
+    options_override: Optional[list[Any]] = None,
+) -> tuple[Any, Optional[str], Optional[str]]:
+    """Resolve only provider-neutral, reversible defaults.
+
+    Account-owned resources, geography, URLs and assets deliberately have no
+    fallback here. Their absence must remain visible as a user/context input.
+    """
+    if "default" in field:
+        return _copy_json(field["default"]), "blueprint", str(
+            field.get("default_reason") or "按当前广告蓝图预设，可在高级设置中修改。"
+        )
+    if "default" in schema:
+        return _copy_json(schema["default"]), "tool_schema", str(
+            field.get("default_reason") or "按渠道 Tool Schema 默认值填充，可修改。"
+        )
+    strategy = str(field.get("default_strategy") or schema.get("default_strategy") or "").strip().lower()
+    field_name = _field_name(field, schema)
+    if strategy == "generated_name" or field_name in {"name", "campaign_name", "campaignname", "adgroup_name", "ad_name"}:
+        return _generated_name(intent, provider_values, field), "generated", "系统按推广目标、广告层级和日期生成，可修改。"
+
+    options = list(options_override) if options_override else _options(field, schema)
+    if not options:
+        return None, None, None
+    if field.get("presentation") == "derived_readonly" and len(options) == 1:
+        return _copy_json(options[0]), "derived", "由当前创建类型自动匹配。"
+
+    normalized = field_name.replace("-", "_")
+    if normalized in {"buying_type", "purchase_type"} and "AUCTION" in options:
+        return "AUCTION", "policy", "默认采用竞价购买，适用于大多数自动优化场景。"
+    if normalized in {"bid_type", "deep_bid_type"}:
+        no_bid = next((value for value in options if "NO_BID" in str(value)), None)
+        if no_bid is not None:
+            return _copy_json(no_bid), "policy", "默认不设置人工出价上限，让平台自动探索，可修改。"
+    if normalized in {"budget_mode", "budgetmode"}:
+        daily = next((value for value in options if any(token in str(value).upper() for token in ("DYNAMIC_DAILY", "_DAY", "DAILY"))), None)
+        if daily is not None:
+            return _copy_json(daily), "policy", "默认使用日预算，便于按天控制花费，可修改。"
+    if normalized in {"schedule_type", "scheduletype"}:
+        from_now = next((value for value in options if "FROM_NOW" in str(value).upper()), None)
+        if from_now is not None:
+            return _copy_json(from_now), "policy", "默认从开始时间起立即进入投放，可修改。"
+    if normalized in {"gender", "gender_type"}:
+        unlimited = next((value for value in options if "UNLIMITED" in str(value).upper()), None)
+        if unlimited is not None:
+            return _copy_json(unlimited), "policy", "默认不限性别，避免系统替你缩窄受众。"
+    if normalized in {"placement_type", "placement_mode"}:
+        automatic = next((value for value in options if "AUTOMATIC" in str(value).upper()), None)
+        if automatic is not None:
+            return _copy_json(automatic), "policy", "默认使用自动版位，让平台分配流量。"
+    if normalized in {"optimization_goal", "optimization_event"}:
+        preferred = (
+            "LANDING_PAGE_VIEWS", "OFFSITE_CONVERSIONS", "CONVERT",
+            "MAXIMIZE_CONVERSIONS", "LINK_CLICKS", "CLICK", "REACH",
+        )
+        selected = next((value for wanted in preferred for value in options if str(value).upper() == wanted), None)
+        if selected is not None:
+            return _copy_json(selected), "policy", "默认选择与当前推广目标匹配的优化方向，可修改。"
+    if normalized in {"billing_event", "billingevent"}:
+        selected = next((value for wanted in ("IMPRESSIONS", "OCPM", "CPM") for value in options if str(value).upper() == wanted), None)
+        if selected is not None:
+            return _copy_json(selected), "policy", "默认采用平台常用计费事件，可修改。"
+    if normalized in {"bid_strategy", "bidding_strategy"}:
+        selected = next((value for value in options if str(value).upper() == "LOWEST_COST_WITHOUT_CAP"), None)
+        if selected is not None:
+            return _copy_json(selected), "policy", "默认采用最低成本策略，不设置人工上限，可修改。"
+    if normalized in {"contains_eu_political_advertising", "eu_political_advertising"}:
+        safe = next((value for value in options if "DOES_NOT_CONTAIN" in str(value).upper()), None)
+        if safe is not None:
+            return _copy_json(safe), "policy", "默认声明不包含欧盟政治广告，可按实际情况修改。"
+    if normalized in {"budget_optimize_on", "catalog_enabled", "brand_guidelines_enabled"} and False in options:
+        return False, "policy", "默认关闭可选增强能力，避免未准备资源时产生额外约束。"
+    if normalized == "special_ad_categories":
+        none_value = next((value for value in options if str(value).upper() == "NONE"), None)
+        if none_value is not None:
+            return [none_value], "policy", "默认声明不属于特殊广告类别，可按业务实际情况修改。"
+    schema_type = schema.get("type")
+    is_array = schema_type == "array" or (
+        isinstance(schema_type, list) and "array" in schema_type
+    )
+    if normalized == "age_groups" and is_array:
+        age_options = [value for value in options if str(value).upper().startswith("AGE_")]
+        if age_options:
+            return _copy_json(age_options), "policy", "默认覆盖全部年龄段，避免系统替你缩窄受众。"
+    if len(options) == 1 and field.get("source") != "lookup":
+        return _copy_json(options[0]), "derived", "当前创建类型只有一个合法选项，系统自动匹配。"
+    return None, None, None
+
+
+def _input_mode(field: Mapping[str, Any], schema: Mapping[str, Any], default_source: Optional[str]) -> str:
+    declared = str(field.get("input_mode") or schema.get("input_mode") or "").strip().lower()
+    if declared in _INPUT_MODES:
+        return declared
+    if field.get("presentation") == "derived_readonly":
+        return "auto_derived"
+    if default_source:
+        return "auto_default"
+    lookup_tool = schema.get("lookup_tool") or (
+        schema.get("lookup", {}).get("tool") if isinstance(schema.get("lookup"), Mapping) else None
+    )
+    if lookup_tool or field.get("source") == "lookup":
+        return "context_required" if field.get("required") or field.get("required_when") else "user_optional"
+    return "user_required" if field.get("required") or field.get("required_when") else "user_optional"
 
 
 def _control_for(field: Mapping[str, Any], schema: Mapping[str, Any], options: list[Any]) -> str:
@@ -881,10 +1023,208 @@ class CreationCardBuilder:
         document["fields"] = all_fields
         return AdCreationBlueprint.from_dict(document)
 
-    @staticmethod
-    def is_creation_intent(intent: ParsedIntent) -> bool:
-        value = str(getattr(intent, "intent_type", "") or "").strip().lower()
-        return value == "create_campaign" or value.startswith("create_")
+    def is_creation_intent(
+        self,
+        intent: ParsedIntent,
+        tool_plan: Optional[Mapping[str, Any]] = None,
+    ) -> bool:
+        """Determine creation from the active Tool contract.
+
+        The interaction surface follows ``ToolDefinition.action`` rather
+        than an intent-name prefix. A Capability can therefore publish a
+        custom intent such as ``launch_asset`` without a Core change.
+        """
+        candidates: list[Any] = []
+        if isinstance(tool_plan, Mapping):
+            candidates = [
+                tool
+                for tools in tool_plan.values()
+                for tool in (tools or [])
+            ]
+        else:
+            intent_type = str(getattr(intent, "intent_type", "") or "").strip()
+            list_by_platform = getattr(self.tools, "list_by_platform", None)
+            if callable(list_by_platform):
+                for platform in getattr(intent, "platforms", []) or []:
+                    try:
+                        definitions = list_by_platform(normalize_platform(platform))
+                    except (KeyError, LookupError, TypeError):
+                        definitions = []
+                    candidates.extend(
+                        definition for definition in definitions
+                        if intent_type in set(
+                            getattr(definition, "intent_types", []) or []
+                        )
+                    )
+        return any(
+            str(getattr(tool, "action", "") or "").strip().lower() == "create"
+            for tool in candidates
+        )
+
+    def _selector_text_matches(
+        self, text: str, provider: str,
+    ) -> list[tuple[int, AdCreationBlueprint, Mapping[str, Any], Any, str]]:
+        """Find an explicit selector choice from provider-owned metadata.
+
+        This is intentionally separate from ``_resolve``.  It is used when a
+        short follow-up (for example ``流量广告``) should continue a persisted
+        creation draft.  Only selector options and Blueprint ``match_terms``
+        are accepted; Runtime never maintains a provider/action synonym map.
+        """
+        normalized_text = _normalized(text)
+        if not normalized_text:
+            return []
+        matches: list[tuple[int, AdCreationBlueprint, Mapping[str, Any], Any, str]] = []
+        for blueprint in self.blueprints.list(provider=provider):
+            selector = blueprint.selector or {}
+            if not selector:
+                continue
+            best: tuple[int, Any, str] | None = None
+            phrases: list[tuple[str, Any]] = []
+            for option in _selector_options(selector):
+                phrases.extend([
+                    (str(option.get("value") or ""), option.get("value")),
+                    (str(option.get("label") or ""), option.get("value")),
+                ])
+            phrases.extend((str(term), None) for term in blueprint.match_terms)
+            for phrase, option_value in phrases:
+                normalized_phrase = _normalized(phrase)
+                # Very short phrases such as a one-letter campaign code are
+                # not safe natural-language selectors.
+                if len(normalized_phrase) < 2 or normalized_phrase not in normalized_text:
+                    continue
+                value = option_value
+                if value is None and len(selector.get("values", [])) == 1:
+                    value = selector["values"][0]
+                if value is None:
+                    continue
+                candidate = (len(normalized_phrase), value, phrase)
+                if best is None or candidate[0] > best[0]:
+                    best = candidate
+            if best is not None:
+                matches.append((best[0], blueprint, selector, best[1], best[2]))
+        return matches
+
+    def merge_pending_intent(
+        self, pending: ParsedIntent, follow_up: ParsedIntent, follow_up_text: str,
+    ) -> Optional[ParsedIntent]:
+        """Merge a deterministic follow-up into a persisted creation draft.
+
+        The pending intent is the source of the original operation and
+        platform.  The follow-up can contribute explicitly parsed values or a
+        selector phrase declared by a Blueprint.  A free-form short answer
+        cannot change the platform or invent an account/resource ID.
+        """
+        if not self.is_creation_intent(pending):
+            return None
+        merged = _copy_json(pending.to_dict())
+        merged["raw_input"] = (
+            f"{pending.raw_input}\n{str(follow_up_text or '').strip()}"
+        ).strip()
+        current_params = merged.get("platform_params")
+        if not isinstance(current_params, Mapping):
+            current_params = {}
+        current_params = _copy_json(current_params)
+        changed = False
+
+        follow_up_params = getattr(follow_up, "platform_params", {}) or {}
+        for raw_platform, values in follow_up_params.items():
+            if not isinstance(values, Mapping):
+                continue
+            target_platform = normalize_platform(raw_platform)
+            if target_platform not in {
+                normalize_platform(item) for item in (pending.platforms or [])
+            }:
+                continue
+            destination = dict(current_params.get(target_platform, {}) or {})
+            for key, value in values.items():
+                if value not in (None, "", {}, []):
+                    if destination.get(key) != value:
+                        destination[str(key)] = _copy_json(value)
+                        changed = True
+            current_params[target_platform] = destination
+
+        for provider in list(pending.platforms or []):
+            canonical = normalize_platform(provider)
+            matches = self._selector_text_matches(follow_up_text, canonical)
+            if not matches:
+                continue
+            best_score = max(item[0] for item in matches)
+            best = [item for item in matches if item[0] == best_score]
+            if len(best) != 1:
+                continue
+            _score, blueprint, selector, selector_value, _phrase = best[0]
+            destination = dict(current_params.get(canonical, {}) or {})
+            for field in blueprint.fields:
+                if str(field.get("path")) != str(selector.get("field")):
+                    continue
+                _tool_name, schema_path, _schema = _schema_for_ref(
+                    self.tools, field["tool_ref"]
+                )
+                if destination.get(schema_path) != selector_value:
+                    destination[schema_path] = selector_value
+                    changed = True
+                break
+            dimension = str(selector.get("dimension") or "")
+            if dimension and destination.get(dimension) != selector_value:
+                destination[dimension] = selector_value
+                changed = True
+            current_params[canonical] = destination
+            if dimension == "objective" and merged.get("objective") != selector_value:
+                merged["objective"] = selector_value
+                changed = True
+            elif dimension in {"campaign_type", "ad_format"} and merged.get("campaign_type") != selector_value:
+                merged["campaign_type"] = selector_value
+                changed = True
+
+        # Explicit scalar values from a structured follow-up are safe to
+        # carry forward; the original creation intent and platform stay fixed.
+        for field_name in ("budget", "duration_days", "objective", "campaign_type", "creative_materials"):
+            value = getattr(follow_up, field_name, None)
+            if value not in (None, "", [], {}):
+                if merged.get(field_name) != value:
+                    merged[field_name] = _copy_json(value)
+                    changed = True
+        if not changed:
+            return None
+        merged["platform_params"] = current_params
+        return ParsedIntent(**{
+            key: value for key, value in merged.items()
+            if key in ParsedIntent.__dataclass_fields__
+        })
+
+    def build_clarification(self, intent: ParsedIntent) -> dict[str, Any]:
+        """Return a text/choice clarification without a creation form.
+
+        A selector is deliberately not rendered as a parameter card.  The
+        user must first choose a concrete Blueprint branch; only then can the
+        full Campaign/Ad Group/Ad form be shown.
+        """
+        selector_cards = [
+            card for card in self.build(intent)
+            if card.get("type") == "ad_creation_selector"
+        ]
+        if not selector_cards:
+            return {}
+        selector = selector_cards[0]
+        options: list[dict[str, Any]] = []
+        for field in selector.get("fields", []):
+            for option in field.get("options", []):
+                if not isinstance(option, Mapping):
+                    continue
+                item = dict(option)
+                item["field"] = field.get("path")
+                item["field_label"] = field.get("label")
+                if item not in options:
+                    options.append(item)
+        provider = str(selector.get("provider") or "广告平台")
+        return {
+            "kind": "creation_clarification",
+            "provider": provider,
+            "question": f"请先确定要创建的 {provider} 广告推广目标或广告类型。",
+            "options": options[:_MAX_OPTIONS],
+            "reason": "creation_selector_required",
+        }
 
     def llm_context(
         self,
@@ -962,10 +1302,10 @@ class CreationCardBuilder:
             )
         return "\n".join(lines)[:max_chars]
 
-    def _field_value(
+    def _provided_field_value(
         self, intent: ParsedIntent, provider_values: Mapping[str, Any], field: Mapping[str, Any]
     ) -> Any:
-        tool_name, schema_path, _schema = _schema_for_ref(self.tools, field["tool_ref"])
+        tool_name, schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
         # Form submissions keep values both at the provider-neutral top level
         # and under the authoritative Tool name. Prefer the scoped copy so a
         # repeated field such as ``name`` cannot be overwritten by another
@@ -987,6 +1327,21 @@ class CreationCardBuilder:
                 value = getattr(intent, "objective", None)
             elif schema_path in {"campaign_type", "advertising_channel_type"}:
                 value = getattr(intent, "campaign_type", None)
+        return value
+
+    def _field_value(
+        self, intent: ParsedIntent, provider_values: Mapping[str, Any], field: Mapping[str, Any]
+    ) -> Any:
+        _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
+        value = self._provided_field_value(intent, provider_values, field)
+        # Selector resolution must inspect the caller's value, not a
+        # presentation-only single-option value from a different Blueprint.
+        # Derived defaults are materialized only after the concrete Blueprint
+        # has been selected in _form_card.
+        if value is None and field.get("presentation") == "derived_readonly":
+            return None
+        if value is None:
+            value, _source, _reason = _safe_default(intent, provider_values, field, schema)
         return value
 
     def _resolve(self, intent: ParsedIntent, provider: str) -> tuple[Optional[AdCreationBlueprint], Any, dict[str, Any]]:
@@ -1216,7 +1571,12 @@ class CreationCardBuilder:
         for field in blueprint.fields[:_MAX_FIELDS]:
             if _SENSITIVE_FIELD.search(str(field.get("path"))):
                 continue
-            values[str(field["path"])] = self._field_value(intent, provider_values, field)
+            value = self._field_value(intent, provider_values, field)
+            if value is None:
+                _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
+                if schema.get("type") == "boolean":
+                    value = False
+            values[str(field["path"])] = value
         option_sources: dict[str, list[Any]] = {}
         for field in blueprint.fields[:_MAX_FIELDS]:
             _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
@@ -1235,6 +1595,26 @@ class CreationCardBuilder:
             ):
                 values[path] = schema_options[0]
         evaluation = self.cascade.evaluate(blueprint, values, option_sources=option_sources)
+        # Some safe defaults depend on a parent selection (for example Meta's
+        # optimization goal depends on the campaign objective). Resolve those
+        # after the first cascade pass, then evaluate once more so readiness
+        # and conditional fields use the same materialized draft.
+        dependent_defaults_changed = False
+        initial_states = {item["path"]: item for item in evaluation.get("fields", [])}
+        for field in blueprint.fields[:_MAX_FIELDS]:
+            path = str(field["path"])
+            if values.get(path) is not None:
+                continue
+            _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
+            candidate, _source, _reason = _safe_default(
+                intent, provider_values, field, schema,
+                options_override=list(initial_states.get(path, {}).get("options") or []),
+            )
+            if candidate is not None:
+                values[path] = candidate
+                dependent_defaults_changed = True
+        if dependent_defaults_changed:
+            evaluation = self.cascade.evaluate(blueprint, values, option_sources=option_sources)
         state_by_path = {item["path"]: item for item in evaluation.get("fields", [])}
         fields: list[dict[str, Any]] = []
         for field in blueprint.fields[:_MAX_FIELDS]:
@@ -1279,6 +1659,24 @@ class CreationCardBuilder:
                 "value": value,
                 "source": field.get("source", "tool_schema"),
             }
+            _default_value, default_source, default_reason = _safe_default(
+                intent, provider_values, field, schema,
+                options_override=options,
+            )
+            input_mode = _input_mode(field, schema, default_source)
+            item["input_mode"] = input_mode
+            item["user_required"] = input_mode in _USER_INPUT_MODES
+            item["advanced"] = bool(
+                field.get("advanced", input_mode in {"auto_default", "auto_derived", "user_optional"})
+            )
+            item["auto_filled"] = bool(
+                default_source and value is not None
+                and self._provided_field_value(intent, provider_values, field) is None
+            )
+            if default_source:
+                item["default_source"] = default_source
+            if default_reason:
+                item["default_reason"] = default_reason
             if field.get("visible_when") is not None:
                 item["visible_when"] = _copy_json(field["visible_when"])
             constraints = _schema_constraints(schema)
@@ -1406,6 +1804,20 @@ class CreationCardBuilder:
         for path in blocking:
             if path not in missing_fields:
                 missing_fields.append(path)
+        defaulted_fields = [
+            {
+                "path": item["path"], "label": item["label"],
+                "value": _copy_json(item["value"]),
+                "source": item.get("default_source"),
+                "reason": item.get("default_reason"),
+            }
+            for item in fields if item.get("auto_filled")
+        ]
+        advanced_fields = [item["path"] for item in fields if item.get("advanced")]
+        user_input_fields = [
+            item["path"] for item in fields
+            if item.get("user_required") and item.get("visible", True)
+        ]
         return {
             "type": "ad_creation_form", "version": "1.0",
             "id": f"{blueprint.blueprint_id}@{blueprint.version}",
@@ -1414,6 +1826,10 @@ class CreationCardBuilder:
             "blueprint_version": blueprint.version, "mode": "draft",
             "selector": {"dimension": (blueprint.selector or {}).get("dimension"), "value": selector_value},
             "fields": fields,
+            "user_input_fields": user_input_fields,
+            "advanced_fields": advanced_fields,
+            "auto_filled_count": len(defaulted_fields),
+            "defaulted_fields": defaulted_fields[:_MAX_FIELDS],
             "missing_fields": missing_fields,
             "invalid_fields": list(evaluation.get("invalid_fields", [])),
             "ready": bool(evaluation.get("ready")) and not blocking,
@@ -1428,8 +1844,12 @@ class CreationCardBuilder:
             ],
         }
 
-    def build(self, intent: ParsedIntent) -> list[dict[str, Any]]:
-        if not self.is_creation_intent(intent):
+    def build(
+        self,
+        intent: ParsedIntent,
+        tool_plan: Optional[Mapping[str, Any]] = None,
+    ) -> list[dict[str, Any]]:
+        if not self.is_creation_intent(intent, tool_plan=tool_plan):
             return []
         cards: list[dict[str, Any]] = []
         for provider in list(getattr(intent, "platforms", []) or [])[:_MAX_CARDS]:

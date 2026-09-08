@@ -85,7 +85,7 @@ class RuntimeServices(RuntimeServicesPort):
         return self._runtime.blueprint_cascade
 
     def canonical_platform(self, platform: str) -> str:
-        return self._runtime._canonical_platform(platform)
+        return self._runtime._resolve_platform_identifier(platform)
 
     def get_registered_tool(self, tool_name: str) -> tuple[Any, Any]:
         return self._runtime._get_registered_tool(tool_name)
@@ -127,7 +127,7 @@ class RuntimeServices(RuntimeServicesPort):
             include_provider_contract=include_provider_contract,
         )
 
-    def resource_id_field(self, tool: Any) -> str:
+    def resource_id_field(self, tool: Any) -> str | None:
         return self._runtime._resource_id_field_for_tool(tool)
 
     def parent_resource_id_field(self, tool: Any) -> Optional[str]:

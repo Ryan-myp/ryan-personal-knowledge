@@ -22,6 +22,7 @@ from agents.ad_agent.capabilities.meta.capability import _meta_update_adapter
 from agents.ad_agent.capabilities.tiktok.capability import _tiktok_update_adapter
 from agents.ad_agent.capabilities.google.capability import _google_update_adapter
 from agents.ad_agent.capabilities.base import CampaignUpdateHandler
+from agents.ad_agent.capabilities.meta.creatives import MetaCreateCreativeHandler
 
 
 def test_creation_tools_publish_provider_payload_requirements():
@@ -289,7 +290,7 @@ def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
 
     def request(method, endpoint, data=None, params=None, **_kwargs):
         calls.append((method, endpoint, data, params))
-        if endpoint == "pixel/get/":
+        if endpoint == "pixel/list/":
             return {"list": [{"pixel_id": "px-1", "name": "Website Pixel"}]}
         if endpoint == "pixel/create/":
             return {"pixel_id": "px-new"}
@@ -306,7 +307,7 @@ def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
     assert client.update_pixel("123", "px-1", {"name": "Renamed Pixel"})["success"] is True
 
     assert calls[0] == (
-        "GET", "pixel/get/", None,
+        "GET", "pixel/list/", None,
         {"advertiser_id": "123", "page_size": 10, "pixel_ids": ["px-1"]},
     )
     assert calls[2] == (
@@ -336,6 +337,42 @@ def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
         {"account_id": "123", "name": "Website Pixel", "object_type": "WEBSITE"},
         include_provider_contract=True,
     ) == []
+
+
+def test_tiktok_account_lookup_uses_advertiser_info_json_array():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        calls.append((method, endpoint, params))
+        or {"list": [{"advertiser_id": "123", "name": "Test advertiser"}]}
+    )
+
+    assert client.get_account("123")["advertiser_id"] == "123"
+    assert calls == [
+        ("GET", "advertiser/info/", {"advertiser_ids": '["123"]'})
+    ]
+
+
+def test_tiktok_catalog_lookup_injects_business_center_from_credentials():
+    client = TikTokAPIClient({"access_token": "test", "bc_id": "bc-1"})
+    seen = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        seen.append((method, endpoint, params))
+        or {"list": []}
+    )
+
+    assert client.list_catalogs("123") == []
+    assert seen == [
+        ("GET", "catalog/get/", {
+            "advertiser_id": "123", "page_size": 20, "bc_id": "bc-1",
+        })
+    ]
+
+
+def test_tiktok_pixel_lookup_rejects_provider_unsupported_page_size():
+    client = TikTokAPIClient({"access_token": "test"})
+    with pytest.raises(ValueError, match="between 1 and 20"):
+        client.list_pixels("123", page_size=21)
 
 
 def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_tools():
@@ -431,8 +468,8 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
         "landing_page_url": "https://example.test/app",
     }
 
-    assert client.create_creative("123", "101", "201", creative) == "301"
-    assert client.update_creative("123", "201", "301", {"name": "Updated creative"}) == {
+    assert client.create_creative("123", "101", "201", creative, live=True) == "301"
+    assert client.update_creative("123", "201", "301", {"name": "Updated creative"}, live=True) == {
         "data": {"ad_id": "301"}
     }
     assert client.delete_creative("123", "301") == {"data": {"ad_id": "301"}}
@@ -453,8 +490,8 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
     assert {
         "tiktok_create_creative", "tiktok_update_creative", "tiktok_delete_creative"
     } <= definitions.keys()
-    assert definitions["tiktok_create_creative"].live_support is False
-    assert definitions["tiktok_update_creative"].live_support is False
+    assert definitions["tiktok_create_creative"].live_support is True
+    assert definitions["tiktok_update_creative"].live_support is True
     assert definitions["tiktok_delete_creative"].live_support is False
     assert definitions["tiktok_create_creative"].resource_type == "creative"
     assert definitions["tiktok_create_creative"].parent_resource_type == "ad_group"
@@ -1208,7 +1245,7 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
         "status": "PAUSED",
         "start_time": "2026-08-28T00:00:00+0000",
         "end_time": "2026-09-04T00:00:00+0000",
-    })
+    }, live=True)
     assert endpoints[-1] == ("POST", "/act_m1/campaigns")
     assert payloads[-1]["buying_type"] == "AUCTION"
     assert payloads[-1]["spend_cap"] == "2500"
@@ -1225,7 +1262,7 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
         "promoted_object": {"pixel_id": "px1", "custom_event_type": "PURCHASE"},
         "start_time": "2026-08-28T00:00:00+0000",
         "end_time": "2026-09-04T00:00:00+0000",
-    })
+    }, live=True)
     assert endpoints[-1] == ("POST", "/act_m1/adsets")
     assert payloads[-1]["bid_strategy"] == "COST_CAP"
     assert "bidding_strategy" not in payloads[-1]
@@ -1238,7 +1275,7 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
     client.create_ad("m1", "as1", {
         "name": "Ad",
         "creative": {"creative_id": "cr1"},
-    })
+    }, live=True)
     assert endpoints[-1] == ("POST", "/act_m1/ads")
     assert json.loads(payloads[-1]["creative"]) == {"creative_id": "cr1"}
 
@@ -1250,7 +1287,7 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
         payloads.append(data) or {"id": "resource-1"}
     )
 
-    client.create_campaign("m1", {"name": "Reach", "objective": "OUTCOME_AWARENESS"})
+    client.create_campaign("m1", {"name": "Reach", "objective": "OUTCOME_AWARENESS"}, live=True)
     assert payloads[-1]["special_ad_categories"] == ["NONE"]
     assert payloads[-1]["is_adset_budget_sharing_enabled"] is False
 
@@ -1260,7 +1297,7 @@ def test_meta_graph_payload_normalizes_categories_and_nested_updates():
             "targeting_automation": {"advantage_audience": 0},
         },
         "daily_budget": 12,
-    })
+    }, live=True)
     assert json.loads(payloads[-1]["targeting"]) == {
         "geo_locations": {"countries": ["US"]},
         "targeting_automation": {"advantage_audience": 0},
@@ -1837,8 +1874,7 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
 
     assert plan["mode"] == "dry_run"
     assert plan["execution_status"] == "planned"
-    assert plan["live_support"] is False
-    assert plan["requires_verified_live_adapter"] is True
+    assert plan["live_support"] is True
     assert plan["asset_group_resource_name"] == "customers/123/assetGroups/-1"
     group = plan["operations"][0]["operation"]["create"]
     assert group == {
@@ -1973,7 +2009,7 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
 
     assert plan["mode"] == "dry_run"
     assert plan["execution_status"] == "planned"
-    assert plan["live_support"] is False
+    assert plan["live_support"] is True
     create = plan["operation"]["adGroupAds"]["create"]
     assert create["resourceName"] == "customers/123/ads/-1"
     assert create["adGroup"] == "customers/123/adGroups/42"
@@ -2168,7 +2204,7 @@ def test_google_app_ad_group_omits_inapplicable_type_and_cpc_fields():
     )
 
     client.create_ad_group(
-        "42", "App group", cpc_bid_micros=None, type=None, status="PAUSED"
+        "42", "App group", cpc_bid_micros=None, type=None, status="PAUSED", live=True
     )
     payload = operations[0][1]["create"]
     assert payload["status"] == "PAUSED"
@@ -2209,6 +2245,20 @@ def test_meta_audience_crud_builds_custom_and_lookalike_payloads():
     assert json.loads(calls[-1][2]["rule"]) == {"event": "lead"}
     assert client.delete_audience("123", "aud-1")["success"] is True
     assert calls[-1][:2] == ("DELETE", "/aud-1")
+
+
+def test_meta_audience_lookup_uses_current_graph_projection():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, extra_params=None, **kwargs: (
+        calls.append((method, endpoint, extra_params or {}))
+        or {"data": [{"id": "aud-1", "name": "Purchasers", "subtype": "CUSTOM"}]}
+    )
+
+    assert client.list_audiences("123") == [
+        {"id": "aud-1", "name": "Purchasers", "subtype": "CUSTOM"}
+    ]
+    assert calls[0][2]["fields"] == "id,name,subtype,delivery_status"
 
 
 def test_meta_lookalike_tool_exposes_source_lookup_and_fixed_subtype():
@@ -2316,7 +2366,7 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
         "media": [{"video_id": "video-1"}],
         "text": {"ad_text": "Install now"},
         "status": 0,
-    })
+    }, live=True)
 
     assert payloads[-1]["adgroup_id"] == "202"
     ad = payloads[-1]["creatives"][0]
@@ -2339,7 +2389,7 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
         "promotion_website_type": "TIKTOK_NATIVE_PAGE",
         "optimization_event": "LEAD_GENERATION",
         "pixel_id": "pixel-1",
-    })
+    }, live=True)
     assert payloads[-1]["conversion_id"] == 42
     assert payloads[-1]["placements"] == ["PLACEMENT_TIKTOK"]
     assert payloads[-1]["promotion_website_type"] == "TIKTOK_NATIVE_PAGE"
@@ -2373,7 +2423,7 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
     )
     result = client.create_adgroup("t1", "101", {
         **base, "catalog_id": "catalog-1", "product_set_id": "set-1",
-    })
+    }, live=True)
     assert result == "ag-1"
     assert payloads[-1]["catalog_id"] == "catalog-1"
     assert payloads[-1]["product_set_id"] == "set-1"
@@ -2425,7 +2475,7 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
     client.request = lambda method, endpoint, data=None, **kwargs: (
         payloads.append((method, endpoint, data)) or {"ad_group_id": "ag-1"}
     )
-    assert client.create_product_sales_adgroup("t1", "101", base) == "ag-1"
+    assert client.create_product_sales_adgroup("t1", "101", base, live=True) == "ag-1"
     assert payloads[-1][1] == "adgroup/create/"
     assert payloads[-1][2]["product_source"] == "STORE"
     assert payloads[-1][2]["store_id"] == "shop-1"
@@ -2436,7 +2486,7 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
     assert client.create_product_sales_ad("t1", "101", "202", {
         "name": "Shop video", "product_source": "STORE", "store_id": "shop-1",
         "ad_format": "SINGLE_VIDEO", "video_id": "video-1",
-    }) == "ad-1"
+    }, live=True) == "ad-1"
     assert payloads[-1][1] == "ad/create/"
     assert payloads[-1][2]["creatives"][0]["video_id"] == "video-1"
 
@@ -2561,7 +2611,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
         "creative_type": "SINGLE_VIDEO", "ad_text": "Try it",
         "call_to_action_id": "cta-1", "identity_id": "identity-1",
         "deeplink": "myapp://home", "operation_status": "ENABLE",
-    })
+    }, live=True)
     assert payloads[-1]["adgroup_id"] == "202"
     ad = payloads[-1]["creatives"][0]
     assert ad["creative_type"] == "SINGLE_VIDEO"
@@ -2577,10 +2627,10 @@ def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
         payloads.append((method, endpoint, data)) or {"ad_id": "ad-1"}
     )
 
-    client.create_single_video_ad("t1", "101", "202", {"name": "Video", "video_id": "v1"})
-    client.create_single_image_ad("t1", "101", "202", {"name": "Image", "image_ids": ["i1"]})
+    client.create_single_video_ad("t1", "101", "202", {"name": "Video", "video_id": "v1"}, live=True)
+    client.create_single_image_ad("t1", "101", "202", {"name": "Image", "image_ids": ["i1"]}, live=True)
     client.create_carousel_ad(
-        "t1", "101", "202", {"name": "Carousel", "image_ids": ["i1", "i2"]}
+        "t1", "101", "202", {"name": "Carousel", "image_ids": ["i1", "i2"]}, live=True
     )
     assert [payload[2]["creatives"][0]["ad_format"] for payload in payloads] == [
         "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL",
@@ -2620,7 +2670,7 @@ def test_tiktok_upgraded_smart_plus_uses_current_three_step_contract():
         "budget_optimize_on": True,
         "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
         "budget": 100,
-    })
+    }, live=True)
     assert campaign["campaign_id"] == "sp-c1"
     assert seen[0][1] == "smart_plus/campaign/create/"
     assert seen[0][2]["objective_type"] == "WEB_CONVERSIONS"
@@ -2639,11 +2689,12 @@ def test_tiktok_upgraded_smart_plus_uses_current_three_step_contract():
         "schedule_type": "SCHEDULE_FROM_NOW",
         "schedule_start_time": "2026-09-07 00:00:00",
         "location_ids": ["US"],
-    })
+    }, live=True)
     assert adgroup["adgroup_id"] == "sp-g1"
     assert seen[1][1] == "smart_plus/adgroup/create/"
     assert seen[1][2]["campaign_id"] == "sp-c1"
     assert "objective_type" not in seen[1][2]
+    assert seen[1][2]["targeting_spec"]["location_ids"] == ["US"]
     assert seen[1][2]["operation_status"] == "DISABLE"
 
     ad = client.create_smart_plus_ad("t1", "sp-c1", "sp-g1", {
@@ -2651,12 +2702,125 @@ def test_tiktok_upgraded_smart_plus_uses_current_three_step_contract():
         "tiktok_item_id": "item-1",
         "identity_type": "AUTH_CODE",
         "identity_id": "identity-1",
-    })
+        "call_to_action_id": "cta-1",
+        "tracking_app_id": "app-1",
+        "click_tracking_url": "https://tracker.example/click",
+        "impression_tracking_url": "https://tracker.example/impression",
+    }, live=True)
     assert ad["smart_plus_ad_id"] == "sp-a1"
     assert seen[2][1] == "smart_plus/ad/create/"
     assert seen[2][2]["campaign_id"] == "sp-c1"
     assert seen[2][2]["adgroup_id"] == "sp-g1"
     assert seen[2][2]["operation_status"] == "DISABLE"
+    assert seen[2][2]["creative_list"][0]["creative_info"]["tiktok_item_id"] == "item-1"
+    assert seen[2][2]["ad_configuration"] == {
+        "call_to_action_id": "cta-1",
+        "tracking_info": {
+            "tracking_app_id": "app-1",
+            "click_tracking_url": "https://tracker.example/click",
+            "impression_tracking_url": "https://tracker.example/impression",
+        },
+    }
+
+
+def test_tiktok_smart_plus_create_methods_are_dry_run_by_default():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda *args, **kwargs: calls.append((args, kwargs))
+
+    campaign = client.create_smart_plus_campaign("t1", {
+        "campaign_name": "Traffic dry-run",
+        "objective_type": "TRAFFIC",
+    })
+    adgroup = client.create_smart_plus_adgroup("t1", "c1", {
+        "objective_type": "TRAFFIC", "adgroup_name": "Traffic group",
+        "promotion_type": "WEBSITE", "optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW",
+        "bid_type": "BID_TYPE_NO_BID", "billing_event": "OCPM",
+        "schedule_type": "SCHEDULE_FROM_NOW", "schedule_start_time": "2026-09-07 00:00:00",
+        "location_ids": ["US"],
+    })
+    ad = client.create_smart_plus_ad("t1", "c1", "g1", {
+        "ad_name": "Traffic ad", "tiktok_item_id": "item-1",
+        "identity_type": "AUTH_CODE", "identity_id": "identity-1",
+        "call_to_action_id": "cta-1", "tracking_app_id": "app-1",
+        "click_tracking_url": "https://tracker.example/click",
+        "impression_tracking_url": "https://tracker.example/impression",
+    })
+
+    assert calls == []
+    assert campaign["mode"] == adgroup["mode"] == ad["mode"] == "dry_run"
+    assert campaign["operation"]["smart_plus/campaign/create/"]["create"]["operation_status"] == "DISABLE"
+    assert adgroup["operation"]["smart_plus/adgroup/create/"]["create"]["operation_status"] == "DISABLE"
+    assert ad["operation"]["smart_plus/ad/create/"]["create"]["operation_status"] == "DISABLE"
+
+
+def test_tiktok_smart_plus_rejects_provider_invalid_budget_and_keeps_tracking_optional():
+    client = TikTokAPIClient({"access_token": "test"})
+    with pytest.raises(ValueError, match="budget_mode"):
+        client.create_smart_plus_campaign("t1", {
+            "campaign_name": "invalid mode", "objective_type": "TRAFFIC",
+            "budget_mode": "BUDGET_MODE_DAY", "budget": 20,
+        })
+    with pytest.raises(ValueError, match="at least 20"):
+        client.create_smart_plus_campaign("t1", {
+            "campaign_name": "invalid budget", "objective_type": "TRAFFIC",
+            "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "budget": 19,
+        })
+
+    seen = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        seen.append((method, endpoint, data))
+        or {"code": 0, "data": {"smart_plus_ad_id": "a1"}}
+    )
+    client.create_smart_plus_ad("t1", "c1", "g1", {
+        "ad_name": "web ad", "ad_format": "SINGLE_VIDEO", "tiktok_item_id": "item-1",
+        "identity_type": "AUTH_CODE", "identity_id": "identity-1",
+        "call_to_action_id": "cta-1", "landing_page_url": "https://example.com/landing",
+    }, live=True)
+    payload = seen[0][2]
+    assert payload["landing_page_url_list"] == [{"landing_page_url": "https://example.com/landing"}]
+    assert "landing_page_url" not in payload["creative_list"][0]["creative_info"]
+    assert "tracking_info" not in payload["ad_configuration"]
+
+
+def test_tiktok_smart_plus_resolves_image_ids_only_at_live_provider_boundary():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data))
+        or {"code": 0, "data": {"smart_plus_ad_id": "image-ad-1"}}
+    )
+    client.get_image = lambda advertiser_id, image_id: {
+        "image_id": image_id,
+        "web_uri": f"https://cdn.example/{image_id}.jpg",
+    }
+
+    client.create_smart_plus_ad("t1", "c1", "g1", {
+        "ad_name": "Image Smart+", "ad_format": "SINGLE_IMAGE",
+        "image_ids": ["img-1"], "identity_type": "AUTH_CODE",
+        "identity_id": "identity-1", "call_to_action_id": "cta-1",
+    }, live=True)
+    image_info = calls[-1][2]["creative_list"][0]["creative_info"]["image_info"]
+    assert image_info == [{"web_uri": "https://cdn.example/img-1.jpg"}]
+
+    calls.clear()
+    client.create_smart_plus_ad("t1", "c1", "g1", {
+        "ad_name": "Image dry run", "ad_format": "SINGLE_IMAGE",
+        "image_ids": ["img-2"], "identity_type": "AUTH_CODE",
+        "identity_id": "identity-1", "call_to_action_id": "cta-1",
+    }, live=False)
+    assert calls == []
+
+
+def test_tiktok_smart_plus_rejects_wrong_media_card_shape_before_provider_call():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: pytest.fail("provider must not be called")
+    with pytest.raises(ValueError, match="at least two images"):
+        client.create_smart_plus_ad("t1", "c1", "g1", {
+            "ad_name": "Invalid carousel", "ad_format": "CAROUSEL_ADS",
+            "image_ids": ["img-1"], "identity_type": "AUTH_CODE",
+            "identity_id": "identity-1", "call_to_action_id": "cta-1",
+        }, live=True)
 
 
 def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools():
@@ -2674,11 +2838,48 @@ def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools()
         definition.name: definition
         for definition, _handler in create_tiktok_capability().register_tools()
     }
-    assert definitions["tiktok_smart_plus_create_campaign"].live_support is False
-    assert definitions["tiktok_smart_plus_create_adgroup"].live_support is False
-    assert definitions["tiktok_smart_plus_create_ad"].live_support is False
+    assert definitions["tiktok_smart_plus_create_campaign"].live_support is True
+    assert definitions["tiktok_smart_plus_create_adgroup"].live_support is True
+    assert definitions["tiktok_smart_plus_create_ad"].live_support is True
     assert definitions["tiktok_smart_plus_create_campaign"].provider_api_version == "v1.3"
     assert definitions["tiktok_smart_plus_create_adgroup"].input_schema.properties["location_ids"]["lookup_tool"] == "tiktok_list_regions"
+    assert definitions["tiktok_smart_plus_update_campaign"].input_schema.properties["updates"]["additionalProperties"] is False
+    assert definitions["tiktok_smart_plus_update_adgroup"].readback_tool == "tiktok_get_adgroup"
+    assert definitions["tiktok_smart_plus_update_ad"].readback_tool == "tiktok_get_ad"
+
+
+def test_tiktok_smart_plus_update_payloads_use_parent_ids_and_normalize_status():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        seen.append((method, endpoint, data)) or {"code": 0, "data": {"updated": True}}
+    )
+
+    client.update_smart_plus_campaign("t1", "c1", {"name": "renamed", "status": "PAUSED"})
+    client.update_smart_plus_adgroup("t1", "c1", "g1", {"budget": 50})
+    client.update_smart_plus_ad("t1", "g1", "a1", {"operation_status": "DISABLE"})
+
+    assert [item[1] for item in seen] == [
+        "smart_plus/campaign/update/", "smart_plus/adgroup/update/", "smart_plus/ad/update/",
+    ]
+    assert seen[0][2]["campaign_id"] == "c1"
+    assert seen[0][2]["campaign"]["operation_status"] == "DISABLE"
+    assert seen[1][2]["campaign_id"] == "c1"
+    assert seen[1][2]["adgroup_id"] == "g1"
+    assert seen[1][2]["adgroup"]["budget"] == 50
+    assert seen[2][2]["adgroup_id"] == "g1"
+    assert seen[2][2]["ad_id"] == "a1"
+
+
+def test_tiktok_app_lookup_uses_advertiser_scoped_app_list_endpoint():
+    client = TikTokAPIClient({"access_token": "test", "advertiser_id": "t1"})
+    seen = []
+    client.request = lambda method, endpoint, params=None, **kwargs: (
+        seen.append((method, endpoint, params)) or {"apps": [{"app_id": "app-1"}]}
+    )
+
+    assert client.list_apps(page_size=10) == [{"app_id": "app-1"}]
+    assert seen == [("GET", "app/list/", {"advertiser_id": "t1", "page_size": 10})]
 
 
 def test_tiktok_app_and_sales_use_smart_plus_with_paused_defaults():
@@ -2697,25 +2898,27 @@ def test_tiktok_app_and_sales_use_smart_plus_with_paused_defaults():
     client.create_smart_plus_campaign("t1", {
         "campaign_name": "App Smart+", "objective_type": "APP_PROMOTION",
         "app_promotion_type": "APP_INSTALL", "app_id": "app-1",
-    })
+    }, live=True)
     client.create_smart_plus_adgroup("t1", "c-1", {
-        "objective_type": "APP_PROMOTION", "adgroup_name": "App group",
-        "promotion_type": "APP_ANDROID", "app_id": "app-1",
-        "optimization_goal": "INSTALL", "bid_type": "BID_TYPE_NO_BID",
+            "objective_type": "APP_PROMOTION", "adgroup_name": "App group",
+            "promotion_type": "APP_ANDROID", "app_id": "app-1",
+            "operating_systems": ["ANDROID"],
+            "optimization_goal": "INSTALL", "bid_type": "BID_TYPE_NO_BID",
         "billing_event": "OCPM", "schedule_type": "SCHEDULE_FROM_NOW",
         "schedule_start_time": "2026-09-07 00:00:00", "location_ids": ["US"],
-    })
+    }, live=True)
     client.create_smart_plus_campaign("t1", {
         "campaign_name": "Sales Smart+", "objective_type": "SALES",
         "sales_destination": "WEBSITE",
-    })
+    }, live=True)
     client.create_smart_plus_adgroup("t1", "c-3", {
         "objective_type": "SALES", "adgroup_name": "Sales group",
         "promotion_type": "WEBSITE", "optimization_goal": "VALUE",
         "bid_type": "BID_TYPE_NO_BID", "billing_event": "OCPM",
         "schedule_type": "SCHEDULE_FROM_NOW",
         "schedule_start_time": "2026-09-07 00:00:00", "location_ids": ["US"],
-    })
+        "pixel_id": "pixel-1",
+    }, live=True)
 
     assert [item[1] for item in seen] == [
         "smart_plus/campaign/create/", "smart_plus/adgroup/create/",
@@ -2768,7 +2971,7 @@ def test_tiktok_ad_queries_use_scoped_filter_and_create_accepts_ad_ids():
         "name": "Authorized video",
         "tiktok_item_id": "item-1",
         "identity_id": "identity-1",
-    }) == "ad-1"
+    }, live=True) == "ad-1"
 
 
 def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():
@@ -2844,7 +3047,7 @@ def test_tiktok_lead_ad_builds_instant_page_payload():
         "media": [{"video_id": "video-1"}],
         "text": {"primary_text": "Get the guide"},
         "tracking_url": "https://example.test/track",
-    }) == "lead-ad-1"
+    }, live=True) == "lead-ad-1"
     method, endpoint, data = payloads[-1]
     assert (method, endpoint) == ("POST", "ad/create/")
     ad = data["creatives"][0]
@@ -3054,7 +3257,7 @@ def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
         "operating_systems": ["ANDROID"],
         "media": [{"video_id": "video-1"}],
         "deep_link": "myapp://home",
-    }) == "app-ad-1"
+    }, live=True) == "app-ad-1"
     ad = payloads[-1][2]["creatives"][0]
     assert ad["app_id"] == "app-1"
     assert ad["promotion_type"] == "APP_ANDROID"
@@ -3133,6 +3336,7 @@ def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():
             "campaign_type": "REGULAR_CAMPAIGN",
             "budget_mode": "BUDGET_MODE_INFINITE",
         },
+        live=True,
     )
 
     assert campaign_id == "campaign-42"
@@ -3296,7 +3500,7 @@ def test_meta_lead_ad_builds_instant_form_story_spec():
         "name": "Lead Ad", "page_id": "page-1", "form_id": "form-1",
         "message": "Get the guide", "headline": "Download now",
         "call_to_action_type": "SIGN_UP", "status": "PAUSED",
-    }) == "ad-lead-1"
+    }, live=True) == "ad-lead-1"
     method, endpoint, data = payloads[-1]
     assert (method, endpoint) == ("POST", "/act_1/ads")
     creative = json.loads(data["creative"])
@@ -3331,7 +3535,7 @@ def test_meta_catalog_ad_builds_template_story_spec():
         "link": "https://example.test/shop", "message": "Shop now",
         "headline": "Summer collection", "ad_style": "CAROUSEL",
         "call_to_action_type": "SHOP_NOW", "status": "PAUSED",
-    }) == "ad-catalog-1"
+    }, live=True) == "ad-catalog-1"
     method, endpoint, data = payloads[-1]
     assert (method, endpoint) == ("POST", "/act_1/ads")
     creative = json.loads(data["creative"])
@@ -3362,7 +3566,7 @@ def test_meta_messaging_ad_builds_click_to_message_story_spec():
         "call_to_action_type": "WHATSAPP", "message": "Chat with us",
         "headline": "Talk to sales", "link": "https://example.test/contact",
         "status": "PAUSED",
-    }) == "ad-message-1"
+    }, live=True) == "ad-message-1"
     method, endpoint, data = payloads[-1]
     assert (method, endpoint) == ("POST", "/act_1/ads")
     creative = json.loads(data["creative"])
@@ -3452,7 +3656,7 @@ def test_meta_link_ad_builds_object_story_spec(media_type, extra, expected_key):
         "name": "Link Ad", "page_id": "page-1", "link": "https://example.test/landing",
         "media_type": media_type, "message": "Learn more", "headline": "Offer",
         "call_to_action_type": "LEARN_MORE", **extra,
-    }) == "ad-link-1"
+    }, live=True) == "ad-link-1"
     creative = json.loads(payloads[-1][2]["creative"])
     story = creative["object_story_spec"]
     assert story["page_id"] == "page-1"
@@ -3548,7 +3752,7 @@ def test_meta_engagement_ad_builds_post_or_video_story_spec(
         "message": "Watch this", "headline": "New video",
         "call_to_action_type": "WATCH_VIDEO",
     }
-    assert client.create_engagement_ad("act_1", "as_1", input_data) == "ad-engagement-1"
+    assert client.create_engagement_ad("act_1", "as_1", input_data, live=True) == "ad-engagement-1"
     creative = json.loads(payloads[-1][2]["creative"])
     assert creative["object_story_spec"] == expected_story
 
@@ -3630,7 +3834,7 @@ def test_meta_create_creative_uses_account_adcreatives_edge():
         "page_id": "page-1",
         "link": "https://www.example.com/",
         "image_hash": "hash-1",
-    }) == "cr-2"
+    }, live=True) == "cr-2"
     assert calls[0][0:2] == ("POST", "/act_123/adcreatives")
     assert json.loads(calls[0][2]["object_story_spec"])["page_id"] == "page-1"
 
@@ -3647,7 +3851,7 @@ def test_meta_create_creative_wires_optional_call_to_action():
         "page_id": "page-1",
         "link": "http://play.google.com/store/apps/details?id=com.example.app",
         "call_to_action_type": "INSTALL_MOBILE_APP",
-    })
+    }, live=True)
     payload = json.loads(calls[0][2]["object_story_spec"])
     assert payload["link_data"]["call_to_action"] == {
         "type": "INSTALL_MOBILE_APP",
@@ -3655,6 +3859,26 @@ def test_meta_create_creative_wires_optional_call_to_action():
             "link": "http://play.google.com/store/apps/details?id=com.example.app",
         },
     }
+
+
+def test_meta_create_creative_dry_run_never_calls_graph_api():
+    client = MetaAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: pytest.fail(
+        "dry-run Meta Creative must not call Graph API"
+    )
+    result = MetaCreateCreativeHandler(client).execute(
+        ToolContext(
+            session_id="s1", user_id="u1", account_id="act_123",
+            metadata={"execution_mode": "dry_run"},
+        ),
+        {
+            "name": "Creative", "page_id": "page-1",
+            "link": "https://www.example.com/",
+        },
+    )
+    assert result.success is True
+    assert result.data["execution_status"] == "planned"
+    assert result.data["mode"] == "dry_run"
 
 
 def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
@@ -3716,7 +3940,7 @@ def test_meta_catalog_tools_expose_lookup_and_format_contract():
     assert catalog_ad.input_schema.properties["ad_style"]["enum"] == [
         "CAROUSEL", "COLLAGE", "PRODUCT_SET"
     ]
-    assert catalog_ad.live_support is False
+    assert catalog_ad.live_support is True
 
 
 def test_meta_catalog_and_product_set_tools_cover_scoped_crud():
@@ -3893,13 +4117,13 @@ def test_meta_adset_client_rejects_missing_cap_limits_and_forwards_roas_floor():
     assert client.create_adset("123", "campaign-1", {
         "name": "Min ROAS", "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS",
         "roas_average_floor": 1.4,
-    }) == "adset-1"
+    }, live=True) == "adset-1"
     assert payloads[-1]["bid_strategy"] == "LOWEST_COST_WITH_MIN_ROAS"
     assert payloads[-1]["roas_average_floor"] == "1.4"
     assert "bid_amount" not in payloads[-1]
 
 
-def test_meta_adset_client_omits_default_lowest_cost_strategy_on_wire():
+def test_meta_adset_client_preserves_selected_lowest_cost_strategy_on_wire():
     client = MetaAPIClient({"access_token": "test"})
     payloads = []
     client.request = lambda method, endpoint, data=None, **kwargs: (
@@ -3908,15 +4132,18 @@ def test_meta_adset_client_omits_default_lowest_cost_strategy_on_wire():
 
     client.create_adset("123", "campaign-1", {
         "name": "Lowest cost", "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
-    })
+    }, live=True)
 
-    assert "bid_strategy" not in payloads[-1]
+    # The account may have a different default bid strategy.  The adapter
+    # must preserve the operator's explicit selection instead of relying on
+    # an account-level default that can make Graph require a bid amount.
+    assert payloads[-1]["bid_strategy"] == "LOWEST_COST_WITHOUT_CAP"
     assert "bidding_strategy" not in payloads[-1]
     assert "bid_amount" not in payloads[-1]
 
 
 def test_google_creation_options_are_mapped_to_rest_resources():
-    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
 
     def fake_mutate(resource, operation):
@@ -3935,6 +4162,7 @@ def test_google_creation_options_are_mapped_to_rest_resources():
         target_roas=3.5,
         networks=["GOOGLE_SEARCH", "SEARCH_PARTNERS"],
         start_date="2026-08-28", end_date="2026-09-04",
+        live=True,
     )
     campaign = operations[1][1]["create"]
     assert operations[0][1]["create"]["explicitlyShared"] is False
@@ -3948,6 +4176,7 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     client.create_campaign(
         "Clicks", "SEARCH", "TARGET_IMPRESSION_SHARE", 10,
         target_impression_share=0.7,
+        live=True,
     )
     impression_share_campaign = operations[1][1]["create"]
     assert impression_share_campaign["targetImpressionShare"] == {
@@ -3962,6 +4191,7 @@ def test_google_creation_options_are_mapped_to_rest_resources():
             "app_store": "GOOGLE_APP_STORE",
             "bidding_strategy_goal_type": "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST",
         },
+        live=True,
     )
     app_campaign = operations[-1][1]["create"]
     assert app_campaign["appCampaignSetting"] == {
@@ -3973,25 +4203,38 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     client.create_campaign(
         "Value", "SEARCH", "MAXIMIZE_CONVERSION_VALUE", 10,
         target_roas=2.5,
+        live=True,
     )
     value_campaign = operations[-1][1]["create"]
     assert value_campaign["maximizeConversionValue"] == {"targetRoas": 2.5}
 
+    client.create_campaign(
+        "Clicks", "SEARCH", "MAXIMIZE_CLICKS", 10,
+        live=True,
+    )
+    clicks_campaign = operations[-1][1]["create"]
+    # Google Ads v24 represents the UI's Maximize clicks strategy as
+    # TargetSpend; the removed maximizeClicks field must never reach REST.
+    assert clicks_campaign["targetSpend"] == {}
+    assert "maximizeClicks" not in clicks_campaign
+
     client.create_ad_group(
         "c1", "Group", cpc_bid_micros=123456,
         type="SEARCH_STANDARD", targeting={"target_restrictions": []},
+        live=True,
     )
     ad_group = operations[-1][1]["create"]
     assert ad_group["cpcBidMicros"] == 123456
     assert ad_group["type"] == "SEARCH_STANDARD"
     assert ad_group["targetingSetting"] == {"targetRestrictions": []}
 
-    client.create_ad_group("c1", "Shopping group", type="SHOPPING_PRODUCT")
+    client.create_ad_group("c1", "Shopping group", type="SHOPPING_PRODUCT", live=True)
     assert operations[-1][1]["create"]["type"] == "SHOPPING_PRODUCT_ADS"
 
     client.create_search_ad(
         "ag1", ["Headline 1", "Headline 2"], ["Description 1", "Description 2"],
         "https://example.test", path1="buy", path2="now",
+        live=True,
     )
     ad = operations[-1][1]["create"]["ad"]
     assert ad["responsiveSearchAd"]["path1"] == "buy"
@@ -4122,7 +4365,7 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
 
 
 def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
-    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
     client._mutate = lambda resource, operation: (
         operations.append((resource, operation)) or {
@@ -4132,6 +4375,7 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
 
     client.create_campaign(
         "PMax", "MAX", "MAXIMIZE_CONVERSIONS", 10,
+        live=True,
     )
     campaign = operations[1][1]["create"]
     assert campaign["advertisingChannelType"] == "PERFORMANCE_MAX"
@@ -4140,6 +4384,7 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
     client.create_campaign(
         "Video", "VIDEO", "TARGET_CPM", 10, target_cpm_micros=2500000,
         network_setting={"target_content_network": True},
+        live=True,
     )
     campaign = operations[1][1]["create"]
     assert campaign["targetCpm"] == {"targetCpmMicros": 2500000}
@@ -4147,7 +4392,7 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
 
 
 def test_google_pmax_campaign_defaults_brand_guidelines_to_disabled():
-    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
     client._mutate = lambda resource, operation: (
         operations.append((resource, operation)) or {
@@ -4157,6 +4402,7 @@ def test_google_pmax_campaign_defaults_brand_guidelines_to_disabled():
 
     client.create_campaign(
         "PMax", "PERFORMANCE_MAX", "MAXIMIZE_CONVERSIONS", 10,
+        live=True,
     )
     assert operations[1][1]["create"]["brandGuidelinesEnabled"] is False
 
@@ -4366,7 +4612,7 @@ def test_google_product_group_update_and_delete_use_composite_criterion_resource
         client.update_product_group("456", "789", {"product_group_type": "brand"})
 
 
-def test_google_product_group_lifecycle_tools_are_scoped_and_dry_run_only():
+def test_google_product_group_lifecycle_tools_are_scoped_and_live_gated():
     definitions = {
         definition.name: definition
         for definition, _handler in create_google_capability().register_tools()
@@ -4392,11 +4638,8 @@ def test_google_product_group_lifecycle_tools_are_scoped_and_dry_run_only():
     assert definitions["google_create_product_group"].readback_tool == (
         "google_get_product_group"
     )
-    assert all(
-        definitions[name].is_write_tool and definitions[name].live_support is False
-        for name in expected - {"google_create_product_group"}
-        if definitions[name].is_write_tool
-    )
+    assert definitions["google_update_product_group"].is_write_tool
+    assert definitions["google_update_product_group"].live_support is True
 
 
 def test_google_pmax_listing_group_filter_create_uses_asset_group_resource():
@@ -4555,6 +4798,7 @@ def test_google_responsive_display_ad_builds_dedicated_ad_payload():
         logos=[{"asset": "customers/g1/assets/12"}],
         call_to_action_text="SHOP_NOW",
         allow_flexible_color=False,
+        live=True,
     )
 
     assert result == "123~456"
@@ -4589,6 +4833,7 @@ def test_google_video_ad_builds_format_specific_payload():
         "123", "YouTube bumper", "BUMPER", "dQw4w9WgXcQ",
         "https://example.test", action_button_label="SHOP_NOW",
         action_headline="Summer sale",
+        live=True,
     )
 
     assert result == "123~789"
@@ -4878,12 +5123,45 @@ def test_provider_create_and_detail_contracts_reject_empty_success_payloads():
     for client, method_name, args in clients:
         client.request = lambda *args, **kwargs: {}
         with pytest.raises(APIError, match="resource ID"):
-            getattr(client, method_name)(*args)
+            getattr(client, method_name)(*args, live=True)
 
     meta = MetaAPIClient({"access_token": "test"})
     meta.request = lambda *args, **kwargs: {}
     with pytest.raises(APIError, match="resource"):
         meta.get_campaign("c1")
+
+
+def test_meta_and_tiktok_client_writes_are_dry_run_by_default():
+    """The provider boundary must not turn a default dry-run into HTTP I/O."""
+    meta = MetaAPIClient({"access_token": "test"})
+    tiktok = TikTokAPIClient({"access_token": "test"})
+
+    def fail_request(*_args, **_kwargs):
+        raise AssertionError("dry-run unexpectedly called a provider")
+
+    meta.request = fail_request
+    tiktok.request = fail_request
+
+    meta_plan = meta.create_campaign("1", {"name": "plan", "objective": "OUTCOME_SALES"})
+    adset_plan = meta.create_adset("1", "2", {"name": "plan"})
+    ad_plan = meta.create_ad("1", "3", {"name": "plan", "creative_id": "4"})
+    meta_update = meta.update_campaign("2", {"name": "updated"})
+
+    tiktok_plan = tiktok.create_campaign(
+        "1", {"name": "plan", "objective_type": "TRAFFIC"}
+    )
+    tiktok_group_plan = tiktok.create_adgroup("1", "2", {"name": "plan"})
+    tiktok_ad_plan = tiktok.create_ad(
+        "1", "2", "3", {"name": "plan", "tiktok_item_id": "4"}
+    )
+    tiktok_update = tiktok.update_campaign("1", "2", {"name": "updated"})
+
+    for plan in (
+        meta_plan, adset_plan, ad_plan, meta_update,
+        tiktok_plan, tiktok_group_plan, tiktok_ad_plan, tiktok_update,
+    ):
+        assert plan["mode"] == "dry_run"
+        assert plan["execution_status"] == "planned"
 
     google = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     google._search = lambda query: {"results": []}

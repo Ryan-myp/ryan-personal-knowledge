@@ -170,6 +170,13 @@ class ToolDefinition:
     # edit for that upgrade.
     contract_version: str = "1"
     provider_api_version: Optional[str] = None
+    # Result-shape metadata is owned by the Tool publisher.  Cross-feature
+    # extensions can consume a normalized resource result without guessing a
+    # provider's result key or identifier spelling from its Tool name.
+    result_items_key: Optional[str] = None
+    result_id_fields: list[str] = field(default_factory=list)
+    related_resource_type: Optional[str] = None
+    related_resource_id_fields: list[str] = field(default_factory=list)
     # Immutable fingerprint of the public input contract.  It is calculated
     # from ToolSchema rather than provider/channel names, so Registry and
     # approval code can detect schema drift without a central router.
@@ -214,6 +221,19 @@ class ToolDefinition:
             )
         if self.readback_tool is not None:
             self.readback_tool = str(self.readback_tool).strip() or None
+        if self.result_items_key is not None:
+            self.result_items_key = str(self.result_items_key).strip() or None
+        self.result_id_fields = list(dict.fromkeys(
+            str(item).strip() for item in self.result_id_fields if str(item).strip()
+        ))
+        if self.related_resource_type:
+            self.related_resource_type = self._normalize_resource(
+                self.related_resource_type
+            )
+        self.related_resource_id_fields = list(dict.fromkeys(
+            str(item).strip()
+            for item in self.related_resource_id_fields if str(item).strip()
+        ))
         self.intent_types = list(dict.fromkeys(str(item) for item in self.intent_types))
         self.intent_aliases = list(dict.fromkeys(
             str(item).strip() for item in self.intent_aliases if str(item).strip()
@@ -274,6 +294,10 @@ class ToolDefinition:
             "readback_tool": self.readback_tool,
             "contract_version": self.contract_version,
             "provider_api_version": self.provider_api_version,
+            "result_items_key": self.result_items_key,
+            "result_id_fields": list(self.result_id_fields),
+            "related_resource_type": self.related_resource_type,
+            "related_resource_id_fields": list(self.related_resource_id_fields),
             "contract_hash": self.contract_hash,
             "input_schema": self.input_schema.to_dict() if self.input_schema else None,
         }

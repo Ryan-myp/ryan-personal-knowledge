@@ -8,7 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.meta_client import MetaAPIClient
-from ..base import call_with_optional_page_size
+from ..base import call_with_optional_page_size, resource_was_created_in_current_run
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,12 @@ class MetaListAdsHandler(ToolHandler):
         adset_id = input_data.get("adset_id")
         if self.client and ctx.account_id and adset_id:
             try:
-                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
-                    ctx.account_id, "adset", adset_id
+                if (
+                    isinstance(self.client, MetaAPIClient)
+                    and not resource_was_created_in_current_run(ctx, "ad_set", adset_id)
+                    and not self.client.resource_belongs_to_account(
+                        ctx.account_id, "adset", adset_id
+                    )
                 ):
                     return ToolResult.error(
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"
@@ -98,6 +102,7 @@ class MetaCreateAdHandler(ToolHandler):
                     account_id=ctx.account_id,
                     adset_id=adset_id,
                     ad=input_data,
+                    live=str(ctx.metadata.get("execution_mode", "dry_run")) == "live",
                 )
                 return ToolResult.ok({
                     "ad_id": ad_id,

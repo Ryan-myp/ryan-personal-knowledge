@@ -22,6 +22,15 @@ from .platform import normalize_platform
 logger = logging.getLogger(__name__)
 
 
+def _safe_search(pattern: str, text: str) -> bool:
+    """Evaluate a Skill-declared trigger pattern without breaking a request."""
+    try:
+        return re.search(pattern, text, re.IGNORECASE) is not None
+    except re.error:
+        logger.warning("Ignoring invalid Skill trigger pattern")
+        return False
+
+
 @dataclass
 class ToolSelection:
     """工具选择结果"""
@@ -54,17 +63,10 @@ class DynamicToolSelector:
     
     def __init__(
         self,
-        skill_loader=None,
+        skill_loader,
         knowledge_provider: Optional[KnowledgeProvider] = None,
         policies: Optional[list[RuntimePolicy]] = None,
     ):
-        # Runtime injects its canonical SkillLoader.  The lazy fallback keeps
-        # the standalone selector usable without importing the Runtime package
-        # during module initialization.
-        if skill_loader is None:
-            from ..runtime.skill import SkillLoader
-            skill_loader = SkillLoader()
-            skill_loader.load_all()
         self.skill_loader = skill_loader
         self.knowledge_provider = knowledge_provider
         self.policies: list[RuntimePolicy] = list(policies or [])
@@ -192,12 +194,10 @@ class DynamicToolSelector:
         )
         if knowledge:
             selection.expert_knowledge = self._format_knowledge(knowledge)
-        scheduling_context = self._scheduling_skill_context(
-            user_input, intent_type=intent_type
-        )
-        if scheduling_context:
+        triggered_context = self._triggered_skill_context(user_input)
+        if triggered_context:
             selection.expert_knowledge = "\n\n".join(
-                part for part in (selection.expert_knowledge, scheduling_context) if part
+                part for part in (selection.expert_knowledge, triggered_context) if part
             )[:6000]
         managed_context = self._managed_skill_context(user_input, tenant_id=tenant_id)
         if managed_context:
@@ -211,32 +211,27 @@ class DynamicToolSelector:
             "knowledge": knowledge,
         }
 
-    def _scheduling_skill_context(
-        self, user_input: str, *, intent_type: Optional[str] = None,
-        max_chars: int = 3600,
+    def _triggered_skill_context(
+        self, user_input: str, max_chars: int = 3600
     ) -> str:
-        """Inject the built-in scheduling SOP as advisory parser context.
-
-        Scheduling is a Runtime control feature, not a provider platform and
-        therefore has no executable Tool definitions.  It still needs its
-        Skill guidance before the first intent parse; selecting it through the
-        normal provider-tool path would incorrectly make it look executable.
-        """
-        text = str(user_input or "").lower()
-        schedule_markers = (
-            "定时任务", "定时执行", "定期执行", "每小时", "每天", "每日",
-            "每周", "每月", "cron", "schedule",
-        )
-        if not str(intent_type or "").startswith("schedule_") and not any(
-            marker in text for marker in schedule_markers
-        ):
-            return ""
-        loaded = getattr(self.skill_loader, "list_all", lambda: {})()
+        """Load advisory context from Skills whose declared triggers match."""
+        text = str(user_input or "").casefold()
         sections: list[str] = []
-        for skill in sorted(loaded.values(), key=lambda item: str(getattr(item, "name", ""))):
-            platform = str(getattr(skill, "platform", "") or "").strip().lower()
-            name = str(getattr(skill, "name", "") or "").strip().lower()
-            if platform != "scheduling" and "schedule" not in name:
+        for skill in sorted(
+            self.skill_loader.list_all().values(),
+            key=lambda item: str(getattr(item, "name", "")),
+        ):
+            matched = False
+            for trigger in getattr(skill, "triggers", []) or []:
+                keywords = [str(item).casefold() for item in getattr(trigger, "keywords", []) or []]
+                patterns = [str(item) for item in getattr(trigger, "patterns", []) or []]
+                if any(keyword and keyword in text for keyword in keywords):
+                    matched = True
+                if any(pattern and _safe_search(pattern, text) for pattern in patterns):
+                    matched = True
+                if matched:
+                    break
+            if not matched:
                 continue
             markdown = str(getattr(skill, "raw_markdown", "") or "").strip()
             if not markdown:
@@ -249,12 +244,10 @@ class DynamicToolSelector:
                     if len(excerpt) >= max_chars:
                         break
             sections.append(
-                "[built-in scheduling skill]\n"
-                "以下内容仅用于定时任务理解和澄清，不会新增 Tool、权限或账户范围：\n"
+                f"[skill guidance: {getattr(skill, 'name', '')}]\n"
+                "以下内容仅用于理解和澄清，不会新增 Tool、权限或账户范围：\n"
                 + excerpt[:max_chars]
             )
-            if sections:
-                break
         return "\n\n".join(sections)[:max_chars]
 
     def _managed_skill_context(
@@ -425,37 +418,9 @@ class DynamicToolSelector:
         if exact:
             return exact[:8]
 
-        # Keep a bounded, metadata-only fallback for older/custom tools that
-        # have not published intent_types yet.  The selector never interprets
-        # provider-specific intent names; it only compares generic fields that
-        # are already part of ToolDefinition.
-        intent_tokens = {
-            token for token in re.split(r"[^a-z0-9]+", str(intent_type).lower())
-            if token and token not in {"the", "a", "an", "to", "for"}
-        }
-        ranked: list[tuple[int, int, ToolDefinition]] = []
-        for index, tool in enumerate(tools):
-            metadata = " ".join(
-                str(value or "").lower()
-                for value in (
-                    getattr(tool, "action", ""),
-                    getattr(tool, "resource_type", ""),
-                    " ".join(getattr(tool, "traits", []) or []),
-                    getattr(tool, "name", ""),
-                    getattr(tool, "description", ""),
-                )
-            )
-            score = sum(1 for token in intent_tokens if token in metadata)
-            if score:
-                ranked.append((score, -index, tool))
-        if ranked:
-            ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-            return [tool for _score, _index, tool in ranked[:8]]
-
-        # Unknown intents must remain bounded.  The LLM can ask for the
-        # missing capability rather than receiving the entire provider tool
-        # catalog and hallucinating a route.
-        return tools[:5]
+        # An intent without an owning Tool is not executable. Do not expose
+        # an arbitrary subset of provider Tools and invite the model to guess.
+        return []
     
     def _get_expert_knowledge(
         self, 
@@ -463,12 +428,15 @@ class DynamicToolSelector:
         intent_type: str
     ) -> str:
         """获取平台专家知识"""
-        skill = self._get_skill_by_platform(platform)
-        if not skill:
+        skills = self._get_skills_by_platform(platform)
+        if not skills:
             return ""
-        
-        knowledge = getattr(skill, "expert_knowledge", {}) or {}
-        if not isinstance(knowledge, dict):
+        knowledge: dict[str, str] = {}
+        for skill in skills:
+            skill_knowledge = getattr(skill, "expert_knowledge", {}) or {}
+            if isinstance(skill_knowledge, dict):
+                knowledge.update(skill_knowledge)
+        if not knowledge:
             return ""
 
         # Knowledge keys are Skill-owned.  Prefer an exact key, then select
@@ -500,14 +468,12 @@ class DynamicToolSelector:
         knowledge = []
         
         for platform in platforms:
-            skill = self._get_skill_by_platform(platform)
-            if skill and skill.expert_knowledge:
-                # 提取关键专家知识摘要
-                for key, content in list(skill.expert_knowledge.items())[:2]:
-                    # 截取前 500 字符
-                    summary = content[:500] + "..." if len(content) > 500 else content
-                    knowledge.append(f"[{platform}] {key}: {summary}")
-            if skill:
+            for skill in self._get_skills_by_platform(platform):
+                skill_knowledge = getattr(skill, "expert_knowledge", {}) or {}
+                if isinstance(skill_knowledge, dict):
+                    for key, content in list(skill_knowledge.items())[:2]:
+                        summary = content[:500] + "..." if len(content) > 500 else content
+                        knowledge.append(f"[{platform}] {key}: {summary}")
                 # Channel SKILL.md is advisory context, not an executable
                 # registry. Keep a bounded excerpt in the model context so
                 # channel-specific hierarchy, parameter dependencies and
@@ -532,23 +498,17 @@ class DynamicToolSelector:
         
         return "\n\n".join(knowledge)
 
-    def _get_skill_by_platform(self, platform: str):
-        """Resolve a skill by either its name or its declared platform.
-
-        Channel skills live below ``skills/channels`` and their registry key
-        is normally ``meta-marketing-api-expert`` rather than ``meta``.  The
-        old direct lookup therefore silently disabled expert knowledge.
-        """
+    def _get_skills_by_platform(self, platform: str) -> list:
+        """Return every active Skill declaring the requested platform."""
         normalized = self._normalize_platform(platform)
-        skill = self.skill_loader.get_skill(platform)
-        if skill:
-            return skill
-        loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
-        for candidate in loaded_skills.values():
-            candidate_platform = self._normalize_platform(getattr(candidate, "platform", ""))
-            if candidate_platform == normalized:
-                return candidate
-        return None
+        list_all = getattr(self.skill_loader, "list_all", None)
+        skills = list_all() if callable(list_all) else getattr(self.skill_loader, "_skills", {})
+        if isinstance(skills, dict):
+            skills = skills.values()
+        return [
+            skill for skill in skills
+            if self._normalize_platform(getattr(skill, "platform", "")) == normalized
+        ]
     
     def build_tool_prompt(self, selection: ToolSelection) -> str:
         """构建工具列表 prompt（给 LLM 使用）"""
@@ -649,25 +609,5 @@ class DynamicToolSelector:
             "knowledge": knowledge,
         }
 
-
-# 全局实例
-_tool_selector: Optional[DynamicToolSelector] = None
-
-
-def get_tool_selector() -> DynamicToolSelector:
-    """获取全局工具选择器"""
-    global _tool_selector
-    if _tool_selector is None:
-        _tool_selector = DynamicToolSelector()
-    return _tool_selector
-
-
-def select_tools_for_intent(
-    user_input: str,
-    intent: ParsedIntent,
-    all_tools: List[ToolDefinition],
-) -> dict:
-    """便捷函数：为意图选择工具"""
-    return get_tool_selector().optimize_for_llm(user_input, intent, all_tools)
 
 # 扩展的意图类型映射（补充缺失的）

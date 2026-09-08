@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-08",
+  "scope": "campaign_and_descendant_create_update",
+  "safety": {
+    "test_accounts_only": true,
+    "new_resources_paused": true,
+    "deleted": false,
+    "credentials_included": false,
+    "raw_provider_responses_included": false
+  },
+  "runs": [
+    {
+      "provider": "meta",
+      "test_account": "2806375919473667",
+      "api_version": "v19.0",
+      "campaign_type": "TRAFFIC",
+      "status": "live_verified",
+      "resources": {
+        "campaign": {"tool": "meta_create_campaign", "id": "120251262026940251", "status": "PAUSED", "create": "passed", "update": "passed"},
+        "ad_set": {"tool": "meta_create_adset", "id": "120251262047420251", "status": "PAUSED", "create": "passed", "update": "passed"},
+        "ad": {"tool": "meta_create_ad", "id": "120251262049910251", "status": "PAUSED", "create": "passed", "update": "passed"}
+      },
+      "notes": ["The first Ad Set attempt was rejected by the account budget/bid rule; the same Campaign was reused and the corrected Ad Set/Ad chain passed."]
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "7397068114548195329",
+      "api_version": "v1.3",
+      "campaign_type": "TRAFFIC",
+      "status": "partial_live_verified",
+      "resources": {
+        "campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875745135119681", "status": "DISABLE", "create": "passed", "update": "passed"},
+        "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": "1875745135201553", "status": "DISABLE", "create": "passed", "update": "passed"},
+        "ad": {"tool": "tiktok_smart_plus_create_ad", "id": null, "status": null, "create": "provider_rejected", "update": "not_run"}
+      },
+      "error": {"category": "provider_validation", "message": "Unable to create the Ad because TikTok rejected the supplied landing-page/material combination; no Ad resource was returned."},
+      "notes": ["A previously authorized regular TikTok video Ad was also read back successfully on this account, but Smart+ Ad creation remains unverified until the current Smart+ creative contract is corrected."]
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "7397068114548195329",
+      "api_version": "v1.3",
+      "campaign_type": "APP_PROMOTION",
+      "status": "provider_limited",
+      "resources": {"campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": null, "status": null, "create": "provider_rejected"}, "ad_group": {"id": null, "create": "not_run"}, "ad": {"id": null, "create": "not_run"}},
+      "error": {"category": "provider_validation", "message": "TikTok returned a generic Smart+ App campaign error for the selected test-account App configuration."}
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "7397068114548195329",
+      "api_version": "v1.3",
+      "campaign_type": "SALES",
+      "status": "partial_live_verified",
+      "resources": {"campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875745926090897", "status": "DISABLE", "create": "passed", "update": "not_run"}, "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": null, "status": null, "create": "provider_rejected"}, "ad": {"id": null, "create": "not_run"}},
+      "error": {"category": "provider_validation", "message": "TikTok requires a Pixel for website Sales optimization."}
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "7397068114548195329",
+      "api_version": "v1.3",
+      "campaign_type": "PRODUCT_SALES",
+      "status": "partial_live_verified",
+      "resources": {"campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875745928289778", "status": "DISABLE", "create": "passed", "update": "not_run"}, "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": null, "status": null, "create": "provider_rejected"}, "ad": {"id": null, "create": "not_run"}},
+      "error": {"category": "provider_validation", "message": "TikTok requires a Pixel for website Product Sales optimization."}
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "7397068114548195329",
+      "api_version": "v1.3",
+      "campaign_type": "LEAD_GENERATION",
+      "status": "live_verified",
+      "resources": {
+        "campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875745928535297", "status": "DISABLE", "create": "passed", "update": "passed"},
+        "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": "1875745930658113", "status": "DISABLE", "create": "passed", "update": "passed"},
+        "ad": {"tool": "tiktok_smart_plus_create_ad", "id": null, "status": null, "create": "not_run"}
+      }
+    },
+    {
+      "provider": "google-ads",
+      "test_account": "9055507554",
+      "api_version": "v24",
+      "campaign_types": ["PERFORMANCE_MAX", "SHOPPING", "APP"],
+      "status": "campaign_live_verified",
+      "resources": {
+        "PERFORMANCE_MAX": {"campaign": {"id": "24221191602", "status": "PAUSED", "create": "passed"}},
+        "SHOPPING": {"campaign": {"id": "24232139476", "status": "PAUSED", "create": "passed"}},
+        "APP": {"campaign": {"id": "24226802801", "status": "PAUSED", "create": "passed"}}
+      },
+      "notes": ["The PMax, Shopping and App campaign resources were created against the specified test customer. Descendant resource IDs are intentionally not asserted here unless present in the captured run output."]
+    }
+  ]
+}

@@ -4,6 +4,7 @@ capabilities/meta/capability.py - Meta Capability 定义
 from __future__ import annotations
 
 import logging
+import inspect
 from copy import deepcopy
 from pathlib import Path
 from typing import Optional
@@ -99,7 +100,7 @@ META_LOOKUP_CONTRACTS = {
         "page_id": _meta_lookup(
             "meta_list_pages", "pages", ["id", "page_id"],
             ["name", "page_name", "id"],
-        ) | {"lookup_defaults": {"limit": 1000}},
+        ) | {"lookup_defaults": {"limit": 100}},
         "pixel_id": _meta_lookup(
             "meta_list_pixels", "pixels", ["id", "pixel_id"],
             ["name", "pixel_name", "id"],
@@ -196,7 +197,9 @@ META_LOOKUP_CONTRACTS = {
 }
 
 
-def _meta_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
+def _meta_update_adapter(
+    client, ctx, resource_type, resource_id, _parent_id, updates, *, live=False
+):
     """Adapt Meta's object-specific Graph update methods for one Tool."""
     method_name = {
         "campaign": "update_campaign",
@@ -214,7 +217,11 @@ def _meta_update_adapter(client, ctx, resource_type, resource_id, _parent_id, up
         raise PermissionError(
             f"Meta {resource_type} {resource_id} does not belong to account {ctx.account_id}"
         )
-    return method(resource_id, updates)
+    try:
+        supports_live = "live" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        supports_live = False
+    return method(resource_id, updates, **({"live": live} if supports_live else {}))
 
 
 class MetaCapability(BaseCapability):
@@ -919,6 +926,8 @@ class MetaCapability(BaseCapability):
                     {"field": "form_id", "exists": True},
                 ],
                 traits=["write", "ad", "lead", "instant_form"], write=True,
+                live_support=True, readback_tool="meta_get_ad",
+                provider_api_version="v19.0", required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "form_id", "link", "message", "headline",
@@ -945,6 +954,8 @@ class MetaCapability(BaseCapability):
                     {"field": "product_set_id", "exists": True},
                 ],
                 traits=["write", "ad", "catalog", "dynamic_product"], write=True,
+                live_support=True, readback_tool="meta_get_ad",
+                provider_api_version="v19.0", required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "product_set_id", "link", "message",
@@ -974,6 +985,8 @@ class MetaCapability(BaseCapability):
                     },
                 }],
                 traits=["write", "ad", "messaging", "click_to_message"], write=True,
+                live_support=True, readback_tool="meta_get_ad",
+                provider_api_version="v19.0", required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data, "account_id"), data["adset_id"], {
                         key: data[key] for key in meta_messaging_ad_schema()["properties"]
@@ -1017,7 +1030,9 @@ class MetaCapability(BaseCapability):
                         "link": {"exists": True},
                     },
                 }],
-                traits=traits, write=True,
+                traits=traits, write=True, live_support=True,
+                readback_tool="meta_get_ad", provider_api_version="v19.0",
+                required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data, "account_id"), data["adset_id"], {
                         key: data[key] for key in link_schema["properties"]
@@ -1051,7 +1066,9 @@ class MetaCapability(BaseCapability):
                     "video_id": {"exists": True},
                 }},
             ],
-            traits=["write", "ad", "engagement"], write=True,
+            traits=["write", "ad", "engagement"], write=True, live_support=True,
+            readback_tool="meta_get_ad", provider_api_version="v19.0",
+            required_permissions=["ads.plan"],
             argument_builder=lambda ctx, data: ((
                 account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in engagement_schema["properties"]
@@ -1152,6 +1169,7 @@ class MetaCapability(BaseCapability):
                 resource_id_field=resource_id, intent_types=[intent] if intent != "delete_campaign" else [
                     "delete_campaign", "cross_channel_batch_delete"
                 ],
+                intent_aliases=["删除 Meta campaign"] if intent == "delete_campaign" else [],
                 traits=["write", resource_type], write=True,
                 argument_builder=lambda ctx, data, field=resource_id: (
                     (account(ctx, data), data[field]), {}
@@ -1213,6 +1231,12 @@ class MetaCapability(BaseCapability):
                 "cross_channel_performance_insights", "cross_channel_optimize_budget",
                 "cross_channel_export_report",
             ],
+            intent_aliases=[
+                "列出 Meta 广告系列", "列出 Meta campaign 列表",
+                "列出 Meta campaign", "查询 Meta campaign 列表",
+            ],
+            result_items_key="campaigns",
+            result_id_fields=["id", "campaign_id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1238,6 +1262,7 @@ class MetaCapability(BaseCapability):
             ),
             action="get", resource_type="campaign", resource_id_field="campaign_id",
             intent_types=["get_campaign"],
+            intent_aliases=["查询 Meta campaign 详情", "查看 Meta campaign 详情", "查询 Meta 广告系列详情"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1259,6 +1284,7 @@ class MetaCapability(BaseCapability):
             # one Tool without adding a Meta branch to Runtime.
             action="create", resource_type="campaign",
             intent_types=["create_campaign", "create_campaign_only"],
+            intent_aliases=["创建 Meta 广告系列", "创建 Meta campaign"],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
@@ -1287,6 +1313,7 @@ class MetaCapability(BaseCapability):
                 properties={"campaign_id": {"type": "string"}, "limit": {"type": "integer"}},
             ),
             action="list", resource_type="ad_set", parent_resource_type="campaign",
+            parent_resource_id_field="campaign_id",
             intent_types=["list_adsets"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -1304,6 +1331,7 @@ class MetaCapability(BaseCapability):
                 required=["adset_id"],
                 properties={
                     "adset_id": {"type": "string"},
+                    "campaign_id": {"type": "string"},
                     "fields": {
                         "type": "array",
                         "items": {"type": "string", "minLength": 1},
@@ -1313,6 +1341,7 @@ class MetaCapability(BaseCapability):
             ),
             action="get", resource_type="ad_set", parent_resource_type="campaign",
             resource_id_field="adset_id",
+            parent_resource_id_field="campaign_id",
             intent_types=["get_adset"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -1377,6 +1406,7 @@ class MetaCapability(BaseCapability):
             traits=["read", "ad"],
             action="list", resource_type="ad", intent_types=["list_ads"],
             parent_resource_type="ad_set",
+            parent_resource_id_field="adset_id",
         ), MetaListAdsHandler(api_client)))
 
         # Get Ad
@@ -1387,7 +1417,10 @@ class MetaCapability(BaseCapability):
             description="获取 Meta Ad 详情。",
             input_schema=ToolSchema(
                 required=["ad_id"],
-                properties={"ad_id": {"type": "string"}},
+                properties={
+                    "ad_id": {"type": "string"},
+                    "adset_id": {"type": "string"},
+                },
             ),
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
@@ -1396,6 +1429,7 @@ class MetaCapability(BaseCapability):
             action="get", resource_type="ad", resource_id_field="ad_id",
             intent_types=["get_ad"],
             parent_resource_type="ad_set",
+            parent_resource_id_field="adset_id",
         ), MetaGetAdHandler(api_client)))
 
         # Create Ad
@@ -1461,6 +1495,12 @@ class MetaCapability(BaseCapability):
             ),
             action="report", resource_type="report",
             intent_types=["get_campaign_report", "download_report"],
+            intent_aliases=[
+                "查询 Meta 报表", "查询 Meta campaign 报表",
+                "查看 Meta 广告系列表现",
+            ],
+            related_resource_type="campaign",
+            related_resource_id_fields=["campaign_ids", "campaign_id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
@@ -1561,6 +1601,11 @@ class MetaCapability(BaseCapability):
                     required=[resource_id, "updates"],
                     properties={
                         resource_id: {"type": "string"},
+                        **({
+                            "campaign_id": {"type": "string"},
+                        } if resource_type == "ad_set" else {
+                            "adset_id": {"type": "string"},
+                        } if resource_type == "ad" else {}),
                         "updates": meta_updates(tool_suffix),
                     },
                 ),
@@ -1574,12 +1619,19 @@ class MetaCapability(BaseCapability):
                     ],
                     "ad_set": ["update_adset"], "ad": ["update_ad"],
                 }[resource_type],
+                intent_aliases=(
+                    ["更新 Meta campaign"]
+                    if resource_type == "campaign" else []
+                ),
                 risk_level=RiskLevel.MEDIUM,
                 effect_class=ToolEffect.WRITE,
                 replay_policy=ReplayPolicy.UNSAFE,
                 traits=["write", resource_type],
                 live_support=True,
                 resource_id_field=resource_id,
+                parent_resource_id_field={
+                    "ad_set": "campaign_id", "ad": "adset_id",
+                }.get(resource_type),
                 readback_tool={
                     "campaign": "meta_get_campaign",
                     "ad_set": "meta_get_adset",

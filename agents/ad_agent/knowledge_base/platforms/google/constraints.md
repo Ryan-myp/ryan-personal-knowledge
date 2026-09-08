@@ -4,7 +4,7 @@ id: google-constraints
 title: Google Ads 参数约束
 layer: platform
 knowledge_type: constraint
-platform: google
+platform: google-ads
 source: Google Ads 官方文档 + API 实测
 source_ref: platforms/google/constraints.md
 version: "1.0.0"

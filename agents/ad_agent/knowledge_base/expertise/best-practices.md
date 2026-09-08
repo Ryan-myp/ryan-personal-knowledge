@@ -66,7 +66,7 @@ status: published
 ### Target CPA
 - 适合有历史转化数据的账户
 - 建议目标 CPA 不超过实际 CPA 的 120%
-- 需要至少 30 个转化/月才能生效
+- 不存在脱离平台、目标、事件延迟、预算和账户规模的通用最低转化数；样本不足时降低结论置信度并延长观察窗口
 
 ### Maximize Conversions
 - 适合新账户或数据不足
@@ -78,3 +78,7 @@ status: published
 - [Google Ads 最佳实践](https://support.google.com/google-ads/answer/2474563)
 - [Meta 广告投放指南](https://www.facebook.com/business/learn)
 - [TikTok Ads 最佳实践](https://business-api.tiktok.com/portal/docs)
+
+## 质量护栏
+
+最佳实践只有在适用条件明确时才可复用。每条建议补充平台、目标、对象层级、数据窗口、前提、主/保护指标、失效条件和回退动作；固定 benchmark 只能作为待验证假设，不能写成保证。涉及平台动态字段、政策或策略枚举时，必须回查当前官方文档和 Tool schema。

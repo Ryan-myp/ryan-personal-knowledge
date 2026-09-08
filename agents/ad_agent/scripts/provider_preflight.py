@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """Run a no-network preflight before a controlled real-account API test."""
 
 from __future__ import annotations

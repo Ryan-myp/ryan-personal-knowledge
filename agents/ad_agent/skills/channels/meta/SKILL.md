@@ -6,7 +6,6 @@ author: Ryan
 created: 2026-09-08
 tags: [meta, facebook, instagram, odax, advantage-plus, insights, pixel, capi, catalog]
 aliases: [facebook, instagram, fb, meta ads]
-parser_platform: meta
 ---
 
 # Meta Marketing API 专家 Skill

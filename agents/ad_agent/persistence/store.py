@@ -12,6 +12,7 @@ import json
 import sqlite3
 import logging
 import hashlib
+import math
 import re
 import threading
 import time
@@ -23,6 +24,7 @@ from .models import (
     CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
     ExecutionRunRecord, TaskRecord, ToolCallRecord,
     OutboxEvent, ScheduledTaskRecord, ScheduledTaskRunRecord,
+    CreationTemplateRecord,
 )
 from .errors import PersistenceConflictError
 from ..core.memory import MemoryRecord
@@ -76,7 +78,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 10
+    SCHEMA_VERSION = 13
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -125,6 +127,33 @@ class AdAgentStore:
         published_at TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS creation_templates (
+        template_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        provider TEXT NOT NULL,
+        blueprint_id TEXT NOT NULL,
+        blueprint_version TEXT NOT NULL,
+        ad_format TEXT NOT NULL,
+        scope_type TEXT NOT NULL DEFAULT 'general',
+        account_id TEXT NOT NULL DEFAULT '',
+        region TEXT NOT NULL DEFAULT '',
+        tags TEXT NOT NULL DEFAULT '[]',
+        template_values TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'active',
+        is_default INTEGER NOT NULL DEFAULT 0,
+        usage_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_creation_templates_scope
+        ON creation_templates(tenant_id, user_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_creation_templates_blueprint
+        ON creation_templates(tenant_id, user_id, blueprint_id, status);
+
     CREATE TABLE IF NOT EXISTS memories (
         memory_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -139,7 +168,9 @@ class AdAgentStore:
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         expires_at TEXT,
-        status TEXT NOT NULL DEFAULT 'active'
+        status TEXT NOT NULL DEFAULT 'active',
+        memory_key TEXT,
+        superseded_by TEXT
     );
     
     CREATE TABLE IF NOT EXISTS tool_calls (
@@ -657,6 +688,49 @@ class AdAgentStore:
                 CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
                     ON scheduled_task_runs(status, created_at ASC);
                 """
+            )
+        elif version == 11:
+            cls._add_column_if_missing(conn, "memories", "memory_key", "TEXT")
+            cls._add_column_if_missing(conn, "memories", "superseded_by", "TEXT")
+        elif version == 12:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS creation_templates (
+                    template_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    provider TEXT NOT NULL,
+                    blueprint_id TEXT NOT NULL,
+                    blueprint_version TEXT NOT NULL,
+                    ad_format TEXT NOT NULL,
+                    scope_type TEXT NOT NULL DEFAULT 'general',
+                    account_id TEXT NOT NULL DEFAULT '',
+                    region TEXT NOT NULL DEFAULT '',
+                    tags TEXT NOT NULL DEFAULT '[]',
+                    template_values TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    usage_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_creation_templates_scope
+                    ON creation_templates(tenant_id, user_id, status, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_creation_templates_blueprint
+                    ON creation_templates(tenant_id, user_id, blueprint_id, status);
+                """
+            )
+        elif version == 13:
+            cls._add_column_if_missing(conn, "creation_templates", "is_default", "INTEGER NOT NULL DEFAULT 0")
+            conn.execute(
+                """CREATE INDEX IF NOT EXISTS idx_creation_templates_default
+                   ON creation_templates(tenant_id, user_id, blueprint_id, scope_type, is_default)"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_key "
+                "ON memories(tenant_id, user_id, memory_key, status, updated_at DESC)"
             )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
@@ -2635,6 +2709,8 @@ class AdAgentStore:
             updated_at=str(data.get("updated_at") or ""),
             expires_at=data.get("expires_at"),
             status=str(data.get("status") or "active"),
+            memory_key=data.get("memory_key"),
+            superseded_by=data.get("superseded_by"),
             score=score,
         )
 
@@ -2647,17 +2723,52 @@ class AdAgentStore:
             conn.execute(
                 """INSERT OR REPLACE INTO memories
                 (memory_id, tenant_id, user_id, session_id, kind, content, source,
-                 tags, importance, confidence, created_at, updated_at, expires_at, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 tags, importance, confidence, created_at, updated_at, expires_at,
+                 status, memory_key, superseded_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     record.memory_id, record.tenant_id, record.user_id,
                     record.session_id, record.kind, record.content, record.source,
                     json.dumps(list(record.tags), ensure_ascii=False), record.importance,
                     record.confidence, record.created_at, record.updated_at,
                     record.expires_at, record.status,
+                    record.memory_key, record.superseded_by,
                 ),
             )
             conn.commit()
+
+    def find_active_memory(
+        self, memory_key: str, *, tenant_id: str, user_id: str,
+    ) -> Optional[MemoryRecord]:
+        """Find the current version of one scoped logical memory."""
+        with self._lock:
+            row = self._get_conn().execute(
+                """SELECT * FROM memories
+                   WHERE tenant_id = ? AND user_id = ? AND memory_key = ?
+                     AND status = 'active'
+                   ORDER BY updated_at DESC LIMIT 1""",
+                (str(tenant_id), str(user_id), str(memory_key)),
+            ).fetchone()
+            return self._memory_from_row(row) if row else None
+
+    def supersede_memory(
+        self, memory_id: str, superseded_by: str, *, tenant_id: str, user_id: str,
+    ) -> bool:
+        """Close an older logical version while retaining its audit history."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE memories
+                   SET status = 'superseded', superseded_by = ?, updated_at = ?
+                   WHERE memory_id = ? AND tenant_id = ? AND user_id = ?
+                     AND status = 'active'""",
+                (
+                    str(superseded_by), datetime.now(timezone.utc).isoformat(),
+                    str(memory_id), str(tenant_id), str(user_id),
+                ),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
 
     def search_memories(
         self, query: str, *, tenant_id: str, user_id: str,
@@ -2692,6 +2803,13 @@ class AdAgentStore:
                 terms.extend(term[index:index + 2] for index in range(len(term) - 1))
         phrase = str(query or "").strip().lower()
         ranked: list[tuple[float, MemoryRecord]] = []
+        half_life_days = {
+            "working": 2.0,
+            "episodic": 14.0,
+            "semantic": 45.0,
+            "procedural": 120.0,
+        }
+        now = datetime.now(timezone.utc)
         with self._lock:
             rows = self._get_conn().execute(query_sql, params).fetchall()
         for row in rows:
@@ -2701,7 +2819,7 @@ class AdAgentStore:
                     expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
                     if expiry.tzinfo is None:
                         expiry = expiry.replace(tzinfo=timezone.utc)
-                    if expiry <= datetime.now(timezone.utc):
+                    if expiry <= now:
                         continue
                 except (TypeError, ValueError, OverflowError):
                     # Invalid expiry is safer treated as expired than recalled.
@@ -2716,7 +2834,22 @@ class AdAgentStore:
                 score = 0.1
             if score <= 0:
                 continue
-            score = score + record.importance * 0.5 + record.confidence * 0.5
+            try:
+                updated_at = datetime.fromisoformat(
+                    str(record.updated_at).replace("Z", "+00:00")
+                )
+                if updated_at.tzinfo is None:
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+                age_days = max(0.0, (now - updated_at).total_seconds() / 86400.0)
+            except (TypeError, ValueError, OverflowError):
+                age_days = 3650.0
+            half_life = half_life_days.get(record.kind, 30.0)
+            recency = math.pow(0.5, age_days / half_life)
+            score = (
+                score * (0.7 + 0.3 * recency)
+                + record.importance * 0.5
+                + record.confidence * 0.5
+            )
             ranked.append((score, record))
         ranked.sort(key=lambda item: (-item[0], item[1].updated_at, item[1].memory_id))
         return [
@@ -2918,6 +3051,67 @@ class AdAgentStore:
                 ).fetchone()
             ) or record
 
+    def update_knowledge_document(
+        self, document_id: str, *, tenant_id: str, data: dict[str, Any],
+    ) -> Optional[KnowledgeDocumentRecord]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE knowledge_documents
+                   SET title = ?, content = ?, platform = ?, layer = ?,
+                       knowledge_type = ?, source = ?, source_ref = ?,
+                       version = ?, confidence = ?, tags = ?, updated_at = ?
+                   WHERE document_id = ? AND tenant_id = ? AND status = 'draft'""",
+                (
+                    data["title"], data["content"], data["platform"], data["layer"],
+                    data["knowledge_type"], data["source"], data["source_ref"],
+                    data["version"], data["confidence"],
+                    json.dumps(data["tags"], ensure_ascii=False), now,
+                    str(document_id), str(tenant_id),
+                ),
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._knowledge_row(
+                conn.execute(
+                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
+                    (str(document_id),),
+                ).fetchone()
+            )
+
+    def delete_knowledge_document(
+        self, document_id: str, *, tenant_id: str,
+    ) -> Optional[KnowledgeDocumentRecord]:
+        now = datetime.now().isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            existing = self._knowledge_row(conn.execute(
+                "SELECT * FROM knowledge_documents WHERE document_id = ? AND tenant_id = ?",
+                (str(document_id), str(tenant_id)),
+            ).fetchone())
+            if not existing:
+                return None
+            if existing.status == "published":
+                conn.execute(
+                    """UPDATE knowledge_documents
+                       SET status = 'deprecated', updated_at = ?
+                       WHERE document_id = ? AND tenant_id = ?""",
+                    (now, str(document_id), str(tenant_id)),
+                )
+                conn.commit()
+                return self._knowledge_row(conn.execute(
+                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
+                    (str(document_id),),
+                ).fetchone())
+            conn.execute(
+                "DELETE FROM knowledge_documents WHERE document_id = ? AND tenant_id = ?",
+                (str(document_id), str(tenant_id)),
+            )
+            conn.commit()
+            return existing
+
     def get_knowledge_document(
         self, document_id: str, *, tenant_id: Optional[str] = None,
     ) -> Optional[KnowledgeDocumentRecord]:
@@ -2994,6 +3188,288 @@ class AdAgentStore:
                     (str(document_id),),
                 ).fetchone()
             )
+
+    def _ensure_knowledge_search_index(self, conn: Any) -> bool:
+        if not isinstance(conn, sqlite3.Connection):
+            return False
+        try:
+            existing = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_search_fts'"
+            ).fetchone()
+            if existing:
+                columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(knowledge_search_fts)").fetchall()
+                }
+                if not {"category", "subcategory"}.issubset(columns):
+                    conn.execute("DROP TABLE knowledge_search_fts")
+            conn.execute(
+                """CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search_fts
+                   USING fts5(
+                       scope UNINDEXED,
+                       chunk_id UNINDEXED,
+                       document_id UNINDEXED,
+                       title,
+                       heading_path,
+                       tags,
+                       category,
+                       subcategory,
+                       content,
+                       platform UNINDEXED,
+                       knowledge_type UNINDEXED,
+                       status UNINDEXED,
+                       confidence UNINDEXED
+                   )"""
+            )
+        except sqlite3.OperationalError:
+            return False
+        return True
+
+    def rebuild_knowledge_search_index(
+        self, chunks: list[dict[str, Any]], *, scope: str,
+    ) -> bool:
+        normalized_scope = str(scope or "").strip()
+        if not normalized_scope:
+            return False
+        with self._lock:
+            conn = self._get_conn()
+            if not self._ensure_knowledge_search_index(conn):
+                return False
+            conn.execute(
+                "DELETE FROM knowledge_search_fts WHERE scope = ?",
+                (normalized_scope,),
+            )
+            rows = []
+            for chunk in chunks or []:
+                if not isinstance(chunk, dict):
+                    continue
+                rows.append(
+                    (
+                        normalized_scope,
+                        str(chunk.get("chunk_id") or ""),
+                        str(chunk.get("document_id") or ""),
+                        str(chunk.get("title") or ""),
+                        str(chunk.get("heading_path") or ""),
+                        str(chunk.get("tags") or ""),
+                        str(chunk.get("category") or ""),
+                        str(chunk.get("subcategory") or ""),
+                        str(chunk.get("content") or ""),
+                        str(chunk.get("platform") or "all"),
+                        str(chunk.get("knowledge_type") or "general"),
+                        str(chunk.get("status") or "published"),
+                        float(chunk.get("confidence") or 0.0),
+                    )
+                )
+            if rows:
+                conn.executemany(
+                    """INSERT INTO knowledge_search_fts
+                       (scope, chunk_id, document_id, title, heading_path,
+                        tags, category, subcategory, content, platform,
+                        knowledge_type, status, confidence)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rows,
+                )
+            conn.commit()
+        return True
+
+    def search_knowledge_search_index(
+        self, query: str, *, scopes: list[str], limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        safe_query = str(query or "").strip()
+        normalized_scopes = [str(scope).strip() for scope in scopes if str(scope).strip()]
+        if not safe_query or not normalized_scopes or limit <= 0:
+            return []
+        with self._lock:
+            conn = self._get_conn()
+            if not self._ensure_knowledge_search_index(conn):
+                return []
+            placeholders = ",".join("?" for _ in normalized_scopes)
+            rows = conn.execute(
+                f"""SELECT scope, chunk_id, document_id,
+                           bm25(knowledge_search_fts, 8.0, 5.0, 3.0, 3.0, 3.0, 1.0) AS rank
+                    FROM knowledge_search_fts
+                    WHERE knowledge_search_fts MATCH ?
+                      AND scope IN ({placeholders})
+                      AND status = 'published'
+                    ORDER BY rank ASC
+                    LIMIT ?""",
+                [safe_query, *normalized_scopes, max(1, min(int(limit), 500))],
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- Campaign creation templates ------------------------------------
+
+    @staticmethod
+    def _creation_template_row(row: Any) -> Optional[CreationTemplateRecord]:
+        return CreationTemplateRecord.from_row(dict(row)) if row else None
+
+    def create_creation_template(self, record: CreationTemplateRecord) -> CreationTemplateRecord:
+        data = record.to_dict()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """INSERT INTO creation_templates
+                       (template_id, tenant_id, user_id, name, description,
+                        provider, blueprint_id, blueprint_version, ad_format,
+                        scope_type, account_id, region, tags, template_values,
+                        status, is_default, usage_count, created_at, updated_at, last_used_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        data["template_id"], data["tenant_id"], data["user_id"],
+                        data["name"], data["description"], data["provider"],
+                        data["blueprint_id"], data["blueprint_version"], data["ad_format"],
+                        data["scope_type"], data["account_id"], data["region"],
+                        json.dumps(data["tags"], ensure_ascii=False),
+                        json.dumps(data["values"], ensure_ascii=False), data["status"],
+                        int(data["is_default"]), data["usage_count"], data["created_at"], data["updated_at"],
+                        data["last_used_at"],
+                    ),
+                )
+                if data["is_default"]:
+                    conn.execute(
+                        """UPDATE creation_templates SET is_default = 0
+                           WHERE tenant_id = ? AND user_id = ? AND provider = ?
+                             AND blueprint_id = ? AND scope_type = ?
+                             AND account_id = ? AND region = ? AND template_id != ?""",
+                        (
+                            data["tenant_id"], data["user_id"], data["provider"],
+                            data["blueprint_id"], data["scope_type"], data["account_id"],
+                            data["region"], data["template_id"],
+                        ),
+                    )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceConflictError(
+                    "creation template violates a persistence constraint"
+                ) from exc
+            conn.commit()
+            return self._creation_template_row(conn.execute(
+                "SELECT * FROM creation_templates WHERE template_id = ?",
+                (data["template_id"],),
+            ).fetchone()) or record
+
+    def get_creation_template(
+        self, template_id: str, *, tenant_id: str, user_id: str,
+    ) -> Optional[CreationTemplateRecord]:
+        with self._lock:
+            return self._creation_template_row(self._get_conn().execute(
+                """SELECT * FROM creation_templates
+                   WHERE template_id = ? AND tenant_id = ? AND user_id = ?""",
+                (str(template_id), str(tenant_id), str(user_id)),
+            ).fetchone())
+
+    def list_creation_templates(
+        self, tenant_id: str, user_id: str, *, provider: Optional[str] = None,
+        blueprint_id: Optional[str] = None, status: Optional[str] = None,
+        query: Optional[str] = None, limit: int = 100,
+    ) -> list[CreationTemplateRecord]:
+        bounded_limit = max(1, min(int(limit), 200))
+        clauses = ["tenant_id = ?", "user_id = ?"]
+        params: list[Any] = [str(tenant_id), str(user_id)]
+        if provider:
+            clauses.append("provider = ?")
+            params.append(str(provider))
+        if blueprint_id:
+            clauses.append("blueprint_id = ?")
+            params.append(str(blueprint_id))
+        if status:
+            clauses.append("status = ?")
+            params.append(str(status))
+        if query:
+            clauses.append("(name LIKE ? OR description LIKE ? OR tags LIKE ?)")
+            needle = f"%{str(query).strip()}%"
+            params.extend([needle, needle, needle])
+        params.append(bounded_limit)
+        with self._lock:
+            rows = self._get_conn().execute(
+                f"""SELECT * FROM creation_templates
+                    WHERE {' AND '.join(clauses)}
+                    ORDER BY updated_at DESC, name ASC LIMIT ?""",
+                params,
+            ).fetchall()
+            return [self._creation_template_row(row) for row in rows if row]
+
+    def update_creation_template(
+        self, template_id: str, *, tenant_id: str, user_id: str,
+        data: dict[str, Any],
+    ) -> Optional[CreationTemplateRecord]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE creation_templates
+                   SET name = ?, description = ?, scope_type = ?, account_id = ?,
+                       region = ?, tags = ?, template_values = ?, status = ?, is_default = ?,
+                       updated_at = ?
+                   WHERE template_id = ? AND tenant_id = ? AND user_id = ?""",
+                (
+                    data["name"], data["description"], data["scope_type"],
+                    data["account_id"], data["region"],
+                    json.dumps(data["tags"], ensure_ascii=False),
+                    json.dumps(data["values"], ensure_ascii=False), data["status"],
+                    int(data["is_default"]), now,
+                    str(template_id), str(tenant_id), str(user_id),
+                ),
+            )
+            if cursor.rowcount and data["is_default"]:
+                conn.execute(
+                    """UPDATE creation_templates SET is_default = 0
+                       WHERE tenant_id = ? AND user_id = ? AND provider = ?
+                         AND blueprint_id = ? AND scope_type = ?
+                         AND account_id = ? AND region = ? AND template_id != ?""",
+                    (
+                        str(tenant_id), str(user_id), data["provider"], data["blueprint_id"],
+                        data["scope_type"], data["account_id"], data["region"], str(template_id),
+                    ),
+                )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._creation_template_row(conn.execute(
+                "SELECT * FROM creation_templates WHERE template_id = ?",
+                (str(template_id),),
+            ).fetchone())
+
+    def delete_creation_template(
+        self, template_id: str, *, tenant_id: str, user_id: str,
+    ) -> Optional[CreationTemplateRecord]:
+        with self._lock:
+            conn = self._get_conn()
+            existing = self._creation_template_row(conn.execute(
+                """SELECT * FROM creation_templates
+                   WHERE template_id = ? AND tenant_id = ? AND user_id = ?""",
+                (str(template_id), str(tenant_id), str(user_id)),
+            ).fetchone())
+            if not existing:
+                return None
+            conn.execute(
+                """DELETE FROM creation_templates
+                   WHERE template_id = ? AND tenant_id = ? AND user_id = ?""",
+                (str(template_id), str(tenant_id), str(user_id)),
+            )
+            conn.commit()
+            return existing
+
+    def record_creation_template_usage(
+        self, template_id: str, *, tenant_id: str, user_id: str,
+    ) -> Optional[CreationTemplateRecord]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE creation_templates
+                   SET usage_count = usage_count + 1, last_used_at = ?, updated_at = ?
+                   WHERE template_id = ? AND tenant_id = ? AND user_id = ?
+                     AND status = 'active'""",
+                (now, now, str(template_id), str(tenant_id), str(user_id)),
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._creation_template_row(conn.execute(
+                "SELECT * FROM creation_templates WHERE template_id = ?",
+                (str(template_id),),
+            ).fetchone())
     
     # -- Tool Calls --
     

@@ -376,40 +376,6 @@ class CrossChannelAggregator:
                         values[metric] = value
                         available.add(metric)
                         break
-        # Meta returns conversion data as action arrays rather than a scalar
-        # ``conversions`` field. Only count well-defined conversion actions;
-        # do not treat every action (for example, link clicks) as a conversion.
-        if "conversions" not in values:
-            conversion_types = {
-                "purchase", "omni_purchase", "offsite_conversion",
-                "offsite_conversion.purchase", "lead", "complete_registration",
-            }
-            action_values = []
-            for action in data.get("actions", []) or []:
-                if not isinstance(action, dict):
-                    continue
-                action_type = str(action.get("action_type", "")).lower()
-                if action_type in conversion_types:
-                    value = _number(action.get("value"))
-                    if value is not None:
-                        action_values.append(value)
-            if action_values:
-                values["conversions"] = sum(action_values)
-                available.add("conversions")
-        if "revenue" not in values:
-            revenue_types = {"purchase", "omni_purchase", "offsite_conversion.purchase"}
-            revenue_values = []
-            for action in data.get("action_values", []) or []:
-                if not isinstance(action, dict):
-                    continue
-                action_type = str(action.get("action_type", "")).lower()
-                if action_type in revenue_types:
-                    value = _number(action.get("value"))
-                    if value is not None:
-                        revenue_values.append(value)
-            if revenue_values:
-                values["revenue"] = sum(revenue_values)
-                available.add("revenue")
         currency = data.get("currency") or data.get("currency_code")
         return MetricSnapshot(
             **values,

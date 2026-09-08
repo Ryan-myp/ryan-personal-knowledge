@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.13
 """skill-up Custom Engine adapter for the ad-agent runtime.
 
 The adapter intentionally evaluates the application runtime, not a second
