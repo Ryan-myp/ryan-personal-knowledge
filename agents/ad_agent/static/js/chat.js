@@ -50,6 +50,7 @@
             selectedTemplateId: '',
             templatePanelOpen: false,
             templateSaveAsNew: false,
+            mode: 'wizard',
         };
         const knowledgeState = { items: [], selectedKey: '', summary: '', summaryMode: 'lexical', managedItems: [], editingDocumentId: '' };
 
@@ -2251,10 +2252,20 @@
             return data;
         }
 
-        function openBlueprintManager(provider = null, selectorValue = null, blueprintId = null) {
+        function openBlueprintManager(provider = null, selectorValue = null, blueprintId = null, mode = 'wizard') {
+            blueprintState.mode = mode === 'templates' ? 'templates' : 'wizard';
             closeWorkspacePopovers();
             const overlay = document.getElementById('blueprintOverlay');
             if (!overlay) return;
+            const title = document.getElementById('blueprintConsoleTitle');
+            const subtitle = document.querySelector('.blueprint-console-subtitle');
+            if (blueprintState.mode === 'templates') {
+                if (title) title.textContent = '模板管理';
+                if (subtitle) subtitle.textContent = '管理已保存的创建参数模板；模板只负责复用参数，不替代广告创建向导。';
+            } else {
+                if (title) title.textContent = '广告创建向导';
+                if (subtitle) subtitle.textContent = '选择渠道与投放目标，按业务阶段完成参数；系统会实时校验联动关系，当前只生成草稿。';
+            }
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
             loadCreationBlueprints(blueprintId || null).then(() => {
@@ -2267,6 +2278,10 @@
                 );
                 if (item) selectBlueprint(item.id, selectorValue);
             });
+        }
+
+        function openCreationTemplateManager() {
+            openBlueprintManager(null, null, null, 'templates');
         }
 
         function closeBlueprintManager() {
@@ -3493,6 +3508,17 @@
                 blueprintState.tools = Array.isArray(tools.tools) ? tools.tools : [];
                 blueprintState.templates = Array.isArray(templates.templates) ? templates.templates : [];
                 renderBlueprintList();
+                if (blueprintState.mode === 'templates') {
+                    const selectedTemplate = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId)
+                        || blueprintState.templates[0];
+                    if (selectedTemplate) {
+                        selectCreationTemplate(selectedTemplate.template_id);
+                    } else {
+                        blueprintState.selected = null;
+                        renderBlueprintEditor();
+                    }
+                    return;
+                }
                 const target = selectId || blueprintState.selected?.id || blueprintState.items[0]?.id;
                 if (target) selectBlueprint(target);
             } catch (error) {
@@ -3514,7 +3540,17 @@
             toolbar.className = 'blueprint-list-toolbar';
             const toolbarTitle = document.createElement('div');
             toolbarTitle.className = 'blueprint-list-toolbar-title';
-            toolbarTitle.innerHTML = '<strong>创建工作台</strong><span>先选我的模板，也可以从系统蓝图开始</span>';
+            toolbarTitle.innerHTML = blueprintState.mode === 'templates'
+                ? '<strong>模板库</strong><span>只管理已保存模板，不重复展示系统蓝图</span>'
+                : '<strong>创建工作台</strong><span>先选我的模板，也可以从系统蓝图开始</span>';
+            if (blueprintState.mode === 'templates') {
+                const wizardButton = document.createElement('button');
+                wizardButton.type = 'button';
+                wizardButton.className = 'blueprint-list-open-wizard';
+                wizardButton.textContent = '去创建向导';
+                wizardButton.onclick = () => openBlueprintManager();
+                toolbarTitle.appendChild(wizardButton);
+            }
             const search = document.createElement('input');
             search.type = 'search';
             search.className = 'blueprint-list-search';
@@ -3556,7 +3592,7 @@
                     .filter(Boolean).join(' ').toLowerCase().includes(query);
             };
             const visibleTemplates = blueprintState.templates.filter(matches);
-            const visibleItems = blueprintState.items.filter(matches);
+            const visibleItems = blueprintState.mode === 'templates' ? [] : blueprintState.items.filter(matches);
             const renderSection = (title, subtitle, values, renderItem) => {
                 if (!values.length) return;
                 const section = document.createElement('section');
