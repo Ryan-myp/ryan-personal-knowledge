@@ -148,6 +148,80 @@
             label.textContent = text;
         }
 
+        function renderMonitoringToolTrend(timeline) {
+            const svg = document.getElementById('monitoringToolTrend');
+            const empty = document.getElementById('monitoringToolTrendEmpty');
+            if (!svg || !empty) return;
+            const points = Array.isArray(timeline) ? timeline : [];
+            const width = 720;
+            const height = 230;
+            const padding = { top: 14, right: 14, bottom: 28, left: 30 };
+            const plotWidth = width - padding.left - padding.right;
+            const plotHeight = height - padding.top - padding.bottom;
+            const maxValue = Math.max(1, ...points.flatMap(item => [Number(item.calls || 0), Number(item.failed || 0)]));
+            const xFor = index => padding.left + (points.length <= 1 ? plotWidth / 2 : index / (points.length - 1) * plotWidth);
+            const yFor = value => padding.top + plotHeight - Math.max(0, Number(value || 0)) / maxValue * plotHeight;
+            const callPoints = points.map((item, index) => `${xFor(index).toFixed(1)},${yFor(item.calls).toFixed(1)}`).join(' ');
+            const failedPoints = points.map((item, index) => `${xFor(index).toFixed(1)},${yFor(item.failed).toFixed(1)}`).join(' ');
+            const areaPath = points.length
+                ? `M ${padding.left},${padding.top + plotHeight} L ${callPoints.replace(/ /g, ' L ')} L ${padding.left + plotWidth},${padding.top + plotHeight} Z`
+                : '';
+            const yTicks = [0, maxValue / 2, maxValue];
+            const grid = yTicks.map(value => {
+                const y = yFor(value).toFixed(1);
+                const label = Number.isInteger(value) ? String(value) : value.toFixed(1);
+                return `<line class="monitoring-chart-grid" x1="${padding.left}" y1="${y}" x2="${padding.left + plotWidth}" y2="${y}"></line><text class="monitoring-chart-axis" x="${padding.left - 7}" y="${Number(y) + 3}" text-anchor="end">${label}</text>`;
+            }).join('');
+            const labels = points.map((item, index) => {
+                if (index !== 0 && index !== points.length - 1 && index % 2 !== 0) return '';
+                const label = String(item.label || '');
+                return label ? `<text class="monitoring-chart-axis" x="${xFor(index).toFixed(1)}" y="${height - 7}" text-anchor="middle">${escapeHtml(label)}</text>` : '';
+            }).join('');
+            const dots = (key, className) => points.map((item, index) => `<circle class="monitoring-chart-point ${className}" cx="${xFor(index).toFixed(1)}" cy="${yFor(item[key]).toFixed(1)}" r="3"></circle>`).join('');
+            svg.innerHTML = `<defs><linearGradient id="monitoringTrendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#58e6d0" stop-opacity=".24"></stop><stop offset="100%" stop-color="#58e6d0" stop-opacity="0"></stop></linearGradient></defs>${grid}<path class="monitoring-chart-area" d="${areaPath}"></path><polyline class="monitoring-chart-line calls" points="${callPoints}"></polyline><polyline class="monitoring-chart-line failed" points="${failedPoints}"></polyline>${dots('calls', 'calls')}${dots('failed', 'failed')}${labels}`;
+            const totalCalls = points.reduce((sum, item) => sum + Number(item.calls || 0), 0);
+            const totalFailed = points.reduce((sum, item) => sum + Number(item.failed || 0), 0);
+            const peak = points.reduce((highest, item) => Math.max(highest, Number(item.calls || 0)), 0);
+            empty.hidden = totalCalls > 0;
+            document.getElementById('monitoringTrendCalls').textContent = monitoringNumber(totalCalls);
+            document.getElementById('monitoringTrendFailed').textContent = monitoringNumber(totalFailed);
+            document.getElementById('monitoringTrendPeak').textContent = monitoringNumber(peak);
+        }
+
+        function renderMonitoringToolDonut(tools) {
+            const donut = document.getElementById('monitoringToolDonut');
+            const totalLabel = document.getElementById('monitoringToolDonutTotal');
+            const legend = document.getElementById('monitoringToolDonutLegend');
+            if (!donut || !totalLabel || !legend) return;
+            const total = Math.max(0, Number(tools.total || 0));
+            const failed = Math.min(total, Math.max(0, Number(tools.failed || 0)));
+            const succeeded = total - failed;
+            totalLabel.textContent = monitoringNumber(total);
+            if (!total) {
+                donut.style.background = '#162e40';
+                legend.innerHTML = '<div class="monitoring-empty">最近窗口暂无 Tool 调用</div>';
+                return;
+            }
+            const successPercent = succeeded / total * 100;
+            donut.style.background = `conic-gradient(#58e6d0 0 ${successPercent}%, #ff817b ${successPercent}% 100%)`;
+            legend.innerHTML = [
+                ['成功', succeeded, '#58e6d0'],
+                ['失败', failed, '#ff817b'],
+            ].map(([label, value, color]) => `<div class="monitoring-donut-legend-item" style="--legend-color:${color}"><i></i><span>${label}</span><strong>${monitoringNumber(value)}</strong><small>${Math.round(Number(value) / total * 100)}% · 最近 1 小时</small></div>`).join('');
+        }
+
+        function monitoringToolTimeline(tools) {
+            if (Array.isArray(tools.timeline) && tools.timeline.length) return tools.timeline;
+            const total = Math.max(0, Number(tools.total || 0));
+            if (!total) return [];
+            const failed = Math.min(total, Math.max(0, Number(tools.failed || 0)));
+            return Array.from({length: 12}, (_, index) => ({
+                label: index === 11 ? '现在' : '',
+                calls: index === 11 ? total : 0,
+                failed: index === 11 ? failed : 0,
+            }));
+        }
+
         function renderMonitoring(snapshot) {
             const tasks = snapshot.tasks || {};
             const runs = snapshot.runs || {};
@@ -172,6 +246,8 @@
             document.getElementById('monitoringRecoveryHint').textContent = `Task ${monitoringNumber(taskStatuses.recovery_required || 0)} · Run ${monitoringNumber(runs.by_status?.recovery_required || 0)} · Workflow ${monitoringNumber(workflows.by_status?.recovery_required || 0)}`;
             document.getElementById('monitoringToolSuccess').textContent = successRate || '—';
             document.getElementById('monitoringToolHint').textContent = `${monitoringNumber(tools.total || 0)} 次调用 · 平均 ${tools.avg_latency_ms == null ? '—' : `${Math.round(tools.avg_latency_ms)} ms`}`;
+            renderMonitoringToolTrend(monitoringToolTimeline(tools));
+            renderMonitoringToolDonut(tools);
 
             const counts = Object.entries(taskStatuses).sort((a, b) => Number(b[1]) - Number(a[1]));
             const maxCount = Math.max(1, ...counts.map(([, value]) => Number(value)));

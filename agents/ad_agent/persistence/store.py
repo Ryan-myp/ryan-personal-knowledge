@@ -731,6 +731,19 @@ class AdAgentStore:
         except (TypeError, ValueError, OverflowError):
             return None
 
+    @staticmethod
+    def _monitoring_timestamp(value: Any) -> Optional[datetime]:
+        """Parse a stored timestamp into the local naive clock used by charts."""
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                return parsed.astimezone().replace(tzinfo=None)
+            return parsed
+        except (TypeError, ValueError, OverflowError):
+            return None
+
     def get_monitoring_snapshot(
         self, *, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
         stale_after_seconds: float = 300.0,
@@ -900,6 +913,37 @@ class AdAgentStore:
                 duration for row in tool_rows
                 if (duration := self._monitoring_duration_ms(row["started_at"], row["ended_at"])) is not None
             ]
+            timeline_bucket_count = 12
+            timeline_bucket_seconds = tool_window / timeline_bucket_count
+            timeline_start = now - timedelta(seconds=tool_window)
+            tool_timeline = [
+                {
+                    "label": (timeline_start + timedelta(seconds=index * timeline_bucket_seconds)).strftime("%H:%M"),
+                    "calls": 0,
+                    "failed": 0,
+                    "avg_latency_ms": None,
+                }
+                for index in range(timeline_bucket_count)
+            ]
+            timeline_durations: list[list[float]] = [[] for _ in range(timeline_bucket_count)]
+            for row in tool_rows:
+                started_at = self._monitoring_timestamp(row["started_at"])
+                if started_at is None:
+                    continue
+                offset_seconds = (started_at - timeline_start).total_seconds()
+                if offset_seconds < 0 or offset_seconds >= tool_window:
+                    continue
+                bucket = min(timeline_bucket_count - 1, int(offset_seconds / timeline_bucket_seconds))
+                tool_timeline[bucket]["calls"] += 1
+                tool_timeline[bucket]["failed"] += int(not bool(row["success"]))
+                duration = self._monitoring_duration_ms(row["started_at"], row["ended_at"])
+                if duration is not None:
+                    timeline_durations[bucket].append(duration)
+            for index, durations_for_bucket in enumerate(timeline_durations):
+                if durations_for_bucket:
+                    tool_timeline[index]["avg_latency_ms"] = round(
+                        sum(durations_for_bucket) / len(durations_for_bucket), 2,
+                    )
             by_tool: dict[str, dict[str, Any]] = {}
             for row in tool_rows:
                 name = str(row["tool_name"] or "unknown")
@@ -952,6 +996,8 @@ class AdAgentStore:
                 "failed": tool_failed,
                 "success_rate": round((tool_total - tool_failed) / tool_total, 4) if tool_total else None,
                 "avg_latency_ms": round(sum(durations) / len(durations), 2) if durations else None,
+                "timeline_interval_seconds": timeline_bucket_seconds,
+                "timeline": tool_timeline,
                 "top_tools": top_tools,
             },
             "alerts": {

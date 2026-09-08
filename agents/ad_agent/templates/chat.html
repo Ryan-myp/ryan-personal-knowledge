@@ -181,6 +181,21 @@
                     <article class="monitoring-stat-card accent-red"><span>需恢复</span><strong id="monitoringRecoveryCount">—</strong><small id="monitoringRecoveryHint">Task · Run · Workflow</small></article>
                     <article class="monitoring-stat-card accent-violet"><span>Tool 成功率</span><strong id="monitoringToolSuccess">—</strong><small id="monitoringToolHint">最近 1 小时</small></article>
                 </div>
+                <div class="monitoring-grid monitoring-analytics-grid">
+                    <section class="monitoring-panel monitoring-trend-panel">
+                        <div class="monitoring-panel-heading"><div><h2>Tool 调用趋势</h2><p>最近 1 小时 · 每 5 分钟聚合一次，观察调用量和失败波动</p></div><span class="monitoring-panel-mark">LIVE</span></div>
+                        <div class="monitoring-chart-legend"><span><i class="monitoring-legend-dot calls"></i>调用次数</span><span><i class="monitoring-legend-dot failed"></i>失败次数</span></div>
+                        <div class="monitoring-trend-chart"><svg id="monitoringToolTrend" viewBox="0 0 720 230" role="img" aria-label="Tool 调用趋势图"></svg><div class="monitoring-chart-empty" id="monitoringToolTrendEmpty">最近窗口暂无 Tool 调用</div></div>
+                        <div class="monitoring-trend-summary"><span><small>窗口调用</small><strong id="monitoringTrendCalls">—</strong></span><span><small>窗口失败</small><strong id="monitoringTrendFailed">—</strong></span><span><small>单桶峰值</small><strong id="monitoringTrendPeak">—</strong></span></div>
+                    </section>
+                    <section class="monitoring-panel monitoring-distribution-panel">
+                        <div class="monitoring-panel-heading"><div><h2>Tool 结果分布</h2><p>成功与失败比例；颜色和顶部成功率卡片保持一致</p></div><span class="monitoring-panel-mark">SLA</span></div>
+                        <div class="monitoring-donut-layout">
+                            <div class="monitoring-donut" id="monitoringToolDonut" role="img" aria-label="Tool 成功失败比例"><div class="monitoring-donut-center"><strong id="monitoringToolDonutTotal">—</strong><span>调用</span></div></div>
+                            <div class="monitoring-donut-legend" id="monitoringToolDonutLegend"><div class="monitoring-empty">等待数据…</div></div>
+                        </div>
+                    </section>
+                </div>
                 <div class="monitoring-grid monitoring-grid-main">
                     <section class="monitoring-panel monitoring-queue-panel">
                         <div class="monitoring-panel-heading"><div><h2>任务流转</h2><p>Durable queue 状态与本机线程池占用</p></div><span class="monitoring-panel-mark">01</span></div>

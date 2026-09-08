@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from agents.ad_agent import AdAgentStore, AgentRuntime
 from agents.ad_agent import api_server
-from agents.ad_agent.persistence.models import ExecutionRunRecord, TaskRecord
+from agents.ad_agent.persistence.models import ExecutionRunRecord, TaskRecord, ToolCallRecord
 
 
 def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():
@@ -26,6 +26,14 @@ def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():
         task_id="recovery-hidden", tenant_id="tenant-b", user_id="user-b",
         kind="agent.turn", status="recovery_required", created_at=old, updated_at=old,
     ))
+    store.create_session("session-a", "user-a")
+    tool_started = (now - timedelta(minutes=2)).isoformat()
+    tool_ended = (now - timedelta(minutes=1, seconds=59)).isoformat()
+    store.record_tool_call(ToolCallRecord(
+        id="tool-visible", session_id="session-a", turn_id="turn-a",
+        tool_name="meta_list_accounts", platform="meta", input_data={},
+        output_data={}, started_at=tool_started, ended_at=tool_ended,
+    ))
     store.create_execution_run(ExecutionRunRecord(
         run_id="run-visible", session_id="session-a", turn_id="turn-a",
         user_id="user-a", tenant_id="tenant-a", status="recovery_required",
@@ -43,6 +51,10 @@ def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():
     assert snapshot["runs"]["by_status"]["recovery_required"] == 1
     assert snapshot["alerts"]["recovery_required"] == 1
     assert snapshot["status"] == "critical"
+    assert snapshot["tools"]["total"] == 1
+    assert len(snapshot["tools"]["timeline"]) == 12
+    assert sum(item["calls"] for item in snapshot["tools"]["timeline"]) == 1
+    assert any(item["avg_latency_ms"] is not None for item in snapshot["tools"]["timeline"])
 
     unscoped = store.get_monitoring_snapshot()
     assert unscoped["tasks"]["by_status"]["recovery_required"] == 1
