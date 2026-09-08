@@ -576,6 +576,236 @@ class AgentRuntime:
         """Resolve an optional domain feature through its generic contract."""
         return feature_for_intent(self.features, intent)
 
+    def get_schedule_draft(self, session_id: str) -> Optional[dict[str, Any]]:
+        """Return the pending schedule draft restored for this session."""
+        session = self._sessions.get(str(session_id or ""))
+        if not session:
+            return None
+        draft = session.ctx.metadata.get("schedule_draft")
+        return copy.deepcopy(draft) if isinstance(draft, dict) else None
+
+    def set_schedule_draft(
+        self, session_id: str, draft: Optional[Mapping[str, Any]],
+    ) -> None:
+        """Keep a bounded, redacted schedule draft in durable session metadata."""
+        session = self._sessions.get(str(session_id or ""))
+        if not session:
+            return
+        if draft is None:
+            session.ctx.metadata.pop("schedule_draft", None)
+            return
+        safe = self._redact_for_persistence(dict(draft))
+        serialized = json.dumps(safe, ensure_ascii=False, default=str)
+        if len(serialized.encode("utf-8")) > 32_000:
+            raise ValueError("scheduled task draft exceeds persistence limit")
+        session.ctx.metadata["schedule_draft"] = safe
+
+    def preflight_scheduled_prompt(
+        self, prompt: str, *, session_id: str,
+        platforms: Optional[list[str]] = None,
+        account_id: Optional[str] = None,
+        platform_params: Optional[dict[str, Any]] = None,
+        permissions: Optional[set[str] | frozenset[str]] = None,
+        account_scope: Optional[Mapping[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Check a scheduled instruction against the live Tool Registry.
+
+        This is metadata-only: it parses and routes a normal Agent request but
+        never calls a Tool or Provider. The scheduled turn still repeats this
+        check at execution time because Skills, schemas and permissions may
+        change between creation and the next occurrence.
+        """
+        text = str(prompt or "").strip()
+        if not text:
+            return {"status": "needs_input", "missing": ["instruction"], "reason": "请补充到期后要执行的具体指令。"}
+        session = self._sessions.get(str(session_id or ""))
+        if session is None:
+            return {"status": "needs_input", "missing": ["session"], "reason": "当前会话上下文尚未准备好，无法完成能力预检。"}
+        try:
+            candidate = self.intent_parser.parse(text, session.ctx)
+        except Exception as exc:
+            logger.info("scheduled prompt preflight parse failed", exc_info=True)
+            return {
+                "status": "unsupported", "missing": [],
+                "reason": "无法识别定时任务到期后的具体业务动作，请说明查询、分析、创建或其他动作。",
+                "parse_error": type(exc).__name__,
+            }
+        supplied_platforms = [
+            str(item).strip() for item in (platforms or []) if str(item).strip()
+        ]
+        if supplied_platforms:
+            candidate.platforms = list(dict.fromkeys(supplied_platforms))
+        if platform_params:
+            merged_params = dict(getattr(candidate, "platform_params", {}) or {})
+            for platform, values in platform_params.items():
+                if isinstance(values, dict):
+                    merged = dict(merged_params.get(platform, {}) or {})
+                    merged.update(values)
+                    merged_params[str(platform)] = merged
+            candidate.platform_params = merged_params
+        if str(getattr(candidate, "intent_type", "") or "") in {
+            "chat", "schedule_create", "schedule_list", "schedule_pause",
+            "schedule_resume", "schedule_delete", "schedule_run_now",
+        }:
+            return {
+                "status": "needs_input", "missing": ["action"],
+                "reason": "请明确到期后要执行的业务动作，例如查询 Campaign performance 或创建广告系列。",
+            }
+        if not candidate.platforms:
+            return {
+                "status": "needs_input", "missing": ["platform"],
+                "reason": "请明确执行渠道，例如 Meta、Google Ads、TikTok、DV360 或跨渠道。",
+                "intent_type": candidate.intent_type,
+            }
+        plan = self.intent_router.route(candidate, self.registry)
+        if not plan:
+            return {
+                "status": "unsupported", "missing": [],
+                "reason": "当前已注册的 Tool/Capability 没有匹配该动作和渠道的执行能力。",
+                "intent_type": candidate.intent_type,
+                "platforms": list(candidate.platforms),
+            }
+        account_values = []
+        if account_id not in (None, ""):
+            account_values.append(str(account_id))
+        for values in (getattr(candidate, "platform_params", {}) or {}).values():
+            if not isinstance(values, dict):
+                continue
+            for field_name in ("account_id", "advertiser_id", "customer_id"):
+                if values.get(field_name) not in (None, ""):
+                    account_values.append(str(values[field_name]))
+        account_values = list(dict.fromkeys(account_values))
+        if len(account_values) > 1:
+            return {
+                "status": "needs_input", "missing": ["account"],
+                "reason": "请求中出现多个不同广告账户，请明确每个渠道使用的账户。",
+                "intent_type": candidate.intent_type,
+                "platforms": list(plan),
+                "account_candidates": account_values[:10],
+            }
+        if not account_values:
+            return {
+                "status": "needs_input", "missing": ["account"],
+                "reason": "请明确要使用的广告账户，并确保当前身份有该账户权限。",
+                "intent_type": candidate.intent_type,
+                "platforms": list(plan),
+            }
+        matched_tools = [
+            definition for definitions in plan.values() for definition in definitions
+        ]
+        permission_errors = []
+        for definition in matched_tools:
+            error = self._check_tool_permissions(definition, permissions)
+            if error and error not in permission_errors:
+                permission_errors.append(error)
+        if permission_errors:
+            return {
+                "status": "unsupported", "missing": [],
+                "reason": "；".join(permission_errors),
+                "intent_type": candidate.intent_type,
+                "platforms": list(plan),
+            }
+        write_tools = [definition for definition in matched_tools if definition.is_write_tool]
+        account_errors = []
+        if account_scope is not None or self.enforce_account_scope:
+            for platform in plan:
+                platform_account = account_values[0]
+                allowed, account_error = self._validate_account_with_principal(
+                    platform, platform_account, bool(write_tools), account_scope,
+                )
+                if not allowed and account_error not in account_errors:
+                    account_errors.append(account_error)
+        if account_errors:
+            return {
+                "status": "unsupported", "missing": [],
+                "reason": "；".join(account_errors),
+                "intent_type": candidate.intent_type,
+                "platforms": list(plan),
+            }
+        # A matched intent is not enough to declare a future run executable:
+        # the selected Tool contract may still require resource IDs or other
+        # structured fields. Check only the declarative required contract here;
+        # no lookup or Provider call is allowed during schedule creation.
+        platform_params_by_canonical: dict[str, dict[str, Any]] = {}
+        for platform_name, values in (getattr(candidate, "platform_params", {}) or {}).items():
+            if not isinstance(values, dict):
+                continue
+            canonical = self._canonical_platform(str(platform_name))
+            current = platform_params_by_canonical.setdefault(canonical, {})
+            current.update(values)
+        missing_parameters: dict[str, list[str]] = {}
+        ready_tools: list[Any] = []
+        for platform, definitions in plan.items():
+            canonical = self._canonical_platform(str(platform))
+            supplied = dict(platform_params_by_canonical.get(canonical, {}))
+            candidates_ready = False
+            platform_missing: set[str] = set()
+            for definition in definitions:
+                schema = getattr(definition, "input_schema", None)
+                properties = getattr(schema, "properties", {}) if schema else {}
+                properties = properties if isinstance(properties, Mapping) else {}
+                candidate_input = {
+                    key: value for key, value in supplied.items() if key in properties
+                }
+                for field_name in ("account_id", "advertiser_id", "customer_id"):
+                    if field_name in properties and account_values:
+                        candidate_input.setdefault(field_name, account_values[0])
+                required = [
+                    str(field_name) for field_name in (getattr(schema, "required", []) or [])
+                ]
+                required.extend(
+                    str(field_name)
+                    for field_name in (getattr(schema, "provider_required", []) or [])
+                    if str(field_name) not in required
+                )
+                missing = {
+                    field_name for field_name in required
+                    if candidate_input.get(field_name) in (None, "", {}, [])
+                }
+                for alternatives in (
+                    (getattr(schema, "provider_any_of", []) or [])
+                    if schema else ()
+                ):
+                    if not any(candidate_input.get(str(field_name)) not in (None, "", {}, []) for field_name in alternatives):
+                        missing.add("one_of:" + "|".join(str(field_name) for field_name in alternatives))
+                if not missing:
+                    candidates_ready = True
+                    ready_tools.append(definition)
+                else:
+                    platform_missing.update(missing)
+            if not candidates_ready and platform_missing:
+                missing_parameters[canonical] = sorted(platform_missing)
+        if missing_parameters:
+            formatted = [
+                f"{platform}: {', '.join(fields)}"
+                for platform, fields in sorted(missing_parameters.items())
+            ]
+            return {
+                "status": "needs_input", "missing": [
+                    "parameter:" + field
+                    for fields in missing_parameters.values()
+                    for field in fields
+                ],
+                "reason": "匹配的 Tool 还缺少必填参数：" + "；".join(formatted),
+                "intent_type": candidate.intent_type,
+                "platforms": list(plan),
+                "missing_parameters": missing_parameters,
+            }
+        if ready_tools:
+            matched_tools = ready_tools
+            write_tools = [definition for definition in matched_tools if definition.is_write_tool]
+        return {
+            "status": "ready",
+            "intent_type": candidate.intent_type,
+            "platforms": list(plan),
+            "tool_names": [str(definition.name) for definition in matched_tools],
+            "effects": ["write" if write_tools else "read"],
+            "write_tools": [str(definition.name) for definition in write_tools],
+            "account_id": account_values[0],
+            "execution_mode": "dry_run",
+            "reason": "已匹配当前 Registry 的 Tool/Capability；到期执行仍会重新校验。",
+        }
+
     def _refresh_parser_catalog(self) -> None:
         """Synchronize parser discovery data with the active Tool registry."""
         refresh = getattr(self.intent_parser, "refresh_tool_catalog", None)
@@ -3038,6 +3268,9 @@ class AgentRuntime:
             "message_count": len(session.messages),
             "messages": self._redact_for_persistence(session.messages[-20:]),
         }
+        schedule_draft = session.ctx.metadata.get("schedule_draft")
+        if isinstance(schedule_draft, dict):
+            metadata["schedule_draft"] = self._redact_for_persistence(schedule_draft)
         ui_by_turn = session.ctx.metadata.get("conversation_ui", {})
         ui_by_turn = dict(ui_by_turn) if isinstance(ui_by_turn, dict) else {}
         if isinstance(ui, Mapping) and ui:
@@ -3863,6 +4096,19 @@ class AgentRuntime:
                 "confirmation_payload": None,
                 "policy_errors": [error],
             }
+        # A control Feature may own a durable conversational draft.  Let the
+        # feature adopt a short follow-up such as “Google Ads” or “确认创建”
+        # before normal routing, without teaching Runtime any schedule fields.
+        for pending_feature in self.features:
+            adopt_pending = getattr(pending_feature, "adopt_pending_intent", None)
+            if not callable(adopt_pending):
+                continue
+            try:
+                adopted = adopt_pending(self, intent, session_id=session_id)
+                if adopted is not None:
+                    intent = adopted
+            except Exception:
+                logger.debug("pending feature intent adoption failed", exc_info=True)
         # Runtime control-plane Features (currently scheduling) are handled
         # through the same parsed-intent boundary but do not enter provider
         # Tool routing. Their eventual work is submitted back as agent.turn.
@@ -5931,6 +6177,9 @@ class AgentRuntime:
             stored_ui = persisted_metadata.get("conversation_ui")
             if isinstance(stored_ui, dict):
                 ctx.metadata["conversation_ui"] = stored_ui
+            stored_schedule_draft = persisted_metadata.get("schedule_draft")
+            if isinstance(stored_schedule_draft, dict):
+                ctx.metadata["schedule_draft"] = stored_schedule_draft
             session.messages = persisted_metadata.get("messages", [])[-20:]
             ctx.messages = list(session.messages)
             if self._session_manager and persisted:

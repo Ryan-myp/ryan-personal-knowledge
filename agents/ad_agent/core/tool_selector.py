@@ -192,6 +192,13 @@ class DynamicToolSelector:
         )
         if knowledge:
             selection.expert_knowledge = self._format_knowledge(knowledge)
+        scheduling_context = self._scheduling_skill_context(
+            user_input, intent_type=intent_type
+        )
+        if scheduling_context:
+            selection.expert_knowledge = "\n\n".join(
+                part for part in (selection.expert_knowledge, scheduling_context) if part
+            )[:6000]
         managed_context = self._managed_skill_context(user_input, tenant_id=tenant_id)
         if managed_context:
             selection.expert_knowledge = "\n\n".join(
@@ -203,6 +210,52 @@ class DynamicToolSelector:
             "platforms": selection.platform,
             "knowledge": knowledge,
         }
+
+    def _scheduling_skill_context(
+        self, user_input: str, *, intent_type: Optional[str] = None,
+        max_chars: int = 3600,
+    ) -> str:
+        """Inject the built-in scheduling SOP as advisory parser context.
+
+        Scheduling is a Runtime control feature, not a provider platform and
+        therefore has no executable Tool definitions.  It still needs its
+        Skill guidance before the first intent parse; selecting it through the
+        normal provider-tool path would incorrectly make it look executable.
+        """
+        text = str(user_input or "").lower()
+        schedule_markers = (
+            "定时任务", "定时执行", "定期执行", "每小时", "每天", "每日",
+            "每周", "每月", "cron", "schedule",
+        )
+        if not str(intent_type or "").startswith("schedule_") and not any(
+            marker in text for marker in schedule_markers
+        ):
+            return ""
+        loaded = getattr(self.skill_loader, "list_all", lambda: {})()
+        sections: list[str] = []
+        for skill in sorted(loaded.values(), key=lambda item: str(getattr(item, "name", ""))):
+            platform = str(getattr(skill, "platform", "") or "").strip().lower()
+            name = str(getattr(skill, "name", "") or "").strip().lower()
+            if platform != "scheduling" and "schedule" not in name:
+                continue
+            markdown = str(getattr(skill, "raw_markdown", "") or "").strip()
+            if not markdown:
+                continue
+            excerpt = markdown[:max_chars]
+            references = getattr(skill, "reference_documents", {}) or {}
+            if isinstance(references, dict):
+                for path, content in sorted(references.items()):
+                    excerpt += f"\n\n[{path}]\n{str(content)[:700]}"
+                    if len(excerpt) >= max_chars:
+                        break
+            sections.append(
+                "[built-in scheduling skill]\n"
+                "以下内容仅用于定时任务理解和澄清，不会新增 Tool、权限或账户范围：\n"
+                + excerpt[:max_chars]
+            )
+            if sections:
+                break
+        return "\n\n".join(sections)[:max_chars]
 
     def _managed_skill_context(
         self,
