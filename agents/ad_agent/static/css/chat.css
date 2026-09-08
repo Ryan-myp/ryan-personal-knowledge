@@ -3200,7 +3200,11 @@
         .system-ops-wrap { position: relative; }
         .system-ops-trigger { min-width: 92px; }
         .system-ops-icon { color: #58e6d0; font-size: 14px; line-height: 1; }
-        .system-ops-chevron { margin-left: 1px; color: #668797; font-size: 14px; line-height: 1; transform: translateY(-1px); }
+        .system-ops-chevron { position: relative; width: 11px; height: 7px; margin: 0 0 0 3px; color: #668797; transform: translateY(-1px); transition: color .16s ease, transform .16s ease; }
+        .system-ops-chevron::before, .system-ops-chevron::after { position: absolute; top: 3px; width: 7px; height: 1.5px; border-radius: 999px; background: currentColor; content: ''; }
+        .system-ops-chevron::before { left: 0; transform: rotate(42deg); transform-origin: left center; }
+        .system-ops-chevron::after { right: 0; transform: rotate(-42deg); transform-origin: right center; }
+        .system-ops-trigger.active .system-ops-chevron { color: #58e6d0; transform: translateY(1px) rotate(180deg); }
         .system-ops-menu { position: absolute; top: calc(100% + 11px); right: 0; z-index: 1000; display: none; width: 286px; padding: 8px; border: 1px solid #2b5065; border-radius: 12px; background: #0b1a29; box-shadow: 0 20px 54px rgba(0,0,0,.35); }
         .system-ops-menu.active { display: block; animation: opsMenuIn .16s ease both; }
         .system-ops-menu-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 9px 10px; border-bottom: 1px solid #203b4d; }
