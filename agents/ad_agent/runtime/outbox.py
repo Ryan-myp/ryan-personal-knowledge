@@ -8,10 +8,13 @@ this module is the durable hand-off for a later SSE/Webhook/metrics sink.
 from __future__ import annotations
 
 import threading
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from ..persistence.models import OutboxEvent
+
+logger = logging.getLogger(__name__)
 
 
 class OutboxPublisher:
@@ -88,5 +91,17 @@ class OutboxConsumer:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self.drain_once()
+            try:
+                self.drain_once()
+            except Exception as exc:
+                # Delivery failures are handled per event in ``drain_once``.
+                # A backend outage/close can still fail the claim itself; keep
+                # the daemon alive and leave pending rows durable for retry.
+                logger.warning(
+                    "Outbox poll failed; retrying: %s",
+                    type(exc).__name__,
+                )
+                if self._stop.wait(min(max(self.poll_interval * 4, 0.5), 5.0)):
+                    break
+                continue
             self._stop.wait(self.poll_interval)

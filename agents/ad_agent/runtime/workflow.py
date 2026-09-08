@@ -12,8 +12,9 @@ from ..core.execution_plan import ExecutionPlan
 class WorkflowCoordinator:
     """Persist generic plan checkpoints and workflow state transitions."""
 
-    def __init__(self, services: RuntimeServices):
+    def __init__(self, services: RuntimeServices, outbox: Any = None):
         self.services = services
+        self.outbox = outbox
 
     def start(
         self,
@@ -33,24 +34,36 @@ class WorkflowCoordinator:
         ):
             return None
         workflow_id = str(uuid.uuid4())
+        workflow_metadata = {
+            "platforms": list(intent.platforms),
+            "dry_run": self.services.is_dry_run(),
+            "execution_plan": (
+                execution_plan.to_dict()
+                if execution_plan is not None else None
+            ),
+            "compensation_policy": "manual_review_required",
+            "replay_policy": "explicit_operator_confirmation",
+            "raw_input": self.services.redact(intent.raw_input),
+        }
         store.create_workflow(
             workflow_id,
             session.session_id,
             intent.intent_type,
             self.services.execution_mode,
             status="running",
-            metadata={
-                "platforms": list(intent.platforms),
-                "dry_run": self.services.is_dry_run(),
-                "execution_plan": (
-                    execution_plan.to_dict()
-                    if execution_plan is not None else None
-                ),
-                "compensation_policy": "manual_review_required",
-                "replay_policy": "explicit_operator_confirmation",
-                "raw_input": self.services.redact(intent.raw_input),
-            },
+            metadata=workflow_metadata,
+            emit_outbox=self.outbox is None,
         )
+        if self.outbox is not None:
+            self.outbox.publish(
+                workflow_id,
+                "workflow.created",
+                {
+                    "workflow_id": workflow_id,
+                    "status": "running",
+                    "metadata": workflow_metadata,
+                },
+            )
         store.heartbeat_workflow(
             workflow_id,
             self.services.workflow_lease_owner(),
@@ -326,16 +339,28 @@ class WorkflowCoordinator:
                 "planned" if self.services.is_dry_run() else "succeeded"
             )
             compensation_required = False
+        workflow_metadata = {
+            "write_item_count": len(item_sequences),
+            "successful_items": len(successful_sequences),
+            "failed_items": len(failed_sequences),
+            "retriable_items": retriable_sequences,
+            "planning_error_count": len(planning_errors),
+            "compensation_required": compensation_required,
+            "compensation_policy": "manual_review_required",
+        }
         store.update_workflow(
             workflow_id,
             status,
-            {
-                "write_item_count": len(item_sequences),
-                "successful_items": len(successful_sequences),
-                "failed_items": len(failed_sequences),
-                "retriable_items": retriable_sequences,
-                "planning_error_count": len(planning_errors),
-                "compensation_required": compensation_required,
-                "compensation_policy": "manual_review_required",
-            },
+            workflow_metadata,
+            emit_outbox=self.outbox is None,
         )
+        if self.outbox is not None:
+            self.outbox.publish(
+                workflow_id,
+                "workflow.updated",
+                {
+                    "workflow_id": workflow_id,
+                    "status": status,
+                    "metadata": workflow_metadata,
+                },
+            )

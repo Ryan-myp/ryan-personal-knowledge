@@ -10,7 +10,10 @@ from typing import Any, Optional
 from datetime import datetime
 
 from .interfaces import PersistenceBackend
-from .models import ConversationMessageRecord, ToolCallRecord, CampaignRecord
+from .models import (
+    ConversationMessageRecord, ToolCallRecord, CampaignRecord,
+    ExecutionRunRecord,
+)
 from ..core.platform import normalize_platform
 from ..core.memory import MemoryManager, MemoryRecord
 
@@ -110,6 +113,44 @@ class SessionManager:
     def get_session_history(self, session_id: str, limit: int = 50) -> list:
         """获取会话历史（工具调用 + 结果）"""
         return self.store.list_tool_calls(session_id, limit=limit)
+
+    # -- Durable Agent run/event replay ---------------------------------
+
+    def create_execution_run(self, record: ExecutionRunRecord) -> ExecutionRunRecord:
+        return self.store.create_execution_run(record)
+
+    def append_execution_run_event(self, run_id: str, event: dict[str, Any]) -> bool:
+        return self.store.append_execution_run_event(run_id, event)
+
+    def get_execution_run(
+        self, run_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[ExecutionRunRecord]:
+        return self.store.get_execution_run(run_id, user_id=user_id, tenant_id=tenant_id)
+
+    def get_latest_execution_run(
+        self, session_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[ExecutionRunRecord]:
+        return self.store.get_latest_execution_run(
+            session_id, user_id=user_id, tenant_id=tenant_id
+        )
+
+    def list_execution_run_events(
+        self, run_id: str, after_seq: int = 0, limit: int = 256,
+    ) -> list[dict[str, Any]]:
+        return self.store.list_execution_run_events(run_id, after_seq, limit)
+
+    def update_execution_run(
+        self, run_id: str, *, workflow_id: Optional[str] = None,
+        status: Optional[str] = None, metadata: Optional[dict] = None,
+    ) -> bool:
+        return self.store.update_execution_run(
+            run_id, workflow_id=workflow_id, status=status, metadata=metadata
+        )
+
+    def recover_stale_execution_runs(self, stale_after_seconds: float = 300.0) -> int:
+        return self.store.recover_stale_execution_runs(stale_after_seconds)
 
     # -- Agent Memory -----------------------------------------------------
 
@@ -221,16 +262,21 @@ class SessionManager:
     def create_workflow(
         self, workflow_id: str, session_id: str, intent_type: str,
         execution_mode: str, status: str = "planned", metadata: dict = None,
+        emit_outbox: bool = True,
     ) -> None:
         """Create a durable local workflow record; never stores credentials."""
         self.store.create_workflow(
-            workflow_id, session_id, intent_type, execution_mode, status, metadata
+            workflow_id, session_id, intent_type, execution_mode, status, metadata,
+            emit_outbox=emit_outbox,
         )
 
     def update_workflow(
         self, workflow_id: str, status: str, metadata: dict = None,
+        emit_outbox: bool = True,
     ) -> bool:
-        return self.store.update_workflow(workflow_id, status, metadata)
+        return self.store.update_workflow(
+            workflow_id, status, metadata, emit_outbox=emit_outbox
+        )
 
     def heartbeat_workflow(
         self, workflow_id: str, lease_owner: str, lease_seconds: float = 300.0,

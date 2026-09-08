@@ -138,6 +138,44 @@ class OutboxEvent:
 
 
 @dataclass
+class ExecutionRunRecord:
+    """Durable lifecycle record for one Agent turn."""
+
+    run_id: str
+    session_id: str
+    turn_id: str
+    user_id: str
+    tenant_id: str
+    status: str = "running"
+    execution_mode: str = "dry_run"
+    workflow_id: str | None = None
+    task_id: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: str = ""
+    updated_at: str = ""
+    finished_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["metadata"] = json.loads(
+            json.dumps(self.metadata or {}, ensure_ascii=False, default=str)
+        )
+        return value
+
+    @classmethod
+    def from_row(cls, row: Any) -> "ExecutionRunRecord":
+        data = dict(row) if isinstance(row, dict) else dict(row)
+        metadata = data.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata or "{}")
+            except (TypeError, ValueError):
+                metadata = {}
+        data["metadata"] = metadata if isinstance(metadata, dict) else {}
+        return cls(**data)
+
+
+@dataclass
 class ConversationMessageRecord:
     """One durable, sanitized user/assistant message in a session."""
 

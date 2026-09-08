@@ -21,7 +21,7 @@ from typing import Any, Optional, List
 
 from .models import (
     CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
-    TaskRecord, ToolCallRecord,
+    ExecutionRunRecord, TaskRecord, ToolCallRecord,
     OutboxEvent,
 )
 from .errors import PersistenceConflictError
@@ -76,7 +76,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 7
+    SCHEMA_VERSION = 8
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -325,6 +325,38 @@ class AdAgentStore:
     CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(tenant_id, user_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at ASC);
 
+    CREATE TABLE IF NOT EXISTS execution_runs (
+        run_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        execution_mode TEXT NOT NULL DEFAULT 'dry_run',
+        workflow_id TEXT,
+        task_id TEXT,
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        finished_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_execution_runs_session
+        ON execution_runs(tenant_id, user_id, session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_execution_runs_status
+        ON execution_runs(status, updated_at ASC);
+
+    CREATE TABLE IF NOT EXISTS execution_run_events (
+        run_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (run_id, seq),
+        FOREIGN KEY (run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_execution_run_events_created
+        ON execution_run_events(run_id, seq ASC);
+
     CREATE TABLE IF NOT EXISTS approvals (
         plan_fingerprint TEXT PRIMARY KEY,
         token_hash TEXT NOT NULL,
@@ -484,6 +516,41 @@ class AdAgentStore:
         elif version == 7:
             cls._add_column_if_missing(
                 conn, "write_reservations", "request_hash", "TEXT"
+            )
+        elif version == 8:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS execution_runs (
+                    run_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    turn_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    execution_mode TEXT NOT NULL DEFAULT 'dry_run',
+                    workflow_id TEXT,
+                    task_id TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    finished_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_runs_session
+                    ON execution_runs(tenant_id, user_id, session_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_execution_runs_status
+                    ON execution_runs(status, updated_at ASC);
+                CREATE TABLE IF NOT EXISTS execution_run_events (
+                    run_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, seq),
+                    FOREIGN KEY (run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_run_events_created
+                    ON execution_run_events(run_id, seq ASC);
+                """
             )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
@@ -967,6 +1034,254 @@ class AdAgentStore:
             )
             self._get_conn().commit()
             return cursor.rowcount == 1
+
+    # -- Durable Agent run/event replay ---------------------------------
+
+    @staticmethod
+    def _execution_run_from_row(row: Any) -> Optional[ExecutionRunRecord]:
+        return ExecutionRunRecord.from_row(dict(row)) if row else None
+
+    def create_execution_run(self, record: ExecutionRunRecord) -> ExecutionRunRecord:
+        """Create a durable turn before any provider work can start.
+
+        ``INSERT OR IGNORE`` makes retrying the Runtime bootstrap harmless and
+        keeps the run identifier stable when an HTTP worker is restarted.
+        """
+        data = record.to_dict()
+        now = str(data.get("created_at") or datetime.now(timezone.utc).isoformat())
+        updated = str(data.get("updated_at") or now)
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT OR IGNORE INTO execution_runs
+                   (run_id, session_id, turn_id, user_id, tenant_id, status,
+                    execution_mode, workflow_id, task_id, metadata, created_at,
+                    updated_at, finished_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(data["run_id"]), str(data["session_id"]),
+                    str(data["turn_id"]), str(data["user_id"]),
+                    str(data["tenant_id"]), str(data.get("status") or "running"),
+                    str(data.get("execution_mode") or "dry_run"),
+                    str(data["workflow_id"]) if data.get("workflow_id") else None,
+                    str(data["task_id"]) if data.get("task_id") else None,
+                    json.dumps(data.get("metadata") or {}, ensure_ascii=False,
+                               sort_keys=True, default=str),
+                    now, updated, data.get("finished_at"),
+                ),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM execution_runs WHERE run_id = ?",
+                (str(data["run_id"]),),
+            ).fetchone()
+            return self._execution_run_from_row(row) or record
+
+    def append_execution_run_event(self, run_id: str, event: dict[str, Any]) -> bool:
+        """Append one sanitized event idempotently and advance run state."""
+        if not isinstance(event, dict):
+            return False
+        try:
+            seq = int(event.get("seq"))
+        except (TypeError, ValueError):
+            return False
+        if seq < 1:
+            return False
+        event_type = str(event.get("event_type") or event.get("type") or "event")
+        payload = json.dumps(event, ensure_ascii=False, sort_keys=True, default=str)
+        now = str(event.get("timestamp") or datetime.now(timezone.utc).isoformat())
+        with self._lock:
+            conn = self._get_conn()
+            exists = conn.execute(
+                "SELECT 1 FROM execution_runs WHERE run_id = ?", (str(run_id),)
+            ).fetchone()
+            if not exists:
+                return False
+            cursor = conn.execute(
+                """INSERT OR IGNORE INTO execution_run_events
+                   (run_id, seq, event_type, payload, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (str(run_id), seq, event_type, payload, now),
+            )
+            if cursor.rowcount != 1:
+                conn.commit()
+                return False
+            latest_seq = conn.execute(
+                "SELECT MAX(seq) FROM execution_run_events WHERE run_id = ?",
+                (str(run_id),),
+            ).fetchone()[0]
+            # A delayed event from another worker is still retained for
+            # replay, but it must not move the durable lifecycle backwards
+            # after a later ``done`` event has already been committed.
+            if int(latest_seq or 0) != seq:
+                conn.commit()
+                return True
+            status = str(event.get("status") or "")
+            is_done = event_type == "done"
+            terminal = status in {"succeeded", "failed", "recovery_required"}
+            assignments = ["updated_at = ?"]
+            values: list[Any] = [now]
+            if is_done and status:
+                assignments.append("status = ?")
+                values.append(status)
+                if terminal:
+                    assignments.append("finished_at = COALESCE(finished_at, ?)")
+                    values.append(now)
+            elif status in {"running", "awaiting_confirmation", "recovery_required"}:
+                assignments.append("status = ?")
+                values.append(status)
+            values.append(str(run_id))
+            conn.execute(
+                "UPDATE execution_runs SET " + ", ".join(assignments)
+                + " WHERE run_id = ?",
+                values,
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def get_execution_run(
+        self, run_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[ExecutionRunRecord]:
+        clauses = ["run_id = ?"]
+        params: list[Any] = [str(run_id)]
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(str(user_id))
+        if tenant_id is not None:
+            clauses.append("tenant_id = ?")
+            params.append(str(tenant_id))
+        with self._lock:
+            row = self._get_conn().execute(
+                "SELECT * FROM execution_runs WHERE " + " AND ".join(clauses),
+                params,
+            ).fetchone()
+            return self._execution_run_from_row(row)
+
+    def get_latest_execution_run(
+        self, session_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[ExecutionRunRecord]:
+        clauses = ["session_id = ?"]
+        params: list[Any] = [str(session_id)]
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(str(user_id))
+        if tenant_id is not None:
+            clauses.append("tenant_id = ?")
+            params.append(str(tenant_id))
+        with self._lock:
+            row = self._get_conn().execute(
+                "SELECT * FROM execution_runs WHERE " + " AND ".join(clauses)
+                + " ORDER BY created_at DESC LIMIT 1",
+                params,
+            ).fetchone()
+            return self._execution_run_from_row(row)
+
+    def list_execution_run_events(
+        self, run_id: str, after_seq: int = 0, limit: int = 256,
+    ) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit), 512))
+        with self._lock:
+            rows = self._get_conn().execute(
+                """SELECT payload FROM execution_run_events
+                   WHERE run_id = ? AND seq > ? ORDER BY seq ASC LIMIT ?""",
+                (str(run_id), max(0, int(after_seq)), bounded_limit),
+            ).fetchall()
+            events: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    payload = json.loads(row[0] or "{}")
+                except (TypeError, ValueError):
+                    payload = {}
+                if isinstance(payload, dict):
+                    events.append(payload)
+            return events
+
+    def update_execution_run(
+        self, run_id: str, *, workflow_id: Optional[str] = None,
+        status: Optional[str] = None, metadata: Optional[dict] = None,
+    ) -> bool:
+        assignments = ["updated_at = ?"]
+        values: list[Any] = [datetime.now(timezone.utc).isoformat()]
+        if workflow_id is not None:
+            assignments.append("workflow_id = ?")
+            values.append(str(workflow_id))
+        if status is not None:
+            assignments.append("status = ?")
+            values.append(str(status))
+            if status in {"succeeded", "failed", "recovery_required"}:
+                assignments.append("finished_at = COALESCE(finished_at, ?)")
+                values.append(datetime.now(timezone.utc).isoformat())
+        if metadata is not None:
+            encoded = json.dumps(metadata, ensure_ascii=False, sort_keys=True, default=str)
+            assignments.append("metadata = ?")
+            values.append(encoded)
+        values.append(str(run_id))
+        with self._lock:
+            cursor = self._get_conn().execute(
+                "UPDATE execution_runs SET " + ", ".join(assignments)
+                + " WHERE run_id = ?", values,
+            )
+            self._get_conn().commit()
+            return cursor.rowcount > 0
+
+    def recover_stale_execution_runs(self, stale_after_seconds: float = 300.0) -> int:
+        if float(stale_after_seconds) <= 0:
+            return 0
+        cutoff = (datetime.now(timezone.utc) - timedelta(
+            seconds=float(stale_after_seconds)
+        )).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            rows = conn.execute(
+                """SELECT run_id, metadata FROM execution_runs
+                   WHERE status = 'running' AND updated_at <= ?""",
+                (cutoff,),
+            ).fetchall()
+            recovered = 0
+            for row in rows:
+                try:
+                    metadata = json.loads(row["metadata"] or "{}") or {}
+                except (TypeError, ValueError):
+                    metadata = {}
+                metadata.update({
+                    "recovery_reason": "stale_execution_run",
+                    "provider_state": "unknown",
+                    "recovery_detected_at": now,
+                })
+                cursor = conn.execute(
+                    """UPDATE execution_runs SET status = 'recovery_required',
+                       metadata = ?, updated_at = ?
+                       WHERE run_id = ? AND status = 'running'""",
+                    (json.dumps(metadata, ensure_ascii=False, sort_keys=True), now,
+                     str(row["run_id"])),
+                )
+                if cursor.rowcount != 1:
+                    continue
+                next_seq = conn.execute(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM execution_run_events WHERE run_id = ?",
+                    (str(row["run_id"]),),
+                ).fetchone()[0]
+                event = {
+                    "type": "recovery_required",
+                    "event_type": "recovery_required",
+                    "seq": int(next_seq),
+                    "status": "recovery_required",
+                    "timestamp": now,
+                    "safe_metadata": metadata,
+                }
+                conn.execute(
+                    """INSERT OR IGNORE INTO execution_run_events
+                       (run_id, seq, event_type, payload, created_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (str(row["run_id"]), int(next_seq), "recovery_required",
+                     json.dumps(event, ensure_ascii=False, sort_keys=True), now),
+                )
+                recovered += 1
+            conn.commit()
+            return recovered
 
     # -- Approval records --------------------------------------------------
 
@@ -1748,6 +2063,12 @@ class AdAgentStore:
         """Delete a session; SQLite foreign keys remove its local history."""
         with self._lock:
             conn = self._get_conn()
+            # Keep durable run/event replay data within the same privacy
+            # boundary even for databases created before the FK was added.
+            conn.execute(
+                "DELETE FROM execution_runs WHERE session_id = ?",
+                (str(session_id),),
+            )
             cursor = conn.execute(
                 "DELETE FROM sessions WHERE session_id = ?", (str(session_id),)
             )
@@ -2059,6 +2380,7 @@ class AdAgentStore:
     def create_workflow(
         self, workflow_id: str, session_id: str, intent_type: str,
         execution_mode: str, status: str = "planned", metadata: dict = None,
+        emit_outbox: bool = True,
     ) -> None:
         now = datetime.now().isoformat()
         with self._lock:
@@ -2071,24 +2393,26 @@ class AdAgentStore:
                 (workflow_id, session_id, intent_type, execution_mode, status,
                 json.dumps(metadata or {}), now, now),
             )
-            conn.execute(
-                """INSERT OR IGNORE INTO outbox_events
-                   (event_id, run_id, event_type, payload, created_at)
-                   VALUES (?, ?, 'workflow.created', ?, ?)""",
-                (
-                    str(uuid.uuid4()), str(workflow_id),
-                    json.dumps({
-                        "workflow_id": str(workflow_id),
-                        "status": str(status),
-                        "metadata": metadata or {},
-                    }, ensure_ascii=False, sort_keys=True, default=str),
-                    now,
-                ),
-            )
+            if emit_outbox:
+                conn.execute(
+                    """INSERT OR IGNORE INTO outbox_events
+                       (event_id, run_id, event_type, payload, created_at)
+                       VALUES (?, ?, 'workflow.created', ?, ?)""",
+                    (
+                        str(uuid.uuid4()), str(workflow_id),
+                        json.dumps({
+                            "workflow_id": str(workflow_id),
+                            "status": str(status),
+                            "metadata": metadata or {},
+                        }, ensure_ascii=False, sort_keys=True, default=str),
+                        now,
+                    ),
+                )
             conn.commit()
 
     def update_workflow(
         self, workflow_id: str, status: str, metadata: dict = None,
+        emit_outbox: bool = True,
     ) -> bool:
         with self._lock:
             conn = self._get_conn()
@@ -2142,7 +2466,7 @@ class AdAgentStore:
                        WHERE workflow_id = ?""",
                     (status, json.dumps(merged_metadata), datetime.now().isoformat(), workflow_id),
                 )
-            if cursor.rowcount > 0:
+            if cursor.rowcount > 0 and emit_outbox:
                 conn.execute(
                     """INSERT INTO outbox_events
                        (event_id, run_id, event_type, payload, created_at)

@@ -1,6 +1,7 @@
 """Regression tests for the dap_agent-inspired safety contracts."""
 
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 
 from agents.ad_agent.api_clients.base import AuthError, RateLimitError, TemporaryError
 from agents.ad_agent.core.interfaces import (
@@ -10,6 +11,7 @@ from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.persistence.models import OutboxEvent
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.outbox import OutboxConsumer
+from agents.ad_agent.runtime.runtime import AgentRuntime
 from agents.ad_agent.runtime.security import RuntimeSecurity
 from agents.ad_agent.runtime.tool_executor import classify_error
 
@@ -89,6 +91,46 @@ def test_outbox_claim_is_single_delivery_and_consumer_acknowledges():
     assert consumer.drain_once() == 1
     assert consumer.drain_once() == 0
     assert seen == ["e1"]
+
+
+def test_runtime_starts_outbox_consumer_and_workflow_publishes_once():
+    store = AdAgentStore(":memory:")
+    delivered = []
+    runtime = AgentRuntime(
+        require_llm=False,
+        persistence_store=store,
+        features=[],
+        outbox_delivery=lambda event: delivered.append(event.event_type),
+        outbox_poll_interval=60,
+    )
+    try:
+        assert runtime.outbox_consumer is not None
+        assert runtime.outbox_consumer._thread is not None
+        assert runtime.outbox_consumer._thread.is_alive()
+
+        # Stop the background loop so the test can inspect the durable event.
+        runtime.outbox_consumer.stop()
+        store.create_session("s1", "u1")
+        workflow_id = runtime.workflow.start(
+            SimpleNamespace(
+                session_id="s1",
+                ctx=SimpleNamespace(account_id=None),
+            ),
+            SimpleNamespace(
+                intent_type="update_campaign",
+                platforms=["meta"],
+                raw_input="更新 campaign",
+            ),
+            {"meta": [_tool()]},
+            register_items=False,
+        )
+        events = store.claim_outbox_events(10, "test-workflow-publisher")
+        assert workflow_id
+        assert len(events) == 1
+        assert events[0].event_type == "workflow.created"
+        assert delivered == []
+    finally:
+        runtime.close()
 
 
 def test_error_classification_preserves_three_state_write_recovery_semantics():

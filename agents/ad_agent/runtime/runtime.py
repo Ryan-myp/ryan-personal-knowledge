@@ -27,7 +27,7 @@ from collections import OrderedDict
 from contextvars import ContextVar
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -79,11 +79,11 @@ from .session_context import SessionContext
 from .capability_context import CapabilityContextWrapper
 from .security import RuntimeSecurity
 from .tool_executor import ToolExecutor
-from .outbox import OutboxPublisher
+from .outbox import OutboxConsumer, OutboxPublisher
 from .task_executor import TaskExecutionContext, TaskExecutor
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
-from ..persistence.models import ToolCallRecord
+from ..persistence.models import ToolCallRecord, ExecutionRunRecord
 from .reconciliation import ToolReadbackReconciler
 
 logger = logging.getLogger(__name__)
@@ -165,6 +165,8 @@ class AgentRuntime:
         max_task_queue: int = 32,
         task_timeout_seconds: float = 900.0,
         task_lease_seconds: float = 300.0,
+        outbox_delivery: Optional[Callable[[Any], None]] = None,
+        outbox_poll_interval: float = 0.25,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -390,6 +392,18 @@ class AgentRuntime:
         if persistence_store:
             self._persistence_store = persistence_store
             self._session_manager = SessionManager(persistence_store)
+            recover_runs = getattr(
+                self._session_manager, "recover_stale_execution_runs", None
+            )
+            if callable(recover_runs):
+                try:
+                    recovered_runs = recover_runs(self.workflow_stale_after_seconds)
+                    if recovered_runs:
+                        logger.warning(
+                            "marked %s stale Agent runs for recovery", recovered_runs
+                        )
+                except Exception:
+                    logger.exception("failed to recover stale Agent runs")
             if all(callable(getattr(persistence_store, method, None)) for method in (
                 "save_memory", "search_memories", "delete_memory"
             )):
@@ -399,10 +413,18 @@ class AgentRuntime:
         else:
             self._persistence_store = None
         self.outbox = OutboxPublisher(self._session_manager) if self._session_manager else None
+        self.outbox_consumer: Optional[OutboxConsumer] = None
+        if self._persistence_store is not None and self.outbox is not None:
+            self.outbox_consumer = OutboxConsumer(
+                self._persistence_store,
+                outbox_delivery or self._default_outbox_delivery,
+                poll_interval=outbox_poll_interval,
+            )
+            self.outbox_consumer.start()
 
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
-        self.workflow = WorkflowCoordinator(self.services)
+        self.workflow = WorkflowCoordinator(self.services, outbox=self.outbox)
         self.security = RuntimeSecurity(self)
         self.tool_executor = ToolExecutor(self.services)
         self.task_executor: Optional[TaskExecutor] = None
@@ -568,9 +590,27 @@ class AgentRuntime:
 
     def close(self, wait: bool = False) -> None:
         """Release Runtime-owned workers through one generic lifecycle seam."""
+        consumer = self.outbox_consumer
+        if consumer is not None:
+            consumer.stop()
         executor = self.task_executor
         if executor is not None:
             executor.shutdown(wait=wait)
+
+    @staticmethod
+    def _default_outbox_delivery(event: Any) -> None:
+        """Consume events safely until an application sink is configured.
+
+        The Runtime owns lifecycle, while SSE/Webhook/metrics integrations are
+        supplied through ``outbox_delivery``.  Do not log the event payload:
+        workflow data may contain user-provided values.
+        """
+        logger.info(
+            "Outbox event consumed by default sink: event_id=%s run_id=%s type=%s",
+            getattr(event, "event_id", ""),
+            getattr(event, "run_id", ""),
+            getattr(event, "event_type", ""),
+        )
 
     @property
     def memory_manager(self) -> Optional[MemoryManager]:
@@ -3221,6 +3261,7 @@ class AgentRuntime:
             user_id=context.user_id,
             tenant_id=context.tenant_id,
             cancellation_event=context.cancel_event,
+            task_id=context.task_id,
         )
 
     def get_task(
@@ -3305,6 +3346,7 @@ class AgentRuntime:
         cancellation_event: Optional[threading.Event] = None,
         event_callback: Optional[ExecutionEventCallback] = None,
         execution_mode: Optional[str] = None,
+        task_id: Optional[str] = None,
     ) -> dict:
         """Execute one turn while serializing turns for the same session.
 
@@ -3348,6 +3390,7 @@ class AgentRuntime:
                     tenant_id=effective_tenant_id,
                     cancellation_event=cancellation_event,
                     event_callback=event_callback,
+                    task_id=task_id,
                 )
         finally:
             _execution_mode_context.reset(mode_token)
@@ -3369,6 +3412,7 @@ class AgentRuntime:
         tenant_id: str = "default",
         cancellation_event: Optional[threading.Event] = None,
         event_callback: Optional[ExecutionEventCallback] = None,
+        task_id: Optional[str] = None,
     ) -> dict:
         """
         执行一次完整的对话回合。
@@ -3389,7 +3433,50 @@ class AgentRuntime:
         """
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())[:8]
-        trace = ExecutionTrace(event_callback, turn_id=turn_id)
+        run_id = str(uuid.uuid4())
+        durable_run = bool(
+            self._session_manager
+            and callable(getattr(self._session_manager, "create_execution_run", None))
+        )
+
+        def observe_trace(event: dict[str, Any]) -> None:
+            if durable_run:
+                try:
+                    self._session_manager.append_execution_run_event(run_id, event)
+                except Exception:
+                    # Replay persistence is important, but it must never make
+                    # a provider operation fail because an observer backend is
+                    # temporarily unavailable.
+                    logger.debug("failed to persist execution event", exc_info=True)
+            if callable(event_callback):
+                try:
+                    event_callback(event)
+                except Exception:
+                    logger.debug("execution event observer failed", exc_info=True)
+
+        if durable_run:
+            try:
+                self._session_manager.create_execution_run(
+                    ExecutionRunRecord(
+                        run_id=run_id,
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        user_id=str(user_id),
+                        tenant_id=str(tenant_id or "default"),
+                        execution_mode=self.execution_mode,
+                        task_id=str(task_id) if task_id else None,
+                        metadata={
+                            "provider_state": "unknown",
+                            "user_input": self._redact_for_persistence(user_input),
+                        },
+                        created_at=datetime.now().isoformat(),
+                        updated_at=datetime.now().isoformat(),
+                    )
+                )
+            except Exception:
+                durable_run = False
+                logger.exception("failed to create durable Agent run")
+        trace = ExecutionTrace(observe_trace if (durable_run or event_callback) else None, turn_id=turn_id)
         trace.start()
         input_error = self._validate_request_limits(user_input, platform_params)
         if input_error:
@@ -3397,6 +3484,7 @@ class AgentRuntime:
             trace.done("failed", safe_metadata={"reason": "request_invalid"})
             return {
                 "session_id": session_id,
+                "run_id": run_id,
                 "turn_id": turn_id,
                 "timestamp": datetime.now().isoformat(),
                 "intent": None,
@@ -3528,6 +3616,7 @@ class AgentRuntime:
             )
             return {
                 "session_id": session_id,
+                "run_id": run_id,
                 "turn_id": turn_id,
                 "timestamp": datetime.now().isoformat(),
                 "intent": None,
@@ -3567,8 +3656,9 @@ class AgentRuntime:
                     session, turn_id, safe_user_input, error, execution_trace=trace
                 )
                 return {
-                    "session_id": session_id,
-                    "turn_id": turn_id,
+                "session_id": session_id,
+                "run_id": run_id,
+                "turn_id": turn_id,
                     "timestamp": datetime.now().isoformat(),
                     "intent": None,
                     "tool_plan": {},
@@ -3604,6 +3694,7 @@ class AgentRuntime:
             )
             return {
                 "session_id": session_id,
+                "run_id": run_id,
                 "turn_id": turn_id,
                 "timestamp": datetime.now().isoformat(),
                 "intent": intent.to_dict(),
@@ -3676,8 +3767,9 @@ class AgentRuntime:
                     execution_trace=trace,
                 )
                 return {
-                    "session_id": session_id,
-                    "turn_id": turn_id,
+                "session_id": session_id,
+                "run_id": run_id,
+                "turn_id": turn_id,
                     "timestamp": datetime.now().isoformat(),
                     "intent": intent.to_dict(),
                     "tool_plan": {},
@@ -3702,8 +3794,9 @@ class AgentRuntime:
                     execution_trace=trace,
                 )
                 return {
-                    "session_id": session_id,
-                    "turn_id": turn_id,
+                "session_id": session_id,
+                "run_id": run_id,
+                "turn_id": turn_id,
                     "timestamp": datetime.now().isoformat(),
                     "intent": intent.to_dict(),
                     "tool_plan": {},
@@ -3838,6 +3931,7 @@ class AgentRuntime:
             )
             return {
                 "session_id": session_id,
+                "run_id": run_id,
                 "turn_id": turn_id,
                 "timestamp": datetime.now().isoformat(),
                 "intent": intent.to_dict(),
@@ -3897,6 +3991,7 @@ class AgentRuntime:
             )
             return {
                 "session_id": session_id,
+                "run_id": run_id,
                 "turn_id": turn_id,
                 "timestamp": datetime.now().isoformat(),
                 "intent": intent.to_dict(),
@@ -3986,8 +4081,9 @@ class AgentRuntime:
                     execution_trace=trace, ui=creation_ui,
                 )
                 return {
-                    "session_id": session_id,
-                    "turn_id": turn_id,
+                "session_id": session_id,
+                "run_id": run_id,
+                "turn_id": turn_id,
                     "timestamp": datetime.now().isoformat(),
                     "intent": intent.to_dict(),
                     "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
@@ -4056,8 +4152,9 @@ class AgentRuntime:
                     execution_trace=trace, ui=creation_ui,
                 )
                 return {
-                    "session_id": session_id,
-                    "turn_id": turn_id,
+                "session_id": session_id,
+                "run_id": run_id,
+                "turn_id": turn_id,
                     "timestamp": datetime.now().isoformat(),
                     "intent": intent.to_dict(),
                     "tool_plan": {k: [t.name for t in v] for k, v in tool_plan.items()},
@@ -4109,6 +4206,7 @@ class AgentRuntime:
                 register_items=not feature.is_batch_intent(intent),
                 execution_plan=execution_plan,
             )
+            self._bind_execution_run_workflow(run_id, workflow_id)
             batch_result = feature.run_batch_plan(
                 self.services,
                 safe_user_input, session, turn_id, intent, tool_plan,
@@ -4116,6 +4214,8 @@ class AgentRuntime:
                 account_scope=account_scope,
                 granted_permissions=effective_permissions,
             )
+            if isinstance(batch_result, dict):
+                batch_result.setdefault("run_id", run_id)
             for result in batch_result.get("results", []) if isinstance(batch_result, dict) else []:
                 node = trace.node_for(result.get("platform", ""), result.get("tool", ""))
                 trace.node_status(
@@ -4214,6 +4314,7 @@ class AgentRuntime:
             )
             return {
                 "session_id": session_id,
+                "run_id": run_id,
                 "turn_id": turn_id,
                 "timestamp": datetime.now().isoformat(),
                 "intent": intent.to_dict(),
@@ -4249,6 +4350,7 @@ class AgentRuntime:
         workflow_id = self.workflow.start(
             session, intent, tool_plan, execution_plan=execution_plan
         )
+        self._bind_execution_run_workflow(run_id, workflow_id)
         # Keep sensitive execution inputs local; they are only copied through
         # the redaction path when a workflow is persisted and are never added
         # to the public result payload.
@@ -5066,6 +5168,7 @@ class AgentRuntime:
         
         return {
             "session_id": session_id,
+            "run_id": run_id,
             "turn_id": turn_id,
             "timestamp": datetime.now().isoformat(),
             "intent": intent.to_dict(),
@@ -5309,6 +5412,81 @@ class AgentRuntime:
             "messages": messages,
             "execution_traces": traces if isinstance(traces, dict) else {},
         }
+
+    @staticmethod
+    def _execution_run_dict(record: Any) -> Optional[dict[str, Any]]:
+        if record is None:
+            return None
+        if hasattr(record, "to_dict"):
+            return record.to_dict()
+        if isinstance(record, dict):
+            return dict(record)
+        return None
+
+    def _bind_execution_run_workflow(self, run_id: str, workflow_id: Optional[str]) -> None:
+        if not workflow_id or not self._session_manager:
+            return
+        updater = getattr(self._session_manager, "update_execution_run", None)
+        if callable(updater):
+            try:
+                updater(str(run_id), workflow_id=str(workflow_id))
+            except Exception:
+                logger.debug("failed to bind workflow to execution run", exc_info=True)
+
+    def get_latest_run(
+        self, session_id: str, user_id: str, tenant_id: str = "default",
+    ) -> Optional[dict[str, Any]]:
+        """Return the latest run plus its currently durable event snapshot."""
+        if not self._session_manager:
+            return None
+        getter = getattr(self._session_manager, "get_latest_execution_run", None)
+        if not callable(getter):
+            return None
+        record = getter(session_id, user_id=user_id, tenant_id=tenant_id)
+        result = self._execution_run_dict(record)
+        if result is None:
+            return None
+        events = self._session_manager.list_execution_run_events(
+            result["run_id"], after_seq=0, limit=512
+        )
+        result["events"] = events
+        result["latest_seq"] = max(
+            [int(item.get("seq", 0)) for item in events if isinstance(item, dict)]
+            or [0]
+        )
+        result["recovery_message"] = (
+            "服务中断导致本次执行状态未知，请先回查 Provider/工作流后再继续。"
+            if result.get("status") == "recovery_required" else None
+        )
+        return result
+
+    def get_run_events(
+        self, run_id: str, user_id: str, tenant_id: str = "default",
+        after_seq: int = 0, limit: int = 256,
+    ) -> Optional[dict[str, Any]]:
+        """Read incremental run events after enforcing tenant/user ownership."""
+        if not self._session_manager:
+            return None
+        getter = getattr(self._session_manager, "get_execution_run", None)
+        if not callable(getter):
+            return None
+        record = getter(run_id, user_id=user_id, tenant_id=tenant_id)
+        result = self._execution_run_dict(record)
+        if result is None:
+            return None
+        events = self._session_manager.list_execution_run_events(
+            run_id, after_seq=max(0, int(after_seq)), limit=limit
+        )
+        result["events"] = events
+        result["latest_seq"] = max(
+            [int(item.get("seq", 0)) for item in events if isinstance(item, dict)]
+            or [max(0, int(after_seq))]
+        )
+        result["recovery_message"] = (
+            "服务中断导致本次执行状态未知，请先回查 Provider/工作流后再继续。"
+            if result.get("status") == "recovery_required" else None
+        )
+        return result
 
     def delete_conversation(
         self, session_id: str, user_id: str, tenant_id: str = "default",

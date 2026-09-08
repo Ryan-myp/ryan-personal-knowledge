@@ -82,6 +82,26 @@ class PersistenceBackend(Protocol):
         self, event_id: str, next_retry_at: str, error: Optional[str] = None,
     ) -> bool: ...
 
+    # -- Durable Agent run/event replay -------------------------------
+    def create_execution_run(self, record: Any) -> Any: ...
+    def append_execution_run_event(self, run_id: str, event: dict[str, Any]) -> bool: ...
+    def get_execution_run(
+        self, run_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def get_latest_execution_run(
+        self, session_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def list_execution_run_events(
+        self, run_id: str, after_seq: int = 0, limit: int = 256,
+    ) -> list[dict[str, Any]]: ...
+    def update_execution_run(
+        self, run_id: str, *, workflow_id: Optional[str] = None,
+        status: Optional[str] = None, metadata: Optional[dict] = None,
+    ) -> bool: ...
+    def recover_stale_execution_runs(self, stale_after_seconds: float = 300.0) -> int: ...
+
     # -- Runtime configuration -----------------------------------------
     # Execution mode is a principal-scoped preference. Persisting ``live``
     # never grants permission to perform a live write; deployment gates,
@@ -96,10 +116,11 @@ class PersistenceBackend(Protocol):
     def create_workflow(
         self, workflow_id: str, session_id: str, intent_type: str,
         execution_mode: str, status: str = "planned",
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict] = None, emit_outbox: bool = True,
     ) -> None: ...
     def update_workflow(
         self, workflow_id: str, status: str, metadata: Optional[dict] = None,
+        emit_outbox: bool = True,
     ) -> bool: ...
     def heartbeat_workflow(
         self, workflow_id: str, lease_owner: str, lease_seconds: float = 300.0,

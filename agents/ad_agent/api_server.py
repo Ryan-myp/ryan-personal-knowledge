@@ -640,6 +640,54 @@ async def rename_session(
     return conversation
 
 
+@app.get("/sessions/{session_id}/runs/latest", tags=["runs"])
+async def get_latest_session_run(
+    session_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Return the latest durable Agent run and its replayable events."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "get_latest_run", None)):
+        raise HTTPException(status_code=503, detail="运行状态存储未初始化")
+    run = await run_in_threadpool(
+        runtime.get_latest_run,
+        session_id=session_id,
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="运行记录不存在或无权访问")
+    return run
+
+
+@app.get("/runs/{run_id}/events", tags=["runs"])
+async def get_run_events(
+    run_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    after_seq: int = Query(0, ge=0),
+    limit: int = Query(256, ge=1, le=512),
+):
+    """Read incremental durable events for one owned Agent run."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    if not runtime or not callable(getattr(runtime, "get_run_events", None)):
+        raise HTTPException(status_code=503, detail="运行状态存储未初始化")
+    run = await run_in_threadpool(
+        runtime.get_run_events,
+        run_id=run_id,
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        after_seq=after_seq,
+        limit=limit,
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="运行记录不存在或无权访问")
+    return run
+
+
 @app.delete("/sessions", tags=["sessions"])
 async def delete_sessions(
     request: SessionDeleteRequest,
@@ -1802,6 +1850,15 @@ async def chat_stream(
                     for key in ("tool", "platform", "resource_type", "success", "error", "needs_confirmation", "skipped", "data")
                     if key in item
                 })
+            run_id = result.get("run_id") if isinstance(result, dict) else None
+            if not run_id and isinstance(result, dict) and result.get("session_id"):
+                latest = await run_in_threadpool(
+                    runtime.get_latest_run,
+                    session_id=result.get("session_id"),
+                    user_id=principal.user_id,
+                    tenant_id=principal.tenant_id,
+                )
+                run_id = (latest or {}).get("run_id")
             yield event({
                 "type": "reply",
                 "event_type": "reply",
@@ -1811,6 +1868,7 @@ async def chat_stream(
                 "content": AgentRuntime._redact_for_persistence(result.get("reply", "")),
                 "session_id": result.get("session_id"),
                 "turn_id": result.get("turn_id"),
+                "run_id": run_id,
                 "needs_confirmation": bool(result.get("needs_confirmation")),
                 "confirmation_payload": AgentRuntime._redact_for_persistence(result.get("confirmation_payload")),
                 "results": safe_results,

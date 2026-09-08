@@ -2336,6 +2336,559 @@
             .main-content { margin-top: 56px; width: 100%; }
             .activity-dock { display: none; }
         }
+
+        /* Visual system: a calm operator console with one signal color. */
+        :root {
+            --bg-primary: #07111d;
+            --bg-secondary: #0b1928;
+            --bg-tertiary: #102335;
+            --bg-hover: #163149;
+            --bg-active: #1a3b52;
+            --border: #1d354b;
+            --border-light: #2b4a62;
+            --text-primary: #edf7f5;
+            --text-secondary: #9fb8c8;
+            --text-muted: #668095;
+            --accent: #58e6d0;
+            --accent-hover: #8af2e1;
+            --accent-light: rgba(88, 230, 208, .12);
+            --success: #59d69b;
+            --success-light: rgba(89, 214, 155, .12);
+            --warning: #ffbf69;
+            --error: #ff7186;
+            --error-light: rgba(255, 113, 134, .12);
+        }
+
+        html { background: var(--bg-primary); }
+        body {
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg-primary);
+            letter-spacing: -.01em;
+        }
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            opacity: .18;
+            background-image: linear-gradient(rgba(88,230,208,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(88,230,208,.06) 1px, transparent 1px);
+            background-size: 48px 48px;
+            mask-image: linear-gradient(to bottom, #000, transparent 72%);
+        }
+        .global-topbar {
+            background: rgba(8, 22, 36, .94);
+            border-bottom-color: var(--border);
+            backdrop-filter: blur(14px);
+        }
+        .global-brand-mark {
+            background: var(--accent) !important;
+            color: #06201f !important;
+            box-shadow: 0 0 0 4px rgba(88,230,208,.1), 0 0 24px rgba(88,230,208,.22);
+        }
+        .global-brand-name { color: var(--text-primary); letter-spacing: -.03em; }
+        .session-pill { background: #102638 !important; border-color: #2b5064 !important; }
+        .session-pill i, .status-dot { background: var(--accent); box-shadow: 0 0 0 4px rgba(88,230,208,.1); }
+        .session-pill em { color: var(--accent) !important; }
+        .global-readonly, .global-action { border-color: var(--border-light) !important; background: rgba(16,35,53,.8) !important; }
+        .global-readonly { color: var(--accent) !important; }
+        .global-action:hover { border-color: var(--accent) !important; color: var(--text-primary) !important; }
+        .global-avatar { background: #d7a86c !important; color: #1b1b16 !important; }
+
+        .sidebar {
+            background: linear-gradient(180deg, #0b1928 0%, #091522 100%);
+            border-right-color: var(--border);
+        }
+        .sidebar > .new-chat-btn:first-child {
+            color: #06201f;
+            background: var(--accent);
+            box-shadow: 0 7px 18px rgba(88,230,208,.12);
+        }
+        .sidebar > .new-chat-btn:first-child:hover { background: var(--accent-hover); }
+        .skill-nav-btn, .knowledge-nav-btn, .blueprint-nav-btn {
+            background: transparent !important;
+            border-color: transparent !important;
+            color: var(--text-secondary) !important;
+        }
+        .skill-nav-btn:hover, .knowledge-nav-btn:hover, .blueprint-nav-btn:hover {
+            background: var(--bg-hover) !important;
+            border-color: var(--border-light) !important;
+            color: var(--text-primary) !important;
+        }
+        .chat-history-header { color: var(--text-muted); }
+        .chat-history-item { border: 1px solid transparent; }
+        .chat-history-item:hover { background: rgba(22,49,73,.65); }
+        .chat-history-item.active { background: #14344a; border-color: #26556a; box-shadow: inset 3px 0 var(--accent); }
+        .sidebar-footer { border-top-color: var(--border); }
+
+        .main-content { background: transparent; }
+        .topbar { min-height: 54px; padding: 10px 26px; background: rgba(7,17,29,.52); border-bottom-color: var(--border); }
+        .topbar-title { color: var(--text-primary); font-size: 13px; font-weight: 650; }
+        .platform-tags { gap: 6px; }
+        .platform-tag { padding: 5px 9px; border-radius: 6px; background: rgba(16,35,53,.68); font-size: 10px; }
+        .platform-tag.meta { color: #72aefc; }
+        .platform-tag.tiktok { color: #ff829b; }
+        .platform-tag.google { color: #88b8ff; }
+        .platform-tag.dv360 { color: #69dbe3; }
+        .chat-area { padding: 36px 28px 24px; }
+        .chat-container { max-width: 860px; gap: 28px; }
+        .welcome-page { padding: 48px 20px 72px; text-align: left; }
+        .welcome-icon {
+            width: 54px; height: 54px; margin: 0 0 22px; border-radius: 15px;
+            background: #123c46; color: var(--accent); font-size: 25px;
+            box-shadow: inset 0 0 0 1px rgba(88,230,208,.34), 0 12px 32px rgba(0,0,0,.2);
+        }
+        .welcome-title { max-width: 620px; margin-bottom: 12px; color: var(--text-primary); font-size: clamp(30px, 4vw, 46px); line-height: 1.08; letter-spacing: -.055em; }
+        .welcome-desc { max-width: 560px; margin-bottom: 34px; color: var(--text-secondary); font-size: 15px; line-height: 1.75; }
+        .feature-grid { max-width: 680px; margin: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+        .feature-card { min-height: 142px; padding: 15px; background: rgba(16,35,53,.72); border-color: var(--border); border-radius: 11px; }
+        .feature-card:hover { background: #14344a; border-color: rgba(88,230,208,.65); transform: translateY(-2px); }
+        .feature-card .icon { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-bottom: 18px; border-radius: 8px; background: rgba(88,230,208,.1); font-size: 15px; }
+        .feature-card .title { color: var(--text-primary); font-size: 12px; line-height: 1.4; }
+        .feature-card .desc { color: var(--text-muted); font-size: 11px; line-height: 1.5; }
+
+        .message-body { line-height: 1.75; }
+        .message.agent .message-avatar { background: #123c46; color: var(--accent); box-shadow: inset 0 0 0 1px rgba(88,230,208,.35); }
+        .message.user .message-avatar { background: #19354c; }
+        .message.user .message-body { padding: 11px 15px; border: 1px solid #2b5065; border-radius: 14px 4px 14px 14px; background: #14344a; }
+        .message-body pre, .message-body code, .reply-content code { background: #091522; border-color: var(--border); }
+        .data-table { background: var(--bg-secondary); border: 1px solid var(--border); }
+        .data-table th { background: #14344a; }
+        .data-table th, .data-table td { border-bottom-color: var(--border); }
+
+        .confirm-card-container { padding: 0 28px 16px; max-width: 860px; }
+        .input-area { padding: 14px 28px 22px; background: linear-gradient(to top, #07111d 72%, transparent); }
+        .input-container { max-width: 860px; }
+        .input-box { min-height: 60px; padding: 17px 60px 17px 18px; border-radius: 14px; background: #0e2132; border-color: #2b4a62; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; }
+        .input-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(88,230,208,.11), 0 10px 30px rgba(0,0,0,.18); }
+        .send-btn { right: 13px; bottom: 13px; width: 36px; height: 36px; border-radius: 10px; background: var(--accent); color: #06201f; }
+        .send-btn:hover { background: var(--accent-hover); box-shadow: 0 0 20px rgba(88,230,208,.3); }
+        .input-hint { margin-top: 9px; color: var(--text-muted); font-size: 11px; }
+
+        .right-panel { background: rgba(11,25,40,.88); border-left-color: var(--border); }
+        .trace-header { padding: 17px 16px 13px !important; border-bottom-color: var(--border) !important; }
+        .trace-title { color: var(--text-primary) !important; }
+        .trace-live-dot { background: var(--accent) !important; box-shadow: 0 0 0 4px rgba(88,230,208,.1); }
+        .trace-toolbar { background: rgba(16,35,53,.52) !important; border-bottom-color: var(--border) !important; }
+        .trace-node { background: rgba(16,35,53,.46) !important; border-color: var(--border) !important; }
+        .trace-node:hover, .trace-node.selected { background: #14344a !important; border-color: var(--accent) !important; }
+        .trace-mode-bar { border-top-color: var(--border) !important; }
+        .risk-badge { color: var(--accent) !important; background: rgba(88,230,208,.1) !important; border-color: rgba(88,230,208,.3) !important; }
+        .activity-dock { background: #081522 !important; border-top-color: var(--border) !important; }
+
+        button, input, textarea, select { font-family: inherit; }
+        button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        @media (max-width: 760px) {
+            .topbar { padding: 10px 16px; }
+            .platform-tags { display: none; }
+            .chat-area { padding: 24px 16px; }
+            .welcome-page { padding: 30px 4px 48px; }
+            .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .feature-card { min-height: 124px; }
+            .input-area { padding: 10px 16px 16px; }
+            .confirm-card-container { padding: 0 16px 12px; }
+            .global-brand-name, .session-pill { display: none; }
+            .global-topbar { padding: 0 14px !important; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+        }
+
+        body.light-theme {
+            --bg-primary: #f3f7f8;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #edf4f5;
+            --bg-hover: #e2eff0;
+            --bg-active: #d7ebeb;
+            --border: #c5d8da;
+            --border-light: #a8c2c5;
+            --text-primary: #16333b;
+            --text-secondary: #536e77;
+            --text-muted: #708991;
+            --accent: #0b9f91;
+            --accent-hover: #087d73;
+            --accent-light: rgba(11,159,145,.12);
+        }
+        body.light-theme::before { opacity: .22; }
+        body.light-theme .global-topbar, body.light-theme .sidebar, body.light-theme .right-panel { background: rgba(255,255,255,.9); }
+        body.light-theme .input-box { background: #fff; }
+        body.light-theme .welcome-icon { color: #087d73; background: #dff3f1; }
+        body.light-theme .feature-card { background: rgba(255,255,255,.82); }
+        body.light-theme .feature-card:hover { background: #e2f3f1; }
+        body.light-theme .global-topbar { background: rgba(255,255,255,.94); border-bottom-color: #d8e5e6; }
+        body.light-theme .global-brand-mark { background: #0b9f91 !important; color: #fff !important; box-shadow: 0 0 0 4px rgba(11,159,145,.1); }
+        body.light-theme .session-pill { background: #eef7f7 !important; border-color: #c4dfe0 !important; }
+        body.light-theme .session-pill i, body.light-theme .status-dot { background: #0b9f91; box-shadow: 0 0 0 4px rgba(11,159,145,.1); }
+        body.light-theme .session-pill em { color: #087d73 !important; }
+        body.light-theme .global-readonly, body.light-theme .global-action { color: #42606a !important; background: #f2f7f7 !important; border-color: #c5d8da !important; }
+        body.light-theme .global-readonly { color: #087d73 !important; }
+        body.light-theme .global-action:hover { color: #16333b !important; background: #e2f3f1 !important; border-color: #0b9f91 !important; }
+        body.light-theme .global-avatar { background: #e5bb78 !important; color: #3a2c16 !important; }
+        body.light-theme .sidebar { background: #fbfdfd; border-right-color: #d8e5e6; }
+        body.light-theme .sidebar > .new-chat-btn:first-child { color: #fff; background: #0b9f91; }
+        body.light-theme .sidebar > .new-chat-btn:first-child:hover { background: #087d73; }
+        body.light-theme .skill-nav-btn, body.light-theme .knowledge-nav-btn, body.light-theme .blueprint-nav-btn { color: #536e77 !important; }
+        body.light-theme .skill-nav-btn:hover, body.light-theme .knowledge-nav-btn:hover, body.light-theme .blueprint-nav-btn:hover { color: #16333b !important; background: #e8f3f3 !important; }
+        body.light-theme .chat-history-item:hover { background: #edf6f6; }
+        body.light-theme .chat-history-item.active { color: #16333b; background: #dff1ef; border-color: #a8d6d2; box-shadow: inset 3px 0 #0b9f91; }
+        body.light-theme .topbar { background: rgba(246,250,250,.88); border-bottom-color: #d8e5e6; }
+        body.light-theme .platform-tag { background: #eef5f6; border-color: #c5d8da; }
+        body.light-theme .chat-area { background: rgba(249,252,252,.66); }
+        body.light-theme .welcome-icon { box-shadow: inset 0 0 0 1px #a8d6d2, 0 10px 28px rgba(31,76,82,.12); }
+        body.light-theme .feature-card { border-color: #c5d8da; box-shadow: 0 3px 12px rgba(31,76,82,.04); }
+        body.light-theme .feature-card:hover { border-color: #0b9f91; box-shadow: 0 7px 18px rgba(11,159,145,.12); }
+        body.light-theme .message.user .message-body { background: #e2f3f1; border-color: #acd8d4; }
+        body.light-theme .message.agent .message-avatar { background: #dff3f1; color: #087d73; box-shadow: inset 0 0 0 1px #a8d6d2; }
+        body.light-theme .message.user .message-avatar { background: #e7eef5; }
+        body.light-theme .message-body pre, body.light-theme .message-body code, body.light-theme .reply-content code { background: #edf4f5; border-color: #c5d8da; }
+        body.light-theme .input-area { background: linear-gradient(to top, #f3f7f8 72%, transparent); }
+        body.light-theme .input-box { border-color: #a8c2c5; box-shadow: 0 10px 28px rgba(31,76,82,.1); }
+        body.light-theme .input-box:focus { border-color: #0b9f91; box-shadow: 0 0 0 3px rgba(11,159,145,.13), 0 10px 28px rgba(31,76,82,.1); }
+        body.light-theme .send-btn { color: #fff; background: #0b9f91; }
+        body.light-theme .send-btn:hover { background: #087d73; box-shadow: 0 0 18px rgba(11,159,145,.25); }
+        body.light-theme .right-panel { background: #f4f8f9; border-left-color: #c5d8da; }
+        body.light-theme .trace-header { background: #fff !important; border-bottom-color: #d8e5e6 !important; }
+        body.light-theme .trace-toolbar { color: #536e77 !important; background: #e9f2f3 !important; border-bottom-color: #c5d8da !important; }
+        body.light-theme .trace-node { background: #fff !important; border-color: #c5d8da !important; box-shadow: 0 2px 8px rgba(31,76,82,.04); }
+        body.light-theme .trace-node:hover, body.light-theme .trace-node.selected { background: #e8f5f3 !important; border-color: #0b9f91 !important; }
+        body.light-theme .trace-detail, body.light-theme .trace-io-block { background: #fff !important; border-color: #c5d8da !important; }
+        body.light-theme .trace-mode-bar { border-top-color: #c5d8da !important; }
+        body.light-theme .activity-dock { background: #eaf2f3 !important; border-top-color: #c5d8da !important; }
+        body.light-theme .activity-dock-header { color: #35545d !important; }
+        body.light-theme .activity-dock-header span, body.light-theme .activity-dock-actions { color: #64808a !important; }
+        body.light-theme .activity-dock-actions button { color: #47636c; background: #fff; border-color: #b6ced0; }
+        body.light-theme .dock-ticker .trace-ticker-row { color: #35545d; background: #fff !important; border-color: #c5d8da !important; box-shadow: 0 2px 8px rgba(31,76,82,.04); }
+        body.light-theme .dock-ticker .trace-ticker-row span:nth-child(2) { color: #35545d; }
+
+        /* Component pass: give every workspace a clear canvas, scroll region,
+           and action shelf. */
+        .skill-overlay, .knowledge-overlay, .blueprint-overlay {
+            padding: 24px;
+            background: rgba(4, 13, 22, .72);
+            backdrop-filter: blur(10px);
+        }
+        .skill-console, .knowledge-console, .blueprint-console {
+            width: min(1280px, 100%);
+            height: min(900px, calc(100vh - 48px));
+            border: 1px solid #356078;
+            border-radius: 20px;
+            background: #f7fbfb;
+            box-shadow: 0 28px 90px rgba(2, 17, 28, .38);
+        }
+        .skill-console-header, .knowledge-console-header, .blueprint-console-header {
+            min-height: 76px;
+            padding: 18px 24px;
+            background: #fff;
+            border-bottom-color: #d5e3e5;
+        }
+        .skill-console-title, .knowledge-console-title, .blueprint-console-title { color: #16333b; font-size: 18px; letter-spacing: -.03em; }
+        .skill-console-subtitle, .knowledge-console-subtitle, .blueprint-console-subtitle { color: #66818a; line-height: 1.45; }
+        .skill-console .icon-btn, .knowledge-console .icon-btn, .blueprint-console .icon-btn { width: 34px; height: 34px; border-radius: 10px; color: #4c6b74; background: #f0f6f6; border-color: #c5d8da; }
+        .skill-console .icon-btn:hover, .knowledge-console .icon-btn:hover, .blueprint-console .icon-btn:hover { color: #16333b; background: #e2f3f1; border-color: #0b9f91; }
+
+        .skill-toolbar { min-height: 62px; padding: 12px 24px; background: #eef5f6; border-bottom-color: #d5e3e5; }
+        .skill-toolbar label { color: #56727b; }
+        .skill-toolbar input { background: #fff; border-color: #b8ced1; }
+        .skill-toolbar .btn-primary, .skill-editor-footer .btn-primary { background: #0b9f91; border-color: #0b9f91; }
+        .skill-toolbar .btn-primary:hover, .skill-editor-footer .btn-primary:hover { background: #087d73; }
+        .skill-toolbar .btn-secondary, .skill-editor-footer .btn-secondary { color: #36565f; background: #fff; border-color: #b8ced1; }
+        .skill-toolbar .btn-secondary:hover, .skill-editor-footer .btn-secondary:hover { background: #e5f3f2; border-color: #0b9f91; }
+        .skill-console-body { grid-template-columns: 280px minmax(0, 1fr); background: #f7fbfb; }
+        .skill-list { padding: 18px 14px; background: #f0f7f7; border-right-color: #d0e0e2; }
+        .skill-list-group { margin-bottom: 22px; }
+        .skill-list-name { color: #244650; margin: 0 8px 8px; }
+        .skill-version-item { padding: 11px 12px; border-radius: 10px; }
+        .skill-version-item:hover, .skill-version-item.active { color: #16333b; background: #fff; border-color: #0b9f91; box-shadow: 0 5px 14px rgba(31,76,82,.08); }
+        .skill-status { background: #dceeed; }
+        .skill-editor { background: #fff; }
+        .skill-editor-header { padding: 18px 24px 14px; border-bottom: 1px solid #e0eaeb; }
+        .skill-editor-header label { color: #56727b; }
+        .skill-editor-header input { background: #f3f8f8; border-color: #b8ced1; }
+        .skill-immutable-note { color: #718b92; }
+        .skill-files { padding: 16px 24px 20px; background: #fbfdfd; }
+        .skill-file-row { display: flex; flex-direction: column; margin-bottom: 14px; padding: 14px; background: #f1f7f7; border-color: #c7dadd; border-radius: 12px; }
+        .skill-file-row textarea { flex: 1; min-height: 220px; color: #294b55; background: #fff; border-color: #b8ced1; border-radius: 9px; }
+        .skill-files:has(.skill-file-row:only-child) .skill-file-row { min-height: 100%; }
+        .skill-files:has(.skill-file-row:only-child) .skill-file-row textarea { min-height: 300px; }
+        .skill-editor-footer { padding: 14px 24px; background: #f0f7f7; border-top-color: #d0e0e2; }
+        .skill-eval-summary { color: #64808a; }
+
+        .knowledge-console-body { display: flex; flex-direction: column; min-height: 0; background: #f7fbfb; }
+        .knowledge-search-panel { padding: 18px 24px 16px; background: #eef5f6; border-bottom-color: #d0e0e2; }
+        .knowledge-search-grid { gap: 14px; }
+        .knowledge-search-grid label, .knowledge-compose label { color: #41616a; font-weight: 600; }
+        .knowledge-search-grid input, .knowledge-search-grid select, .knowledge-compose input, .knowledge-compose select, .knowledge-compose textarea { background: #fff; border-color: #b8ced1; border-radius: 9px; color: #244650; }
+        .knowledge-results { flex: 1; min-height: 220px; padding: 24px; background: #fbfdfd; overflow: auto; }
+        .knowledge-results:empty::before { content: "还没有搜索结果"; display: grid; place-items: center; min-height: 180px; border: 1px dashed #b8ced1; border-radius: 12px; color: #78939a; background: #f4f9f9; font-size: 13px; }
+        .knowledge-compose { margin: 0 24px 20px; padding: 18px; background: #eef7f7; border: 1px solid #b8d7d7; border-radius: 14px; }
+
+        .blueprint-console-body { grid-template-columns: 300px minmax(0, 1fr); background: #f7fbfb; }
+        .blueprint-list { padding: 18px 14px; background: #f0f7f7; border-right-color: #d0e0e2; }
+        .blueprint-list-item { padding: 13px 12px; border-radius: 10px; }
+        .blueprint-list-item:hover, .blueprint-list-item.active { color: #16333b; background: #fff; border-color: #d49a3d; box-shadow: 0 5px 14px rgba(64,53,24,.08); }
+        .blueprint-editor { background: #fff; }
+        .blueprint-editor-header { padding: 18px 24px 14px; border-bottom: 1px solid #e0eaeb; }
+        .blueprint-editor-title { color: #16333b; font-size: 17px; }
+        .blueprint-selector, .blueprint-account { margin-left: 24px; margin-right: 24px; border-radius: 12px; }
+        .blueprint-fields { padding: 0 24px 20px; background: #fbfdfd; }
+        .blueprint-field { padding: 13px; margin-bottom: 11px; border-radius: 11px; background: #f1f7f7; border-color: #c7dadd; }
+        .blueprint-editor-footer { padding: 14px 24px; background: #eef5f6; border-top-color: #d0e0e2; }
+        .blueprint-editor-footer .btn-secondary { color: #36565f; background: #fff; border-color: #b8ced1; }
+        .blueprint-editor-footer .btn-primary { color: #fff; background: #0b9f91; }
+
+        .creation-card { border-color: #a8d6d2; border-radius: 16px; background: #fff; box-shadow: 0 12px 34px rgba(31,76,82,.12); }
+        .creation-card-header { padding: 17px 20px 14px; background: linear-gradient(135deg, #f7fbfb, #edf7f6); border-bottom-color: #d5e5e5; }
+        .creation-card-kicker { color: #0b8e82; letter-spacing: .04em; }
+        .creation-card-title { font-size: 16px; color: #16333b; }
+        .creation-card-meta { color: #64808a; }
+        .creation-card-context { padding: 10px 20px; background: #fbfdfd; border-bottom: 1px solid #e0eaeb; }
+        .creation-card-fields { gap: 12px; padding: 16px 20px; background: #fff; }
+        .creation-card-field { padding: 11px; border-radius: 11px; background: #f3f8f8; border-color: #c7dadd; }
+        .creation-card-field label { color: #244650; }
+        .creation-card-field input, .creation-card-field select, .creation-card-field textarea { background: #fff; border-color: #aec8cb; }
+        .creation-card-account { margin: 0 20px 5px; border-radius: 11px; background: #fff8e9; border-color: #edc56f; }
+        .creation-card-footer { padding: 13px 20px; background: #eef7f7; border-top-color: #d0e0e2; }
+        body:not(.light-theme) .skill-console,
+        body:not(.light-theme) .knowledge-console,
+        body:not(.light-theme) .blueprint-console { background: #0b1928; border-color: #2b5065; }
+        body:not(.light-theme) .skill-console-header,
+        body:not(.light-theme) .knowledge-console-header,
+        body:not(.light-theme) .blueprint-console-header,
+        body:not(.light-theme) .skill-editor { background: #102335; border-color: #1d354b; }
+        body:not(.light-theme) .skill-console-title,
+        body:not(.light-theme) .knowledge-console-title,
+        body:not(.light-theme) .blueprint-console-title,
+        body:not(.light-theme) .blueprint-editor-title { color: #edf7f5; }
+        body:not(.light-theme) .skill-toolbar,
+        body:not(.light-theme) .skill-list,
+        body:not(.light-theme) .knowledge-search-panel,
+        body:not(.light-theme) .blueprint-list,
+        body:not(.light-theme) .skill-editor-footer,
+        body:not(.light-theme) .blueprint-editor-footer { background: #0e2132; border-color: #1d354b; }
+        body:not(.light-theme) .skill-files,
+        body:not(.light-theme) .knowledge-results,
+        body:not(.light-theme) .blueprint-fields { background: #0b1928; }
+        body:not(.light-theme) .skill-file-row,
+        body:not(.light-theme) .blueprint-field,
+        body:not(.light-theme) .knowledge-compose { background: #102335; border-color: #2b4a62; }
+        body:not(.light-theme) .skill-file-row textarea,
+        body:not(.light-theme) .skill-editor-header input,
+        body:not(.light-theme) .skill-toolbar input,
+        body:not(.light-theme) .knowledge-search-grid input,
+        body:not(.light-theme) .knowledge-search-grid select,
+        body:not(.light-theme) .knowledge-compose input,
+        body:not(.light-theme) .knowledge-compose select,
+        body:not(.light-theme) .knowledge-compose textarea { color: #edf7f5; background: #091522; border-color: #2b4a62; }
+        body:not(.light-theme) .skill-console-subtitle,
+        body:not(.light-theme) .knowledge-console-subtitle,
+        body:not(.light-theme) .blueprint-console-subtitle,
+        body:not(.light-theme) .skill-immutable-note,
+        body:not(.light-theme) .skill-eval-summary { color: #9fb8c8; }
+        body:not(.light-theme) .skill-list-name,
+        body:not(.light-theme) .knowledge-search-grid label,
+        body:not(.light-theme) .knowledge-compose label { color: #c1d5dc; }
+        body:not(.light-theme) .skill-version-item:hover,
+        body:not(.light-theme) .skill-version-item.active,
+        body:not(.light-theme) .blueprint-list-item:hover,
+        body:not(.light-theme) .blueprint-list-item.active { color: #edf7f5; background: #14344a; }
+        body:not(.light-theme) .knowledge-results:empty::before { color: #7899a8; background: #102335; border-color: #2b4a62; }
+        body:not(.light-theme) .creation-card { background: #0b1928; border-color: #2b5065; }
+        body:not(.light-theme) .creation-card-header,
+        body:not(.light-theme) .creation-card-context,
+        body:not(.light-theme) .creation-card-fields { background: #102335; border-color: #1d354b; }
+        body:not(.light-theme) .creation-card-title,
+        body:not(.light-theme) .creation-card-field label { color: #edf7f5; }
+        body:not(.light-theme) .creation-card-meta,
+        body:not(.light-theme) .creation-card-field .help { color: #9fb8c8; }
+        body:not(.light-theme) .creation-card-field { background: #0e2132; border-color: #2b4a62; }
+        body:not(.light-theme) .creation-card-field input,
+        body:not(.light-theme) .creation-card-field select,
+        body:not(.light-theme) .creation-card-field textarea { color: #edf7f5; background: #091522; border-color: #2b4a62; }
+        body:not(.light-theme) .creation-card-footer { background: #0e2132; border-color: #1d354b; }
+        .message.agent .message-content { max-width: 100%; }
+        .message-body { color: #244650; }
+        .data-table {
+            display: table;
+            width: 100%;
+            table-layout: auto;
+            border: 1px solid #c7dadd;
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 6px 18px rgba(31,76,82,.06);
+        }
+        .data-table thead, .data-table tbody { width: 100%; }
+        .data-table th, .data-table td { min-width: 92px; vertical-align: top; word-break: break-word; }
+        .data-table th { color: #234b54; background: #e2f3f1; border-bottom-color: #b8d7d7; font-size: 11px; font-weight: 700; }
+        .data-table td { color: #466772; background: #fff; line-height: 1.55; }
+        .data-table tr:hover td { background: #f1f8f7; }
+        .message-body pre {
+            max-height: 360px;
+            overflow: auto;
+            color: #355b66;
+            background: #eef5f6;
+            border-color: #c7dadd;
+            border-radius: 10px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.6;
+        }
+        .trace-detail { border-radius: 12px !important; box-shadow: 0 4px 14px rgba(31,76,82,.05); }
+        .trace-io-block { border-radius: 10px !important; }
+        .trace-io-label { font-weight: 650; }
+        body:not(.light-theme) .message-body { color: #edf7f5; }
+        body:not(.light-theme) .data-table { border-color: #2b4a62; background: #102335; }
+        body:not(.light-theme) .data-table th { color: #edf7f5; background: #14344a; border-bottom-color: #2b4a62; }
+        body:not(.light-theme) .data-table td { color: #b9ced8; background: #102335; }
+        body:not(.light-theme) .data-table tr:hover td { background: #14344a; }
+        body:not(.light-theme) .message-body pre { color: #c9dced; background: #091522; border-color: #2b4a62; }
+        body.light-theme .message-body { color: #244650; }
+        body.light-theme .message-body strong { color: #16333b; }
+        body.light-theme .message.agent { padding: 4px 0; }
+        body.light-theme .message-header { margin-bottom: 7px; }
+        body.light-theme .message-sender { color: #244650; }
+        body.light-theme .message-body h1, body.light-theme .message-body h2, body.light-theme .message-body h3 { color: #16333b; letter-spacing: -.025em; }
+        body.light-theme .message-body h2 { margin-top: 20px; margin-bottom: 8px; font-size: 16px; }
+        body.light-theme .message-body h3 { margin-top: 16px; margin-bottom: 6px; font-size: 14px; }
+        body.light-theme .tool-results { gap: 7px; margin-top: 14px; }
+        body.light-theme .tool-tag { padding: 5px 9px; border-radius: 7px; background: #edf6f6; border-color: #b8d7d7; color: #466772; font-size: 11px; }
+        body.light-theme .tool-tag.success { color: #17745e; background: #e4f5ef; border-color: #a5d6c5; }
+        body.light-theme .tool-tag.error { color: #a52e47; background: #fff0f2; border-color: #e5acb7; }
+        body.light-theme .confirm-card { border-color: #d9b86b; background: #fffdf8; box-shadow: 0 12px 30px rgba(78,63,26,.12); }
+        body.light-theme .confirm-card-header { background: linear-gradient(135deg, #fff8e8, transparent 64%); border-bottom: 1px solid #f0dfb8; }
+        body.light-theme .confirm-icon { color: #8a620e; background: #fff2c9; border-color: #e2bd62; }
+        body.light-theme .confirm-title { color: #4c3b1a; }
+        body.light-theme .confirm-card-body { color: #6d5d3d; }
+        body.light-theme .confirm-card-body strong { color: #4c3b1a; }
+        body.light-theme .confirm-card-footer { background: #fff8e8; border-top-color: #f0dfb8; }
+        body.light-theme .confirm-btn.cancel { color: #6d5d3d; background: #fff; border-color: #d8c69d; }
+        body.light-theme .confirm-btn.cancel:hover { color: #4c3b1a; background: #fff4d8; border-color: #c89c38; }
+        body.light-theme .confirm-btn.confirm { color: #fff; background: #0b9f91; box-shadow: 0 4px 12px rgba(11,159,145,.2); }
+
+        .workspace-popover {
+            border: 1px solid #2b5065;
+            border-radius: 14px;
+            background: #102335;
+            box-shadow: 0 18px 50px rgba(2,17,28,.28);
+        }
+        .workspace-popover-header { padding: 14px 16px; border-bottom-color: #2b4a62; }
+        .workspace-popover-title { color: var(--text-primary); font-weight: 680; letter-spacing: -.02em; }
+        .workspace-popover-subtitle { color: var(--text-secondary); line-height: 1.5; }
+        .workspace-popover-close { color: var(--text-secondary); border-radius: 7px; }
+        .workspace-popover-close:hover { color: var(--accent); background: var(--accent-light); }
+        .workspace-form input, .workspace-form select, .workspace-mode-select-label select {
+            min-height: 34px; border-radius: 8px; border-color: var(--border-light); background: var(--bg-primary); color: var(--text-primary);
+        }
+        .workspace-form input:focus, .workspace-form select:focus, .workspace-mode-select-label select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+        .workspace-form-actions button, .knowledge-search-panel button, .knowledge-compose-actions button {
+            min-height: 32px; padding: 7px 12px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer;
+        }
+        .workspace-form-actions button:hover, .knowledge-search-panel button:hover, .knowledge-compose-actions button:hover { border-color: var(--accent); background: var(--accent-light); }
+        .workspace-mode-card { border-radius: 11px; }
+
+        .right-panel { box-shadow: -10px 0 28px rgba(2,17,28,.05); }
+        .trace-node-copy { padding: 2px 0; }
+        .trace-node-state { letter-spacing: -.02em; }
+        .trace-empty { min-height: 150px; }
+        .activity-dock { box-shadow: 0 -8px 24px rgba(2,17,28,.04); }
+        .dock-ticker .trace-ticker-row { min-height: 38px; }
+
+        body.light-theme .workspace-popover { color: #244650; background: #fff; border-color: #b8ced1; box-shadow: 0 18px 50px rgba(31,76,82,.16); }
+        body.light-theme .workspace-popover-header { border-bottom-color: #d5e3e5; }
+        body.light-theme .workspace-popover-title { color: #16333b; }
+        body.light-theme .workspace-popover-subtitle, body.light-theme .workspace-form label { color: #56727b; }
+        body.light-theme .workspace-popover-close { color: #55727b; }
+        body.light-theme .workspace-form input, body.light-theme .workspace-form select, body.light-theme .workspace-mode-select-label select { color: #244650; background: #fff; border-color: #b8ced1; }
+        body.light-theme .workspace-form-actions button, body.light-theme .knowledge-search-panel button, body.light-theme .knowledge-compose-actions button { color: #36565f; background: #fff; border-color: #b8ced1; }
+        body.light-theme .workspace-form-actions button:hover, body.light-theme .knowledge-search-panel button:hover, body.light-theme .knowledge-compose-actions button:hover { color: #087d73; background: #e5f3f2; border-color: #0b9f91; }
+        body.light-theme .trace-empty { color: #66818a; background: #f6fafb; border-color: #b8ced1; }
+        body.light-theme .trace-empty strong { color: #35545d; }
+        body.light-theme .right-panel { box-shadow: -10px 0 28px rgba(31,76,82,.05); }
+        body.light-theme .activity-dock { box-shadow: 0 -8px 24px rgba(31,76,82,.05); }
+        body.light-theme ::-webkit-scrollbar-thumb { background: #b8ced1; }
+        body.light-theme ::-webkit-scrollbar-thumb:hover { background: #82aeb2; }
+        ::selection { color: #06201f; background: rgba(88,230,208,.35); }
+
+        #knowledgeComposer {
+            display: none;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 16px;
+            align-content: start;
+        }
+        #knowledgeComposer.active { display: grid; }
+        #knowledgeComposer .knowledge-compose-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(150px, .75fr) minmax(150px, .75fr);
+            gap: 14px;
+        }
+        #knowledgeComposer label,
+        #knowledgeComposer .knowledge-file-row > label {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 7px;
+            color: #41616a;
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.3;
+        }
+        #knowledgeComposer .knowledge-compose-grid label:first-child { grid-column: span 2; }
+        #knowledgeComposer input,
+        #knowledgeComposer select,
+        #knowledgeComposer textarea {
+            width: 100%;
+            min-height: 36px;
+            padding: 8px 10px;
+            border: 1px solid #b8ced1;
+            border-radius: 9px;
+            color: #244650;
+            background: #fff;
+            font: inherit;
+            font-size: 12px;
+        }
+        #knowledgeComposer input:focus,
+        #knowledgeComposer select:focus,
+        #knowledgeComposer textarea:focus { border-color: #0b9f91; box-shadow: 0 0 0 3px rgba(11,159,145,.12); outline: none; }
+        #knowledgeComposer .knowledge-file-row {
+            display: grid;
+            grid-template-columns: minmax(220px, .7fr) minmax(0, 1.3fr);
+            align-items: end;
+            gap: 14px;
+            padding: 12px;
+            border: 1px dashed #b8ced1;
+            border-radius: 10px;
+            background: #f4f9f9;
+        }
+        #knowledgeComposer .knowledge-file-row input[type="file"] { padding: 6px; }
+        #knowledgeComposer .knowledge-file-hint { align-self: end; padding-bottom: 9px; color: #708991; line-height: 1.5; }
+        #knowledgeComposer > label { gap: 7px; }
+        #knowledgeComposer > label textarea { min-height: 190px; resize: vertical; line-height: 1.6; }
+        #knowledgeComposer .workspace-form-actions { align-items: center; padding-top: 2px; }
+        #knowledgeComposer .knowledge-compose-actions { display: flex; gap: 8px; }
+        #knowledgeComposer .knowledge-compose-actions button:last-child { color: #fff; background: #0b9f91; border-color: #0b9f91; }
+        #knowledgeComposer .knowledge-compose-actions button:last-child:hover { color: #fff; background: #087d73; }
+        body:not(.light-theme) #knowledgeComposer label,
+        body:not(.light-theme) #knowledgeComposer .knowledge-file-row > label { color: #c1d5dc; }
+        body:not(.light-theme) #knowledgeComposer input,
+        body:not(.light-theme) #knowledgeComposer select,
+        body:not(.light-theme) #knowledgeComposer textarea { color: #edf7f5; background: #091522; border-color: #2b4a62; }
+        body:not(.light-theme) #knowledgeComposer .knowledge-file-row { border-color: #2b4a62; background: #102335; }
+        body:not(.light-theme) #knowledgeComposer .knowledge-file-hint { color: #9fb8c8; }
+        @media (max-width: 760px) {
+            #knowledgeComposer .knowledge-compose-grid { grid-template-columns: 1fr; }
+            #knowledgeComposer .knowledge-compose-grid label:first-child { grid-column: auto; }
+            #knowledgeComposer .knowledge-file-row { grid-template-columns: 1fr; gap: 8px; }
+            #knowledgeComposer .knowledge-file-hint { padding-bottom: 0; }
+            #knowledgeComposer .workspace-form-actions { align-items: stretch; flex-direction: column; }
+            #knowledgeComposer .knowledge-compose-actions { justify-content: stretch; }
+            #knowledgeComposer .knowledge-compose-actions button { flex: 1; }
+        }
+        @media (max-width: 760px) {
+            .skill-overlay, .knowledge-overlay, .blueprint-overlay { padding: 0; }
+            .skill-console, .knowledge-console, .blueprint-console { height: 100%; border-radius: 0; }
+            .skill-console-body, .blueprint-console-body { grid-template-columns: 1fr; grid-template-rows: 190px minmax(0, 1fr); }
+            .skill-list, .blueprint-list { border-right: 0; border-bottom: 1px solid #d0e0e2; }
+            .skill-editor-header, .skill-files, .skill-editor-footer, .blueprint-editor-header, .blueprint-fields, .blueprint-editor-footer { padding-left: 16px; padding-right: 16px; }
+            .creation-card-fields { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -2542,29 +3095,29 @@
                 <!-- 欢迎页 -->
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
-                    <h1 class="welcome-title">欢迎使用 AI Ops Agent</h1>
-                    <p class="welcome-desc">我是您的广告投放专家助手，支持 Meta、TikTok、Google Ads、DV360 四大平台。<br>告诉我您的需求，我将为您制定投放方案。</p>
+                    <h1 class="welcome-title">把投放问题，交给一个懂执行的 Agent。</h1>
+                    <p class="welcome-desc">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
                     
                     <div class="feature-grid">
                         <div class="feature-card" onclick="setInput('帮我列出 Meta 账户')">
                             <div class="icon">📘</div>
-                            <div class="title">查询 Meta 账户</div>
-                            <div class="desc">查看广告账户信息和Campaign列表</div>
+                            <div class="title">查看账户</div>
+                            <div class="desc">账户与 Campaign 概览</div>
                         </div>
                         <div class="feature-card" onclick="setInput('创建 TikTok 广告系列')">
                             <div class="icon">🎵</div>
-                            <div class="title">创建 TikTok Campaign</div>
-                            <div class="desc">快速创建信息流或Spark广告</div>
+                            <div class="title">创建 Campaign</div>
+                            <div class="desc">从蓝图开始配置广告</div>
                         </div>
                         <div class="feature-card" onclick="setInput('查询 Google Ads 报表')">
                             <div class="icon">🔍</div>
-                            <div class="title">Google Ads 报表</div>
-                            <div class="desc">分析搜索和购物广告效果</div>
+                            <div class="title">分析报表</div>
+                            <div class="desc">读懂渠道效果与趋势</div>
                         </div>
                         <div class="feature-card" onclick="setInput('跨渠道预算优化')">
                             <div class="icon">⚡</div>
-                            <div class="title">智能预算优化</div>
-                            <div class="desc">跨平台预算分配建议</div>
+                            <div class="title">优化预算</div>
+                            <div class="desc">比较渠道，找到增长空间</div>
                         </div>
                     </div>
                 </div>
@@ -2741,6 +3294,7 @@
         let historySearchQuery = '';
         let pendingConversationDeleteIds = [];
         let pendingConversationRenameId = null;
+        const loadedConversationTurnIds = new Set();
         let workspaceTheme = 'dark';
         const creationCardState = new Map();
         const creationCardEvaluationTimers = new Map();
@@ -2776,6 +3330,10 @@
             unknown: '待命', recovery_required: '需恢复'
         };
         let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, expanded: false, activeTurn: 0, traceId: null, status: 'unknown', orderCounter: 0 };
+        let durableRunPollTimer = null;
+        let durableRunPollToken = 0;
+        let activeDurableRunId = null;
+        let durableRunSeq = 0;
 
         function traceStatusLabel(status) {
             return TRACE_STATUS_LABELS[status] || '未知';
@@ -3399,6 +3957,82 @@
             renderExecutionTrace();
         }
 
+        function stopDurableRunPolling() {
+            durableRunPollToken += 1;
+            if (durableRunPollTimer) {
+                clearTimeout(durableRunPollTimer);
+                durableRunPollTimer = null;
+            }
+            activeDurableRunId = null;
+            durableRunSeq = 0;
+        }
+
+        function applyDurableRun(run, { reset = true } = {}) {
+            if (!run || !Array.isArray(run.events)) return;
+            if (reset) resetExecutionTrace();
+            for (const event of run.events) applyExecutionEvent(event);
+            durableRunSeq = Math.max(
+                Number(run.latest_seq || 0),
+                ...run.events.map(event => Number(event.seq || 0)),
+            );
+            if (run.status === 'recovery_required') {
+                updateTraceHeader('recovery_required', run.recovery_message || '服务中断，需先回查 Provider 后恢复');
+            } else if (run.status) {
+                updateTraceHeader(run.status, run.status === 'running' ? '服务重启后正在恢复本次执行现场' : '已恢复最近一次 Agent 执行轨迹');
+            }
+            renderExecutionTrace();
+        }
+
+        function scheduleDurableRunPoll(delay = 1000) {
+            if (!activeDurableRunId) return;
+            const token = durableRunPollToken;
+            if (durableRunPollTimer) clearTimeout(durableRunPollTimer);
+            durableRunPollTimer = setTimeout(() => pollDurableRun(token), delay);
+        }
+
+        async function pollDurableRun(token) {
+            if (token !== durableRunPollToken || !activeDurableRunId) return;
+            try {
+                const run = await apiFetch(
+                    `/runs/${encodeURIComponent(activeDurableRunId)}/events?after_seq=${durableRunSeq}&limit=256`,
+                );
+                if (token !== durableRunPollToken) return;
+                applyDurableRun(run, { reset: false });
+                if (run.status === 'running') scheduleDurableRunPoll(1000);
+                else stopDurableRunPolling();
+            } catch (_) {
+                if (token === durableRunPollToken) scheduleDurableRunPoll(2000);
+            }
+        }
+
+        async function loadLatestDurableRun(targetSessionId) {
+            stopDurableRunPolling();
+            if (!targetSessionId) return;
+            const token = durableRunPollToken;
+            try {
+                const response = await authenticatedFetch(
+                    `/sessions/${encodeURIComponent(targetSessionId)}/runs/latest`,
+                );
+                if (!response.ok) return;
+                const run = await response.json();
+                if (token !== durableRunPollToken || sessionId !== targetSessionId) return;
+                activeDurableRunId = run.run_id || null;
+                if (
+                    ['running', 'recovery_required'].includes(run.status)
+                    && run.metadata?.user_input
+                    && !loadedConversationTurnIds.has(run.turn_id)
+                ) {
+                    addMessage(run.metadata.user_input, 'user');
+                    loadedConversationTurnIds.add(run.turn_id);
+                }
+                applyDurableRun(run);
+                if (run.status === 'running') scheduleDurableRunPoll(500);
+                else stopDurableRunPolling();
+            } catch (_) {
+                // Older deployments may not expose durable run replay yet.
+            }
+        }
+
         function toggleTracePanel() {
             traceState.collapsed = !traceState.collapsed;
             if (traceState.collapsed) {
@@ -3442,6 +4076,7 @@
         }
 
         function startExecutionTrace(userInput) {
+            stopDurableRunPolling();
             traceState.activeTurn += 1;
             traceState.nodes = [];
             traceState.events = [];
@@ -3587,6 +4222,7 @@
                 if (!line) return;
                 try {
                     const payload = JSON.parse(line.slice(5).trim());
+                    if (payload.run_id) activeDurableRunId = payload.run_id;
                     const applied = applyExecutionEvent(payload);
                     if (applied?.type === 'reply') finalResult = applied;
                     if (applied?.type === 'error') {
@@ -3606,6 +4242,7 @@
             }
             if (buffer.trim()) consume(buffer);
             if (!finalResult) throw new Error(streamError || '事件流未返回最终回复');
+            if (finalResult.run_id) activeDurableRunId = finalResult.run_id;
             return finalResult;
         }
 
@@ -4037,6 +4674,10 @@
                 if (!response.ok) throw new Error(data.detail || data.error || `对话加载失败（${response.status}）`);
                 sessionId = data.session_id || targetSessionId;
                 selectedConversationId = sessionId;
+                loadedConversationTurnIds.clear();
+                for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
+                    if (message.turn_id) loadedConversationTurnIds.add(message.turn_id);
+                }
                 pendingRequest = null;
                 document.getElementById('confirmCard')?.remove();
                 const container = document.getElementById('chatContainer');
@@ -4059,6 +4700,7 @@
                     container.appendChild(empty);
                 }
                 restoreExecutionTrace(data.execution_traces);
+                await loadLatestDurableRun(sessionId);
                 renderConversationHistory();
             } catch (error) {
                 addMessage(error?.message || '对话加载失败，请稍后重试。', 'agent', null, true);
@@ -6818,8 +7460,10 @@
         
         // New chat
         function newChat() {
+            stopDurableRunPolling();
             sessionId = null;
             selectedConversationId = null;
+            loadedConversationTurnIds.clear();
             pendingRequest = null;
             pendingBlueprintRequest = null;
             pendingCreationReview = null;
@@ -6831,29 +7475,29 @@
             document.getElementById('chatContainer').innerHTML = `
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
-                    <h1 class="welcome-title">欢迎使用 AI Ops Agent</h1>
-                    <p class="welcome-desc">我是您的广告投放专家助手，支持 Meta、TikTok、Google Ads、DV360 四大平台。<br>告诉我您的需求，我将为您制定投放方案。</p>
+                    <h1 class="welcome-title">把投放问题，交给一个懂执行的 Agent。</h1>
+                    <p class="welcome-desc">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
                     
                     <div class="feature-grid">
                         <div class="feature-card" onclick="setInput('帮我列出 Meta 账户')">
                             <div class="icon">📘</div>
-                            <div class="title">查询 Meta 账户</div>
-                            <div class="desc">查看广告账户信息和Campaign列表</div>
+                            <div class="title">查看账户</div>
+                            <div class="desc">账户与 Campaign 概览</div>
                         </div>
                         <div class="feature-card" onclick="setInput('创建 TikTok 广告系列')">
                             <div class="icon">🎵</div>
-                            <div class="title">创建 TikTok Campaign</div>
-                            <div class="desc">快速创建信息流或Spark广告</div>
+                            <div class="title">创建 Campaign</div>
+                            <div class="desc">从蓝图开始配置广告</div>
                         </div>
                         <div class="feature-card" onclick="setInput('查询 Google Ads 报表')">
                             <div class="icon">🔍</div>
-                            <div class="title">Google Ads 报表</div>
-                            <div class="desc">分析搜索和购物广告效果</div>
+                            <div class="title">分析报表</div>
+                            <div class="desc">读懂渠道效果与趋势</div>
                         </div>
                         <div class="feature-card" onclick="setInput('跨渠道预算优化')">
                             <div class="icon">⚡</div>
-                            <div class="title">智能预算优化</div>
-                            <div class="desc">跨平台预算分配建议</div>
+                            <div class="title">优化预算</div>
+                            <div class="desc">比较渠道，找到增长空间</div>
                         </div>
                     </div>
                 </div>
