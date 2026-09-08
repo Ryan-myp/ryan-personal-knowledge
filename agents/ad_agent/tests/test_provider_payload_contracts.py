@@ -4399,6 +4399,143 @@ def test_google_product_group_lifecycle_tools_are_scoped_and_dry_run_only():
     )
 
 
+def test_google_pmax_listing_group_filter_create_uses_asset_group_resource():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation)) or {
+            "data": {"results": [{
+                "resourceName": "customers/123/assetGroupListingGroupFilters/456~7"
+            }]}
+        }
+    )
+
+    assert client.create_asset_group_listing_group_filter("456") == "7"
+    assert calls[-1] == (
+        "assetGroupListingGroupFilters",
+        {"create": {
+            "assetGroup": "customers/123/assetGroups/456",
+            "type": "SUBDIVISION",
+            "listingSource": "SHOPPING",
+        }},
+    )
+
+    assert client.create_asset_group_listing_group_filter(
+        "456", "UNIT_INCLUDED", "SHOPPING", "PRODUCT_CATEGORY", "1234",
+        dimension_level="LEVEL3", parent_filter_id="7",
+    ) == "7"
+    assert calls[-1][1]["create"]["caseValue"] == {
+        "productCategory": {"level": "LEVEL3", "categoryId": 1234}
+    }
+    assert calls[-1][1]["create"]["parentListingGroupFilter"] == (
+        "customers/123/assetGroupListingGroupFilters/456~7"
+    )
+
+    # A PMax retail campaign may use an UNIT_INCLUDED root for "all products".
+    assert client.create_asset_group_listing_group_filter("456", "UNIT_INCLUDED") == "7"
+    with pytest.raises(ValueError, match="root.*UNIT_EXCLUDED"):
+        client.create_asset_group_listing_group_filter("456", "UNIT_EXCLUDED")
+    with pytest.raises(ValueError, match="another asset group or customer"):
+        client.create_asset_group_listing_group_filter(
+            "456", "UNIT_INCLUDED", parent_filter_id="customers/999/assetGroupListingGroupFilters/456~7",
+            product_dimension="PRODUCT_BRAND", value="Acme",
+        )
+
+
+def test_google_pmax_listing_group_filter_normalizes_all_tree_metadata():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client._search_all = lambda query, **kwargs: [{
+        "assetGroupListingGroupFilter": {
+            "id": "7",
+            "resourceName": "customers/123/assetGroupListingGroupFilters/456~7",
+            "assetGroup": "customers/123/assetGroups/456",
+            "type": "UNIT_EXCLUDED", "listingSource": "SHOPPING",
+            "parentListingGroupFilter": "customers/123/assetGroupListingGroupFilters/456~1",
+            "caseValue": {
+                "productCustomAttribute": {"index": "INDEX2", "value": "clearance"}
+            },
+            "path": {"dimensions": []},
+        }
+    }]
+
+    result = client.list_asset_group_listing_group_filters("456", page_size=25)
+    assert result[0]["asset_group_id"] == "456"
+    assert result[0]["listing_group_filter_id"] == "7"
+    assert result[0]["product_dimension"] == "PRODUCT_CUSTOM_ATTRIBUTE"
+    assert result[0]["custom_attribute_index"] == "INDEX2"
+    assert result[0]["value"] == "clearance"
+    assert "asset_group_listing_group_filter" in client._asset_group_listing_group_filter_query()
+
+
+def test_google_pmax_listing_group_filter_update_delete_are_typed_and_scoped():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: calls.append((resource, operation)) or {}
+
+    assert client.update_asset_group_listing_group_filter(
+        "456", "7", {
+            "product_dimension": "PRODUCT_BRAND", "value": "Acme",
+        },
+    )["resource_name"] == "customers/123/assetGroupListingGroupFilters/456~7"
+    assert calls[-1][1]["update"]["caseValue"] == {
+        "productBrand": {"value": "Acme"}
+    }
+    assert calls[-1][1]["updateMask"] == {"paths": ["caseValue"]}
+
+    deleted = client.delete_asset_group_listing_group_filter("456", "7")
+    assert deleted["listing_group_filter_id"] == "7"
+    assert calls[-1] == (
+        "assetGroupListingGroupFilters",
+        {"remove": "customers/123/assetGroupListingGroupFilters/456~7"},
+    )
+    with pytest.raises(ValueError, match="caseValue is replaced"):
+        client.update_asset_group_listing_group_filter("456", "7", {"value": "Acme"})
+
+
+def test_google_pmax_listing_group_filter_tools_and_blueprint_are_declared():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    expected = {
+        "google_list_asset_group_listing_group_filters",
+        "google_get_asset_group_listing_group_filter",
+        "google_create_asset_group_listing_group_filter",
+        "google_update_asset_group_listing_group_filter",
+        "google_delete_asset_group_listing_group_filter",
+    }
+    assert expected <= definitions.keys()
+    create_tool = definitions["google_create_asset_group_listing_group_filter"]
+    assert create_tool.parent_resource_type == "asset_group"
+    assert create_tool.live_support is True
+    assert create_tool.input_schema.properties["filter_type"]["enum"] == [
+        "SUBDIVISION", "UNIT_INCLUDED", "UNIT_EXCLUDED"
+    ]
+    assert validate_tool_input(
+        create_tool.input_schema,
+        {
+            "asset_group_id": "456", "filter_type": "UNIT_INCLUDED",
+            "parent_filter_id": "7", "product_dimension": "PRODUCT_BRAND",
+            "value": "Acme",
+        },
+        include_provider_contract=True,
+    ) == []
+    assert validate_tool_input(
+        create_tool.input_schema,
+        {"asset_group_id": "456", "filter_type": "UNIT_EXCLUDED"},
+        include_provider_contract=True,
+    )
+
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_google_capability())
+    blueprint = runtime.creation_blueprints.get("google-ads.performance_max")
+    assert "google_create_asset_group_listing_group_filter" in blueprint.tools
+    assert any(
+        field["path"] == "listing_group_filter.product_dimension"
+        for field in blueprint.fields
+    )
+
+
 def test_google_responsive_display_ad_builds_dedicated_ad_payload():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "g1"})
     operations = []

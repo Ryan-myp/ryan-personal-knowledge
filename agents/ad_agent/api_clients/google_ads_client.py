@@ -164,6 +164,32 @@ class GoogleAdsAPIClient(BasePlatformClient):
     }
     KEYWORD_UPDATE_FIELDS = {"status", "cpc_bid_micros", "cpc_bid"}
     PRODUCT_GROUP_UPDATE_FIELDS = {"status", "cpc_bid_micros", "cpc_bid"}
+    # PMax uses a different listing tree resource from Standard Shopping.
+    # Keep these enums and the case-value translation at the Google adapter
+    # boundary; ``AdGroupCriterion.listingGroup`` must never be sent for an
+    # AssetGroup.
+    ASSET_GROUP_LISTING_GROUP_FILTER_TYPES = {
+        "SUBDIVISION", "UNIT_INCLUDED", "UNIT_EXCLUDED",
+    }
+    ASSET_GROUP_LISTING_SOURCES = {"SHOPPING", "WEBPAGE", "RETAIL"}
+    ASSET_GROUP_LISTING_DIMENSIONS = {
+        "PRODUCT_TYPE", "PRODUCT_BRAND", "PRODUCT_CATEGORY", "PRODUCT_CHANNEL",
+        "PRODUCT_CONDITION", "PRODUCT_CUSTOM_ATTRIBUTE", "PRODUCT_ITEM_ID",
+        "WEBPAGE", "RETAIL_FILTER_BUNDLE",
+    }
+    ASSET_GROUP_LISTING_PRODUCT_LEVELS = {
+        "LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5",
+    }
+    ASSET_GROUP_LISTING_CUSTOM_ATTRIBUTE_INDICES = {
+        "INDEX0", "INDEX1", "INDEX2", "INDEX3", "INDEX4",
+    }
+    ASSET_GROUP_LISTING_UPDATE_FIELDS = {
+        # Google marks the tree identity fields immutable. caseValue is the
+        # only mutable field exposed by the v24 resource contract.
+        "product_dimension", "value", "dimension_level",
+        "custom_attribute_index", "webpage_conditions",
+        "retail_filter_shared_set",
+    }
     USER_LIST_UPLOAD_COLUMNS = {"hashed_email", "hashed_phone_number"}
     MAX_USER_LIST_UPLOAD_BYTES = 100 * 1024 * 1024
     MAX_USER_LIST_UPLOAD_ROWS = 100_000
@@ -2226,6 +2252,462 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "success": True,
             "ad_group_id": ad_group_id,
             "product_group_id": product_group_id,
+        }
+
+    # ==================== PMax Listing Group Filter 管理 ====================
+
+    def _asset_group_listing_group_filter_resource_name(
+        self, asset_group_id: Any, listing_group_filter_id: Any,
+        field_name: str = "listing_group_filter_id",
+    ) -> str:
+        """Build/validate a customer-scoped PMax filter resource name."""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
+        raw_id = str(listing_group_filter_id or "").strip()
+        customer = self._numeric_id(self.customer_id, "customer_id")
+        if re.fullmatch(r"\d+", raw_id):
+            return (
+                f"customers/{customer}/assetGroupListingGroupFilters/"
+                f"{asset_group_id}~{raw_id}"
+            )
+        match = re.fullmatch(
+            r"customers/(\d+)/assetGroupListingGroupFilters/(\d+)~(\d+)",
+            raw_id,
+        )
+        if match:
+            if match.group(1) != customer or match.group(2) != asset_group_id:
+                raise ValueError(f"{field_name} belongs to another asset group or customer")
+            return raw_id
+        raise ValueError(
+            f"{field_name} must be a numeric ID or a customer-scoped "
+            "assetGroupListingGroupFilters resource name"
+        )
+
+    def _shared_set_resource_name(self, value: Any) -> str:
+        """Normalize a SharedSet ID/resource for Retail listing filters."""
+        raw = str(value or "").strip()
+        customer = self._numeric_id(self.customer_id, "customer_id")
+        if re.fullmatch(r"\d+", raw):
+            return f"customers/{customer}/sharedSets/{raw}"
+        match = re.fullmatch(r"customers/(\d+)/sharedSets/(\d+)", raw)
+        if match and match.group(1) == customer:
+            return raw
+        raise ValueError(
+            "retail_filter_shared_set must be a numeric SharedSet ID or a "
+            "customer-scoped SharedSet resource name"
+        )
+
+    @classmethod
+    def _asset_group_listing_case_value(
+        cls,
+        product_dimension: Any,
+        value: Any = None,
+        dimension_level: str = "LEVEL1",
+        custom_attribute_index: str = "INDEX0",
+        webpage_conditions: list[dict[str, Any]] | None = None,
+        retail_filter_shared_set: Any = None,
+    ) -> dict[str, Any]:
+        """Translate the typed Tool fields into v24 ListingGroupFilterDimension."""
+        dimension = str(product_dimension or "").strip().upper()
+        if dimension not in cls.ASSET_GROUP_LISTING_DIMENSIONS:
+            raise ValueError(
+                "product_dimension must be one of "
+                f"{sorted(cls.ASSET_GROUP_LISTING_DIMENSIONS)}"
+            )
+        level = str(dimension_level or "LEVEL1").strip().upper()
+        if level not in cls.ASSET_GROUP_LISTING_PRODUCT_LEVELS:
+            raise ValueError(
+                "dimension_level must be one of "
+                f"{sorted(cls.ASSET_GROUP_LISTING_PRODUCT_LEVELS)}"
+            )
+
+        if dimension == "PRODUCT_TYPE":
+            text = str(value or "").strip()
+            if not text:
+                raise ValueError("PRODUCT_TYPE requires value")
+            return {"productType": {"level": level, "value": text}}
+        if dimension == "PRODUCT_BRAND":
+            text = str(value or "").strip()
+            if not text:
+                raise ValueError("PRODUCT_BRAND requires value")
+            return {"productBrand": {"value": text}}
+        if dimension == "PRODUCT_CATEGORY":
+            try:
+                category_id = int(str(value).strip())
+            except (TypeError, ValueError) as exc:
+                raise ValueError("PRODUCT_CATEGORY value must be a numeric category ID") from exc
+            if category_id < 0:
+                raise ValueError("PRODUCT_CATEGORY value must be non-negative")
+            return {"productCategory": {"level": level, "categoryId": category_id}}
+        if dimension == "PRODUCT_CHANNEL":
+            channel = str(value or "").strip().upper()
+            if channel not in {"ONLINE", "LOCAL"}:
+                raise ValueError("PRODUCT_CHANNEL value must be ONLINE or LOCAL")
+            return {"productChannel": {"channel": channel}}
+        if dimension == "PRODUCT_CONDITION":
+            condition = str(value or "").strip().upper()
+            if condition not in {"NEW", "REFURBISHED", "USED"}:
+                raise ValueError(
+                    "PRODUCT_CONDITION value must be NEW, REFURBISHED or USED"
+                )
+            return {"productCondition": {"condition": condition}}
+        if dimension == "PRODUCT_CUSTOM_ATTRIBUTE":
+            index = str(custom_attribute_index or "INDEX0").strip().upper()
+            if index not in cls.ASSET_GROUP_LISTING_CUSTOM_ATTRIBUTE_INDICES:
+                raise ValueError(
+                    "custom_attribute_index must be one of "
+                    f"{sorted(cls.ASSET_GROUP_LISTING_CUSTOM_ATTRIBUTE_INDICES)}"
+                )
+            text = str(value or "").strip()
+            if not text:
+                raise ValueError("PRODUCT_CUSTOM_ATTRIBUTE requires value")
+            return {"productCustomAttribute": {"index": index, "value": text}}
+        if dimension == "PRODUCT_ITEM_ID":
+            text = str(value or "").strip()
+            if not text:
+                raise ValueError("PRODUCT_ITEM_ID requires value")
+            return {"productItemId": {"value": text}}
+        if dimension == "WEBPAGE":
+            if not isinstance(webpage_conditions, list) or not webpage_conditions:
+                raise ValueError("WEBPAGE requires at least one webpage condition")
+            conditions: list[dict[str, str]] = []
+            for index, condition in enumerate(webpage_conditions):
+                if not isinstance(condition, dict):
+                    raise ValueError(f"webpage_conditions[{index}] must be an object")
+                url_contains = str(condition.get("url_contains") or "").strip()
+                custom_label = str(condition.get("custom_label") or "").strip()
+                if bool(url_contains) == bool(custom_label):
+                    raise ValueError(
+                        f"webpage_conditions[{index}] must contain exactly one of "
+                        "url_contains or custom_label"
+                    )
+                conditions.append(
+                    {"urlContains": url_contains}
+                    if url_contains else {"customLabel": custom_label}
+                )
+            return {"webpage": {"conditions": conditions}}
+        # RETAIL_FILTER_BUNDLE
+        shared_set = str(retail_filter_shared_set or value or "").strip()
+        if not shared_set:
+            raise ValueError("RETAIL_FILTER_BUNDLE requires retail_filter_shared_set")
+        return {"retailFilterBundle": {"sharedSet": shared_set}}
+
+    def create_asset_group_listing_group_filter(
+        self,
+        asset_group_id: str,
+        filter_type: str = "SUBDIVISION",
+        listing_source: str = "SHOPPING",
+        product_dimension: str = None,
+        value: Any = None,
+        dimension_level: str = "LEVEL1",
+        custom_attribute_index: str = "INDEX0",
+        parent_filter_id: str = None,
+        webpage_conditions: list[dict[str, Any]] = None,
+        retail_filter_shared_set: str = None,
+    ) -> str:
+        """Create one node in a PMax AssetGroup listing filter tree.
+
+        The root is a ``SUBDIVISION`` without a case value. Child nodes must
+        have a parent and a typed case value. This is intentionally separate
+        from Standard Shopping's AdGroupCriterion listing-group API.
+        """
+        asset_group = self._customer_resource_name(
+            asset_group_id, "assetGroups", "asset_group_id"
+        )
+        filter_type = str(filter_type or "SUBDIVISION").strip().upper()
+        if filter_type not in self.ASSET_GROUP_LISTING_GROUP_FILTER_TYPES:
+            raise ValueError(
+                "filter_type must be one of "
+                f"{sorted(self.ASSET_GROUP_LISTING_GROUP_FILTER_TYPES)}"
+            )
+        listing_source = str(listing_source or "SHOPPING").strip().upper()
+        if listing_source not in self.ASSET_GROUP_LISTING_SOURCES:
+            raise ValueError(
+                "listing_source must be one of "
+                f"{sorted(self.ASSET_GROUP_LISTING_SOURCES)}"
+            )
+
+        parent_resource = None
+        if parent_filter_id not in (None, ""):
+            parent_resource = self._asset_group_listing_group_filter_resource_name(
+                asset_group_id, parent_filter_id, "parent_filter_id"
+            )
+        is_root = parent_resource is None
+        # Google allows either a SUBDIVISION root (when a product tree will
+        # follow) or an UNIT_INCLUDED root representing "all products". A
+        # WEBPAGE source may also have root nodes carrying webpage conditions.
+        if is_root and filter_type == "UNIT_EXCLUDED":
+            raise ValueError("the root PMax listing filter cannot be UNIT_EXCLUDED")
+        if product_dimension not in (None, ""):
+            product_dimension = str(product_dimension).strip().upper()
+        has_case_input = any(value not in (None, "", []) for value in (
+            product_dimension, value, webpage_conditions, retail_filter_shared_set,
+        ))
+        if is_root and has_case_input and not (
+            listing_source == "WEBPAGE" and product_dimension == "WEBPAGE"
+        ):
+            raise ValueError(
+                "a root case value is supported only for WEBPAGE listing_source"
+            )
+        if not is_root and not product_dimension:
+            raise ValueError("child PMax listing filters require product_dimension")
+
+        case_value = None
+        if product_dimension:
+            shared_set = retail_filter_shared_set
+            if product_dimension == "RETAIL_FILTER_BUNDLE" and shared_set not in (None, ""):
+                shared_set = self._shared_set_resource_name(shared_set)
+            case_value = self._asset_group_listing_case_value(
+                product_dimension, value, dimension_level,
+                custom_attribute_index, webpage_conditions,
+                shared_set,
+            )
+            if listing_source == "WEBPAGE" and product_dimension != "WEBPAGE":
+                raise ValueError("WEBPAGE listing_source requires WEBPAGE product_dimension")
+            if listing_source == "RETAIL" and product_dimension != "RETAIL_FILTER_BUNDLE":
+                raise ValueError(
+                    "RETAIL listing_source requires RETAIL_FILTER_BUNDLE product_dimension"
+                )
+            if listing_source == "SHOPPING" and product_dimension in {
+                "WEBPAGE", "RETAIL_FILTER_BUNDLE",
+            }:
+                raise ValueError(
+                    "SHOPPING listing_source supports product dimensions, not webpage or retail"
+                )
+
+        payload: dict[str, Any] = {
+            "assetGroup": asset_group,
+            "type": filter_type,
+            "listingSource": listing_source,
+        }
+        if case_value is not None:
+            payload["caseValue"] = case_value
+        if parent_resource is not None:
+            payload["parentListingGroupFilter"] = parent_resource
+        response = self._mutate(
+            "assetGroupListingGroupFilters", {"create": payload}
+        )
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(
+                "AssetGroupListingGroupFilter mutate returned no resource name: "
+                f"{response}"
+            )
+        return str(resource_name).rsplit("/", 1)[-1].rsplit("~", 1)[-1]
+
+    @staticmethod
+    def _normalize_asset_group_listing_group_filter(row: dict) -> dict[str, Any]:
+        """Flatten one PMax listing filter without losing its tree path."""
+        resource = row.get(
+            "assetGroupListingGroupFilter",
+            row.get("asset_group_listing_group_filter", row),
+        ) or {}
+        case = resource.get("caseValue", resource.get("case_value", {})) or {}
+        path = resource.get("path", {}) or {}
+
+        def nested(value: Any, *keys: str) -> Any:
+            current = value
+            for key in keys:
+                if not isinstance(current, dict):
+                    return None
+                current = current.get(key, current.get(GoogleAdsAPIClient._camel_case(key)))
+            return current
+
+        product_dimension = None
+        value: Any = None
+        dimension_level = None
+        custom_attribute_index = None
+        webpage_conditions = None
+        retail_filter_shared_set = None
+        dimension_map = (
+            ("productType", "PRODUCT_TYPE"),
+            ("productBrand", "PRODUCT_BRAND"),
+            ("productCategory", "PRODUCT_CATEGORY"),
+            ("productChannel", "PRODUCT_CHANNEL"),
+            ("productCondition", "PRODUCT_CONDITION"),
+            ("productCustomAttribute", "PRODUCT_CUSTOM_ATTRIBUTE"),
+            ("productItemId", "PRODUCT_ITEM_ID"),
+            ("webpage", "WEBPAGE"),
+            ("retailFilterBundle", "RETAIL_FILTER_BUNDLE"),
+        )
+        for key, dimension in dimension_map:
+            detail = case.get(key, case.get(GoogleAdsAPIClient._camel_case(key)))
+            if not isinstance(detail, dict):
+                continue
+            product_dimension = dimension
+            if dimension in {"PRODUCT_TYPE", "PRODUCT_CATEGORY"}:
+                value = nested(detail, "value") if dimension == "PRODUCT_TYPE" else nested(detail, "category_id")
+                dimension_level = nested(detail, "level")
+            elif dimension == "PRODUCT_CUSTOM_ATTRIBUTE":
+                value = nested(detail, "value")
+                custom_attribute_index = nested(detail, "index")
+            elif dimension == "WEBPAGE":
+                webpage_conditions = nested(detail, "conditions") or []
+            elif dimension == "RETAIL_FILTER_BUNDLE":
+                retail_filter_shared_set = nested(detail, "shared_set")
+            elif dimension == "PRODUCT_CHANNEL":
+                value = nested(detail, "channel")
+            elif dimension == "PRODUCT_CONDITION":
+                value = nested(detail, "condition")
+            else:
+                value = nested(detail, "value")
+            break
+
+        resource_name = resource.get("resourceName", resource.get("resource_name"))
+        filter_id = resource.get("id")
+        if filter_id in (None, "") and resource_name:
+            filter_id = str(resource_name).rsplit("~", 1)[-1]
+        asset_group = resource.get("assetGroup", resource.get("asset_group"))
+        if isinstance(asset_group, str):
+            asset_group_id = asset_group.rsplit("/", 1)[-1]
+        else:
+            asset_group_id = asset_group
+        parent = resource.get(
+            "parentListingGroupFilter",
+            resource.get("parent_listing_group_filter"),
+        )
+        return {
+            "id": filter_id,
+            "listing_group_filter_id": filter_id,
+            "asset_group_id": asset_group_id,
+            "resource_name": resource_name,
+            "filter_type": resource.get("type"),
+            "listing_source": resource.get(
+                "listingSource", resource.get("listing_source")
+            ),
+            "parent_filter_id": parent,
+            "product_dimension": product_dimension,
+            "value": value,
+            "dimension_level": dimension_level,
+            "custom_attribute_index": custom_attribute_index,
+            "webpage_conditions": webpage_conditions,
+            "retail_filter_shared_set": retail_filter_shared_set,
+            "path": path,
+        }
+
+    def _asset_group_listing_group_filter_query(self, where: str = "") -> str:
+        """Return the v24 GAQL projection for PMax listing filters."""
+        query = (
+            "SELECT asset_group_listing_group_filter.resource_name, "
+            "asset_group_listing_group_filter.asset_group, "
+            "asset_group_listing_group_filter.id, "
+            "asset_group_listing_group_filter.type, "
+            "asset_group_listing_group_filter.listing_source, "
+            "asset_group_listing_group_filter.parent_listing_group_filter, "
+            "asset_group_listing_group_filter.case_value.product_type.level, "
+            "asset_group_listing_group_filter.case_value.product_type.value, "
+            "asset_group_listing_group_filter.case_value.product_brand.value, "
+            "asset_group_listing_group_filter.case_value.product_category.level, "
+            "asset_group_listing_group_filter.case_value.product_category.category_id, "
+            "asset_group_listing_group_filter.case_value.product_channel.channel, "
+            "asset_group_listing_group_filter.case_value.product_condition.condition, "
+            "asset_group_listing_group_filter.case_value.product_custom_attribute.index, "
+            "asset_group_listing_group_filter.case_value.product_custom_attribute.value, "
+            "asset_group_listing_group_filter.case_value.product_item_id.value, "
+            "asset_group_listing_group_filter.case_value.webpage.conditions, "
+            "asset_group_listing_group_filter.case_value.retail_filter_bundle.shared_set, "
+            "asset_group_listing_group_filter.path "
+            "FROM asset_group_listing_group_filter"
+        )
+        filters = ["asset_group_listing_group_filter.asset_group IS NOT NULL"]
+        if where:
+            filters.append(where)
+        return f"{query} WHERE {' AND '.join(filters)}"
+
+    def list_asset_group_listing_group_filters(
+        self, asset_group_id: str, page_size: int = 100
+    ) -> list[dict[str, Any]]:
+        """List the PMax listing filter tree under one AssetGroup."""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
+        rows = self._search_all(
+            self._asset_group_listing_group_filter_query(
+                f"asset_group_listing_group_filter.asset_group = "
+                f"'customers/{self.customer_id}/assetGroups/{asset_group_id}'"
+            ),
+            page_size=page_size,
+        )
+        return [self._normalize_asset_group_listing_group_filter(row) for row in rows]
+
+    def get_asset_group_listing_group_filter(
+        self, asset_group_id: str, listing_group_filter_id: str
+    ) -> dict[str, Any]:
+        """Get one PMax listing filter node."""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
+        resource_name = self._asset_group_listing_group_filter_resource_name(
+            asset_group_id, listing_group_filter_id
+        )
+        rows = self._search_all(
+            self._asset_group_listing_group_filter_query(
+                "asset_group_listing_group_filter.resource_name = "
+                f"'{resource_name}'"
+            ),
+            page_size=1,
+        )
+        if not rows:
+            raise APIError(
+                f"Google AssetGroupListingGroupFilter {resource_name} was not found"
+            )
+        return self._normalize_asset_group_listing_group_filter(rows[0])
+
+    def update_asset_group_listing_group_filter(
+        self, asset_group_id: str, listing_group_filter_id: str,
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Update the mutable case value of one PMax listing filter node."""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
+        resource_name = self._asset_group_listing_group_filter_resource_name(
+            asset_group_id, listing_group_filter_id
+        )
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.ASSET_GROUP_LISTING_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(
+                "Unsupported Google PMax listing filter update fields: "
+                f"{sorted(unknown)}"
+            )
+        dimension = updates.get("product_dimension")
+        if not dimension:
+            raise ValueError(
+                "updates.product_dimension is required because caseValue is replaced as a whole"
+            )
+        case_value = self._asset_group_listing_case_value(
+            dimension,
+            updates.get("value"),
+            updates.get("dimension_level", "LEVEL1"),
+            updates.get("custom_attribute_index", "INDEX0"),
+            updates.get("webpage_conditions"),
+            self._shared_set_resource_name(updates["retail_filter_shared_set"])
+            if dimension == "RETAIL_FILTER_BUNDLE"
+            and updates.get("retail_filter_shared_set") not in (None, "")
+            else updates.get("retail_filter_shared_set"),
+        )
+        self._mutate("assetGroupListingGroupFilters", {
+            "update": {"resourceName": resource_name, "caseValue": case_value},
+            "updateMask": {"paths": ["caseValue"]},
+        })
+        return {
+            "success": True,
+            "asset_group_id": asset_group_id,
+            "listing_group_filter_id": resource_name.rsplit("~", 1)[-1],
+            "resource_name": resource_name,
+        }
+
+    def delete_asset_group_listing_group_filter(
+        self, asset_group_id: str, listing_group_filter_id: str
+    ) -> dict[str, Any]:
+        """Remove a PMax listing filter node after its children are removed."""
+        asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
+        resource_name = self._asset_group_listing_group_filter_resource_name(
+            asset_group_id, listing_group_filter_id
+        )
+        self._mutate(
+            "assetGroupListingGroupFilters", {"remove": resource_name}
+        )
+        return {
+            "success": True,
+            "asset_group_id": asset_group_id,
+            "listing_group_filter_id": resource_name.rsplit("~", 1)[-1],
+            "resource_name": resource_name,
         }
 
     # ==================== Campaign Criterion ====================

@@ -32,6 +32,7 @@ OFFICIAL_INVENTORY = [
     {"resource": "feed", "action": "crud", "status": "implemented", "surface_method": "create_feed", "provider_operation": "FeedService / FeedItemService"},
     {"resource": "campaign_asset", "action": "mutate", "status": "implemented", "surface_method": "create_campaign_asset", "provider_operation": "CampaignAssetService.mutateCampaignAssets"},
     {"resource": "asset_group_asset", "action": "mutate", "status": "implemented", "surface_method": "create_asset_group_asset", "provider_operation": "AssetGroupAssetService.mutateAssetGroupAssets"},
+    {"resource": "asset_group_listing_group_filter", "action": "crud", "status": "implemented", "surface_method": "create_asset_group_listing_group_filter", "provider_operation": "AssetGroupListingGroupFilterService.mutateAssetGroupListingGroupFilters"},
     {"resource": "conversion_goal", "action": "mutate", "status": "implemented", "surface_method": "update_customer_conversion_goal", "provider_operation": "CustomerConversionGoalService / CampaignConversionGoalService"},
 ]
 
@@ -94,6 +95,11 @@ API_SURFACE = [
     {"resource": "asset_group_asset", "action": "list", "method": "list_asset_group_assets", "status": "implemented"},
     {"resource": "asset_group_asset", "action": "create", "method": "create_asset_group_asset", "status": "implemented"},
     {"resource": "asset_group_asset", "action": "delete", "method": "delete_asset_group_asset", "status": "implemented"},
+    {"resource": "listing_group_filter", "action": "list", "method": "list_asset_group_listing_group_filters", "status": "implemented", "parent_resource": "asset_group", "provider_operation": "GoogleAdsService.search: asset_group_listing_group_filter"},
+    {"resource": "listing_group_filter", "action": "get", "method": "get_asset_group_listing_group_filter", "status": "implemented", "parent_resource": "asset_group"},
+    {"resource": "listing_group_filter", "action": "create", "method": "create_asset_group_listing_group_filter", "status": "implemented", "parent_resource": "asset_group"},
+    {"resource": "listing_group_filter", "action": "update", "method": "update_asset_group_listing_group_filter", "status": "implemented", "parent_resource": "asset_group", "notes": "v24 mutable caseValue only; tree identity fields are immutable"},
+    {"resource": "listing_group_filter", "action": "delete", "method": "delete_asset_group_listing_group_filter", "status": "implemented", "parent_resource": "asset_group"},
     {"resource": "product_group", "action": "create", "method": "create_product_group", "status": "implemented"},
     {"resource": "product_group", "action": "list", "method": "list_product_groups", "status": "implemented"},
     {"resource": "product_group", "action": "get", "method": "get_product_group", "status": "implemented"},

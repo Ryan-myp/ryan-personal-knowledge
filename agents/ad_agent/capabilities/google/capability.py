@@ -46,6 +46,9 @@ from .parameters import (
     google_user_list_schema, google_user_list_update_schema,
     google_bidding_strategy_schema, google_bidding_strategy_update_schema,
     google_product_group_update_schema, google_product_group_read_schema,
+    google_asset_group_listing_group_filter_schema,
+    google_asset_group_listing_group_filter_update_schema,
+    google_asset_group_listing_group_filter_read_schema,
     google_feed_schema, google_conversion_goal_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
@@ -170,6 +173,15 @@ GOOGLE_LOOKUP_CONTRACTS = {
                 "label": "所属商品广告组", "required": True,
             }],
         ),
+        "parent_filter_id": _google_lookup(
+            "google_list_asset_group_listing_group_filters", "listing_group_filters",
+            ["listing_group_filter_id", "id", "resource_name"],
+            ["product_dimension", "value", "id", "resource_name"],
+            depends_on=[{
+                "input_field": "asset_group_id", "value_path": "asset_group_id",
+                "label": "所属 Asset Group", "required": True,
+            }],
+        ),
         "feed_id": _google_lookup(
             "google_list_feeds", "feeds", ["id", "feed_id", "resource_name"],
             ["name", "feed_name", "id"],
@@ -262,6 +274,21 @@ class GoogleCapability(BaseCapability):
         "list_asset_group_assets": ["google_list_asset_group_assets"],
         "create_asset_group_asset": ["google_create_asset_group_asset"],
         "delete_asset_group_asset": ["google_delete_asset_group_asset"],
+        "list_asset_group_listing_group_filters": [
+            "google_list_asset_group_listing_group_filters"
+        ],
+        "get_asset_group_listing_group_filter": [
+            "google_get_asset_group_listing_group_filter"
+        ],
+        "create_asset_group_listing_group_filter": [
+            "google_create_asset_group_listing_group_filter"
+        ],
+        "update_asset_group_listing_group_filter": [
+            "google_update_asset_group_listing_group_filter"
+        ],
+        "delete_asset_group_listing_group_filter": [
+            "google_delete_asset_group_listing_group_filter"
+        ],
         "create_keywords": ["google_create_keywords"],
         "update_keyword": ["google_update_keyword"],
         "delete_keyword": ["google_delete_keyword"],
@@ -400,6 +427,9 @@ class GoogleCapability(BaseCapability):
         app_ad_schema = google_app_ad_schema()
         product_group_read_schema = google_product_group_read_schema()
         product_group_update_schema = google_product_group_update_schema()
+        listing_filter_schema = google_asset_group_listing_group_filter_schema()
+        listing_filter_update_schema = google_asset_group_listing_group_filter_update_schema()
+        listing_filter_read_schema = google_asset_group_listing_group_filter_read_schema()
         product_group_read_properties = product_group_read_schema["properties"]
         experiment_schema = google_experiment_schema()
         experiment_update_schema = google_experiment_update_schema()
@@ -1310,6 +1340,119 @@ class GoogleCapability(BaseCapability):
                 write=True,
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["product_group_id"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_list_asset_group_listing_group_filters",
+                description="查询 Google PMax Asset Group 下的 Listing Group Filter 树。",
+                method_name="list_asset_group_listing_group_filters",
+                result_key="listing_group_filters",
+                properties=listing_filter_read_schema["properties"],
+                required=["asset_group_id"], action="list",
+                resource_type="listing_group_filter",
+                parent_resource_type="asset_group",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["list_asset_group_listing_group_filters"],
+                traits=["read", "listing_group_filter", "pmax"],
+                argument_builder=lambda _ctx, data: ((data["asset_group_id"],), {
+                    "page_size": data.get("limit", 100),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_get_asset_group_listing_group_filter",
+                description="查询 Google PMax 单个 Listing Group Filter 节点。",
+                method_name="get_asset_group_listing_group_filter",
+                result_key="listing_group_filter",
+                properties=listing_filter_read_schema["properties"],
+                required=["asset_group_id", "listing_group_filter_id"],
+                action="get", resource_type="listing_group_filter",
+                parent_resource_type="asset_group",
+                resource_id_field="listing_group_filter_id",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["get_asset_group_listing_group_filter"],
+                traits=["read", "listing_group_filter", "pmax"],
+                argument_builder=lambda _ctx, data: ((
+                    data["asset_group_id"], data["listing_group_filter_id"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_create_asset_group_listing_group_filter",
+                description="创建 Google PMax Listing Group Filter；根节点或商品/网页/Retail 子节点，默认仅生成 dry-run 计划。",
+                method_name="create_asset_group_listing_group_filter",
+                result_key="listing_group_filter_id",
+                properties=listing_filter_schema["properties"],
+                required=listing_filter_schema["required"],
+                provider_required=listing_filter_schema["provider_required"],
+                conditional_rules=listing_filter_schema["conditional_rules"],
+                action="create", resource_type="listing_group_filter",
+                parent_resource_type="asset_group",
+                resource_id_field="listing_group_filter_id",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["create_asset_group_listing_group_filter", "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type", "aliases": ["advertising_channel_type"],
+                    "in": ["PERFORMANCE_MAX", "MAX"],
+                }],
+                traits=["write", "listing_group_filter", "pmax"], write=True,
+                live_support=True,
+                readback_tool="google_get_asset_group_listing_group_filter",
+                argument_builder=lambda _ctx, data: ((data["asset_group_id"],), {
+                    "filter_type": data.get("filter_type", "SUBDIVISION"),
+                    "listing_source": data.get("listing_source", "SHOPPING"),
+                    "product_dimension": data.get("product_dimension"),
+                    "value": data.get("value"),
+                    "dimension_level": data.get("dimension_level", "LEVEL1"),
+                    "custom_attribute_index": data.get("custom_attribute_index", "INDEX0"),
+                    "parent_filter_id": data.get("parent_filter_id"),
+                    "webpage_conditions": data.get("webpage_conditions"),
+                    "retail_filter_shared_set": data.get("retail_filter_shared_set"),
+                }),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_update_asset_group_listing_group_filter",
+                description="更新 Google PMax Listing Group Filter 的 case value；默认仅生成 dry-run 计划。",
+                method_name="update_asset_group_listing_group_filter",
+                result_key="listing_group_filter_result",
+                properties={
+                    **listing_filter_read_schema["properties"],
+                    "updates": listing_filter_update_schema,
+                },
+                required=["asset_group_id", "listing_group_filter_id", "updates"],
+                provider_required=["updates"], action="update",
+                resource_type="listing_group_filter",
+                parent_resource_type="asset_group",
+                resource_id_field="listing_group_filter_id",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["update_asset_group_listing_group_filter"],
+                traits=["write", "listing_group_filter", "pmax"], write=True,
+                live_support=True,
+                readback_tool="google_get_asset_group_listing_group_filter",
+                argument_builder=lambda _ctx, data: ((
+                    data["asset_group_id"], data["listing_group_filter_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                platform="google-ads", skill="google-ads-api-expert",
+                name="google_delete_asset_group_listing_group_filter",
+                description="删除 Google PMax Listing Group Filter 节点；需先删除其子节点，默认仅生成 dry-run 计划。",
+                method_name="delete_asset_group_listing_group_filter",
+                result_key="listing_group_filter_result",
+                properties=listing_filter_read_schema["properties"],
+                required=["asset_group_id", "listing_group_filter_id"],
+                action="delete", resource_type="listing_group_filter",
+                parent_resource_type="asset_group",
+                resource_id_field="listing_group_filter_id",
+                parent_resource_id_field="asset_group_id",
+                intent_types=["delete_asset_group_listing_group_filter"],
+                traits=["write", "listing_group_filter", "pmax"], write=True,
+                live_support=True,
+                readback_tool="google_get_asset_group_listing_group_filter",
+                argument_builder=lambda _ctx, data: ((
+                    data["asset_group_id"], data["listing_group_filter_id"]
                 ), {}),
             ),
             method_tool(

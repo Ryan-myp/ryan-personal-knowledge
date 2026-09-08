@@ -1,5 +1,5 @@
 {
-  "digest": "b69baaf2d611b819a11ef040da00c41be84d5dd4eeaa2f73f3010319524bd0f9",
+  "digest": "4a58ec0c1d351ee699ec48a03c957b73f03e05c51ec5f035dee071182d09b28b",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2053,8 +2053,8 @@
       ]
     },
     "google-ads": {
-      "digest": "98bb73b020eab6af8cfa945415bacae841136bbd84cb5ec3c5c8c1154ab9f462",
-      "tool_count": 108,
+      "digest": "fbd68fa6ecb643025a337547f52790de0d5df25aa07e6295df78ac86ebf6d130",
+      "tool_count": 113,
       "tools": [
         {
           "action": "create",
@@ -3659,6 +3659,359 @@
             "write",
             "asset",
             "asset_group_asset",
+            "pmax"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "PERFORMANCE_MAX",
+                "MAX"
+              ]
+            }
+          ],
+          "contract_hash": "3b9945023a7c37ad4c5645b4938deef33c52424984196721a5c0ae5456852027",
+          "contract_version": "1.4.0",
+          "description": "创建 Google PMax Listing Group Filter；根节点或商品/网页/Retail 子节点，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "excluded_leaf_requires_parent_and_dimension",
+                "if": {
+                  "filter_type": "UNIT_EXCLUDED"
+                },
+                "message": "UNIT_EXCLUDED requires a parent filter and case dimension",
+                "required": [
+                  "parent_filter_id",
+                  "product_dimension"
+                ]
+              },
+              {
+                "id": "product_type_requires_value",
+                "if": {
+                  "product_dimension": "PRODUCT_TYPE"
+                },
+                "message": "PRODUCT_TYPE requires value and dimension_level",
+                "required": [
+                  "value",
+                  "dimension_level"
+                ]
+              },
+              {
+                "id": "product_category_requires_value",
+                "if": {
+                  "product_dimension": "PRODUCT_CATEGORY"
+                },
+                "message": "PRODUCT_CATEGORY requires value and dimension_level",
+                "required": [
+                  "value",
+                  "dimension_level"
+                ]
+              },
+              {
+                "id": "custom_attribute_requires_value",
+                "if": {
+                  "product_dimension": "PRODUCT_CUSTOM_ATTRIBUTE"
+                },
+                "message": "PRODUCT_CUSTOM_ATTRIBUTE requires value and custom_attribute_index",
+                "required": [
+                  "value",
+                  "custom_attribute_index"
+                ]
+              },
+              {
+                "id": "webpage_requires_conditions",
+                "if": {
+                  "product_dimension": "WEBPAGE"
+                },
+                "message": "WEBPAGE requires webpage_conditions",
+                "required": [
+                  "webpage_conditions"
+                ]
+              },
+              {
+                "id": "retail_requires_shared_set",
+                "if": {
+                  "product_dimension": "RETAIL_FILTER_BUNDLE"
+                },
+                "message": "RETAIL_FILTER_BUNDLE requires retail_filter_shared_set",
+                "required": [
+                  "retail_filter_shared_set"
+                ]
+              }
+            ],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent PMax Asset Group ID",
+                "lookup_account_required": true,
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "asset_groups",
+                "lookup_tool": "google_list_asset_groups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "asset_group_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "asset_group_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "custom_attribute_index": {
+                "default": "INDEX0",
+                "description": "Custom attribute index",
+                "enum": [
+                  "INDEX0",
+                  "INDEX1",
+                  "INDEX2",
+                  "INDEX3",
+                  "INDEX4"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "PRODUCT_CUSTOM_ATTRIBUTE",
+                  "field": "product_dimension"
+                }
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "dimension_level": {
+                "default": "LEVEL1",
+                "description": "Product type/category taxonomy level",
+                "enum": [
+                  "LEVEL1",
+                  "LEVEL2",
+                  "LEVEL3",
+                  "LEVEL4",
+                  "LEVEL5"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "field": "product_dimension",
+                  "in": [
+                    "PRODUCT_TYPE",
+                    "PRODUCT_CATEGORY"
+                  ]
+                }
+              },
+              "filter_type": {
+                "default": "SUBDIVISION",
+                "description": "Listing filter node type",
+                "enum": [
+                  "SUBDIVISION",
+                  "UNIT_INCLUDED",
+                  "UNIT_EXCLUDED"
+                ],
+                "type": "string"
+              },
+              "listing_group_filter_id": {
+                "description": "PMax listing group filter ID",
+                "lookup_account_required": true,
+                "lookup_result_key": "listing_group_filters",
+                "lookup_tool": "google_list_asset_group_listing_group_filters",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_dimension",
+                  "value",
+                  "id",
+                  "resource_name"
+                ],
+                "selection_value_fields": [
+                  "listing_group_filter_id",
+                  "id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "listing_source": {
+                "default": "SHOPPING",
+                "description": "Listing source",
+                "enum": [
+                  "SHOPPING",
+                  "WEBPAGE",
+                  "RETAIL"
+                ],
+                "type": "string"
+              },
+              "parent_filter_id": {
+                "description": "Parent listing filter ID; omit only for the root SUBDIVISION",
+                "lookup_account_required": true,
+                "lookup_dependencies": [
+                  {
+                    "input_field": "asset_group_id",
+                    "label": "所属 Asset Group",
+                    "required": true,
+                    "value_path": "asset_group_id"
+                  }
+                ],
+                "lookup_result_key": "listing_group_filters",
+                "lookup_tool": "google_list_asset_group_listing_group_filters",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_dimension",
+                  "value",
+                  "id",
+                  "resource_name"
+                ],
+                "selection_value_fields": [
+                  "listing_group_filter_id",
+                  "id",
+                  "resource_name"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "field": "filter_type",
+                  "in": [
+                    "SUBDIVISION",
+                    "UNIT_INCLUDED",
+                    "UNIT_EXCLUDED"
+                  ]
+                }
+              },
+              "product_dimension": {
+                "description": "Dimension used to refine a parent node",
+                "enum": [
+                  "PRODUCT_TYPE",
+                  "PRODUCT_BRAND",
+                  "PRODUCT_CATEGORY",
+                  "PRODUCT_CHANNEL",
+                  "PRODUCT_CONDITION",
+                  "PRODUCT_CUSTOM_ATTRIBUTE",
+                  "PRODUCT_ITEM_ID",
+                  "WEBPAGE",
+                  "RETAIL_FILTER_BUNDLE"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "any": [
+                    {
+                      "field": "filter_type",
+                      "in": [
+                        "UNIT_INCLUDED",
+                        "UNIT_EXCLUDED"
+                      ]
+                    },
+                    {
+                      "equals": "WEBPAGE",
+                      "field": "listing_source"
+                    }
+                  ]
+                }
+              },
+              "retail_filter_shared_set": {
+                "description": "RetailFilterBundle SharedSet resource name or ID",
+                "manual_entry": {
+                  "instructions": "请填写 Google Ads SharedSet 资源 ID/资源名；该资源由 Retail Product Tags 使用。",
+                  "source": "google_shared_set_resource",
+                  "title": "Retail Filter Bundle"
+                },
+                "minLength": 1,
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "RETAIL_FILTER_BUNDLE",
+                  "field": "product_dimension"
+                }
+              },
+              "value": {
+                "description": "Dimension value; category uses a numeric taxonomy ID",
+                "type": [
+                  "string",
+                  "integer"
+                ],
+                "ui_visible_when": {
+                  "field": "product_dimension",
+                  "in": [
+                    "PRODUCT_TYPE",
+                    "PRODUCT_BRAND",
+                    "PRODUCT_CATEGORY",
+                    "PRODUCT_CHANNEL",
+                    "PRODUCT_CONDITION",
+                    "PRODUCT_CUSTOM_ATTRIBUTE",
+                    "PRODUCT_ITEM_ID"
+                  ]
+                }
+              },
+              "webpage_conditions": {
+                "description": "Webpage URL/custom-label conditions",
+                "items": {
+                  "additionalProperties": false,
+                  "description": "Webpage filter condition",
+                  "properties": {
+                    "custom_label": {
+                      "description": "Page-feed custom label",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url_contains": {
+                      "description": "URL substring to match",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "presentation": "object_editor",
+                "type": "array",
+                "ui_visible_when": {
+                  "equals": "WEBPAGE",
+                  "field": "product_dimension"
+                }
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "asset_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "create_asset_group_listing_group_filter",
+            "create_campaign"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_create_asset_group_listing_group_filter",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": "google_get_asset_group_listing_group_filter",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "listing_group_filter_id",
+          "resource_type": "listing_group_filter",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "listing_group_filter",
             "pmax"
           ]
         },
@@ -10250,6 +10603,108 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "contract_hash": "f2f0236201288ec3ab0d25ab0c2624bc40432ea500d9713d6bef0e3efc866cfe",
+          "contract_version": "1.4.0",
+          "description": "删除 Google PMax Listing Group Filter 节点；需先删除其子节点，默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent PMax Asset Group ID",
+                "lookup_account_required": true,
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "asset_groups",
+                "lookup_tool": "google_list_asset_groups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "asset_group_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "asset_group_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of listing filters",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "listing_group_filter_id": {
+                "description": "PMax listing group filter ID",
+                "lookup_account_required": true,
+                "lookup_result_key": "listing_group_filters",
+                "lookup_tool": "google_list_asset_group_listing_group_filters",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_dimension",
+                  "value",
+                  "id",
+                  "resource_name"
+                ],
+                "selection_value_fields": [
+                  "listing_group_filter_id",
+                  "id",
+                  "resource_name"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "asset_group_id",
+              "listing_group_filter_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "delete_asset_group_listing_group_filter"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_delete_asset_group_listing_group_filter",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": "google_get_asset_group_listing_group_filter",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "listing_group_filter_id",
+          "resource_type": "listing_group_filter",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "listing_group_filter",
+            "pmax"
+          ]
+        },
+        {
+          "action": "delete",
+          "activation_rules": [],
           "contract_hash": "066115a6e362d969422bad1d564e46bf651ad3a6c22e673647dd7d995ab96545",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
@@ -11781,6 +12236,108 @@
         {
           "action": "get",
           "activation_rules": [],
+          "contract_hash": "f2f0236201288ec3ab0d25ab0c2624bc40432ea500d9713d6bef0e3efc866cfe",
+          "contract_version": "1.4.0",
+          "description": "查询 Google PMax 单个 Listing Group Filter 节点。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent PMax Asset Group ID",
+                "lookup_account_required": true,
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "asset_groups",
+                "lookup_tool": "google_list_asset_groups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "asset_group_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "asset_group_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of listing filters",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "listing_group_filter_id": {
+                "description": "PMax listing group filter ID",
+                "lookup_account_required": true,
+                "lookup_result_key": "listing_group_filters",
+                "lookup_tool": "google_list_asset_group_listing_group_filters",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_dimension",
+                  "value",
+                  "id",
+                  "resource_name"
+                ],
+                "selection_value_fields": [
+                  "listing_group_filter_id",
+                  "id",
+                  "resource_name"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "asset_group_id",
+              "listing_group_filter_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "get_asset_group_listing_group_filter"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_asset_group_listing_group_filter",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": "listing_group_filter_id",
+          "resource_type": "listing_group_filter",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "listing_group_filter",
+            "pmax"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
           "contract_hash": "0053b306eb4ac16ed58ed66ce75905926ab06bee05bda44bd0b07a1fa257a800",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 出价策略详情。",
@@ -13186,6 +13743,107 @@
             "read",
             "asset",
             "asset_group_asset",
+            "pmax"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "contract_hash": "d2a838bbbd5b8a893ad743a3a95fe9df8e3ac7b9fb8569ad4cce5b082e4ab72a",
+          "contract_version": "1.4.0",
+          "description": "查询 Google PMax Asset Group 下的 Listing Group Filter 树。",
+          "effect_class": "read",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent PMax Asset Group ID",
+                "lookup_account_required": true,
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "asset_groups",
+                "lookup_tool": "google_list_asset_groups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "asset_group_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "asset_group_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of listing filters",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "listing_group_filter_id": {
+                "description": "PMax listing group filter ID",
+                "lookup_account_required": true,
+                "lookup_result_key": "listing_group_filters",
+                "lookup_tool": "google_list_asset_group_listing_group_filters",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_dimension",
+                  "value",
+                  "id",
+                  "resource_name"
+                ],
+                "selection_value_fields": [
+                  "listing_group_filter_id",
+                  "id",
+                  "resource_name"
+                ],
+                "type": "string"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [],
+            "required": [
+              "asset_group_id"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "list_asset_group_listing_group_filters"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_list_asset_group_listing_group_filters",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "listing_group_filter",
+          "risk_level": "low",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "listing_group_filter",
             "pmax"
           ]
         },
@@ -15298,6 +15956,247 @@
           "traits": [
             "write",
             "asset_group"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "contract_hash": "864849c76395d7a16c3b129ec24ea64caec894331a8e8a7e159c450cb34d5b8b",
+          "contract_version": "1.4.0",
+          "description": "更新 Google PMax Listing Group Filter 的 case value；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_id": {
+                "description": "Parent PMax Asset Group ID",
+                "lookup_account_required": true,
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "asset_groups",
+                "lookup_tool": "google_list_asset_groups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "asset_group_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "asset_group_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "limit": {
+                "description": "Maximum number of listing filters",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "listing_group_filter_id": {
+                "description": "PMax listing group filter ID",
+                "lookup_account_required": true,
+                "lookup_result_key": "listing_group_filters",
+                "lookup_tool": "google_list_asset_group_listing_group_filters",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "product_dimension",
+                  "value",
+                  "id",
+                  "resource_name"
+                ],
+                "selection_value_fields": [
+                  "listing_group_filter_id",
+                  "id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "updates": {
+                "additionalProperties": false,
+                "description": "Replacement case value for a PMax listing filter node",
+                "properties": {
+                  "custom_attribute_index": {
+                    "default": "INDEX0",
+                    "description": "Custom attribute index",
+                    "enum": [
+                      "INDEX0",
+                      "INDEX1",
+                      "INDEX2",
+                      "INDEX3",
+                      "INDEX4"
+                    ],
+                    "type": "string",
+                    "ui_visible_when": {
+                      "equals": "PRODUCT_CUSTOM_ATTRIBUTE",
+                      "field": "product_dimension"
+                    }
+                  },
+                  "dimension_level": {
+                    "default": "LEVEL1",
+                    "description": "Product type/category taxonomy level",
+                    "enum": [
+                      "LEVEL1",
+                      "LEVEL2",
+                      "LEVEL3",
+                      "LEVEL4",
+                      "LEVEL5"
+                    ],
+                    "type": "string",
+                    "ui_visible_when": {
+                      "field": "product_dimension",
+                      "in": [
+                        "PRODUCT_TYPE",
+                        "PRODUCT_CATEGORY"
+                      ]
+                    }
+                  },
+                  "product_dimension": {
+                    "description": "Dimension used to refine a parent node",
+                    "enum": [
+                      "PRODUCT_TYPE",
+                      "PRODUCT_BRAND",
+                      "PRODUCT_CATEGORY",
+                      "PRODUCT_CHANNEL",
+                      "PRODUCT_CONDITION",
+                      "PRODUCT_CUSTOM_ATTRIBUTE",
+                      "PRODUCT_ITEM_ID",
+                      "WEBPAGE",
+                      "RETAIL_FILTER_BUNDLE"
+                    ],
+                    "type": "string",
+                    "ui_visible_when": {
+                      "any": [
+                        {
+                          "field": "filter_type",
+                          "in": [
+                            "UNIT_INCLUDED",
+                            "UNIT_EXCLUDED"
+                          ]
+                        },
+                        {
+                          "equals": "WEBPAGE",
+                          "field": "listing_source"
+                        }
+                      ]
+                    }
+                  },
+                  "retail_filter_shared_set": {
+                    "description": "RetailFilterBundle SharedSet resource name or ID",
+                    "manual_entry": {
+                      "instructions": "请填写 Google Ads SharedSet 资源 ID/资源名；该资源由 Retail Product Tags 使用。",
+                      "source": "google_shared_set_resource",
+                      "title": "Retail Filter Bundle"
+                    },
+                    "minLength": 1,
+                    "type": "string",
+                    "ui_visible_when": {
+                      "equals": "RETAIL_FILTER_BUNDLE",
+                      "field": "product_dimension"
+                    }
+                  },
+                  "value": {
+                    "description": "Dimension value; category uses a numeric taxonomy ID",
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "ui_visible_when": {
+                      "field": "product_dimension",
+                      "in": [
+                        "PRODUCT_TYPE",
+                        "PRODUCT_BRAND",
+                        "PRODUCT_CATEGORY",
+                        "PRODUCT_CHANNEL",
+                        "PRODUCT_CONDITION",
+                        "PRODUCT_CUSTOM_ATTRIBUTE",
+                        "PRODUCT_ITEM_ID"
+                      ]
+                    }
+                  },
+                  "webpage_conditions": {
+                    "description": "Webpage URL/custom-label conditions",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Webpage filter condition",
+                      "properties": {
+                        "custom_label": {
+                          "description": "Page-feed custom label",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "url_contains": {
+                          "description": "URL substring to match",
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "presentation": "object_editor",
+                    "type": "array",
+                    "ui_visible_when": {
+                      "equals": "WEBPAGE",
+                      "field": "product_dimension"
+                    }
+                  }
+                },
+                "required": [
+                  "product_dimension"
+                ],
+                "type": "object"
+              }
+            },
+            "provider_any_of": [],
+            "provider_required": [
+              "updates"
+            ],
+            "required": [
+              "asset_group_id",
+              "listing_group_filter_id",
+              "updates"
+            ],
+            "type": "object"
+          },
+          "intent_types": [
+            "update_asset_group_listing_group_filter"
+          ],
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_update_asset_group_listing_group_filter",
+          "parent_resource_id_field": "asset_group_id",
+          "parent_resource_type": "asset_group",
+          "platform": "google-ads",
+          "provider_api_version": "v24",
+          "readback_tool": "google_get_asset_group_listing_group_filter",
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "listing_group_filter_id",
+          "resource_type": "listing_group_filter",
+          "risk_level": "medium",
+          "skill": "google-ads-api-expert",
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "listing_group_filter",
+            "pmax"
           ]
         },
         {
@@ -43477,6 +44376,73 @@
         "status": "implemented"
       },
       {
+        "action": "list",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "list_asset_group_listing_group_filters",
+        "parent_resource": "asset_group",
+        "provider": "google-ads",
+        "provider_operation": "GoogleAdsService.search: asset_group_listing_group_filter",
+        "resource": "listing_group_filter",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "get",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_asset_group_listing_group_filter",
+        "parent_resource": "asset_group",
+        "provider": "google-ads",
+        "resource": "listing_group_filter",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_asset_group_listing_group_filter",
+        "parent_resource": "asset_group",
+        "provider": "google-ads",
+        "resource": "listing_group_filter",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "update",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "update_asset_group_listing_group_filter",
+        "notes": "v24 mutable caseValue only; tree identity fields are immutable",
+        "parent_resource": "asset_group",
+        "provider": "google-ads",
+        "resource": "listing_group_filter",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "delete",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "delete_asset_group_listing_group_filter",
+        "parent_resource": "asset_group",
+        "provider": "google-ads",
+        "resource": "listing_group_filter",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
         "action": "create",
         "api_version": "v24",
         "evidence_level": "code_contract",
@@ -46185,5 +47151,5 @@
       ]
     }
   },
-  "tool_count": 304
+  "tool_count": 309
 }

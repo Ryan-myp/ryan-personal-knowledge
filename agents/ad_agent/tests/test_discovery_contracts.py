@@ -89,7 +89,11 @@ def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
         ),
         (
             "PERFORMANCE_MAX",
-            ["google_create_campaign", "google_create_pmax_asset_group"],
+            [
+                "google_create_campaign",
+                "google_create_pmax_asset_group",
+                "google_create_asset_group_listing_group_filter",
+            ],
         ),
         (
             "SHOPPING",

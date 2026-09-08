@@ -67,6 +67,18 @@ GOOGLE_PRODUCT_PARTITION_TYPES = ["UNIT", "SUBDIVISION"]
 GOOGLE_PRODUCT_CONDITIONS = ["NEW", "USED", "REFURBISHED"]
 GOOGLE_PRODUCT_CHANNELS = ["ONLINE", "LOCAL"]
 GOOGLE_PRODUCT_LEVELS = ["LEVEL1", "LEVEL2", "LEVEL3", "LEVEL4", "LEVEL5"]
+GOOGLE_ASSET_GROUP_LISTING_FILTER_TYPES = [
+    "SUBDIVISION", "UNIT_INCLUDED", "UNIT_EXCLUDED",
+]
+GOOGLE_ASSET_GROUP_LISTING_SOURCES = ["SHOPPING", "WEBPAGE", "RETAIL"]
+GOOGLE_ASSET_GROUP_LISTING_DIMENSIONS = [
+    "PRODUCT_TYPE", "PRODUCT_BRAND", "PRODUCT_CATEGORY", "PRODUCT_CHANNEL",
+    "PRODUCT_CONDITION", "PRODUCT_CUSTOM_ATTRIBUTE", "PRODUCT_ITEM_ID",
+    "WEBPAGE", "RETAIL_FILTER_BUNDLE",
+]
+GOOGLE_ASSET_GROUP_LISTING_CUSTOM_ATTRIBUTE_INDICES = [
+    "INDEX0", "INDEX1", "INDEX2", "INDEX3", "INDEX4",
+]
 GOOGLE_VIDEO_AD_FORMATS = [
     "SKIPPABLE_IN_STREAM", "NON_SKIPPABLE_IN_STREAM", "BUMPER", "OUTSTREAM",
 ]
@@ -1358,6 +1370,185 @@ def google_product_group_read_schema() -> dict[str, Any]:
                 "integer", "Maximum number of product groups", minimum=1, maximum=10_000,
             ),
         },
+    }
+
+
+def google_asset_group_listing_group_filter_schema() -> dict[str, Any]:
+    """Schema for the Google v24 PMax listing-filter tree resource.
+
+    This is deliberately not an alias of ``google_product_group_schema``:
+    Standard Shopping uses AdGroupCriterion, while PMax uses
+    AssetGroupListingGroupFilter and its ``UNIT_INCLUDED``/``UNIT_EXCLUDED``
+    node types.
+    """
+    webpage_condition = _object({
+        "url_contains": _field("string", "URL substring to match", minLength=1),
+        "custom_label": _field("string", "Page-feed custom label", minLength=1),
+    }, "Webpage filter condition", additional_properties=False)
+    properties = {
+        "customer_id": _field("string", "Google Ads customer ID"),
+        "asset_group_id": _field(
+            "string", "Parent PMax Asset Group ID", minLength=1,
+            lookup_tool="google_list_asset_groups", lookup_result_key="asset_groups",
+            lookup_account_required=True,
+            selection_value_fields=["asset_group_id", "id", "resource_name"],
+            selection_label_fields=["name", "asset_group_name", "id"],
+        ),
+        "listing_group_filter_id": _field(
+            "string", "PMax listing group filter ID", minLength=1,
+            lookup_tool="google_list_asset_group_listing_group_filters",
+            lookup_result_key="listing_group_filters", lookup_account_required=True,
+            selection_value_fields=["listing_group_filter_id", "id", "resource_name"],
+            selection_label_fields=["product_dimension", "value", "id", "resource_name"],
+        ),
+        "filter_type": _field(
+            "string", "Listing filter node type",
+            enum=GOOGLE_ASSET_GROUP_LISTING_FILTER_TYPES, default="SUBDIVISION",
+        ),
+        "listing_source": _field(
+            "string", "Listing source",
+            enum=GOOGLE_ASSET_GROUP_LISTING_SOURCES, default="SHOPPING",
+        ),
+        "product_dimension": _field(
+            "string", "Dimension used to refine a parent node",
+            enum=GOOGLE_ASSET_GROUP_LISTING_DIMENSIONS,
+            ui_visible_when={
+                "any": [
+                    {"field": "filter_type", "in": ["UNIT_INCLUDED", "UNIT_EXCLUDED"]},
+                    {"field": "listing_source", "equals": "WEBPAGE"},
+                ]
+            },
+        ),
+        "value": _field(
+            ["string", "integer"], "Dimension value; category uses a numeric taxonomy ID",
+            ui_visible_when={
+                "field": "product_dimension", "in": [
+                    "PRODUCT_TYPE", "PRODUCT_BRAND", "PRODUCT_CATEGORY",
+                    "PRODUCT_CHANNEL", "PRODUCT_CONDITION", "PRODUCT_CUSTOM_ATTRIBUTE",
+                    "PRODUCT_ITEM_ID",
+                ]
+            },
+        ),
+        "dimension_level": _field(
+            "string", "Product type/category taxonomy level", enum=GOOGLE_PRODUCT_LEVELS,
+            default="LEVEL1", ui_visible_when={
+                "field": "product_dimension", "in": ["PRODUCT_TYPE", "PRODUCT_CATEGORY"]
+            },
+        ),
+        "custom_attribute_index": _field(
+            "string", "Custom attribute index",
+            enum=GOOGLE_ASSET_GROUP_LISTING_CUSTOM_ATTRIBUTE_INDICES, default="INDEX0",
+            ui_visible_when={"field": "product_dimension", "equals": "PRODUCT_CUSTOM_ATTRIBUTE"},
+        ),
+        "parent_filter_id": _field(
+            "string", "Parent listing filter ID; omit only for the root SUBDIVISION",
+            minLength=1,
+            lookup_tool="google_list_asset_group_listing_group_filters",
+            lookup_result_key="listing_group_filters", lookup_account_required=True,
+            selection_value_fields=["listing_group_filter_id", "id", "resource_name"],
+            selection_label_fields=["product_dimension", "value", "id", "resource_name"],
+            lookup_dependencies=[{
+                "input_field": "asset_group_id", "value_path": "asset_group_id",
+                "label": "所属 Asset Group", "required": True,
+            }],
+            ui_visible_when={
+                "field": "filter_type", "in": ["SUBDIVISION", "UNIT_INCLUDED", "UNIT_EXCLUDED"]
+            },
+        ),
+        "webpage_conditions": _field(
+            "array", "Webpage URL/custom-label conditions", minItems=1, maxItems=20,
+            items=webpage_condition, presentation="object_editor",
+            ui_visible_when={"field": "product_dimension", "equals": "WEBPAGE"},
+        ),
+        "retail_filter_shared_set": _field(
+            "string", "RetailFilterBundle SharedSet resource name or ID", minLength=1,
+            manual_entry={
+                "title": "Retail Filter Bundle",
+                "instructions": "请填写 Google Ads SharedSet 资源 ID/资源名；该资源由 Retail Product Tags 使用。",
+                "source": "google_shared_set_resource",
+            },
+            ui_visible_when={
+                "field": "product_dimension", "equals": "RETAIL_FILTER_BUNDLE"
+            },
+        ),
+    }
+    conditional_rules = [
+        {
+            "id": "excluded_leaf_requires_parent_and_dimension",
+            "if": {"filter_type": "UNIT_EXCLUDED"},
+            "required": ["parent_filter_id", "product_dimension"],
+            "message": "UNIT_EXCLUDED requires a parent filter and case dimension",
+        },
+        {
+            "id": "product_type_requires_value",
+            "if": {"product_dimension": "PRODUCT_TYPE"},
+            "required": ["value", "dimension_level"],
+            "message": "PRODUCT_TYPE requires value and dimension_level",
+        },
+        {
+            "id": "product_category_requires_value",
+            "if": {"product_dimension": "PRODUCT_CATEGORY"},
+            "required": ["value", "dimension_level"],
+            "message": "PRODUCT_CATEGORY requires value and dimension_level",
+        },
+        {
+            "id": "custom_attribute_requires_value",
+            "if": {"product_dimension": "PRODUCT_CUSTOM_ATTRIBUTE"},
+            "required": ["value", "custom_attribute_index"],
+            "message": "PRODUCT_CUSTOM_ATTRIBUTE requires value and custom_attribute_index",
+        },
+        {
+            "id": "webpage_requires_conditions",
+            "if": {"product_dimension": "WEBPAGE"},
+            "required": ["webpage_conditions"],
+            "message": "WEBPAGE requires webpage_conditions",
+        },
+        {
+            "id": "retail_requires_shared_set",
+            "if": {"product_dimension": "RETAIL_FILTER_BUNDLE"},
+            "required": ["retail_filter_shared_set"],
+            "message": "RETAIL_FILTER_BUNDLE requires retail_filter_shared_set",
+        },
+    ]
+    return {
+        "required": ["asset_group_id"],
+        "provider_required": [],
+        "properties": properties,
+        "conditional_rules": conditional_rules,
+    }
+
+
+def google_asset_group_listing_group_filter_update_schema() -> dict[str, Any]:
+    """Typed replacement payload for the mutable PMax caseValue."""
+    schema = google_asset_group_listing_group_filter_schema()
+    fields = {
+        name: schema["properties"][name]
+        for name in (
+            "product_dimension", "value", "dimension_level",
+            "custom_attribute_index", "webpage_conditions",
+            "retail_filter_shared_set",
+        )
+    }
+    return _object(
+        fields,
+        "Replacement case value for a PMax listing filter node",
+        additional_properties=False,
+        required=["product_dimension"],
+    )
+
+
+def google_asset_group_listing_group_filter_read_schema() -> dict[str, Any]:
+    """Identity fields for PMax listing-filter read Tools."""
+    schema = google_asset_group_listing_group_filter_schema()
+    properties = schema["properties"]
+    return {
+        "properties": {
+            key: properties[key]
+            for key in ("customer_id", "asset_group_id", "listing_group_filter_id", "limit")
+            if key in properties
+        } | {
+            "limit": _field("integer", "Maximum number of listing filters", minimum=1, maximum=10_000),
+        }
     }
 
 
