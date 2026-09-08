@@ -8,6 +8,7 @@ from agents.ad_agent.core.interfaces import (
 )
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
 from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.skill import SkillLoader
 from agents.ad_agent.skills.businesses.policy import BusinessSkillPolicy
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.session_context import SessionContext
@@ -44,7 +45,7 @@ def test_runtime_discovers_domain_features_without_a_central_workflow_table():
             encoding="utf-8"
         )
     )
-    assert not hasattr(DynamicToolSelector(), "business_context")
+    assert not hasattr(DynamicToolSelector(SkillLoader()), "business_context")
 
 
 def test_business_skill_policy_is_loaded_and_enforced_outside_runtime(tmp_path):
@@ -163,7 +164,7 @@ def test_session_context_uses_declared_resource_metadata_only():
     }
 
 
-def test_router_resolves_llm_intent_synonym_from_registered_tool_metadata():
+def test_router_requires_an_exact_registered_intent():
     registry = __import__(
         "agents.ad_agent.core.tool_registry",
         fromlist=["SimpleToolRegistry"],
@@ -185,9 +186,7 @@ def test_router_resolves_llm_intent_synonym_from_registered_tool_metadata():
         registry,
     )
 
-    assert [tool.name for tool in routed["new-network"]] == [
-        "new_network_download_report"
-    ]
+    assert routed == {}
 
 
 def test_parser_drops_unregistered_routing_metadata_from_platform_params():

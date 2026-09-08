@@ -119,12 +119,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         # serialized form so each turn does not rebuild the same prompt prefix.
         # It is invalidated whenever Tool definitions are refreshed.
         self._intent_catalog_prompt_cache: dict[tuple[str, ...], str] = {}
-        # Standalone parsing can use Skill-declared identity aliases before
-        # Runtime mounts its active Tool registry. This is advisory metadata
-        # and never registers executable capability.
-        for platform in sorted(declared_platforms()):
-            self.register_platform_aliases(platform, recognition_aliases(platform))
-
     def register_tool_definitions(self, definitions: list[ToolDefinition] | tuple[ToolDefinition, ...]) -> None:
         """Publish Tool-owned intent metadata to the LLM parser.
 

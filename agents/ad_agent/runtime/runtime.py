@@ -56,12 +56,13 @@ from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
-from ..core.knowledge import KnowledgeProvider, LocalMarkdownKnowledgeProvider
+from ..core.knowledge import KnowledgeProvider, MarkdownWikiKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
 from ..core.memory import MemoryManager
 from ..core.parameter_catalog import ParameterCatalogRegistry
 from ..core.blueprint import BlueprintRegistry, BlueprintCascadeEngine, _schema_at_path
 from ..core.creation_card import CreationCardBuilder
+from ..core.clarification import ActionClarificationBuilder
 from ..core.parameter_selection import (
     ParameterSelectionSigner,
 )
@@ -139,9 +140,9 @@ class AgentRuntime:
         write_guard: WriteGuard = None,
         skill_roots: list[str] = None,
         llm_client=None,  # 可选：自定义 LLM 客户端
-        # A production Agent is model-backed by definition.  Tests and
-        # explicitly offline tooling may opt into the legacy rule parser with
-        # ``require_llm=False``; the default must never silently degrade.
+        # A production Agent is model-backed by definition. Explicit offline
+        # tooling may opt into the schema-driven parser with ``require_llm=False``;
+        # the default must never silently degrade.
         require_llm: bool = True,
         persistence_store: PersistenceBackend = None,
         whitelist_validator: AccountWhitelistValidator = None,
@@ -199,6 +200,13 @@ class AgentRuntime:
         self.write_guard = write_guard
         self.skill_loader = SkillLoader(skill_roots)
         self.skill_loader.load_all()
+        # SkillLoader is the sole owner of Skill discovery. Publish the
+        # validated platform aliases to the parser before the first turn;
+        # Parser/Core must not scan the filesystem independently.
+        for skill in self.skill_loader.list_all().values():
+            self.intent_parser.register_platform_aliases(
+                skill.platform, skill.platform_aliases or []
+            )
         self._llm = llm_client
         self.conversation_title_generator = ConversationTitleGenerator()
         # A conversation title is presentation metadata and must never add a
@@ -212,8 +220,8 @@ class AgentRuntime:
         # the same model-backed Agent dependency; otherwise the strict
         # startup gate would reject a valid LLM configuration while checking
         # only the Runtime field.
-        if self._llm is None and isinstance(self.intent_parser, LLMIntentParser):
-            self._llm = getattr(self.intent_parser, "_llm", None)
+        if self._llm is None:
+            self._llm = self.intent_parser.model_client()
         self._sessions: dict[str, "SessionContext"] = {}
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_locks_guard = threading.RLock()
@@ -241,10 +249,9 @@ class AgentRuntime:
                     (PluginKind.FEATURE.value,),
                     description=f"Runtime feature {feature_name}",
                 )
-            register_intents = getattr(self.intent_parser, "register_intents", None)
-            feature_intents = getattr(feature, "INTENTS", ())
-            if callable(register_intents) and feature_intents:
-                register_intents(feature_intents)
+            self.intent_parser.register_intent_descriptors(
+                feature.intent_descriptors()
+            )
         self.response_renderer: ResponseRenderer = (
             response_renderer or discover_response_renderer()
         )
@@ -265,12 +272,9 @@ class AgentRuntime:
                 (PluginKind.RENDERER.value,),
                 description=f"Response renderer {renderer_name}",
             )
-        self._loaded_skills: dict[str, Skill] = {}  # platform -> Skill
         # Keep exact registration ownership so multiple Skills can share a
         # platform and unload cannot rely on a non-existent ``skill.tools``
         # attribute or accidentally remove another Skill's tools.
-        # ``_loaded_skills`` remains a primary-by-platform compatibility view;
-        # these indexes retain every Skill for exact lifecycle operations.
         self._skill_objects: dict[str, Skill] = {}
         self._skill_keys_by_platform: dict[str, list[str]] = {}
         self._skill_tool_names: dict[str, list[str]] = {}
@@ -292,7 +296,7 @@ class AgentRuntime:
         self._execution_mode_cache: OrderedDict[
             tuple[str, str], tuple[str, float]
         ] = OrderedDict()
-        base_knowledge_provider = knowledge_provider or LocalMarkdownKnowledgeProvider(
+        base_knowledge_provider = knowledge_provider or MarkdownWikiKnowledgeProvider(
             Path(__file__).resolve().parent.parent / "knowledge_base",
             search_index=persistence_store,
         )
@@ -316,6 +320,7 @@ class AgentRuntime:
             self.registry,
             self.blueprint_cascade,
         )
+        self.action_clarification_builder = ActionClarificationBuilder()
         # Blueprint context is declarative and changes only at registry
         # lifecycle boundaries. Cache the bounded LLM view per provider scope
         # so ordinary turns do not re-expand every creation schema twice.
@@ -339,7 +344,7 @@ class AgentRuntime:
         self.input_builder = ToolInputBuilder(self.services)
         self.account_resolver = AccountResolver(self.services)
         self.policies: list[RuntimePolicy] = list(policies or [])
-        if self.policies and hasattr(self.tool_selector, "set_policies"):
+        if self.policies:
             self.tool_selector.set_policies(self.policies)
 
         if execution_mode not in {mode.value for mode in ExecutionMode}:
@@ -612,6 +617,366 @@ class AgentRuntime:
             raise ValueError("scheduled task draft exceeds persistence limit")
         session.ctx.metadata["schedule_draft"] = safe
 
+    def get_creation_draft(self, session_id: str) -> Optional[dict[str, Any]]:
+        """Return the durable, provider-neutral creation draft for a session."""
+        session = self._sessions.get(str(session_id or ""))
+        if not session:
+            return None
+        draft = session.ctx.metadata.get("creation_draft")
+        return copy.deepcopy(draft) if isinstance(draft, dict) else None
+
+    def set_creation_draft(
+        self, session_id: str, draft: Optional[Mapping[str, Any]],
+    ) -> None:
+        """Persist only bounded, redacted creation context between turns."""
+        session = self._sessions.get(str(session_id or ""))
+        if not session:
+            return
+        if draft is None:
+            session.ctx.metadata.pop("creation_draft", None)
+            return
+        safe = self._redact_for_persistence(dict(draft))
+        serialized = json.dumps(safe, ensure_ascii=False, default=str)
+        if len(serialized.encode("utf-8")) > 48_000:
+            raise ValueError("creation draft exceeds persistence limit")
+        session.ctx.metadata["creation_draft"] = safe
+
+    def get_action_draft(self, session_id: str) -> Optional[dict[str, Any]]:
+        """Return a pending non-creation action clarification draft."""
+        session = self._sessions.get(str(session_id or ""))
+        if not session:
+            return None
+        draft = session.ctx.metadata.get("action_draft")
+        return copy.deepcopy(draft) if isinstance(draft, dict) else None
+
+    def set_action_draft(
+        self, session_id: str, draft: Optional[Mapping[str, Any]],
+    ) -> None:
+        """Persist bounded context needed to continue an incomplete action."""
+        session = self._sessions.get(str(session_id or ""))
+        if not session:
+            return
+        if draft is None:
+            session.ctx.metadata.pop("action_draft", None)
+            return
+        safe = self._redact_for_persistence(dict(draft))
+        serialized = json.dumps(safe, ensure_ascii=False, default=str)
+        if len(serialized.encode("utf-8")) > 32_000:
+            raise ValueError("action clarification draft exceeds persistence limit")
+        session.ctx.metadata["action_draft"] = safe
+
+    @staticmethod
+    def _creation_intent_from_draft(draft: Optional[Mapping[str, Any]]) -> Optional[ParsedIntent]:
+        if not isinstance(draft, Mapping):
+            return None
+        raw = draft.get("intent") if isinstance(draft.get("intent"), Mapping) else draft
+        if not isinstance(raw, Mapping):
+            return None
+        fields = getattr(ParsedIntent, "__dataclass_fields__", {})
+        values = {key: copy.deepcopy(value) for key, value in raw.items() if key in fields}
+        # ParsedIntent.to_dict() intentionally omits raw_input from the public
+        # contract. A durable draft still needs a safe seed for deterministic
+        # Blueprint resolution, so restore it from the draft envelope when
+        # available and otherwise use an empty string.
+        values.setdefault("raw_input", str(raw.get("raw_input") or draft.get("raw_input") or ""))
+        try:
+            return ParsedIntent(**values)
+        except (TypeError, ValueError):
+            return None
+
+    def _adopt_creation_draft(
+        self, session_id: str, intent: ParsedIntent, follow_up_text: str,
+    ) -> ParsedIntent:
+        """Adopt a short answer into the pending creation conversation."""
+        draft = self.get_creation_draft(session_id)
+        pending = self._creation_intent_from_draft(draft)
+        if pending is None:
+            return intent
+        try:
+            adopted = self.creation_card_builder.merge_pending_intent(
+                pending, intent, follow_up_text,
+            )
+        except Exception:
+            logger.debug("failed to merge pending creation draft", exc_info=True)
+            return intent
+        if adopted is None:
+            return intent
+        return adopted
+
+    def _adopt_action_draft(
+        self, session_id: str, intent: ParsedIntent, follow_up_text: str,
+    ) -> ParsedIntent:
+        """Merge a concise answer into the last incomplete action.
+
+        A reply such as ``campaign_id=123`` often has no platform or action
+        words. Reusing the durable intent keeps that answer attached to the
+        original request after a restart, while a new non-chat intent is left
+        untouched so a pending clarification cannot hijack a new request.
+        """
+        draft = self.get_action_draft(session_id)
+        pending = self._creation_intent_from_draft(draft)
+        if pending is None or self.creation_card_builder.is_creation_intent(pending):
+            return intent
+        current_type = str(getattr(intent, "intent_type", "") or "")
+        current_platforms = list(getattr(intent, "platforms", []) or [])
+        pending_platforms = list(getattr(pending, "platforms", []) or [])
+        if current_type not in {"", "chat"} and current_type != pending.intent_type:
+            return intent
+        if current_platforms and set(current_platforms) != set(pending_platforms):
+            return intent
+
+        merged = pending.to_dict()
+        merged["raw_input"] = str(getattr(pending, "raw_input", "") or "")
+        merged_params = copy.deepcopy(getattr(pending, "platform_params", {}) or {})
+        current_params = getattr(intent, "platform_params", {}) or {}
+        if isinstance(current_params, Mapping):
+            for platform, values in current_params.items():
+                if not isinstance(values, Mapping):
+                    continue
+                destination = dict(merged_params.get(platform, {}) or {})
+                destination.update(copy.deepcopy(dict(values)))
+                merged_params[platform] = destination
+        if pending_platforms:
+            try:
+                extracted = self.intent_parser.extract_parameters(
+                    follow_up_text, pending_platforms
+                )
+            except Exception:
+                extracted = {}
+            if isinstance(extracted, Mapping):
+                for platform, values in extracted.items():
+                    if not isinstance(values, Mapping):
+                        continue
+                    destination = dict(merged_params.get(platform, {}) or {})
+                    destination.update(copy.deepcopy(dict(values)))
+                    merged_params[platform] = destination
+        for field_name in (
+            "objective", "campaign_type", "budget", "duration_days", "date_range",
+            "creative_materials",
+        ):
+            value = getattr(intent, field_name, None)
+            if value not in (None, "", [], {}):
+                merged[field_name] = copy.deepcopy(value)
+        merged["platform_params"] = merged_params
+        merged["intent_type"] = pending.intent_type
+        merged["platforms"] = pending_platforms
+        try:
+            return ParsedIntent(**{
+                key: value for key, value in merged.items()
+                if key in ParsedIntent.__dataclass_fields__
+            })
+        except (TypeError, ValueError):
+            return intent
+
+    def _action_clarification_response(
+        self,
+        *,
+        session: "SessionContext",
+        session_id: str,
+        run_id: str,
+        turn_id: str,
+        user_input: str,
+        reply: str,
+        intent: ParsedIntent,
+        ui: Mapping[str, Any],
+        trace: ExecutionTrace,
+        recalled_memories: list[dict[str, Any]],
+        memory_updates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Stop before plan/workflow creation while collecting action inputs."""
+        clarification = ui.get("clarification") if isinstance(ui, Mapping) else {}
+        confirmation_payload = None
+        clarification_fields = (
+            clarification.get("fields", [])
+            if isinstance(clarification, Mapping) else []
+        )
+        account_fields = [
+            item for item in clarification_fields
+            if isinstance(item, Mapping)
+            and str(item.get("path") or "") in {"account_id", "ad_account_id", "advertiser_id", "customer_id"}
+        ]
+        non_account_fields = [item for item in clarification_fields if item not in account_fields]
+        # Keep the established account-selection interaction for the simple
+        # account-only case. A request with both an account and other missing
+        # data stays an inline clarification so users do not receive a
+        # fragmented sequence of popups.
+        if account_fields and not non_account_fields:
+            platform = str(account_fields[0].get("platform") or "目标平台")
+            confirmation_payload = {
+                "type": "ask_account",
+                "platform": platform,
+                "question": f"请提供要操作的 {platform} 广告账户 ID。",
+            }
+            reply = confirmation_payload["question"]
+        trace.stage_status(
+            "action_clarification",
+            "补充执行信息",
+            "awaiting_confirmation",
+            subtitle="等待用户明确资源范围和必填参数",
+            safe_metadata={"reason": "required_parameters"},
+            safe_output={
+                "field_count": len(clarification.get("fields", []) or {})
+                if isinstance(clarification, Mapping) else 0,
+            },
+        )
+        self.set_action_draft(session_id, {
+            "intent": intent.to_dict(),
+            "clarification": clarification,
+        })
+        trace.reply()
+        trace.done("awaiting_confirmation", safe_metadata={
+            "reason": "action_clarification", "tool_count": 0,
+        })
+        self.persist_conversation_turn(
+            session, turn_id, user_input, reply, execution_trace=trace, ui=ui,
+        )
+        updater = getattr(self._session_manager, "update_execution_run", None)
+        if callable(updater):
+            try:
+                updater(str(run_id), status="awaiting_confirmation")
+            except Exception:
+                logger.debug("failed to finalize action clarification run", exc_info=True)
+        response_results = []
+        if confirmation_payload:
+            response_results.append({
+                "tool": str(account_fields[0].get("tool") or "account_scope"),
+                "platform": str(account_fields[0].get("platform") or ""),
+                "success": False,
+                "data": {},
+                "error": "缺少账户ID",
+                "needs_confirmation": True,
+                "confirmation_payload": confirmation_payload,
+            })
+        return {
+            "session_id": session_id,
+            "run_id": run_id,
+            "turn_id": turn_id,
+            "timestamp": datetime.now().isoformat(),
+            "intent": intent.to_dict(),
+            "tool_plan": {},
+            "execution_plan": {},
+            "tool_selection": None,
+            "memory": recalled_memories,
+            "memory_updates": memory_updates,
+            "results": response_results,
+            "response_source": "action_clarification",
+            "reply": reply,
+            "needs_confirmation": bool(confirmation_payload),
+            "needs_input": True,
+            "confirmation_payload": confirmation_payload,
+            "workflow_id": None,
+            "ui": dict(ui),
+        }
+
+    def _creation_input_response(
+        self,
+        *,
+        session: "SessionContext",
+        session_id: str,
+        run_id: str,
+        turn_id: str,
+        user_input: str,
+        reply: str,
+        intent: ParsedIntent,
+        ui: Mapping[str, Any],
+        trace: ExecutionTrace,
+        recalled_memories: list[dict[str, Any]],
+        memory_updates: list[dict[str, Any]],
+        reason: str,
+    ) -> dict[str, Any]:
+        """Finish a clarification turn without materializing Tool nodes."""
+        trace.stage_status(
+            "creation_clarification",
+            "创建需求澄清" if reason == "creation_selector_required" else "创建参数收集",
+            "awaiting_confirmation",
+            subtitle="等待补充明确的广告类型和必填参数",
+            safe_metadata={"reason": reason},
+            safe_output={
+                "provider": (ui.get("clarification") or {}).get("provider")
+                if isinstance(ui, Mapping) else None,
+                "card_count": len(ui.get("cards", []) or []) if isinstance(ui, Mapping) else 0,
+            },
+        )
+        self.set_creation_draft(session_id, {"intent": intent.to_dict(), "reason": reason})
+        trace.reply()
+        trace.done("awaiting_confirmation", safe_metadata={"reason": reason, "tool_count": 0})
+        self.persist_conversation_turn(
+            session, turn_id, user_input, reply, execution_trace=trace, ui=ui,
+        )
+        updater = getattr(self._session_manager, "update_execution_run", None)
+        if callable(updater):
+            try:
+                updater(str(run_id), status="awaiting_confirmation")
+            except Exception:
+                logger.debug("failed to finalize clarification execution run", exc_info=True)
+        return {
+            "session_id": session_id,
+            "run_id": run_id,
+            "turn_id": turn_id,
+            "timestamp": datetime.now().isoformat(),
+            "intent": intent.to_dict(),
+            "tool_plan": {},
+            "execution_plan": {},
+            "tool_selection": None,
+            "memory": recalled_memories,
+            "memory_updates": memory_updates,
+            "results": [],
+            "response_source": (
+                "creation_clarification"
+                if reason == "creation_selector_required" else "creation_card"
+            ),
+            "reply": reply,
+            "needs_confirmation": False,
+            "needs_input": True,
+            "confirmation_payload": None,
+            "workflow_id": None,
+            "ui": dict(ui),
+        }
+
+    def _creation_policy_response(
+        self,
+        *,
+        session: "SessionContext",
+        session_id: str,
+        run_id: str,
+        turn_id: str,
+        user_input: str,
+        intent: ParsedIntent,
+        trace: ExecutionTrace,
+        error: str,
+    ) -> dict[str, Any]:
+        """Reject an out-of-scope explicit account before clarification."""
+        trace.error(reason="account_scope_denied")
+        trace.done("failed", safe_metadata={"reason": "account_scope_denied"})
+        reply = "❌ " + str(error)
+        self.persist_conversation_turn(
+            session, turn_id, user_input, reply, execution_trace=trace,
+        )
+        updater = getattr(self._session_manager, "update_execution_run", None)
+        if callable(updater):
+            try:
+                updater(str(run_id), status="failed")
+            except Exception:
+                logger.debug("failed to finalize creation policy run", exc_info=True)
+        return {
+            "session_id": session_id,
+            "run_id": run_id,
+            "turn_id": turn_id,
+            "timestamp": datetime.now().isoformat(),
+            "intent": intent.to_dict(),
+            "tool_plan": {},
+            "execution_plan": {},
+            "tool_selection": None,
+            "results": [],
+            "reply": reply,
+            "needs_confirmation": False,
+            "needs_input": False,
+            "confirmation_payload": None,
+            "policy_errors": [str(error)],
+            "workflow_id": None,
+            "ui": {},
+        }
+
     def preflight_scheduled_prompt(
         self, prompt: str, *, session_id: str,
         platforms: Optional[list[str]] = None,
@@ -821,22 +1186,20 @@ class AgentRuntime:
     def _refresh_parser_catalog(self) -> None:
         """Synchronize parser discovery data with the active Tool registry."""
         self._creation_blueprint_context_cache.clear()
-        refresh = getattr(self.intent_parser, "refresh_tool_catalog", None)
         definitions = self.registry.list_all()
-        if callable(refresh):
-            refresh(definitions)
-        elif hasattr(self.intent_parser, "register_tool_definitions"):
-            self.intent_parser.register_tool_definitions(definitions)
+        self.intent_parser.refresh_tool_catalog(definitions)
+        for feature in self.features:
+            self.intent_parser.register_intent_descriptors(
+                feature.intent_descriptors()
+            )
 
         # Skill aliases are context metadata, but they must follow the same
         # lifecycle as their active Skill.  Provider identity itself remains
         # discovered from Tool metadata; aliases never create Tools.
         for skill in list(self._skill_objects.values()):
-            if hasattr(self.intent_parser, "register_platform_aliases"):
-                self.intent_parser.register_platform_aliases(
-                    getattr(skill, "platform", ""),
-                    getattr(skill, "platform_aliases", []) or [],
-                )
+            self.intent_parser.register_platform_aliases(
+                skill.platform, skill.platform_aliases or []
+            )
 
     @staticmethod
     def _canonical_platform(platform: str) -> str:
@@ -1017,39 +1380,18 @@ class AgentRuntime:
         intent_type: Optional[str],
         tenant_id: str,
     ) -> dict:
-        """Call selector extensions without breaking older injected selectors."""
-        builder = getattr(self.tool_selector, "build_context_for_input", None)
-        if not callable(builder):
-            return {"creation_blueprints": self.creation_card_builder.llm_context()}
-        try:
-            parameters = inspect.signature(builder).parameters.values()
-        except (TypeError, ValueError):
-            parameters = ()
-        supports_keyword = any(
-            parameter.name == "tenant_id" or parameter.kind == inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters
+        """Build parser context through the selector contract."""
+        context = self.tool_selector.build_context_for_input(
+            user_input, available_tools, intent_type, tenant_id=tenant_id
         )
-        supports_extra_positional = any(
-            parameter.kind == inspect.Parameter.VAR_POSITIONAL
-            for parameter in parameters
-        )
-        context = None
-        if supports_keyword:
-            context = builder(
-                user_input, available_tools, intent_type, tenant_id=tenant_id
-            )
-        elif supports_extra_positional:
-            context = builder(user_input, available_tools, intent_type, tenant_id)
-        else:
-            context = builder(user_input, available_tools, intent_type)
         if not isinstance(context, dict):
             context = {}
         # Blueprints are bounded declarative context for the LLM. They do not
         # register Tools and cannot execute lookup/provider operations.
         # Reuse the selector's registry-derived platform scope so the LLM gets
         # the complete relevant Blueprint catalog within a bounded prompt.
-        # The fallback remains the full bounded catalog when no platform is
-        # known yet (for example, “create an app campaign”).
+        # With no provider scope, the registry-backed builder returns the full
+        # bounded declarative catalog.
         raw_platforms = context.get("platforms")
         provider_scope = [
             item.strip() for item in str(raw_platforms or "").split(",")
@@ -1071,24 +1413,10 @@ class AgentRuntime:
         self, user_input: str, intent: ParsedIntent,
         available_tools: list, tenant_id: str,
     ) -> dict:
-        """Invoke selector extensions without breaking older selectors."""
-        optimizer = getattr(self.tool_selector, "optimize_for_llm", None)
-        if not callable(optimizer):
-            return {}
-        try:
-            parameters = inspect.signature(optimizer).parameters.values()
-        except (TypeError, ValueError):
-            parameters = ()
-        supports_keyword = any(
-            parameter.name == "tenant_id"
-            or parameter.kind == inspect.Parameter.VAR_KEYWORD
-            for parameter in parameters
+        """Optimize the current Tool context through the selector contract."""
+        return self.tool_selector.optimize_for_llm(
+            user_input, intent, available_tools, tenant_id=tenant_id
         )
-        if supports_keyword:
-            return optimizer(
-                user_input, intent, available_tools, tenant_id=tenant_id
-            )
-        return optimizer(user_input, intent, available_tools)
 
     def _build_prior_tool_results_context(
         self, session: "SessionContext", max_results: int = 8, max_chars: int = 4000
@@ -1281,7 +1609,6 @@ class AgentRuntime:
                         self._skill_keys_by_platform[canonical] = keys
                     else:
                         self._skill_keys_by_platform.pop(canonical, None)
-                        self._loaded_skills.pop(canonical, None)
             self.ad_format_catalogs = before_formats
             self.provider_version_contracts = before_provider_versions
             self.provider_api_surfaces = before_provider_surfaces
@@ -1360,8 +1687,7 @@ class AgentRuntime:
         # Keep the Parser's language catalog derived from the actual Registry
         # rather than from a central intent table.  Custom parsers may ignore
         # this optional extension seam.
-        if hasattr(self.intent_parser, "register_tool_definitions"):
-            self.intent_parser.register_tool_definitions(self.registry.list_all())
+        self.intent_parser.register_tool_definitions(self.registry.list_all())
 
         # Register executable tools supplied by the Capability.  Tool metadata
         # is the routing contract; no workflow file is consulted here.
@@ -1374,7 +1700,6 @@ class AgentRuntime:
             skill_candidates = self.skill_loader.get_by_platform(canonical_platform)
             if skill_candidates:
                 primary_skill = skill_candidates[0]
-                self._loaded_skills.setdefault(canonical_platform, primary_skill)
                 skill_key = str(getattr(primary_skill, "name", "") or canonical_platform)
             else:
                 primary_skill = None
@@ -1594,10 +1919,14 @@ class AgentRuntime:
             option_sources=option_sources,
         )
 
-    def build_creation_ui(self, intent: ParsedIntent) -> dict[str, Any]:
+    def build_creation_ui(
+        self,
+        intent: ParsedIntent,
+        tool_plan: Optional[Mapping[str, Any]] = None,
+    ) -> dict[str, Any]:
         """Build safe conversational creation cards without executing Tools."""
         try:
-            cards = self.creation_card_builder.build(intent)
+            cards = self.creation_card_builder.build(intent, tool_plan=tool_plan)
         except Exception:
             logger.exception("构建广告创建参数卡失败")
             cards = []
@@ -1678,6 +2007,26 @@ class AgentRuntime:
             card for card in cards or []
             if isinstance(card, Mapping) and card.get("type") == "ad_creation_selector"
         ]
+        clarification = ui.get("clarification") if isinstance(ui, Mapping) else None
+        if isinstance(clarification, Mapping):
+            provider = str(clarification.get("provider") or "目标平台")
+            option_labels = [
+                str(option.get("label") or option.get("value"))
+                for option in (clarification.get("options") or [])[:12]
+                if isinstance(option, Mapping)
+            ]
+            options_text = "、".join(dict.fromkeys(option_labels))
+            if is_english:
+                return (
+                    f"I identified a {provider} ad creation request, but the campaign goal/type is not clear yet. "
+                    f"Supported choices: {options_text}. Please choose one; I will then show the complete form "
+                    "for that Blueprint and will not submit anything without a final confirmation."
+                )
+            return (
+                f"我识别到你要在 {provider} 创建广告，但目前还不能确定具体的推广目标或广告类型。"
+                f"当前能力支持：{options_text}。请先选择一种；确定后我再展示该蓝图对应的完整 Campaign、Ad Group 和 Ad 参数，"
+                "不会根据模糊描述猜测，也不会提前提交。"
+            )
         if selector_cards:
             provider = str(selector_cards[0].get("provider") or "目标平台")
             selector = selector_cards[0]
@@ -1828,6 +2177,38 @@ class AgentRuntime:
             "你也可以直接用文字继续，例如“账户 ID 是 [账户ID]，选择 Android，优化安装量，日预算 100”。"
             "我会先校验参数组合并展示最终方案，只有你明确确认后才会提交创建。"
         )
+
+    @staticmethod
+    def action_clarification_reply(
+        ui: Mapping[str, Any], user_input: str = "",
+    ) -> str:
+        """Render schema-driven missing inputs as a business question."""
+        clarification = ui.get("clarification") if isinstance(ui, Mapping) else {}
+        if not isinstance(clarification, Mapping):
+            return "请补充本次操作所需的信息。"
+        question = str(clarification.get("question") or "请补充本次操作所需的信息。")
+        fields = clarification.get("fields") or []
+        parts: list[str] = []
+        for field in fields[:8]:
+            if not isinstance(field, Mapping):
+                continue
+            label = str(field.get("label") or field.get("path") or "参数")
+            source = str(field.get("source") or "text")
+            if source == "lookup":
+                detail = "请从当前账户的资源列表中选择，系统不会猜测 ID"
+            elif source == "enum" and field.get("options"):
+                options = "、".join(str(item) for item in field["options"][:8])
+                detail = f"可选：{options}"
+            else:
+                detail = str(field.get("hint") or "请直接提供")
+            parts.append(f"{label}（{detail}）")
+        suffix = "；".join(parts)
+        hint = str(clarification.get("hint") or "")
+        if suffix:
+            question += "\n" + suffix + "。"
+        if hint and hint not in question:
+            question += "\n" + hint
+        return question
 
     def _creation_contract_preflight(
         self,
@@ -2145,11 +2526,9 @@ class AgentRuntime:
 
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
-        if hasattr(self.intent_parser, "register_platform_aliases"):
-            self.intent_parser.register_platform_aliases(
-                getattr(skill, "platform", ""),
-                getattr(skill, "platform_aliases", []) or [],
-            )
+        self.intent_parser.register_platform_aliases(
+            skill.platform, skill.platform_aliases or []
+        )
         registered_names: list[str] = []
         for tool_def in skill.get_tools():
             skill_platform = self._canonical_platform(skill.platform)
@@ -2174,10 +2553,9 @@ class AgentRuntime:
             keys = self._skill_keys_by_platform.setdefault(platform_key, [])
             if skill_key not in keys:
                 keys.append(skill_key)
-            if hasattr(self.intent_parser, "register_tool_definitions"):
-                self.intent_parser.register_tool_definitions(
-                    [self.registry.get(name)[0] for name in registered_names]
-                )
+            self.intent_parser.register_tool_definitions(
+                [self.registry.get(name)[0] for name in registered_names]
+            )
     
     # ─── Skill 动态注册 ────────────────────────────────────────
     
@@ -2208,7 +2586,6 @@ class AgentRuntime:
             logger.info("ⓘ Skill '%s' 已加载，跳过重复注册", skill_key)
             return True
         
-        # Capability is the compatibility source for built-in channel Skills.
         # A custom Skill may provide its own ToolDefinitions and handlers; in
         # that case register only the declared executable tools instead of
         # exposing every tool belonging to the platform.
@@ -2222,8 +2599,8 @@ class AgentRuntime:
                 logger.warning("解析 Skill '%s' 工具声明失败: %s", skill_key, exc)
 
         # A custom Skill can target a new platform and provide all of its own
-        # handlers.  Only built-in fallback Skills require a known Capability;
-        # this keeps the extension seam genuinely Skill + Tools based.
+        # handlers. Built-in provider packages can be discovered by convention;
+        # the extension seam remains genuinely Skill + Tools based.
         capability = self._discover_capability(canonical_platform, api_client)
         if capability is None:
             try:
@@ -2310,11 +2687,9 @@ class AgentRuntime:
             return False
 
         self._validate_parameter_lookup_contract()
-        if hasattr(self.intent_parser, "register_tool_definitions"):
-            self.intent_parser.register_tool_definitions(self.registry.list_all())
+        self.intent_parser.register_tool_definitions(self.registry.list_all())
 
         # 保存 Skill 和平台映射
-        self._loaded_skills.setdefault(canonical_platform, skill)
         self._skill_tool_names[skill_key] = [tool_def.name for tool_def, _ in tools]
         self._skill_platforms[skill_key] = canonical_platform
         self._skill_objects[skill_key] = skill
@@ -2398,8 +2773,7 @@ class AgentRuntime:
         Supported convention:
 
         ``skills/<name>/tools.py`` or ``skills/<name>/tools/__init__.py``
-        exports ``create_skill(api_client=None)`` (``get_skill`` is accepted
-        as a compatibility alias).  The factory must return a Core ``Skill``
+        exports ``create_skill(api_client)``. The factory must return a Core ``Skill``
         implementation with ``get_tools`` and ``get_tool_handler`` methods.
 
         Importing a plugin only constructs local objects; provider I/O remains
@@ -2427,24 +2801,11 @@ class AgentRuntime:
                 return None
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
-            factory = getattr(module, "create_skill", None) or getattr(module, "get_skill", None)
+            factory = getattr(module, "create_skill", None)
             if not callable(factory):
-                logger.warning("Skill plugin %s 缺少 create_skill(api_client=None)", plugin_path)
+                logger.warning("Skill plugin %s 缺少 create_skill(api_client)", plugin_path)
                 return None
-            try:
-                signature = inspect.signature(factory)
-            except (TypeError, ValueError):
-                skill = factory(api_client)
-            else:
-                try:
-                    signature.bind(api_client)
-                except TypeError:
-                    skill = factory()
-                else:
-                    # Do not catch TypeError from inside the factory: that is
-                    # an implementation failure, not evidence of a zero-arg
-                    # compatibility signature.
-                    skill = factory(api_client)
+            skill = factory(api_client)
             if not (
                 skill is not None
                 and callable(getattr(skill, "get_tools", None))
@@ -2493,10 +2854,6 @@ class AgentRuntime:
         canonical_platform = self._canonical_platform(platform)
         candidates = list(self._skill_keys_by_platform.get(canonical_platform, []))
         if not candidates:
-            primary = self._loaded_skills.get(canonical_platform) or self._loaded_skills.get(platform)
-            if primary is not None:
-                candidates = [str(getattr(primary, "name", "") or canonical_platform)]
-        if not candidates and platform not in self._loaded_skills and canonical_platform not in self._loaded_skills:
             return True
         
         try:
@@ -2505,10 +2862,7 @@ class AgentRuntime:
                     return False
                 target_key = skill_name
             else:
-                primary = self._loaded_skills.get(canonical_platform)
-                target_key = str(getattr(primary, "name", "") or "") if primary else ""
-                if target_key not in candidates:
-                    target_key = candidates[0]
+                target_key = candidates[0]
             tool_names = list(self._skill_tool_names.get(target_key, []))
             target_skill = self._skill_objects.get(target_key)
 
@@ -2535,18 +2889,12 @@ class AgentRuntime:
             remaining = [key for key in candidates if key != target_key]
             if remaining:
                 self._skill_keys_by_platform[canonical_platform] = remaining
-                replacement = self._skill_objects.get(remaining[0])
-                if replacement is not None:
-                    self._loaded_skills[canonical_platform] = replacement
             else:
                 self._skill_keys_by_platform.pop(canonical_platform, None)
-                self._loaded_skills.pop(canonical_platform, None)
                 # Blueprints are owned by the provider Capability. Remove
                 # them only after the final Skill for that platform is gone.
                 self.creation_blueprints.remove_owner(canonical_platform)
 
-            if platform != canonical_platform:
-                self._loaded_skills.pop(platform, None)
             self._refresh_parser_catalog()
             logger.info(
                 "✅ 已卸载 Skill '%s' (platform=%s)，移除 %s 个工具",
@@ -2558,8 +2906,8 @@ class AgentRuntime:
             return False
     
     def get_loaded_skills(self) -> dict[str, Skill]:
-        """获取所有已加载的 Skills"""
-        return self._loaded_skills.copy()
+        """Return every active Skill keyed by its declared Skill name."""
+        return self._skill_objects.copy()
     
     def get_available_skills(self) -> dict[str, Skill]:
         """获取所有可用的 Skills（包括未加载的）"""
@@ -2583,7 +2931,7 @@ class AgentRuntime:
         for platform in platforms:
             actual_platform = self._canonical_platform(platform)
 
-            if actual_platform in self._loaded_skills:
+            if self._skill_keys_by_platform.get(actual_platform):
                 continue  # 已加载，跳过
 
             # 查找对应的 Skill
@@ -2601,14 +2949,7 @@ class AgentRuntime:
     def _find_skill_by_platform(self, platform: str) -> 'Skill':
         """
         根据平台名称查找对应的 Skill。
-        
-        策略：
-        1. 从已加载的 Skill 中查找
-        2. 从 SkillLoader 缓存中查找
         """
-        # 先从已加载的 Skill 中查找
-        if platform in self._loaded_skills:
-            return self._loaded_skills[platform]
         canonical_platform = self._canonical_platform(platform)
         for skill_key in self._skill_keys_by_platform.get(canonical_platform, []):
             skill = self._skill_objects.get(skill_key)
@@ -2710,12 +3051,12 @@ class AgentRuntime:
         ``create_<platform>_capability`` factory. Custom channels can instead
         expose executable Tools from their Skill plugin.
         """
-        from ..capabilities.factory import discover_capability_factory, _call_factory
+        from ..capabilities.factory import discover_capability_factory
 
         factory = discover_capability_factory(platform)
         if not callable(factory):
             return None
-        return _call_factory(factory, api_client)
+        return factory(api_client)
 
     def _build_request_clients(self, credentials: Optional[dict]) -> dict[str, Any]:
         """Build per-request clients without replacing shared handlers.
@@ -2979,6 +3320,10 @@ class AgentRuntime:
         name = input_data.get("name") or f"dry_run_{key}"
         resource_type = getattr(tool_def, "resource_type", None) or "resource"
         resource_key = self._resource_id_field_for_tool(tool_def)
+        if not resource_key:
+            return ToolResult.error(
+                f"Tool '{tool_def.name}' must declare resource_id_field"
+            )
         parent_type = getattr(tool_def, "parent_resource_type", None)
         parent_field = self._parent_resource_id_field_for_tool(tool_def)
         parent_id = input_data.get(parent_field) if parent_field else None
@@ -3018,71 +3363,28 @@ class AgentRuntime:
         }
         return ToolResult.dry_run(data)
 
-    @staticmethod
-    def _resource_id_field(resource_type: str) -> str:
-        # Kept as a compatibility helper for callers that need a neutral
-        # result key. Provider/Skill Tools must declare the actual wire field
-        # through ``resource_id_field``; Core must not turn a logical resource
-        # type into a provider field name.
-        return "resource_id"
-
     @classmethod
-    def _resource_id_field_for_tool(cls, tool_def: Any) -> str:
+    def _resource_id_field_for_tool(cls, tool_def: Any) -> Optional[str]:
         """Resolve the provider resource ID from the Tool contract.
 
         A provider with a different wire name publishes
-        ``resource_id_field`` on its Tool and does not require a Runtime
-        change. A schema marker is accepted for custom Skill tools, but there
-        is deliberately no resource-type-to-field lookup here.
+        ``resource_id_field`` on its Tool. Runtime never infers an identity
+        from a logical resource type or a schema property name.
         """
         declared = str(getattr(tool_def, "resource_id_field", "") or "").strip()
         if declared:
             return declared
-        schema = getattr(tool_def, "input_schema", None)
-        properties = getattr(schema, "properties", {}) if schema else {}
-        if isinstance(properties, dict):
-            marked = [
-                str(name) for name, spec in properties.items()
-                if isinstance(spec, dict)
-                and (spec.get("resource_id") or spec.get("x-resource-id"))
-            ]
-            if len(marked) == 1:
-                return marked[0]
-        return "resource_id"
+        return None
 
     @staticmethod
     def _parent_resource_id_field_for_tool(tool_def: Any) -> Optional[str]:
-        """Resolve a Tool's parent ID field without provider branching.
-
-        ``parent_resource_id_field`` is authoritative.  The schema marker is
-        useful for plugin Tools that want to keep metadata close to their
-        input contract; conventional logical names remain a compatibility
-        fallback for older Tools.
-        """
+        """Resolve a Tool's parent ID field from its explicit contract."""
         declared = str(
             getattr(tool_def, "parent_resource_id_field", "") or ""
         ).strip()
         if declared:
             return declared
 
-        schema = getattr(tool_def, "input_schema", None)
-        properties = getattr(schema, "properties", {}) if schema else {}
-        if isinstance(properties, dict):
-            marked = [
-                str(name) for name, spec in properties.items()
-                if isinstance(spec, dict)
-                and (spec.get("parent_resource_id") or spec.get("x-parent-resource-id"))
-            ]
-            if len(marked) == 1:
-                return marked[0]
-
-        parent_type = str(getattr(tool_def, "parent_resource_type", "") or "")
-        normalized_parent = re.sub(r"[^a-z0-9]+", "_", parent_type.lower()).strip("_")
-        candidates = [f"{normalized_parent}_id"] if normalized_parent else []
-        if isinstance(properties, dict):
-            for candidate in candidates:
-                if candidate in properties:
-                    return candidate
         return None
 
     @classmethod
@@ -3111,11 +3413,11 @@ class AgentRuntime:
                 continue
             sequence += 1
             resource_type = str(item["resource_type"])
-            id_field = str(item.get("resource_id_field") or cls._resource_id_field(resource_type))
+            id_field = str(item.get("resource_id_field") or "")
+            if not id_field:
+                continue
             input_data = data.get("input") if isinstance(data.get("input"), dict) else {}
             raw_id = data.get(id_field) or input_data.get(id_field) or item.get(id_field)
-            if raw_id in (None, ""):
-                raw_id = input_data.get("resource_id") or data.get("resource_id")
             raw_id = str(raw_id) if raw_id not in (None, "") else None
             simulated = bool(data.get("simulated") or item.get("simulated"))
             execution_status = str(data.get("execution_status") or "").lower()
@@ -3314,17 +3616,28 @@ class AgentRuntime:
             "tenant_id": session.ctx.metadata.get("tenant_id", "default"),
             "conversation_title": session.ctx.metadata.get("conversation_title", "新对话"),
             "conversation_title_source": session.ctx.metadata.get(
-                "conversation_title_source", "fallback"
+                "conversation_title_source", "deterministic"
             ),
+            # Keep the bounded working window in session metadata for
+            # compatibility with older consumers that read session metadata
+            # directly. The complete transcript remains in
+            # conversation_messages; this bounded copy is not a second
+            # durable source of truth.
+            "messages": list(session.messages),
             "message_count": len(session.messages),
             "conversation_turn_count": session.ctx.metadata["conversation_turn_count"],
-            "messages": self._redact_for_persistence(session.messages[-20:]),
             "conversation_digest": session.ctx.metadata.get("conversation_digest", ""),
             "memory_updates": session.ctx.metadata.get("memory_updates", [])[-20:],
         }
         schedule_draft = session.ctx.metadata.get("schedule_draft")
         if isinstance(schedule_draft, dict):
             metadata["schedule_draft"] = self._redact_for_persistence(schedule_draft)
+        creation_draft = session.ctx.metadata.get("creation_draft")
+        if isinstance(creation_draft, dict):
+            metadata["creation_draft"] = self._redact_for_persistence(creation_draft)
+        action_draft = session.ctx.metadata.get("action_draft")
+        if isinstance(action_draft, dict):
+            metadata["action_draft"] = self._redact_for_persistence(action_draft)
         ui_by_turn = session.ctx.metadata.get("conversation_ui", {})
         ui_by_turn = dict(ui_by_turn) if isinstance(ui_by_turn, dict) else {}
         if isinstance(ui, Mapping) and ui:
@@ -4033,6 +4346,11 @@ class AgentRuntime:
         # Make the resolved mode explicit to handlers and trace/persistence
         # adapters without exposing the mutable Runtime default.
         session.ctx.metadata["execution_mode"] = self.execution_mode
+        # This map is scoped to one execution turn.  Provider handlers use it
+        # only to bridge eventual-consistency gaps between a successful parent
+        # create and its dependent child create; caller-supplied IDs still go
+        # through normal account ownership checks.
+        session.ctx.metadata["runtime_created_resource_ids"] = {}
         if cancellation_event is not None:
             session.ctx.metadata["task_cancel_event"] = cancellation_event
         else:
@@ -4274,6 +4592,23 @@ class AgentRuntime:
                 else:
                     merged_params[platform] = self._redact_for_persistence(values)
             intent.platform_params = merged_params
+
+        # A creation follow-up is often intentionally short (for example
+        # “流量广告” after the Agent asked for a TikTok objective). Restore
+        # the durable creation intent before loading Skills or routing Tools;
+        # the persisted draft is never treated as an execution permission.
+        if not creation_blueprint_id:
+            intent = self._adopt_creation_draft(
+                session_id, intent, safe_user_input,
+            )
+        # A concise answer to a generic action clarification (for example a
+        # Campaign ID after “update this campaign”) must remain attached to
+        # the original action. The draft is durable session context, not an
+        # execution permission.
+        if not creation_blueprint_id:
+            intent = self._adopt_action_draft(
+                session_id, intent, safe_user_input,
+            )
         
         # Step 2.5: 动态加载相关平台的 Skill 工具
         self._load_required_skills(intent.platforms)
@@ -4301,6 +4636,97 @@ class AgentRuntime:
                 "confirmation_payload": None,
                 "policy_errors": policy_errors,
             }
+
+        # Creation is a parameter-collection boundary. Resolve the
+        # provider-owned Blueprint before IntentRouter materializes the
+        # Campaign -> Ad Group -> Ad chain. This prevents an ambiguous request
+        # or an incomplete Blueprint form from being displayed as three
+        # independently pending Tool confirmations in the execution panel.
+        creation_ui: dict[str, Any] = {}
+        creation_requested = self.creation_card_builder.is_creation_intent(intent)
+        if creation_requested and not creation_blueprint_id:
+            # An explicit account is still subject to trusted principal and
+            # test-account policy even when the business type is ambiguous.
+            # Clarification must not become a way to probe or operate outside
+            # the caller's account scope.
+            for provider in list(getattr(intent, "platforms", []) or []):
+                canonical_provider = self._canonical_platform(provider)
+                provider_values: Mapping[str, Any] = {}
+                for raw_provider, values in (getattr(intent, "platform_params", {}) or {}).items():
+                    if self._canonical_platform(raw_provider) == canonical_provider and isinstance(values, Mapping):
+                        provider_values = values
+                        break
+                explicit_account = account_id
+                if explicit_account in (None, ""):
+                    for account_field in ("account_id", "advertiser_id", "customer_id"):
+                        if provider_values.get(account_field) not in (None, ""):
+                            explicit_account = provider_values.get(account_field)
+                            break
+                if explicit_account in (None, ""):
+                    continue
+                allowed, account_error = self._validate_account_with_principal(
+                    canonical_provider, str(explicit_account), True, account_scope,
+                )
+                if not allowed:
+                    return self._creation_policy_response(
+                        session=session,
+                        session_id=session_id,
+                        run_id=run_id,
+                        turn_id=turn_id,
+                        user_input=safe_user_input,
+                        intent=intent,
+                        trace=trace,
+                        error=account_error,
+                    )
+            creation_ui = self.build_creation_ui(intent)
+            if account_id and isinstance(creation_ui, dict):
+                for card in creation_ui.get("cards", []) or []:
+                    if isinstance(card, dict):
+                        card["account_id"] = str(account_id)
+            selector_cards = [
+                card for card in creation_ui.get("cards", []) or []
+                if isinstance(card, Mapping)
+                and card.get("type") == "ad_creation_selector"
+            ]
+            if selector_cards:
+                clarification = self.creation_card_builder.build_clarification(intent)
+                clarification_ui = {
+                    "schema_version": "1.0",
+                    "needs_input": True,
+                    "cards": [],
+                    "clarification": clarification,
+                }
+                reply = self.creation_ui_reply(clarification_ui, safe_user_input)
+                return self._creation_input_response(
+                    session=session,
+                    session_id=session_id,
+                    run_id=run_id,
+                    turn_id=turn_id,
+                    user_input=safe_user_input,
+                    reply=reply,
+                    intent=intent,
+                    ui=clarification_ui,
+                    trace=trace,
+                    recalled_memories=recalled_memories,
+                    memory_updates=memory_updates,
+                    reason="creation_selector_required",
+                )
+            if creation_ui.get("cards") and creation_ui.get("needs_input"):
+                reply = self.creation_ui_reply(creation_ui, safe_user_input)
+                return self._creation_input_response(
+                    session=session,
+                    session_id=session_id,
+                    run_id=run_id,
+                    turn_id=turn_id,
+                    user_input=safe_user_input,
+                    reply=reply,
+                    intent=intent,
+                    ui=creation_ui,
+                    trace=trace,
+                    recalled_memories=recalled_memories,
+                    memory_updates=memory_updates,
+                    reason="creation_parameters_required",
+                )
 
         # Step 3: discover Tools from their self-described action/resource
         # metadata. Skills provide expert context and SOP; the Runtime orders
@@ -4341,42 +4767,17 @@ class AgentRuntime:
         )
         if should_repair_route and (not tool_plan or route_is_incomplete):
             repair = getattr(self.intent_parser, "repair_for_routing", None)
-            if callable(repair):
-                repaired_intent = repair(safe_user_input, session.ctx, intent)
-                if repaired_intent is not None:
-                    intent = repaired_intent
-                    self._load_required_skills(intent.platforms)
-                    policy_errors = self._validate_policies(intent)
-                    if not policy_errors:
-                        tool_plan = self.intent_router.route(intent, self.registry)
+            repaired_intent = (
+                repair(safe_user_input, session.ctx, intent)
+                if callable(repair) else None
+            )
+            if repaired_intent is not None:
+                intent = repaired_intent
+                self._load_required_skills(intent.platforms)
+                policy_errors = self._validate_policies(intent)
+                if not policy_errors:
+                    tool_plan = self.intent_router.route(intent, self.registry)
         if creation_blueprint_id:
-            if not (
-                str(getattr(intent, "intent_type", "") or "") == "create_campaign"
-                or str(getattr(intent, "intent_type", "") or "").startswith("create_")
-            ):
-                reply = "这份广告创建草稿需要在创建广告的对话中继续提交。"
-                trace.error(reason="creation_blueprint_context_invalid")
-                trace.done("failed", safe_metadata={"reason": "creation_blueprint_context_invalid"})
-                self.persist_conversation_turn(
-                    session, turn_id, safe_user_input, reply,
-                    execution_trace=trace,
-                )
-                return {
-                "session_id": session_id,
-                "run_id": run_id,
-                "turn_id": turn_id,
-                    "timestamp": datetime.now().isoformat(),
-                    "intent": intent.to_dict(),
-                    "tool_plan": {},
-                    "execution_plan": {},
-                    "tool_selection": None,
-                    "results": [],
-                    "reply": reply,
-                    "needs_confirmation": False,
-                    "confirmation_payload": None,
-                    "policy_errors": ["creation blueprint requires a create intent"],
-                    "ui": {},
-                }
             blueprint_tool_plan, blueprint_error = self._creation_blueprint_tool_plan(
                 creation_blueprint_id, creation_blueprint_version, intent
             )
@@ -4405,12 +4806,77 @@ class AgentRuntime:
                     "ui": {},
                 }
             # Blueprint submission is an explicit structured continuation.
-            # Use the generic creation lifecycle so provider-owned Tool
-            # activation metadata and dependency ordering select the exact
-            # declared chain without trusting the short UI label.
-            intent.intent_type = "create_campaign"
+            # The Blueprint's declared Tool composition is authoritative;
+            # preserve the original intent name so custom Capabilities do not
+            # need to alias their action to ``create_campaign``.
             intent.platforms = [next(iter(blueprint_tool_plan))]
             tool_plan = blueprint_tool_plan or {}
+
+        # Ordinary actions use the same schema boundary as creation: if the
+        # selected Tool cannot be built from explicit/trusted session values,
+        # ask first. This happens before ExecutionPlan/Workflow creation, so
+        # an incomplete request is never rendered as an executable Tool node.
+        creation_requested = self.creation_card_builder.is_creation_intent(
+            intent, tool_plan=tool_plan,
+        )
+        clarification_feature = self._feature_for_intent(intent)
+        feature_owns_planning = bool(
+            clarification_feature is not None
+            and callable(getattr(clarification_feature, "is_batch_intent", None))
+            and clarification_feature.is_batch_intent(intent)
+        )
+        if (
+            tool_plan
+            and not creation_requested
+            and not creation_blueprint_id
+            and not feature_owns_planning
+        ):
+            account_by_platform: dict[str, Optional[str]] = {}
+            for platform, routed in tool_plan.items():
+                has_write = any(tool.is_write_tool for tool in routed)
+                account_by_platform[self._canonical_platform(platform)] = (
+                    self.account_resolver.resolve(
+                        intent,
+                        platform,
+                        list(routed),
+                        account_id,
+                        allow_automatic_account=not has_write,
+                    )
+                )
+            clarification = self.action_clarification_builder.build(
+                intent,
+                tool_plan,
+                self.input_builder,
+                session.ctx,
+                account_by_platform=account_by_platform,
+            )
+            if clarification:
+                clarification_ui = {
+                    "schema_version": "1.0",
+                    "needs_input": True,
+                    "cards": [],
+                    "clarification": clarification,
+                }
+                reply = self.action_clarification_reply(
+                    clarification_ui, safe_user_input,
+                )
+                return self._action_clarification_response(
+                    session=session,
+                    session_id=session_id,
+                    run_id=run_id,
+                    turn_id=turn_id,
+                    user_input=safe_user_input,
+                    reply=reply,
+                    intent=intent,
+                    ui=clarification_ui,
+                    trace=trace,
+                    recalled_memories=recalled_memories,
+                    memory_updates=memory_updates,
+                )
+
+        # The action is now complete enough to enter the normal lifecycle.
+        # Do not let a later unrelated chat message inherit this old draft.
+        self.set_action_draft(session_id, None)
 
         execution_groups = list(tool_plan.items())
         routed_tools = [
@@ -4442,7 +4908,8 @@ class AgentRuntime:
         # used by the execution path. It is returned alongside the normal
         # conversation so users can edit fields or continue in natural
         # language; it never invokes a lookup or Provider API.
-        creation_ui = self.build_creation_ui(intent)
+        if not creation_ui:
+            creation_ui = self.build_creation_ui(intent, tool_plan=tool_plan)
         if account_id and isinstance(creation_ui, dict):
             for card in creation_ui.get("cards", []) or []:
                 if isinstance(card, dict):
@@ -4459,7 +4926,9 @@ class AgentRuntime:
         # example Google customer_id) is treated consistently with the
         # top-level account_id. The later card submission is the only
         # continuation into the normal creation lifecycle.
-        creation_is_requested = self.creation_card_builder.is_creation_intent(intent)
+        creation_is_requested = self.creation_card_builder.is_creation_intent(
+            intent, tool_plan=tool_plan,
+        )
         creation_has_write_tools = creation_is_requested and any(
             tool.is_write_tool
             for tools in tool_plan.values()
@@ -4828,6 +5297,7 @@ class AgentRuntime:
 
         # 检查是否需要执行任何工具
         if not tool_plan:
+            self.set_action_draft(session_id, None)
             intent_type = str(getattr(intent, "intent_type", "") or "")
             platform_params = getattr(intent, "platform_params", {}) or {}
             has_structured_request = bool(
@@ -5068,6 +5538,51 @@ class AgentRuntime:
                     "account_selected": bool(per_platform_account),
                 },
             )
+
+            # A dependent Campaign creation is one operator decision.  Build
+            # a stable, provider-neutral approval envelope for the complete
+            # write chain before entering the Tool loop.  Parent IDs are
+            # provider-generated during execution and therefore are not part
+            # of the operator-authored manifest.
+            write_chain_tools = [tool for tool in tools if tool.is_write_tool]
+            plan_confirmation_mode = (
+                self.execution_mode == ExecutionMode.LIVE.value
+                and len(write_chain_tools) > 1
+                and len({self._canonical_platform(getattr(tool, "platform", actual_platform))
+                         for tool in write_chain_tools}) == 1
+            )
+            plan_confirmation_expected = None
+            plan_confirmation_authorized = False
+            if plan_confirmation_mode:
+                intent_snapshot = (
+                    intent.to_dict() if callable(getattr(intent, "to_dict", None))
+                    else vars(intent) if hasattr(intent, "__dict__") else {}
+                )
+                plan_confirmation_expected = self.security.confirmation_chain_plan(
+                    session_id,
+                    session.ctx.user_id,
+                    per_platform_account,
+                    actual_platform,
+                    write_chain_tools,
+                    self._redact_for_persistence({
+                        "user_input": safe_user_input,
+                        "intent": intent_snapshot,
+                        "creation_blueprint_id": creation_blueprint_id,
+                        "creation_blueprint_version": creation_blueprint_version,
+                    }),
+                    preview={
+                        "platform": actual_platform,
+                        "account_id": per_platform_account,
+                        "steps": [
+                            {
+                                "tool": tool.name,
+                                "resource_type": getattr(tool, "resource_type", None),
+                                "parent_resource_type": getattr(tool, "parent_resource_type", None),
+                            }
+                            for tool in write_chain_tools
+                        ],
+                    },
+                )
 
             # 非只读模式：写操作需要白名单 + 幂等保护
             chain_blocked = False
@@ -5338,125 +5853,176 @@ class AgentRuntime:
                 # 触发外部写 API。确认状态只来自受信任的请求字段，不从自然语言推断。
                 expected_confirmation = None
                 if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
-                    expected_confirmation = self.security.prepare_confirmation(
-                        self.security.confirmation_plan(
-                            session_id, session.ctx.user_id, session.ctx.account_id,
-                            tool_def, tool_input,
-                            preview={
+                    if plan_confirmation_mode:
+                        expected_confirmation = self.security.prepare_confirmation(
+                            plan_confirmation_expected or {}, create=not confirmed,
+                        )
+                        if confirmed and incoming_confirmation_payload is None:
+                            error = "confirmed=true 必须携带当前创建计划的 confirmation_payload"
+                            reason = "confirmation_payload_required"
+                        elif confirmed and not self.security.confirmation_matches(
+                            incoming_confirmation_payload, expected_confirmation,
+                        ):
+                            error = "确认信息与当前创建计划不匹配，已拒绝执行"
+                            reason = "confirmation_mismatch"
+                        elif confirmed and not plan_confirmation_authorized:
+                            approval_ok, approval_error = self.security.validate_confirmation_record(
+                                expected_confirmation, incoming_confirmation_payload,
+                            )
+                            if not approval_ok:
+                                error = f"确认记录无效：{approval_error}"
+                                reason = "confirmation_invalid"
+                            elif not self._session_manager or self._session_manager.consume_approval(
+                                expected_confirmation["plan_fingerprint"],
+                                expected_confirmation["confirmation_token"],
+                            ):
+                                plan_confirmation_authorized = True
+                                error = ""
+                                reason = ""
+                            else:
+                                error = "确认记录已被使用，请重新生成计划并确认"
+                                reason = "confirmation_consumed"
+                        elif not confirmed:
+                            error = "live 创建计划等待显式确认"
+                            reason = "live_confirmation_required"
+                        else:
+                            error = ""
+                            reason = ""
+
+                        if error:
+                            results.append({
                                 "tool": tool_def.name,
-                                "platform": actual_platform,
-                                "account_id": session.ctx.account_id,
-                                "input": self._redact_for_persistence(tool_input),
-                            },
-                        ),
-                        create=not confirmed,
-                    )
+                                "platform": platform,
+                                "success": False,
+                                "error": error,
+                                "needs_confirmation": True,
+                                "confirmation_payload": {
+                                    **expected_confirmation,
+                                    "input": self._redact_for_persistence(tool_input),
+                                    "question": (
+                                        "请确认整条创建计划（Campaign 及其下层级）后再提交。"
+                                        if reason == "live_confirmation_required"
+                                        else "请使用当前创建计划返回的确认信息。"
+                                    ),
+                                },
+                            })
+                            trace.confirmation(node, reason=reason)
+                            needs_confirmation = True
+                            confirmation_payload = results[-1]["confirmation_payload"]
+                            chain_blocked = True
+                            chain_blocker = tool_def.name
+                            session.ctx.account_id = original_account
+                            continue
+                    else:
+                        expected_confirmation = self.security.prepare_confirmation(
+                            self.security.confirmation_plan(
+                                session_id, session.ctx.user_id, session.ctx.account_id,
+                                tool_def, tool_input,
+                                preview={
+                                    "tool": tool_def.name,
+                                    "platform": actual_platform,
+                                    "account_id": session.ctx.account_id,
+                                    "input": self._redact_for_persistence(tool_input),
+                                },
+                            ),
+                            create=not confirmed,
+                        )
 
-                if (
-                    tool_def.is_write_tool
-                    and self.execution_mode == ExecutionMode.LIVE.value
-                    and confirmed
-                    and incoming_confirmation_payload is None
-                ):
-                    results.append({
-                        "tool": tool_def.name,
-                        "platform": platform,
-                        "success": False,
-                        "error": "confirmed=true 必须携带当前写入计划的 confirmation_payload",
-                        "needs_confirmation": True,
-                        "confirmation_payload": {
-                            "type": "confirm_write",
-                            **(expected_confirmation or {}),
-                            "input": self._redact_for_persistence(tool_input),
-                            "question": "请使用当前计划返回的 confirmation_payload 确认。",
-                        },
-                    })
-                    trace.confirmation(node, reason="confirmation_payload_required")
-                    needs_confirmation = True
-                    confirmation_payload = results[-1]["confirmation_payload"]
-                    chain_blocked = True
-                    chain_blocker = tool_def.name
-                    session.ctx.account_id = original_account
-                    continue
+                        if confirmed and incoming_confirmation_payload is None:
+                            results.append({
+                                "tool": tool_def.name,
+                                "platform": platform,
+                                "success": False,
+                                "error": "confirmed=true 必须携带当前写入计划的 confirmation_payload",
+                                "needs_confirmation": True,
+                                "confirmation_payload": {
+                                    "type": "confirm_write",
+                                    **(expected_confirmation or {}),
+                                    "input": self._redact_for_persistence(tool_input),
+                                    "question": "请使用当前计划返回的 confirmation_payload 确认。",
+                                },
+                            })
+                            trace.confirmation(node, reason="confirmation_payload_required")
+                            needs_confirmation = True
+                            confirmation_payload = results[-1]["confirmation_payload"]
+                            chain_blocked = True
+                            chain_blocker = tool_def.name
+                            session.ctx.account_id = original_account
+                            continue
 
-                if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and confirmed and incoming_confirmation_payload is not None and not self.security.confirmation_matches(
-                    incoming_confirmation_payload, expected_confirmation or {}
-                ):
-                    results.append({
-                        "tool": tool_def.name,
-                        "platform": platform,
-                        "success": False,
-                        "error": "确认信息与当前写入计划不匹配，已拒绝执行",
-                        "needs_confirmation": True,
-                        "confirmation_payload": {
-                            "type": "confirm_write",
-                            **(expected_confirmation or {}),
-                            "input": self._redact_for_persistence(tool_input),
-                            "question": "写入计划已变化，请使用最新计划重新确认。",
-                        },
-                    })
-                    trace.confirmation(node, reason="confirmation_mismatch")
-                    needs_confirmation = True
-                    confirmation_payload = results[-1]["confirmation_payload"]
-                    chain_blocked = True
-                    chain_blocker = tool_def.name
-                    session.ctx.account_id = original_account
-                    continue
+                        if confirmed and incoming_confirmation_payload is not None and not self.security.confirmation_matches(
+                            incoming_confirmation_payload, expected_confirmation or {}
+                        ):
+                            results.append({
+                                "tool": tool_def.name,
+                                "platform": platform,
+                                "success": False,
+                                "error": "确认信息与当前写入计划不匹配，已拒绝执行",
+                                "needs_confirmation": True,
+                                "confirmation_payload": {
+                                    "type": "confirm_write",
+                                    **(expected_confirmation or {}),
+                                    "input": self._redact_for_persistence(tool_input),
+                                    "question": "写入计划已变化，请使用最新计划重新确认。",
+                                },
+                            })
+                            trace.confirmation(node, reason="confirmation_mismatch")
+                            needs_confirmation = True
+                            confirmation_payload = results[-1]["confirmation_payload"]
+                            chain_blocked = True
+                            chain_blocker = tool_def.name
+                            session.ctx.account_id = original_account
+                            continue
 
-                if (
-                    tool_def.is_write_tool
-                    and self.execution_mode == ExecutionMode.LIVE.value
-                    and confirmed
-                    and incoming_confirmation_payload is not None
-                ):
-                    approval_ok, approval_error = self.security.validate_confirmation_record(
-                        expected_confirmation or {}, incoming_confirmation_payload
-                    )
-                    if not approval_ok:
-                        results.append({
-                            "tool": tool_def.name,
-                            "platform": platform,
-                            "success": False,
-                            "error": f"确认记录无效：{approval_error}",
-                            "needs_confirmation": True,
-                            "confirmation_payload": {
-                                "type": "confirm_write",
-                                **(expected_confirmation or {}),
-                                "input": self._redact_for_persistence(tool_input),
-                                "question": "确认记录已过期或已使用，请重新生成计划并确认。",
-                            },
-                        })
-                        trace.confirmation(node, reason="confirmation_invalid")
-                        needs_confirmation = True
-                        confirmation_payload = results[-1]["confirmation_payload"]
-                        chain_blocked = True
-                        chain_blocker = tool_def.name
-                        session.ctx.account_id = original_account
-                        continue
+                        if confirmed and incoming_confirmation_payload is not None:
+                            approval_ok, approval_error = self.security.validate_confirmation_record(
+                                expected_confirmation or {}, incoming_confirmation_payload
+                            )
+                            if not approval_ok:
+                                results.append({
+                                    "tool": tool_def.name,
+                                    "platform": platform,
+                                    "success": False,
+                                    "error": f"确认记录无效：{approval_error}",
+                                    "needs_confirmation": True,
+                                    "confirmation_payload": {
+                                        "type": "confirm_write",
+                                        **(expected_confirmation or {}),
+                                        "input": self._redact_for_persistence(tool_input),
+                                        "question": "确认记录已过期或已使用，请重新生成计划并确认。",
+                                    },
+                                })
+                                trace.confirmation(node, reason="confirmation_invalid")
+                                needs_confirmation = True
+                                confirmation_payload = results[-1]["confirmation_payload"]
+                                chain_blocked = True
+                                chain_blocker = tool_def.name
+                                session.ctx.account_id = original_account
+                                continue
 
-                if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value and not confirmed:
-                    results.append({
-                        "tool": tool_def.name,
-                        "platform": platform,
-                        "success": False,
-                        "error": "live 写操作等待显式确认",
-                        "needs_confirmation": True,
-                        "confirmation_payload": {
-                            "type": "confirm_write",
-                            "tool": tool_def.name,
-                            "platform": actual_platform,
-                            "input": self._redact_for_persistence(tool_input),
-                            **(expected_confirmation or {}),
-                            "question": f"即将对 {actual_platform} 执行 live 写操作 {tool_def.name}，请确认。",
-                        },
-                    })
-                    trace.confirmation(node, reason="live_confirmation_required")
-                    needs_confirmation = True
-                    confirmation_payload = results[-1]["confirmation_payload"]
-                    chain_blocked = True
-                    chain_blocker = tool_def.name
-                    session.ctx.account_id = original_account
-                    continue
+                        if not confirmed:
+                            results.append({
+                                "tool": tool_def.name,
+                                "platform": platform,
+                                "success": False,
+                                "error": "live 写操作等待显式确认",
+                                "needs_confirmation": True,
+                                "confirmation_payload": {
+                                    "type": "confirm_write",
+                                    "tool": tool_def.name,
+                                    "platform": actual_platform,
+                                    "input": self._redact_for_persistence(tool_input),
+                                    **(expected_confirmation or {}),
+                                    "question": f"即将对 {actual_platform} 执行 live 写操作 {tool_def.name}，请确认。",
+                                },
+                            })
+                            trace.confirmation(node, reason="live_confirmation_required")
+                            needs_confirmation = True
+                            confirmation_payload = results[-1]["confirmation_payload"]
+                            chain_blocked = True
+                            chain_blocker = tool_def.name
+                            session.ctx.account_id = original_account
+                            continue
 
                 # 使用最终规范化后的输入生成幂等键，保证 reserve 与成功后的
                 # mark_executed 使用同一组字段；不能使用原始自然语言参数。
@@ -5539,13 +6105,14 @@ class AgentRuntime:
                     result.data = {
                         **result.data,
                         "resource_type": resource_type,
-                        "resource_id_field": resource_id_field,
                         "parent_resource_type": parent_type,
                         "parent_resource_id_field": parent_field,
                         "parent_resource_id": (
                             str(parent_id) if parent_id not in (None, "") else None
                         ),
                     }
+                    if resource_id_field:
+                        result.data["resource_id_field"] = resource_id_field
 
                 result_index = len(results)
                 safe_result_data = self._redact_for_persistence(result.data)
@@ -5618,6 +6185,25 @@ class AgentRuntime:
                 )
                 session.save_result(tool_def.name, safe_result, platform=actual_platform)
 
+                if (
+                    result.success
+                    and not result.simulated
+                    and tool_def.action == "create"
+                    and isinstance(result.data, dict)
+                ):
+                    created_id = (
+                        result.data.get(resource_id_field)
+                        if resource_id_field else None
+                    )
+                    if created_id not in (None, ""):
+                        created_map = session.ctx.metadata.setdefault(
+                            "runtime_created_resource_ids", {}
+                        )
+                        if isinstance(created_map, dict):
+                            created_map.setdefault(resource_type, []).append(
+                                str(created_id)
+                            )
+
                 # 将 protected_state 同步回 ctx，使后续 Tool 可以读取
                 session.ctx.protected_state.update(session.protected_state)
 
@@ -5631,7 +6217,11 @@ class AgentRuntime:
                         self.write_guard.finalize(write_reservation, result)
                     else:
                         self.write_guard.mark_executed(tool_def.name, tool_input, session.ctx.user_id)
-                    if expected_confirmation and incoming_confirmation_payload:
+                    if (
+                        expected_confirmation
+                        and incoming_confirmation_payload
+                        and not plan_confirmation_mode
+                    ):
                         if self._session_manager:
                             self._session_manager.consume_approval(
                                 expected_confirmation["plan_fingerprint"],
@@ -5852,9 +6442,6 @@ class AgentRuntime:
                 str(session.get("session_id") or ""), limit=500
             )
             messages = [record.to_dict() for record in records]
-            if not messages:
-                legacy = metadata.get("messages")
-                messages = legacy if isinstance(legacy, list) else []
             conversations.append(self._conversation_summary(session, messages))
         return conversations[:limit]
 
@@ -5939,7 +6526,7 @@ class AgentRuntime:
         return [document.to_dict() for document in documents]
 
     def summarize_knowledge(
-        self, query: str, documents: list[dict[str, Any]],
+        self, query: str, documents: list[dict[str, Any]], *, use_llm: bool = True,
     ) -> str:
         """Create a business-facing summary without executing any Tool."""
         safe_documents = self._redact_for_persistence(documents or [])
@@ -5952,7 +6539,7 @@ class AgentRuntime:
             excerpt = " ".join(excerpt.split())[:180]
             fallback_parts.append(f"{title}：{excerpt}" if excerpt else title)
         fallback = "根据检索到的资料，重点参考：" + "；".join(fallback_parts) + "。"
-        if self._llm is None:
+        if not use_llm or self._llm is None:
             return fallback[:1200]
         prompt = (
             "你是广告运营知识助手。请根据用户问题和检索到的 Markdown Wiki 资料，"
@@ -6015,16 +6602,8 @@ class AgentRuntime:
                 stored_ui = ui_by_turn.get(str(message.get("turn_id")))
                 if isinstance(stored_ui, dict) and stored_ui:
                     message["ui"] = self._redact_for_persistence(stored_ui)
-        if not messages:
-            legacy = metadata.get("messages")
-            messages = legacy if isinstance(legacy, list) else []
         summary = self._conversation_summary(session, messages)
         traces = metadata.get("execution_traces")
-        if not isinstance(traces, dict) or not traces:
-            # Older sessions predate durable lifecycle snapshots. Rebuild a
-            # tool-level trace from the already-sanitized audit records so
-            # opening an existing conversation still shows what ran.
-            traces = self._legacy_execution_traces(session_id)
         return {
             **summary,
             "messages": messages,
@@ -6144,80 +6723,6 @@ class AgentRuntime:
                 deleted.append(normalized_session_id)
         return deleted
 
-    def _legacy_execution_traces(self, session_id: str) -> dict[str, dict[str, Any]]:
-        """Build a bounded compatibility trace from durable Tool audit rows."""
-        if not self._session_manager:
-            return {}
-        records = list(reversed(self._session_manager.get_session_history(
-            session_id, limit=200
-        )))
-        grouped: dict[str, list[Any]] = {}
-        for record in records:
-            turn_id = str(getattr(record, "turn_id", "") or "legacy")
-            grouped.setdefault(turn_id, []).append(record)
-        snapshots: dict[str, dict[str, Any]] = {}
-        for turn_id, turn_records in list(grouped.items())[-20:]:
-            nodes = []
-            events = [{
-                "type": "start", "event_type": "start", "trace_id": f"legacy:{turn_id}",
-                "turn_id": turn_id, "seq": 1, "status": "running",
-                "safe_metadata": {"source": "durable_tool_audit"},
-            }]
-            sequence = 1
-            for index, record in enumerate(turn_records, start=1):
-                tool_name = str(getattr(record, "tool_name", "") or "Tool")
-                platform = str(getattr(record, "platform", "") or "")
-                node_id = f"legacy-node-{index:04d}"
-                nodes.append({
-                    "node_id": node_id, "sequence": index,
-                    "platform": platform, "tool": tool_name,
-                    "action": "", "resource_type": "",
-                    "depends_on": [nodes[-1]["node_id"]] if nodes else [],
-                })
-                sequence += 1
-                events.append({
-                    "type": "node_started", "event_type": "node_started",
-                    "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
-                    "seq": sequence, "node_id": node_id, "platform": platform,
-                    "tool": tool_name, "status": "running",
-                    "safe_input": self._redact_for_persistence(getattr(record, "input_data", {})),
-                })
-                sequence += 1
-                success = bool(getattr(record, "success", False))
-                events.append({
-                    "type": "node_status", "event_type": "node_status",
-                    "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
-                    "seq": sequence, "node_id": node_id, "platform": platform,
-                    "tool": tool_name, "status": "succeeded" if success else "failed",
-                    "safe_input": self._redact_for_persistence(getattr(record, "input_data", {})),
-                    "safe_output": self._redact_for_persistence(getattr(record, "output_data", {})),
-                    "safe_metadata": {
-                        "reason": self._redact_for_persistence(getattr(record, "error", "")),
-                        "source": "durable_tool_audit",
-                    },
-                })
-            sequence += 1
-            final_status = "succeeded" if all(
-                bool(getattr(record, "success", False)) for record in turn_records
-            ) else "failed"
-            events.append({
-                "type": "done", "event_type": "done",
-                "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
-                "seq": sequence, "status": final_status,
-                "safe_metadata": {"source": "durable_tool_audit"},
-            })
-            snapshots[turn_id] = {
-                "trace_id": f"legacy:{turn_id}", "turn_id": turn_id,
-                "status": final_status, "events": [
-                    {"type": "plan", "event_type": "plan", "trace_id": f"legacy:{turn_id}",
-                     "turn_id": turn_id, "seq": 2, "status": "planned",
-                     "execution_plan": {"schema_version": "1.0", "intent_type": "legacy",
-                                         "nodes": nodes}},
-                    *events,
-                ],
-            }
-        return snapshots
-    
     def _ensure_session(
         self,
         session_id: str,
@@ -6256,7 +6761,7 @@ class AgentRuntime:
             if isinstance(stored_title, str) and stored_title.strip():
                 ctx.metadata["conversation_title"] = stored_title.strip()
                 ctx.metadata["conversation_title_source"] = str(
-                    persisted_metadata.get("conversation_title_source") or "legacy"
+                    persisted_metadata.get("conversation_title_source") or "deterministic"
                 )
             stored_traces = persisted_metadata.get("execution_traces")
             if isinstance(stored_traces, dict):
@@ -6267,16 +6772,21 @@ class AgentRuntime:
             stored_schedule_draft = persisted_metadata.get("schedule_draft")
             if isinstance(stored_schedule_draft, dict):
                 ctx.metadata["schedule_draft"] = stored_schedule_draft
+            stored_creation_draft = persisted_metadata.get("creation_draft")
+            if isinstance(stored_creation_draft, dict):
+                ctx.metadata["creation_draft"] = stored_creation_draft
+            stored_action_draft = persisted_metadata.get("action_draft")
+            if isinstance(stored_action_draft, dict):
+                ctx.metadata["action_draft"] = stored_action_draft
             stored_digest = persisted_metadata.get("conversation_digest")
             if isinstance(stored_digest, str):
                 ctx.metadata["conversation_digest"] = stored_digest[:2400]
             ctx.metadata["conversation_turn_count"] = int(
                 persisted_metadata.get("conversation_turn_count", 0) or 0
             )
-            session.replace_messages(persisted_metadata.get("messages", []))
-            # The normalized conversation table is the durable source of
-            # truth. Prefer it on restart so a crashed turn cannot leave the
-            # metadata window ahead of or behind the actual transcript.
+            # The normalized conversation table is the only durable source of
+            # truth. Runtime metadata never contains a second transcript.
+            session.replace_messages([])
             if self._session_manager and persisted:
                 list_messages = getattr(self._session_manager, "list_conversation_messages", None)
                 if callable(list_messages):
@@ -6712,8 +7222,6 @@ class AgentRuntime:
                     tool_context=ctx,
                     execute_read=execute_read,
                     resolve_read_tool=self._resolve_readback_definition,
-                    resolve_tool=lambda tool_name: self._get_registered_tool(tool_name)[0]
-                    if tool_name else None,
                 )
             )
             if not isinstance(observation, ReconciliationObservation):

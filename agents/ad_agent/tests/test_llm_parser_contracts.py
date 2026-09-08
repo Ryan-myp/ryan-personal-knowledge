@@ -104,11 +104,11 @@ def test_repaired_model_output_cannot_reintroduce_a_guessed_resource_id():
     assert "app_id" not in intent.platform_params["tiktok"]
 
 
-def test_parser_without_active_registry_remains_usable_for_standalone_llm_embedding():
+def test_parser_without_active_registry_cannot_create_executable_scope():
     llm = _SequenceLLM('{"intent_type":"list_campaigns","platforms":["tiktok"]}')
     parser = LLMIntentParser(llm, allow_rule_fallback=False)
 
     intent = parser.parse("查询 TikTok campaign", ToolContext("s1", "u1"))
 
-    assert intent.intent_type == "list_campaigns"
-    assert intent.platforms == ["tiktok"]
+    assert intent.intent_type == "chat"
+    assert intent.platforms == []

@@ -14,9 +14,9 @@ from agents.ad_agent.core.interfaces import (
     ToolSchema,
 )
 from agents.ad_agent.core.intent import LLMIntentParser, SimpleIntentRouter
-from agents.ad_agent.core.platform import (
-    normalize_platform, parser_platform, recognition_aliases,
-)
+from agents.ad_agent.core.creation_card import CreationCardBuilder
+from agents.ad_agent.core.blueprint import BlueprintRegistry
+from agents.ad_agent.core.platform import normalize_platform
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
@@ -182,9 +182,10 @@ def test_google_app_campaign_chain_is_dry_run_ready():
         },
     )
 
-    assert [item["tool"] for item in result["results"]] == [
-        "google_create_campaign", "google_create_app_ad_group", "google_create_app_ad",
-    ]
+    assert result["results"] == []
+    assert result["workflow_id"] is None
+    assert result["ui"]["cards"]
+    assert result["tool_plan"] == {}
     assert all(item["success"] and item["data"]["simulated"] for item in result["results"])
 
 
@@ -509,6 +510,86 @@ def test_new_custom_intent_is_declared_on_tool_not_router():
     ]
 
 
+def test_activation_narrowing_uses_candidate_ambiguity_not_intent_names():
+    """An opaque custom intent gets the same conditional routing semantics."""
+    registry = SimpleToolRegistry()
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            return ToolResult.ok({})
+
+    common = dict(
+        skill="new-network-skill",
+        platform="new-network",
+        description="Create an asset",
+        input_schema=ToolSchema(
+            properties={"mode": {"type": "string"}},
+        ),
+        action="create",
+        resource_type="asset",
+        intent_types=["opaque_operation"],
+    )
+    registry.register(ToolDefinition(name="new_create_asset", **common), Handler())
+    registry.register(
+        ToolDefinition(
+            name="new_create_special_asset",
+            **common,
+            activation_rules=[{"field": "mode", "in": ["special"]}],
+        ),
+        Handler(),
+    )
+
+    router = SimpleIntentRouter()
+    ordinary = router.route(
+        ParsedIntent(
+            "opaque_operation", "ordinary", ["new-network"],
+            platform_params={"new-network": {"mode": "ordinary"}},
+        ),
+        registry,
+    )
+    special = router.route(
+        ParsedIntent(
+            "opaque_operation", "special", ["new-network"],
+            platform_params={"new-network": {"mode": "special"}},
+        ),
+        registry,
+    )
+
+    assert [tool.name for tool in ordinary["new-network"]] == [
+        "new_create_asset"
+    ]
+    assert [tool.name for tool in special["new-network"]] == [
+        "new_create_asset", "new_create_special_asset"
+    ]
+
+
+def test_creation_surface_uses_tool_action_not_intent_name_prefix():
+    registry = SimpleToolRegistry()
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            return ToolResult.ok({})
+
+    registry.register(
+        ToolDefinition(
+            name="new_launch_asset",
+            skill="new-network-skill",
+            platform="new-network",
+            description="Create an asset",
+            input_schema=ToolSchema(),
+            action="create",
+            resource_type="asset",
+            intent_types=["launch_asset"],
+        ),
+        Handler(),
+    )
+    builder = CreationCardBuilder(BlueprintRegistry(), registry)
+
+    assert builder.is_creation_intent(
+        ParsedIntent("launch_asset", "launch", ["new-network"])
+    ) is True
+
+
 def test_new_tool_publishes_dynamic_intent_context_without_parser_edit():
     definition = ToolDefinition(
         name="new_network_estimate_reach",
@@ -527,11 +608,12 @@ def test_new_tool_publishes_dynamic_intent_context_without_parser_edit():
     assert "Estimate audience reach" in parser._intent_candidates_prompt()
 
 
-def test_platform_identity_is_declared_by_channel_skill_metadata():
-    """Aliases and parser labels come from Skill metadata, not Core channel code."""
+def test_platform_identity_is_published_by_the_active_skill():
+    """Core normalizes identifiers; aliases are published by the active Skill."""
     assert normalize_platform("google ads") == "google-ads"
-    assert parser_platform("google-ads") == "google"
-    assert "谷歌" in recognition_aliases("google-ads")
+    parser = LLMIntentParser()
+    parser.register_platform_aliases("new-network", ["新网络"])
+    assert parser._detect_platforms("查询新网络数据") == ["new-network"]
 
 
 def test_standard_skill_ignores_workflow_yaml_as_package_data(tmp_path):
