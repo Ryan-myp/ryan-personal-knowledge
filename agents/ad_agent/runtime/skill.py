@@ -36,8 +36,8 @@ class SkillTrigger:
 
 
 @dataclass
-class SkillCapability:
-    """单个工具的能力声明"""
+class SkillToolSpec:
+    """A declarative Tool specification loaded from a Skill package."""
     name: str
     description: str
     required_params: list[str] = field(default_factory=list)
@@ -87,7 +87,7 @@ class SkillContract:
         self.namespace: str = ""
         self.namespace_aliases: list[str] = []
         self.triggers: list[SkillTrigger] = []
-        self.capabilities: dict[str, SkillCapability] = {}
+        self.tool_specs: dict[str, SkillToolSpec] = {}
         self.references: dict[str, str] = {}  # ref_name -> file_path
         self.reference_documents: dict[str, str] = {}
         self.expert_knowledge: dict[str, str] = {}
@@ -182,7 +182,7 @@ class SkillContract:
         return schema
 
     @classmethod
-    def _capability(cls, name: Any, spec: Any, source: str) -> SkillCapability:
+    def _tool_spec(cls, name: Any, spec: Any, source: str) -> SkillToolSpec:
         if not isinstance(name, str) or not name.strip():
             raise ValueError(f"Skill tool name in {source} must be a non-empty string")
         if not isinstance(spec, dict):
@@ -254,7 +254,7 @@ class SkillContract:
             f"tool {name}.related_resource_id_fields",
         )
 
-        return SkillCapability(
+        return SkillToolSpec(
             name=name.strip(), description=description,
             required_params=required_params, optional_params=optional_params,
             risk_level=risk_level, effect=effect, input_schema=input_schema,
@@ -437,14 +437,14 @@ class SkillContract:
             self.raw_yaml.get("version", self.version)
         )
         
-        # 合并到 capabilities
+        # Merge declarative Tool specifications.
         tools = self.raw_yaml.get('tools', {})
         if not isinstance(tools, dict):
             raise ValueError("Skill contract tools must be an object")
         for name, spec in tools.items():
-            if name in self.capabilities:
+            if name in self.tool_specs:
                 raise ValueError(f"Skill tool {name} is declared more than once")
-            self.capabilities[name] = self._capability(name, spec, path)
+            self.tool_specs[name] = self._tool_spec(name, spec, path)
     
     def _load_tools_from_directory(self, tools_dir: str) -> None:
         """
@@ -465,7 +465,7 @@ class SkillContract:
             if not isinstance(spec, dict) or not spec.get("name"):
                 raise ValueError(f"Skill tool file {filepath} must define a name")
             tool_name = spec["name"]
-            if tool_name in self.capabilities:
+            if tool_name in self.tool_specs:
                 raise ValueError(f"Skill tool {tool_name} is declared more than once")
             normalized = dict(spec)
             if "risk_level" in normalized and "risk" not in normalized:
@@ -485,7 +485,7 @@ class SkillContract:
                     if field_name not in schema.get("required", [])
                 ],
             )
-            self.capabilities[tool_name] = self._capability(
+            self.tool_specs[tool_name] = self._tool_spec(
                 tool_name, normalized, filepath
             )
 
@@ -554,11 +554,11 @@ class BaseSkill(Skill):
     def get_tools(self) -> list[ToolDefinition]:
         """返回此 Skill 的所有工具定义"""
         tools = []
-        for name, cap in self._contract.capabilities.items():
-            declared_schema = cap.input_schema if isinstance(cap.input_schema, dict) else {}
+        for name, spec in self._contract.tool_specs.items():
+            declared_schema = spec.input_schema if isinstance(spec.input_schema, dict) else {}
             schema = ToolSchema(
                 type=declared_schema.get("type", "object"),
-                required=list(declared_schema.get("required", cap.required_params) or []),
+                required=list(declared_schema.get("required", spec.required_params) or []),
                 properties=(
                     declared_schema.get("properties")
                     or self._build_properties(name)
@@ -584,30 +584,30 @@ class BaseSkill(Skill):
                 name=name,
                 skill=self.name,
                 namespace=self.namespace,
-                description=cap.description,
+                description=spec.description,
                 input_schema=schema,
-                risk_level=self._parse_risk(cap.risk_level),
-                effect_class=self._parse_effect(cap.effect),
-                live_support=cap.live_support,
-                required_permissions=list(cap.required_permissions),
-                action=cap.action,
-                resource_type=cap.resource_type,
-                parent_resource_type=cap.parent_resource_type,
-                resource_id_field=cap.resource_id_field,
-                parent_resource_id_field=cap.parent_resource_id_field,
-                readback_tool=cap.readback_tool,
-                intent_types=list(cap.intent_types),
-                intent_aliases=list(cap.intent_aliases),
-                replay_policy=self._parse_replay_policy(cap.replay_policy, cap.effect),
-                traits=list(cap.traits),
-                timeout_seconds=cap.timeout_seconds,
-                max_output_bytes=cap.max_output_bytes,
-                contract_version=cap.contract_version,
-                integration_api_version=cap.integration_api_version,
-                result_items_key=cap.result_items_key,
-                result_id_fields=list(cap.result_id_fields),
-                related_resource_type=cap.related_resource_type,
-                related_resource_id_fields=list(cap.related_resource_id_fields),
+                risk_level=self._parse_risk(spec.risk_level),
+                effect_class=self._parse_effect(spec.effect),
+                live_support=spec.live_support,
+                required_permissions=list(spec.required_permissions),
+                action=spec.action,
+                resource_type=spec.resource_type,
+                parent_resource_type=spec.parent_resource_type,
+                resource_id_field=spec.resource_id_field,
+                parent_resource_id_field=spec.parent_resource_id_field,
+                readback_tool=spec.readback_tool,
+                intent_types=list(spec.intent_types),
+                intent_aliases=list(spec.intent_aliases),
+                replay_policy=self._parse_replay_policy(spec.replay_policy, spec.effect),
+                traits=list(spec.traits),
+                timeout_seconds=spec.timeout_seconds,
+                max_output_bytes=spec.max_output_bytes,
+                contract_version=spec.contract_version,
+                integration_api_version=spec.integration_api_version,
+                result_items_key=spec.result_items_key,
+                result_id_fields=list(spec.result_id_fields),
+                related_resource_type=spec.related_resource_type,
+                related_resource_id_fields=list(spec.related_resource_id_fields),
             ))
         return tools
     
@@ -617,14 +617,14 @@ class BaseSkill(Skill):
 
     def _build_properties(self, tool_name: str) -> dict[str, Any]:
         """构建工具输入参数的 JSON Schema properties"""
-        cap = self._contract.capabilities.get(tool_name)
-        if not cap:
+        spec = self._contract.tool_specs.get(tool_name)
+        if not spec:
             return {}
         
         properties = {}
-        for param in cap.required_params:
+        for param in spec.required_params:
             properties[param] = {"type": "string", "description": f"Required: {param}"}
-        for param in cap.optional_params:
+        for param in spec.optional_params:
             properties[param] = {"type": "string", "description": f"Optional: {param}"}
         
         # 通用字段

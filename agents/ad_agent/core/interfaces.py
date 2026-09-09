@@ -642,7 +642,6 @@ class CapabilityModule(ABC):
 class CapabilityContext:
     """Capability 配置上下文"""
     registry: ToolRegistry
-    skills: dict[str, Skill] = field(default_factory=dict)
     config: dict[str, Any] = field(default_factory=dict)
     session_store: Optional[Any] = None  # 会话存储（可选）
 

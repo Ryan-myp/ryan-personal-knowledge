@@ -166,6 +166,15 @@ def test_supervisor_receives_task_kinds_from_the_application_composition_root():
     assert "task_handlers" in source
 
 
+def test_capability_context_has_no_skill_back_reference():
+    """Capabilities receive execution dependencies, not Skill objects."""
+    from agents.ad_agent.core.interfaces import CapabilityContext
+    from agents.ad_agent.runtime.capability_context import CapabilityContextWrapper
+
+    assert "skills" not in CapabilityContext.__dataclass_fields__
+    assert not hasattr(CapabilityContextWrapper(object()), "skills")
+
+
 def test_monitoring_tool_counts_are_tenant_scoped_by_session_column():
     store = AdAgentStore(":memory:")
     store.create_session("session-a", "user-a", metadata={"tenant_id": "tenant-a"})

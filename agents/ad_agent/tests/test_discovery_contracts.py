@@ -691,7 +691,7 @@ def test_standard_skill_ignores_workflow_yaml_as_package_data(tmp_path):
     contract = SkillContract(str(skill_dir)).load()
 
     assert contract.name == "standard-skill"
-    assert contract.capabilities == {}
+    assert contract.tool_specs == {}
     assert not hasattr(contract, "workflows")
 
 
