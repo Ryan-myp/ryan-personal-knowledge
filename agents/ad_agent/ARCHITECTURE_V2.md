@@ -405,7 +405,11 @@ CREATE TABLE campaigns (...)  # 同步 Campaign 状态
 `persistence.mysql_store.MySQLStore`。它复用同一份领域 Store 契约，使用 InnoDB、事务、
 任务/Outbox 的行锁 claim、Session/Workflow lease 和 Run Event replay；Runtime 不包含
 SQLite/MySQL 分支。`tasks` 是 Agent 执行队列，`outbox_events` 是事件投递队列，二者都
-必须保持幂等消费和明确的恢复状态。
+必须保持幂等消费和明确的恢复状态。MySQL 的 claim transaction 对死锁和 lock wait
+timeout 做有界的整事务重试；任务、定时任务和 Outbox 的确认/回写都要求当前 owner，
+并且控制面修改在数据库中带 tenant/user scope 原子执行，避免“先查询再修改”的
+TOCTOU 越权窗口。SQLite 仍只适合单进程，生产多机必须使用共享 InnoDB 和统一的
+租约/令牌配置。
 
 ### 3. Markdown LLM Wiki
 
@@ -448,7 +452,7 @@ Tool Registry、权限、账户范围或执行计划。
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
 | `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
 | `runtime/ad_turn_engine.py` | 当前源码 | 广告应用回合执行：意图、Tool 计划、策略和结果闭环 |
-| `runtime/supervisor.py` | 当前源码 | Task、Scheduler、Outbox、Event Repair worker 生命周期 |
+| `runtime/supervisor.py` | 当前源码 | 通用 Task、Scheduler、Outbox、Event Repair worker 生命周期；任务类型由应用组合根注入 |
 | `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |
 | `runtime/tool_executor.py` | 当前源码 | Tool 执行、超时与 Provider Client 隔离 |
 | `runtime/security.py` | 当前源码 | 红线字段、确认、结果证据与不确定失败边界 |

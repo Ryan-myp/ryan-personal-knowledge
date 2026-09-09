@@ -14,6 +14,7 @@ from agents.ad_agent.persistence.mysql_store import _MySQLPool
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AgentRuntime
 from agents.ad_agent.runtime.task_executor import TaskExecutor
+from agents.ad_agent.persistence.mysql_store import _mysql_schema, _translate_sql
 
 
 def test_worker_liveness_is_durable_and_visible_to_monitoring():
@@ -169,6 +170,138 @@ def test_two_sqlite_instances_only_one_outbox_consumer_claims_event():
         second.close()
         if os.path.exists(path):
             os.unlink(path)
+
+
+def test_outbox_ack_and_retry_require_the_current_consumer_owner():
+    store = AdAgentStore(":memory:")
+    now = datetime.now(timezone.utc).isoformat()
+    store.insert_outbox_event(OutboxEvent(
+        event_id="owned-event", run_id="run", event_type="started",
+        payload={}, created_at=now,
+    ))
+    claimed = store.claim_outbox_events(1, "consumer-a")[0]
+    assert store.mark_outbox_delivered(claimed.event_id, "consumer-b") is False
+    assert store.mark_outbox_retry(
+        claimed.event_id, now, "retry", "consumer-b"
+    ) is False
+    assert store.mark_outbox_delivered(claimed.event_id, "consumer-a") is True
+    store.close()
+
+
+def test_schedule_claim_ack_and_advance_require_the_current_scheduler_owner():
+    store = AdAgentStore(":memory:")
+    now = datetime.now(timezone.utc).isoformat()
+    store.create_scheduled_task(ScheduledTaskRecord(
+        schedule_id="owned-schedule", tenant_id="tenant", user_id="user",
+        name="daily", prompt="report", cron_expression="* * * * *",
+        next_run_at="2000-01-01T00:00:00+00:00", created_at=now, updated_at=now,
+    ))
+    schedule, occurrence = store.claim_due_scheduled_tasks(now, "scheduler-a")[0]
+    assert store.attach_scheduled_task_run(
+        occurrence.schedule_run_id, "task-a", lease_owner="scheduler-b"
+    ) is False
+    assert store.attach_scheduled_task_run(
+        occurrence.schedule_run_id, "task-a", lease_owner="scheduler-a"
+    ) is True
+    assert store.advance_scheduled_task(
+        schedule.schedule_id, schedule.next_run_at, "2099-01-01T00:00:00+00:00",
+        lease_owner="scheduler-b",
+    ) is False
+    assert store.advance_scheduled_task(
+        schedule.schedule_id, schedule.next_run_at, "2099-01-01T00:00:00+00:00",
+        lease_owner="scheduler-a",
+    ) is True
+    store.close()
+
+
+def test_task_mutations_are_scoped_atomically_to_tenant_and_user():
+    store = AdAgentStore(":memory:")
+    now = datetime.now(timezone.utc).isoformat()
+    store.create_task(TaskRecord(
+        task_id="scoped-task", tenant_id="tenant-a", user_id="user-a",
+        kind="local", status="queued", payload={},
+        created_at=now, updated_at=now,
+    ))
+    assert store.pause_task(
+        "scoped-task", tenant_id="tenant-b", user_id="user-b"
+    ) is None
+    assert store.get_task("scoped-task").status == "queued"
+    paused = store.pause_task(
+        "scoped-task", tenant_id="tenant-a", user_id="user-a"
+    )
+    assert paused is not None and paused.status == "paused"
+    assert store.resume_task(
+        "scoped-task", tenant_id="tenant-b", user_id="user-b"
+    ) is None
+    resumed = store.resume_task(
+        "scoped-task", tenant_id="tenant-a", user_id="user-a"
+    )
+    assert resumed is not None and resumed.status == "queued"
+    assert store.cancel_task(
+        "scoped-task", tenant_id="tenant-b", user_id="user-b"
+    ) is None
+    assert store.get_task("scoped-task").status == "queued"
+    store.close()
+
+
+def test_schedule_mutations_are_scoped_atomically_to_tenant_and_user():
+    store = AdAgentStore(":memory:")
+    now = datetime.now(timezone.utc).isoformat()
+    store.create_scheduled_task(ScheduledTaskRecord(
+        schedule_id="scoped-schedule", tenant_id="tenant-a", user_id="user-a",
+        name="daily", prompt="report", cron_expression="* * * * *",
+        next_run_at="2099-01-01T00:00:00+00:00", created_at=now, updated_at=now,
+    ))
+    assert store.pause_scheduled_task(
+        "scoped-schedule", tenant_id="tenant-b", user_id="user-b"
+    ) is None
+    assert store.get_scheduled_task("scoped-schedule").status == "active"
+    paused = store.pause_scheduled_task(
+        "scoped-schedule", tenant_id="tenant-a", user_id="user-a"
+    )
+    assert paused is not None and paused.status == "paused"
+    assert store.resume_scheduled_task(
+        "scoped-schedule", "2099-01-01T00:00:00+00:00",
+        tenant_id="tenant-b", user_id="user-b",
+    ) is None
+    assert store.get_scheduled_task("scoped-schedule").status == "paused"
+    assert store.delete_scheduled_task(
+        "scoped-schedule", tenant_id="tenant-b", user_id="user-b"
+    ) is False
+    assert store.delete_scheduled_task(
+        "scoped-schedule", tenant_id="tenant-a", user_id="user-a"
+    ) is True
+    store.close()
+
+
+def test_stale_scheduler_cannot_requeue_a_run_after_lease_loss():
+    store = AdAgentStore(":memory:")
+    now = datetime.now(timezone.utc).isoformat()
+    store.create_scheduled_task(ScheduledTaskRecord(
+        schedule_id="lease-schedule", tenant_id="tenant", user_id="user",
+        name="daily", prompt="report", cron_expression="* * * * *",
+        next_run_at="2000-01-01T00:00:00+00:00", created_at=now, updated_at=now,
+    ))
+    schedule, occurrence = store.claim_due_scheduled_tasks(now, "scheduler-a")[0]
+    assert store.update_scheduled_task_run(
+        occurrence.schedule_run_id, "queued", error="stale",
+        lease_owner="scheduler-b",
+    ) is False
+    assert store.update_scheduled_task_run(
+        occurrence.schedule_run_id, "queued", error="current",
+        lease_owner="scheduler-a",
+    ) is True
+    store.close()
+
+
+def test_mysql_translation_preserves_numeric_unique_columns_and_transactions():
+    ddl = _mysql_schema(
+        "CREATE TABLE execution_event_repairs "
+        "(run_id TEXT, seq INTEGER, UNIQUE (run_id, seq));"
+    )
+    assert "UNIQUE (run_id(191), seq)" in ddl
+    assert "ENGINE=InnoDB" in ddl
+    assert _translate_sql("BEGIN IMMEDIATE") == "BEGIN"
 
 
 def test_runtime_can_disable_background_workers_for_in_memory_tests():

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from .event_repair import ExecutionEventRepairConsumer
 from .outbox import OutboxConsumer
@@ -18,8 +18,8 @@ class RuntimeSupervisor:
         *,
         store: Any,
         outbox_delivery: Optional[Callable[[Any], None]],
-        scheduled_submitter: Callable[..., Any],
-        task_handler: Callable[..., Any],
+        scheduled_submitter: Optional[Callable[..., Any]],
+        task_handlers: Mapping[str, Callable[..., Any]],
         redact: Callable[[Any], Any],
         max_task_workers: int,
         max_task_queue: int,
@@ -57,8 +57,12 @@ class RuntimeSupervisor:
             lease_seconds=task_lease_seconds,
             redact=redact,
         )
-        self.task_executor.register_handler("agent.turn", task_handler)
-        self.scheduler = SchedulerService(store, scheduled_submitter)
+        for kind, handler in task_handlers.items():
+            self.task_executor.register_handler(kind, handler)
+        self.scheduler = (
+            SchedulerService(store, scheduled_submitter)
+            if callable(scheduled_submitter) else None
+        )
         if start_background_workers:
             self.start()
 

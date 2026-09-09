@@ -14,8 +14,6 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
-from ..domain.ad.auth import RequestPrincipal
-from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 from .scheduler import CronExpression, next_run_at, validate_timezone
 
 
@@ -32,7 +30,10 @@ class SchedulingService:
         redact: Callable[[Any], Any],
         validate_input: Callable[[Any], list[str]],
         max_prompt_chars: int,
-        default_permissions: Any,
+        schedule_record_factory: Callable[..., Any],
+        task_kind: str,
+        principal_from_metadata: Optional[Callable[[Mapping[str, Any]], Any]] = None,
+        default_principal: Optional[Callable[[str, str], Any]] = None,
     ) -> None:
         self.store = store
         self.submit_task = submit_task
@@ -41,7 +42,12 @@ class SchedulingService:
         self.redact = redact
         self.validate_input = validate_input
         self.max_prompt_chars = int(max_prompt_chars)
-        self.default_permissions = default_permissions
+        self.schedule_record_factory = schedule_record_factory
+        self.task_kind = str(task_kind or "").strip()
+        if not self.task_kind:
+            raise ValueError("task_kind is required")
+        self.principal_from_metadata = principal_from_metadata
+        self.default_principal = default_principal
 
     def get_draft(self, session_id: str) -> Optional[dict[str, Any]]:
         session = self.session_context(str(session_id or ""))
@@ -70,9 +76,8 @@ class SchedulingService:
 
     def create(
         self, *, name: str, prompt: str, cron_expression: str,
-        timezone: str = "Asia/Shanghai", session_id: Optional[str] = None,
-        account_id: Optional[str] = None, platform_params: Optional[dict] = None,
-        principal: Optional[RequestPrincipal] = None,
+        timezone: str = "Asia/Shanghai", payload: Optional[Mapping[str, Any]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
     ) -> dict[str, Any]:
         if self.store is None or not callable(getattr(self.store, "create_scheduled_task", None)):
             raise RuntimeError("scheduled task persistence is not configured")
@@ -88,28 +93,18 @@ class SchedulingService:
         safe_prompt = self.redact(prompt)
         if safe_prompt != prompt:
             raise ValueError("定时任务指令不能包含凭证或认证材料")
-        safe_params = platform_params if platform_params is not None else {}
-        protected = self.validate_input(safe_params)
+        raw_payload = dict(payload or {})
+        protected = self.validate_input(raw_payload)
         if protected:
             raise ValueError("定时任务包含禁止持久化的凭证/账户配置字段：" + ", ".join(protected))
-        effective_principal = principal or RequestPrincipal(
-            user_id="anonymous", tenant_id="default",
-            permissions=self.default_permissions,
-        )
-        safe_payload = self.redact({
-            "user_input": safe_prompt,
-            "session_id": session_id,
-            "account_id": account_id,
-            "platform_params": safe_params,
-            "execution_mode": "dry_run",
-            "confirmed": False,
-            "confirmation_payload": None,
-        })
+        safe_payload = self.redact(raw_payload)
+        if not isinstance(safe_payload, dict):
+            raise ValueError("scheduled task payload must be an object")
         now = datetime.now().isoformat()
-        record = ScheduledTaskRecord(
+        record = self.schedule_record_factory(
             schedule_id=str(uuid.uuid4()),
-            tenant_id=str(effective_principal.tenant_id),
-            user_id=str(effective_principal.user_id),
+            tenant_id=str((metadata or {}).get("tenant_id") or "default"),
+            user_id=str((metadata or {}).get("user_id") or "anonymous"),
             name=name,
             prompt=safe_prompt,
             cron_expression=expression,
@@ -117,12 +112,7 @@ class SchedulingService:
             status="active",
             next_run_at=next_run_at(expression, timezone),
             payload=safe_payload,
-            metadata={
-                "principal": effective_principal.to_safe_dict(),
-                "account_id_present": bool(account_id),
-                "execution_mode": "dry_run",
-                "created_via": "runtime",
-            },
+            metadata=self.redact(dict(metadata or {})),
             created_at=now,
             updated_at=now,
         )
@@ -151,7 +141,9 @@ class SchedulingService:
     def pause(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
         if self.get(schedule_id, user_id=user_id, tenant_id=tenant_id) is None:
             return None
-        record = self.store.pause_scheduled_task(schedule_id)
+        record = self.store.pause_scheduled_task(
+            schedule_id, tenant_id=tenant_id, user_id=user_id,
+        )
         return record.to_dict() if record else None
 
     def resume(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
@@ -159,14 +151,17 @@ class SchedulingService:
         if current is None:
             return None
         record = self.store.resume_scheduled_task(
-            schedule_id, next_run_at(current["cron_expression"], current["timezone"])
+            schedule_id, next_run_at(current["cron_expression"], current["timezone"]),
+            tenant_id=tenant_id, user_id=user_id,
         )
         return record.to_dict() if record else None
 
     def delete(self, schedule_id: str, *, user_id: str, tenant_id: str) -> bool:
         if self.get(schedule_id, user_id=user_id, tenant_id=tenant_id) is None:
             return False
-        return bool(self.store.delete_scheduled_task(schedule_id))
+        return bool(self.store.delete_scheduled_task(
+            schedule_id, tenant_id=tenant_id, user_id=user_id,
+        ))
 
     def list_runs(
         self, *, schedule_id: Optional[str] = None, user_id: Optional[str] = None,
@@ -194,38 +189,36 @@ class SchedulingService:
         )
         if record is None:
             return None
-        claims = record.metadata.get("principal") if isinstance(record.metadata, dict) else None
-        principal = (
-            RequestPrincipal.from_claims(claims)
-            if isinstance(claims, dict)
-            else RequestPrincipal(
-                user_id=user_id, tenant_id=tenant_id,
-                permissions=self.default_permissions,
-            )
-        )
+        principal = self._principal_for(record, user_id, tenant_id)
         task, _created = self.submit_task(
-            "agent.turn", dict(record.payload or {}), principal=principal,
+            self.task_kind, dict(record.payload or {}), principal=principal,
             idempotency_key=f"schedule:{schedule_id}:manual:{uuid.uuid4().hex}",
         )
         return task
 
     def submit_occurrence(
-        self, schedule: ScheduledTaskRecord, occurrence: ScheduledTaskRunRecord,
+        self, schedule: Any, occurrence: Any,
     ) -> dict[str, Any]:
-        claims = schedule.metadata.get("principal") if isinstance(schedule.metadata, dict) else None
-        principal = (
-            RequestPrincipal.from_claims(claims)
-            if isinstance(claims, dict)
-            else RequestPrincipal(
-                user_id=schedule.user_id, tenant_id=schedule.tenant_id,
-                permissions=self.default_permissions,
-            )
+        principal = self._principal_for(
+            schedule, schedule.user_id, schedule.tenant_id
         )
         task, _created = self.submit_task(
-            "agent.turn", dict(schedule.payload or {}), principal=principal,
+            self.task_kind, dict(schedule.payload or {}), principal=principal,
             idempotency_key=f"schedule:{schedule.schedule_id}:{occurrence.scheduled_for}",
         )
         return task
+
+    def _principal_for(self, schedule: Any, user_id: str, tenant_id: str) -> Any:
+        """Rehydrate opaque application identity through an injected adapter."""
+        metadata = getattr(schedule, "metadata", None)
+        claims = metadata.get("principal") if isinstance(metadata, dict) else None
+        if isinstance(claims, Mapping) and self.principal_from_metadata is not None:
+            principal = self.principal_from_metadata(claims)
+            if principal is not None:
+                return principal
+        if self.default_principal is not None:
+            return self.default_principal(str(user_id), str(tenant_id))
+        return None
 
 
 __all__ = ["SchedulingService"]

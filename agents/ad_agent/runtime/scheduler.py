@@ -11,8 +11,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
-
 logger = logging.getLogger(__name__)
 
 
@@ -150,7 +148,7 @@ class SchedulerService:
     def __init__(
         self,
         store: Any,
-        submit_turn: Callable[[ScheduledTaskRecord, ScheduledTaskRunRecord], Any],
+        submit_turn: Callable[[Any, Any], Any],
         *, poll_interval: float = 5.0,
         lease_seconds: float = 60.0,
         batch_size: int = 20,
@@ -214,6 +212,8 @@ class SchedulerService:
             return
         lease_seconds = min(max(self.lease_seconds, 15.0), 120.0)
         while not self._stop.wait(min(max(lease_seconds / 3.0, 5.0), 20.0)):
+            if getattr(self.store, "is_closed", False):
+                return
             try:
                 if not heartbeat(self.worker_id, lease_seconds=lease_seconds):
                     return
@@ -239,7 +239,10 @@ class SchedulerService:
                 task_id = str(task.get("task_id") if isinstance(task, dict) else getattr(task, "task_id", ""))
                 if not task_id:
                     raise RuntimeError("scheduled Agent task did not return task_id")
-                self.store.attach_scheduled_task_run(occurrence.schedule_run_id, task_id)
+                if not self.store.attach_scheduled_task_run(
+                    occurrence.schedule_run_id, task_id, lease_owner=self.worker_id
+                ):
+                    raise RuntimeError("scheduled occurrence is no longer owned")
                 # Advance only after the durable Agent task exists. If the
                 # process dies before this point, the same occurrence is
                 # recovered by its unique run key on the next scan.
@@ -247,9 +250,11 @@ class SchedulerService:
                     schedule.cron_expression, schedule.timezone,
                     after=datetime.fromisoformat(str(occurrence.scheduled_for).replace("Z", "+00:00")),
                 )
-                self.store.advance_scheduled_task(
+                if not self.store.advance_scheduled_task(
                     schedule.schedule_id, str(occurrence.scheduled_for), following,
-                )
+                    lease_owner=self.worker_id,
+                ):
+                    raise RuntimeError("scheduled lease was lost before advance")
                 with self._lock:
                     self._metrics.submitted_total += 1
             except Exception as exc:
@@ -261,6 +266,7 @@ class SchedulerService:
                 # outage is retried instead of consuming the recurring slot.
                 self.store.update_scheduled_task_run(
                     occurrence.schedule_run_id, "queued", error=safe_error,
+                    lease_owner=self.worker_id,
                 )
                 with self._lock:
                     self._metrics.failed_total += 1
@@ -293,6 +299,8 @@ class SchedulerService:
     def _run(self) -> None:
         # Run immediately after startup so a restart does not wait a full poll.
         while not self._stop.is_set():
+            if getattr(self.store, "is_closed", False):
+                break
             try:
                 self.scan_once()
                 with self._lock:

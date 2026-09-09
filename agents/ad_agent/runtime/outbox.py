@@ -13,8 +13,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
-from ..persistence.models import OutboxEvent
-
 logger = logging.getLogger(__name__)
 
 
@@ -36,7 +34,7 @@ class OutboxConsumer:
     def __init__(
         self,
         store: Any,
-        publish: Callable[[OutboxEvent], None],
+        publish: Callable[[Any], None],
         *,
         poll_interval: float = 0.25,
         batch_size: int = 20,
@@ -71,10 +69,13 @@ class OutboxConsumer:
                 self.store.mark_outbox_retry(
                     # Delivery exceptions may contain provider payloads or
                     # credentials; keep the durable retry record generic.
-                    event.event_id, next_retry, "outbox delivery failed"
+                    event.event_id, next_retry, "outbox delivery failed",
+                    self.consumer_id,
                 )
             else:
-                if self.store.mark_outbox_delivered(event.event_id):
+                if self.store.mark_outbox_delivered(
+                    event.event_id, self.consumer_id
+                ):
                     delivered += 1
         return delivered
 
@@ -102,6 +103,8 @@ class OutboxConsumer:
         if not callable(heartbeat):
             return
         while not self._stop.wait(10.0):
+            if getattr(self.store, "is_closed", False):
+                return
             try:
                 if not heartbeat(self.consumer_id, lease_seconds=30.0):
                     return
@@ -135,6 +138,8 @@ class OutboxConsumer:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            if getattr(self.store, "is_closed", False):
+                break
             try:
                 self.drain_once()
             except Exception as exc:

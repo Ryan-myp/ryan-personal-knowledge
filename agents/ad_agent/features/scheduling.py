@@ -439,10 +439,29 @@ class SchedulingFeature:
                 schedule = services.scheduling.create(
                     name=str(existing.get("name") or existing.get("prompt") or "Scheduled Agent task"),
                     prompt=str(existing["prompt"]), cron_expression=str(existing["cron_expression"]),
-                    timezone=str(existing.get("timezone") or "Asia/Shanghai"), session_id=session_id,
-                    account_id=existing.get("account_id") or account_id,
-                    platform_params=existing.get("platform_params") or platform_params,
-                    principal=principal,
+                    timezone=str(existing.get("timezone") or "Asia/Shanghai"),
+                    payload=services.redact({
+                        "user_input": str(existing["prompt"]),
+                        "session_id": session_id,
+                        "account_id": existing.get("account_id") or account_id,
+                        "platform_params": existing.get("platform_params") or platform_params or {},
+                        "execution_mode": "dry_run",
+                        "confirmed": False,
+                        "confirmation_payload": None,
+                    }),
+                    metadata=services.redact({
+                        "tenant_id": tenant_id,
+                        "user_id": user_id,
+                        "principal": (
+                            principal.to_safe_dict()
+                            if principal is not None else None
+                        ),
+                        "account_id_present": bool(
+                            existing.get("account_id") or account_id
+                        ),
+                        "execution_mode": "dry_run",
+                        "created_via": "runtime",
+                    }),
                 )
             except Exception:
                 # Keep the draft for a retry; Runtime will redact the error.

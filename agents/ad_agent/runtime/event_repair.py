@@ -40,6 +40,8 @@ class ExecutionEventRepairConsumer:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            if getattr(self.store, "is_closed", False):
+                break
             try:
                 repair = getattr(self.store, "repair_execution_run_events", None)
                 if callable(repair):

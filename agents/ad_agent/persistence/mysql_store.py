@@ -13,6 +13,7 @@ import sqlite3
 import threading
 import uuid
 import queue
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlparse
@@ -290,9 +291,21 @@ def _mysql_schema(sql: str) -> str:
         )
     sql = re.sub(r"\btitle\s+VARCHAR\(191\)", "title VARCHAR(255)", sql, flags=re.IGNORECASE)
     sql = re.sub(r"\bsource_ref\s+VARCHAR\(191\)", "source_ref VARCHAR(1024)", sql, flags=re.IGNORECASE)
+    # Index prefixes are valid for character columns, not numeric columns.
+    # In particular execution_event_repairs has UNIQUE(run_id, seq); blindly
+    # appending ``(191)`` to ``seq`` makes the generated MySQL DDL invalid.
+    prefixable = {
+        "run_id", "tenant_id", "skill_name", "version", "plugin_id", "idempotency_key",
+        "schedule_id", "scheduled_for",
+    }
+
     def unique_prefix(match: re.Match[str]) -> str:
         columns = [item.strip() for item in match.group(1).split(",")]
-        return "UNIQUE (" + ", ".join(f"{column}(191)" for column in columns) + ")"
+        rendered = []
+        for column in columns:
+            bare = column.strip("`")
+            rendered.append(f"{column}(191)" if bare in prefixable else column)
+        return "UNIQUE (" + ", ".join(rendered) + ")"
     sql = re.sub(r"UNIQUE\s*\(([^)]*)\)", unique_prefix, sql, flags=re.IGNORECASE)
     # MySQL does not permit literal defaults on LONGTEXT/BLOB columns.
     sql = re.sub(
@@ -301,15 +314,32 @@ def _mysql_schema(sql: str) -> str:
         sql,
         flags=re.IGNORECASE,
     )
-    return re.sub(
+    sql = re.sub(
         r"CREATE\s+(UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS",
         r"CREATE \1INDEX", sql, flags=re.IGNORECASE,
+    )
+
+    def force_innodb(match: re.Match[str]) -> str:
+        statement = match.group(0)
+        if re.search(r"\bENGINE\s*=", statement, flags=re.IGNORECASE):
+            return statement
+        return statement[:-1] + " ENGINE=InnoDB;"
+
+    # Locking/foreign-key semantics are part of this backend contract. Do not
+    # silently depend on a server's default storage engine.
+    return re.sub(
+        r"CREATE\s+TABLE\b.*?;", force_innodb, sql,
+        flags=re.IGNORECASE | re.DOTALL,
     )
 
 
 def _translate_sql(statement: str) -> str:
     """Translate the limited SQLite DML syntax used by ``AdAgentStore``."""
     statement = statement.strip()
+    # SQLite uses BEGIN IMMEDIATE for the scheduler's claim transaction;
+    # MySQL's equivalent is a normal transaction whose SELECT ... FOR UPDATE
+    # statements acquire the row locks.
+    statement = re.sub(r"^BEGIN\s+IMMEDIATE$", "BEGIN", statement, flags=re.IGNORECASE)
     statement = re.sub(r"\bINSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT IGNORE INTO", statement, flags=re.IGNORECASE)
     statement = re.sub(r"\bINSERT\s+OR\s+REPLACE\s+INTO\b", "REPLACE INTO", statement, flags=re.IGNORECASE)
     statement = re.sub(r"\browid\b", "message_id", statement, flags=re.IGNORECASE)
@@ -324,6 +354,33 @@ def _translate_sql(statement: str) -> str:
         )
         statement = statement[:match.start()] + "ON DUPLICATE KEY UPDATE " + assignments
     return statement.replace("?", "%s")
+
+
+def _is_retryable_transaction_error(error: BaseException) -> bool:
+    """Return whether MySQL aborted a transaction that is safe to retry."""
+    code = None
+    args = getattr(error, "args", ())
+    if args:
+        try:
+            code = int(args[0])
+        except (TypeError, ValueError):
+            code = None
+    # ER_LOCK_DEADLOCK and ER_LOCK_WAIT_TIMEOUT. Connection failures are not
+    # retried here: the pool discards those connections and the caller can
+    # apply its own request-level retry policy without duplicating mutations.
+    return code in {1205, 1213}
+
+
+def _retry_transaction(operation: Any, *, attempts: int = 3) -> Any:
+    """Retry a complete claim transaction, never an individual SQL statement."""
+    for attempt in range(max(1, int(attempts))):
+        try:
+            return operation()
+        except Exception as exc:
+            if attempt + 1 >= max(1, int(attempts)) or not _is_retryable_transaction_error(exc):
+                raise
+            time.sleep(min(0.25, 0.05 * (2 ** attempt)))
+    raise AssertionError("unreachable")
 
 
 class MySQLStore(AdAgentStore):
@@ -384,6 +441,10 @@ class MySQLStore(AdAgentStore):
             if self._pool:
                 self._pool.close()
             self._mysql_conn = None
+
+    @property
+    def is_closed(self) -> bool:
+        return bool(self._pool.metrics().get("closed"))
 
     def get_backend_health(self) -> dict[str, Any]:
         try:
@@ -636,6 +697,13 @@ class MySQLStore(AdAgentStore):
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,
     ) -> Optional[TaskRecord]:
+        return _retry_transaction(
+            lambda: self._claim_task_once(task_id, lease_owner, lease_seconds)
+        )
+
+    def _claim_task_once(
+        self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,
+    ) -> Optional[TaskRecord]:
         if not lease_owner or float(lease_seconds) <= 0:
             return None
         now = datetime.now(timezone.utc)
@@ -669,6 +737,13 @@ class MySQLStore(AdAgentStore):
                 raise
 
     def claim_outbox_events(
+        self, limit: int = 20, consumer_id: Optional[str] = None,
+    ) -> list[OutboxEvent]:
+        return _retry_transaction(
+            lambda: self._claim_outbox_events_once(limit, consumer_id)
+        )
+
+    def _claim_outbox_events_once(
         self, limit: int = 20, consumer_id: Optional[str] = None,
     ) -> list[OutboxEvent]:
         bounded_limit = max(1, min(int(limit), 100))
@@ -708,6 +783,16 @@ class MySQLStore(AdAgentStore):
                 raise
 
     def claim_due_scheduled_tasks(
+        self, now: str, lease_owner: str, lease_seconds: float = 60.0,
+        limit: int = 20,
+    ) -> list[tuple[ScheduledTaskRecord, ScheduledTaskRunRecord]]:
+        return _retry_transaction(
+            lambda: self._claim_due_scheduled_tasks_once(
+                now, lease_owner, lease_seconds, limit
+            )
+        )
+
+    def _claim_due_scheduled_tasks_once(
         self, now: str, lease_owner: str, lease_seconds: float = 60.0,
         limit: int = 20,
     ) -> list[tuple[ScheduledTaskRecord, ScheduledTaskRunRecord]]:

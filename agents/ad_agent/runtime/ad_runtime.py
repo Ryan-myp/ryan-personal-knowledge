@@ -89,6 +89,7 @@ from .ad_workflow_services import AdWorkflowServices
 from ..core.runtime_kernel import AgentRuntimeKernel, TurnRequest
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
+from ..persistence.models import ScheduledTaskRecord
 
 logger = logging.getLogger(__name__)
 
@@ -495,7 +496,12 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             redact=self._redact_for_persistence,
             validate_input=self.security.validate_input_redline,
             max_prompt_chars=self.max_user_input_chars,
-            default_permissions=self._granted_permissions,
+            schedule_record_factory=ScheduledTaskRecord,
+            task_kind="agent.turn",
+            principal_from_metadata=lambda claims: RequestPrincipal.from_claims(claims),
+            default_principal=lambda user, tenant: RequestPrincipal(
+                user_id=user, tenant_id=tenant, permissions=self._granted_permissions,
+            ),
         )
         self.services.bind_scheduling(self.scheduling_service)
         self.persistence_services = AdPersistenceServices(self)
@@ -531,7 +537,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             store=self._persistence_store,
             outbox_delivery=outbox_delivery or self._default_outbox_delivery,
             scheduled_submitter=self._submit_scheduled_task,
-            task_handler=self._execute_agent_task,
+            task_handlers={"agent.turn": self._execute_agent_task},
             redact=self._redact_for_persistence,
             max_task_workers=max_task_workers,
             max_task_queue=max_task_queue,

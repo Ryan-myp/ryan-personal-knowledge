@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
-from ..persistence.models import TaskRecord
+from ..core.task import TaskSubmission
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,7 @@ class TaskExecutor:
         task_timeout_seconds: float = 900.0,
         lease_seconds: float = 300.0,
         redact: Optional[Callable[[Any], Any]] = None,
+        task_record_factory: Optional[Callable[..., Any]] = None,
     ):
         if max_workers <= 0 or max_queue < 0:
             raise ValueError("max_workers must be positive and max_queue cannot be negative")
@@ -133,6 +134,9 @@ class TaskExecutor:
         self.task_timeout_seconds = float(task_timeout_seconds)
         self.lease_seconds = float(lease_seconds)
         self._redact = redact or (lambda value: value)
+        # The default value is generic. Applications may inject a richer
+        # persistence record without coupling this queue to that model.
+        self._task_record_factory = task_record_factory or TaskSubmission
         self._capacity = threading.BoundedSemaphore(self.max_workers + self.max_queue)
         self._pool = ThreadPoolExecutor(
             max_workers=self.max_workers, thread_name_prefix="ad-agent-task"
@@ -196,7 +200,7 @@ class TaskExecutor:
         idempotency_key: Optional[str] = None,
         workflow_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
-    ) -> tuple[TaskRecord, bool]:
+    ) -> tuple[Any, bool]:
         """Persist and schedule a task. Returns ``(record, created)``."""
         kind = str(kind or "").strip()
         if kind not in self.registered_kinds():
@@ -214,7 +218,7 @@ class TaskExecutor:
         if not self._capacity.acquire(blocking=False):
             raise TaskCapacityError("task queue is full")
         now = self._now()
-        record = TaskRecord(
+        record = self._task_record_factory(
             task_id=str(uuid.uuid4()), tenant_id=str(tenant_id), user_id=str(user_id),
             kind=kind, status="queued", payload=payload,
             idempotency_key=str(idempotency_key) if idempotency_key else None,
@@ -278,6 +282,8 @@ class TaskExecutor:
             return
         interval = min(max(self.lease_seconds / 3.0, 2.0), 15.0)
         while not self._worker_heartbeat_stop.wait(interval):
+            if getattr(self.store, "is_closed", False):
+                return
             try:
                 if not heartbeat(
                     self._worker_id,
@@ -470,17 +476,22 @@ class TaskExecutor:
     def get(
         self, task_id: str, *, tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
-    ) -> Optional[TaskRecord]:
+    ) -> Optional[Any]:
         return self.store.get_task(task_id, tenant_id=tenant_id, user_id=user_id)
 
     def list(
         self, *, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
         statuses: Optional[list[str]] = None, limit: int = 50,
-    ) -> list[TaskRecord]:
+    ) -> list[Any]:
         return self.store.list_tasks(tenant_id, user_id, statuses, limit)
 
-    def cancel(self, task_id: str) -> Optional[TaskRecord]:
-        record = self.store.cancel_task(task_id)
+    def cancel(
+        self, task_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]:
+        record = self.store.cancel_task(
+            task_id, tenant_id=tenant_id, user_id=user_id,
+        )
         if record and record.status == "cancelling":
             with self._lock:
                 handle = self._handles.get(task_id)
@@ -488,11 +499,21 @@ class TaskExecutor:
                     handle.cancel_event.set()
         return record
 
-    def pause(self, task_id: str) -> Optional[TaskRecord]:
-        return self.store.pause_task(task_id)
+    def pause(
+        self, task_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]:
+        return self.store.pause_task(
+            task_id, tenant_id=tenant_id, user_id=user_id,
+        )
 
-    def resume(self, task_id: str) -> Optional[TaskRecord]:
-        record = self.store.resume_task(task_id)
+    def resume(
+        self, task_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]:
+        record = self.store.resume_task(
+            task_id, tenant_id=tenant_id, user_id=user_id,
+        )
         if record is None or record.status != "queued":
             return record
         if not self._schedule(record.task_id):
@@ -500,17 +521,25 @@ class TaskExecutor:
                 record.task_id, "paused", error="task queue is full",
                 expected_statuses=["queued"],
             )
-            return self.store.get_task(record.task_id)
-        return self.store.get_task(record.task_id) or record
+            return self.store.get_task(
+                record.task_id, tenant_id=tenant_id, user_id=user_id,
+            )
+        return self.store.get_task(
+            record.task_id, tenant_id=tenant_id, user_id=user_id,
+        ) or record
 
     def requeue_recovery(
         self, task_id: str, *, recovery_reference: str,
-    ) -> Optional[TaskRecord]:
+        tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+    ) -> Optional[Any]:
         """Requeue only after an explicit, externally verified recovery."""
         requeue = getattr(self.store, "requeue_recovery_task", None)
         if not callable(requeue):
             return None
-        record = requeue(str(task_id), recovery_reference=str(recovery_reference))
+        record = requeue(
+            str(task_id), recovery_reference=str(recovery_reference),
+            tenant_id=tenant_id, user_id=user_id,
+        )
         if record is None or record.status != "queued":
             return record
         if not self._schedule(record.task_id):
@@ -518,8 +547,12 @@ class TaskExecutor:
                 record.task_id, "paused", error="task queue is full",
                 expected_statuses=["queued"],
             )
-            return self.store.get_task(record.task_id)
-        return self.store.get_task(record.task_id) or record
+            return self.store.get_task(
+                record.task_id, tenant_id=tenant_id, user_id=user_id,
+            )
+        return self.store.get_task(
+            record.task_id, tenant_id=tenant_id, user_id=user_id,
+        ) or record
 
     def shutdown(self, wait: bool = False) -> None:
         with self._lock:

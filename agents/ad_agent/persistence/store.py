@@ -847,6 +847,11 @@ class AdAgentStore:
                 self._conn.close()
                 self._conn = None
 
+    @property
+    def is_closed(self) -> bool:
+        """Expose backend lifecycle without leaking a connection object."""
+        return self._conn is None
+
     # -- Durable worker liveness -------------------------------------
 
     def register_worker(
@@ -1584,39 +1589,73 @@ class AdAgentStore:
             conn.commit()
             return cursor.rowcount > 0
 
-    def pause_task(self, task_id: str) -> Optional[TaskRecord]:
+    def pause_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
         with self._lock:
             conn = self._get_conn()
             now = datetime.now().isoformat()
+            where = "task_id = ? AND status = 'queued'"
+            params: list[Any] = [now, str(task_id)]
+            if tenant_id is not None:
+                where += " AND tenant_id = ?"
+                params.append(str(tenant_id))
+            if user_id is not None:
+                where += " AND user_id = ?"
+                params.append(str(user_id))
             cursor = conn.execute(
                 "UPDATE tasks SET status = 'paused', updated_at = ? "
-                "WHERE task_id = ? AND status = 'queued'",
-                (now, str(task_id)),
+                "WHERE " + where,
+                params,
             )
             conn.commit()
-            return self._task_from_row(
-                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
-            ) if cursor.rowcount else self.get_task(str(task_id))
+            return self.get_task(
+                str(task_id), tenant_id=tenant_id, user_id=user_id,
+            )
 
-    def resume_task(self, task_id: str) -> Optional[TaskRecord]:
+    def resume_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
         with self._lock:
             conn = self._get_conn()
             now = datetime.now().isoformat()
+            where = "task_id = ? AND status = 'paused'"
+            params: list[Any] = [now, str(task_id)]
+            if tenant_id is not None:
+                where += " AND tenant_id = ?"
+                params.append(str(tenant_id))
+            if user_id is not None:
+                where += " AND user_id = ?"
+                params.append(str(user_id))
             cursor = conn.execute(
                 "UPDATE tasks SET status = 'queued', updated_at = ?, error = NULL "
-                "WHERE task_id = ? AND status = 'paused'",
-                (now, str(task_id)),
+                "WHERE " + where,
+                params,
             )
             conn.commit()
-            return self._task_from_row(
-                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
-            ) if cursor.rowcount else self.get_task(str(task_id))
+            return self.get_task(
+                str(task_id), tenant_id=tenant_id, user_id=user_id,
+            )
 
-    def cancel_task(self, task_id: str) -> Optional[TaskRecord]:
+    def cancel_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[TaskRecord]:
         with self._lock:
             conn = self._get_conn()
+            scope = ""
+            scope_params: list[Any] = []
+            if tenant_id is not None:
+                scope += " AND tenant_id = ?"
+                scope_params.append(str(tenant_id))
+            if user_id is not None:
+                scope += " AND user_id = ?"
+                scope_params.append(str(user_id))
             row = conn.execute(
-                "SELECT status, metadata FROM tasks WHERE task_id = ?", (str(task_id),)
+                "SELECT status, metadata FROM tasks WHERE task_id = ?" + scope,
+                [str(task_id)] + scope_params,
             ).fetchone()
             if not row:
                 return None
@@ -1640,13 +1679,18 @@ class AdAgentStore:
             if finished:
                 values.append(now)
             values.append(str(task_id))
+            values.extend(scope_params)
+            if status == "cancelled":
+                status_guard = " AND status IN ('queued', 'paused')"
+            else:
+                status_guard = " AND status IN ('running', 'cancelling')"
             conn.execute(
                 "UPDATE tasks SET status = ?, metadata = ?, updated_at = ?" + finished
-                + " WHERE task_id = ?", values,
+                + " WHERE task_id = ?" + scope + status_guard, values,
             )
             conn.commit()
-            return self._task_from_row(
-                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            return self.get_task(
+                str(task_id), tenant_id=tenant_id, user_id=user_id,
             )
 
     def recover_stale_tasks(self, stale_after_seconds: float = 300.0) -> int:
@@ -1680,6 +1724,7 @@ class AdAgentStore:
 
     def requeue_recovery_task(
         self, task_id: str, *, recovery_reference: str,
+        tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[TaskRecord]:
         """Move an uncertain task back to the queue after operator recovery.
 
@@ -1693,9 +1738,17 @@ class AdAgentStore:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
             conn = self._get_conn()
+            scope = ""
+            scope_params: list[Any] = []
+            if tenant_id is not None:
+                scope += " AND tenant_id = ?"
+                scope_params.append(str(tenant_id))
+            if user_id is not None:
+                scope += " AND user_id = ?"
+                scope_params.append(str(user_id))
             row = conn.execute(
-                "SELECT metadata FROM tasks WHERE task_id = ? AND status = 'recovery_required'",
-                (str(task_id),),
+                "SELECT metadata FROM tasks WHERE task_id = ? AND status = 'recovery_required'" + scope,
+                [str(task_id)] + scope_params,
             ).fetchone()
             if not row:
                 return None
@@ -1713,13 +1766,14 @@ class AdAgentStore:
                    updated_at = ?, started_at = NULL, finished_at = NULL,
                    lease_owner = NULL, lease_expires_at = NULL, metadata = ?
                    WHERE task_id = ? AND status = 'recovery_required'""",
-                (now, json.dumps(metadata, ensure_ascii=False, sort_keys=True), str(task_id)),
+                [now, json.dumps(metadata, ensure_ascii=False, sort_keys=True), str(task_id)]
+                + scope_params,
             )
             conn.commit()
             if cursor.rowcount != 1:
                 return None
-            return self._task_from_row(
-                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            return self.get_task(
+                str(task_id), tenant_id=tenant_id, user_id=user_id,
             )
 
     # -- Recurring Agent schedules ------------------------------------
@@ -1793,7 +1847,8 @@ class AdAgentStore:
         self, schedule_id: str, *, status: Optional[str] = None,
         next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,
         last_run_status: Optional[str] = None, last_task_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict] = None, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> bool:
         assignments = ["updated_at = ?"]
         values: list[Any] = [datetime.now(timezone.utc).isoformat()]
@@ -1807,46 +1862,83 @@ class AdAgentStore:
         if metadata is not None:
             assignments.append("metadata = ?"); values.append(json.dumps(metadata or {}, ensure_ascii=False))
         values.append(str(schedule_id))
+        where = "schedule_id = ?"
+        if tenant_id is not None:
+            where += " AND tenant_id = ?"
+            values.append(str(tenant_id))
+        if user_id is not None:
+            where += " AND user_id = ?"
+            values.append(str(user_id))
         with self._lock:
             cursor = self._get_conn().execute(
                 "UPDATE scheduled_tasks SET " + ", ".join(assignments)
-                + " WHERE schedule_id = ?", values,
+                + " WHERE " + where, values,
             )
             self._get_conn().commit()
             return cursor.rowcount > 0
 
     def advance_scheduled_task(
         self, schedule_id: str, expected_next_run_at: str, next_run_at: str,
+        lease_owner: Optional[str] = None,
     ) -> bool:
+        where = "schedule_id = ? AND next_run_at = ?"
+        params: list[Any] = [next_run_at, datetime.now(timezone.utc).isoformat(), str(schedule_id), expected_next_run_at]
+        if lease_owner is not None:
+            where += " AND lease_owner = ?"
+            params.append(str(lease_owner))
         with self._lock:
             conn = self._get_conn()
             cursor = conn.execute(
                 """UPDATE scheduled_tasks SET next_run_at = ?, lease_owner = NULL,
                    lease_expires_at = NULL, updated_at = ?
-                   WHERE schedule_id = ? AND next_run_at = ?""",
-                (next_run_at, datetime.now(timezone.utc).isoformat(), str(schedule_id), expected_next_run_at),
+                   WHERE """ + where,
+                params,
             )
             conn.commit()
             return cursor.rowcount > 0
 
-    def pause_scheduled_task(self, schedule_id: str) -> Optional[ScheduledTaskRecord]:
-        self.update_scheduled_task(schedule_id, status="paused")
-        with self._lock:
-            return self._scheduled_from_row(self._get_conn().execute(
-                "SELECT * FROM scheduled_tasks WHERE schedule_id = ?", (str(schedule_id),)
-            ).fetchone())
+    def pause_scheduled_task(
+        self, schedule_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[ScheduledTaskRecord]:
+        if not self.update_scheduled_task(
+            schedule_id, status="paused", tenant_id=tenant_id, user_id=user_id,
+        ):
+            return None
+        return self.get_scheduled_task(
+            schedule_id, tenant_id=tenant_id, user_id=user_id,
+        )
 
-    def resume_scheduled_task(self, schedule_id: str, next_run_at: str) -> Optional[ScheduledTaskRecord]:
-        self.update_scheduled_task(schedule_id, status="active", next_run_at=next_run_at)
-        with self._lock:
-            return self._scheduled_from_row(self._get_conn().execute(
-                "SELECT * FROM scheduled_tasks WHERE schedule_id = ?", (str(schedule_id),)
-            ).fetchone())
+    def resume_scheduled_task(
+        self, schedule_id: str, next_run_at: str, *,
+        tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+    ) -> Optional[ScheduledTaskRecord]:
+        if not self.update_scheduled_task(
+            schedule_id, status="active", next_run_at=next_run_at,
+            tenant_id=tenant_id, user_id=user_id,
+        ):
+            return None
+        return self.get_scheduled_task(
+            schedule_id, tenant_id=tenant_id, user_id=user_id,
+        )
 
-    def delete_scheduled_task(self, schedule_id: str) -> bool:
+    def delete_scheduled_task(
+        self, schedule_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> bool:
         with self._lock:
             conn = self._get_conn()
-            cursor = conn.execute("DELETE FROM scheduled_tasks WHERE schedule_id = ?", (str(schedule_id),))
+            where = "schedule_id = ?"
+            params: list[Any] = [str(schedule_id)]
+            if tenant_id is not None:
+                where += " AND tenant_id = ?"
+                params.append(str(tenant_id))
+            if user_id is not None:
+                where += " AND user_id = ?"
+                params.append(str(user_id))
+            cursor = conn.execute(
+                "DELETE FROM scheduled_tasks WHERE " + where, params,
+            )
             conn.commit()
             return cursor.rowcount > 0
 
@@ -1908,13 +2000,25 @@ class AdAgentStore:
                 raise
         return claimed
 
-    def attach_scheduled_task_run(self, schedule_run_id: str, task_id: str, status: str = "queued") -> bool:
+    def attach_scheduled_task_run(
+        self, schedule_run_id: str, task_id: str, status: str = "queued",
+        lease_owner: Optional[str] = None,
+    ) -> bool:
         with self._lock:
             conn = self._get_conn()
+            owner_clause = ""
+            owner_values: list[Any] = []
+            if lease_owner is not None:
+                owner_clause = (
+                    " AND EXISTS (SELECT 1 FROM scheduled_tasks s "
+                    "WHERE s.schedule_id = scheduled_task_runs.schedule_id "
+                    "AND s.lease_owner = ?)"
+                )
+                owner_values.append(str(lease_owner))
             cursor = conn.execute(
                 "UPDATE scheduled_task_runs SET task_id = ?, status = ?, started_at = ?, error = NULL "
-                "WHERE schedule_run_id = ? AND status IN ('queued', 'running')",
-                (str(task_id), str(status), datetime.now(timezone.utc).isoformat(), str(schedule_run_id)),
+                "WHERE schedule_run_id = ? AND status IN ('queued', 'running')" + owner_clause,
+                [str(task_id), str(status), datetime.now(timezone.utc).isoformat(), str(schedule_run_id)] + owner_values,
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -1923,6 +2027,7 @@ class AdAgentStore:
         self, schedule_run_id: str, status: str, *, task_id: Optional[str] = None,
         started_at: Optional[str] = None, finished_at: Optional[str] = None,
         error: Optional[str] = None, result: Optional[dict] = None,
+        lease_owner: Optional[str] = None,
     ) -> bool:
         status = str(status)
         with self._lock:
@@ -1945,7 +2050,21 @@ class AdAgentStore:
             if result is not None:
                 assignments.append("result = ?"); values.append(json.dumps(result, ensure_ascii=False))
             values.append(str(schedule_run_id))
-            conn.execute("UPDATE scheduled_task_runs SET " + ", ".join(assignments) + " WHERE schedule_run_id = ?", values)
+            owner_clause = ""
+            if lease_owner is not None:
+                owner_clause = (
+                    " AND EXISTS (SELECT 1 FROM scheduled_tasks s "
+                    "WHERE s.schedule_id = scheduled_task_runs.schedule_id "
+                    "AND s.lease_owner = ?)"
+                )
+                values.append(str(lease_owner))
+            cursor = conn.execute(
+                "UPDATE scheduled_task_runs SET " + ", ".join(assignments)
+                + " WHERE schedule_run_id = ?" + owner_clause, values,
+            )
+            if cursor.rowcount == 0:
+                conn.commit()
+                return False
             if status in terminal_statuses and current not in terminal_statuses:
                 schedule_id = str(row["schedule_id"])
                 conn.execute(
@@ -2134,27 +2253,40 @@ class AdAgentStore:
             conn.commit()
             return events
 
-    def mark_outbox_delivered(self, event_id: str) -> bool:
+    def mark_outbox_delivered(
+        self, event_id: str, consumer_id: Optional[str] = None,
+    ) -> bool:
         with self._lock:
+            owner_clause = ""
+            params: list[Any] = [str(event_id)]
+            if consumer_id is not None:
+                owner_clause = " AND claimed_by = ?"
+                params.append(str(consumer_id))
             cursor = self._get_conn().execute(
                 """UPDATE outbox_events SET status = 'delivered',
                    claimed_by = NULL, claimed_at = NULL
-                   WHERE event_id = ? AND status = 'claimed'""",
-                (str(event_id),),
+                   WHERE event_id = ? AND status = 'claimed'""" + owner_clause,
+                params,
             )
             self._get_conn().commit()
             return cursor.rowcount == 1
 
     def mark_outbox_retry(
         self, event_id: str, next_retry_at: str, error: Optional[str] = None,
+        consumer_id: Optional[str] = None,
     ) -> bool:
         with self._lock:
+            owner_clause = ""
+            params: list[Any] = [str(next_retry_at), str(error) if error else None, str(event_id)]
+            if consumer_id is not None:
+                owner_clause = " AND claimed_by = ?"
+                params.append(str(consumer_id))
             cursor = self._get_conn().execute(
                 """UPDATE outbox_events SET status = 'pending',
                    retry_count = retry_count + 1, next_retry_at = ?,
                    last_error = ?, claimed_by = NULL, claimed_at = NULL
-                   WHERE event_id = ? AND status = 'claimed'""",
-                (str(next_retry_at), str(error) if error else None, str(event_id)),
+                   WHERE event_id = ? AND status = 'claimed'""" + owner_clause,
+                params,
             )
             self._get_conn().commit()
             return cursor.rowcount == 1

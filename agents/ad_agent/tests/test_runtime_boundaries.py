@@ -147,6 +147,24 @@ def test_application_runtime_has_no_direct_provider_factory_imports():
     assert direct_provider_imports == []
 
 
+def test_generic_worker_modules_do_not_import_application_models_or_principal():
+    """Queue/schedule infrastructure must remain reusable outside ad-agent."""
+    import pathlib
+
+    root = pathlib.Path("agents/ad_agent/runtime")
+    for name in ("task_executor.py", "outbox.py", "scheduler.py", "scheduling_service.py"):
+        source = (root / name).read_text(encoding="utf-8")
+        assert "persistence.models" not in source
+        assert "domain.ad" not in source
+
+
+def test_supervisor_receives_task_kinds_from_the_application_composition_root():
+    """The generic worker lifecycle must not own an application task name."""
+    source = open("agents/ad_agent/runtime/supervisor.py", encoding="utf-8").read()
+    assert 'register_handler("agent.turn"' not in source
+    assert "task_handlers" in source
+
+
 def test_monitoring_tool_counts_are_tenant_scoped_by_session_column():
     store = AdAgentStore(":memory:")
     store.create_session("session-a", "user-a", metadata={"tenant_id": "tenant-a"})

@@ -111,8 +111,32 @@ class AdTaskServices:
     # -- Recurring schedule control plane ------------------------------
 
     def create_schedule(self, **kwargs: Any) -> dict[str, Any]:
-        """Compatibility facade for the generic SchedulingService."""
-        return self.runtime.scheduling_service.create(**kwargs)
+        """Adapt advertising request data into the generic schedule contract."""
+        values = dict(kwargs)
+        account_id = values.pop("account_id", None)
+        platform_params = values.pop("platform_params", None)
+        session_id = values.pop("session_id", None)
+        principal = values.pop("principal", None)
+        values["payload"] = self.runtime._redact_for_persistence({
+            "user_input": values.get("prompt"),
+            "session_id": session_id,
+            "account_id": account_id,
+            "platform_params": platform_params or {},
+            "execution_mode": "dry_run",
+            "confirmed": False,
+            "confirmation_payload": None,
+        })
+        values["metadata"] = {
+            "tenant_id": getattr(principal, "tenant_id", "default"),
+            "user_id": getattr(principal, "user_id", "anonymous"),
+            "principal": (
+                principal.to_safe_dict() if principal is not None else None
+            ),
+            "account_id_present": bool(account_id),
+            "execution_mode": "dry_run",
+            "created_via": "runtime",
+        }
+        return self.runtime.scheduling_service.create(**values)
 
     def list_schedules(self, **kwargs: Any) -> list[dict[str, Any]]:
         return self.runtime.scheduling_service.list(**kwargs)
@@ -237,7 +261,9 @@ class AdTaskServices:
             return None
         if self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
             return None
-        record = self.runtime.task_executor.pause(task_id)
+        record = self.runtime.task_executor.pause(
+            task_id, tenant_id=tenant_id, user_id=user_id,
+        )
         return record.to_dict() if record else None
 
     def resume_task(
@@ -247,7 +273,9 @@ class AdTaskServices:
             return None
         if self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
             return None
-        record = self.runtime.task_executor.resume(task_id)
+        record = self.runtime.task_executor.resume(
+            task_id, tenant_id=tenant_id, user_id=user_id,
+        )
         return record.to_dict() if record else None
 
     def recover_task(
@@ -276,6 +304,7 @@ class AdTaskServices:
             raise ValueError("recovery_reference is required")
         recovered = self.runtime.task_executor.requeue_recovery(
             task_id, recovery_reference=str(recovery_reference),
+            tenant_id=tenant_id, user_id=user_id,
         )
         return recovered.to_dict() if recovered else None
 
@@ -286,5 +315,7 @@ class AdTaskServices:
             return None
         if self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
             return None
-        record = self.runtime.task_executor.cancel(task_id)
+        record = self.runtime.task_executor.cancel(
+            task_id, tenant_id=tenant_id, user_id=user_id,
+        )
         return record.to_dict() if record else None

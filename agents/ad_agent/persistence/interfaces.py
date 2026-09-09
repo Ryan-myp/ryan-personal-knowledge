@@ -136,9 +136,12 @@ class PersistenceBackend(Protocol):
     def claim_outbox_events(
         self, limit: int = 20, consumer_id: Optional[str] = None,
     ) -> list[Any]: ...
-    def mark_outbox_delivered(self, event_id: str) -> bool: ...
+    def mark_outbox_delivered(
+        self, event_id: str, consumer_id: Optional[str] = None,
+    ) -> bool: ...
     def mark_outbox_retry(
         self, event_id: str, next_retry_at: str, error: Optional[str] = None,
+        consumer_id: Optional[str] = None,
     ) -> bool: ...
 
     # -- Durable Agent run/event replay -------------------------------
@@ -313,12 +316,22 @@ class PersistenceBackend(Protocol):
         workflow_id: Optional[str] = None,
         expected_statuses: Optional[list[str]] = None,
     ) -> bool: ...
-    def pause_task(self, task_id: str) -> Optional[Any]: ...
-    def resume_task(self, task_id: str) -> Optional[Any]: ...
-    def cancel_task(self, task_id: str) -> Optional[Any]: ...
+    def pause_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def resume_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def cancel_task(
+        self, task_id: str, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
     def recover_stale_tasks(self, stale_after_seconds: float = 300.0) -> int: ...
     def requeue_recovery_task(
         self, task_id: str, *, recovery_reference: str,
+        tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[Any]: ...
 
     # -- Recurring Agent schedules ------------------------------------
@@ -335,25 +348,38 @@ class PersistenceBackend(Protocol):
         self, schedule_id: str, *, status: Optional[str] = None,
         next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,
         last_run_status: Optional[str] = None, last_task_id: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict] = None, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> bool: ...
-    def pause_scheduled_task(self, schedule_id: str) -> Optional[Any]: ...
-    def resume_scheduled_task(self, schedule_id: str, next_run_at: str) -> Optional[Any]: ...
-    def delete_scheduled_task(self, schedule_id: str) -> bool: ...
+    def pause_scheduled_task(
+        self, schedule_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def resume_scheduled_task(
+        self, schedule_id: str, next_run_at: str, *,
+        tenant_id: Optional[str] = None, user_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def delete_scheduled_task(
+        self, schedule_id: str, *, tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> bool: ...
     def claim_due_scheduled_tasks(
         self, now: str, lease_owner: str, lease_seconds: float = 60.0,
         limit: int = 20,
     ) -> list[tuple[Any, Any]]: ...
     def advance_scheduled_task(
         self, schedule_id: str, expected_next_run_at: str, next_run_at: str,
+        lease_owner: Optional[str] = None,
     ) -> bool: ...
     def attach_scheduled_task_run(
         self, schedule_run_id: str, task_id: str, status: str = "queued",
+        lease_owner: Optional[str] = None,
     ) -> bool: ...
     def update_scheduled_task_run(
         self, schedule_run_id: str, status: str, *, task_id: Optional[str] = None,
         started_at: Optional[str] = None, finished_at: Optional[str] = None,
         error: Optional[str] = None, result: Optional[dict] = None,
+        lease_owner: Optional[str] = None,
     ) -> bool: ...
     def list_scheduled_task_runs(
         self, schedule_id: Optional[str] = None, tenant_id: Optional[str] = None,
