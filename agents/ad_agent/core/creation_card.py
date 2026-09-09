@@ -42,6 +42,87 @@ _INPUT_MODES = {
 _USER_INPUT_MODES = {"user_required", "context_required", "asset_required"}
 
 
+_HIERARCHY_LABELS = {
+    "campaign": "Campaign",
+    "campaigns": "Campaign",
+    "ad_set": "Ad Set",
+    "adset": "Ad Set",
+    "ad_group": "Ad Group",
+    "adgroup": "Ad Group",
+    "ad": "Ad",
+    "insertion_order": "Insertion Order",
+    "line_item": "Line Item",
+    "creative": "Creative",
+    "asset_group": "Asset Group",
+    "product_group": "Product Group",
+    "listing_group_filter": "Listing Group",
+}
+
+
+def _blueprint_contract_metadata(
+    blueprint: AdCreationBlueprint, fields: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Publish bounded quality metadata for the wizard and template UI.
+
+    This is presentation metadata only.  The Tool schema and Runtime remain
+    authoritative for validation and execution; the summary makes coverage
+    and the amount of advanced configuration explicit to a human user.
+    """
+    hierarchy_order: list[str] = []
+    hierarchy_counts: dict[str, int] = {}
+    required_count = 0
+    conditional_count = 0
+    lookup_count = 0
+    default_count = 0
+    advanced_count = 0
+    derived_count = 0
+    for field in fields:
+        path = str(field.get("path") or "")
+        root = path.split(".", 1)[0].lower()
+        hierarchy = _HIERARCHY_LABELS.get(root, root.replace("_", " ").title() or "通用")
+        if hierarchy not in hierarchy_counts:
+            hierarchy_order.append(hierarchy)
+            hierarchy_counts[hierarchy] = 0
+        hierarchy_counts[hierarchy] += 1
+        if field.get("required") or field.get("required_when"):
+            required_count += 1
+        if field.get("required_when") or field.get("visible_when") or field.get("option_rules"):
+            conditional_count += 1
+        if field.get("source") == "lookup" or field.get("lookup_tool"):
+            lookup_count += 1
+        if "default" in field or field.get("default_strategy"):
+            default_count += 1
+        auto_advanced = (
+            field.get("auto_exposed")
+            and not field.get("required")
+            and not field.get("required_when")
+            and not field.get("lookup_tool")
+            and field.get("presentation") not in {"asset_picker", "file_reference"}
+        )
+        if field.get("presentation") == "advanced_json" or field.get("advanced") or auto_advanced:
+            advanced_count += 1
+        if field.get("presentation") == "derived_readonly":
+            derived_count += 1
+    return {
+        "field_count": len(fields),
+        "required_count": required_count,
+        "conditional_count": conditional_count,
+        "lookup_count": lookup_count,
+        "declared_default_count": default_count,
+        "advanced_count": advanced_count,
+        "derived_count": derived_count,
+        "hierarchies": [
+            {"name": name, "field_count": hierarchy_counts[name]}
+            for name in hierarchy_order
+        ],
+        "template": {
+            "supported": True,
+            "version_locked": True,
+            "stores_only_declared_fields": True,
+        },
+    }
+
+
 def _json_shape(field: Mapping[str, Any], schema: Mapping[str, Any]) -> Optional[str]:
     """Return the declared JSON container shape for an editable payload.
 
@@ -1021,6 +1102,7 @@ class CreationCardBuilder:
             return blueprint
         document = blueprint.to_dict()
         document["fields"] = all_fields
+        document["ui_contract"] = _blueprint_contract_metadata(blueprint, all_fields)
         return AdCreationBlueprint.from_dict(document)
 
     def is_creation_intent(

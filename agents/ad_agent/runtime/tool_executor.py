@@ -254,11 +254,23 @@ class ToolExecutor:
                 "请升级 Client 或提供版本 adapter"
             )
 
+        # A request may provide an isolated, credential-bound Provider Client
+        # without mutating the shared Capability Handler.  Do not reject that
+        # request merely because the shared handler is intentionally unbound;
+        # the request-client branch below will attach the isolated client
+        # before invocation.  This ordering matters for HTTP requests where
+        # credentials are scoped to one principal/turn.
+        request_platform = self.services.canonical_platform(definition.platform)
+        has_request_client = bool(
+            isinstance(request_clients, dict)
+            and request_clients.get(request_platform) is not None
+        )
         if (
             definition.is_read_tool
             and not self.services.offline_mode
             and hasattr(handler, "client")
             and getattr(handler, "client", None) is None
+            and not has_request_client
         ):
             return ToolResult.error(
                 f"{tool_name} 没有配置 Provider Client；当前未启用 offline_mode，"

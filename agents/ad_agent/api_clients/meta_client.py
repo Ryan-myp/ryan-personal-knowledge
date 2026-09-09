@@ -1444,14 +1444,35 @@ class MetaAPIClient(BasePlatformClient):
     
     def list_adsets(self, account_id: str, campaign_id: str = None, limit: int = 25) -> list:
         """获取 Ad Set 列表"""
-        endpoint = self._ad_account_edge(account_id, "adsets")
+        clean_account_id = self._clean_meta_id(account_id, "account_id")
+        # Meta's account-level ``/{ad-account}/adsets`` edge accepts a
+        # ``campaign_id`` query parameter in some API versions but ignores
+        # it in others.  Query the Campaign node edge when a parent was
+        # supplied so a lookup can never mix Ad Sets from another campaign.
+        parent_campaign_id = None
+        if campaign_id not in (None, ""):
+            parent_campaign_id = self._clean_meta_id(campaign_id, "campaign_id")
+            endpoint = f"/{parent_campaign_id}/adsets"
+        else:
+            endpoint = f"/act_{clean_account_id}/adsets"
         params = {
             'limit': limit,
             'fields': 'id,name,status,budget_remaining,daily_budget,campaign{id,name}'
         }
-        if campaign_id:
-            params['campaign_id'] = campaign_id
-        return self._list_graph_pages(account_id, endpoint, params)
+        rows = self._list_graph_pages(clean_account_id, endpoint, params)
+        # Keep a second boundary in case a provider proxy returns a broader
+        # page than requested.  Do not silently return unscoped rows.
+        if parent_campaign_id:
+            return [
+                row for row in rows
+                if isinstance(row, dict)
+                and str(
+                    (row.get("campaign") or {}).get("id")
+                    if isinstance(row.get("campaign"), dict)
+                    else row.get("campaign_id") or ""
+                ) == parent_campaign_id
+            ]
+        return rows
     
     def get_adset(self, adset_id: str, fields: list = None) -> dict:
         """获取 Ad Set 详情"""
@@ -1589,14 +1610,29 @@ class MetaAPIClient(BasePlatformClient):
     
     def list_ads(self, account_id: str, adset_id: str = None, limit: int = 25) -> list:
         """获取 Ad 列表"""
-        endpoint = self._ad_account_edge(account_id, "ads")
+        clean_account_id = self._clean_meta_id(account_id, "account_id")
+        # As with Ad Sets, the account-level Ad edge may ignore an
+        # ``adset_id`` query parameter.  A parent node edge is the provider
+        # contract that gives us a reliably scoped read-back.
+        parent_adset_id = None
+        if adset_id not in (None, ""):
+            parent_adset_id = self._clean_meta_id(adset_id, "adset_id")
+            endpoint = f"/{parent_adset_id}/ads"
+        else:
+            endpoint = f"/act_{clean_account_id}/ads"
         params = {
             'limit': limit,
             'fields': 'id,name,status,adset_id'
         }
-        if adset_id:
-            params['adset_id'] = adset_id
-        return self._list_graph_pages(account_id, endpoint, params)
+        rows = self._list_graph_pages(clean_account_id, endpoint, params)
+        if parent_adset_id:
+            return [
+                row for row in rows
+                if isinstance(row, dict)
+                and str(row.get("adset_id") or row.get("ad_set_id") or "")
+                == parent_adset_id
+            ]
+        return rows
     
     def get_ad(self, ad_id: str, fields: list = None) -> dict:
         """获取 Ad 详情"""
@@ -1729,17 +1765,22 @@ class MetaAPIClient(BasePlatformClient):
         if cta_type not in {"SHOP_NOW", "LEARN_MORE", "BUY_NOW"}:
             raise ValueError("Unsupported Catalog Ad CTA type")
 
+        format_options = {
+            "CAROUSEL": "carousel_images_multi_items",
+            "COLLAGE": "carousel_slideshows",
+            "PRODUCT_SET": "single_image",
+        }
         template_data: dict[str, Any] = {
-            "product_set_id": product_set_id,
             "link": link,
             "message": ad.get("message", ""),
             "name": ad.get("headline", ""),
             "description": ad.get("description", ""),
             "call_to_action": {"type": cta_type},
-            # Keep the selected format explicit in the dry-run payload.  Live
-            # mutation remains disabled until this mapping is verified against
-            # the target Meta account/API version.
-            "format_option": ad_style,
+            # Product set selection belongs to the parent Ad Set's
+            # ``promoted_object``. Meta rejects it inside template_data.
+            # Keep the selected format explicit for the supported catalog
+            # creative contract.
+            "format_option": format_options[ad_style],
         }
         return self.create_ad(
             account_id,

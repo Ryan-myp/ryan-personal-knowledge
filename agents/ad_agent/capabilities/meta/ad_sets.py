@@ -54,8 +54,10 @@ class MetaGetAdSetHandler(ToolHandler):
         adset_id = input_data.get("adset_id")
         if self.client:
             try:
-                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
-                    ctx.account_id, "adset", adset_id
+                if (
+                    isinstance(self.client, MetaAPIClient)
+                    and not resource_was_created_in_current_run(ctx, "ad_set", adset_id)
+                    and not self.client.resource_belongs_to_account(ctx.account_id, "adset", adset_id)
                 ):
                     return ToolResult.error(
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"

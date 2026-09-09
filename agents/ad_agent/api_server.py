@@ -416,6 +416,13 @@ class TaskSubmitRequest(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, max_length=200)
 
 
+class TaskRecoveryRequest(BaseModel):
+    """Explicit recovery proof for a task with unknown external state."""
+
+    recovery_reference: str = Field(min_length=1, max_length=255)
+    provider_verified: bool = False
+
+
 class ScheduleCreateRequest(BaseModel):
     """Recurring, data-only Agent instruction."""
 
@@ -849,7 +856,10 @@ async def submit_task(
 ):
     """Queue an Agent turn and return immediately with its durable status."""
     principal = _authorize_request(x_api_key, http_request)
-    _require_principal_permission(principal, "ads.read")
+    # Queueing is an execution-side effect even when the eventual Agent turn
+    # is read-only. Keep it behind the planning grant; the task's own Tools
+    # still enforce their narrower read/write permissions when it runs.
+    _require_principal_permission(principal, "ads.plan")
     if not runtime or not callable(getattr(runtime, "submit_task", None)):
         raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
     _activate_request_tenant_skills(principal)
@@ -954,6 +964,37 @@ async def resume_task(
     )
     if not task:
         raise HTTPException(status_code=404, detail="task not found")
+    return task
+
+
+@app.post("/tasks/{task_id}/recover", tags=["tasks"])
+async def recover_task(
+    task_id: str,
+    body: TaskRecoveryRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Requeue an uncertain task only after provider readback verification."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.reconcile")
+    if not runtime or not callable(getattr(runtime, "recover_task", None)):
+        raise HTTPException(status_code=503, detail="异步任务执行器未初始化")
+    try:
+        task = await run_in_threadpool(
+            runtime.recover_task,
+            task_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+            recovery_reference=body.recovery_reference,
+            provider_verified=body.provider_verified,
+            permissions=principal.permissions,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not task:
+        raise HTTPException(status_code=404, detail="task not found or task is not recoverable")
     return task
 
 
@@ -1887,6 +1928,7 @@ async def get_creation_blueprints(
         "ad_format": ad_format,
         "selector_dimension": selector_dimension,
         "selector_value": selector_value,
+        "formats": runtime.list_ad_formats(provider) if provider else runtime.list_ad_formats(),
         "blueprints": runtime.list_creation_blueprints(
             provider, ad_format, selector_dimension, selector_value
         ),

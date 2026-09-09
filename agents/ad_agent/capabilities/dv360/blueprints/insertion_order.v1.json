@@ -1,0 +1,85 @@
+{
+  "id": "dv360.insertion_order",
+  "version": "1.0.0",
+  "provider": "dv360",
+  "ad_format": "INSERTION_ORDER",
+  "title": "DV360 Insertion Order",
+  "description": "在已存在的 DV360 Campaign 下创建 Insertion Order；Campaign 由账户内查询结果明确选择。",
+  "match_terms": ["Insertion Order", "IO", "DV360 订单", "创建 IO"],
+  "tools": ["dv360_create_io"],
+  "resources": ["campaign", "insertion_order"],
+  "fields": [
+    {
+      "path": "insertion_order.campaign_id",
+      "tool_ref": "dv360_create_io.campaign_id",
+      "label": "所属 Campaign",
+      "description": "从当前 DV360 广告客户下选择已有 Campaign，不根据名称猜测。",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "dv360_list_campaigns",
+      "lookup_result_key": "campaigns",
+      "selection_value_fields": ["id", "campaign_id"],
+      "selection_label_fields": ["name", "campaign_name", "id"]
+    },
+    {
+      "path": "insertion_order.name",
+      "tool_ref": "dv360_create_io.name",
+      "label": "Insertion Order 名称",
+      "required": true,
+      "default_strategy": "generated_name"
+    },
+    {
+      "path": "insertion_order.budget",
+      "tool_ref": "dv360_create_io.budget",
+      "label": "预算",
+      "description": "账户币种下的 IO 花费上限。",
+      "required": true
+    },
+    {
+      "path": "insertion_order.spend_cap_micros",
+      "tool_ref": "dv360_create_io.spend_cap_micros",
+      "label": "微单位花费上限",
+      "advanced": true
+    },
+    {
+      "path": "insertion_order.start_date",
+      "tool_ref": "dv360_create_io.start_date",
+      "label": "开始日期",
+      "description": "格式：YYYY-MM-DD。",
+      "required": true
+    },
+    {
+      "path": "insertion_order.end_date",
+      "tool_ref": "dv360_create_io.end_date",
+      "label": "结束日期",
+      "description": "格式：YYYY-MM-DD，不能早于开始日期。",
+      "required": true
+    },
+    {
+      "path": "insertion_order.status",
+      "tool_ref": "dv360_create_io.status",
+      "label": "初始状态",
+      "source": "enum",
+      "options": ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"],
+      "default": "DRAFT",
+      "default_reason": "默认以草稿状态创建，确认配置后再由生命周期操作启用。"
+    },
+    {
+      "path": "insertion_order.pacing_type",
+      "tool_ref": "dv360_create_io.pacing_type",
+      "label": "预算节奏",
+      "source": "enum",
+      "options": ["ASAP", "EVEN"],
+      "option_labels": {"ASAP": "尽快消耗", "EVEN": "均匀消耗"},
+      "default": "EVEN"
+    },
+    {
+      "path": "insertion_order.frequency_cap",
+      "tool_ref": "dv360_create_io.frequency_cap",
+      "label": "频次上限",
+      "presentation": "object_editor",
+      "advanced": true
+    }
+  ],
+  "rules": []
+}

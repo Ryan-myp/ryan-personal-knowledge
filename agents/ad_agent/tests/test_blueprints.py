@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
 from agents.ad_agent.core.blueprint import (
@@ -42,6 +43,59 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     assert versions["tiktok.product_sales_video"] == "2.0.0"
     assert versions["tiktok.traffic_video"] == "3.0.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
+
+
+def test_creation_blueprint_list_publishes_contract_and_support_metadata():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    for capability in (
+        create_google_capability(), create_meta_capability(), create_tiktok_capability(),
+    ):
+        runtime.register_capability(capability)
+
+    blueprints = runtime.list_creation_blueprints()
+    search = next(item for item in blueprints if item["id"] == "google-ads.search")
+
+    assert search["ui_contract"]["field_count"] == len(search["fields"])
+    assert search["ui_contract"]["required_count"] > 0
+    assert {item["name"] for item in search["ui_contract"]["hierarchies"]} == {
+        "Campaign", "Ad Group", "Ad",
+    }
+    assert search["support"]["level"] in {"supported_dry_run", "partial_dry_run"}
+    assert search["support"]["catalog_match"] is True
+
+
+def test_creation_blueprint_support_does_not_claim_unverified_tiktok_formats():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_tiktok_capability())
+
+    formats = runtime.list_ad_formats("tiktok")
+    blueprint_suffixes = {
+        item.blueprint_id.rsplit(".", 1)[-1]
+        for item in runtime.creation_blueprints.list(provider="tiktok")
+    }
+    assert {item["format_id"] for item in formats if item["coverage"] == "declared_only"} == {
+        "brand.topview", "brand.takeover",
+    }
+    assert "topview" not in blueprint_suffixes
+    assert "takeover" not in blueprint_suffixes
+
+
+def test_dv360_guided_surfaces_start_from_explicit_existing_parents():
+    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime.register_capability(create_dv360_capability())
+
+    blueprints = runtime.list_creation_blueprints(provider="dv360")
+    assert {item["id"] for item in blueprints} == {
+        "dv360.insertion_order", "dv360.line_item",
+    }
+    insertion_order = next(item for item in blueprints if item["id"] == "dv360.insertion_order")
+    line_item = next(item for item in blueprints if item["id"] == "dv360.line_item")
+    assert any(field["path"] == "insertion_order.campaign_id" for field in insertion_order["fields"])
+    assert any(field["path"] == "line_item.io_id" for field in line_item["fields"])
+    assert line_item["selector"]["values"] == [
+        "DISPLAY_DEFAULT", "VIDEO_DEFAULT", "AUDIO_DEFAULT",
+        "CONNECTED_TV_DEFAULT", "YOUTUBE_AND_PARTNERS_VIDEO",
+    ]
 
 
 def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():

@@ -81,8 +81,10 @@ from .capability_context import CapabilityContextWrapper
 from .security import RuntimeSecurity
 from .tool_executor import ToolExecutor
 from .outbox import OutboxConsumer, OutboxPublisher
+from .event_repair import ExecutionEventRepairConsumer
 from .task_executor import TaskExecutionContext, TaskExecutor
 from .scheduler import SchedulerService, next_run_at, validate_timezone, CronExpression
+from ..core.runtime_kernel import AgentRuntimeKernel, TurnRequest
 from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
 from ..persistence.models import ToolCallRecord, ExecutionRunRecord, ScheduledTaskRecord, ScheduledTaskRunRecord
@@ -174,6 +176,7 @@ class AgentRuntime:
         session_lease_seconds: float = 300.0,
         outbox_delivery: Optional[Callable[[Any], None]] = None,
         outbox_poll_interval: float = 0.25,
+        start_background_workers: bool = True,
         conversation_title_use_llm: bool = False,
     ):
         base_registry = registry or SimpleToolRegistry()
@@ -449,18 +452,41 @@ class AgentRuntime:
             self._persistence_store = None
         self.outbox = OutboxPublisher(self._session_manager) if self._session_manager else None
         self.outbox_consumer: Optional[OutboxConsumer] = None
-        if self._persistence_store is not None and self.outbox is not None:
+        self.event_repair_consumer: Optional[ExecutionEventRepairConsumer] = None
+        if start_background_workers and self._persistence_store is not None and self.outbox is not None:
             self.outbox_consumer = OutboxConsumer(
                 self._persistence_store,
                 outbox_delivery or self._default_outbox_delivery,
                 poll_interval=outbox_poll_interval,
             )
             self.outbox_consumer.start()
+            if callable(getattr(self._persistence_store, "enqueue_execution_event_repair", None)):
+                self.event_repair_consumer = ExecutionEventRepairConsumer(self._persistence_store)
+                self.event_repair_consumer.start()
 
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
         self.workflow = WorkflowCoordinator(self.services, outbox=self.outbox)
         self.security = RuntimeSecurity(self)
+        # The kernel is intentionally business-neutral.  This composition
+        # point is the only place where the advertising application binds its
+        # policy/session implementation to the generic turn shell.
+        self._runtime_kernel = AgentRuntimeKernel(
+            session_manager=self._session_manager,
+            session_locks=self._session_locks,
+            session_locks_guard=self._session_locks_guard,
+            lease_owner=self._session_lease_owner,
+            lease_seconds=self.session_lease_seconds,
+            mode_context=_execution_mode_context,
+            validate_mode=self._validate_execution_mode,
+            resolve_mode=lambda tenant, user, _requested: self.get_execution_mode(
+                tenant, user
+            ),
+            assert_ready=self.assert_llm_ready,
+            ensure_session=self._ensure_session,
+            execute_unlocked=self._execute_kernel_request,
+            busy_error=SessionBusyError,
+        )
         self.tool_executor = ToolExecutor(self.services)
         self.task_executor: Optional[TaskExecutor] = None
         self.scheduler: Optional[SchedulerService] = None
@@ -477,11 +503,13 @@ class AgentRuntime:
             # Agent Runtime turn boundary, so workers cannot bypass parser,
             # policy, account, approval, idempotency or audit gates.
             self.task_executor.register_handler("agent.turn", self._execute_agent_task)
-            self.task_executor.start()
+            if start_background_workers:
+                self.task_executor.start()
             self.scheduler = SchedulerService(
                 persistence_store, self._submit_scheduled_task,
             )
-            self.scheduler.start()
+            if start_background_workers:
+                self.scheduler.start()
         if read_only_mode:
             logger.info("🔒 只读模式已启用，仅允许查询操作")
 
@@ -1261,6 +1289,9 @@ class AgentRuntime:
         consumer = self.outbox_consumer
         if consumer is not None:
             consumer.stop()
+        event_repair = self.event_repair_consumer
+        if event_repair is not None:
+            event_repair.stop()
         scheduler = self.scheduler
         if scheduler is not None:
             scheduler.stop(wait=wait)
@@ -1904,12 +1935,75 @@ class AgentRuntime:
         selector_dimension: Optional[str] = None, selector_value: Any = None,
     ) -> list[dict[str, Any]]:
         """Return provider-owned creation metadata without making network calls."""
-        return [
-            self.creation_card_builder.expand_blueprint(blueprint).to_dict()
-            for blueprint in self.creation_blueprints.list(
-                provider, ad_format, selector_dimension, selector_value
-            )
-        ]
+        result = []
+        for blueprint in self.creation_blueprints.list(
+            provider, ad_format, selector_dimension, selector_value
+        ):
+            expanded = self.creation_card_builder.expand_blueprint(blueprint)
+            document = expanded.to_dict()
+            document["support"] = self._creation_blueprint_support(expanded)
+            result.append(document)
+        return result
+
+    @staticmethod
+    def _creation_format_tokens(value: Any) -> set[str]:
+        return {
+            token for token in re.split(r"[^a-z0-9]+", str(value or "").casefold())
+            if token
+        }
+
+    def _creation_blueprint_support(self, blueprint: Any) -> dict[str, Any]:
+        """Attach catalog evidence without inventing provider mappings."""
+        suffix = str(getattr(blueprint, "blueprint_id", "")).rsplit(".", 1)[-1]
+        blueprint_tokens = (
+            self._creation_format_tokens(suffix)
+            | self._creation_format_tokens(getattr(blueprint, "ad_format", ""))
+        )
+        candidates: list[tuple[int, Mapping[str, Any]]] = []
+        for entry in self.ad_format_catalogs.get(str(getattr(blueprint, "provider", "")), []) or []:
+            if not isinstance(entry, Mapping):
+                continue
+            format_id = str(entry.get("format_id") or "")
+            category = str(entry.get("category") or "")
+            format_key = format_id.casefold()
+            suffix_key = suffix.casefold()
+            score = 0
+            if format_key == suffix_key:
+                score = 100
+            elif format_key == str(getattr(blueprint, "ad_format", "")).casefold():
+                score = 100
+            elif category and category.casefold() == suffix_key:
+                score = 80
+            elif blueprint_tokens & (
+                self._creation_format_tokens(format_id)
+                | self._creation_format_tokens(category)
+            ):
+                score = 60
+            if score:
+                candidates.append((score, entry))
+        if not candidates:
+            return {
+                "level": "contract_only",
+                "label": "已接入字段合同",
+                "catalog_match": False,
+                "gaps": ["尚未关联渠道广告类型目录"],
+            }
+        _score, entry = sorted(candidates, key=lambda item: (-item[0], str(item[1].get("format_id"))))[0]
+        coverage = str(entry.get("coverage") or "contract_only")
+        labels = {
+            "supported_dry_run": "支持草稿校验",
+            "partial_dry_run": "部分支持草稿",
+            "declared_only": "暂不支持向导创建",
+            "contract_only": "已接入字段合同",
+        }
+        return {
+            "level": coverage,
+            "label": labels.get(coverage, coverage),
+            "catalog_match": True,
+            "catalog_format": entry.get("format_id"),
+            "dependencies": list(entry.get("dependencies") or [])[:8],
+            "gaps": list(entry.get("gaps") or [])[:8],
+        }
 
     def resolve_creation_blueprint(
         self,
@@ -1992,6 +2086,47 @@ class AgentRuntime:
                 for card in cards
             ),
         })
+
+    @staticmethod
+    def _is_campaign_only_plan(
+        tool_plan: Optional[Mapping[str, Any]],
+        intent: Optional[Any] = None,
+    ) -> bool:
+        """Return whether a provider-declared plan contains only Campaign.
+
+        Campaign-only smoke tests are an explicit Tool contract, not a
+        Runtime intent-name special case.  The provider Capability marks the
+        selected Tool with ``campaign_only``; ordinary creation routes keep
+        their complete Blueprint and descendant validation.
+        """
+        tools = [
+            tool
+            for routed in (tool_plan or {}).values()
+            for tool in (routed or ())
+        ]
+        intent_type = str(getattr(intent, "intent_type", "") or "").strip()
+        # A Tool may advertise a broad primary intent plus a narrower
+        # lifecycle intent.  Only the latter is an explicit opt-in to this
+        # scope; a generic creation request that happens to route to one
+        # Campaign (because its format is incomplete) must still open the
+        # full Blueprint and collect descendants.
+        explicit_scope = any(
+            intent_type in {
+                str(item).strip()
+                for item in (getattr(tool, "intent_types", []) or [])[1:]
+            }
+            for tool in tools
+        )
+        return bool(tools) and explicit_scope and all(
+            str(getattr(tool, "action", "") or "").strip().lower() == "create"
+            and str(getattr(tool, "resource_type", "") or "").strip().lower()
+            == "campaign"
+            and "campaign_only" in {
+                str(item).strip().lower()
+                for item in (getattr(tool, "traits", []) or [])
+            }
+            for tool in tools
+        )
 
     def _creation_blueprint_tool_plan(
         self,
@@ -3087,11 +3222,17 @@ class AgentRuntime:
         source = credentials if credentials is not None else self._credentials
         if not isinstance(source, Mapping):
             return {}
-        from ..capabilities.factory import normalize_platform
-
-        wanted = normalize_platform(platform)
+        wanted = self._resolve_platform_identifier(platform)
         for key, value in source.items():
-            if normalize_platform(str(key)) == wanted and isinstance(value, dict):
+            # Credential keys are deployment-facing aliases (for example
+            # ``google``), while Tool/Capability identity may be
+            # ``google-ads``. Resolve both through the active Skill metadata
+            # so the Runtime does not grow a provider catalogue or a Google
+            # specific branch.
+            if (
+                self._resolve_platform_identifier(str(key)) == wanted
+                and isinstance(value, dict)
+            ):
                 return copy.deepcopy(value)
         return {}
 
@@ -3126,7 +3267,7 @@ class AgentRuntime:
 
         clients: dict[str, Any] = {}
         for raw_platform in credentials:
-            platform = self._canonical_platform(str(raw_platform))
+            platform = self._resolve_platform_identifier(str(raw_platform))
             provider_credentials = self._credentials_for_platform(platform, credentials)
             if not provider_credentials:
                 continue
@@ -4125,6 +4266,8 @@ class AgentRuntime:
             "platform_count": len(self.registry.list_all_platforms()),
             "task_executor": task_executor.metrics() if task_executor else {"state": "disabled"},
             "outbox_consumer": outbox_consumer.metrics() if outbox_consumer else {"state": "disabled"},
+            "event_repair": self.event_repair_consumer.metrics()
+            if self.event_repair_consumer else {"state": "disabled"},
             "scheduler": self.scheduler.metrics() if self.scheduler else {"state": "disabled"},
         }
         return snapshot
@@ -4148,6 +4291,35 @@ class AgentRuntime:
             return None
         record = self.task_executor.resume(task_id)
         return record.to_dict() if record else None
+
+    def recover_task(
+        self, task_id: str, *, user_id: str, tenant_id: str,
+        recovery_reference: str, provider_verified: bool = False,
+        permissions: Optional[Iterable[str]] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Explicitly requeue an uncertain task after provider readback.
+
+        A stale task is never replayed merely because a process restarted.
+        The caller must prove that a provider/workflow reconciliation was
+        performed and supply its audit reference.  The task then re-enters
+        the normal ``agent.turn`` Runtime boundary.
+        """
+        if self.task_executor is None:
+            return None
+        task = self.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id)
+        if task is None:
+            return None
+        granted = set(permissions or self._granted_permissions)
+        if "ads.reconcile" not in granted and "ads.write" not in granted:
+            raise PermissionError("task recovery requires ads.reconcile or ads.write")
+        if not provider_verified:
+            raise ValueError("provider_verified=true is required before task recovery")
+        if not str(recovery_reference or "").strip():
+            raise ValueError("recovery_reference is required")
+        recovered = self.task_executor.requeue_recovery(
+            task_id, recovery_reference=str(recovery_reference),
+        )
+        return recovered.to_dict() if recovered else None
 
     def cancel_task(
         self, task_id: str, *, user_id: str, tenant_id: str,
@@ -4190,96 +4362,54 @@ class AgentRuntime:
         execution_mode: Optional[str] = None,
         task_id: Optional[str] = None,
     ) -> dict:
-        """Execute one turn while serializing turns for the same session.
+        """Execute one turn through the business-neutral Runtime Kernel."""
+        return self._runtime_kernel.run(
+            TurnRequest(
+                user_input=user_input,
+                session_id=session_id,
+                user_id=user_id,
+                tenant_id=tenant_id or "default",
+                account_id=account_id,
+                credentials=credentials,
+                platform_params=platform_params,
+                confirmed=confirmed,
+                confirmation_payload=confirmation_payload,
+                creation_blueprint_id=creation_blueprint_id,
+                creation_blueprint_version=creation_blueprint_version,
+                principal=principal,
+                cancellation_event=cancellation_event,
+                event_callback=event_callback,
+                execution_mode=execution_mode,
+                task_id=task_id,
+            )
+        )
 
-        SessionContext, credentials and protected state are mutable.  Without
-        this boundary two concurrent requests for one session can interleave
-        account context, tool outputs and confirmation state.
-        """
-        self.assert_llm_ready()
-        lock = self._get_session_lock(session_id or "__new_session__")
-        effective_user_id = principal.user_id if principal is not None else user_id
-        effective_tenant_id = (
-            principal.tenant_id if principal is not None else (tenant_id or "default")
+    def _execute_kernel_request(self, request: TurnRequest) -> dict:
+        """Adapt the generic kernel request to the application turn engine."""
+        principal = request.principal
+        permissions = (
+            principal.permissions
+            if principal is not None else self._granted_permissions
         )
-        requested_mode = (
-            self._validate_execution_mode(execution_mode)
-            if execution_mode is not None
-            else self.get_execution_mode(effective_tenant_id, effective_user_id)
+        account_scope = principal.account_scope if principal is not None else None
+        return self._run_unlocked(
+            user_input=request.user_input,
+            session_id=request.session_id,
+            user_id=request.user_id,
+            account_id=request.account_id,
+            credentials=request.credentials,
+            platform_params=request.platform_params,
+            confirmed=request.confirmed,
+            confirmation_payload=request.confirmation_payload,
+            creation_blueprint_id=request.creation_blueprint_id,
+            creation_blueprint_version=request.creation_blueprint_version,
+            granted_permissions=permissions,
+            account_scope=account_scope,
+            tenant_id=request.tenant_id,
+            cancellation_event=request.cancellation_event,
+            event_callback=request.event_callback,
+            task_id=request.task_id,
         )
-        effective_permissions = (
-            principal.permissions if principal is not None else self._granted_permissions
-        )
-        effective_account_scope = (
-            principal.account_scope if principal is not None else None
-        )
-        mode_token = _execution_mode_context.set(requested_mode)
-        try:
-            with lock:
-                normalized_session_id = session_id or str(uuid.uuid4())
-                # Materialize the session before claiming its durable lease.
-                # _run_unlocked calls this again, but that second call is a
-                # read/restore fast path and does not replace existing state.
-                self._ensure_session(
-                    normalized_session_id, effective_user_id, account_id,
-                    credentials, tenant_id=effective_tenant_id,
-                )
-                lease_store = self._session_manager
-                lease_acquired = False
-                lease_stop = threading.Event()
-                lease_thread: Optional[threading.Thread] = None
-                acquire_lease = getattr(lease_store, "acquire_session_lease", None)
-                heartbeat_lease = getattr(lease_store, "heartbeat_session_lease", None)
-                release_lease = getattr(lease_store, "release_session_lease", None)
-                if callable(acquire_lease) and callable(release_lease):
-                    lease_acquired = bool(acquire_lease(
-                        normalized_session_id, self._session_lease_owner,
-                        self.session_lease_seconds,
-                    ))
-                    if not lease_acquired:
-                        raise SessionBusyError(
-                            "session is busy on another Agent instance; retry shortly"
-                        )
-                    if callable(heartbeat_lease):
-                        def heartbeat() -> None:
-                            interval = min(max(self.session_lease_seconds / 3.0, 1.0), 10.0)
-                            while not lease_stop.wait(interval):
-                                if not heartbeat_lease(
-                                    normalized_session_id, self._session_lease_owner,
-                                    self.session_lease_seconds,
-                                ):
-                                    return
-                        lease_thread = threading.Thread(
-                            target=heartbeat, name="ad-agent-session-heartbeat", daemon=True
-                        )
-                        lease_thread.start()
-                try:
-                    return self._run_unlocked(
-                        user_input=user_input,
-                        session_id=normalized_session_id,
-                        user_id=effective_user_id,
-                        account_id=account_id,
-                        credentials=credentials,
-                        platform_params=platform_params,
-                        confirmed=confirmed,
-                        confirmation_payload=confirmation_payload,
-                        creation_blueprint_id=creation_blueprint_id,
-                        creation_blueprint_version=creation_blueprint_version,
-                        granted_permissions=effective_permissions,
-                        account_scope=effective_account_scope,
-                        tenant_id=effective_tenant_id,
-                        cancellation_event=cancellation_event,
-                        event_callback=event_callback,
-                        task_id=task_id,
-                    )
-                finally:
-                    if lease_acquired:
-                        lease_stop.set()
-                        if lease_thread:
-                            lease_thread.join(timeout=0.2)
-                        release_lease(normalized_session_id, self._session_lease_owner)
-        finally:
-            _execution_mode_context.reset(mode_token)
 
     def _run_unlocked(
         self,
@@ -4328,11 +4458,21 @@ class AgentRuntime:
         def observe_trace(event: dict[str, Any]) -> None:
             if durable_run:
                 try:
-                    self._session_manager.append_execution_run_event(run_id, event)
+                    accepted = self._session_manager.append_execution_run_event(run_id, event)
+                    if not accepted:
+                        enqueue = getattr(self._persistence_store, "enqueue_execution_event_repair", None)
+                        if callable(enqueue):
+                            enqueue(run_id, event)
                 except Exception:
                     # Replay persistence is important, but it must never make
                     # a provider operation fail because an observer backend is
                     # temporarily unavailable.
+                    enqueue = getattr(self._persistence_store, "enqueue_execution_event_repair", None)
+                    if callable(enqueue):
+                        try:
+                            enqueue(run_id, event)
+                        except Exception:
+                            logger.warning("failed to enqueue execution event repair", exc_info=True)
                     logger.debug("failed to persist execution event", exc_info=True)
             if callable(event_callback):
                 try:
@@ -4733,7 +4873,14 @@ class AgentRuntime:
         # independently pending Tool confirmations in the execution panel.
         creation_ui: dict[str, Any] = {}
         creation_requested = self.creation_card_builder.is_creation_intent(intent)
-        if creation_requested and not creation_blueprint_id:
+        # Resolve the explicit Tool route before constructing a Blueprint. A
+        # Campaign-only verification Tool deliberately has no descendant
+        # inputs, so expanding a full provider Blueprint here would create a
+        # false blocking dependency on Ad Set/Ad/creative fields.
+        campaign_only_request = self._is_campaign_only_plan(
+            self.intent_router.route(intent, self.registry), intent
+        )
+        if creation_requested and not creation_blueprint_id and not campaign_only_request:
             # An explicit account is still subject to trusted principal and
             # test-account policy even when the business type is ambiguous.
             # Clarification must not become a way to probe or operate outside
@@ -4997,7 +5144,7 @@ class AgentRuntime:
         # used by the execution path. It is returned alongside the normal
         # conversation so users can edit fields or continue in natural
         # language; it never invokes a lookup or Provider API.
-        if not creation_ui:
+        if not creation_ui and not campaign_only_request:
             creation_ui = self.build_creation_ui(intent, tool_plan=tool_plan)
         if account_id and isinstance(creation_ui, dict):
             for card in creation_ui.get("cards", []) or []:

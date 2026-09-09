@@ -1053,6 +1053,11 @@ class TikTokCapability(BaseCapability):
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
         tools = []
         api_client = getattr(self, '_api_client', None)
+        # Keep account resolution provider-owned and reusable by every
+        # registration below.  This closure was previously scoped only to
+        # ``_extended_provider_tools``; Smart+ Tools therefore failed at live
+        # invocation with ``name 'account' is not defined``.
+        account = lambda ctx, data: account_from(ctx, data, "account_id", "advertiser_id")
         # These objectives are composed by the current Upgraded Smart+ chain.
         # Keep the provider-owned set next to the Tool registrations so
         # legacy ad-format Tools cannot become parallel nodes when a complete
@@ -1118,7 +1123,7 @@ class TikTokCapability(BaseCapability):
             platform="tiktok",
             description="创建 TikTok Ads Campaign。",
             input_schema=ToolSchema(**tiktok_campaign_schema()),
-            action="create", resource_type="campaign", intent_types=["create_campaign"],
+            action="create", resource_type="campaign", intent_types=["create_campaign", "create_campaign_only"],
             intent_aliases=[
                 "创建 TikTok 广告系列", "创建 TikTok campaign",
                 "TikTok 销售广告系列", "TikTok 销售 campaign",
@@ -1523,9 +1528,9 @@ class TikTokCapability(BaseCapability):
             provider_required=smart_plus_campaign["provider_required"],
             conditional_rules=smart_plus_campaign["conditional_rules"],
             action="create", resource_type="campaign", resource_id_field="campaign_id",
-            intent_types=["create_smart_plus_campaign", "create_campaign"],
+            intent_types=["create_smart_plus_campaign", "create_campaign", "create_campaign_only"],
             activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
-            traits=["write", "campaign", "smart_plus", "smart_plus/campaign/create"],
+            traits=["write", "campaign", "campaign_only", "smart_plus", "smart_plus/campaign/create"],
             write=True, live_support=True, provider_api_version="v1.3",
             readback_tool="tiktok_get_campaign",
             argument_builder=lambda ctx, data: ((account(ctx, data), {
@@ -1546,6 +1551,7 @@ class TikTokCapability(BaseCapability):
             required=["account_id"] + smart_plus_adgroup["required"],
             provider_required=smart_plus_adgroup["provider_required"],
             provider_any_of=smart_plus_adgroup["provider_any_of"],
+            conditional_rules=smart_plus_adgroup["conditional_rules"],
             action="create", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
             intent_types=["create_smart_plus_adgroup", "create_campaign", "create_adgroup"],

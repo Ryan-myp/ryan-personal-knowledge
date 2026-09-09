@@ -145,6 +145,20 @@ def test_tiktok_image_upload_builds_official_multipart_payload(tmp_path):
     assert calls[0][3]["image_file"][1].closed is True
 
 
+def test_tiktok_smart_plus_cta_catalog_rejects_provider_invalid_labels():
+    client = TikTokAPIClient({"access_token": "test"})
+    with pytest.raises(ValueError, match="call_to_action"):
+        client.create_smart_plus_ad(
+            "123", "456", "789",
+            {
+                "ad_name": "Invalid CTA", "ad_format": "SINGLE_VIDEO",
+                "video_id": "video-1", "landing_page_url": "https://example.test",
+                "call_to_action": "INSTALL", "operation_status": "DISABLE",
+            },
+            live=True,
+        )
+
+
 def test_tiktok_video_upload_supports_provider_url_without_local_file():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
@@ -1278,6 +1292,43 @@ def test_meta_creation_options_are_forwarded_to_provider_payloads():
     }, live=True)
     assert endpoints[-1] == ("POST", "/act_m1/ads")
     assert json.loads(payloads[-1]["creative"]) == {"creative_id": "cr1"}
+
+
+def test_meta_child_lookups_use_parent_edges_and_filter_mixed_rows():
+    """Read-back must stay scoped to the requested campaign/ad set.
+
+    Some Graph API versions ignore a parent ID sent as a query parameter on
+    the account edge.  The client therefore uses the parent node edge and
+    keeps a local filter as a defensive boundary for provider proxies.
+    """
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, extra_params=None, **kwargs):
+        calls.append((method, endpoint, extra_params))
+        if endpoint.endswith("/adsets"):
+            return {
+                "data": [
+                    {"id": "as1", "campaign": {"id": "c1"}},
+                    {"id": "as-other", "campaign": {"id": "other"}},
+                ]
+            }
+        return {
+            "data": [
+                {"id": "ad1", "adset_id": "as1"},
+                {"id": "ad-other", "adset_id": "other"},
+            ]
+        }
+
+    client.request = request
+    assert client.list_adsets("m1", "c1") == [
+        {"id": "as1", "campaign": {"id": "c1"}}
+    ]
+    assert client.list_ads("m1", "as1") == [
+        {"id": "ad1", "adset_id": "as1"}
+    ]
+    assert calls[0][0:2] == ("GET", "/c1/adsets")
+    assert calls[1][0:2] == ("GET", "/as1/ads")
 
 
 def test_meta_graph_payload_normalizes_categories_and_nested_updates():
@@ -2715,6 +2766,8 @@ def test_tiktok_upgraded_smart_plus_uses_current_three_step_contract():
     assert seen[2][2]["creative_list"][0]["creative_info"]["tiktok_item_id"] == "item-1"
     assert seen[2][2]["ad_configuration"] == {
         "call_to_action_id": "cta-1",
+        "identity_type": "AUTH_CODE",
+        "identity_id": "identity-1",
         "tracking_info": {
             "tracking_app_id": "app-1",
             "click_tracking_url": "https://tracker.example/click",
@@ -2781,6 +2834,103 @@ def test_tiktok_smart_plus_rejects_provider_invalid_budget_and_keeps_tracking_op
     assert payload["landing_page_url_list"] == [{"landing_page_url": "https://example.com/landing"}]
     assert "landing_page_url" not in payload["creative_list"][0]["creative_info"]
     assert "tracking_info" not in payload["ad_configuration"]
+
+
+def test_tiktok_smart_plus_catalog_context_is_normalized_and_forwarded():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda method, endpoint, params=None, **kwargs: {
+        "data": {"list": [{
+            "catalog_id": "catalog-1",
+            "name": "Approved catalog",
+            "bc_info": {"bc_id": "bc-1"},
+        }]}
+    }
+
+    catalogs = client.list_catalogs("123")
+    assert catalogs[0]["catalog_authorized_bc_id"] == "bc-1"
+    assert catalogs[0]["authorized_bc_id"] == "bc-1"
+
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, data))
+        or {"code": 0, "data": {"adgroup_id": "group-1"}}
+    )
+    client.create_smart_plus_adgroup("123", "campaign-1", {
+        "objective_type": "PRODUCT_SALES",
+        "adgroup_name": "Catalog app group",
+        "promotion_type": "APP_ANDROID",
+        "optimization_goal": "VALUE",
+        "bid_type": "BID_TYPE_NO_BID",
+        "billing_event": "OCPM",
+        "schedule_type": "SCHEDULE_FROM_NOW",
+        "schedule_start_time": "2026-09-09 00:00:00",
+        "location_ids": ["1643084"],
+        "catalog_id": "catalog-1",
+        "catalog_authorized_bc_id": "bc-1",
+    }, live=True)
+    assert calls[0][2]["catalog_id"] == "catalog-1"
+    assert calls[0][2]["catalog_authorized_bc_id"] == "bc-1"
+
+    with pytest.raises(ValueError, match="catalog_authorized_bc_id"):
+        client.create_smart_plus_adgroup("123", "campaign-1", {
+            "objective_type": "PRODUCT_SALES",
+            "adgroup_name": "Missing BC",
+            "promotion_type": "APP_ANDROID",
+            "optimization_goal": "VALUE",
+            "bid_type": "BID_TYPE_NO_BID",
+            "billing_event": "OCPM",
+            "schedule_type": "SCHEDULE_FROM_NOW",
+            "schedule_start_time": "2026-09-09 00:00:00",
+            "location_ids": ["1643084"],
+            "catalog_id": "catalog-1",
+        }, live=True)
+
+
+def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_capability().register_tools()
+    }
+    campaign_schema = definitions["tiktok_smart_plus_create_campaign"].input_schema
+    errors = validate_tool_input(
+        campaign_schema,
+        {
+            "account_id": "123",
+            "campaign_name": "Product sales",
+            "objective_type": "PRODUCT_SALES",
+            "sales_destination": "APP",
+            "catalog_enabled": False,
+        },
+        include_provider_contract=True,
+    )
+    assert any("catalog_enabled" in error for error in errors)
+
+    adgroup_schema = definitions["tiktok_smart_plus_create_adgroup"].input_schema
+    errors = validate_tool_input(
+        adgroup_schema,
+        {
+            "account_id": "123", "campaign_id": "campaign-1",
+            "objective_type": "PRODUCT_SALES",
+            "adgroup_name": "Catalog group", "promotion_type": "APP_ANDROID",
+            "optimization_goal": "VALUE", "bid_type": "BID_TYPE_NO_BID",
+            "billing_event": "OCPM", "schedule_type": "SCHEDULE_FROM_NOW",
+            "schedule_start_time": "2026-09-09 00:00:00",
+            "location_ids": ["1643084"], "catalog_id": "catalog-1",
+        },
+        include_provider_contract=True,
+    )
+    assert any("catalog_authorized_bc_id" in error for error in errors)
+
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: pytest.fail(
+        "provider must not be called when the video cover is missing"
+    )
+    with pytest.raises(ValueError, match="image_web_uris"):
+        client.create_smart_plus_ad("123", "campaign-1", "group-1", {
+            "ad_name": "Video without cover", "ad_format": "SINGLE_VIDEO",
+            "video_id": "video-1", "identity_type": "AUTH_CODE",
+            "identity_id": "identity-1", "call_to_action_id": "cta-1",
+        }, live=True)
 
 
 def test_tiktok_smart_plus_resolves_image_ids_only_at_live_provider_boundary():
@@ -3541,13 +3691,12 @@ def test_meta_catalog_ad_builds_template_story_spec():
     creative = json.loads(data["creative"])
     assert creative["object_story_spec"]["page_id"] == "page-1"
     assert creative["object_story_spec"]["template_data"] == {
-        "product_set_id": "set-1",
         "link": "https://example.test/shop",
         "message": "Shop now",
         "name": "Summer collection",
         "description": "",
         "call_to_action": {"type": "SHOP_NOW"},
-        "format_option": "CAROUSEL",
+        "format_option": "carousel_images_multi_items",
     }
 
     with pytest.raises(ValueError, match="page_id, product_set_id and link"):
@@ -4171,6 +4320,32 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     assert campaign["networkSettings"]["targetGoogleSearch"] is True
     assert campaign["networkSettings"]["targetSearchNetwork"] is True
     assert campaign["targetRoas"] == {"targetRoas": 3.5}
+
+
+def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation))
+        or {"data": {"results": [{"resourceName": f"customers/123/{resource}/1"}]}}
+    )
+
+    client.create_campaign(
+        "Retail PMax", "PERFORMANCE_MAX", "MAXIMIZE_CONVERSIONS", 20,
+        campaign_goal_setting={"optimization_goal_types": ["OPTIMIZE_CONVERSION_VALUE"]},
+        shopping_setting={"merchant_id": 115791065, "campaign_priority": 0},
+        live=True,
+    )
+    assert operations[1][1]["create"]["shoppingSetting"] == {
+        "merchantId": 115791065,
+    }
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_capability().register_tools()
+    }
+    setting = definitions["google_create_campaign"].input_schema.properties["shopping_setting"]
+    assert setting["ui_visible_when"]["in"] == ["SHOPPING", "PERFORMANCE_MAX"]
 
     operations.clear()
     client.create_campaign(

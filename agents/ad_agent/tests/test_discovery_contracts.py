@@ -370,6 +370,31 @@ def test_meta_campaign_only_route_does_not_expand_hierarchy():
     ]
 
 
+def test_campaign_only_routes_are_provider_declared_and_do_not_expand_hierarchy():
+    cases = [
+        ("meta", create_meta_capability(), "meta_create_campaign"),
+        ("google-ads", create_google_capability(), "google_create_campaign"),
+        ("tiktok", create_tiktok_capability(), "tiktok_smart_plus_create_campaign"),
+    ]
+    for platform, capability, expected_tool in cases:
+        runtime = AgentRuntime(require_llm=False)
+        runtime.register_capability(capability)
+        params = {
+            "name": "campaign-only",
+            "objective": "OUTCOME_TRAFFIC" if platform == "meta" else "TRAFFIC",
+            "objective_type": "TRAFFIC",
+            "special_ad_categories": ["NONE"],
+            "status": "PAUSED",
+        }
+        intent = ParsedIntent(
+            "create_campaign_only", "create campaign only", [platform],
+            platform_params={platform: params},
+        )
+        routed = runtime.intent_router.route(intent, runtime.registry)
+        assert [definition.name for definition in routed[platform]] == [expected_tool]
+        assert runtime._is_campaign_only_plan(routed, intent)
+
+
 def test_resource_results_follow_declared_parent_fields_across_channels():
     cases = [
         ("meta", "meta_create_campaign", "meta_create_adset", "campaign_id", "c-meta", "adset_id", "s-meta"),

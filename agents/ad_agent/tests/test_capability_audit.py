@@ -124,11 +124,23 @@ def test_capability_audit_reports_scoped_official_inventory_separately_from_tool
             for entry in inventory["covered_entries"] + inventory["gaps_entries"]
         )
 
-    # Newly implemented resources must move from the explicit planned gap
-    # list into covered entries without changing the scoped-not-exhaustive
-    # semantics of the provider inventory.
-    google_covered = report["platforms"]["google-ads"]["official_inventory"]["covered_entries"]
-    assert any(entry["resource"] == "feed" for entry in google_covered)
+    # Legacy Google Feed/FeedItem resources are intentionally not executable
+    # in v24. They remain visible as an explicit planned gap rather than being
+    # counted as covered because compatibility methods still exist in the
+    # client.
+    google_inventory = report["platforms"]["google-ads"]["official_inventory"]
+    google_covered = google_inventory["covered_entries"]
+    assert any(
+        entry["resource"] == "feed" for entry in google_inventory["gaps_entries"]
+    )
+    assert any(
+        entry["resource"] == "feed_item"
+        for entry in report["platforms"]["google-ads"]["api_surface_planned"]
+    )
+    assert not any(
+        definition.name == "google_list_feeds"
+        for definition in build_runtime().registry.list_all()
+    )
     assert any(
         entry["resource"] == "conversion_goal"
         for entry in google_covered
@@ -149,7 +161,7 @@ def test_creation_contract_audit_closes_blueprint_and_lookup_sources_without_io(
     report = audit_creation_contracts(build_creation_runtime())
 
     assert report["issues"] == []
-    assert report["blueprint_count"] == 26
+    assert report["blueprint_count"] == 28
     assert report["creation_tool_count"] > 0
     assert report["lookup_contract_count"] > 0
     assert not report["unresolved_fields"]

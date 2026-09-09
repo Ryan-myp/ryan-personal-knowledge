@@ -1,0 +1,127 @@
+{
+  "id": "dv360.line_item",
+  "version": "1.0.0",
+  "provider": "dv360",
+  "ad_format": "LINE_ITEM",
+  "title": "DV360 Line Item",
+  "description": "在已存在的 Insertion Order 下创建 Line Item，覆盖投放类型、目标、预算、排期和定向表达式。",
+  "match_terms": ["Line Item", "DV360 线性项", "创建 Line Item", "广告投放单元"],
+  "selector": {
+    "dimension": "ad_format",
+    "field": "line_item.type",
+    "values": ["DISPLAY_DEFAULT", "VIDEO_DEFAULT", "AUDIO_DEFAULT", "CONNECTED_TV_DEFAULT", "YOUTUBE_AND_PARTNERS_VIDEO"],
+    "label": "Line Item 类型",
+    "options": [
+      {"value": "DISPLAY_DEFAULT", "label": "Display"},
+      {"value": "VIDEO_DEFAULT", "label": "Video"},
+      {"value": "AUDIO_DEFAULT", "label": "Audio"},
+      {"value": "CONNECTED_TV_DEFAULT", "label": "Connected TV"},
+      {"value": "YOUTUBE_AND_PARTNERS_VIDEO", "label": "YouTube & Partners Video"}
+    ]
+  },
+  "tools": ["dv360_create_line_item"],
+  "resources": ["insertion_order", "line_item"],
+  "fields": [
+    {
+      "path": "line_item.io_id",
+      "tool_ref": "dv360_create_line_item.io_id",
+      "label": "所属 Insertion Order",
+      "description": "从当前 DV360 广告客户下选择已有 IO。",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "dv360_list_ios",
+      "lookup_result_key": "ios",
+      "selection_value_fields": ["id", "io_id"],
+      "selection_label_fields": ["name", "io_name", "id"]
+    },
+    {
+      "path": "line_item.name",
+      "tool_ref": "dv360_create_line_item.name",
+      "label": "Line Item 名称",
+      "required": true,
+      "default_strategy": "generated_name"
+    },
+    {
+      "path": "line_item.type",
+      "tool_ref": "dv360_create_line_item.type",
+      "label": "Line Item 类型",
+      "required": true,
+      "source": "enum",
+      "options": ["DISPLAY_DEFAULT", "VIDEO_DEFAULT", "AUDIO_DEFAULT", "CONNECTED_TV_DEFAULT", "YOUTUBE_AND_PARTNERS_VIDEO"],
+      "option_labels": {
+        "DISPLAY_DEFAULT": "Display",
+        "VIDEO_DEFAULT": "Video",
+        "AUDIO_DEFAULT": "Audio",
+        "CONNECTED_TV_DEFAULT": "Connected TV",
+        "YOUTUBE_AND_PARTNERS_VIDEO": "YouTube & Partners Video"
+      },
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "line_item.goal",
+      "tool_ref": "dv360_create_line_item.goal",
+      "label": "投放目标",
+      "description": "至少填写 goal_type；目标 CPA/ROAS 仅在对应出价策略下补充。",
+      "required": true,
+      "presentation": "object_editor"
+    },
+    {
+      "path": "line_item.targeting",
+      "tool_ref": "dv360_create_line_item.targeting",
+      "label": "定向表达式",
+      "description": "DV360 Targeting API 对象；当前保留为受约束的高级 JSON，不自动猜测定向。",
+      "required": true,
+      "presentation": "advanced_json",
+      "json_shape": "object",
+      "advanced": true
+    },
+    {
+      "path": "line_item.budget",
+      "tool_ref": "dv360_create_line_item.budget",
+      "label": "预算",
+      "required": true
+    },
+    {
+      "path": "line_item.start_date",
+      "tool_ref": "dv360_create_line_item.start_date",
+      "label": "开始日期",
+      "required": true
+    },
+    {
+      "path": "line_item.end_date",
+      "tool_ref": "dv360_create_line_item.end_date",
+      "label": "结束日期",
+      "required": true
+    },
+    {
+      "path": "line_item.status",
+      "tool_ref": "dv360_create_line_item.status",
+      "label": "初始状态",
+      "source": "enum",
+      "options": ["DRAFT", "ACTIVE", "PAUSED", "ARCHIVED"],
+      "default": "DRAFT",
+      "default_reason": "默认以草稿状态创建，避免未完成定向和素材准备时进入投放。"
+    },
+    {
+      "path": "line_item.bid_strategy",
+      "tool_ref": "dv360_create_line_item.bid_strategy",
+      "label": "出价策略",
+      "source": "enum",
+      "options": ["MANUAL_CPM", "MANUAL_CPC", "MAXIMIZE_CONVERSIONS", "TARGET_CPA", "TARGET_ROAS"],
+      "option_labels": {
+        "MANUAL_CPM": "手动 CPM",
+        "MANUAL_CPC": "手动 CPC",
+        "MAXIMIZE_CONVERSIONS": "最大化转化",
+        "TARGET_CPA": "目标 CPA",
+        "TARGET_ROAS": "目标 ROAS"
+      }
+    },
+    {
+      "path": "line_item.bid_amount",
+      "tool_ref": "dv360_create_line_item.bid_amount",
+      "label": "人工出价",
+      "required_when": {"field": "line_item.bid_strategy", "in": ["MANUAL_CPM", "MANUAL_CPC"]}
+    }
+  ],
+  "rules": []
+}

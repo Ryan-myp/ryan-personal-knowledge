@@ -82,6 +82,10 @@ def test_task_api_rejects_credentials_and_enforces_principal_scope(monkeypatch):
                 "user_id": "owner", "tenant_id": "tenant-a",
                 "permissions": ["ads.read", "ads.plan"],
             },
+            "reader-key": {
+                "user_id": "reader", "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            },
             "other-key": {
                 "user_id": "other", "tenant_id": "tenant-b",
                 "permissions": ["ads.read", "ads.plan"],
@@ -90,6 +94,12 @@ def test_task_api_rejects_credentials_and_enforces_principal_scope(monkeypatch):
     )
 
     with TestClient(api_server.app) as client:
+        denied = client.post(
+            "/tasks", headers={"X-API-Key": "reader-key"},
+            json={"payload": {"user_input": "只读查询"}},
+        )
+        assert denied.status_code == 403
+
         rejected = client.post(
             "/tasks", headers={"X-API-Key": "owner-key"},
             json={

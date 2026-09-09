@@ -2,8 +2,10 @@
 capabilities/dv360/capability.py - DV360 Capability 定义
 """
 import logging
+from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
+from ...core.blueprint import load_blueprint_file
 from ..base import BaseCapability, CampaignUpdateHandler
 from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import (
@@ -54,6 +56,16 @@ class DV360Capability(BaseCapability):
         "get_report_result": ["dv360_get_report_result", "dv360_get_line_item_report"],
         "get_line_item_report": ["dv360_get_line_item_report"],
     }
+
+    def get_creation_blueprints(self) -> list:
+        """Load the verified IO and Line Item creation surfaces.
+
+        DV360 Campaign creation is intentionally not represented here because
+        this Capability does not expose a Campaign create Tool. The guided
+        surfaces start from an existing, explicitly selected parent.
+        """
+        blueprint_dir = Path(__file__).with_name("blueprints")
+        return [load_blueprint_file(path) for path in sorted(blueprint_dir.glob("*.json"))]
 
     def _extended_provider_tools(self, client):
         """Expose DV360 advertiser, lifecycle and asynchronous report APIs."""

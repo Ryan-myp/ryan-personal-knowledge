@@ -3881,32 +3881,49 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 if key in allowed_app_fields and value is not None
             })
 
-        if advertising_channel_type == "SHOPPING" and shopping_setting is not None:
+        # Retail Performance Max campaigns can also be bound to Merchant
+        # Center.  Listing-group filters are only meaningful when this
+        # campaign-level context exists; do not silently discard it for
+        # PMax and then report a misleadingly successful non-retail campaign.
+        if advertising_channel_type in {"SHOPPING", "PERFORMANCE_MAX"} and shopping_setting is not None:
             if not isinstance(shopping_setting, dict):
                 raise ValueError("shopping_setting must be an object")
             merchant_id = shopping_setting.get("merchant_id")
-            priority = shopping_setting.get(
-                "campaign_priority", shopping_setting.get("priority")
-            )
             if merchant_id in (None, ""):
                 raise ValueError("shopping_setting.merchant_id is required")
-            if priority in (None, ""):
-                raise ValueError("shopping_setting.campaign_priority is required")
             try:
                 merchant_id = int(merchant_id)
-                priority = int(priority)
             except (TypeError, ValueError) as exc:
                 raise ValueError(
-                    "shopping_setting.merchant_id and campaign_priority must be integers"
+                    "shopping_setting.merchant_id must be an integer"
                 ) from exc
-            if merchant_id <= 0 or priority not in {0, 1, 2}:
+            if merchant_id <= 0:
                 raise ValueError(
-                    "shopping_setting.merchant_id must be positive and campaign_priority must be 0, 1 or 2"
+                    "shopping_setting.merchant_id must be positive"
                 )
             shopping_payload = {
                 "merchant_id": merchant_id,
-                "campaign_priority": priority,
             }
+            # Standard Shopping requires campaignPriority.  Retail PMax
+            # accepts the Merchant Center link but rejects that field in the
+            # current v24 context, so keep the two provider contexts distinct.
+            if advertising_channel_type == "SHOPPING":
+                priority = shopping_setting.get(
+                    "campaign_priority", shopping_setting.get("priority")
+                )
+                if priority in (None, ""):
+                    raise ValueError("shopping_setting.campaign_priority is required")
+                try:
+                    priority = int(priority)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        "shopping_setting.campaign_priority must be an integer"
+                    ) from exc
+                if priority not in {0, 1, 2}:
+                    raise ValueError(
+                        "shopping_setting.campaign_priority must be 0, 1 or 2"
+                    )
+                shopping_payload["campaign_priority"] = priority
             for key in (
                 "feed_label", "enable_local", "use_vehicle_inventory",
                 "advertising_partner_ids", "ignore_brand_exclusion_in_shopping_ads",

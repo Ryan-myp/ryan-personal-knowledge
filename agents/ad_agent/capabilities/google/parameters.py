@@ -935,7 +935,7 @@ def google_campaign_schema() -> dict[str, Any]:
             },
             "shopping_setting": {
                 **google_shopping_setting_schema(),
-                **_ui_equals("advertising_channel_type", "SHOPPING"),
+                **_ui_when("advertising_channel_type", "SHOPPING", "PERFORMANCE_MAX"),
             },
             "campaign_goal_setting": {
                 **google_campaign_goal_setting_schema(),

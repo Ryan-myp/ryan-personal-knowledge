@@ -1,5 +1,5 @@
 {
-  "digest": "91f0960460e34c9429e41816b22c0e86cacc15be3b9e064a5ed80dca072a98ad",
+  "digest": "3ae51fb3becfc6ccee1ab9d10f00107a7fc84e91bd788ee0043b35a3a672f58b",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2227,8 +2227,8 @@
       ]
     },
     "google-ads": {
-      "digest": "1d0670f6c242dfc92b4c86cd6eb1baca022c3f3a4827b7c9b025b00e62216ea6",
-      "tool_count": 113,
+      "digest": "a54b0b427db413e113ca0fc70f199d3f285b770b56e5c5804b12457be101fbae",
+      "tool_count": 103,
       "tools": [
         {
           "action": "create",
@@ -4382,7 +4382,7 @@
         {
           "action": "create",
           "activation_rules": [],
-          "contract_hash": "12c7e61c584c12c3bb5a4e91e46f4ec7e373dff724c4aa6fa935b7ff8d7b7dbb",
+          "contract_hash": "be27bc49ce96956a3f2ccc42b762cf3e7f7d801e37b11c0eb9aed95fe048b6dd",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
@@ -5166,8 +5166,11 @@
                 ],
                 "type": "object",
                 "ui_visible_when": {
-                  "equals": "SHOPPING",
-                  "field": "advertising_channel_type"
+                  "field": "advertising_channel_type",
+                  "in": [
+                    "SHOPPING",
+                    "PERFORMANCE_MAX"
+                  ]
                 }
               },
               "start_date": {
@@ -5398,7 +5401,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "write",
-            "campaign"
+            "campaign",
+            "campaign_only"
           ]
         },
         {
@@ -7533,307 +7537,6 @@
           "traits": [
             "write",
             "experiment"
-          ]
-        },
-        {
-          "action": "create",
-          "activation_rules": [],
-          "contract_hash": "69ced7ff0d3c6529c92cca2b72432e432af61274ab02d19ee975ad51adf6254f",
-          "contract_version": "1.4.0",
-          "description": "创建 Google Ads Feed；默认仅生成 dry-run 计划。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [
-              "name"
-            ],
-            "required": [
-              "customer_id",
-              "name"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "create_feed"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "google_create_feed",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "feed_id",
-          "resource_type": "feed",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "medium",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "feed"
-          ]
-        },
-        {
-          "action": "create",
-          "activation_rules": [],
-          "contract_hash": "a6bc4f939eadebcd57ec300faf4d7cc93de1f34585f405e81bfc7869d07dee69",
-          "contract_version": "1.4.0",
-          "description": "创建 Google Ads FeedItem；默认仅生成 dry-run 计划。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [
-              "feed_id",
-              "attribute_values"
-            ],
-            "required": [
-              "customer_id",
-              "feed_id",
-              "attribute_values"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "create_feed_item"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "google_create_feed_item",
-          "parent_resource_id_field": "feed_id",
-          "parent_resource_type": "feed",
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "feed_item_id",
-          "resource_type": "feed_item",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "medium",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "feed",
-            "feed_item"
           ]
         },
         {
@@ -11703,301 +11406,6 @@
         {
           "action": "delete",
           "activation_rules": [],
-          "contract_hash": "b5b537e11db951ae84684ffb6d558e7ad62f9141769f7c168e551b048eefa53d",
-          "contract_version": "1.4.0",
-          "description": "删除 Google Ads Feed；默认仅生成 dry-run 计划。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [],
-            "required": [
-              "customer_id",
-              "feed_id"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "delete_feed"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "google_delete_feed",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "feed_id",
-          "resource_type": "feed",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "medium",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "feed"
-          ]
-        },
-        {
-          "action": "delete",
-          "activation_rules": [],
-          "contract_hash": "7dae45218eff4d1d8d1947881533848de7cba39667f96ecffce022ce880129bc",
-          "contract_version": "1.4.0",
-          "description": "删除 Google Ads FeedItem；默认仅生成 dry-run 计划。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [],
-            "required": [
-              "customer_id",
-              "feed_item_resource_name"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "delete_feed_item"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "google_delete_feed_item",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "feed_item_resource_name",
-          "resource_type": "feed_item",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "medium",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "feed",
-            "feed_item"
-          ]
-        },
-        {
-          "action": "delete",
-          "activation_rules": [],
           "contract_hash": "5b7239125cd2b0d7c5a3fcaf67a8c4f97b97836190bb6b9b19289bcac5502af3",
           "contract_version": "1.4.0",
           "description": "删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
@@ -13563,302 +12971,6 @@
           "traits": [
             "read",
             "experiment"
-          ]
-        },
-        {
-          "action": "get",
-          "activation_rules": [],
-          "contract_hash": "b5b537e11db951ae84684ffb6d558e7ad62f9141769f7c168e551b048eefa53d",
-          "contract_version": "1.4.0",
-          "description": "查询 Google Ads Feed 详情。",
-          "effect_class": "read",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [],
-            "required": [
-              "customer_id",
-              "feed_id"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "get_feed"
-          ],
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "google_get_feed",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": "feed_id",
-          "resource_type": "feed",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "feed"
-          ]
-        },
-        {
-          "action": "get",
-          "activation_rules": [],
-          "contract_hash": "2933e11e35a75fb26a9110f127f7926b8829c38c2d9155558b76b4990b8b8c62",
-          "contract_version": "1.4.0",
-          "description": "查询 Google Ads FeedItem 详情。",
-          "effect_class": "read",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [],
-            "required": [
-              "customer_id",
-              "feed_id",
-              "feed_item_resource_name"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "get_feed_item"
-          ],
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "google_get_feed_item",
-          "parent_resource_id_field": "feed_id",
-          "parent_resource_type": "feed",
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": "feed_item_resource_name",
-          "resource_type": "feed_item",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "feed",
-            "feed_item"
           ]
         },
         {
@@ -15504,300 +14616,6 @@
           "traits": [
             "read",
             "experiment"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "contract_hash": "b5b537e11db951ae84684ffb6d558e7ad62f9141769f7c168e551b048eefa53d",
-          "contract_version": "1.4.0",
-          "description": "查询 Google Ads FeedItem 列表。",
-          "effect_class": "read",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [],
-            "required": [
-              "customer_id",
-              "feed_id"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "list_feed_items"
-          ],
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "google_list_feed_items",
-          "parent_resource_id_field": "feed_id",
-          "parent_resource_type": "feed",
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "feed_item",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "feed",
-            "feed_item"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "contract_hash": "47da568affb8dc51682e2c173781d9a1163ac3f2e31e7027d9fb39ec319fe645",
-          "contract_version": "1.4.0",
-          "description": "查询 Google Ads Feed 列表。",
-          "effect_class": "read",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [],
-            "required": [
-              "customer_id"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "list_feeds"
-          ],
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "google_list_feeds",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "feed",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "feed"
           ]
         },
         {
@@ -18106,270 +16924,6 @@
         {
           "action": "update",
           "activation_rules": [],
-          "contract_hash": "d5ad9923cfb221b8044519d0cb97e4b481c8a12aa3b619444218731372002182",
-          "contract_version": "1.4.0",
-          "description": "更新 Google Ads Feed；默认仅生成 dry-run 计划。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "attribute_values": {
-                "description": "FeedItem attribute values advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                  "source": "google_feed_item_attribute_payload",
-                  "title": "FeedItem 属性值"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "attributes": {
-                "description": "Feed attribute definitions advanced payload",
-                "items": {
-                  "additionalProperties": true,
-                  "type": "object"
-                },
-                "manual_entry": {
-                  "instructions": "Feed 属性的 name、type 等字段必须与 Google FeedAttribute 版本契约一致；请使用 Google 返回或已审核的对象数组。",
-                  "source": "google_feed_attribute_payload",
-                  "title": "Feed 属性定义"
-                },
-                "presentation": "advanced_json",
-                "type": "array"
-              },
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_id": {
-                "description": "Google Feed ID",
-                "lookup_result_key": "feeds",
-                "lookup_tool": "google_list_feeds",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "id",
-                  "feed_id",
-                  "resource_name"
-                ],
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "limit": {
-                "description": "Maximum number of rows",
-                "maximum": 10000,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "name": {
-                "description": "Feed name",
-                "maxLength": 255,
-                "minLength": 1,
-                "type": "string"
-              },
-              "origin": {
-                "description": "Feed origin",
-                "enum": [
-                  "UNKNOWN",
-                  "USER",
-                  "GOOGLE"
-                ],
-                "type": "string"
-              },
-              "updates": {
-                "additionalProperties": true,
-                "type": "object"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [
-              "feed_id",
-              "updates"
-            ],
-            "required": [
-              "customer_id",
-              "feed_id",
-              "updates"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "update_feed"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "google_update_feed",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "feed_id",
-          "resource_type": "feed",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "medium",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "feed"
-          ]
-        },
-        {
-          "action": "update",
-          "activation_rules": [],
-          "contract_hash": "32b8382b2e4c50a7a5d6603e58f7abfdbc2e6486c1e24cb134aeb51d334b2e36",
-          "contract_version": "1.4.0",
-          "description": "更新 Google Ads FeedItem；默认仅生成 dry-run 计划。",
-          "effect_class": "write",
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "customer_id": {
-                "description": "Google Ads customer ID",
-                "type": "string"
-              },
-              "feed_item_resource_name": {
-                "description": "FeedItem resource name",
-                "lookup_dependencies": [
-                  {
-                    "input_field": "feed_id",
-                    "label": "所属 Feed",
-                    "required": true,
-                    "value_path": "feed_id"
-                  }
-                ],
-                "lookup_result_key": "feed_items",
-                "lookup_tool": "google_list_feed_items",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "name",
-                  "feed_item_name",
-                  "resource_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "resource_name",
-                  "feed_item_resource_name",
-                  "id"
-                ],
-                "type": "string"
-              },
-              "updates": {
-                "additionalProperties": false,
-                "properties": {
-                  "attribute_values": {
-                    "description": "FeedItem attribute values advanced payload",
-                    "items": {
-                      "additionalProperties": true,
-                      "type": "object"
-                    },
-                    "manual_entry": {
-                      "instructions": "属性值必须引用目标 Feed 的 attribute_id，并使用与 FeedAttribute 类型匹配的值字段；请按已审核的 Google payload 填写。",
-                      "source": "google_feed_item_attribute_payload",
-                      "title": "FeedItem 属性值"
-                    },
-                    "presentation": "advanced_json",
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "attribute_values"
-                ],
-                "type": "object"
-              }
-            },
-            "provider_any_of": [],
-            "provider_required": [
-              "feed_item_resource_name",
-              "updates"
-            ],
-            "required": [
-              "customer_id",
-              "feed_item_resource_name",
-              "updates"
-            ],
-            "type": "object"
-          },
-          "intent_aliases": [],
-          "intent_types": [
-            "update_feed_item"
-          ],
-          "live_support": false,
-          "max_output_bytes": 1000000,
-          "name": "google_update_feed_item",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "platform": "google-ads",
-          "provider_api_version": "v24",
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "unsafe",
-          "required_permissions": [
-            "ads.plan"
-          ],
-          "resource_id_field": "feed_item_resource_name",
-          "resource_type": "feed_item",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "medium",
-          "skill": "google-ads-api-expert",
-          "timeout_seconds": 30.0,
-          "traits": [
-            "write",
-            "feed",
-            "feed_item"
-          ]
-        },
-        {
-          "action": "update",
-          "activation_rules": [],
           "contract_hash": "3ef3463a7c98d2aba4246786258c4c08857f4619a260a8b3bff90bb07509ddd6",
           "contract_version": "1.4.0",
           "description": "更新 Google Ad Group 关键词状态或 CPC 出价；默认仅生成 dry-run 计划。",
@@ -18815,7 +17369,7 @@
       ]
     },
     "meta": {
-      "digest": "fc26d6db43909d06eb7c3c162e3f368aa5e1f50776be9d45438f42bcc139b414",
+      "digest": "0fb956b3f0d0b221d547661394f1635b519eb51f5e64818a94b916487298f28d",
       "tool_count": 78,
       "tools": [
         {
@@ -21562,7 +20116,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "write",
-            "campaign"
+            "campaign",
+            "campaign_only"
           ]
         },
         {
@@ -29452,7 +28007,7 @@
       ]
     },
     "tiktok": {
-      "digest": "908462aa18373f82b1968ee855842f31f3ca59d5bd8491dc0ecc5674d7327798",
+      "digest": "36abf3cc7d64e91e53cf73e3fe73cc8c12c1e6258d4e652a77dfe4e0d4c70b9d",
       "tool_count": 90,
       "tools": [
         {
@@ -32810,7 +31365,8 @@
             "TikTok 流量 campaign"
           ],
           "intent_types": [
-            "create_campaign"
+            "create_campaign",
+            "create_campaign_only"
           ],
           "live_support": true,
           "max_output_bytes": 1000000,
@@ -42405,7 +40961,7 @@
               ]
             }
           ],
-          "contract_hash": "0da7dcdfaa54f962e7f61fa4a7cc6c9e83c8a3b09d8d3617f2c6e8c01f866687",
+          "contract_hash": "a2918b484d0a8343ae14fd9bfffc257edba61bdfed4aa1d7ea38cb6857982bfc",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -42556,7 +41112,46 @@
                 "type": "string"
               },
               "call_to_action": {
-                "description": "CTA enum value, for example SHOP_NOW or LEARN_MORE",
+                "description": "TikTok Smart+ CTA enum value",
+                "enum": [
+                  "APPLY_NOW",
+                  "BOOK_NOW",
+                  "CALL_NOW",
+                  "CHECK_AVAILABILITY",
+                  "CONTACT_US",
+                  "DOWNLOAD_NOW",
+                  "EXPERIENCE_NOW",
+                  "GET_QUOTE",
+                  "GET_SHOWTIMES",
+                  "GET_TICKETS_NOW",
+                  "INSTALL_NOW",
+                  "INTERESTED",
+                  "JOIN_THIS_HASHTAG",
+                  "LEARN_MORE",
+                  "LISTEN_NOW",
+                  "ORDER_NOW",
+                  "PLAY_GAME",
+                  "PREORDER_NOW",
+                  "READ_MORE",
+                  "SEND_MESSAGE",
+                  "SHOOT_WITH_THIS_EFFECT",
+                  "SHOP_NOW",
+                  "SIGN_UP",
+                  "SUBSCRIBE",
+                  "VIEW_NOW",
+                  "VIEW_PROFILE",
+                  "VIEW_VIDEO_WITH_THIS_EFFECT",
+                  "VISIT_STORE",
+                  "WATCH_LIVE",
+                  "WATCH_NOW"
+                ],
+                "option_aliases": {
+                  "INSTALL_NOW": [
+                    "install",
+                    "安装",
+                    "安装应用"
+                  ]
+                },
                 "type": "string"
               },
               "call_to_action_id": {
@@ -42575,6 +41170,45 @@
                   "properties": {
                     "call_to_action": {
                       "description": "CTA enum value",
+                      "enum": [
+                        "APPLY_NOW",
+                        "BOOK_NOW",
+                        "CALL_NOW",
+                        "CHECK_AVAILABILITY",
+                        "CONTACT_US",
+                        "DOWNLOAD_NOW",
+                        "EXPERIENCE_NOW",
+                        "GET_QUOTE",
+                        "GET_SHOWTIMES",
+                        "GET_TICKETS_NOW",
+                        "INSTALL_NOW",
+                        "INTERESTED",
+                        "JOIN_THIS_HASHTAG",
+                        "LEARN_MORE",
+                        "LISTEN_NOW",
+                        "ORDER_NOW",
+                        "PLAY_GAME",
+                        "PREORDER_NOW",
+                        "READ_MORE",
+                        "SEND_MESSAGE",
+                        "SHOOT_WITH_THIS_EFFECT",
+                        "SHOP_NOW",
+                        "SIGN_UP",
+                        "SUBSCRIBE",
+                        "VIEW_NOW",
+                        "VIEW_PROFILE",
+                        "VIEW_VIDEO_WITH_THIS_EFFECT",
+                        "VISIT_STORE",
+                        "WATCH_LIVE",
+                        "WATCH_NOW"
+                      ],
+                      "option_aliases": {
+                        "INSTALL_NOW": [
+                          "install",
+                          "安装",
+                          "安装应用"
+                        ]
+                      },
                       "type": "string"
                     }
                   },
@@ -43168,14 +41802,83 @@
               ]
             }
           ],
-          "contract_hash": "83649612b4639bbf1f9aeb014d334e97827c01edba291fba551df5848a0d39c9",
+          "contract_hash": "9b1cfd5af60dda814c5e614716a4b0ad24450b9bc19abc3342eaf7c848b521b1",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "allowed": {
+                  "optimization_goal": [
+                    "INSTALL",
+                    "IN_APP_EVENT",
+                    "VALUE"
+                  ],
+                  "promotion_type": [
+                    "APP_ANDROID",
+                    "APP_IOS"
+                  ]
+                },
+                "if": {
+                  "objective_type": "APP_PROMOTION"
+                },
+                "message": "APP_PROMOTION requires an app, matching operating system and Smart+ app goal",
+                "required": [
+                  "app_id",
+                  "operating_systems"
+                ]
+              },
+              {
+                "allowed": {
+                  "optimization_goal": [
+                    "LEAD_GENERATION",
+                    "CLICK",
+                    "CONVERSATION"
+                  ],
+                  "promotion_type": [
+                    "LEAD_GENERATION",
+                    "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE",
+                    "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"
+                  ]
+                },
+                "if": {
+                  "objective_type": "LEAD_GENERATION"
+                },
+                "message": "LEAD_GENERATION requires a supported lead promotion type, target and goal",
+                "required": [
+                  "promotion_target_type"
+                ]
+              },
+              {
+                "allowed": {
+                  "optimization_goal": [
+                    "CLICK",
+                    "TRAFFIC_LANDING_PAGE_VIEW"
+                  ],
+                  "promotion_type": [
+                    "WEBSITE"
+                  ]
+                },
+                "if": {
+                  "objective_type": "TRAFFIC"
+                },
+                "message": "TRAFFIC Smart+ requires WEBSITE and CLICK or TRAFFIC_LANDING_PAGE_VIEW"
+              },
+              {
+                "if": {
+                  "catalog_id": {
+                    "exists": true
+                  }
+                },
+                "message": "Catalog Ads require catalog_authorized_bc_id returned with the selected catalog",
+                "required": [
+                  "catalog_authorized_bc_id"
+                ]
+              }
+            ],
             "properties": {
               "account_id": {
                 "type": "string"
@@ -43282,6 +41985,23 @@
                 "selection_value_fields": [
                   "campaign_id",
                   "id"
+                ],
+                "type": "string"
+              },
+              "catalog_authorized_bc_id": {
+                "description": "Business Center ID returned with the selected Catalog; required for Catalog Ads",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "catalog_name",
+                  "name",
+                  "catalog_authorized_bc_id"
+                ],
+                "selection_value_fields": [
+                  "catalog_authorized_bc_id",
+                  "authorized_bc_id",
+                  "bc_id"
                 ],
                 "type": "string"
               },
@@ -43877,7 +42597,7 @@
               ]
             }
           ],
-          "contract_hash": "88d28260fbfba7aa0eb18eb2fbdf559e565977fc812a4887e3a365bf70da0488",
+          "contract_hash": "909287d9fcedd7a764de271be098309722ea05c4547a53c98757ac9ee79c5a0f",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、Sales 和 Product Sales，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -43915,6 +42635,20 @@
                 },
                 "required": [
                   "sales_destination"
+                ]
+              },
+              {
+                "allowed": {
+                  "catalog_enabled": [
+                    true
+                  ]
+                },
+                "if": {
+                  "objective_type": "PRODUCT_SALES"
+                },
+                "message": "PRODUCT_SALES Smart+ requires catalog_enabled=true (catalog-backed delivery)",
+                "required": [
+                  "catalog_enabled"
                 ]
               },
               {
@@ -44138,7 +42872,8 @@
           "intent_aliases": [],
           "intent_types": [
             "create_smart_plus_campaign",
-            "create_campaign"
+            "create_campaign",
+            "create_campaign_only"
           ],
           "live_support": true,
           "max_output_bytes": 1000000,
@@ -44164,6 +42899,7 @@
           "traits": [
             "write",
             "campaign",
+            "campaign_only",
             "smart_plus",
             "smart_plus/campaign/create"
           ]
@@ -48114,121 +46850,131 @@
         "action": "list",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy Feed GAQL resource",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "list_feeds",
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "get",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy Feed GAQL resource",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "get_feed",
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "create",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy Feed mutation surface",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "create_feed",
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "update",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy Feed mutation surface",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "update_feed",
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "delete",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy Feed mutation surface",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "delete_feed",
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "list",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy FeedItem GAQL resource",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "list_feed_items",
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "get",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy FeedItem GAQL resource",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "get_feed_item",
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "create",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy FeedItem mutation surface",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "create_feed_item",
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "update",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy FeedItem mutation surface",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "update_feed_item",
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "delete",
         "api_version": "v24",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "Google Ads v24 no longer exposes the legacy FeedItem mutation surface",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "delete_feed_item",
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "implemented"
+        "status": "planned"
       },
       {
         "action": "list",
@@ -50422,5 +49168,5 @@
       ]
     }
   },
-  "tool_count": 312
+  "tool_count": 302
 }

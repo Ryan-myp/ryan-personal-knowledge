@@ -1,0 +1,321 @@
+        /* 确认卡片容器 - 位于输入框上方 */
+        .confirm-card-container {
+            padding: 0 24px 16px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        /* Conversational creation cards: structured UI metadata rendered by
+           the page; values are always submitted through the normal chat path. */
+        .creation-card {
+            margin-top: 14px;
+            border: 1px solid rgba(99, 102, 241, .38);
+            border-radius: 12px;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+        }
+        .creation-card-header { padding: 14px 16px 11px; border-bottom: 1px solid var(--border); }
+        .creation-card-kicker { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+        .creation-card-title { margin-top: 4px; color: var(--text-primary); font-size: 14px; font-weight: 650; }
+        .creation-card-meta { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+        .creation-card-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 13px 16px; }
+        .creation-card-field { min-width: 0; padding: 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-tertiary); }
+        .creation-card-field.hidden { display: none; }
+        .creation-card-field.missing { border-color: rgba(245, 158, 11, .58); }
+        .creation-card-field.invalid { border-color: rgba(239, 68, 68, .62); }
+        .creation-card-field label { display: flex; gap: 4px; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+        .creation-card-field .required { color: var(--error); }
+        .creation-card-field .help { margin-bottom: 6px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
+        .creation-card-field input, .creation-card-field select, .creation-card-field textarea { width: 100%; min-height: 30px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; outline: none; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; }
+        .creation-card-field textarea { min-height: 58px; resize: vertical; font-family: Monaco, Menlo, monospace; font-size: 10px; }
+        .creation-card-field .structured-object-editor { background: var(--bg-secondary); }
+        .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+        .creation-card-field .source { margin-top: 5px; color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .creation-card-field-error { margin-top: 7px; color: var(--error); font-size: 10px; line-height: 1.45; }
+        .creation-card-account { margin: 0 16px 3px; padding: 9px; border: 1px solid rgba(245, 158, 11, .35); border-radius: 8px; background: rgba(245, 158, 11, .07); }
+        .creation-card-account label { display: block; margin-bottom: 5px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+        .creation-card-account input { width: 100%; min-height: 32px; padding: 6px 8px; border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-primary); background: var(--bg-primary); font: inherit; font-size: 11px; }
+        .creation-card-account small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 9px; }
+        .creation-card-review { margin: 0 16px 12px; padding: 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+        .creation-review-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+        .creation-review-head > div { display: grid; gap: 2px; min-width: 0; }
+        .creation-review-head strong { color: var(--text-primary); font-size: 12px; }
+        .creation-review-head small { color: var(--text-muted); font-size: 9px; }
+        .creation-review-head > span { flex: 0 0 auto; padding: 4px 6px; border: 1px solid rgba(245, 158, 11, .45); border-radius: 5px; color: var(--warning); background: rgba(245, 158, 11, .08); font-size: 8px; font-weight: 700; }
+        .creation-review-account { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+        .creation-review-account span { color: var(--text-muted); font-size: 9px; }
+        .creation-review-account strong { overflow: hidden; color: var(--text-primary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+        .creation-review-groups { display: grid; gap: 8px; margin-top: 8px; }
+        .creation-review-group { padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
+        .creation-review-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+        .creation-review-group-head strong { color: var(--accent); font-size: 9px; }
+        .creation-review-group-head small { color: var(--text-muted); font-size: 8px; }
+        .creation-review-row { display: grid; grid-template-columns: minmax(110px, .7fr) minmax(0, 1.3fr); gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+        .creation-review-row:last-child { border-bottom: 0; }
+        .creation-review-row span { overflow: hidden; color: var(--text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+        .creation-review-row strong { overflow: hidden; color: var(--text-primary); font-size: 10px; font-weight: 600; overflow-wrap: anywhere; }
+        .creation-review-empty { padding: 10px 0; color: var(--text-muted); font-size: 10px; text-align: center; }
+        .creation-review-note { margin-top: 8px; color: var(--text-muted); font-size: 9px; line-height: 1.4; }
+        .creation-card-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 11px 16px; border-top: 1px solid var(--border); }
+        .creation-card-status { flex: 1; min-width: 150px; color: var(--text-muted); font-size: 10px; }
+        .creation-card-action { padding: 7px 10px; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-secondary); background: var(--bg-hover); cursor: pointer; font: inherit; font-size: 10px; }
+        .creation-card-action:hover { color: var(--text-primary); border-color: var(--accent); }
+        .creation-card-action.primary { border-color: var(--accent); color: white; background: var(--accent); }
+        .creation-card-action:disabled { opacity: .55; cursor: not-allowed; }
+        @media (max-width: 720px) { .creation-card-fields { grid-template-columns: 1fr; } }
+
+        /* Creation card polish: keep the existing design tokens, but give
+           dense provider forms a clearer visual hierarchy. */
+        .message-ui-cards { width: min(100%, 860px); margin-top: 16px; }
+        .message-clarification-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+        .clarification-option { padding: 8px 13px; border: 1px solid rgba(99, 102, 241, .45); border-radius: 999px; color: var(--text-primary); background: var(--accent-light); cursor: pointer; font: inherit; font-size: 11px; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+        .clarification-option:hover { border-color: var(--accent); background: rgba(99, 102, 241, .2); transform: translateY(-1px); }
+        .message-clarification-fields { display: grid; gap: 6px; margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(99, 102, 241, .2); border-radius: 12px; background: rgba(99, 102, 241, .055); }
+        .clarification-field-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 6px 0; border-bottom: 1px solid rgba(148, 163, 184, .12); }
+        .clarification-field-row:last-child { border-bottom: 0; }
+        .clarification-field-label { color: var(--text-primary); font-size: 12px; font-weight: 650; }
+        .clarification-field-source { color: var(--text-muted); font-size: 11px; text-align: right; }
+        .creation-card {
+            position: relative;
+            margin-top: 0;
+            border-color: rgba(99, 102, 241, .42);
+            border-radius: 14px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, .18), 0 0 0 1px rgba(99, 102, 241, .04);
+        }
+        .creation-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 auto;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), #8b5cf6 55%, rgba(139, 92, 246, 0));
+        }
+        .creation-card-header {
+            padding: 17px 18px 14px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, .09), transparent 58%);
+        }
+        .creation-card-header-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .creation-card-state {
+            flex: 0 0 auto;
+            padding: 4px 8px;
+            border: 1px solid rgba(245, 158, 11, .3);
+            border-radius: 999px;
+            color: var(--warning);
+            background: rgba(245, 158, 11, .09);
+            font-size: 10px;
+            line-height: 1;
+        }
+        .creation-card-state.ready { color: var(--success); border-color: rgba(34, 197, 94, .28); background: var(--success-light); }
+        .creation-card-state.invalid { color: var(--error); border-color: rgba(239, 68, 68, .28); background: var(--error-light); }
+        .creation-card-state.error { color: var(--error); border-color: rgba(239, 68, 68, .28); background: var(--error-light); }
+        .creation-card-title { margin-top: 7px; font-size: 16px; font-weight: 680; letter-spacing: -.01em; }
+        .creation-card-meta { color: var(--text-secondary); font-size: 11px; line-height: 1.45; }
+        .creation-card-context { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+        .creation-card-context-item { display: inline-flex; align-items: center; gap: 5px; min-height: 24px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-secondary); background: var(--bg-tertiary); font-size: 10px; }
+        .creation-card-context-item strong { color: var(--text-primary); font-weight: 650; }
+        .creation-card-next { margin-top: 10px; color: var(--text-secondary); font-size: 10px; line-height: 1.5; }
+        .creation-card-next strong { color: var(--text-primary); font-weight: 650; }
+        .creation-card-fields { gap: 10px; padding: 14px 18px 16px; }
+        .creation-card-field {
+            padding: 11px 12px 10px;
+            border-radius: 10px;
+            transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+        }
+        .creation-card-field:hover { border-color: var(--border-light); background: var(--bg-hover); }
+        .creation-card-field.wide { grid-column: 1 / -1; }
+        .creation-card-field.missing { box-shadow: inset 3px 0 0 rgba(245, 158, 11, .72); }
+        .creation-card-field.invalid { box-shadow: inset 3px 0 0 rgba(239, 68, 68, .78); }
+        .creation-card-field .help { color: var(--text-secondary); }
+        .creation-card-field input, .creation-card-field select, .creation-card-field textarea { min-height: 32px; padding: 7px 9px; border-radius: 7px; transition: border-color .18s ease, box-shadow .18s ease; }
+        .creation-card-field textarea { min-height: 72px; line-height: 1.55; }
+        .creation-card-field input:focus, .creation-card-field select:focus, .creation-card-field textarea:focus { box-shadow: 0 0 0 3px var(--accent-light); }
+        .lookup-picker { display: grid; gap: 7px; }
+        .lookup-picker-toolbar { display: flex; align-items: stretch; gap: 6px; }
+        .lookup-picker-toolbar input { min-width: 0; flex: 1; }
+        .lookup-picker-search { flex: 0 0 auto; min-width: 58px; padding: 6px 9px; border: 1px solid var(--accent); border-radius: 7px; color: #fff; background: var(--accent); cursor: pointer; font: inherit; font-size: 10px; font-weight: 650; }
+        .lookup-picker-search:hover { background: var(--accent-hover); }
+        .lookup-picker-search:disabled { opacity: .5; cursor: not-allowed; }
+        .lookup-picker-status { color: var(--text-muted); font-size: 9px; line-height: 1.35; }
+        .lookup-picker-results { display: grid; gap: 4px; max-height: 168px; overflow-y: auto; padding: 4px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); }
+        .lookup-picker-results:empty { display: none; }
+        .lookup-option { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; color: var(--text-secondary); background: transparent; cursor: pointer; text-align: left; font: inherit; font-size: 10px; }
+        .lookup-option:hover, .lookup-option.selected { border-color: rgba(99, 102, 241, .3); color: var(--text-primary); background: var(--accent-light); }
+        .lookup-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lookup-option-value { flex: 0 0 auto; max-width: 46%; overflow: hidden; color: var(--text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+        .lookup-picker-selected { display: flex; flex-wrap: wrap; gap: 5px; }
+        .lookup-selection-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 7px; border: 1px solid rgba(99, 102, 241, .28); border-radius: 999px; color: var(--text-primary); background: var(--accent-light); font-size: 9px; }
+        .lookup-selection-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .lookup-selection-chip button { width: 15px; height: 15px; padding: 0; border: 0; border-radius: 50%; color: var(--text-secondary); background: transparent; cursor: pointer; line-height: 15px; }
+        .lookup-selection-chip button:hover { color: var(--error); background: var(--error-light); }
+        .manual-entry-help { margin-top: 5px; padding: 7px 9px; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-muted); background: var(--bg-secondary); font-size: 10px; line-height: 1.45; }
+        .manual-entry-help strong { color: var(--text-secondary); font-weight: 650; }
+        .blueprint-field .lookup-picker-search { padding-block: 7px; }
+        .structured-object-row .lookup-picker { margin-top: 1px; }
+        .structured-object-row .lookup-picker-toolbar input { min-height: 30px; }
+        .structured-object-row .lookup-picker-results { max-height: 132px; }
+        .creation-card-account {
+            margin: 14px 18px 0;
+            padding: 12px 13px;
+            border-color: rgba(99, 102, 241, .34);
+            border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent-light), rgba(99, 102, 241, .025));
+        }
+        .creation-card-account label { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font-weight: 680; }
+        .creation-card-account label::before { content: '执行范围'; color: var(--accent); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+        .creation-card-account input { min-height: 35px; padding: 7px 9px; border-radius: 7px; font-size: 12px; }
+        .creation-card-account input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-light); }
+        .creation-card-account small { margin-top: 6px; color: var(--text-secondary); font-size: 10px; }
+        .creation-card-progress { margin: 14px 18px 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-tertiary); }
+        .creation-card-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+        .creation-card-progress-head strong { color: var(--text-primary); font-weight: 650; }
+        .creation-card-progress-track { height: 5px; margin-top: 7px; overflow: hidden; border-radius: 999px; background: var(--bg-hover); }
+        .creation-card-progress-bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), #8b5cf6); transition: width .22s ease; }
+        .creation-card-footer { gap: 12px; padding: 12px 18px; background: var(--bg-tertiary); }
+        .creation-card-status { flex: 1 1 180px; color: var(--text-secondary); line-height: 1.4; }
+        .creation-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+        .creation-card-action { min-height: 31px; padding: 7px 11px; transition: color .18s ease, border-color .18s ease, background .18s ease; }
+        .creation-card-action:hover { background: var(--accent-light); }
+        .creation-card-action.primary { box-shadow: 0 4px 12px rgba(99, 102, 241, .22); }
+        @media (max-width: 720px) {
+            .creation-card-fields { grid-template-columns: 1fr; padding-inline: 14px; }
+            .creation-card-field.wide { grid-column: auto; }
+            .creation-card-account, .creation-card-progress { margin-inline: 14px; }
+            .creation-card-header, .creation-card-footer { padding-inline: 14px; }
+            .creation-card-actions { width: 100%; justify-content: flex-start; }
+        }
+
+        /* 确认卡片样式 */
+        .confirm-card {
+            background: var(--bg-tertiary);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            border-radius: 12px;
+            overflow: hidden;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .confirm-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            background: rgba(245, 158, 11, 0.1);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .confirm-icon { font-size: 20px; }
+
+        .confirm-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .confirm-card-body { padding: 16px; }
+
+        .confirm-plan-intro { color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+        .confirm-plan-steps { display: grid; gap: 7px; margin-top: 12px; }
+        .confirm-plan-step { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); }
+        .confirm-plan-index { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; color: #17352f; background: #7ce3bb; font-size: 10px; font-weight: 750; }
+        .confirm-plan-step strong { display: block; color: var(--text-primary); font-size: 12px; font-weight: 650; }
+        .confirm-plan-step small { display: block; margin-top: 2px; color: var(--text-muted); font-size: 10px; }
+        .confirm-plan-account { margin-top: 12px; color: var(--text-muted); font-size: 10px; }
+
+        .confirm-field { margin-bottom: 12px; }
+
+        .confirm-field label {
+            display: block;
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .confirm-field input {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .confirm-field input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .confirm-card-footer {
+            display: flex;
+            gap: 10px;
+            padding: 12px 16px;
+            border-top: 1px solid var(--border);
+            justify-content: flex-end;
+        }
+
+        .confirm-btn {
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .confirm-btn.cancel {
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-light);
+        }
+
+        .confirm-btn.cancel:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .confirm-btn.confirm {
+            background: var(--accent);
+            color: white;
+        }
+
+        .confirm-btn.confirm:hover {
+            background: var(--accent-hover);
+        }
+
+        /* Keep confirmations in the same visual language as creation cards:
+           indigo for the primary action and neutral surfaces. */
+        .confirm-card {
+            margin: 14px auto 0;
+            border: 1px solid rgba(99, 102, 241, .42);
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, .18), 0 0 0 1px rgba(99, 102, 241, .04);
+        }
+        .confirm-card-header {
+            padding: 16px 18px 13px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, .09), transparent 58%);
+        }
+        .confirm-icon { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid rgba(99, 102, 241, .28); border-radius: 8px; color: var(--accent); background: var(--accent-light); font-size: 14px; }
+        .confirm-title { color: var(--text-primary); font-size: 14px; font-weight: 680; }
+        .confirm-card-body { padding: 16px 18px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+        .confirm-card-body p { margin: 0; }
+        .confirm-card-body p + p { margin-top: 8px; }
+        .confirm-card-body strong { color: var(--text-primary); font-weight: 680; }
+        .confirm-card-footer { gap: 8px; padding: 12px 18px; background: var(--bg-tertiary); }
+        .confirm-btn { min-height: 32px; padding: 7px 13px; border-radius: 8px; font-size: 11px; font-weight: 650; }
+        .confirm-btn.cancel { color: var(--text-secondary); background: var(--bg-primary); border: 1px solid var(--border-light); }
+        .confirm-btn.cancel:hover { color: var(--text-primary); border-color: var(--accent); background: var(--accent-light); }
+        .confirm-btn.confirm { color: #fff; background: var(--accent); box-shadow: 0 4px 12px rgba(99, 102, 241, .22); }
+        .confirm-btn.confirm:hover { background: var(--accent-hover); }

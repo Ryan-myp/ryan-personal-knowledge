@@ -57,8 +57,10 @@ class MetaGetAdHandler(ToolHandler):
         ad_id = input_data.get("ad_id")
         if self.client:
             try:
-                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
-                    ctx.account_id, "ad", ad_id
+                if (
+                    isinstance(self.client, MetaAPIClient)
+                    and not resource_was_created_in_current_run(ctx, "ad", ad_id)
+                    and not self.client.resource_belongs_to_account(ctx.account_id, "ad", ad_id)
                 ):
                     return ToolResult.error(
                         f"Ad {ad_id} does not belong to account {ctx.account_id}"
@@ -92,8 +94,10 @@ class MetaCreateAdHandler(ToolHandler):
                     return ToolResult.error(
                         "受控 Meta 创建链路只允许以 PAUSED 状态创建 Ad"
                     )
-                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
-                    ctx.account_id, "adset", adset_id
+                if (
+                    isinstance(self.client, MetaAPIClient)
+                    and not resource_was_created_in_current_run(ctx, "ad_set", adset_id)
+                    and not self.client.resource_belongs_to_account(ctx.account_id, "adset", adset_id)
                 ):
                     return ToolResult.error(
                         f"Ad Set {adset_id} does not belong to account {ctx.account_id}"

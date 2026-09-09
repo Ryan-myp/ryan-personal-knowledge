@@ -78,7 +78,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 13
+    SCHEMA_VERSION = 16
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -89,6 +89,7 @@ class AdAgentStore:
     CREATE TABLE IF NOT EXISTS sessions (
         session_id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         account_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -96,6 +97,34 @@ class AdAgentStore:
         lease_owner TEXT,
         lease_expires_at TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS worker_instances (
+        worker_id TEXT PRIMARY KEY,
+        worker_kind TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        started_at TEXT NOT NULL,
+        last_heartbeat_at TEXT NOT NULL,
+        lease_expires_at TEXT,
+        metadata TEXT NOT NULL DEFAULT '{}'
+    );
+    CREATE INDEX IF NOT EXISTS idx_worker_instances_heartbeat
+        ON worker_instances(status, last_heartbeat_at);
+
+    CREATE TABLE IF NOT EXISTS execution_event_repairs (
+        repair_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT,
+        created_at TEXT NOT NULL,
+        last_error TEXT,
+        UNIQUE (run_id, seq)
+    );
+    CREATE INDEX IF NOT EXISTS idx_execution_event_repairs_due
+        ON execution_event_repairs(status, next_attempt_at, created_at);
 
     CREATE TABLE IF NOT EXISTS conversation_messages (
         message_id TEXT PRIMARY KEY,
@@ -220,6 +249,7 @@ class AdAgentStore:
     CREATE TABLE IF NOT EXISTS workflows (
         workflow_id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL DEFAULT 'default',
         intent_type TEXT NOT NULL,
         execution_mode TEXT NOT NULL,
         status TEXT NOT NULL,
@@ -255,6 +285,8 @@ class AdAgentStore:
     );
 
     CREATE INDEX IF NOT EXISTS idx_workflow_items_workflow ON workflow_items(workflow_id, sequence);
+    CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON sessions(tenant_id, user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_workflows_tenant ON workflows(tenant_id, status, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS skill_versions (
         version_id TEXT PRIMARY KEY,
@@ -732,6 +764,71 @@ class AdAgentStore:
                 "CREATE INDEX IF NOT EXISTS idx_memories_key "
                 "ON memories(tenant_id, user_id, memory_key, status, updated_at DESC)"
             )
+        elif version == 14:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS worker_instances (
+                    worker_id TEXT PRIMARY KEY,
+                    worker_kind TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    started_at TEXT NOT NULL,
+                    last_heartbeat_at TEXT NOT NULL,
+                    lease_expires_at TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE INDEX IF NOT EXISTS idx_worker_instances_heartbeat
+                    ON worker_instances(status, last_heartbeat_at);
+                """
+            )
+        elif version == 15:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS execution_event_repairs (
+                    repair_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT,
+                    created_at TEXT NOT NULL,
+                    last_error TEXT,
+                    UNIQUE (run_id, seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_event_repairs_due
+                    ON execution_event_repairs(status, next_attempt_at, created_at);
+                """
+            )
+        elif version == 16:
+            cls._add_column_if_missing(conn, "sessions", "tenant_id", "TEXT NOT NULL DEFAULT 'default'")
+            cls._add_column_if_missing(conn, "workflows", "tenant_id", "TEXT NOT NULL DEFAULT 'default'")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_tenant "
+                "ON sessions(tenant_id, user_id, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_workflows_tenant "
+                "ON workflows(tenant_id, status, updated_at DESC)"
+            )
+            # Prefer an already-persisted trusted tenant marker when upgrading
+            # an older database. Rows without one remain in the explicit
+            # default tenant and must be re-associated by deployment policy.
+            for table in ("sessions", "workflows"):
+                key = "session_id" if table == "sessions" else "workflow_id"
+                for row in conn.execute(
+                    f"SELECT {key}, metadata FROM {table} WHERE tenant_id = 'default'"
+                ).fetchall():
+                    try:
+                        metadata = json.loads(row["metadata"] or "{}") or {}
+                    except (TypeError, ValueError):
+                        metadata = {}
+                    tenant_id = str(metadata.get("tenant_id") or "").strip()
+                    if tenant_id and tenant_id != "default":
+                        conn.execute(
+                            f"UPDATE {table} SET tenant_id = ? WHERE {key} = ?",
+                            (tenant_id, str(row[key])),
+                        )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -741,6 +838,175 @@ class AdAgentStore:
             if self._conn:
                 self._conn.close()
                 self._conn = None
+
+    # -- Durable worker liveness -------------------------------------
+
+    def register_worker(
+        self, worker_id: str, worker_kind: str, *, metadata: Optional[dict[str, Any]] = None,
+        lease_seconds: float = 30.0,
+    ) -> None:
+        """Register one process worker for cross-instance monitoring."""
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(seconds=max(1.0, float(lease_seconds)))
+        payload = json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True, default=str)
+        with self._lock:
+            self._get_conn().execute(
+                """INSERT INTO worker_instances
+                   (worker_id, worker_kind, status, started_at, last_heartbeat_at,
+                    lease_expires_at, metadata)
+                   VALUES (?, ?, 'running', ?, ?, ?, ?)
+                   ON CONFLICT(worker_id) DO UPDATE SET
+                    worker_kind = excluded.worker_kind, status = 'running',
+                    last_heartbeat_at = excluded.last_heartbeat_at,
+                    lease_expires_at = excluded.lease_expires_at,
+                    metadata = excluded.metadata""",
+                (str(worker_id), str(worker_kind), now.isoformat(), now.isoformat(),
+                 expires.isoformat(), payload),
+            )
+            self._get_conn().commit()
+
+    def heartbeat_worker(
+        self, worker_id: str, *, lease_seconds: float = 30.0,
+    ) -> bool:
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(seconds=max(1.0, float(lease_seconds)))
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE worker_instances SET status = 'running',
+                   last_heartbeat_at = ?, lease_expires_at = ?
+                   WHERE worker_id = ?""",
+                (now.isoformat(), expires.isoformat(), str(worker_id)),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
+
+    def unregister_worker(self, worker_id: str) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """UPDATE worker_instances SET status = 'stopped',
+                   last_heartbeat_at = ?, lease_expires_at = NULL
+                   WHERE worker_id = ?""",
+                (now, str(worker_id)),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
+
+    def list_workers(
+        self, *, statuses: Optional[list[str]] = None, limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM worker_instances WHERE 1 = 1"
+        params: list[Any] = []
+        if statuses:
+            values = [str(item) for item in statuses]
+            query += " AND status IN (" + ",".join("?" for _ in values) + ")"
+            params.extend(values)
+        query += " ORDER BY last_heartbeat_at DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 500)))
+        with self._lock:
+            rows = self._get_conn().execute(query, params).fetchall()
+        result = []
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            item = dict(row)
+            try:
+                metadata = json.loads(item.get("metadata") or "{}")
+            except (TypeError, ValueError):
+                metadata = {}
+            item["metadata"] = metadata if isinstance(metadata, dict) else {}
+            expires = item.get("lease_expires_at")
+            try:
+                item["lease_expired"] = bool(expires) and datetime.fromisoformat(
+                    str(expires).replace("Z", "+00:00")
+                ) <= now
+            except (TypeError, ValueError):
+                item["lease_expired"] = True
+            result.append(item)
+        return result
+
+    def get_backend_health(self) -> dict[str, Any]:
+        """Return a small backend-neutral health snapshot."""
+        try:
+            with self._lock:
+                self._get_conn().execute("SELECT 1").fetchone()
+            return {"backend": getattr(self, "backend_name", "sqlite"), "status": "healthy"}
+        except Exception as exc:
+            return {
+                "backend": getattr(self, "backend_name", "sqlite"),
+                "status": "unhealthy", "error": type(exc).__name__,
+            }
+
+    # -- Execution event repair --------------------------------------
+
+    def enqueue_execution_event_repair(self, run_id: str, event: dict[str, Any]) -> bool:
+        """Durably retain a sanitized event that could not be appended."""
+        if not isinstance(event, dict):
+            return False
+        try:
+            seq = int(event.get("seq"))
+        except (TypeError, ValueError):
+            return False
+        if seq < 1:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        payload = json.dumps(event, ensure_ascii=False, sort_keys=True, default=str)
+        with self._lock:
+            cursor = self._get_conn().execute(
+                """INSERT OR IGNORE INTO execution_event_repairs
+                   (repair_id, run_id, seq, event_type, payload, status,
+                    attempts, next_attempt_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)""",
+                (str(uuid.uuid4()), str(run_id), seq,
+                 str(event.get("event_type") or event.get("type") or "event"),
+                 payload, now, now),
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
+
+    def repair_execution_run_events(self, limit: int = 50) -> int:
+        """Retry pending event appends without affecting Agent execution."""
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            rows = self._get_conn().execute(
+                """SELECT * FROM execution_event_repairs
+                   WHERE status = 'pending'
+                     AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                   ORDER BY created_at ASC LIMIT ?""",
+                (now.isoformat(), max(1, min(int(limit), 100))),
+            ).fetchall()
+        repaired = 0
+        for row in rows:
+            try:
+                event = json.loads(row["payload"] or "{}")
+            except (TypeError, ValueError):
+                event = {}
+            success = self.append_execution_run_event(str(row["run_id"]), event)
+            already_present = any(
+                int(item.get("seq", 0)) == int(row["seq"])
+                for item in self.list_execution_run_events(
+                    str(row["run_id"]), after_seq=int(row["seq"]) - 1, limit=2
+                )
+            )
+            if success or already_present:
+                with self._lock:
+                    self._get_conn().execute(
+                        "DELETE FROM execution_event_repairs WHERE repair_id = ?",
+                        (str(row["repair_id"]),),
+                    )
+                    self._get_conn().commit()
+                repaired += 1
+                continue
+            attempts = int(row["attempts"] or 0) + 1
+            delay = min(300, 2 ** min(attempts, 8))
+            next_attempt = (now + timedelta(seconds=delay)).isoformat()
+            with self._lock:
+                self._get_conn().execute(
+                    """UPDATE execution_event_repairs SET attempts = ?,
+                       next_attempt_at = ?, last_error = ? WHERE repair_id = ?""",
+                    (attempts, next_attempt, "event append was not accepted", str(row["repair_id"])),
+                )
+                self._get_conn().commit()
+        return repaired
 
     # -- Runtime configuration -----------------------------------------
 
@@ -1010,14 +1276,13 @@ class AdAgentStore:
                 run_params + [stale_cutoff],
             ) or 0)
 
-            # Workflows and sessions predate tenant_id on their tables.  They
-            # are therefore scoped by the trusted user identity where
-            # available; the query still remains useful for the configured
-            # service principal in a single-tenant deployment.
             session_scope = ""
             session_params: list[Any] = []
+            if tenant_id is not None:
+                session_scope += " AND w.tenant_id = ?"
+                session_params.append(str(tenant_id))
             if user_id is not None:
-                session_scope = " AND s.user_id = ?"
+                session_scope += " AND s.user_id = ?"
                 session_params.append(str(user_id))
             workflow_statuses = {
                 str(row["status"]): int(row["count"] or 0)
@@ -1046,26 +1311,34 @@ class AdAgentStore:
             ) or 0)
             session_leases = int(scalar(
                 "SELECT COUNT(*) FROM sessions s WHERE s.lease_owner IS NOT NULL"
+                + (" AND s.tenant_id = ?" if tenant_id is not None else "")
                 + (" AND s.user_id = ?" if user_id is not None else "")
                 + " AND s.lease_expires_at > ?",
-                ([str(user_id)] if user_id is not None else []) + [now_iso],
+                ([str(tenant_id)] if tenant_id is not None else [])
+                + ([str(user_id)] if user_id is not None else []) + [now_iso],
             ) or 0)
             session_expired = int(scalar(
                 "SELECT COUNT(*) FROM sessions s WHERE s.lease_owner IS NOT NULL"
+                + (" AND s.tenant_id = ?" if tenant_id is not None else "")
                 + (" AND s.user_id = ?" if user_id is not None else "")
                 + " AND (s.lease_expires_at IS NULL OR s.lease_expires_at <= ?)",
-                ([str(user_id)] if user_id is not None else []) + [now_iso],
+                ([str(tenant_id)] if tenant_id is not None else [])
+                + ([str(user_id)] if user_id is not None else []) + [now_iso],
             ) or 0)
 
             outbox_where = ""
             outbox_params: list[Any] = []
-            if user_id is not None:
+            if tenant_id is not None or user_id is not None:
                 outbox_where = (
                     " AND EXISTS (SELECT 1 FROM workflows w JOIN sessions s "
                     "ON s.session_id = w.session_id WHERE w.workflow_id = outbox_events.run_id "
-                    "AND s.user_id = ?)"
+                    + ("AND w.tenant_id = ? " if tenant_id is not None else "")
+                    + ("AND s.user_id = ?" if user_id is not None else "") + ")"
                 )
-                outbox_params.append(str(user_id))
+                if tenant_id is not None:
+                    outbox_params.append(str(tenant_id))
+                if user_id is not None:
+                    outbox_params.append(str(user_id))
             outbox_statuses = grouped(
                 "outbox_events", where=outbox_where, params=outbox_params,
             )
@@ -1131,6 +1404,8 @@ class AdAgentStore:
         schedule_metrics = self.get_scheduled_task_metrics(
             tenant_id=tenant_id, user_id=user_id,
         )
+        workers = self.list_workers()
+        backend_health = self.get_backend_health()
         alert_count = sum(
             value > 0 for value in (
                 task_statuses.get("recovery_required", 0),
@@ -1168,6 +1443,16 @@ class AdAgentStore:
                 "claimed": outbox_statuses.get("claimed", 0),
                 "retrying": outbox_retrying,
             },
+            "workers": {
+                "total": len(workers),
+                "running": sum(
+                    1 for item in workers
+                    if item.get("status") == "running" and not item.get("lease_expired")
+                ),
+                "stale": sum(1 for item in workers if item.get("lease_expired")),
+                "items": workers,
+            },
+            "backend_health": backend_health,
             "schedules": schedule_metrics,
             "tools": {
                 "window_seconds": tool_window,
@@ -1378,6 +1663,50 @@ class AdAgentStore:
                 )
             conn.commit()
             return len(rows)
+
+    def requeue_recovery_task(
+        self, task_id: str, *, recovery_reference: str,
+    ) -> Optional[TaskRecord]:
+        """Move an uncertain task back to the queue after operator recovery.
+
+        This is intentionally separate from ``resume_task``.  A recovery task
+        may have produced an external side effect, so callers must first
+        reconcile the provider and provide an auditable reference.
+        """
+        reference = str(recovery_reference or "").strip()[:255]
+        if not reference:
+            raise ValueError("recovery_reference is required")
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            row = conn.execute(
+                "SELECT metadata FROM tasks WHERE task_id = ? AND status = 'recovery_required'",
+                (str(task_id),),
+            ).fetchone()
+            if not row:
+                return None
+            try:
+                metadata = json.loads(row["metadata"] or "{}") or {}
+            except (TypeError, ValueError):
+                metadata = {}
+            metadata.update({
+                "recovery_action": "operator_requeue",
+                "recovery_reference": reference,
+                "requeued_at": now,
+            })
+            cursor = conn.execute(
+                """UPDATE tasks SET status = 'queued', error = NULL, result = NULL,
+                   updated_at = ?, started_at = NULL, finished_at = NULL,
+                   lease_owner = NULL, lease_expires_at = NULL, metadata = ?
+                   WHERE task_id = ? AND status = 'recovery_required'""",
+                (now, json.dumps(metadata, ensure_ascii=False, sort_keys=True), str(task_id)),
+            )
+            conn.commit()
+            if cursor.rowcount != 1:
+                return None
+            return self._task_from_row(
+                conn.execute("SELECT * FROM tasks WHERE task_id = ?", (str(task_id),)).fetchone()
+            )
 
     # -- Recurring Agent schedules ------------------------------------
 
@@ -2877,8 +3206,13 @@ class AdAgentStore:
             # Session creation is intentionally insert-once. Replacing a row
             # would clear a cross-instance lease while another turn is using
             # the session; metadata updates have their own method.
-            sql = "INSERT OR IGNORE INTO sessions (session_id, user_id, account_id, created_at, updated_at, metadata) VALUES (?, ?, ?, ?, ?, ?)"
-            conn.execute(sql, (session_id, user_id, account_id, now, now, json.dumps(metadata or {})))
+            session_metadata = metadata or {}
+            tenant_id = str(session_metadata.get("tenant_id") or "default")
+            sql = """INSERT OR IGNORE INTO sessions
+                     (session_id, user_id, tenant_id, account_id, created_at, updated_at, metadata)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)"""
+            conn.execute(sql, (session_id, user_id, tenant_id, account_id, now, now,
+                               json.dumps(session_metadata)))
             conn.commit()
     
     def update_session(self, session_id: str, metadata: dict = None) -> None:
@@ -3620,12 +3954,17 @@ class AdAgentStore:
         now = datetime.now().isoformat()
         with self._lock:
             conn = self._get_conn()
+            session_row = conn.execute(
+                "SELECT tenant_id, metadata FROM sessions WHERE session_id = ?",
+                (str(session_id),),
+            ).fetchone()
+            tenant_id = str(session_row["tenant_id"] or "default") if session_row else "default"
             conn.execute(
                 """INSERT INTO workflows
-                   (workflow_id, session_id, intent_type, execution_mode, status,
+                   (workflow_id, session_id, tenant_id, intent_type, execution_mode, status,
                     metadata, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (workflow_id, session_id, intent_type, execution_mode, status,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (workflow_id, session_id, tenant_id, intent_type, execution_mode, status,
                 json.dumps(metadata or {}), now, now),
             )
             if emit_outbox:

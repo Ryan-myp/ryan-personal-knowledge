@@ -20,6 +20,21 @@ from .base import BasePlatformClient, APIError, AuthError, RateLimitError, Tempo
 logger = logging.getLogger(__name__)
 
 
+# TikTok Smart+ exposes a fixed CTA enum rather than a discoverable lookup
+# endpoint. Keep this provider-owned catalog next to the adapter so schema
+# and direct client calls can reject a UI label such as ``INSTALL`` before
+# the request reaches the provider.
+TIKTOK_SMART_PLUS_CTA_VALUES = (
+    "APPLY_NOW", "BOOK_NOW", "CALL_NOW", "CHECK_AVAILABILITY", "CONTACT_US",
+    "DOWNLOAD_NOW", "EXPERIENCE_NOW", "GET_QUOTE", "GET_SHOWTIMES",
+    "GET_TICKETS_NOW", "INSTALL_NOW", "INTERESTED", "JOIN_THIS_HASHTAG",
+    "LEARN_MORE", "LISTEN_NOW", "ORDER_NOW", "PLAY_GAME", "PREORDER_NOW",
+    "READ_MORE", "SEND_MESSAGE", "SHOOT_WITH_THIS_EFFECT", "SHOP_NOW",
+    "SIGN_UP", "SUBSCRIBE", "VIEW_NOW", "VIEW_PROFILE", "VIEW_VIDEO_WITH_THIS_EFFECT",
+    "VISIT_STORE", "WATCH_LIVE", "WATCH_NOW",
+)
+
+
 class TikTokAPIClient(BasePlatformClient):
     """
     TikTok Marketing API 客户端 (open_api/v1.3)
@@ -1213,6 +1228,12 @@ class TikTokAPIClient(BasePlatformClient):
             if not destination:
                 raise ValueError("WEB_CONVERSIONS requires sales_destination")
             campaign = {**campaign, "sales_destination": destination}
+        if public_objective == "PRODUCT_SALES" and campaign.get("catalog_enabled") is not True:
+            # TikTok's Smart+ Product/Sales contract is catalog-backed even
+            # when the destination is an App. Fail before the network call so
+            # the operator is asked for an explicit catalog selection instead
+            # of receiving the provider's opaque 40002 response.
+            raise ValueError("PRODUCT_SALES Smart+ requires catalog_enabled=true")
 
         budget_mode = str(campaign.get("budget_mode") or "").upper()
         if budget_mode and budget_mode not in self.SMART_PLUS_CAMPAIGN_BUDGET_MODES:
@@ -1324,6 +1345,11 @@ class TikTokAPIClient(BasePlatformClient):
                 raise ValueError("LEAD_GENERATION requires a lead promotion_type")
             if adgroup.get("promotion_target_type") in (None, ""):
                 raise ValueError("LEAD_GENERATION requires promotion_target_type")
+        if adgroup.get("catalog_id") not in (None, "", []):
+            if adgroup.get("catalog_authorized_bc_id") in (None, "", []):
+                raise ValueError(
+                    "Catalog Ads require catalog_authorized_bc_id from the selected catalog"
+                )
         if (
             public_objective in {"SALES", "PRODUCT_SALES", "WEB_CONVERSIONS"}
             and str(adgroup.get("promotion_type") or "").upper() == "WEBSITE"
@@ -1368,6 +1394,7 @@ class TikTokAPIClient(BasePlatformClient):
 
         wire_fields = {
             "request_id", "operation_status", "adgroup_name", "catalog_id", "product_set_id",
+            "catalog_authorized_bc_id",
             "promotion_type", "promotion_target_type", "optimization_goal", "optimization_event",
             "app_attribution_source", "app_data_source", "app_id", "bid_type", "bid_price",
             "conversion_bid_price", "deep_bid_type", "roas_bid", "billing_event", "budget_mode",
@@ -1548,6 +1575,15 @@ class TikTokAPIClient(BasePlatformClient):
             configuration = dict(configuration)
         if ad.get("call_to_action_id") not in (None, ""):
             configuration.setdefault("call_to_action_id", ad["call_to_action_id"])
+        # Smart+ keeps the identity in the ad configuration as well as in
+        # the creative metadata.  The provider rejects a non-Spark ad when
+        # ``ad_configuration.identity_id`` is absent, even if the same
+        # identity is present in ``creative_info``.  Keep this translation at
+        # the TikTok boundary so the public creation-card contract remains
+        # flat and provider-neutral.
+        for key in ("identity_type", "identity_id", "identity_authorized_bc_id"):
+            if ad.get(key) not in (None, ""):
+                configuration.setdefault(key, ad[key])
         tracking = dict(configuration.get("tracking_info") or {})
         for key in ("tracking_app_id", "click_tracking_url", "impression_tracking_url"):
             if ad.get(key) not in (None, ""):
@@ -1612,7 +1648,31 @@ class TikTokAPIClient(BasePlatformClient):
         if cta_list not in (None, "", []):
             if not isinstance(cta_list, list):
                 raise ValueError("TikTok Smart+ call_to_action_list must be an array")
+            for index, item in enumerate(cta_list):
+                if not isinstance(item, dict):
+                    raise ValueError(f"call_to_action_list[{index}] must be an object")
+                cta = str(item.get("call_to_action") or "").strip().upper()
+                if cta not in TIKTOK_SMART_PLUS_CTA_VALUES:
+                    raise ValueError(
+                        f"call_to_action_list[{index}].call_to_action must be one of "
+                        f"{sorted(TIKTOK_SMART_PLUS_CTA_VALUES)}"
+                    )
+                item["call_to_action"] = cta
             data["call_to_action_list"] = cta_list
+        # The Smart+ API requires one cover image for uploaded video
+        # materials. A video library ID alone is not enough; fail locally
+        # with the field the creation card must collect instead of forwarding
+        # a request that the provider will reject with a generic 40002.
+        for item in creative_list:
+            creative_info = item["creative_info"]
+            if (
+                creative_info.get("video_info")
+                and not creative_info.get("tiktok_item_id")
+                and not creative_info.get("image_info")
+            ):
+                raise ValueError(
+                    "TikTok Smart+ video material requires one image_web_uris value as its cover"
+                )
         if ad.get("page_list") not in (None, "", []):
             if not isinstance(ad["page_list"], list):
                 raise ValueError("TikTok Smart+ page_list must be an array")
@@ -3156,7 +3216,23 @@ class TikTokAPIClient(BasePlatformClient):
             data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'catalog/get/', params=data)
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        catalogs = payload.get('list', []) if isinstance(payload, dict) else []
+        # Catalog Ads require the owning Business Center in addition to the
+        # catalog ID. TikTok returns it nested under ``bc_info``; expose a
+        # stable provider-owned alias for the creation-card picker.
+        normalized = []
+        for catalog in catalogs:
+            if not isinstance(catalog, dict):
+                continue
+            item = dict(catalog)
+            bc_info = item.get("bc_info")
+            if isinstance(bc_info, dict):
+                bc_id = bc_info.get("bc_id") or bc_info.get("business_center_id")
+                if bc_id not in (None, ""):
+                    item.setdefault("catalog_authorized_bc_id", str(bc_id))
+                    item.setdefault("authorized_bc_id", str(bc_id))
+            normalized.append(item)
+        return normalized
 
     def get_catalog(self, advertiser_id: str, catalog_id: str) -> dict:
         """Get one Catalog through the existing catalog/get endpoint."""

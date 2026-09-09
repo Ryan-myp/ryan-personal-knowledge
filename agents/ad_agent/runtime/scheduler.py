@@ -163,6 +163,7 @@ class SchedulerService:
         self.worker_id = f"scheduler:{uuid.uuid4().hex}"
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._heartbeat_thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
         self._metrics = SchedulerMetrics(worker_id=self.worker_id)
 
@@ -172,6 +173,18 @@ class SchedulerService:
                 return
             self._stop.clear()
             self._metrics.state = "running"
+            register = getattr(self.store, "register_worker", None)
+            if callable(register):
+                lease_seconds = min(max(self.lease_seconds, 15.0), 120.0)
+                register(
+                    self.worker_id, "scheduler",
+                    metadata={"poll_interval_seconds": self.poll_interval},
+                    lease_seconds=lease_seconds,
+                )
+                self._heartbeat_thread = threading.Thread(
+                    target=self._heartbeat, name="ad-agent-scheduler-heartbeat", daemon=True,
+                )
+                self._heartbeat_thread.start()
             self._thread = threading.Thread(
                 target=self._run, name="ad-agent-scheduler", daemon=True
             )
@@ -184,6 +197,28 @@ class SchedulerService:
             self._metrics.state = "stopped"
         if wait and thread:
             thread.join(timeout=max(1.0, self.poll_interval + 1.0))
+        heartbeat_thread = self._heartbeat_thread
+        if heartbeat_thread:
+            heartbeat_thread.join(timeout=0.5)
+        unregister = getattr(self.store, "unregister_worker", None)
+        if callable(unregister):
+            try:
+                unregister(self.worker_id)
+            except Exception:
+                logger.warning("failed to unregister scheduler worker", exc_info=True)
+        self._heartbeat_thread = None
+
+    def _heartbeat(self) -> None:
+        heartbeat = getattr(self.store, "heartbeat_worker", None)
+        if not callable(heartbeat):
+            return
+        lease_seconds = min(max(self.lease_seconds, 15.0), 120.0)
+        while not self._stop.wait(min(max(lease_seconds / 3.0, 5.0), 20.0)):
+            try:
+                if not heartbeat(self.worker_id, lease_seconds=lease_seconds):
+                    return
+            except Exception:
+                logger.warning("scheduler worker heartbeat failed", exc_info=True)
 
     def metrics(self) -> dict[str, Any]:
         with self._lock:

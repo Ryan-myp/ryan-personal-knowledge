@@ -94,6 +94,8 @@ class TaskExecutor:
         self._lock = threading.RLock()
         self._closed = False
         self._worker_id = f"task-worker:{uuid.uuid4()}"
+        self._worker_heartbeat_stop = threading.Event()
+        self._worker_heartbeat_thread: Optional[threading.Thread] = None
 
     def register_handler(
         self, kind: str, handler: Callable[[TaskExecutionContext], Any]
@@ -196,6 +198,14 @@ class TaskExecutor:
 
     def start(self) -> int:
         """Recover stale workers and schedule durable queued records."""
+        register = getattr(self.store, "register_worker", None)
+        if callable(register):
+            register(
+                self._worker_id, "task_executor",
+                metadata={"pid": __import__("os").getpid(), "max_workers": self.max_workers},
+                lease_seconds=min(max(self.lease_seconds, 10.0), 60.0),
+            )
+            self._start_worker_heartbeat()
         recovered = self.store.recover_stale_tasks(self.lease_seconds)
         if recovered:
             logger.warning("marked %s stale Agent tasks for recovery", recovered)
@@ -204,6 +214,30 @@ class TaskExecutor:
             if self._schedule(record.task_id):
                 scheduled += 1
         return scheduled
+
+    def _start_worker_heartbeat(self) -> None:
+        if self._worker_heartbeat_thread and self._worker_heartbeat_thread.is_alive():
+            return
+        self._worker_heartbeat_stop.clear()
+        self._worker_heartbeat_thread = threading.Thread(
+            target=self._heartbeat_worker, name="ad-agent-worker-heartbeat", daemon=True,
+        )
+        self._worker_heartbeat_thread.start()
+
+    def _heartbeat_worker(self) -> None:
+        heartbeat = getattr(self.store, "heartbeat_worker", None)
+        if not callable(heartbeat):
+            return
+        interval = min(max(self.lease_seconds / 3.0, 2.0), 15.0)
+        while not self._worker_heartbeat_stop.wait(interval):
+            try:
+                if not heartbeat(
+                    self._worker_id,
+                    lease_seconds=min(max(self.lease_seconds, 10.0), 60.0),
+                ):
+                    return
+            except Exception:
+                logger.warning("task worker heartbeat failed", exc_info=True)
 
     def _schedule(self, task_id: str, *, slot_reserved: bool = False) -> bool:
         with self._lock:
@@ -366,6 +400,24 @@ class TaskExecutor:
             return self.store.get_task(record.task_id)
         return self.store.get_task(record.task_id) or record
 
+    def requeue_recovery(
+        self, task_id: str, *, recovery_reference: str,
+    ) -> Optional[TaskRecord]:
+        """Requeue only after an explicit, externally verified recovery."""
+        requeue = getattr(self.store, "requeue_recovery_task", None)
+        if not callable(requeue):
+            return None
+        record = requeue(str(task_id), recovery_reference=str(recovery_reference))
+        if record is None or record.status != "queued":
+            return record
+        if not self._schedule(record.task_id):
+            self.store.update_task(
+                record.task_id, "paused", error="task queue is full",
+                expected_statuses=["queued"],
+            )
+            return self.store.get_task(record.task_id)
+        return self.store.get_task(record.task_id) or record
+
     def shutdown(self, wait: bool = False) -> None:
         with self._lock:
             if self._closed:
@@ -373,6 +425,16 @@ class TaskExecutor:
             self._closed = True
             for handle in self._handles.values():
                 handle.cancel_event.set()
+        self._worker_heartbeat_stop.set()
+        heartbeat_thread = self._worker_heartbeat_thread
+        if heartbeat_thread:
+            heartbeat_thread.join(timeout=0.5)
+        unregister = getattr(self.store, "unregister_worker", None)
+        if callable(unregister):
+            try:
+                unregister(self._worker_id)
+            except Exception:
+                logger.warning("failed to unregister task worker", exc_info=True)
         self._pool.shutdown(wait=wait, cancel_futures=True)
 
     def _safe_error(self, error: Exception) -> str:

@@ -221,6 +221,13 @@ Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调
 Runtime、Skill、Tool、Capability 代码无需修改。运行中的 workflow 会 heartbeat，恢复
 worker 通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
 
+当任务已经进入 `recovery_required` 时，HTTP 只能通过
+`POST /tasks/{task_id}/recover` 显式提交 `provider_verified=true`、回查记录
+`recovery_reference` 以及 `ads.reconcile`（或 `ads.write`）权限；接口随后重新进入统一的
+`agent.turn` 队列，不会绕过 Runtime 的 Skill、Tool、账户、确认和审计门禁。事件落库失败会
+进入 `execution_event_repairs` 补偿队列，避免一次短暂数据库异常让前端永久丢失 Run Event。
+Worker 注册与心跳则写入 `worker_instances`，运行监控可区分共享队列状态和当前进程状态。
+
 ### 存储后端与部署切换
 
 默认配置保持 SQLite：

@@ -12,6 +12,7 @@ import re
 import sqlite3
 import threading
 import uuid
+import queue
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlparse
@@ -38,6 +39,8 @@ class _MySQLCursor:
     def __init__(self, cursor: Any):
         self._cursor = cursor
         self._columns: list[str] = []
+        self._rows: list[tuple[Any, ...]] = []
+        self._offset = 0
 
     @property
     def rowcount(self) -> int:
@@ -59,25 +62,161 @@ class _MySQLCursor:
                 raise sqlite3.IntegrityError(str(exc)) from exc
             raise
         self._columns = [str(item[0]) for item in (self._cursor.description or ())]
+        if self._columns:
+            self._rows = list(self._cursor.fetchall())
         return self
 
     def fetchone(self) -> Optional[_MySQLRow]:
-        row = self._cursor.fetchone()
+        row = self._rows[self._offset] if self._offset < len(self._rows) else None
+        self._offset += 1
         return _MySQLRow(self._columns, row) if row is not None else None
 
     def fetchall(self) -> list[_MySQLRow]:
-        return [_MySQLRow(self._columns, row) for row in self._cursor.fetchall()]
+        rows = self._rows[self._offset:]
+        self._offset = len(self._rows)
+        return [_MySQLRow(self._columns, row) for row in rows]
+
+
+class _MySQLPool:
+    """Small bounded PyMySQL pool with ping-before-borrow semantics."""
+
+    def __init__(self, connect: Any, *, pool_size: int, max_overflow: int):
+        self._connect = connect
+        self._capacity = max(1, int(pool_size)) + max(0, int(max_overflow))
+        self._available: queue.Queue[Any] = queue.Queue(maxsize=self._capacity)
+        self._created = 0
+        self._condition = threading.Condition(threading.RLock())
+        self._all: dict[int, Any] = {}
+        self._checked_out: dict[int, Any] = {}
+        self._closed = False
+
+    def acquire(self) -> Any:
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("MySQL connection pool is closed")
+            while True:
+                try:
+                    connection = self._available.get_nowait()
+                except queue.Empty:
+                    if self._created >= self._capacity:
+                        # Domain operations are already serialized by the store
+                        # boundary, so waiting here is preferable to opening an
+                        # unbounded number of database connections.
+                        if not self._condition.wait(timeout=30.0):
+                            raise TimeoutError("MySQL connection pool is exhausted")
+                        continue
+                    connection = self._connect()
+                    self._created += 1
+                    self._all[id(connection)] = connection
+                break
+            self._checked_out[id(connection)] = connection
+        try:
+            connection.ping(reconnect=True)
+            return connection
+        except Exception:
+            self.discard(connection)
+            raise
+
+    def release(self, connection: Any) -> None:
+        connection_id = id(connection)
+        with self._condition:
+            self._checked_out.pop(connection_id, None)
+            if self._closed:
+                try:
+                    connection.close()
+                finally:
+                    self._all.pop(connection_id, None)
+                    self._created = max(0, self._created - 1)
+                    self._condition.notify()
+                return
+            try:
+                self._available.put_nowait(connection)
+            except queue.Full:
+                connection.close()
+                self._all.pop(connection_id, None)
+                self._created = max(0, self._created - 1)
+            self._condition.notify()
+
+    def discard(self, connection: Any) -> None:
+        connection_id = id(connection)
+        with self._condition:
+            self._checked_out.pop(connection_id, None)
+            tracked = connection_id in self._all
+            try:
+                connection.close()
+            finally:
+                if tracked:
+                    self._all.pop(connection_id, None)
+                    self._created = max(0, self._created - 1)
+                self._condition.notify()
+
+    def close(self) -> None:
+        with self._condition:
+            self._closed = True
+            connections = list(self._all.values())
+            self._all.clear()
+            self._checked_out.clear()
+            self._available = queue.Queue(maxsize=self._capacity)
+            self._created = 0
+            self._condition.notify_all()
+        for connection in connections:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    def metrics(self) -> dict[str, Any]:
+        with self._condition:
+            return {
+                "capacity": self._capacity,
+                "created": self._created,
+                "idle": self._available.qsize(),
+                "in_use": len(self._checked_out),
+                "closed": self._closed,
+            }
 
 
 class _MySQLConnection:
-    def __init__(self, connection: Any):
-        self._connection = connection
+    def __init__(self, pool: _MySQLPool):
+        self._pool = pool
+        self._local = threading.local()
+
+    def _transaction_connection(self) -> Any:
+        return getattr(self._local, "connection", None)
 
     def execute(self, statement: str, params: Any = None) -> _MySQLCursor:
         import pymysql
-
-        cursor = self._connection.cursor(pymysql.cursors.Cursor)
-        return _MySQLCursor(cursor).execute(_translate_sql(statement), params)
+        active = self._transaction_connection()
+        connection = active or self._pool.acquire()
+        borrowed = active is None
+        discarded = False
+        cursor = None
+        try:
+            cursor = connection.cursor(pymysql.cursors.Cursor)
+            result = _MySQLCursor(cursor).execute(_translate_sql(statement), params)
+            if borrowed:
+                try:
+                    connection.commit()
+                except Exception:
+                    self._pool.discard(connection)
+                    discarded = True
+                    raise
+            return result
+        except Exception as exc:
+            if borrowed:
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
+                if not discarded and isinstance(exc, getattr(pymysql.err, "OperationalError", ())):
+                    self._pool.discard(connection)
+                    discarded = True
+            raise
+        finally:
+            if cursor is not None:
+                cursor.close()
+            if borrowed and not discarded:
+                self._pool.release(connection)
 
     def executescript(self, script: str) -> None:
         # The checked-in schema contains no semicolons inside string literals.
@@ -93,16 +232,44 @@ class _MySQLConnection:
                     raise
 
     def begin(self) -> None:
-        self._connection.begin()
+        if self._transaction_connection() is not None:
+            raise RuntimeError("nested MySQL transactions are not supported")
+        connection = self._pool.acquire()
+        try:
+            connection.begin()
+        except Exception:
+            self._pool.discard(connection)
+            raise
+        self._local.connection = connection
 
     def commit(self) -> None:
-        self._connection.commit()
+        connection = self._transaction_connection()
+        if connection is None:
+            return
+        try:
+            connection.commit()
+        except Exception:
+            self._pool.discard(connection)
+            raise
+        finally:
+            self._local.connection = None
+        self._pool.release(connection)
 
     def rollback(self) -> None:
-        self._connection.rollback()
+        connection = self._transaction_connection()
+        if connection is None:
+            return
+        try:
+            connection.rollback()
+        except Exception:
+            self._pool.discard(connection)
+            raise
+        finally:
+            self._local.connection = None
+        self._pool.release(connection)
 
     def close(self) -> None:
-        self._connection.close()
+        self._pool.close()
 
 
 def _mysql_schema(sql: str) -> str:
@@ -174,6 +341,11 @@ class MySQLStore(AdAgentStore):
         self.pool_size = max(1, int(pool_size))
         self.max_overflow = max(0, int(max_overflow))
         self.connect_timeout = max(1, int(connect_timeout))
+        self._pool = _MySQLPool(
+            self._connect,
+            pool_size=self.pool_size,
+            max_overflow=self.max_overflow,
+        )
         self._mysql_conn: Optional[_MySQLConnection] = None
         self._mysql_connect_lock = threading.RLock()
         super().__init__(database_url)
@@ -198,13 +370,37 @@ class MySQLStore(AdAgentStore):
         }
         if query.get("unix_socket"):
             kwargs["unix_socket"] = query["unix_socket"][0]
-        return _MySQLConnection(pymysql.connect(**kwargs))
+        return pymysql.connect(**kwargs)
 
     def _get_conn(self) -> _MySQLConnection:
         with self._mysql_connect_lock:
             if self._mysql_conn is None:
-                self._mysql_conn = self._connect()
+                self._mysql_conn = _MySQLConnection(self._pool)
             return self._mysql_conn
+
+    def close(self) -> None:
+        """Close all idle pooled connections and prevent new borrows."""
+        with self._mysql_connect_lock:
+            if self._pool:
+                self._pool.close()
+            self._mysql_conn = None
+
+    def get_backend_health(self) -> dict[str, Any]:
+        try:
+            with self._lock:
+                self._get_conn().execute("SELECT 1").fetchone()
+            return {
+                "backend": self.backend_name,
+                "status": "healthy",
+                "pool": self._pool.metrics(),
+            }
+        except Exception as exc:
+            return {
+                "backend": self.backend_name,
+                "status": "unhealthy",
+                "error": type(exc).__name__,
+                "pool": self._pool.metrics(),
+            }
 
     @staticmethod
     def _table_columns(conn: _MySQLConnection, table: str) -> set[str]:
@@ -366,6 +562,76 @@ class MySQLStore(AdAgentStore):
                     ON creation_templates(tenant_id, user_id, blueprint_id, scope_type, is_default);
                 """
             ))
+        elif version == 14:
+            conn.executescript(_mysql_schema(
+                """
+                CREATE TABLE IF NOT EXISTS worker_instances (
+                    worker_id TEXT PRIMARY KEY,
+                    worker_kind TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'running',
+                    started_at TEXT NOT NULL,
+                    last_heartbeat_at TEXT NOT NULL,
+                    lease_expires_at TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE INDEX IF NOT EXISTS idx_worker_instances_heartbeat
+                    ON worker_instances(status, last_heartbeat_at);
+                """
+            ))
+        elif version == 15:
+            conn.executescript(_mysql_schema(
+                """
+                CREATE TABLE IF NOT EXISTS execution_event_repairs (
+                    repair_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at TEXT,
+                    created_at TEXT NOT NULL,
+                    last_error TEXT,
+                    UNIQUE (run_id, seq)
+                );
+                CREATE INDEX IF NOT EXISTS idx_execution_event_repairs_due
+                    ON execution_event_repairs(status, next_attempt_at, created_at);
+                """
+            ))
+        elif version == 16:
+            self._add_mysql_column_if_missing(
+                conn, "sessions", "tenant_id", "VARCHAR(255) NOT NULL DEFAULT 'default'"
+            )
+            self._add_mysql_column_if_missing(
+                conn, "workflows", "tenant_id", "VARCHAR(255) NOT NULL DEFAULT 'default'"
+            )
+            conn.executescript(_mysql_schema(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sessions_tenant
+                    ON sessions(tenant_id, user_id, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_workflows_tenant
+                    ON workflows(tenant_id, status, updated_at);
+                """
+            ))
+            # Preserve a tenant marker already present in legacy metadata when
+            # possible. Records without one intentionally stay in default and
+            # require explicit deployment-level association.
+            for table, key in (("sessions", "session_id"), ("workflows", "workflow_id")):
+                for row in conn.execute(
+                    f"SELECT {key}, metadata FROM `{table}` WHERE tenant_id = ?",
+                    ("default",),
+                ).fetchall():
+                    try:
+                        import json
+                        metadata = json.loads(row["metadata"] or "{}") or {}
+                    except (TypeError, ValueError):
+                        metadata = {}
+                    tenant_id = str(metadata.get("tenant_id") or "").strip()
+                    if tenant_id and tenant_id != "default":
+                        conn.execute(
+                            f"UPDATE `{table}` SET tenant_id = ? WHERE `{key}` = ?",
+                            (tenant_id, str(row[key])),
+                        )
 
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,

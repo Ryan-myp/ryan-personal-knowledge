@@ -182,18 +182,6 @@ GOOGLE_LOOKUP_CONTRACTS = {
                 "label": "所属 Asset Group", "required": True,
             }],
         ),
-        "feed_id": _google_lookup(
-            "google_list_feeds", "feeds", ["id", "feed_id", "resource_name"],
-            ["name", "feed_name", "id"],
-        ),
-        "feed_item_resource_name": _google_lookup(
-            "google_list_feed_items", "feed_items",
-            ["resource_name", "feed_item_resource_name", "id"],
-            ["name", "feed_item_name", "resource_name", "id"], depends_on=[{
-                "input_field": "feed_id", "value_path": "feed_id",
-                "label": "所属 Feed", "required": True,
-            }],
-        ),
         # Google Ads API does not expose a customer-scoped App catalog.  An
         # App ID is an external store identifier and must never be fabricated
         # from a campaign/account lookup.
@@ -256,7 +244,17 @@ def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, 
 class GoogleCapability(BaseCapability):
     platform_name = "google-ads"
     provider_client_class = GoogleAdsAPIClient
-    provider_method_exclusions = {"for_customer"}
+    # Google Ads v24 no longer exposes the legacy Feed/FeedItem GAQL
+    # resources. Keep the old client adapters for isolated contract tests and
+    # a future versioned adapter, but do not publish them as executable Tools
+    # in the current Capability. This is deliberately an explicit exclusion,
+    # so the capability audit cannot mistake compatibility code for coverage.
+    provider_method_exclusions = {
+        "for_customer",
+        "list_feeds", "get_feed", "create_feed", "update_feed", "delete_feed",
+        "list_feed_items", "get_feed_item", "create_feed_item",
+        "update_feed_item", "delete_feed_item",
+    }
     capability_version = "1.4.0"
     provider_api_version = "v24"
     provider_method_coverage = {
@@ -356,14 +354,6 @@ class GoogleCapability(BaseCapability):
         "graduate_experiment": ["google_graduate_experiment"],
         "promote_experiment": ["google_promote_experiment"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
-        "list_feeds": ["google_list_feeds"], "get_feed": ["google_get_feed"],
-        "create_feed": ["google_create_feed"], "update_feed": ["google_update_feed"],
-        "delete_feed": ["google_delete_feed"],
-        "list_feed_items": ["google_list_feed_items"],
-        "get_feed_item": ["google_get_feed_item"],
-        "create_feed_item": ["google_create_feed_item"],
-        "update_feed_item": ["google_update_feed_item"],
-        "delete_feed_item": ["google_delete_feed_item"],
         "list_customer_conversion_goals": ["google_list_customer_conversion_goals"],
         "update_customer_conversion_goal": ["google_update_customer_conversion_goal"],
         "list_campaign_conversion_goals": ["google_list_campaign_conversion_goals"],
@@ -1640,6 +1630,10 @@ class GoogleCapability(BaseCapability):
                 ),
             )
 
+        # These Feed/FeedItem definitions are retained as compatibility
+        # metadata while the v24 surface is being migrated, but are filtered
+        # before binding below. A planned surface must not become a runtime
+        # Tool simply because an old adapter method still exists.
         tools.extend([
             _ad_tool(
                 name="google_create_demand_gen_multi_asset_ad",
@@ -1929,6 +1923,12 @@ class GoogleCapability(BaseCapability):
             ),
         ])
 
+        unavailable_methods = set(self.provider_method_exclusions) - {"for_customer"}
+        tools = [
+            tool for tool in tools
+            if getattr(tool[1], "method_name", "") not in unavailable_methods
+        ]
+
         bound_tools = []
         for tool in tools:
             definition, handler = bind_provider_method(tool, client)
@@ -2017,7 +2017,7 @@ class GoogleCapability(BaseCapability):
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
-            traits=["write", "campaign"],
+            traits=["write", "campaign", "campaign_only"],
             # The v24 Campaign -> Ad Group -> Ad mutate adapter is verified
             # for controlled test-account runs. Runtime still requires the
             # deployment live fuse, tool allowlist and confirmation.

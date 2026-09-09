@@ -1280,7 +1280,9 @@ def test_store_records_explicit_schema_migrations():
     rows = store._get_conn().execute(
         "SELECT version FROM schema_migrations ORDER BY version"
     ).fetchall()
-    assert [int(row[0]) for row in rows] == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]
+    assert [int(row[0]) for row in rows] == list(
+        range(1, store.SCHEMA_VERSION + 1)
+    )
 
 
 def test_golden_intent_cases_remain_deterministic():

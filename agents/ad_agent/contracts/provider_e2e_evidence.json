@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-09-08",
+  "generated_at": "2026-09-09",
   "scope": "campaign_and_descendant_create_update",
   "safety": {
     "test_accounts_only": true,
@@ -22,6 +22,18 @@
         "ad": {"tool": "meta_create_ad", "id": "120251262049910251", "status": "PAUSED", "create": "passed", "update": "passed"}
       },
       "notes": ["The first Ad Set attempt was rejected by the account budget/bid rule; the same Campaign was reused and the corrected Ad Set/Ad chain passed."]
+    },
+    {
+      "provider": "meta",
+      "test_account": "2806375919473667",
+      "api_version": "v19.0",
+      "campaign_type": "CATALOG_SALES",
+      "status": "live_verified",
+      "resources": {
+        "campaign": {"tool": "meta_create_campaign", "id": "120251279654070251", "status": "PAUSED", "create": "passed", "update": "passed"},
+        "ad_set": {"tool": "meta_create_adset", "id": "120251280075130251", "status": "PAUSED", "create": "passed", "update": "passed"},
+        "ad": {"tool": "meta_create_ad", "id": "120251280082800251", "status": "PAUSED", "create": "passed", "update": "passed"}
+      }
     },
     {
       "provider": "tiktok",
@@ -68,6 +80,20 @@
       "provider": "tiktok",
       "test_account": "7397068114548195329",
       "api_version": "v1.3",
+      "campaign_type": "PRODUCT_SALES_APP",
+      "status": "partial_live_verified",
+      "resources": {
+        "campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875822474379281", "status": "DISABLE", "create": "passed", "update": "not_run"},
+        "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": "1875822478125442", "status": "DISABLE", "create": "passed", "update": "passed"},
+        "ad": {"tool": "tiktok_smart_plus_create_ad", "id": null, "status": null, "create": "provider_rejected", "update": "not_run"}
+      },
+      "error": {"category": "provider_asset_access", "message": "TikTok rejected every tested video-cover image as inaccessible to the test advertiser; no Ad resource was returned."},
+      "notes": ["The campaign and Ad Group were created with catalog_enabled=true, catalog_id, catalog_authorized_bc_id, Indonesia location 1643084, ACTIVE_PAY and VALUE/VO_HIGHEST_VALUE. Product Set lookup endpoints returned HTTP 404 and no Product Set ID was guessed."]
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "7397068114548195329",
+      "api_version": "v1.3",
       "campaign_type": "LEAD_GENERATION",
       "status": "live_verified",
       "resources": {
@@ -81,13 +107,24 @@
       "test_account": "9055507554",
       "api_version": "v24",
       "campaign_types": ["PERFORMANCE_MAX", "SHOPPING", "APP"],
-      "status": "campaign_live_verified",
+      "status": "live_verified_with_provider_limits",
       "resources": {
-        "PERFORMANCE_MAX": {"campaign": {"id": "24221191602", "status": "PAUSED", "create": "passed"}},
-        "SHOPPING": {"campaign": {"id": "24232139476", "status": "PAUSED", "create": "passed"}},
-        "APP": {"campaign": {"id": "24226802801", "status": "PAUSED", "create": "passed"}}
+        "PERFORMANCE_MAX": {
+          "campaign": {"id": "24221191602", "status": "PAUSED", "create": "passed", "update": "passed"},
+          "asset_group": {"id": "6745721013", "status": "PAUSED", "create": "passed", "update": "passed"}
+        },
+        "SHOPPING": {
+          "campaign": {"id": "24232139476", "status": "PAUSED", "create": "passed", "update": "passed"},
+          "ad_group": {"id": "201614104924", "status": "PAUSED", "create": "passed", "update": "passed"},
+          "product_group": {"id": "293946777986", "status": "ENABLED", "create": "passed", "update": "not_run"}
+        },
+        "APP": {
+          "campaign": {"id": "24226802801", "status": "PAUSED", "create": "passed", "update": "passed"},
+          "ad_group": {"id": "199870458893", "status": "PAUSED", "create": "passed", "update": "passed"},
+          "ad": {"id": "199870458~823804628628", "status": "ENABLED", "create": "passed", "update": "not_run"}
+        }
       },
-      "notes": ["The PMax, Shopping and App campaign resources were created against the specified test customer. Descendant resource IDs are intentionally not asserted here unless present in the captured run output."]
+      "notes": ["Campaigns and the verified PMax Asset Group, Shopping Ad Group and App Ad Group were created and read back against the specified test customer. Google does not allow the tested Shopping Product Group to be paused, and v24 rejected pausing this App Ad type; those states are recorded rather than normalized to PAUSED."]
     }
   ]
 }

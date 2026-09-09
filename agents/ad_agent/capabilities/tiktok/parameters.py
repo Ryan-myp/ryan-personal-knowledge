@@ -9,6 +9,8 @@ know that its values are dynamic and must not be hard-coded here.
 
 from typing import Any, Optional
 
+from ...api_clients.tiktok_client import TIKTOK_SMART_PLUS_CTA_VALUES
+
 
 TIKTOK_OBJECTIVE_TYPES = [
     "APP_PROMOTION", "PRODUCT_SALES", "TRAFFIC", "VIDEO_VIEWS",
@@ -1848,6 +1850,12 @@ def tiktok_smart_plus_campaign_schema() -> dict[str, Any]:
             {"if": {"objective_type": "WEB_CONVERSIONS"}, "required": ["sales_destination"]},
             {"if": {"objective_type": "SALES"}, "required": ["sales_destination"]},
             {"if": {"objective_type": "PRODUCT_SALES"}, "required": ["sales_destination"]},
+            {
+                "if": {"objective_type": "PRODUCT_SALES"},
+                "required": ["catalog_enabled"],
+                "allowed": {"catalog_enabled": [True]},
+                "message": "PRODUCT_SALES Smart+ requires catalog_enabled=true (catalog-backed delivery)",
+            },
             {"if": {"objective_type": "APP_PROMOTION"}, "required": ["app_id"], "message": "APP_PROMOTION requires app_id"},
         ],
         "properties": {
@@ -1954,6 +1962,11 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 },
                 "message": "TRAFFIC Smart+ requires WEBSITE and CLICK or TRAFFIC_LANDING_PAGE_VIEW",
             },
+            {
+                "if": {"catalog_id": {"exists": True}},
+                "required": ["catalog_authorized_bc_id"],
+                "message": "Catalog Ads require catalog_authorized_bc_id returned with the selected catalog",
+            },
         ],
         "properties": {
             "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
@@ -1991,6 +2004,15 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 selection_label_fields=["app_name", "name", "display_name", "id"],
             ),
             "catalog_id": _field("string", "Catalog ID returned by tiktok_list_catalogs", minLength=1, lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs"),
+            "catalog_authorized_bc_id": _field(
+                "string",
+                "Business Center ID returned with the selected Catalog; required for Catalog Ads",
+                minLength=1,
+                lookup_tool="tiktok_list_catalogs",
+                lookup_result_key="catalogs",
+                selection_value_fields=["catalog_authorized_bc_id", "authorized_bc_id", "bc_id"],
+                selection_label_fields=["catalog_name", "name", "catalog_authorized_bc_id"],
+            ),
             "product_set_id": _field(
                 "string", "Product set ID returned by tiktok_list_product_sets", minLength=1,
                 lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
@@ -2103,8 +2125,24 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "identity_id": _field("string", "Identity ID", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities"),
             "identity_authorized_bc_id": _field("string", "Authorized Business Center selected from the identity lookup", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities", selection_value_fields=["authorized_bc_id", "bc_id", "id"], selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"]),
             "call_to_action_id": _field("string", "CTA ID"),
-            "call_to_action": _field("string", "CTA enum value, for example SHOP_NOW or LEARN_MORE"),
-            "call_to_action_list": _field("array", "Smart+ CTA list", minItems=1, maxItems=3, items={"type": "object", "required": ["call_to_action"], "properties": {"call_to_action": _field("string", "CTA enum value")}, "additionalProperties": False}),
+            "call_to_action": _field(
+                "string", "TikTok Smart+ CTA enum value",
+                enum=list(TIKTOK_SMART_PLUS_CTA_VALUES),
+                option_aliases={"INSTALL_NOW": ["install", "安装", "安装应用"]},
+            ),
+            "call_to_action_list": _field(
+                "array", "Smart+ CTA list", minItems=1, maxItems=3,
+                items={
+                    "type": "object", "required": ["call_to_action"],
+                    "properties": {
+                        "call_to_action": _field(
+                            "string", "CTA enum value",
+                            enum=list(TIKTOK_SMART_PLUS_CTA_VALUES),
+                            option_aliases={"INSTALL_NOW": ["install", "安装", "安装应用"]},
+                        )
+                    }, "additionalProperties": False,
+                },
+            ),
             "landing_page_url": _field("string", "Landing page URL"),
             "landing_page_url_list": _field("array", "Smart+ landing page URL list", minItems=1, maxItems=1, items={"type": "object", "required": ["landing_page_url"], "properties": {"landing_page_url": _field("string", "Landing page URL", minLength=1)}, "additionalProperties": False}),
             "page_list": _field("array", "Instant Page IDs for lead generation", minItems=1, maxItems=3, items={"type": "object", "required": ["page_id"], "properties": {"page_id": _field("string", "TikTok Instant Page ID", minLength=1)}, "additionalProperties": False}),

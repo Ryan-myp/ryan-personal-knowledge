@@ -8,7 +8,7 @@ from ...core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ...api_clients.meta_client import MetaAPIClient
-from ..base import call_with_optional_page_size
+from ..base import call_with_optional_page_size, resource_was_created_in_current_run
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +84,10 @@ class MetaGetCampaignHandler(ToolHandler):
 
         if self.client and campaign_id:
             try:
-                if isinstance(self.client, MetaAPIClient) and not self.client.resource_belongs_to_account(
-                    account_id, "campaign", campaign_id
+                if (
+                    isinstance(self.client, MetaAPIClient)
+                    and not resource_was_created_in_current_run(ctx, "campaign", campaign_id)
+                    and not self.client.resource_belongs_to_account(account_id, "campaign", campaign_id)
                 ):
                     return ToolResult.error(
                         f"Campaign {campaign_id} does not belong to account {account_id}"

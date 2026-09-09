@@ -9,7 +9,12 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ..base import BaseCapability, CampaignUpdateHandler, apply_lookup_contracts
+from ..base import (
+    BaseCapability,
+    CampaignUpdateHandler,
+    apply_lookup_contracts,
+    resource_was_created_in_current_run,
+)
 from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import MetaListCampaignsHandler, MetaGetCampaignHandler, MetaCreateCampaignHandler
 from .ad_sets import (
@@ -211,8 +216,10 @@ def _meta_update_adapter(
         raise AttributeError(f"Meta {resource_type} update adapter is unavailable")
     # A Graph object can be addressed directly by ID even when the same token
     # can see more than one account. Verify ownership before the write.
-    if isinstance(client, MetaAPIClient) and not client.resource_belongs_to_account(
-        ctx.account_id, resource_type, resource_id
+    if (
+        isinstance(client, MetaAPIClient)
+        and not resource_was_created_in_current_run(ctx, resource_type, resource_id)
+        and not client.resource_belongs_to_account(ctx.account_id, resource_type, resource_id)
     ):
         raise PermissionError(
             f"Meta {resource_type} {resource_id} does not belong to account {ctx.account_id}"
@@ -1288,7 +1295,7 @@ class MetaCapability(BaseCapability):
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,
             replay_policy=ReplayPolicy.UNSAFE,
-            traits=["write", "campaign"],
+            traits=["write", "campaign", "campaign_only"],
             # This is an explicitly verified, paused-only path for the
             # controlled Meta test account.  Runtime still requires the
             # deployment fuse, account whitelist, principal permission,

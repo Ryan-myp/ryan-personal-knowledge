@@ -13,6 +13,32 @@ from fastapi.testclient import TestClient
 from agents.ad_agent import api_server
 
 
+def _chat_page_javascript() -> str:
+    """Read the bootstrap and split bundles as one browser contract."""
+    names = [
+        "chat.js", "chat-state.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
+        "chat-blueprint-editor.js", "chat-skills.js", "chat-creation.js",
+        "chat-messages.js",
+    ]
+    return "\n".join(
+        (api_server.STATIC_PATH / "js" / name).read_text(encoding="utf-8")
+        for name in names
+    )
+
+
+def _chat_page_styles() -> str:
+    """Read the CSS bootstrap and split bundles as one browser contract."""
+    names = [
+        "chat.css", "chat-foundation.css", "chat-workspaces.css",
+        "chat-creation.css", "chat-overrides.css",
+    ]
+    return "\n".join(
+        (api_server.STATIC_PATH / "css" / name).read_text(encoding="utf-8")
+        for name in names
+    )
+
+
 def test_local_env_file_is_loaded_without_overriding_process_environment(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
     env_file.write_text(
@@ -47,6 +73,7 @@ class FakeRuntime:
     def __init__(self):
         self.registry = FakeRegistry()
         self.calls = []
+        self.recovery_calls = []
         self.parameter_option_calls = []
         self.execution_mode = "dry_run"
         self.allow_live_writes = False
@@ -107,6 +134,14 @@ class FakeRuntime:
             },
             "state": "active",
         }]
+
+    def recover_task(self, task_id, **kwargs):
+        self.recovery_calls.append((task_id, kwargs))
+        if kwargs["tenant_id"] != "tenant-a":
+            return None
+        if not kwargs["provider_verified"]:
+            raise ValueError("provider_verified=true is required before task recovery")
+        return {"task_id": task_id, "status": "queued"}
 
 
 @pytest.fixture
@@ -172,6 +207,56 @@ def test_execution_mode_change_requires_planning_permission(monkeypatch, fake_se
         )
     assert response.status_code == 403
     assert fake_server.execution_mode == "dry_run"
+
+
+def test_task_recovery_api_enforces_proof_permission_and_tenant_scope(
+    monkeypatch, fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "read-key": {
+                "user_id": "reader", "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            },
+            "reconcile-key": {
+                "user_id": "operator", "tenant_id": "tenant-a",
+                "permissions": ["ads.reconcile"],
+            },
+            "other-key": {
+                "user_id": "other", "tenant_id": "tenant-b",
+                "permissions": ["ads.reconcile"],
+            },
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        denied = client.post(
+            "/tasks/task-1/recover", headers={"X-API-Key": "read-key"},
+            json={"recovery_reference": "provider-readback-1", "provider_verified": True},
+        )
+        unverified = client.post(
+            "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
+            json={"recovery_reference": "provider-readback-1"},
+        )
+        missing_reference = client.post(
+            "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
+            json={"provider_verified": True},
+        )
+        recovered = client.post(
+            "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
+            json={"recovery_reference": "provider-readback-1", "provider_verified": True},
+        )
+        hidden = client.post(
+            "/tasks/task-1/recover", headers={"X-API-Key": "other-key"},
+            json={"recovery_reference": "provider-readback-1", "provider_verified": True},
+        )
+    assert denied.status_code == 403
+    assert unverified.status_code == 422
+    assert missing_reference.status_code == 422
+    assert recovered.status_code == 200
+    assert recovered.json()["status"] == "queued"
+    assert hidden.status_code == 404
+    assert fake_server.recovery_calls[-1][1]["tenant_id"] == "tenant-b"
 
 
 def test_execution_mode_live_requires_write_permission_and_deployment_gate(
@@ -282,11 +367,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         response = client.get("/")
 
     assert response.status_code == 200
-    html = response.text + "\n" + (
-        api_server.STATIC_PATH / "js" / "chat.js"
-    ).read_text(encoding="utf-8") + "\n" + (
-        api_server.STATIC_PATH / "css" / "chat.css"
-    ).read_text(encoding="utf-8")
+    html = response.text + "\n" + _chat_page_javascript() + "\n" + _chat_page_styles()
     for marker in (
         "Skills 管理", "SKILL.md", "references/", "scripts/", "assets/", "evals/",
         "保存为新版本", "ZIP 导入", "Skill-up 评测", "发布 / 回滚", "下线",
@@ -589,9 +670,7 @@ def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
 
 
 def test_chat_page_does_not_turn_http_errors_into_operation_complete(fake_server):
-    html = api_server.TEMPLATE_PATH.read_text(encoding="utf-8") + "\n" + (
-        api_server.STATIC_PATH / "js" / "chat.js"
-    ).read_text(encoding="utf-8")
+    html = api_server.TEMPLATE_PATH.read_text(encoding="utf-8") + "\n" + _chat_page_javascript()
     assert "if (!response.ok)" in html
     assert "data.detail || data.error" in html
 
