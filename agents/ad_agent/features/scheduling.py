@@ -79,6 +79,10 @@ class SchedulingFeature:
     def can_handle(self, intent: Any) -> bool:
         return str(getattr(intent, "intent_type", "") or "") in self.INTENTS
 
+    def is_control_intent(self, intent: Any) -> bool:
+        """Expose control-plane ownership without leaking intent names upward."""
+        return self.can_handle(intent)
+
     def is_batch_intent(self, _intent: Any) -> bool:
         return False
 
@@ -291,9 +295,9 @@ class SchedulingFeature:
             return None
         return str(match.group(1))
 
-    def adopt_pending_intent(self, runtime: Any, intent: ParsedIntent, *, session_id: str) -> ParsedIntent:
+    def adopt_pending_intent(self, services: Any, intent: ParsedIntent, *, session_id: str) -> ParsedIntent:
         """Treat concise follow-ups as answers to the durable schedule draft."""
-        draft = runtime.get_schedule_draft(session_id)
+        draft = services.scheduling.get_draft(session_id)
         if draft and str(getattr(intent, "intent_type", "") or "") not in self.INTENTS:
             intent.intent_type = "schedule_create"
         return intent
@@ -319,7 +323,7 @@ class SchedulingFeature:
         )
 
     def _build_draft(
-        self, runtime: Any, intent: ParsedIntent, *, existing: Optional[Mapping[str, Any]],
+        self, services: Any, intent: ParsedIntent, *, existing: Optional[Mapping[str, Any]],
         session_id: str, account_id: Optional[str], platform_params: Optional[dict], principal: Any,
     ) -> dict[str, Any]:
         previous = dict(existing or {})
@@ -379,7 +383,7 @@ class SchedulingFeature:
         if not selected_account:
             missing.append("account")
         if not missing:
-            preflight = runtime.preflight_scheduled_prompt(
+            preflight = services.preflight_scheduled_prompt(
                 prompt, session_id=session_id, platforms=platforms,
                 account_id=selected_account, platform_params=params,
                 permissions=getattr(principal, "permissions", None),
@@ -399,40 +403,40 @@ class SchedulingFeature:
         return draft
 
     def handle_turn(
-        self, runtime: Any, intent: ParsedIntent, *, session_id: str,
+        self, services: Any, intent: ParsedIntent, *, session_id: str,
         user_id: str, tenant_id: str, account_id: Optional[str],
         platform_params: Optional[dict], principal: Any,
     ) -> dict[str, Any]:
         intent_type = str(intent.intent_type)
         if intent_type == "schedule_list":
-            schedules = runtime.list_schedules(user_id=user_id, tenant_id=tenant_id, limit=100)
+            schedules = services.scheduling.list(user_id=user_id, tenant_id=tenant_id, limit=100)
             return {"success": True, "schedules": schedules, "reply": f"当前共有 {len(schedules)} 个定时任务。"}
         schedule_id = self._schedule_id(intent)
         if intent_type in {"schedule_pause", "schedule_resume", "schedule_delete", "schedule_run_now"} and not schedule_id:
             return {"success": False, "needs_input": True, "reply": "请提供要操作的定时任务 ID。"}
         if intent_type == "schedule_pause":
-            schedule = runtime.pause_schedule(schedule_id, user_id=user_id, tenant_id=tenant_id)
+            schedule = services.scheduling.pause(schedule_id, user_id=user_id, tenant_id=tenant_id)
             return {"success": bool(schedule), "schedule": schedule, "reply": "定时任务已暂停。" if schedule else "未找到该定时任务。"}
         if intent_type == "schedule_resume":
-            schedule = runtime.resume_schedule(schedule_id, user_id=user_id, tenant_id=tenant_id)
+            schedule = services.scheduling.resume(schedule_id, user_id=user_id, tenant_id=tenant_id)
             return {"success": bool(schedule), "schedule": schedule, "reply": "定时任务已恢复。" if schedule else "未找到该定时任务。"}
         if intent_type == "schedule_delete":
-            deleted = runtime.delete_schedule(schedule_id, user_id=user_id, tenant_id=tenant_id)
+            deleted = services.scheduling.delete(schedule_id, user_id=user_id, tenant_id=tenant_id)
             return {"success": deleted, "reply": "定时任务已删除。" if deleted else "未找到该定时任务。"}
         if intent_type == "schedule_run_now":
-            result = runtime.run_schedule_now(schedule_id, user_id=user_id, tenant_id=tenant_id)
+            result = services.scheduling.run_now(schedule_id, user_id=user_id, tenant_id=tenant_id)
             return {"success": bool(result), "task": result, "reply": "已提交立即执行。" if result else "未找到该定时任务。"}
 
-        existing = runtime.get_schedule_draft(session_id)
+        existing = services.scheduling.get_draft(session_id)
         raw = str(getattr(intent, "raw_input", "") or "").strip()
         if existing and self._CANCEL_RE.match(raw):
-            runtime.set_schedule_draft(session_id, None)
+            services.scheduling.set_draft(session_id, None)
             return {"success": True, "reply": "已取消本次定时任务创建，草稿已清除。", "draft_cleared": True}
         if existing and existing.get("status") == "awaiting_confirmation" and self._CONFIRM_RE.match(raw):
             if (existing.get("preflight") or {}).get("status") != "ready" or existing.get("missing"):
                 return {"success": False, "needs_input": True, "reply": "当前草稿尚未通过能力预检，请先补充缺失信息。", "draft": existing}
             try:
-                schedule = runtime.create_schedule(
+                schedule = services.scheduling.create(
                     name=str(existing.get("name") or existing.get("prompt") or "Scheduled Agent task"),
                     prompt=str(existing["prompt"]), cron_expression=str(existing["cron_expression"]),
                     timezone=str(existing.get("timezone") or "Asia/Shanghai"), session_id=session_id,
@@ -443,17 +447,17 @@ class SchedulingFeature:
             except Exception:
                 # Keep the draft for a retry; Runtime will redact the error.
                 raise
-            runtime.set_schedule_draft(session_id, None)
+            services.scheduling.set_draft(session_id, None)
             return {
                 "success": True, "schedule": schedule, "draft_cleared": True,
                 "reply": f"定时任务已创建，将于 {schedule.get('next_run_at')} 首次执行。",
             }
 
         draft = self._build_draft(
-            runtime, intent, existing=existing, session_id=session_id,
+            services, intent, existing=existing, session_id=session_id,
             account_id=account_id, platform_params=platform_params, principal=principal,
         )
-        runtime.set_schedule_draft(session_id, draft)
+        services.scheduling.set_draft(session_id, draft)
         if draft.get("status") == "awaiting_confirmation":
             return {
                 "success": False, "needs_input": True, "confirmation_required": True,

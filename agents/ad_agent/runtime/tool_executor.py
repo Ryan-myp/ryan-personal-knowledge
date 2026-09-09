@@ -16,9 +16,6 @@ from typing import Any, Optional
 from ..core.interfaces import ToolDefinition, ToolError, ToolResult
 from ..core.tool_registry import validate_tool_input
 from ..core.features import RuntimeServices
-from ..api_clients.base import APIError, AuthError, RateLimitError, TemporaryError
-
-
 def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
     """Map execution failures to stable recovery semantics.
 
@@ -28,21 +25,45 @@ def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
     caller changes the request or credentials through trusted configuration.
     """
     message = str(error)
-    if isinstance(error, (TimeoutError, FutureTimeoutError)):
+    # Keep this layer Provider-neutral. Provider adapters may use their own
+    # exception classes; the stable boundary is the optional ``error_category``
+    # marker/status code, with class-name fallbacks for the built-in adapters.
+    error_name = type(error).__name__
+    category = str(
+        getattr(error, "error_category", None)
+        or getattr(error, "category", None)
+        or ""
+    ).lower()
+    is_timeout = isinstance(error, (TimeoutError, FutureTimeoutError)) or category in {
+        "timeout", "deadline",
+    }
+    is_auth = error_name == "AuthError" or category in {"auth", "authentication"}
+    is_rate_limit = error_name == "RateLimitError" or category in {
+        "rate_limit", "ratelimit",
+    }
+    is_temporary = error_name == "TemporaryError" or category in {
+        "temporary", "transient", "transport",
+    }
+    status_code = getattr(error, "status_code", None)
+    try:
+        status_code = int(status_code or 0)
+    except (TypeError, ValueError):
+        status_code = 0
+    if is_timeout:
         if tool.is_write_tool:
             return ToolError(
                 "provider_result_unknown", "PROVIDER_RESULT_UNKNOWN", message,
                 "Reconcile provider state before any retry",
             )
         return ToolError("retriable", "TIMEOUT", message, "Retry automatically")
-    if isinstance(error, AuthError):
+    if is_auth:
         return ToolError(
             "non_retriable", "AUTH_EXPIRED", message,
             "Refresh credentials through trusted configuration",
         )
-    if isinstance(error, RateLimitError):
+    if is_rate_limit:
         return ToolError("retriable", "RATE_LIMIT", message, "Retry with backoff")
-    if isinstance(error, TemporaryError):
+    if is_temporary:
         if tool.is_write_tool:
             return ToolError(
                 "provider_result_unknown", "PROVIDER_RESULT_UNKNOWN", message,
@@ -52,7 +73,7 @@ def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
             "retriable", "PROVIDER_TEMPORARY_ERROR", message,
             "Retry with backoff",
         )
-    if isinstance(error, APIError) and int(getattr(error, "status_code", 0) or 0) >= 500:
+    if status_code >= 500:
         if tool.is_write_tool:
             return ToolError(
                 "provider_result_unknown", "PROVIDER_RESULT_UNKNOWN", message,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any, Protocol
+from .agent_profile import AgentProfile
 
 
 class ResponseRenderer(Protocol):
@@ -59,11 +60,17 @@ class LLMResponseSynthesizer:
         r"\s*[:=]\s*[^\s,;]+"
     )
     STABLE_SYSTEM_PROMPT = (
-        "[STABLE] 你是一个严谨、可审计的广告 Agent 回复助手。"
+        "[STABLE] 你是一个严谨、可审计的 Agent 回复助手。"
         "只基于已提供的用户问题、意图、知识引用、受控 Memory 和已执行结果回答；"
         "不调用工具、不编造平台数据、不改变执行状态。"
-        "这是给广告投放人员看的最终答复，优先使用中文并保留关键数量、状态和时间范围。"
+        "优先使用用户使用的语言并保留关键数量、状态和时间范围。"
     )
+
+    def __init__(self, profile: AgentProfile | None = None):
+        self.profile = profile or AgentProfile()
+        self.stable_system_prompt = (
+            self.STABLE_SYSTEM_PROMPT + "\n\n" + self.profile.prompt_block()
+        )
 
     @classmethod
     def _safe_payload(cls, value: Any, max_chars: int = 12000) -> str:
@@ -140,7 +147,7 @@ class LLMResponseSynthesizer:
         )
         try:
             answer = llm.call([
-                {"role": "system", "content": self.STABLE_SYSTEM_PROMPT},
+                {"role": "system", "content": self.stable_system_prompt},
                 {"role": "system", "content": context_prompt},
                 {"role": "system", "content": volatile_prompt},
                 {"role": "user", "content": "请根据以上 Stable、Context、Volatile 内容生成最终用户答复。"},

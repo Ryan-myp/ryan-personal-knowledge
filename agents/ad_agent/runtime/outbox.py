@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import threading
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
@@ -46,7 +47,9 @@ class OutboxConsumer:
         self.poll_interval = max(0.01, float(poll_interval))
         self.batch_size = max(1, min(int(batch_size), 100))
         self.max_backoff_seconds = max(0.1, float(max_backoff_seconds))
-        self.consumer_id = f"outbox:{id(self)}"
+        # ``id(self)`` is only process-local and can collide after a restart;
+        # claims are a cross-instance coordination boundary.
+        self.consumer_id = f"outbox:{uuid.uuid4().hex}"
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._heartbeat_thread: Optional[threading.Thread] = None

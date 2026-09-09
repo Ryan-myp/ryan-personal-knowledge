@@ -253,7 +253,10 @@ class SchedulerService:
                 with self._lock:
                     self._metrics.submitted_total += 1
             except Exception as exc:
-                safe_error = str(exc)[:1000]
+                # The scheduler is an infrastructure boundary. Persist only
+                # a bounded exception class so Provider failures cannot leak
+                # credentials into the durable run console.
+                safe_error = type(exc).__name__
                 # Keep submission failures queued so a transient queue/database
                 # outage is retried instead of consuming the recurring slot.
                 self.store.update_scheduled_task_run(
@@ -274,7 +277,10 @@ class SchedulerService:
             task = self.store.get_task(run.task_id, tenant_id=run.tenant_id, user_id=run.user_id)
             if not task or task.status in {"queued", "running", "cancelling"}:
                 continue
-            status = "succeeded" if task.status == "succeeded" else "failed"
+            status = task.status if task.status in {
+                "succeeded", "failed", "partially_failed", "awaiting_input",
+                "cancelled", "recovery_required",
+            } else "failed"
             self.store.update_scheduled_task_run(
                 run.schedule_run_id, status,
                 finished_at=task.finished_at or datetime.now(timezone.utc).isoformat(),
@@ -293,7 +299,7 @@ class SchedulerService:
                     self._metrics.last_error = None
             except Exception as exc:
                 with self._lock:
-                    self._metrics.last_error = str(exc)[:1000]
+                    self._metrics.last_error = type(exc).__name__
                 logger.exception("scheduled task scan failed")
             self._stop.wait(self.poll_interval)
 

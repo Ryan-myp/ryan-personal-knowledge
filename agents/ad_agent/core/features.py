@@ -22,6 +22,9 @@ class RuntimeFeature(Protocol):
     def can_handle(self, intent: Any) -> bool:
         """Return whether this feature owns the intent/workflow."""
 
+    def is_control_intent(self, intent: Any) -> bool:
+        """Return whether the intent belongs to the feature control plane."""
+
     def is_batch_intent(self, intent: Any) -> bool:
         """Return whether the feature owns a planning-only batch path."""
 
@@ -47,6 +50,7 @@ class RuntimeServices(Protocol):
     write_guard: Any
     read_only_mode: bool
     offline_mode: bool
+    scheduling: Any
 
     def canonical_platform(self, platform: str) -> str: ...
     def get_registered_tool(self, tool_name: str) -> tuple[Any, Any]: ...
@@ -89,3 +93,5 @@ class RuntimeServices(Protocol):
     def is_dry_run(self) -> bool: ...
     def workflow_lease_owner(self) -> str: ...
     def workflow_stale_after_seconds(self) -> float: ...
+
+    def preflight_scheduled_prompt(self, prompt: str, **kwargs: Any) -> dict[str, Any]: ...

@@ -26,7 +26,7 @@ def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():
         task_id="recovery-hidden", tenant_id="tenant-b", user_id="user-b",
         kind="agent.turn", status="recovery_required", created_at=old, updated_at=old,
     ))
-    store.create_session("session-a", "user-a")
+    store.create_session("session-a", "user-a", metadata={"tenant_id": "tenant-a"})
     tool_started = (now - timedelta(minutes=2)).isoformat()
     tool_ended = (now - timedelta(minutes=1, seconds=59)).isoformat()
     store.record_tool_call(ToolCallRecord(

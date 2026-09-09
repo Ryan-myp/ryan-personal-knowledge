@@ -52,18 +52,11 @@ class WorkflowCoordinator:
             self.services.execution_mode,
             status="running",
             metadata=workflow_metadata,
-            emit_outbox=self.outbox is None,
+            # Workflow state and its durable event must commit together. The
+            # backend owns this transaction; a process-level publisher is
+            # only a delivery mechanism and cannot sit between the two writes.
+            emit_outbox=True,
         )
-        if self.outbox is not None:
-            self.outbox.publish(
-                workflow_id,
-                "workflow.created",
-                {
-                    "workflow_id": workflow_id,
-                    "status": "running",
-                    "metadata": workflow_metadata,
-                },
-            )
         store.heartbeat_workflow(
             workflow_id,
             self.services.workflow_lease_owner(),
@@ -353,15 +346,7 @@ class WorkflowCoordinator:
             workflow_id,
             status,
             workflow_metadata,
-            emit_outbox=self.outbox is None,
+            # Keep the state transition and workflow.updated event in one
+            # persistence transaction for restart-safe delivery.
+            emit_outbox=True,
         )
-        if self.outbox is not None:
-            self.outbox.publish(
-                workflow_id,
-                "workflow.updated",
-                {
-                    "workflow_id": workflow_id,
-                    "status": status,
-                    "metadata": workflow_metadata,
-                },
-            )

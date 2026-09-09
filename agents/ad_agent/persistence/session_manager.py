@@ -42,9 +42,14 @@ class SessionManager:
         self.store.create_session(session_id, user_id, account_id, metadata)
         return self.get_session(session_id)
     
-    def get_session(self, session_id: str) -> Optional[dict]:
+    def get_session(
+        self, session_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[dict]:
         """获取会话信息"""
-        return self.store.get_session(session_id)
+        return self.store.get_session(
+            session_id, user_id=user_id, tenant_id=tenant_id
+        )
 
     def delete_session(self, session_id: str) -> bool:
         """Delete one durable session and its cascading local history."""
@@ -54,9 +59,12 @@ class SessionManager:
         """更新会话元数据（不保存凭证）。"""
         self.store.update_session(session_id, metadata or {})
     
-    def list_sessions(self, user_id: str = None, limit: int = 50) -> list:
+    def list_sessions(
+        self, user_id: str = None, limit: int = 50,
+        tenant_id: Optional[str] = None,
+    ) -> list:
         """列出会话"""
-        return self.store.list_sessions(user_id, limit)
+        return self.store.list_sessions(user_id, limit, tenant_id)
 
     def acquire_session_lease(
         self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
@@ -387,8 +395,13 @@ class SessionManager:
             parent_resource_type=parent_resource_type,
         )
 
-    def get_workflow(self, workflow_id: str) -> Optional[dict]:
-        return self.store.get_workflow(workflow_id)
+    def get_workflow(
+        self, workflow_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        return self.store.get_workflow(
+            workflow_id, user_id=user_id, tenant_id=tenant_id
+        )
 
     def mark_workflow_items_for_compensation(
         self, workflow_id: str, sequences: list[int]
@@ -417,7 +430,8 @@ class SessionManager:
     def list_resumable_workflows(
         self, user_id: Optional[str] = None, limit: int = 50,
         include_stale_running: bool = False, stale_after_seconds: float = 300.0,
+        tenant_id: Optional[str] = None,
     ) -> list[dict]:
         return self.store.list_resumable_workflows(
-            user_id, limit, include_stale_running, stale_after_seconds
+            user_id, limit, include_stale_running, stale_after_seconds, tenant_id
         )

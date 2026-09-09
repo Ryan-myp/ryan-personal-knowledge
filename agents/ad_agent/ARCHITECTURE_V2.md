@@ -54,7 +54,7 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐    │
 │  │ IntentParser    │  │ IntentRouter    │  │ ToolRegistry             │    │
 │  │ 意图解析         │→│ 路由分发         │→ │ 工具注册/执行            │    │
-│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ 312 tools              │    │
+│  │ - LLM 结构化解析    │ │ - 发现式路由   │  │ 302 tools              │    │
 │  │ - 上下文反馈         │ │ - 确定性执行   │  │ - 受控 Runtime gates     │    │
 │  └─────────────────┘  └─────────────────┘  └─────────────────────────┘    │
 │                                                                             │
@@ -72,7 +72,7 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │
 │  │ Meta        │  │ Google Ads  │  │ TikTok      │  │ DV360            │  │
 │  │ Capability  │  │ Capability  │  │ Capability  │  │ Capability       │  │
-│  │ 76 tools    │  │ 108 tools   │  │ 79 tools    │  │ 31 tools         │  │
+│  │ 78 tools    │  │ 103 tools   │  │ 90 tools    │  │ 31 tools         │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
                                    │
@@ -267,7 +267,7 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单（当前 Capability 共 312 个工具）
+## 三、工具清单（当前 Capability 共 302 个工具）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
@@ -308,7 +308,7 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 
 ### Provider 接口与版本演进
 
-当前 312 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
+当前 302 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
 官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
 参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
 发布门禁。
@@ -444,7 +444,11 @@ Tool Registry、权限、账户范围或执行计划。
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `runtime/runtime.py` | 当前源码 | Agent 主循环与通用生命周期协调 |
+| `core/runtime_kernel.py` | 325 | 与业务无关的请求规范化、Session 并发、跨实例租约和执行委托 |
+| `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
+| `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
+| `runtime/ad_turn_engine.py` | 当前源码 | 广告应用回合执行：意图、Tool 计划、策略和结果闭环 |
+| `runtime/supervisor.py` | 当前源码 | Task、Scheduler、Outbox、Event Repair worker 生命周期 |
 | `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |
 | `runtime/tool_executor.py` | 当前源码 | Tool 执行、超时与 Provider Client 隔离 |
 | `runtime/security.py` | 当前源码 | 红线字段、确认、结果证据与不确定失败边界 |
@@ -566,7 +570,7 @@ runtime.auto_load_skills(
 |------|------|------|
 | **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
 | **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 312 个） |
+| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 302 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）

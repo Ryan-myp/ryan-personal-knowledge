@@ -34,6 +34,49 @@ class UnknownTaskKind(TaskExecutorError):
     """No trusted handler has been registered for the requested kind."""
 
 
+TASK_OUTCOME_STATUSES = frozenset({
+    "succeeded", "failed", "partially_failed", "awaiting_input",
+    "recovery_required", "cancelled",
+})
+
+
+def task_outcome_status(result: Any) -> str:
+    """Translate a handler result into a durable task outcome.
+
+    A handler returning normally only means that the handler completed.  It
+    does not mean the business operation succeeded.  The explicit
+    ``task_status`` field is preferred; the remaining fallbacks keep existing
+    handlers safe while they migrate to the result contract.
+    """
+    if isinstance(result, dict):
+        explicit = result.get("task_status")
+        if explicit in TASK_OUTCOME_STATUSES:
+            return str(explicit)
+        signals = result.get("runtime_signals")
+        if isinstance(signals, dict) and any(
+            bool(signals.get(name))
+            for name in ("session_lease_lost", "task_lease_lost")
+        ):
+            return "recovery_required"
+        if result.get("recovery_required") or result.get("provider_state") == "unknown":
+            return "recovery_required"
+        if result.get("needs_input") or result.get("needs_confirmation"):
+            return "awaiting_input"
+        raw_status = result.get("status")
+        if raw_status in TASK_OUTCOME_STATUSES:
+            return str(raw_status)
+        result_items = result.get("results")
+        if isinstance(result_items, list) and result_items:
+            successes = [bool(item.get("success")) for item in result_items if isinstance(item, dict)]
+            if successes and not any(successes):
+                return "failed"
+            if successes and any(successes) and not all(successes):
+                return "partially_failed"
+        if result.get("success") is False:
+            return "failed"
+    return "succeeded"
+
+
 @dataclass
 class TaskExecutionContext:
     """Input exposed to one trusted task handler."""
@@ -45,10 +88,15 @@ class TaskExecutionContext:
     user_id: str
     metadata: dict[str, Any] = field(default_factory=dict)
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    lease_lost_event: threading.Event = field(default_factory=threading.Event)
     deadline: Optional[datetime] = None
 
     def is_cancelled(self) -> bool:
         return self.cancel_event.is_set()
+
+    def is_lease_lost(self) -> bool:
+        """Whether this worker no longer owns the durable task lease."""
+        return self.lease_lost_event.is_set()
 
     def remaining_seconds(self) -> Optional[float]:
         if self.deadline is None:
@@ -276,16 +324,44 @@ class TaskExecutor:
                 tenant_id=record.tenant_id, user_id=record.user_id,
                 metadata=record.metadata, cancel_event=cancel_event, deadline=deadline,
             )
-            if self.store.get_task(task_id).status == "cancelling":
+            current_before_run = self.store.get_task(task_id)
+            if current_before_run and current_before_run.status == "cancelling":
                 cancel_event.set()
             heartbeat_stop = threading.Event()
+            deadline_event = threading.Event()
+
+            # Python cannot safely kill a provider call running in a worker
+            # thread. A watchdog still makes the deadline observable to the
+            # handler and ensures a late return is recorded as uncertain.
+            def expire() -> None:
+                deadline_event.set()
+                cancel_event.set()
+
+            deadline_timer = threading.Timer(
+                self.task_timeout_seconds, expire
+            )
+            deadline_timer.daemon = True
+            deadline_timer.start()
 
             def heartbeat() -> None:
                 interval = min(max(self.lease_seconds / 3.0, 0.5), 10.0)
                 while not heartbeat_stop.wait(interval):
-                    if not self.store.heartbeat_task(
-                        task_id, self._worker_id, self.lease_seconds
-                    ):
+                    try:
+                        owned = self.store.heartbeat_task(
+                            task_id, self._worker_id, self.lease_seconds
+                        )
+                    except Exception:
+                        # A backend error means this worker can no longer
+                        # prove ownership. Stop the handler cooperatively and
+                        # let the task finish in recovery_required rather than
+                        # risking a second worker running beside it.
+                        context.lease_lost_event.set()
+                        cancel_event.set()
+                        logger.warning("task lease heartbeat failed", exc_info=True)
+                        return
+                    if not owned:
+                        context.lease_lost_event.set()
+                        cancel_event.set()
                         return
 
             heartbeat_thread = threading.Thread(
@@ -296,15 +372,29 @@ class TaskExecutor:
                 result = handler(context)
                 safe_result = self._safe_result(result)
                 current = self.store.get_task(task_id)
-                cancellation_requested = cancel_event.is_set() or bool(
+                cancellation_requested = bool(
                     current and current.status == "cancelling"
+                ) or (cancel_event.is_set() and not deadline_event.is_set())
+                deadline_exceeded = deadline_event.is_set() or context.remaining_seconds() == 0.0
+                lease_lost = context.is_lease_lost() or bool(
+                    isinstance(safe_result, dict)
+                    and (safe_result.get("runtime_signals") or {}).get("task_lease_lost")
                 )
-                deadline_exceeded = context.remaining_seconds() == 0.0
                 workflow_id = (
                     safe_result.get("workflow_id")
                     if isinstance(safe_result, dict) else None
                 )
-                if cancellation_requested:
+                if lease_lost:
+                    self.store.update_task(
+                        task_id,
+                        "recovery_required",
+                        result=safe_result,
+                        workflow_id=workflow_id,
+                        error="任务执行租约丢失；外部副作用状态未知，请先核对后再处理",
+                        metadata={"lease_lost": True, "provider_state": "unknown"},
+                        expected_statuses=["running", "cancelling"],
+                    )
+                elif cancellation_requested:
                     self.store.update_task(
                         task_id, "cancelled", result=safe_result,
                         workflow_id=workflow_id,
@@ -331,19 +421,31 @@ class TaskExecutor:
                         expected_statuses=["running"],
                     )
                 else:
+                    outcome_status = task_outcome_status(safe_result)
+                    outcome_error = None
+                    if outcome_status in {"failed", "partially_failed"}:
+                        if isinstance(safe_result, dict):
+                            outcome_error = safe_result.get("error") or safe_result.get("reply")
+                        outcome_error = str(outcome_error or "Agent turn reported an unsuccessful outcome")[:1000]
+                    outcome_metadata = (
+                        {"handler_outcome": outcome_status}
+                        if outcome_status != "succeeded" else None
+                    )
                     self.store.update_task(
-                        task_id, "succeeded", result=safe_result,
+                        task_id, outcome_status, result=safe_result,
+                        error=outcome_error, metadata=outcome_metadata,
                         workflow_id=workflow_id,
                         expected_statuses=["running"],
                     )
             except Exception as exc:
                 current = self.store.get_task(task_id)
-                cancellation_requested = cancel_event.is_set() or bool(
+                cancellation_requested = bool(
                     current and current.status == "cancelling"
-                )
-                deadline_exceeded = context.remaining_seconds() == 0.0
+                ) or (cancel_event.is_set() and not deadline_event.is_set())
+                deadline_exceeded = deadline_event.is_set() or context.remaining_seconds() == 0.0
                 status = (
-                    "cancelled" if cancellation_requested
+                    "recovery_required" if context.is_lease_lost()
+                    else "cancelled" if cancellation_requested
                     else "recovery_required" if deadline_exceeded
                     else "failed"
                 )
@@ -357,6 +459,7 @@ class TaskExecutor:
                     expected_statuses=["running", "cancelling"],
                 )
             finally:
+                deadline_timer.cancel()
                 heartbeat_stop.set()
                 heartbeat_thread.join(timeout=0.1)
         finally:

@@ -57,12 +57,20 @@ WORKFLOW_ITEM_TRANSITIONS = {
 
 TASK_TRANSITIONS = {
     "queued": {"queued", "running", "paused", "cancelled", "failed"},
-    "running": {"running", "succeeded", "failed", "cancelling", "cancelled", "recovery_required"},
+    "running": {
+        "running", "succeeded", "failed", "partially_failed", "awaiting_input",
+        "cancelling", "cancelled", "recovery_required",
+    },
     "paused": {"paused", "queued", "cancelling", "cancelled"},
-    "cancelling": {"cancelling", "cancelled", "failed", "recovery_required"},
+    "cancelling": {
+        "cancelling", "cancelled", "failed", "partially_failed",
+        "awaiting_input", "recovery_required",
+    },
     "recovery_required": {"recovery_required", "queued", "cancelled"},
     "succeeded": {"succeeded"},
     "failed": {"failed"},
+    "partially_failed": {"partially_failed", "recovery_required", "queued", "failed"},
+    "awaiting_input": {"awaiting_input", "queued", "cancelled"},
     "cancelled": {"cancelled"},
 }
 
@@ -1351,9 +1359,12 @@ class AdAgentStore:
                 "SELECT tc.tool_name, tc.platform, tc.success, tc.started_at, tc.ended_at "
                 "FROM tool_calls tc JOIN sessions s ON s.session_id = tc.session_id "
                 "WHERE tc.started_at >= ?"
+                + (" AND s.tenant_id = ?" if tenant_id is not None else "")
                 + (" AND s.user_id = ?" if user_id is not None else "")
                 + " ORDER BY tc.started_at DESC LIMIT 2000",
-                [tool_cutoff] + ([str(user_id)] if user_id is not None else []),
+                [tool_cutoff]
+                + ([str(tenant_id)] if tenant_id is not None else [])
+                + ([str(user_id)] if user_id is not None else []),
             ).fetchall()
             tool_total = len(tool_rows)
             tool_failed = sum(1 for row in tool_rows if not bool(row["success"]))
@@ -1548,7 +1559,10 @@ class AdAgentStore:
                 pass
             merged_metadata.update(metadata or {})
             now = datetime.now().isoformat()
-            terminal = status in {"succeeded", "failed", "cancelled", "recovery_required"}
+            terminal = status in {
+                "succeeded", "failed", "partially_failed", "awaiting_input",
+                "cancelled", "recovery_required",
+            }
             assignments = [
                 "status = ?", "error = ?", "metadata = ?", "updated_at = ?",
             ]
@@ -1917,7 +1931,11 @@ class AdAgentStore:
             if not row:
                 return False
             current = str(row["status"])
-            if current in {"succeeded", "failed", "cancelled"} and status != current:
+            terminal_statuses = {
+                "succeeded", "failed", "partially_failed", "awaiting_input",
+                "cancelled", "recovery_required",
+            }
+            if current in terminal_statuses and status != current:
                 return False
             assignments = ["status = ?"]
             values: list[Any] = [status]
@@ -1928,7 +1946,7 @@ class AdAgentStore:
                 assignments.append("result = ?"); values.append(json.dumps(result, ensure_ascii=False))
             values.append(str(schedule_run_id))
             conn.execute("UPDATE scheduled_task_runs SET " + ", ".join(assignments) + " WHERE schedule_run_id = ?", values)
-            if status in {"succeeded", "failed", "cancelled"} and current not in {"succeeded", "failed", "cancelled"}:
+            if status in terminal_statuses and current not in terminal_statuses:
                 schedule_id = str(row["schedule_id"])
                 conn.execute(
                     """UPDATE scheduled_tasks SET run_count = run_count + 1,
@@ -1936,7 +1954,9 @@ class AdAgentStore:
                        last_run_at = ?, last_run_status = ?, last_task_id = COALESCE(?, last_task_id),
                        lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
                        WHERE schedule_id = ?""",
-                    (int(status == "succeeded"), int(status != "succeeded"),
+                    (int(status == "succeeded"), int(status in {
+                        "failed", "partially_failed", "cancelled", "recovery_required",
+                    }),
                      finished_at or datetime.now(timezone.utc).isoformat(), status,
                      task_id or row["task_id"], datetime.now(timezone.utc).isoformat(), schedule_id),
                 )
@@ -3222,10 +3242,21 @@ class AdAgentStore:
             conn.execute(sql, (datetime.now().isoformat(), json.dumps(metadata or {}), session_id))
             conn.commit()
     
-    def get_session(self, session_id: str) -> Optional[dict]:
+    def get_session(
+        self, session_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[dict]:
         with self._lock:
             conn = self._get_conn()
-            row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+            query = "SELECT * FROM sessions WHERE session_id = ?"
+            params: list[Any] = [session_id]
+            if user_id is not None:
+                query += " AND user_id = ?"
+                params.append(str(user_id))
+            if tenant_id is not None:
+                query += " AND tenant_id = ?"
+                params.append(str(tenant_id))
+            row = conn.execute(query, params).fetchone()
             if row:
                 return dict(row)
             return None
@@ -3246,18 +3277,26 @@ class AdAgentStore:
             conn.commit()
             return cursor.rowcount > 0
 
-    def list_sessions(self, user_id: str = None, limit: int = 50) -> List[dict]:
+    def list_sessions(
+        self, user_id: str = None, limit: int = 50,
+        tenant_id: Optional[str] = None,
+    ) -> List[dict]:
         with self._lock:
             conn = self._get_conn()
+            clauses: list[str] = []
+            params: list[Any] = []
             if user_id:
-                rows = conn.execute(
-                    "SELECT * FROM sessions WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?",
-                    (user_id, limit)
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?", (limit,)
-                ).fetchall()
+                clauses.append("user_id = ?")
+                params.append(str(user_id))
+            if tenant_id is not None:
+                clauses.append("tenant_id = ?")
+                params.append(str(tenant_id))
+            where = " WHERE " + " AND ".join(clauses) if clauses else ""
+            params.append(limit)
+            rows = conn.execute(
+                "SELECT * FROM sessions" + where
+                + " ORDER BY updated_at DESC LIMIT ?", params
+            ).fetchall()
             return [dict(r) for r in rows]
 
     def acquire_session_lease(
@@ -4267,12 +4306,24 @@ class AdAgentStore:
                 )
             conn.commit()
 
-    def get_workflow(self, workflow_id: str) -> Optional[dict]:
+    def get_workflow(
+        self, workflow_id: str, user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+    ) -> Optional[dict]:
         with self._lock:
             conn = self._get_conn()
-            row = conn.execute(
-                "SELECT * FROM workflows WHERE workflow_id = ?", (workflow_id,)
-            ).fetchone()
+            query = (
+                "SELECT w.* FROM workflows w JOIN sessions s "
+                "ON s.session_id = w.session_id WHERE w.workflow_id = ?"
+            )
+            params: list[Any] = [workflow_id]
+            if user_id is not None:
+                query += " AND s.user_id = ?"
+                params.append(str(user_id))
+            if tenant_id is not None:
+                query += " AND w.tenant_id = ?"
+                params.append(str(tenant_id))
+            row = conn.execute(query, params).fetchone()
             if not row:
                 return None
             result = dict(row)
@@ -4367,6 +4418,7 @@ class AdAgentStore:
     def list_resumable_workflows(
         self, user_id: Optional[str] = None, limit: int = 50,
         include_stale_running: bool = False, stale_after_seconds: float = 300.0,
+        tenant_id: Optional[str] = None,
     ) -> list[dict]:
         """List non-terminal workflows for an operator/recovery worker."""
         statuses = ["failed", "partially_failed", "recovery_required", "blocked"]
@@ -4381,6 +4433,9 @@ class AdAgentStore:
         if user_id is not None:
             query += " AND s.user_id = ?"
             params.append(str(user_id))
+        if tenant_id is not None:
+            query += " AND w.tenant_id = ?"
+            params.append(str(tenant_id))
         query += " ORDER BY w.updated_at ASC LIMIT ?"
         params.append(max(1, int(limit)))
         with self._lock:

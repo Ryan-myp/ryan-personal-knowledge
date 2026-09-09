@@ -13,6 +13,11 @@ class RuntimeServices(RuntimeServicesPort):
 
     def __init__(self, runtime: Any):
         self._runtime = runtime
+        self._scheduling = None
+
+    def bind_scheduling(self, service: Any) -> None:
+        """Bind the generic schedule control-plane after Runtime composition."""
+        self._scheduling = service
 
     @property
     def registry(self):
@@ -74,6 +79,10 @@ class RuntimeServices(RuntimeServicesPort):
     @property
     def offline_mode(self) -> bool:
         return self._runtime.offline_mode
+
+    @property
+    def scheduling(self):
+        return self._scheduling
 
     @property
     def creation_blueprints(self):
@@ -183,3 +192,6 @@ class RuntimeServices(RuntimeServicesPort):
 
     def workflow_stale_after_seconds(self) -> float:
         return self._runtime.workflow_stale_after_seconds
+
+    def preflight_scheduled_prompt(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
+        return self._runtime.preflight_scheduled_prompt(prompt, **kwargs)

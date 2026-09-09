@@ -17,31 +17,51 @@ from __future__ import annotations
 
 import threading
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping, Optional
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable, Mapping, Optional, Protocol
 
 
 class RuntimeSessionBusyError(RuntimeError):
     """Another Runtime instance currently owns the mutable session lease."""
 
 
+class RuntimeSessionLeaseLostError(RuntimeError):
+    """The durable owner lease was lost while a turn was running."""
+
+
+class SessionLeaseStore(Protocol):
+    """Minimal persistence port required by the generic kernel."""
+
+    def acquire_session_lease(
+        self, session_id: str, owner: str, lease_seconds: float,
+    ) -> bool: ...
+
+    def heartbeat_session_lease(
+        self, session_id: str, owner: str, lease_seconds: float,
+    ) -> bool: ...
+
+    def release_session_lease(self, session_id: str, owner: str) -> bool: ...
+
+
 @dataclass(frozen=True)
 class TurnRequest:
-    """Immutable input passed from an embedding boundary into the kernel."""
+    """Immutable input passed from an embedding boundary into the kernel.
+
+    ``context`` is intentionally opaque to the kernel.  An embedding may put
+    domain request data in it (for example account or provider parameters),
+    but the generic execution shell must not name or interpret those fields.
+    Keeping that envelope here also makes the boundary usable by a non-ad
+    application without adding another Runtime-specific request type.
+    """
 
     user_input: str
     session_id: Optional[str] = None
     user_id: str = "anonymous"
     tenant_id: str = "default"
-    account_id: Optional[str] = None
-    credentials: Optional[Mapping[str, Any]] = None
-    platform_params: Optional[Mapping[str, Any]] = None
-    confirmed: bool = False
-    confirmation_payload: Optional[Mapping[str, Any]] = None
-    creation_blueprint_id: Optional[str] = None
-    creation_blueprint_version: Optional[str] = None
+    context: Mapping[str, Any] = field(default_factory=dict)
     principal: Any = None
     cancellation_event: Optional[threading.Event] = None
+    lease_lost_event: Optional[threading.Event] = None
     event_callback: Optional[Callable[[dict[str, Any]], None]] = None
     execution_mode: Optional[str] = None
     task_id: Optional[str] = None
@@ -63,7 +83,7 @@ class SessionLease:
 
     def __init__(
         self,
-        store: Any,
+        store: Optional[SessionLeaseStore],
         session_id: str,
         owner: str,
         lease_seconds: float,
@@ -76,6 +96,7 @@ class SessionLease:
         self.lease_seconds = float(lease_seconds)
         self.busy_error = busy_error
         self._acquired = False
+        self._lost = threading.Event()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -107,11 +128,31 @@ class SessionLease:
                 if not heartbeat(
                     self.session_id, self.owner, self.lease_seconds
                 ):
+                    self._lost.set()
                     return
             except Exception:
                 # The durable owner remains authoritative. A failed heartbeat
                 # must not make the application believe it still owns a lease.
+                # A transient backend error is not proof of lease loss, but the
+                # heartbeat loop exits so the caller can fail closed at the
+                # turn boundary instead of continuing indefinitely.
+                self._lost.set()
                 return
+
+    @property
+    def lost(self) -> bool:
+        return self._lost.is_set()
+
+    @property
+    def lost_event(self) -> threading.Event:
+        """Event exposed to the application executor for fail-closed handling."""
+        return self._lost
+
+    def assert_owned(self) -> None:
+        if self.lost:
+            raise RuntimeSessionLeaseLostError(
+                "durable session lease was lost while the turn was running"
+            )
 
     def __exit__(self, _exc_type: Any, _exc: Any, _tb: Any) -> None:
         self._stop.set()
@@ -120,7 +161,13 @@ class SessionLease:
         if self._acquired:
             release = getattr(self.store, "release_session_lease", None)
             if callable(release):
-                release(self.session_id, self.owner)
+                try:
+                    release(self.session_id, self.owner)
+                except Exception:
+                    # The lease is bounded and will expire server-side. Never
+                    # mask an application result with a best-effort cleanup
+                    # failure (especially after a provider side effect).
+                    pass
         self._thread = None
         self._acquired = False
 
@@ -131,7 +178,7 @@ class AgentRuntimeKernel:
     def __init__(
         self,
         *,
-        session_manager: Any,
+        session_manager: Optional[SessionLeaseStore],
         session_locks: dict[str, threading.RLock],
         session_locks_guard: threading.RLock,
         lease_owner: str,
@@ -140,8 +187,9 @@ class AgentRuntimeKernel:
         validate_mode: Callable[[str], str],
         resolve_mode: Callable[[str, str, Optional[str]], str],
         assert_ready: Callable[[], None],
-        ensure_session: Callable[..., Any],
-        execute_unlocked: Callable[[TurnRequest], dict[str, Any]],
+        ensure_session: Callable[[TurnRequest], Any],
+        refresh_session: Optional[Callable[[TurnRequest], Any]] = None,
+        execute_unlocked: Callable[[TurnRequest], Any],
         busy_error: type[Exception] = RuntimeSessionBusyError,
     ) -> None:
         self.session_manager = session_manager
@@ -154,12 +202,35 @@ class AgentRuntimeKernel:
         self.resolve_mode = resolve_mode
         self.assert_ready = assert_ready
         self.ensure_session = ensure_session
+        self.refresh_session = refresh_session
         self.execute_unlocked = execute_unlocked
         self.busy_error = busy_error
+        # The embedding owns the lock objects, while the kernel owns the
+        # reference count used to retire locks that are no longer used. This
+        # keeps a long-lived multi-tenant process from retaining one RLock per
+        # conversation forever.
+        self._session_lock_refs: dict[str, int] = {}
 
     def _get_session_lock(self, session_id: str) -> threading.RLock:
         with self.session_locks_guard:
-            return self.session_locks.setdefault(str(session_id), threading.RLock())
+            key = str(session_id)
+            lock = self.session_locks.setdefault(key, threading.RLock())
+            self._session_lock_refs[key] = self._session_lock_refs.get(key, 0) + 1
+            return lock
+
+    def _release_session_lock(
+        self, session_id: str, lock: threading.RLock,
+    ) -> None:
+        """Drop an idle per-session lock without removing a replacement lock."""
+        key = str(session_id)
+        with self.session_locks_guard:
+            refs = self._session_lock_refs.get(key, 0) - 1
+            if refs > 0:
+                self._session_lock_refs[key] = refs
+                return
+            self._session_lock_refs.pop(key, None)
+            if self.session_locks.get(key) is lock:
+                self.session_locks.pop(key, None)
 
     @staticmethod
     def _identity(request: TurnRequest) -> tuple[str, str]:
@@ -174,7 +245,7 @@ class AgentRuntimeKernel:
         )
         return user_id, tenant_id
 
-    def run(self, request: TurnRequest) -> dict[str, Any]:
+    def run(self, request: TurnRequest) -> Any:
         """Run one request while enforcing generic session concurrency rules."""
         self.assert_ready()
         user_id, tenant_id = self._identity(request)
@@ -185,30 +256,53 @@ class AgentRuntimeKernel:
         )
         token = self.mode_context.set(requested_mode)
         try:
-            requested_session = str(request.session_id or "__new_session__")
-            lock = self._get_session_lock(requested_session)
-            with lock:
-                session_id = request.session_id or self._new_session_id()
-                self.ensure_session(
-                    session_id,
-                    user_id,
-                    request.account_id,
-                    request.credentials,
-                    tenant_id=tenant_id,
-                )
-                normalized = request.with_effective_identity(
-                    session_id=session_id,
-                    user_id=user_id,
-                    tenant_id=tenant_id,
-                )
-                with SessionLease(
-                    self.session_manager,
-                    session_id,
-                    self.lease_owner,
-                    self.lease_seconds,
-                    busy_error=self.busy_error,
-                ):
-                    return self.execute_unlocked(normalized)
+            # Allocate an ID before locking. A fixed sentinel for all new
+            # sessions accidentally serialized unrelated first turns.
+            session_id = str(request.session_id or self._new_session_id())
+            lock = self._get_session_lock(session_id)
+            try:
+                with lock:
+                    normalized = request.with_effective_identity(
+                        session_id=session_id,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                    )
+                    self.ensure_session(
+                        normalized,
+                    )
+                    with SessionLease(
+                        self.session_manager,
+                        session_id,
+                        self.lease_owner,
+                        self.lease_seconds,
+                        busy_error=self.busy_error,
+                    ) as lease:
+                        if self.refresh_session is not None:
+                            # Re-load after the durable lease is acquired. This
+                            # prevents a warm process-local cache from overwriting
+                            # a newer session state committed by another instance.
+                            self.refresh_session(
+                                normalized,
+                            )
+                        normalized = replace(
+                            normalized, lease_lost_event=lease.lost_event,
+                        )
+                        lease.assert_owned()
+                        result = self.execute_unlocked(normalized)
+                        # Never discard a completed application result merely
+                        # because the lease was lost: the turn may already have
+                        # produced an external side effect. Attach a generic
+                        # signal so the application/task layer can surface it as
+                        # uncertain and require reconciliation instead of retrying
+                        # blindly.
+                        if lease.lost and isinstance(result, dict):
+                            result = dict(result)
+                            signals = dict(result.get("runtime_signals") or {})
+                            signals["session_lease_lost"] = True
+                            result["runtime_signals"] = signals
+                        return result
+            finally:
+                self._release_session_lock(session_id, lock)
         finally:
             self.mode_context.reset(token)
 
@@ -224,6 +318,8 @@ class AgentRuntimeKernel:
 __all__ = [
     "AgentRuntimeKernel",
     "RuntimeSessionBusyError",
+    "RuntimeSessionLeaseLostError",
+    "SessionLeaseStore",
     "SessionLease",
     "TurnRequest",
 ]
