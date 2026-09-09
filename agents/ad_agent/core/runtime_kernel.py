@@ -48,7 +48,7 @@ class TurnRequest:
     """Immutable input passed from an embedding boundary into the kernel.
 
     ``context`` is intentionally opaque to the kernel.  An embedding may put
-    domain request data in it (for example account or provider parameters),
+    domain request data in it (for example tenant or integration parameters),
     but the generic execution shell must not name or interpret those fields.
     Keeping that envelope here also makes the boundary usable by a non-ad
     application without adding another Runtime-specific request type.

@@ -34,15 +34,15 @@ class RuntimeExecutionServices(Protocol):
     """Provider- and business-neutral execution port.
 
     This port contains only services needed by generic Tool execution and
-    workflow persistence.  Scope selection, business preflight, schedules,
-    creation blueprints and other application concerns stay on the embedding
-    Runtime's private feature adapter instead of expanding this contract.
+    workflow persistence. Scope selection, domain preflight, control-plane
+    metadata and other application concerns stay on the embedding Runtime's
+    private feature adapter instead of expanding this contract.
     """
 
     registry: Any
     plugin_registry: Any
     security: Any
-    parameter_selection_signer: Any
+    selection_signer: Any
     input_builder: Any
     session_manager: Any
     response_renderer: Any
@@ -74,6 +74,7 @@ class RuntimeExecutionServices(Protocol):
         self, workflow_id: str | None, tool_plan: dict[str, list[Any]],
         results: list[dict[str, Any]], workflow_inputs: dict[int, dict],
         planning_errors: list[str] | None = None,
+        *, intent: Any = None, session: Any = None,
     ) -> None: ...
     def build_resource_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
     def execute_tool(

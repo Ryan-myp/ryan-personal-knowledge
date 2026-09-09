@@ -400,7 +400,7 @@ def validate_tool_input(
     # Conditional rules model provider relationships such as
     # objective_type=APP_PROMOTION -> promotion_type must be APP_ANDROID and
     # app_id/deep_bid_type are required. The compact operators are data-only
-    # and shared with Blueprint conditions, so a provider can publish a
+    # and shared with declarative conditions, so a publisher can publish a
     # complete allowed-value matrix without a Core/provider branch.
     def condition_matches(conditions: Any) -> bool:
         if not isinstance(conditions, dict):

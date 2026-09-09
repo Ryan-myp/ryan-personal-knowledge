@@ -8,6 +8,19 @@ from ..core.features import RuntimeExecutionServices
 from ..core.tool_registry import validate_tool_input as validate_registered_tool_input
 
 
+class _ScopedSelectionSigner:
+    """Expose selection proofs through a domain-neutral scope contract."""
+
+    def __init__(self, signer: Any):
+        self._signer = signer
+
+    def issue(self, *, scope_key: str, **kwargs: Any):
+        return self._signer.issue(account_id=scope_key, **kwargs)
+
+    def verify(self, token: str, *, scope_key: str, **kwargs: Any):
+        return self._signer.verify(token, account_id=scope_key, **kwargs)
+
+
 class AdRuntimeServices(RuntimeExecutionServices):
     """Advertising application's adapter over the generic execution port.
 
@@ -19,6 +32,9 @@ class AdRuntimeServices(RuntimeExecutionServices):
     def __init__(self, runtime: Any):
         self._runtime = runtime
         self._scheduling = None
+        self._selection_signer = _ScopedSelectionSigner(
+            runtime._parameter_selection_signer
+        )
 
     def bind_scheduling(self, service: Any) -> None:
         """Bind the generic schedule control-plane after Runtime composition."""
@@ -38,8 +54,8 @@ class AdRuntimeServices(RuntimeExecutionServices):
         return self._runtime.security
 
     @property
-    def parameter_selection_signer(self):
-        return self._runtime._parameter_selection_signer
+    def selection_signer(self):
+        return self._selection_signer
 
     @property
     def input_builder(self):
@@ -169,9 +185,11 @@ class AdRuntimeServices(RuntimeExecutionServices):
         self, workflow_id: Optional[str], tool_plan: dict[str, list[Any]],
         results: list[dict[str, Any]], workflow_inputs: dict[int, dict],
         planning_errors: list[str] | None = None,
+        *, intent: Any = None, session: Any = None,
     ) -> None:
         self._runtime.workflow.finish(
-            workflow_id, tool_plan, results, workflow_inputs, planning_errors
+            workflow_id, tool_plan, results, workflow_inputs, planning_errors,
+            intent=intent, session=session,
         )
 
     def build_resource_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -63,6 +63,7 @@ from ..domain.ad.parameter_selection import (
 )
 from ..domain.ad.auth import RequestPrincipal, normalize_account_id
 from ..domain.ad.security import (
+    ACCOUNT_SCOPE_FIELDS,
     PROTECTED_INPUT_FIELDS,
 )
 from .skill import BaseSkill, Skill, SkillContract, SkillLoader
@@ -369,7 +370,11 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             selection_secret, parameter_selection_ttl_seconds
         )
         self.services = AdRuntimeServices(self)
-        self.input_builder = ToolInputBuilder(self.services)
+        self.input_builder = ToolInputBuilder(
+            self.services,
+            scope_field_names=ACCOUNT_SCOPE_FIELDS,
+            scope_value_resolver=lambda context: getattr(context, "account_id", None),
+        )
         self.account_resolver = AccountResolver(self.services)
         self.policies: list[RuntimePolicy] = list(policies or [])
         if self.policies:
@@ -479,6 +484,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             self.services,
             outbox=self.outbox,
             item_scope_resolver=self._resolve_workflow_item_scope,
+            result_scope_resolver=self._resolve_workflow_result_scope,
         )
         self.security = RuntimeSecurity(self)
         self.scheduling_service = SchedulingService(
@@ -677,6 +683,24 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
                 if len(getattr(intent, "platforms", []) or []) == 1 else None
             )
         return self.account_resolver.resolve(intent, platform, tools, fallback)
+
+    def _resolve_workflow_result_scope(
+        self,
+        intent: Any,
+        platform: str,
+        tools: list[Any],
+        session: Any,
+        item: Mapping[str, Any],
+        input_data: Mapping[str, Any],
+        output_data: Mapping[str, Any],
+    ) -> Optional[str]:
+        """Resolve persisted workflow scope at the advertising boundary."""
+        for source in (item, output_data, input_data):
+            for field in ACCOUNT_SCOPE_FIELDS:
+                value = source.get(field) if isinstance(source, Mapping) else None
+                if value not in (None, ""):
+                    return str(value)
+        return self._resolve_workflow_item_scope(intent, platform, tools, session)
 
     @staticmethod
     def _clarification_field_label(
@@ -958,7 +982,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
                     providers=list(provider_key) or None
                 )
             )
-        context["creation_blueprints"] = self._creation_blueprint_context_cache[
+        context["publisher_context"] = self._creation_blueprint_context_cache[
             provider_key
         ]
         return context

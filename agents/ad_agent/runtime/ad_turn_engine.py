@@ -120,7 +120,14 @@ def execute(
             # provider side effect impossible to reconcile after a crash.
             logger.exception("failed to create durable Agent run")
             raise RuntimeError("durable Agent run persistence is unavailable")
-    trace = ExecutionTrace(observe_trace if (durable_run or event_callback) else None, turn_id=turn_id)
+    trace = ExecutionTrace(
+        observe_trace if (durable_run or event_callback) else None,
+        turn_id=turn_id,
+        # The Core trace only knows generic credential shapes. The application
+        # redactor adds the advertising domain's account/configuration policy
+        # at the boundary without polluting the shared trace contract.
+        redactor=runtime._redact_for_persistence,
+    )
     trace.start()
     input_error = runtime._validate_request_limits(user_input, platform_params)
     if input_error:
@@ -1460,7 +1467,7 @@ def execute(
                     tool_name=tool_def.name,
                     status="running",
                     input_data={},
-                    account_id=per_platform_account,
+                    scope=per_platform_account,
                     parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                 )
             tool_call_count += 1
@@ -1535,7 +1542,7 @@ def execute(
                     tool_name=tool_def.name,
                     status="running",
                     input_data=runtime._redact_for_persistence(tool_input),
-                    account_id=per_platform_account,
+                        scope=per_platform_account,
                     parent_resource_type=getattr(tool_def, "parent_resource_type", None),
                 )
 
@@ -2145,7 +2152,10 @@ def execute(
             granted_permissions=effective_permissions,
             execution_trace=trace,
         )
-    runtime.workflow.finish(workflow_id, tool_plan, results, workflow_inputs)
+    runtime.workflow.finish(
+        workflow_id, tool_plan, results, workflow_inputs,
+        intent=intent, session=session,
+    )
     resource_results = runtime._build_resource_results(results)
 
     analysis: dict[str, Any] = {}

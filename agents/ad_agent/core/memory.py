@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional, Protocol
 
+from .security import redact_sensitive_text
+
 
 MEMORY_KINDS = {"working", "semantic", "episodic", "procedural"}
 MEMORY_STATUSES = {"active", "superseded", "deleted"}
@@ -111,12 +113,6 @@ class MemoryStore(Protocol):
 class MemoryManager:
     """Safe policy layer over the backend-neutral memory contract."""
 
-    _SECRET_RE = re.compile(
-        r"(?i)(?:access[_ -]?token|refresh[_ -]?token|developer[_ -]?token|"
-        r"client[_ -]?(?:secret|id)|app[_ -]?secret|private[_ -]?key|"
-        r"authorization|password|credentials?|bc[_ -]?id|mcc|partner[_ -]?id)"
-        r"\s*[:=]\s*[^\s,;]+"
-    )
     _EXPLICIT_MEMORY_RE = re.compile(
         r"(?is)^(?:请)?(?:记住|记一下|保存|牢记|remember|save)\s*(?:我)?(?:的)?[：:\s]*(.+)$"
     )
@@ -149,7 +145,7 @@ class MemoryManager:
             raise ValueError("memory content cannot be empty")
         # Never retain a credential-looking value.  Redaction keeps an audit-
         # safe trace while making the write policy fail closed for secrets.
-        text = cls._SECRET_RE.sub("<redacted>", text)
+        text = redact_sensitive_text(text)
         return text[:4000]
 
     @staticmethod

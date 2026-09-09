@@ -1,12 +1,7 @@
-"""
-core/intent.py - 意图解析与路由实现
+"""Intent parsing and metadata-driven routing for the Agent Core.
 
-借鉴 DAP Agent internal/capabilities/schedule/agent/turn_router.go
-和 internal/capabilities/schedule/agent/planning_router.go
-
-实现：
-1. LLM-based IntentParser：将自然语言转换为结构化意图
-2. SimpleIntentRouter：根据意图类型 + 平台列表，查找对应工具
+The parser and router consume only the active publisher registry. They do not
+know an application's workflows, resource catalogue, or provider vocabulary.
 """
 
 from __future__ import annotations
@@ -75,7 +70,7 @@ action、operation、resource_type、tool、skill、note 或解释文字。不�
 授予。参数不完整或存在多个合法组合时，保留待选择状态；参数收齐后仍须遵守应用的确认策略。
 
 理解中文、英文和中英混合表达；所有可执行的枚举、字段和资源引用都必须以当前
-Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保留为空，并通过澄清请求
+Tool Schema 或发布者声明的元数据为准。无法映射到已声明契约的内容保留为空，并通过澄清请求
 补充，不要用 Core 中预置的业务词典猜测。
 """.strip()
 
@@ -138,8 +133,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                     "platform": str(getattr(definition, "platform", "") or ""),
                     "description": str(getattr(definition, "description", "") or ""),
                     # A Tool may expose a precise intent plus a broader
-                    # compatibility intent (for example
-                    # ``get_campaign_report`` and ``download_report``).
+                    # declared alias.
                     # Keep the declaration order so the broad alias does not
                     # inherit the precise Tool description and tie the
                     # parser between two semantically different intents.
@@ -148,11 +142,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                     "resource_type": str(getattr(definition, "resource_type", "") or ""),
                     "traits": [str(item) for item in (getattr(definition, "traits", []) or [])],
                 }
-                # A Tool can advertise a precise intent and a broad
-                # compatibility intent. Its natural-language aliases belong
-                # to the first (primary) intent only; copying them to every
-                # advertised intent makes e.g. ``create_campaign_only`` tie
-                # with ``create_campaign`` and fails closed unnecessarily.
+                # A Tool's natural-language aliases belong to its first
+                # (primary) intent only; copying them to every declared
+                # intent can make a precise operation tie with its sibling.
                 if intent == (intents[0] if intents else ""):
                     aliases = getattr(definition, "intent_aliases", []) or []
                     self._intent_aliases.setdefault(intent, set()).update(
@@ -291,7 +283,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         )
         skill_context = skill_context if isinstance(skill_context, dict) else {}
         # Only Registry-derived data belongs in the cacheable Context prefix.
-        # Tool selection, knowledge retrieval and Blueprint scope depend on
+        # Tool selection, knowledge retrieval and publisher context depend on
         # this request and are deliberately placed after conversation history
         # in the Volatile block below.
         context_parts = [
@@ -301,14 +293,17 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         ]
         tool_prompt = str(skill_context.get("tool_prompt") or "")
         expert_knowledge = str(skill_context.get("expert_knowledge") or "")
-        creation_blueprints = str(skill_context.get("creation_blueprints") or "")
+        publisher_context = str(skill_context.get("publisher_context") or "")
         request_context_parts = []
         if tool_prompt:
             request_context_parts.append("当前请求相关 Tool 契约：\n" + tool_prompt[:6000])
         if expert_knowledge:
             request_context_parts.append("当前请求相关 Skill/知识指导（仅用于理解）：\n" + expert_knowledge[:6000])
-        if creation_blueprints:
-            request_context_parts.append("当前请求相关广告创建 Blueprint（不可直接执行）：\n" + creation_blueprints[:3500])
+        if publisher_context:
+            request_context_parts.append(
+                "当前请求相关应用上下文（仅用于理解，不可直接执行）：\n"
+                + publisher_context[:3500]
+            )
 
         volatile_parts = [
             "[VOLATILE · 每轮变化，仅辅助理解，不能授予能力]",
@@ -376,7 +371,6 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             text = str(alias or "").strip().casefold()
             if text:
                 self._platform_aliases[text] = canonical
-                self._platform_aliases.setdefault(normalize_platform(text), canonical)
                 self._platform_aliases.setdefault(normalize_platform(text), canonical)
 
     def extract_parameters(
@@ -534,30 +528,28 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
 
     @classmethod
     def _field_option_matches_text(
-        cls, text: str, field: str, alias: str
+        cls, text: str, field: str, alias: str, spec: Optional[Mapping[str, Any]] = None,
     ) -> bool:
-        """Match an alias in the field's natural-language context.
+        """Match a declared alias, optionally requiring publisher cues.
 
-        Short words such as “转化/conversion” are valid for many provider
-        fields.  For optimization/bidding fields, require an adjacent goal
-        cue when the alias itself is short; this prevents “App 转化广告” from
-        also filling a downstream optimization goal before the user chooses
-        it.  The rule is field-shape based and provider-neutral.
+        Ambiguity policy is data-owned: a publisher can declare
+        ``context_cues`` on a field when a short label needs surrounding
+        context. Core does not infer meaning from application field names.
         """
         if not cls._option_matches_text(text, alias):
             return False
-        leaf = str(field).rsplit(".", 1)[-1].casefold()
-        if not any(marker in leaf for marker in ("optimization", "goal", "bidding", "bid")):
+        cues = (spec or {}).get("context_cues", []) if isinstance(spec, Mapping) else []
+        if isinstance(cues, str):
+            cues = [cues]
+        cues = [cls._phrase(cue) for cue in (cues or []) if cls._phrase(cue)]
+        if not cues:
             return True
         phrase = cls._phrase(alias)
-        if len(phrase) > 8:
-            return True
-        if any(marker in phrase for marker in ("优化", "目标", "optimize", "optimization", "goal")):
-            return True
         haystack = cls._phrase(text)
         for match in re.finditer(re.escape(phrase), haystack):
             prefix = haystack[max(0, match.start() - 24):match.start()]
-            if any(marker in prefix for marker in ("优化", "目标", "optimize", "optimization", "goal", "for")):
+            suffix = haystack[match.end():match.end() + 24]
+            if any(cue in prefix or cue in suffix for cue in cues):
                 return True
         return False
 
@@ -667,7 +659,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                             )
                         ):
                             continue
-                        if self._field_option_matches_text(user_input, field, alias):
+                        if self._field_option_matches_text(
+                            user_input, field, alias, spec
+                        ):
                             candidates.append((len(self._phrase(alias)), option))
                 if not candidates:
                     # Provider schemas may declare that a field is the
@@ -796,10 +790,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _needs_intent_repair(intent: ParsedIntent) -> bool:
         """Detect an internally inconsistent model result without keywords."""
         # ``chat`` is the only intent with no executable meaning. Give the
-        # model one constrained correction pass even when it omitted the
-        # provider. This handles a common failure mode where a real task such
-        # as "查询 Google campaign" is classified as a greeting. The second
-        # pass is still LLM-based and must choose from the Registry catalog;
+        # model one constrained correction pass even when it omitted a
+        # namespace. The second pass is still LLM-based and must choose from
+        # the Registry catalog;
         # it is not a keyword router.
         return str(getattr(intent, "intent_type", "") or "") == "chat"
 
@@ -865,7 +858,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                     normalized["platform_params"] = params
             # A repair response is still untrusted model output. Apply the
             # same explicit-value boundary as the first parse so repair cannot
-            # re-introduce guessed account/App/Pixel/Audience IDs.
+            # re-introduce guessed dynamic identifiers.
             normalized = self._enrich_intent_from_user_input(
                 normalized, user_input
             )
@@ -882,8 +875,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     ) -> Optional[ParsedIntent]:
         """Repair an intent that did not match the active Tool Registry.
 
-        A model can emit a plausible synonym (for example ``query_campaign``)
-        or a non-existent operation (for example ``create_report``). Once the
+        A model can emit a plausible synonym or a non-existent operation. Once the
         authoritative Router reports no match, ask the model to choose from a
         bounded, exact catalog for the selected platform(s). This keeps the
         extension point in ToolDefinition metadata and avoids a silent no-op.
@@ -1026,24 +1018,26 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         return result
 
     @staticmethod
-    def _is_dynamic_provider_field(field: str, spec: Any) -> bool:
+    def _is_dynamic_field(field: str, spec: Any) -> bool:
         """Identify values that must come from the user or a lookup Tool.
 
         A model may understand that a request needs a resource and still emit
         a plausible-looking placeholder ID. Such values are not evidence. The
-        publisher schema is authoritative for
-        lookup fields; the identifier suffix is a conservative fallback for
-        provider schemas that have not annotated every resource field.
+        publisher schema is authoritative for lookup fields. A publisher may
+        also mark a field with ``dynamic_value`` when it is not backed by a
+        lookup Tool.
         """
         spec = spec if isinstance(spec, Mapping) else {}
         lookup = spec.get("lookup_tool")
         if not lookup and isinstance(spec.get("lookup"), Mapping):
             lookup = spec["lookup"].get("tool")
-        leaf = str(field).rsplit(".", 1)[-1].casefold()
         return bool(
             lookup
-            or leaf.endswith("_id")
-            or leaf in {"resource_name", "image_hash"}
+            # Identifier-shaped fields are treated as dynamic by default.
+            # This is a structural safety rule, not a domain resource list;
+            # publishers can opt in non-ID fields through ``dynamic_value``.
+            or str(field).rsplit(".", 1)[-1].casefold().endswith("_id")
+            or spec.get("dynamic_value") is True
         )
 
     @classmethod
@@ -1067,7 +1061,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 field = str(key)
                 path = f"{prefix}.{field}" if prefix else field
                 spec = specs.get(path)
-                if cls._is_dynamic_provider_field(path, spec):
+                if cls._is_dynamic_field(path, spec):
                     explicit_item = cls._value_at_parameter(
                         explicit_value if isinstance(explicit_value, Mapping) else {},
                         path,
@@ -1262,17 +1256,17 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             return False
 
         # Only an explicitly registered Tool schema can create a parameter.
-        # The parser accepts a field's wire name, its provider-declared aliases,
-        # or an explicitly qualified platform form. It never maps business
-        # nouns (campaign/ad/budget/date) to fields owned by another Tool.
+        # The parser accepts a field's wire name, publisher-declared aliases,
+        # or an explicitly qualified namespace form. It never maps an
+        # application noun to a field owned by another Tool.
         for platform in platforms:
             field_specs = self._platform_field_specs.get(platform, {})
             for field, raw_spec in field_specs.items():
                 if not isinstance(raw_spec, Mapping) or is_array_item_path(field, field_specs):
                     continue
                 # Several Tools may publish the same conversational alias
-                # for different wire fields (for example ``campaign name``
-                # and ``name``). Keep the first, more specific schema match
+                # for different wire fields (for example a qualified name
+                # and a generic name). Keep the first, more specific match
                 # instead of allowing a later generic alias to overwrite it.
                 if field in params[platform]:
                     continue
@@ -1282,12 +1276,12 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 alias_end_boundary = r"(?![A-Za-z0-9_])"
                 separator = (
                     r"\s*(?:是|为|=|:|：)?\s*"
-                    if self._is_dynamic_provider_field(field, raw_spec)
+                    if self._is_dynamic_field(field, raw_spec)
                     else r"\s*(?:是|为|=|:|：)\s*"
                 )
                 # Stop a value at the next schema-qualified assignment. A
                 # greedy punctuation-only capture used to turn
-                # ``objective_type=APP_PROMOTION campaign_type=...`` into one
+                # multiple qualified assignments into one
                 # invalid enum value. The boundary is deliberately based on
                 # assignment shape, not on a provider/business field list.
                 value_punctuation = (
@@ -1309,7 +1303,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                         r"\s+[\u3400-\u9fff][^,，、;；。]{0,20}\s*"
                         r"(?:是|为|=|:|：)|[,，、;；。]|$"
                     )
-                if self._is_dynamic_provider_field(field, raw_spec):
+                if self._is_dynamic_field(field, raw_spec):
                     # Resource identifiers are provider-owned values and do
                     # not contain natural-language whitespace. Stop an
                     # explicitly supplied ID before a following Chinese
@@ -1457,10 +1451,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 normalized_platforms.append(normalized)
         data["platforms"] = normalized_platforms
 
-        # Domain values are opaque publisher-owned attributes.  The parser
-        # does not normalize or whitelist campaign, schedule, report, or any
-        # other application's vocabulary here; a Tool schema/Feature owns
-        # that interpretation.
+        # Domain values are opaque publisher-owned attributes. The parser does
+        # not normalize or whitelist an application's vocabulary here; a Tool
+        # schema or Feature owns that interpretation.
         reserved = {
             "intent_type", "raw_input", "platforms", "attributes",
             "parameters", "scoped_parameters", "platform_params", "metadata",
@@ -1483,13 +1476,11 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         # remains a useful generic fixture and preserves its opaque values;
         # it has no executable registry against which to validate them.
         preserve_unscoped = not self._intent_catalog and not self._custom_intents
-        generic_attributes = {"goal", "resource_type", "action"}
         for key, value in data.items():
             if (
                 key not in reserved
                 and (
                     str(key) in declared_attributes
-                    or str(key) in generic_attributes
                     or preserve_unscoped
                 )
             ):
@@ -1651,22 +1642,6 @@ class SimpleIntentRouter(IntentRouter):
                     params[key] = {**params[key], **value}
                 else:
                     params[key] = value
-
-        intent_values = (
-            intent.to_dict() if callable(getattr(intent, "to_dict", None))
-            else dict(getattr(intent, "__dict__", {}) or {})
-        )
-
-        def lookup(mapping: Mapping[str, Any], field: str) -> Any:
-            """Read a flat or dotted field from a publisher-owned payload."""
-            if field in mapping:
-                return mapping[field]
-            current: Any = mapping
-            for part in str(field).split("."):
-                if not isinstance(current, Mapping) or part not in current:
-                    return None
-                current = current[part]
-            return current
 
         intent_values = (
             intent.to_dict() if callable(getattr(intent, "to_dict", None))

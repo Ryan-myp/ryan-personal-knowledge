@@ -559,7 +559,7 @@ class CrossChannelFeature:
                     tool_name=tool_name,
                     status="running",
                     input_data=services.redact(tool_input),
-                    account_id=operation.account_id,
+                    scope=operation.account_id,
                     resource_type=getattr(tool_def, "resource_type", None),
                     parent_resource_type=getattr(
                         tool_def, "parent_resource_type", None

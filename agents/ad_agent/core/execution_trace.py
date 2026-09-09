@@ -8,11 +8,12 @@ model thoughts, credentials or raw provider exceptions.
 
 from __future__ import annotations
 
-import re
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
+
+from .security import is_sensitive_field, redact_sensitive_text
 
 
 ExecutionEventCallback = Callable[[dict[str, Any]], None]
@@ -30,12 +31,6 @@ TRACE_STATUSES = frozenset(
     }
 )
 
-_SECRET_KEY = re.compile(
-    r"(?:access[_-]?token|refresh[_-]?token|client[_-]?secret|app[_-]?secret|"
-    r"private[_-]?key|developer[_-]?token|bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc)",
-    re.IGNORECASE,
-)
-
 # Execution plans contain a bounded list of node objects (and dependency
 # lists).  A depth of three is enough for most metadata, but it truncates a
 # perfectly safe plan at ``execution_plan -> nodes -> node``.  Keep the
@@ -43,7 +38,7 @@ _SECRET_KEY = re.compile(
 _MAX_METADATA_DEPTH = 6
 
 
-def _safe_metadata(value: Any, *, depth: int = 0) -> Any:
+def _safe_metadata(value: Any, *, depth: int = 0, sensitive_fields: Any = ()) -> Any:
     """Keep event metadata small and remove credential-shaped values."""
 
     if depth > _MAX_METADATA_DEPTH:
@@ -52,20 +47,22 @@ def _safe_metadata(value: Any, *, depth: int = 0) -> Any:
         result: dict[str, Any] = {}
         for raw_key, raw_value in value.items():
             key = str(raw_key)
-            if _SECRET_KEY.search(key):
+            if is_sensitive_field(key, sensitive_fields):
                 continue
-            result[key[:80]] = _safe_metadata(raw_value, depth=depth + 1)
+            result[key[:80]] = _safe_metadata(
+                raw_value, depth=depth + 1, sensitive_fields=sensitive_fields
+            )
         return result
     if isinstance(value, (list, tuple)):
-        return [_safe_metadata(item, depth=depth + 1) for item in list(value)[:12]]
+        return [
+            _safe_metadata(item, depth=depth + 1, sensitive_fields=sensitive_fields)
+            for item in list(value)[:12]
+        ]
     if isinstance(value, bool) or value is None:
         return value
     if isinstance(value, (int, float)):
         return value
-    text = str(value)
-    if _SECRET_KEY.search(text):
-        return "[redacted]"
-    return text[:240]
+    return redact_sensitive_text(str(value))[:240]
 
 
 class ExecutionTrace:
@@ -83,10 +80,14 @@ class ExecutionTrace:
         *,
         trace_id: Optional[str] = None,
         turn_id: Optional[str] = None,
+        redactor: Optional[Callable[[Any], Any]] = None,
+        sensitive_fields: Any = (),
     ) -> None:
         self.callback = callback
         self.trace_id = trace_id or str(uuid.uuid4())
         self.turn_id = turn_id or ""
+        self.redactor = redactor
+        self.sensitive_fields = tuple(sensitive_fields or ())
         self._sequence = 0
         self._started_at: dict[str, float] = {}
         self._stage_started_at: dict[str, float] = {}
@@ -110,12 +111,16 @@ class ExecutionTrace:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         for key, value in payload.items():
-            if key == "safe_metadata":
-                event[key] = _safe_metadata(value)
-            elif key == "execution_plan":
-                event[key] = _safe_metadata(value)
-            else:
-                event[key] = _safe_metadata(value)
+            if callable(self.redactor):
+                try:
+                    value = self.redactor(value)
+                except Exception:
+                    # Application policy is stronger when available, but the
+                    # Core redactor below remains the minimum safe boundary.
+                    pass
+            event[key] = _safe_metadata(
+                value, sensitive_fields=self.sensitive_fields
+            )
         self._events.append(event)
         if len(self._events) > 256:
             self._events.pop(0)
@@ -218,8 +223,8 @@ class ExecutionTrace:
     ) -> dict[str, Any]:
         """Register a Tool materialized by a running Feature.
 
-        Some read workflows discover a dependent report Tool only after a
-        listing result is available.  This is an explicit observation of the
+        Some read workflows discover a dependent Tool only after an earlier
+        result is available. This is an explicit observation of the
         Tool selected by the Feature, not a node inferred from a result row.
         """
 

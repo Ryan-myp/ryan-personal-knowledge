@@ -668,7 +668,7 @@ class ParsedIntent:
     namespaces and opaque publisher-owned values.  Domain fields must live in
     ``attributes`` (intent-level values) or ``scoped_parameters`` (values
     belonging to a registered namespace/Tool schema).  This prevents Core
-    from accumulating one field per advertising workflow or control-plane
+    from accumulating one field per application workflow or control-plane
     feature.
 
     ``**extensions`` is intentionally data-only.  It lets a Skill/Feature
@@ -750,7 +750,7 @@ class ParsedIntent:
             },
             "metadata": dict(self.metadata),
             # Keep the wire name used by Tool/HTTP adapters; it is a generic
-            # namespace map, not an advertising-specific concept.
+            # namespace map, not an application-specific concept.
             "platform_params": {
                 key: dict(value) for key, value in self.scoped_parameters.items()
             },
@@ -824,6 +824,6 @@ class IntentRouter(ABC):
     def route(self, intent: ParsedIntent, registry: ToolRegistry) -> dict[str, list[ToolDefinition]]:
         """
         返回：{platform: [ToolDefinition, ...]}
-        例如：{"meta": [meta_create_campaign, meta_create_ad_set, ...], "google": [...]}
+        例如：{"namespace-a": [tool_a, tool_b], "namespace-b": [...]}
         """
         pass

@@ -25,6 +25,8 @@ import re
 import threading
 from typing import Any, Iterable, Mapping, Optional, Protocol
 
+from .security import is_sensitive_field
+
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +38,6 @@ _VERSION_INPUT_RE = re.compile(
     r"^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?"
     r"((?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$"
 )
-_PROTECTED_METADATA_FIELDS = {
-    "access_token", "refresh_token", "developer_token", "client_secret",
-    "app_secret", "private_key", "api_key", "password", "authorization",
-    "bc_id", "partner_id", "perter_id", "mcc", "login_customer_id",
-    "manager_customer_id",
-}
-
-
 class PluginKind(str, Enum):
     """Supported extension points of the Agent Harness."""
 
@@ -120,8 +114,7 @@ def _validate_metadata(value: Any, path: str = "metadata") -> None:
 
     if isinstance(value, Mapping):
         for key, child in value.items():
-            normalized = re.sub(r"[-.]", "_", str(key).strip().lower())
-            if normalized in _PROTECTED_METADATA_FIELDS:
+            if is_sensitive_field(key):
                 raise ValueError(f"Plugin {path} contains protected field {key!r}")
             _validate_metadata(child, f"{path}.{key}")
     elif isinstance(value, (list, tuple)):

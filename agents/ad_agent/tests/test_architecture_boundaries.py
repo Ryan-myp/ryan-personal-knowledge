@@ -1,5 +1,6 @@
 """Architecture boundary tests for the single-Agent extension model."""
 
+import ast
 import pytest
 from pathlib import Path
 
@@ -46,6 +47,52 @@ def test_core_contracts_do_not_publish_advertising_models_or_scope_fields():
     assert "scope_key" in __import__(
         "agents.ad_agent.core.interfaces", fromlist=["WriteReservation"]
     ).WriteReservation.__dataclass_fields__
+
+
+def test_core_has_no_provider_or_advertising_security_catalog():
+    """Provider/account credential names belong to the application boundary."""
+    root = Path(__file__).resolve().parents[1] / "core"
+    source = "\n".join(
+        path.read_text(encoding="utf-8").lower()
+        for path in root.glob("*.py")
+    )
+    for forbidden in (
+        "bc_id", "partner_id", "perter_id", "mcc", "campaign",
+        "ad_group", "tiktok", "google", "dv360",
+    ):
+        assert forbidden not in source
+
+
+def test_core_security_accepts_application_specific_redaction_policy():
+    """Shared trace protection is generic and can be extended at the edge."""
+    from agents.ad_agent.core.execution_trace import ExecutionTrace
+
+    events = []
+    trace = ExecutionTrace(events.append, sensitive_fields=("workspace_key",))
+    trace.stage_status(
+        "custom", "Custom", "succeeded",
+        safe_output={"workspace_key": "secret", "value": "visible"},
+    )
+
+    assert events[-1]["safe_output"] == {"value": "visible"}
+
+
+def test_generic_runtime_adapters_do_not_import_ad_domain_or_name_account_fields():
+    """Generic orchestration stays usable for a non-advertising embedding."""
+    root = Path(__file__).resolve().parents[1]
+    generic_modules = (root / "runtime" / "input_builder.py", root / "runtime" / "workflow.py")
+    for path in generic_modules:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imports.append("." * node.level + (node.module or ""))
+        assert not any("domain.ad" in item for item in imports)
+        source = path.read_text(encoding="utf-8").lower()
+        assert "account_id" not in source
+        assert "advertiser_id" not in source
 
 
 def test_runtime_discovers_domain_features_without_a_central_workflow_table():
@@ -226,7 +273,7 @@ def test_generic_workflow_coordinator_receives_scope_from_application_boundary()
     )
 
     assert workflow_id
-    assert Services.session_manager.items[0]["account_id"] == "opaque-scope"
+    assert Services.session_manager.items[0]["scope"] == "opaque-scope"
 
 
 def test_unpublished_intent_is_not_executable():

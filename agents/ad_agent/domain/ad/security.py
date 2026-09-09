@@ -39,6 +39,13 @@ PROTECTED_UPDATE_FIELDS = PROTECTED_INPUT_FIELDS | frozenset({
     "logincustomerid", "managercustomerid", "bcid", "partnerid", "mcc",
 })
 
+# The advertising application binds one logical account scope to several
+# provider wire spellings. This alias set is application policy, not a Core
+# Runtime contract.
+ACCOUNT_SCOPE_FIELDS = (
+    "account_id", "ad_account_id", "advertiser_id", "customer_id",
+)
+
 
 def protected_field_paths(
     value: Any,
@@ -74,6 +81,7 @@ def protected_update_paths(value: Any, path: str = "") -> list[str]:
 __all__ = [
     "PROTECTED_INPUT_FIELDS",
     "PROTECTED_UPDATE_FIELDS",
+    "ACCOUNT_SCOPE_FIELDS",
     "canonical_json",
     "normalize_field_name",
     "protected_field_paths",

@@ -2,7 +2,7 @@
 
 This service is deliberately independent of business workflows. It translates
 the common ParsedIntent shape into a selected Tool's declared schema and
-delegates account, execution and security decisions back to the Runtime.
+delegates scope, execution and security decisions back to the Runtime.
 Provider-specific aliases and enum mappings remain in Tool metadata.
 """
 
@@ -12,22 +12,32 @@ import copy
 import json
 import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from ..core.interfaces import ToolContext, ToolResult
-from ..domain.ad.parameter_selection import ParameterSelectionError
 from ..core.tool_registry import validate_tool_input
 
 
 class ToolInputBuilder:
-    """Build and validate provider Tool inputs from generic Agent state."""
+    """Build and validate publisher Tool inputs from generic Agent state."""
 
-    ACCOUNT_FIELDS = (
-        "account_id", "ad_account_id", "advertiser_id", "customer_id",
-    )
-
-    def __init__(self, services: Any):
+    def __init__(
+        self,
+        services: Any,
+        *,
+        scope_field_names: Iterable[str] = (),
+        scope_value_resolver: Optional[Callable[[ToolContext], Any]] = None,
+    ):
         self.services = services
+        self.scope_field_names = tuple(
+            dict.fromkeys(str(item) for item in (scope_field_names or ()) if str(item))
+        )
+        self.scope_value_resolver = scope_value_resolver
+
+    def scope_value(self, ctx: Optional[ToolContext]) -> Any:
+        if ctx is None or not callable(self.scope_value_resolver):
+            return None
+        return self.scope_value_resolver(ctx)
 
     def platform_params_for_intent(self, intent: Any, platform: str) -> dict[str, Any]:
         requested = self.services.normalize_namespace(platform)
@@ -84,9 +94,8 @@ class ToolInputBuilder:
     def _normalize_input_field(value: Any) -> str:
         return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
-    @classmethod
     def input_candidates(
-        cls, field_name: str, field_schema: Any, available_keys: Any = (),
+        self, field_name: str, field_schema: Any, available_keys: Any = (),
     ) -> list[str]:
         candidates = [str(field_name)]
         if isinstance(field_schema, dict):
@@ -97,12 +106,13 @@ class ToolInputBuilder:
                 str(value) for value in field_schema.get("intent_aliases", []) or []
             )
         keys = [str(key) for key in (available_keys or ())]
-        normalized = cls._normalize_input_field(field_name)
-        account_fields = {
-            "accountid", "adaccountid", "advertiserid", "customerid",
+        normalized = self._normalize_input_field(field_name)
+        scope_fields = {
+            self._normalize_input_field(value)
+            for value in self.scope_field_names
         }
         for key in keys:
-            key_normalized = cls._normalize_input_field(key)
+            key_normalized = self._normalize_input_field(key)
             if key_normalized == normalized:
                 candidates.append(key)
             elif field_name == "name" and key_normalized.endswith("name"):
@@ -113,7 +123,7 @@ class ToolInputBuilder:
                 # field declared by the selected Tool. This is a generic
                 # shape compatibility rule, not a resource-name table.
                 candidates.append(key)
-            elif normalized in account_fields and key_normalized in account_fields:
+            elif normalized in scope_fields and key_normalized in scope_fields:
                 candidates.append(key)
         return list(dict.fromkeys(candidates))
 
@@ -229,18 +239,17 @@ class ToolInputBuilder:
             "location_name", "country_name",
         ]
 
-    @staticmethod
-    def _selection_account_id(field_schema: dict[str, Any], ctx: ToolContext) -> str:
-        """Return the account binding used by a provider selection token.
+    def _selection_scope_key(self, field_schema: dict[str, Any], ctx: ToolContext) -> str:
+        """Return the application scope binding used by a selection token.
 
-        A provider-owned catalog can explicitly be global (for example a
-        TikTok App or location catalog).  Such a selection is intentionally
+        A publisher-owned catalog can explicitly be global (for example a
+        reusable reference catalog). Such a selection is intentionally
         portable across the account chosen later in the creation form.  All
         other selections remain bound to the active account.
         """
         if field_schema.get("lookup_account_required") is False:
             return ""
-        return str(ctx.account_id or "")
+        return str(self.scope_value(ctx) or "")
 
     @classmethod
     def _extract_selection_option(
@@ -332,10 +341,10 @@ class ToolInputBuilder:
                 if identity in seen:
                     continue
                 seen.add(identity)
-                token, expires_at = self.services.parameter_selection_signer.issue(
+                token, expires_at = self.services.selection_signer.issue(
                     session_id=ctx.session_id,
                     user_id=ctx.user_id,
-                    account_id=self._selection_account_id(field_schema, ctx),
+                    scope_key=self._selection_scope_key(field_schema, ctx),
                     platform=platform,
                     tool_name=target_tool.name,
                     field=field_name,
@@ -411,11 +420,11 @@ class ToolInputBuilder:
             for token in tokens:
                 try:
                     resolved.append(
-                        self.services.parameter_selection_signer.verify(
+                        self.services.selection_signer.verify(
                             token,
                             session_id=ctx.session_id,
                             user_id=ctx.user_id,
-                            account_id=self._selection_account_id(field_schema, ctx),
+                            scope_key=self._selection_scope_key(field_schema, ctx),
                             platform=self.services.normalize_namespace(
                                 tool_def.platform
                             ),
@@ -424,7 +433,7 @@ class ToolInputBuilder:
                             source_tool=source_tool,
                         )
                     )
-                except ParameterSelectionError as exc:
+                except ValueError as exc:
                     errors.append(f"selection_tokens.{field_name}: {exc}")
             if len(resolved) != len(tokens):
                 continue
@@ -491,7 +500,7 @@ class ToolInputBuilder:
         if isinstance(specific_params, dict):
             platform_params = {**platform_params, **specific_params}
             accepted = set(tool_def.input_schema.properties)
-            accepted.update(self.ACCOUNT_FIELDS + ("selection_tokens",))
+            accepted.update(self.scope_field_names + ("selection_tokens",))
             for field_name, schema in tool_def.input_schema.properties.items():
                 accepted.update(self.input_candidates(
                     field_name, schema, specific_params.keys()
@@ -510,10 +519,11 @@ class ToolInputBuilder:
                     tool_input[field_name] = platform_params[candidate]
                     break
 
-        if ctx and ctx.account_id:
-            for account_field in self.ACCOUNT_FIELDS:
-                if account_field in properties and account_field not in tool_input:
-                    tool_input[account_field] = ctx.account_id
+        scope_value = self.scope_value(ctx)
+        if scope_value not in (None, ""):
+            for scope_field in self.scope_field_names:
+                if scope_field in properties and scope_field not in tool_input:
+                    tool_input[scope_field] = scope_value
                     break
 
         if ctx:
@@ -552,7 +562,7 @@ class ToolInputBuilder:
         # by the selected Tool.  A provider may map an input field to a
         # different intent field and/or publish an enum translation through
         # ``intent_field`` and ``intent_map``.  Runtime does not need to know
-        # whether that field means budget, objective, campaign type, date
+        # whether that field means a budget, objective, type, date
         # range, or something introduced by a future Skill.
         # Intent-level values are publisher-owned extensions.  Read the
         # generic attribute bag instead of inspecting ParsedIntent's storage
@@ -601,7 +611,7 @@ class ToolInputBuilder:
         if "name" in tool_def.input_schema.required and "name" not in tool_input:
             # Child resources can be planned before their provider parent is
             # created.  A generic hierarchy-based placeholder keeps dry-run
-            # planning possible without naming any advertising resource types.
+            # planning possible without naming any application resource types.
             if services.is_dry_run() and getattr(tool_def, "parent_resource_type", None):
                 resource_type = getattr(tool_def, "resource_type", "") or "resource"
                 tool_input["name"] = (
@@ -646,7 +656,7 @@ class ToolInputBuilder:
         services = self.services
         errors: list[str] = []
         intent_fields = set(vars(intent)) if hasattr(intent, "__dict__") else set()
-        common = intent_fields | set(self.ACCOUNT_FIELDS) | {"selection_tokens"}
+        common = intent_fields | set(self.scope_field_names) | {"selection_tokens"}
         for platform, values in (getattr(intent, "platform_params", {}) or {}).items():
             if str(platform).startswith("_") or not isinstance(values, dict):
                 continue
@@ -661,7 +671,7 @@ class ToolInputBuilder:
             # an input of the final action Tool. Treat it as valid only when
             # another registered Tool in the same provider package declares
             # the field or one of its aliases. This keeps the contract closed
-            # without maintaining a central list of advertising field names.
+            # without maintaining a central list of application field names.
             registered_tools = getattr(services.registry, "list_by_platform", None)
             if callable(registered_tools):
                 tools.extend(registered_tools(canonical))

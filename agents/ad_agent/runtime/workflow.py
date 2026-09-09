@@ -17,6 +17,7 @@ class WorkflowCoordinator:
         services: RuntimeExecutionServices,
         outbox: Any = None,
         item_scope_resolver: Optional[Callable[..., Optional[str]]] = None,
+        result_scope_resolver: Optional[Callable[..., Optional[str]]] = None,
     ):
         self.services = services
         self.outbox = outbox
@@ -25,6 +26,7 @@ class WorkflowCoordinator:
         # whether an application calls it an account, workspace, project, or
         # something else.
         self.item_scope_resolver = item_scope_resolver
+        self.result_scope_resolver = result_scope_resolver
 
     def start(
         self,
@@ -86,7 +88,7 @@ class WorkflowCoordinator:
                         sequence_by_resource.get((actual_platform, parent_type))
                         if parent_type else None
                     )
-                    planned_scope = (
+                    scope_value = (
                         self.item_scope_resolver(
                             intent, platform, [tool], session,
                         )
@@ -99,7 +101,9 @@ class WorkflowCoordinator:
                         tool_name=tool.name,
                         status="planned",
                         input_data={},
-                        account_id=planned_scope,
+                        # The application persistence adapter maps this
+                        # opaque scope to its storage representation.
+                        scope=scope_value,
                         resource_type=getattr(tool, "resource_type", None),
                         parent_resource_type=parent_type,
                         parent_sequence=parent_sequence,
@@ -126,6 +130,9 @@ class WorkflowCoordinator:
         results: list[dict],
         workflow_inputs: dict[int, dict],
         planning_errors: Optional[list[str]] = None,
+        *,
+        intent: Any = None,
+        session: Any = None,
     ) -> None:
         store = self.services.session_manager
         if not workflow_id or not store:
@@ -238,12 +245,13 @@ class WorkflowCoordinator:
             actual_platform = self.services.normalize_namespace(
                 str(item.get("platform") or "")
             )
-            account_id = item.get("account_id") or data.get("account_id")
-            if account_id in (None, ""):
-                for key in ("account_id", "advertiser_id", "customer_id"):
-                    if input_data.get(key) not in (None, ""):
-                        account_id = input_data[key]
-                        break
+            scope_value = (
+                self.result_scope_resolver(
+                    intent, actual_platform, [definition] if definition else [],
+                    session, item, input_data, data,
+                )
+                if self.result_scope_resolver is not None else None
+            )
             parent_sequence = (
                 resource_sequences.get((
                     actual_platform,
@@ -284,8 +292,8 @@ class WorkflowCoordinator:
                 ),
                 provider_resource_id=provider_resource_id,
                 logical_resource_id=local_resource_id or provider_resource_id,
-                account_id=(
-                    str(account_id) if account_id not in (None, "") else None
+                scope=(
+                    str(scope_value) if scope_value not in (None, "") else None
                 ),
             )
             if raw_resource_id not in (None, ""):

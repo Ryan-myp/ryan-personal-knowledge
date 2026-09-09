@@ -379,7 +379,7 @@ class SessionManager:
         parent_resource_id: Optional[str] = None,
         provider_resource_id: Optional[str] = None,
         logical_resource_id: Optional[str] = None,
-        account_id: Optional[str] = None,
+        scope: Optional[str] = None,
         parent_resource_type: Optional[str] = None,
     ) -> None:
         self.store.upsert_workflow_item(
@@ -391,7 +391,9 @@ class SessionManager:
             parent_resource_id=parent_resource_id,
             provider_resource_id=provider_resource_id,
             logical_resource_id=logical_resource_id,
-            account_id=account_id,
+            # The current application's schema calls this durable scope an
+            # account. The generic workflow layer only supplies ``scope``.
+            account_id=scope,
             parent_resource_type=parent_resource_type,
         )
 
