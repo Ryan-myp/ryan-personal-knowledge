@@ -30,10 +30,10 @@ class ToolInputBuilder:
         self.services = services
 
     def platform_params_for_intent(self, intent: Any, platform: str) -> dict[str, Any]:
-        requested = self.services.canonical_platform(platform)
+        requested = self.services.normalize_namespace(platform)
         merged: dict[str, Any] = {}
         for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
-            if self.services.canonical_platform(str(raw_platform)) != requested:
+            if self.services.normalize_namespace(str(raw_platform)) != requested:
                 continue
             if not isinstance(values, dict):
                 continue
@@ -416,7 +416,7 @@ class ToolInputBuilder:
                             session_id=ctx.session_id,
                             user_id=ctx.user_id,
                             account_id=self._selection_account_id(field_schema, ctx),
-                            platform=self.services.canonical_platform(
+                            platform=self.services.normalize_namespace(
                                 tool_def.platform
                             ),
                             tool_name=tool_def.name,
@@ -484,7 +484,7 @@ class ToolInputBuilder:
     ) -> dict[str, Any]:
         services = self.services
         platform_params = self.platform_params_for_intent(intent, platform)
-        actual_platform = services.canonical_platform(platform)
+        actual_platform = services.normalize_namespace(platform)
         tool_input: dict[str, Any] = {}
         specific_params = platform_params.get(tool_def.name, {})
         unknown_specific_params: list[str] = []
@@ -554,11 +554,10 @@ class ToolInputBuilder:
         # ``intent_field`` and ``intent_map``.  Runtime does not need to know
         # whether that field means budget, objective, campaign type, date
         # range, or something introduced by a future Skill.
-        intent_values = (
-            vars(intent)
-            if hasattr(intent, "__dict__") and isinstance(vars(intent), dict)
-            else {}
-        )
+        # Intent-level values are publisher-owned extensions.  Read the
+        # generic attribute bag instead of inspecting ParsedIntent's storage
+        # layout, so adding a new Skill field does not require a Runtime edit.
+        intent_values = dict(getattr(intent, "attributes", {}) or {})
         for field_name, schema in properties.items():
             if field_name in tool_input or not isinstance(schema, dict):
                 continue
@@ -651,11 +650,11 @@ class ToolInputBuilder:
         for platform, values in (getattr(intent, "platform_params", {}) or {}).items():
             if str(platform).startswith("_") or not isinstance(values, dict):
                 continue
-            canonical = services.canonical_platform(platform)
+            canonical = services.normalize_namespace(platform)
             tools = [
                 tool
                 for routed_platform, routed_tools in tool_plan.items()
-                if services.canonical_platform(routed_platform) == canonical
+                if services.normalize_namespace(routed_platform) == canonical
                 for tool in routed_tools
             ]
             # The parser may extract a parent/context identifier that is not

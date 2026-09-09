@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from ..core.features import RuntimeServices as RuntimeServicesPort
+from ..core.features import RuntimeExecutionServices
 from ..core.tool_registry import validate_tool_input as validate_registered_tool_input
 
 
-class RuntimeServices(RuntimeServicesPort):
-    """Expose generic execution primitives without leaking Runtime internals."""
+class AdRuntimeServices(RuntimeExecutionServices):
+    """Advertising application's adapter over the generic execution port.
+
+    The extra account, scheduling and Blueprint accessors below are owned by
+    the advertising composition root.  They are deliberately not part of the
+    Core ``RuntimeExecutionServices`` contract.
+    """
 
     def __init__(self, runtime: Any):
         self._runtime = runtime
@@ -95,6 +100,10 @@ class RuntimeServices(RuntimeServicesPort):
 
     def canonical_platform(self, platform: str) -> str:
         return self._runtime._resolve_platform_identifier(platform)
+
+    def normalize_namespace(self, value: str) -> str:
+        """Normalize an extension namespace without Core knowing its domain."""
+        return self._runtime._resolve_platform_identifier(value)
 
     def get_registered_tool(self, tool_name: str) -> tuple[Any, Any]:
         return self._runtime._get_registered_tool(tool_name)

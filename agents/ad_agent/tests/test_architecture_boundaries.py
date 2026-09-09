@@ -125,6 +125,79 @@ def test_execution_plan_is_provider_neutral_and_validates_dependencies():
         cyclic.validate()
 
 
+def test_parsed_intent_is_an_opaque_publisher_extension_envelope():
+    """Core must not add one field per business workflow."""
+    intent = ParsedIntent(
+        "custom_operation",
+        "do something",
+        ["custom-namespace"],
+        attributes={"publisher_value": "v1"},
+        scoped_parameters={"custom-namespace": {"resource_key": "r1"}},
+    )
+
+    assert {
+        "intent_type", "raw_input", "platforms", "attributes", "parameters",
+        "scoped_parameters", "metadata",
+    } == set(ParsedIntent.__dataclass_fields__)
+    assert "campaign_type" not in ParsedIntent.__dataclass_fields__
+    assert intent.attributes == {"publisher_value": "v1"}
+    assert intent.scoped_parameters["custom-namespace"]["resource_key"] == "r1"
+
+
+def test_generic_workflow_coordinator_receives_scope_from_application_boundary():
+    """Workflow infrastructure must not require an account resolver."""
+    from agents.ad_agent.runtime.workflow import WorkflowCoordinator
+
+    class Store:
+        def __init__(self):
+            self.items = []
+
+        def create_workflow(self, *_args, **_kwargs):
+            return None
+
+        def heartbeat_workflow(self, *_args, **_kwargs):
+            return True
+
+        def record_workflow_item(self, **kwargs):
+            self.items.append(kwargs)
+
+    class Services:
+        session_manager = Store()
+        execution_mode = "dry_run"
+
+        def is_dry_run(self): return True
+        def redact(self, value): return value
+        def workflow_lease_owner(self): return "worker"
+        def workflow_stale_after_seconds(self): return 60
+        def normalize_namespace(self, value): return value.lower()
+        def resolve_account(self, *_args):
+            raise AssertionError("generic workflow must not resolve accounts")
+
+    tool = ToolDefinition(
+        name="custom_write",
+        skill="custom",
+        platform="custom-namespace",
+        description="write",
+        input_schema=ToolSchema(),
+        action="create",
+        resource_type="resource",
+        effect_class=ToolEffect.WRITE,
+    )
+    session = type("Session", (), {"session_id": "s1"})()
+    coordinator = WorkflowCoordinator(
+        Services(),
+        item_scope_resolver=lambda *_args: "opaque-scope",
+    )
+    workflow_id = coordinator.start(
+        session,
+        ParsedIntent("custom_operation", "create", ["custom-namespace"]),
+        {"custom-namespace": [tool]},
+    )
+
+    assert workflow_id
+    assert Services.session_manager.items[0]["account_id"] == "opaque-scope"
+
+
 def test_unpublished_intent_is_not_executable():
     """An intent becomes executable only after its publisher registers it."""
     parser = LLMIntentParser()

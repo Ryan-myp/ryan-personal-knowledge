@@ -1,7 +1,8 @@
 """Generic Tool execution engine.
 
 Authorization and workflow planning happen outside this class. This class
-only executes a selected, already-registered Tool through the RuntimeServices
+only executes a selected, already-registered Tool through the application
+execution port
 port, enforcing request deadlines and provider-client isolation.
 """
 
@@ -15,7 +16,7 @@ from typing import Any, Optional
 
 from ..core.interfaces import ToolDefinition, ToolError, ToolResult
 from ..core.tool_registry import validate_tool_input
-from ..core.features import RuntimeServices
+from ..core.features import RuntimeExecutionServices
 def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
     """Map execution failures to stable recovery semantics.
 
@@ -88,7 +89,7 @@ def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
 class ToolExecutor:
     """Execute one registered Tool after the caller's policy gates."""
 
-    def __init__(self, services: RuntimeServices):
+    def __init__(self, services: RuntimeExecutionServices):
         self.services = services
         # A timed-out Python handler cannot be force-killed safely. Bound the
         # number of such lingering invocations so repeated provider/network
@@ -120,7 +121,7 @@ class ToolExecutor:
             )
 
         if definition.is_write_tool and self.services.execution_mode == "live":
-            platform = self.services.canonical_platform(definition.platform)
+            platform = self.services.normalize_namespace(definition.platform)
             request_client = (request_clients or {}).get(platform)
             has_client = hasattr(handler, "client")
             handler_client = getattr(handler, "client", None) if has_client else None
@@ -281,7 +282,7 @@ class ToolExecutor:
         # the request-client branch below will attach the isolated client
         # before invocation.  This ordering matters for HTTP requests where
         # credentials are scoped to one principal/turn.
-        request_platform = self.services.canonical_platform(definition.platform)
+        request_platform = self.services.normalize_namespace(definition.platform)
         has_request_client = bool(
             isinstance(request_clients, dict)
             and request_clients.get(request_platform) is not None
@@ -305,7 +306,7 @@ class ToolExecutor:
                 )
             else:
                 client = request_clients.get(
-                    self.services.canonical_platform(definition.platform)
+                    self.services.normalize_namespace(definition.platform)
                 )
                 if client is None or not hasattr(handler, "client"):
                     invocation_handler, isolated = handler, False

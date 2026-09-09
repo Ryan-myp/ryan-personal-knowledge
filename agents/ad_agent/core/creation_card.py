@@ -1203,7 +1203,9 @@ class CreationCardBuilder:
         merged["raw_input"] = (
             f"{pending.raw_input}\n{str(follow_up_text or '').strip()}"
         ).strip()
-        current_params = merged.get("platform_params")
+        current_params = merged.get("scoped_parameters")
+        if not isinstance(current_params, Mapping):
+            current_params = merged.get("platform_params")
         if not isinstance(current_params, Mapping):
             current_params = {}
         current_params = _copy_json(current_params)
@@ -1252,23 +1254,24 @@ class CreationCardBuilder:
                 destination[dimension] = selector_value
                 changed = True
             current_params[canonical] = destination
-            if dimension == "objective" and merged.get("objective") != selector_value:
-                merged["objective"] = selector_value
-                changed = True
-            elif dimension in {"campaign_type", "ad_format"} and merged.get("campaign_type") != selector_value:
-                merged["campaign_type"] = selector_value
+            attributes = dict(merged.get("attributes") or {})
+            if dimension and attributes.get(dimension) != selector_value:
+                attributes[dimension] = selector_value
+                merged["attributes"] = attributes
                 changed = True
 
         # Explicit scalar values from a structured follow-up are safe to
         # carry forward; the original creation intent and platform stay fixed.
-        for field_name in ("budget", "duration_days", "objective", "campaign_type", "creative_materials"):
-            value = getattr(follow_up, field_name, None)
+        for field_name, value in (getattr(follow_up, "attributes", {}) or {}).items():
             if value not in (None, "", [], {}):
-                if merged.get(field_name) != value:
-                    merged[field_name] = _copy_json(value)
+                attributes = dict(merged.get("attributes") or {})
+                if attributes.get(field_name) != value:
+                    attributes[field_name] = _copy_json(value)
+                    merged["attributes"] = attributes
                     changed = True
         if not changed:
             return None
+        merged["scoped_parameters"] = current_params
         merged["platform_params"] = current_params
         return ParsedIntent(**{
             key: value for key, value in merged.items()

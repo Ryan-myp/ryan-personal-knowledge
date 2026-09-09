@@ -149,8 +149,9 @@ class DynamicToolSelector:
                     platform=platform,
                     context={
                         "intent_type": intent_type,
-                        "objective": intent.objective,
-                        "budget": intent.budget,
+                        "intent_attributes": dict(
+                            getattr(intent, "attributes", {}) or {}
+                        ),
                         **policy_metadata(self.policies),
                     },
                     expert_knowledge=expert_knowledge,

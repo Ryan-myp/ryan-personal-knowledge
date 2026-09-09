@@ -3,18 +3,28 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from ..core.features import RuntimeServices
+from ..core.features import RuntimeExecutionServices
 from ..core.execution_plan import ExecutionPlan
 
 
 class WorkflowCoordinator:
     """Persist generic plan checkpoints and workflow state transitions."""
 
-    def __init__(self, services: RuntimeServices, outbox: Any = None):
+    def __init__(
+        self,
+        services: RuntimeExecutionServices,
+        outbox: Any = None,
+        item_scope_resolver: Optional[Callable[..., Optional[str]]] = None,
+    ):
         self.services = services
         self.outbox = outbox
+        # Resource scope is application-owned.  The generic coordinator only
+        # persists the opaque value returned by this callback and never knows
+        # whether an application calls it an account, workspace, project, or
+        # something else.
+        self.item_scope_resolver = item_scope_resolver
 
     def start(
         self,
@@ -70,25 +80,17 @@ class WorkflowCoordinator:
                     if not tool.is_write_tool:
                         continue
                     sequence += 1
-                    actual_platform = self.services.canonical_platform(platform)
+                    actual_platform = self.services.normalize_namespace(platform)
                     parent_type = getattr(tool, "parent_resource_type", None)
                     parent_sequence = (
                         sequence_by_resource.get((actual_platform, parent_type))
                         if parent_type else None
                     )
-                    planned_account = self.services.resolve_account(
-                        intent,
-                        platform,
-                        [tool],
-                        # A persisted session account is not a substitute for
-                        # an account explicitly supplied for a write request.
-                        # Read-only plans may still use the normal resolver
-                        # fallback, but workflow items for writes must remain
-                        # unscoped until Runtime validates the current turn.
-                        None if tool.is_write_tool else (
-                            session.ctx.account_id
-                            if len(intent.platforms) == 1 else None
-                        ),
+                    planned_scope = (
+                        self.item_scope_resolver(
+                            intent, platform, [tool], session,
+                        )
+                        if self.item_scope_resolver is not None else None
                     )
                     store.record_workflow_item(
                         workflow_id=workflow_id,
@@ -97,7 +99,7 @@ class WorkflowCoordinator:
                         tool_name=tool.name,
                         status="planned",
                         input_data={},
-                        account_id=planned_account,
+                        account_id=planned_scope,
                         resource_type=getattr(tool, "resource_type", None),
                         parent_resource_type=parent_type,
                         parent_sequence=parent_sequence,
@@ -233,7 +235,7 @@ class WorkflowCoordinator:
                 or data.get("parent_resource_id")
                 or (input_data.get(parent_field) if parent_field else None)
             )
-            actual_platform = self.services.canonical_platform(
+            actual_platform = self.services.normalize_namespace(
                 str(item.get("platform") or "")
             )
             account_id = item.get("account_id") or data.get("account_id")

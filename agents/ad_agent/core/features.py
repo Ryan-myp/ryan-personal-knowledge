@@ -1,8 +1,10 @@
-"""Generic Runtime feature contracts.
+"""Generic Runtime extension contracts.
 
-Features are optional domain extensions. The Runtime discovers and invokes
-them through this small protocol, without importing a business workflow or
-provider implementation.
+The Core package owns the extension seam, not an application's domain model.
+Feature implementations may expose richer methods, but those methods belong
+to the embedding application and are intentionally resolved by capability
+inspection there.  Keeping the Core protocol small prevents a new business
+feature from becoming a mandatory Runtime service.
 """
 
 from __future__ import annotations
@@ -11,7 +13,13 @@ from typing import Any, Protocol
 
 
 class RuntimeFeature(Protocol):
-    """A domain workflow extension owned by a Skill/feature package."""
+    """A domain extension owned by a Skill/feature package.
+
+    ``can_handle`` is the only execution hook the generic Runtime needs.  A
+    feature may publish optional application-specific hooks (for example a
+    control-plane handler or a preflight operation), but those are not part of
+    the Core contract and must not be added here.
+    """
 
     feature_name: str
 
@@ -22,25 +30,20 @@ class RuntimeFeature(Protocol):
     def can_handle(self, intent: Any) -> bool:
         """Return whether this feature owns the intent/workflow."""
 
-    def is_control_intent(self, intent: Any) -> bool:
-        """Return whether the intent belongs to the feature control plane."""
+class RuntimeExecutionServices(Protocol):
+    """Provider- and business-neutral execution port.
 
-    def is_batch_intent(self, intent: Any) -> bool:
-        """Return whether the feature owns a planning-only batch path."""
-
-    def handles_creation_preflight(self, intent: Any) -> bool:
-        """Return whether the feature owns creation preflight for the intent."""
-
-
-class RuntimeServices(Protocol):
-    """Generic execution services exposed to domain Features."""
+    This port contains only services needed by generic Tool execution and
+    workflow persistence.  Account selection, business preflight, schedules,
+    creation blueprints and other application concerns stay on the embedding
+    Runtime's private feature adapter instead of expanding this contract.
+    """
 
     registry: Any
     plugin_registry: Any
     security: Any
     parameter_selection_signer: Any
     input_builder: Any
-    account_resolver: Any
     session_manager: Any
     response_renderer: Any
     execution_mode: str
@@ -50,18 +53,9 @@ class RuntimeServices(Protocol):
     write_guard: Any
     read_only_mode: bool
     offline_mode: bool
-    scheduling: Any
 
-    def canonical_platform(self, platform: str) -> str: ...
+    def normalize_namespace(self, value: str) -> str: ...
     def get_registered_tool(self, tool_name: str) -> tuple[Any, Any]: ...
-    def resolve_account(
-        self, intent: Any, platform: str, tools: list[Any],
-        fallback_account: str | None,
-    ) -> str | None: ...
-    def available_accounts(self, platform: str, account_scope: Any) -> list[str]: ...
-    def validate_account(
-        self, platform: str, account_id: str, is_write: bool, account_scope: Any,
-    ) -> tuple[bool, str]: ...
     def check_tool_permissions(self, tool: Any, permissions: Any) -> str | None: ...
     def validate_input_redline(self, value: Any) -> list[str]: ...
     def validate_tool_input(
@@ -93,5 +87,3 @@ class RuntimeServices(Protocol):
     def is_dry_run(self) -> bool: ...
     def workflow_lease_owner(self) -> str: ...
     def workflow_stale_after_seconds(self) -> float: ...
-
-    def preflight_scheduled_prompt(self, prompt: str, **kwargs: Any) -> dict[str, Any]: ...

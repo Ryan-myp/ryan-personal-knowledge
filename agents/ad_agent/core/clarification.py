@@ -9,16 +9,13 @@ handler and it does not contain channel-specific routing rules.
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Callable, Iterable, Mapping, Optional
 
 from .tool_registry import validate_tool_input
 
 
 _EMPTY = (None, "", {}, [])
 _MAX_FIELDS = 12
-_ACCOUNT_FIELDS = {"account_id", "ad_account_id", "advertiser_id", "customer_id"}
-
-
 def _is_empty(value: Any) -> bool:
     return value in _EMPTY
 
@@ -77,31 +74,28 @@ def _display_action(action: str) -> str:
 
 
 def _display_field(path: str, spec: Mapping[str, Any]) -> str:
-    """Use contract labels first, then stable generic operator wording."""
+    """Use publisher metadata first, then stable generic operator wording."""
     configured = spec.get("label") or spec.get("title")
     if configured:
         return str(configured)
     leaf = str(path or "").rsplit(".", 1)[-1]
-    return {
-        "account_id": "广告账户 ID",
-        "ad_account_id": "广告账户 ID",
-        "advertiser_id": "广告主 ID",
-        "customer_id": "客户账户 ID",
-        "campaign_id": "Campaign ID",
-        "campaign_ids": "Campaign ID 列表",
-        "ad_group_id": "Ad Group ID",
-        "adgroup_id": "Ad Group ID",
-        "ad_id": "Ad ID",
-        "updates": "要修改的字段和值",
-        "date_range": "日期范围",
-        "date_preset": "日期范围",
-        "limit": "返回数量上限",
-        "name": "名称",
-    }.get(leaf, str(path or "参数"))
+    return leaf.replace("_", " ").strip().title() or str(path or "参数")
 
 
 class ActionClarificationBuilder:
     """Build a bounded clarification response from selected Tool contracts."""
+
+    def __init__(
+        self,
+        *,
+        field_labeler: Optional[Callable[[str, Mapping[str, Any]], Optional[str]]] = None,
+        field_hint_builder: Optional[Callable[[str, Mapping[str, Any]], Optional[str]]] = None,
+    ) -> None:
+        # Presentation vocabulary is supplied by the embedding application.
+        # Core only knows how to render a schema field and never owns domain
+        # labels such as an advertising account or campaign identifier.
+        self.field_labeler = field_labeler
+        self.field_hint_builder = field_hint_builder
 
     def build(
         self,
@@ -217,7 +211,10 @@ class ActionClarificationBuilder:
         lookup = spec.get("lookup_tool")
         if not lookup and isinstance(spec.get("lookup"), Mapping):
             lookup = spec["lookup"].get("tool")
-        label = _display_field(raw_name, spec)
+        label = (
+            self.field_labeler(raw_name, spec)
+            if self.field_labeler is not None else None
+        ) or _display_field(raw_name, spec)
         item = {
             "path": raw_name,
             "label": label[:160],
@@ -234,6 +231,8 @@ class ActionClarificationBuilder:
         description = spec.get("description")
         if description and str(description) != label:
             item["hint"] = str(description)[:240]
-        if raw_name in _ACCOUNT_FIELDS:
-            item["hint"] = "请填写当前渠道的广告账户 ID，不能用其他渠道账户代替。"
+        if self.field_hint_builder is not None:
+            hint = self.field_hint_builder(raw_name, spec)
+            if hint:
+                item["hint"] = str(hint)[:240]
         fields.append(item)

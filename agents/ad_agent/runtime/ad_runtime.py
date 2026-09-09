@@ -67,7 +67,7 @@ from ..core.security import (
 from .skill import BaseSkill, Skill, SkillContract, SkillLoader
 from .input_builder import ToolInputBuilder
 from .account_context import AccountResolver
-from .services import RuntimeServices
+from .services import AdRuntimeServices
 from .workflow import WorkflowCoordinator
 from .account_policy import AccountWhitelistValidator
 from .session_context import SessionContext
@@ -344,7 +344,10 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             self.registry,
             self.blueprint_cascade,
         )
-        self.action_clarification_builder = ActionClarificationBuilder()
+        self.action_clarification_builder = ActionClarificationBuilder(
+            field_labeler=self._clarification_field_label,
+            field_hint_builder=self._clarification_field_hint,
+        )
         # Blueprint context is declarative and changes only at registry
         # lifecycle boundaries. Cache the bounded LLM view per provider scope
         # so ordinary turns do not re-expand every creation schema twice.
@@ -364,7 +367,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         self._parameter_selection_signer = ParameterSelectionSigner(
             selection_secret, parameter_selection_ttl_seconds
         )
-        self.services = RuntimeServices(self)
+        self.services = AdRuntimeServices(self)
         self.input_builder = ToolInputBuilder(self.services)
         self.account_resolver = AccountResolver(self.services)
         self.policies: list[RuntimePolicy] = list(policies or [])
@@ -471,7 +474,11 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
 
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
-        self.workflow = WorkflowCoordinator(self.services, outbox=self.outbox)
+        self.workflow = WorkflowCoordinator(
+            self.services,
+            outbox=self.outbox,
+            item_scope_resolver=self._resolve_workflow_item_scope,
+        )
         self.security = RuntimeSecurity(self)
         self.scheduling_service = SchedulingService(
             store=self._persistence_store,
@@ -644,6 +651,61 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
     def _feature_for_intent(self, intent: Any) -> Optional[RuntimeFeature]:
         """Resolve an optional domain feature through its generic contract."""
         return feature_for_intent(self.features, intent)
+
+    def _resolve_workflow_item_scope(
+        self,
+        intent: Any,
+        platform: str,
+        tools: list[Any],
+        session: Any,
+    ) -> Optional[str]:
+        """Resolve the advertising scope at the application boundary.
+
+        ``WorkflowCoordinator`` persists an opaque scope returned by this
+        callback.  Account semantics therefore stay in the advertising
+        composition root instead of leaking into generic workflow
+        infrastructure.
+        """
+        if not tools:
+            return None
+        tool = tools[0]
+        fallback = None
+        if not getattr(tool, "is_write_tool", False):
+            fallback = (
+                getattr(getattr(session, "ctx", None), "account_id", None)
+                if len(getattr(intent, "platforms", []) or []) == 1 else None
+            )
+        return self.account_resolver.resolve(intent, platform, tools, fallback)
+
+    @staticmethod
+    def _clarification_field_label(
+        path: str, spec: Mapping[str, Any]
+    ) -> Optional[str]:
+        """Advertising presentation labels stay outside Core clarification."""
+        configured = spec.get("label") or spec.get("title")
+        if configured:
+            return str(configured)
+        return {
+            "account_id": "广告账户 ID",
+            "ad_account_id": "广告账户 ID",
+            "advertiser_id": "广告主 ID",
+            "customer_id": "客户账户 ID",
+            "campaign_id": "Campaign ID",
+            "campaign_ids": "Campaign ID 列表",
+            "ad_group_id": "Ad Group ID",
+            "adgroup_id": "Ad Group ID",
+            "ad_id": "Ad ID",
+        }.get(str(path or "").rsplit(".", 1)[-1])
+
+    @staticmethod
+    def _clarification_field_hint(
+        path: str, _spec: Mapping[str, Any]
+    ) -> Optional[str]:
+        if str(path or "").rsplit(".", 1)[-1] in {
+            "account_id", "ad_account_id", "advertiser_id", "customer_id",
+        }:
+            return "请填写当前渠道的广告账户 ID，不能用其他渠道账户代替。"
+        return None
 
     def _refresh_parser_catalog(self) -> None:
         """Synchronize parser discovery data with the active Tool registry."""

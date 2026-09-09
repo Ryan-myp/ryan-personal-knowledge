@@ -108,6 +108,16 @@ class AdCreationServicesMixin:
             return None
         fields = getattr(ParsedIntent, "__dataclass_fields__", {})
         values = {key: copy.deepcopy(value) for key, value in raw.items() if key in fields}
+        if "attributes" not in values:
+            values["attributes"] = {
+                str(key): copy.deepcopy(value)
+                for key, value in raw.items()
+                if key not in fields and key not in {"platform_params"}
+            }
+        if "scoped_parameters" not in values:
+            values["scoped_parameters"] = copy.deepcopy(
+                raw.get("platform_params") or {}
+            )
         # ParsedIntent.to_dict() intentionally omits raw_input from the public
         # contract. A durable draft still needs a safe seed for deterministic
         # Blueprint resolution, so restore it from the draft envelope when
@@ -161,8 +171,8 @@ class AdCreationServicesMixin:
 
         merged = pending.to_dict()
         merged["raw_input"] = str(getattr(pending, "raw_input", "") or "")
-        merged_params = copy.deepcopy(getattr(pending, "platform_params", {}) or {})
-        current_params = getattr(intent, "platform_params", {}) or {}
+        merged_params = copy.deepcopy(getattr(pending, "scoped_parameters", {}) or {})
+        current_params = getattr(intent, "scoped_parameters", {}) or {}
         if isinstance(current_params, Mapping):
             for platform, values in current_params.items():
                 if not isinstance(values, Mapping):
@@ -184,14 +194,11 @@ class AdCreationServicesMixin:
                     destination = dict(merged_params.get(platform, {}) or {})
                     destination.update(copy.deepcopy(dict(values)))
                     merged_params[platform] = destination
-        routing_fields = {"intent_type", "raw_input", "platforms", "platform_params"}
-        for field_name in getattr(ParsedIntent, "__dataclass_fields__", {}):
-            if field_name in routing_fields:
-                continue
-            value = getattr(intent, field_name, None)
-            if value not in (None, "", [], {}):
-                merged[field_name] = copy.deepcopy(value)
+        attributes = dict(merged.get("attributes") or {})
+        attributes.update(copy.deepcopy(getattr(intent, "attributes", {}) or {}))
+        merged["attributes"] = attributes
         merged["platform_params"] = merged_params
+        merged["scoped_parameters"] = merged_params
         merged["intent_type"] = pending.intent_type
         merged["platforms"] = pending_platforms
         try:

@@ -63,16 +63,13 @@ class LLMIntentParser(IntentParser):
 输出结构：
 {
   "intent_type": "<候选值>",
-  "platforms": ["<当前已注册的平台标识>"],
-  "objective": "可选的通用业务目标提示",
-  "goal": "可选的用户目标提示",
-  "resource_type": "可选的资源类型提示",
-  "action": "可选的动作提示",
+  "platforms": ["<当前已注册的命名空间>"],
+  "attributes": {"<publisher_defined_attribute>": "<value>"},
   "parameters": {"<field>": "<value>"},
-  "platform_params": {"<platform>": {"<provider_field>": "<value>"}}
+  "scoped_parameters": {"<namespace>": {"<declared_field>": "<value>"}}
 }
 
-安全与契约边界：platform_params 只能放当前已注册 Tool schema 声明的字段，不能放
+安全与契约边界：scoped_parameters 只能放当前已注册 Tool schema 声明的字段，不能放
 action、operation、resource_type、tool、skill、note 或解释文字。不要猜测动态资源 ID；
 这些值必须来自用户明确输入或已声明的只读 lookup。身份和权限不能由 Memory 或用户文本
 授予。参数不完整或存在多个合法组合时，保留待选择状态；参数收齐后仍须遵守应用的确认策略。
@@ -1123,7 +1120,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
         # Model output is not a trusted resource-selection channel. Keep an
         # App/Pixel/Audience/Campaign ID only when the user explicitly typed
         # it; signed card selections are merged later by Runtime.
-        result["platform_params"] = {
+        scoped_parameters = {
             platform: self._drop_unverified_dynamic_values(
                 merged_params.get(platform, {})
                 if isinstance(merged_params, Mapping) else {},
@@ -1133,6 +1130,8 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             )
             for platform in platforms
         }
+        result["scoped_parameters"] = scoped_parameters
+        result["platform_params"] = scoped_parameters
         for platform in platforms:
             result["platform_params"].setdefault(platform, {})
             result["platform_params"][platform] = self._overlay_explicit_dynamic_values(
@@ -1140,6 +1139,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 result["platform_params"].get(platform, {}),
                 self._platform_field_specs.get(platform, {}),
             )
+        # Keep both public names synchronized while adapters move to the
+        # generic ``scoped_parameters`` contract.
+        result["scoped_parameters"] = result["platform_params"]
 
         # Normalize any top-level ParsedIntent value that a provider schema
         # explicitly publishes as an ``intent_field``.  The field name is
@@ -1430,7 +1432,8 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _normalize_intent(self, data: dict) -> dict:
         """规范化解析结果"""
         data = dict(data or {})
-        intent_type = data.get("intent_type")
+        raw_intent_type = data.get("intent_type")
+        intent_type = raw_intent_type
         if not isinstance(intent_type, str) or not intent_type.strip():
             data["intent_type"] = "chat"
         else:
@@ -1454,21 +1457,49 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 normalized_platforms.append(normalized)
         data["platforms"] = normalized_platforms
 
-        if data.get("objective") is not None:
-            data["objective"] = str(data["objective"]).strip() or None
-        if data.get("campaign_type") is not None:
-            data["campaign_type"] = str(data["campaign_type"]).upper()
-        if not isinstance(data.get("creative_materials"), list):
-            data["creative_materials"] = []
-        for field_name in (
-            "schedule_name", "schedule_expression", "schedule_timezone",
-            "schedule_prompt", "schedule_id",
-        ):
-            if data.get(field_name) is not None:
-                data[field_name] = str(data[field_name]).strip() or None
-        
-        # 确保 platform_params 有所有平台
-        params = data.get("platform_params", {})
+        # Domain values are opaque publisher-owned attributes.  The parser
+        # does not normalize or whitelist campaign, schedule, report, or any
+        # other application's vocabulary here; a Tool schema/Feature owns
+        # that interpretation.
+        reserved = {
+            "intent_type", "raw_input", "platforms", "attributes",
+            "parameters", "scoped_parameters", "platform_params", "metadata",
+        }
+        attributes = data.get("attributes")
+        attributes = dict(attributes) if isinstance(attributes, Mapping) else {}
+        declared_attributes: set[str] = set()
+        for field_spec in self._platform_field_specs.values():
+            for spec in field_spec.values():
+                if isinstance(spec, Mapping) and spec.get("intent_field"):
+                    declared_attributes.add(str(spec["intent_field"]))
+        for descriptor in self._feature_intent_descriptors.values():
+            names = descriptor.get("attributes", descriptor.get("intent_attributes", []))
+            if isinstance(names, str):
+                names = [names]
+            declared_attributes.update(str(name) for name in (names or []) if str(name).strip())
+        # An explicitly nested attributes object is already publisher-owned.
+        # Legacy top-level values are accepted only when their names are
+        # declared by the active Tool/Feature catalog.  The no-catalog parser
+        # remains a useful generic fixture and preserves its opaque values;
+        # it has no executable registry against which to validate them.
+        preserve_unscoped = not self._intent_catalog and not self._custom_intents
+        generic_attributes = {"goal", "resource_type", "action"}
+        for key, value in data.items():
+            if (
+                key not in reserved
+                and (
+                    str(key) in declared_attributes
+                    or str(key) in generic_attributes
+                    or preserve_unscoped
+                )
+            ):
+                attributes.setdefault(str(key), value)
+        data["attributes"] = attributes
+
+        # Ensure the namespace-scoped parameter map has all selected scopes.
+        params = data.get("scoped_parameters")
+        if not isinstance(params, Mapping):
+            params = data.get("platform_params", {})
         params = params if isinstance(params, dict) else {}
         normalized_params = {}
         for key, value in params.items():
@@ -1520,15 +1551,24 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 normalized_params[normalized] = normalize_values(platform_values)
         for p in normalized_platforms:
             normalized_params.setdefault(p, {})
-        data["platform_params"] = normalized_params
-
-        allowed = {
-            "intent_type", "raw_input", "platforms", "objective", "campaign_type", "budget",
-            "duration_days", "date_range", "creative_materials", "platform_params",
-            "schedule_name", "schedule_expression", "schedule_timezone",
-            "schedule_prompt", "schedule_id",
+        data["scoped_parameters"] = normalized_params
+        # Flattening publisher attributes keeps declarative activation rules
+        # and existing renderers simple, without introducing a Core-owned
+        # field list.  ParsedIntent stores the canonical nested envelope.
+        result = {
+            "intent_type": data["intent_type"],
+            "raw_input": data.get("raw_input", ""),
+            "platforms": data["platforms"],
+            "attributes": attributes,
+            "parameters": data.get("parameters", {})
+            if isinstance(data.get("parameters"), Mapping) else {},
+            "scoped_parameters": normalized_params,
+            "platform_params": normalized_params,
+            "metadata": data.get("metadata", {})
+            if isinstance(data.get("metadata"), Mapping) else {},
         }
-        return {key: value for key, value in data.items() if key in allowed}
+        result.update(attributes)
+        return result
 
 
 class SimpleIntentRouter(IntentRouter):

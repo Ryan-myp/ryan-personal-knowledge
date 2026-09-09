@@ -777,50 +777,106 @@ class WriteGuard(ABC):
 
 # ─── Intent 相关 ────────────────────────────────────────────────
 
-@dataclass
+@dataclass(init=False)
 class ParsedIntent:
+    """Provider-neutral intent envelope.
+
+    The Core parser and router need only an intent name, a raw request, target
+    namespaces and opaque publisher-owned values.  Domain fields must live in
+    ``attributes`` (intent-level values) or ``scoped_parameters`` (values
+    belonging to a registered namespace/Tool schema).  This prevents Core
+    from accumulating one field per advertising workflow or control-plane
+    feature.
+
+    ``**extensions`` is intentionally data-only.  It lets a Skill/Feature
+    publish a structured value without changing this class, while the
+    application can still access it through ``intent.attributes``.
+    ``platform_params`` and dynamic attribute access remain as a narrow
+    structural bridge for existing adapters; neither contains a domain map.
     """
-    解析后的用户意图 - 对应 Go 的 ParsedIntent / WorkflowTurnInput
-    
-    User Skill 输出的标准化意图，由 IntentRouter 转换为平台工具调用计划。
-    """
-    intent_type: str                  # 意图类型，如 "create_campaign"
-    raw_input: str                    # 原始用户输入
-    platforms: list[str]              # 目标平台列表
-    objective: Optional[str] = None   # 投放目标
-    campaign_type: Optional[str] = None  # 平台/业务 Campaign 类型
-    budget: Optional[float] = None    # 预算
-    duration_days: Optional[int] = None
-    date_range: Optional[Any] = None  # 报表查询日期范围
-    creative_materials: list[dict] = field(default_factory=list)
-    # Runtime control-plane extensions may publish their own structured
-    # fields. Scheduling is generic and does not select a provider here.
-    schedule_name: Optional[str] = None
-    schedule_expression: Optional[str] = None
-    schedule_timezone: Optional[str] = None
-    schedule_prompt: Optional[str] = None
-    schedule_id: Optional[str] = None
-    # 各平台需要的参数
-    platform_params: dict[str, dict] = field(default_factory=dict)
-    # 格式：{"meta": {"campaign_name": "...", ...}, "google": {...}}
-    
-    def to_dict(self) -> dict:
-        return {
-            "intent_type": self.intent_type,
-            "platforms": self.platforms,
-            "objective": self.objective,
-            "campaign_type": self.campaign_type,
-            "budget": self.budget,
-            "duration_days": self.duration_days,
-            "date_range": self.date_range,
-            "creative_materials": self.creative_materials,
-            "schedule_name": self.schedule_name,
-            "schedule_expression": self.schedule_expression,
-            "schedule_timezone": self.schedule_timezone,
-            "schedule_prompt": self.schedule_prompt,
-            "schedule_id": self.schedule_id,
-            "platform_params": self.platform_params,
+    intent_type: str
+    raw_input: str
+    platforms: list[str]
+    attributes: dict[str, Any]
+    parameters: dict[str, Any]
+    scoped_parameters: dict[str, dict[str, Any]]
+    metadata: dict[str, Any]
+
+    def __init__(
+        self,
+        intent_type: str,
+        raw_input: str,
+        platforms: list[str] | tuple[str, ...] | None,
+        *,
+        attributes: Optional[Mapping[str, Any]] = None,
+        parameters: Optional[Mapping[str, Any]] = None,
+        scoped_parameters: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        platform_params: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        **extensions: Any,
+    ) -> None:
+        self.intent_type = str(intent_type or "chat")
+        self.raw_input = str(raw_input or "")
+        self.platforms = [str(item) for item in (platforms or []) if str(item).strip()]
+        self.attributes = dict(attributes or {})
+        # Top-level extension values are folded into the generic envelope.
+        # No Core field-name allowlist is needed because these values are not
+        # executable; Tool schemas remain the only executable input contract.
+        self.attributes.update(extensions)
+        self.parameters = dict(parameters or {})
+        selected = scoped_parameters if scoped_parameters is not None else platform_params
+        self.scoped_parameters = {
+            str(namespace): dict(values or {})
+            for namespace, values in (selected or {}).items()
+            if isinstance(values, Mapping)
         }
+        self.metadata = dict(metadata or {})
+
+    @property
+    def platform_params(self) -> dict[str, dict[str, Any]]:
+        """Structural alias for namespace-scoped Tool parameters."""
+        return self.scoped_parameters
+
+    @platform_params.setter
+    def platform_params(self, value: Mapping[str, Mapping[str, Any]]) -> None:
+        self.scoped_parameters = {
+            str(namespace): dict(values or {})
+            for namespace, values in (value or {}).items()
+            if isinstance(values, Mapping)
+        }
+
+    def __getattr__(self, name: str) -> Any:
+        """Allow application extensions to be read without Core field maps."""
+        attributes = self.__dict__.get("attributes", {})
+        if name in attributes:
+            return attributes[name]
+        # An extension is optional by definition.  Returning ``None`` keeps
+        # ``getattr(intent, name, None)`` useful for application-owned fields
+        # without adding a Core-owned vocabulary or field registry.
+        return None
+
+    def to_dict(self) -> dict[str, Any]:
+        result = {
+            "intent_type": self.intent_type,
+            "raw_input": self.raw_input,
+            "platforms": list(self.platforms),
+            "attributes": dict(self.attributes),
+            "parameters": dict(self.parameters),
+            "scoped_parameters": {
+                key: dict(value) for key, value in self.scoped_parameters.items()
+            },
+            "metadata": dict(self.metadata),
+            # Keep the wire name used by Tool/HTTP adapters; it is a generic
+            # namespace map, not an advertising-specific concept.
+            "platform_params": {
+                key: dict(value) for key, value in self.scoped_parameters.items()
+            },
+        }
+        # Flat extension keys are useful to declarative activation rules and
+        # preserve a simple JSON shape for application renderers.  The set is
+        # owned by the publisher, not by Core.
+        result.update(self.attributes)
+        return result
 
 
 class IntentParser(ABC):
