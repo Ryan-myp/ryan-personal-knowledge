@@ -1,6 +1,6 @@
 """Compatibility facade for the canonical Markdown LLM Wiki provider.
 
-New code should inject/use ``KnowledgeProvider`` from ``core.knowledge``.
+New code should inject/use the application ``KnowledgeProvider`` contract.
 These small helpers remain for CLI and existing callers, but they do not load
 or search a second knowledge index.
 """
@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agents.ad_agent.core.knowledge import (
+from agents.ad_agent.domain.ad.knowledge import (
     KnowledgeDocument,
     MarkdownWikiKnowledgeProvider,
 )

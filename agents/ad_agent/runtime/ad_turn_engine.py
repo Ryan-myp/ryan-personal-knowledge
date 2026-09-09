@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
-from ..core.auth import RequestPrincipal
+from ..domain.ad.auth import RequestPrincipal
 from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionEventCallback, ExecutionTrace
 from ..core.interfaces import ExecutionMode, ToolResult

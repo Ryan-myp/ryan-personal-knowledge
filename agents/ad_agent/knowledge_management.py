@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
-from .core.knowledge import (
+from .domain.ad.knowledge import (
     KnowledgeDocument,
     MarkdownWikiKnowledgeProvider,
     WIKI_LAYERS,

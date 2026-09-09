@@ -14,8 +14,8 @@ from agents.ad_agent.core.interfaces import (
     ToolSchema,
 )
 from agents.ad_agent.core.intent import LLMIntentParser, SimpleIntentRouter
-from agents.ad_agent.core.creation_card import CreationCardBuilder
-from agents.ad_agent.core.blueprint import BlueprintRegistry
+from agents.ad_agent.domain.ad.creation_card import CreationCardBuilder
+from agents.ad_agent.domain.ad.blueprint import BlueprintRegistry
 from agents.ad_agent.core.platform import normalize_platform
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.capabilities.meta import create_meta_capability

@@ -18,8 +18,9 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ..core.interfaces import (
-    AdFormatCoverage, CapabilityModule, CapabilityRuntime, ToolContext, ToolResult,
+    CapabilityModule, CapabilityRuntime, ToolContext, ToolResult,
 )
+from ..domain.ad.contracts import AdFormatCoverage
 from .capability_context import CapabilityContextWrapper
 from ..core.plugins import PluginKind
 from .provider_bindings import ProviderBindings

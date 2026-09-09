@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
-from .platform import normalize_platform
+from ...core.platform import normalize_platform
 
 
 def normalize_account_id(account_id: Any) -> str:

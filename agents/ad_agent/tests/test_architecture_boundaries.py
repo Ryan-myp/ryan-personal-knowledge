@@ -1,6 +1,7 @@
 """Architecture boundary tests for the single-Agent extension model."""
 
 import pytest
+from pathlib import Path
 
 from agents.ad_agent.core.execution_plan import ExecutionPlan, PlanNode
 from agents.ad_agent.core.interfaces import (
@@ -15,6 +16,36 @@ from agents.ad_agent.runtime.session_context import SessionContext
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.intent import SimpleIntentRouter
 from agents.ad_agent.features.response import AdAgentResponseRenderer
+
+
+def test_core_does_not_host_advertising_domain_modules():
+    """Advertising models belong below domain/ad, never in generic Core."""
+    core = Path(__file__).resolve().parents[1] / "core"
+    ad_domain = Path(__file__).resolve().parents[1] / "domain" / "ad"
+    moved = {
+        "blueprint.py", "creation_card.py", "cross_channel.py",
+        "parameter_catalog.py", "provider_preflight.py", "release_readiness.py",
+    }
+    assert not any((core / name).exists() for name in moved)
+    assert all((ad_domain / name).exists() for name in moved)
+
+
+def test_core_contracts_do_not_publish_advertising_models_or_scope_fields():
+    """Core contracts stay opaque; advertising models belong to domain/ad."""
+    root = Path(__file__).resolve().parents[1]
+    core = root / "core"
+    interfaces = (core / "interfaces.py").read_text(encoding="utf-8")
+
+    for name in ("auth.py", "clarification.py", "knowledge.py", "parameter_selection.py"):
+        assert not (core / name).exists()
+    assert "AdFormatCoverage" not in interfaces
+    assert "ad_format_catalogs" not in interfaces
+    assert "creation_blueprints" not in interfaces
+    assert "account_id: " not in interfaces
+    assert "account_id" not in ToolContext.__dataclass_fields__
+    assert "scope_key" in __import__(
+        "agents.ad_agent.core.interfaces", fromlist=["WriteReservation"]
+    ).WriteReservation.__dataclass_fields__
 
 
 def test_runtime_discovers_domain_features_without_a_central_workflow_table():

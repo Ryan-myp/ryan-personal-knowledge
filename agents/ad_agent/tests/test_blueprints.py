@@ -8,14 +8,14 @@ from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
-from agents.ad_agent.core.blueprint import (
+from agents.ad_agent.domain.ad.blueprint import (
     AdCreationBlueprint,
     BlueprintCascadeEngine,
     BlueprintRegistry,
     BlueprintValidationError,
     load_blueprint_file,
 )
-from agents.ad_agent.core.creation_card import CreationCardBuilder
+from agents.ad_agent.domain.ad.creation_card import CreationCardBuilder
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
@@ -1149,7 +1149,7 @@ def test_blueprint_tool_ref_supports_nested_schema_paths():
         ),
         lambda _ctx, _input: None,
     )
-    from agents.ad_agent.core.blueprint import validate_blueprint_against_tools
+    from agents.ad_agent.domain.ad.blueprint import validate_blueprint_against_tools
 
     validate_blueprint_against_tools(blueprint, registry)
 

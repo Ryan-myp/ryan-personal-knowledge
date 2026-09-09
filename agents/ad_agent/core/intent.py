@@ -823,9 +823,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             f"上一次 JSON：{json.dumps(previous, ensure_ascii=False, default=str)}"
         )
         instruction = (
-            "请重新判断上面的用户请求。上一次结果可能把广告业务请求误判成 chat。"
-            "查询、查看、列出、报表和 Campaign 详情必须选择对应的已注册查询意图；"
-            "不要因为缺少账户 ID 就改成 chat，账户由 Runtime 上下文提供。只输出 JSON。"
+            "请重新判断上面的用户请求。上一次结果可能错误地选择了 chat。"
+            "如果请求明确对应已注册的查询能力，必须选择对应的查询意图；"
+            "不要因为缺少可由应用上下文提供的范围信息就改成 chat。只输出 JSON。"
             "intent_type 必须逐字复制 CONTEXT 中的候选；如果确实是闲聊才使用 chat，"
             "且 platforms 必须为空。"
         )
@@ -933,7 +933,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             "用户原文：" + user_input + "\n上一次意图："
             + json.dumps(previous.to_dict(), ensure_ascii=False, default=str),
             "上一次意图无法匹配当前已注册能力。请只修正意图，不要编造工具、平台或参数。"
-            "intent_type 必须从 CONTEXT 的精确候选中逐字选择；如果确实不是广告业务请求才选择 chat。"
+            "intent_type 必须从 CONTEXT 的精确候选中逐字选择；如果确实不属于当前能力才选择 chat。"
             f"{platform_rule}只输出与原协议相同的 JSON。",
         )
         try:
@@ -1029,9 +1029,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
     def _is_dynamic_provider_field(field: str, spec: Any) -> bool:
         """Identify values that must come from the user or a lookup Tool.
 
-        A model may understand that a request needs an App, Pixel, Audience,
-        or Campaign and still emit a plausible-looking placeholder ID. Such
-        values are not evidence. The provider schema is authoritative for
+        A model may understand that a request needs a resource and still emit
+        a plausible-looking placeholder ID. Such values are not evidence. The
+        publisher schema is authoritative for
         lookup fields; the identifier suffix is a conservative fallback for
         provider schemas that have not annotated every resource field.
         """
@@ -1117,9 +1117,9 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
             extracted,
             model_params if isinstance(model_params, Mapping) else {},
         )
-        # Model output is not a trusted resource-selection channel. Keep an
-        # App/Pixel/Audience/Campaign ID only when the user explicitly typed
-        # it; signed card selections are merged later by Runtime.
+        # Model output is not a trusted resource-selection channel. Keep a
+        # resource ID only when the user explicitly typed it; signed card
+        # selections are merged later by the application.
         scoped_parameters = {
             platform: self._drop_unverified_dynamic_values(
                 merged_params.get(platform, {})
@@ -1509,7 +1509,7 @@ Tool Schema/Blueprint 声明为准。无法映射到已声明契约的内容保�
                 platform_values = value if isinstance(value, dict) else {}
                 # Models sometimes echo Tool routing metadata inside
                 # ``platform_params`` (for example ``action=list``). Keep
-                # provider fields only when the current registered Tool
+                # namespace fields only when the current registered Tool
                 # catalog declares them; this is derived from metadata and
                 # does not maintain a provider/business field table.
                 declared_fields = self._platform_field_specs.get(normalized, {})
@@ -1775,9 +1775,8 @@ class SimpleIntentRouter(IntentRouter):
     ) -> list[ToolDefinition]:
         """Order Tools by declared parent resources with a stable fallback.
 
-        Resource names are provider-owned metadata. The router must not keep a
-        closed-world ordering table such as campaign -> ad group -> ad,
-        otherwise a new channel or custom resource hierarchy would require a
+        Resource names are publisher-owned metadata. The router must not keep
+        a closed-world ordering table, otherwise a new resource hierarchy would require a
         core edit. A parent absent from this route is treated as an existing
         context resource, so creating only a child remains valid.
         """

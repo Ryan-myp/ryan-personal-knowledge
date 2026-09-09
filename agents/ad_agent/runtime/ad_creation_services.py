@@ -14,11 +14,12 @@ import uuid
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
-from ..core.auth import normalize_account_id
-from ..core.blueprint import _schema_at_path
+from ..domain.ad.auth import normalize_account_id
+from ..domain.ad.blueprint import _schema_at_path
 from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionTrace
-from ..core.interfaces import AdFormatCoverage, ExecutionMode, ParsedIntent, ToolResult
+from ..core.interfaces import ExecutionMode, ParsedIntent, ToolResult
+from ..domain.ad.contracts import AdFormatCoverage
 from ..core.intent import SimpleIntentRouter
 from ..core.tool_registry import validate_tool_input
 from .account_context import AccountResolver

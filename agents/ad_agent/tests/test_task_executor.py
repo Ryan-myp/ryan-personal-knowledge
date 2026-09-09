@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.persistence.models import TaskRecord
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.task_executor import TaskExecutor, TaskCapacityError

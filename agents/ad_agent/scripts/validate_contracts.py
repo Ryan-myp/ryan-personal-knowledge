@@ -25,7 +25,7 @@ from agents.ad_agent.capabilities.factory import (  # noqa: E402
 )
 from agents.ad_agent.scripts.audit_capabilities import discover_platform_slugs  # noqa: E402
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
-from agents.ad_agent.core.security import PROTECTED_INPUT_FIELDS  # noqa: E402
+from agents.ad_agent.domain.ad.security import PROTECTED_INPUT_FIELDS  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 
 

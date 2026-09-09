@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
-from ..core.auth import RequestPrincipal
+from ..domain.ad.auth import RequestPrincipal
 from ..core.interfaces import (
     ReconciliationContext,
     ReconciliationObservation,

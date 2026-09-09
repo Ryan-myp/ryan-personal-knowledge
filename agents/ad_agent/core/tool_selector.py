@@ -11,11 +11,10 @@ import re
 import logging
 import threading
 import inspect
-from typing import List, Dict, Optional, Set
+from typing import Any, List, Dict, Optional, Set
 from dataclasses import dataclass, field
 
 from .interfaces import ToolDefinition, ParsedIntent, ToolContext
-from .knowledge import KnowledgeProvider
 from .policy import RuntimePolicy, apply_policies, policy_metadata
 from .platform import normalize_platform
 
@@ -64,7 +63,7 @@ class DynamicToolSelector:
     def __init__(
         self,
         skill_loader,
-        knowledge_provider: Optional[KnowledgeProvider] = None,
+        knowledge_provider: Optional[Any] = None,
         policies: Optional[list[RuntimePolicy]] = None,
     ):
         self.skill_loader = skill_loader

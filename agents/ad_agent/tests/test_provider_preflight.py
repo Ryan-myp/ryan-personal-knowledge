@@ -7,7 +7,7 @@ from agents.ad_agent.core.interfaces import (
     ToolResult,
     ToolSchema,
 )
-from agents.ad_agent.core.provider_preflight import build_provider_preflight
+from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.runtime import AgentRuntime
 

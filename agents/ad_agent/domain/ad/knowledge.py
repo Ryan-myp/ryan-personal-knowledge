@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Protocol
 
-from .platform import normalize_platform
+from ...core.platform import normalize_platform
 
 
 WIKI_SCHEMA_VERSION = "1"

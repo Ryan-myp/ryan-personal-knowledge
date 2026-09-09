@@ -1,4 +1,4 @@
-"""跨渠道统一 Campaign 与指标模型。
+"""Advertising cross-channel aggregation models.
 
 平台 API 的字段、货币和报表结构不同。本模块只做无副作用的规范化与
 聚合，不发起任何平台请求，也不把缺失指标填成 0。
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import csv
 import io
 from typing import Any, Iterable, Optional
-from .platform import normalize_platform
+from ...core.platform import normalize_platform
 
 
 @dataclass(frozen=True)

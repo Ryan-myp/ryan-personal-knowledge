@@ -5,7 +5,7 @@ import tempfile
 import time
 from datetime import datetime, timezone
 
-from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.core.interfaces import (
     ParsedIntent, RiskLevel, ToolDefinition, ToolEffect, ToolHandler, ToolResult, ToolSchema,
 )

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.cross_channel import CrossChannelAggregator
+from ..domain.ad.cross_channel import CrossChannelAggregator
 
 
 class AdAgentResponseRenderer:

@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 from ...core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
-from ...core.blueprint import load_blueprint_file
+from ...domain.ad.blueprint import load_blueprint_file
 from ..base import BaseCapability, CampaignUpdateHandler
 from ..provider_tools import account_from, bind_provider_method, method_tool
 from .campaigns import (

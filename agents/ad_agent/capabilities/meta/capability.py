@@ -42,7 +42,7 @@ from .parameters import (
     meta_business_schema,
 )
 from ...api_clients.meta_client import MetaAPIClient
-from ...core.blueprint import load_blueprint_file
+from ...domain.ad.blueprint import load_blueprint_file
 from ..update_contracts import meta_updates
 
 logger = logging.getLogger(__name__)

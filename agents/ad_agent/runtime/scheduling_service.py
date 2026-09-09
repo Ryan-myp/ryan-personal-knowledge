@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
-from ..core.auth import RequestPrincipal
+from ..domain.ad.auth import RequestPrincipal
 from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 from .scheduler import CronExpression, next_run_at, validate_timezone
 

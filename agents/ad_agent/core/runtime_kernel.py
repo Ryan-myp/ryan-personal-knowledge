@@ -8,8 +8,8 @@ The kernel owns only transport and concurrency concerns:
 * install a request-scoped execution mode;
 * delegate the actual turn to an application-provided executor.
 
-It deliberately knows nothing about advertising, Providers, Skills, Tools,
-campaigns, schedules, or UI.  An application Runtime composes this kernel
+It deliberately knows nothing about application domains, Providers, Skills,
+Tools, workflows, or UI.  An application Runtime composes this kernel
 with its own turn executor and policy services.
 """
 

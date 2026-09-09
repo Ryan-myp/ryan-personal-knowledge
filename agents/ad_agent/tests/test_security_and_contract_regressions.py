@@ -26,8 +26,9 @@ from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRunt
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.skill import BaseSkill, SkillContract, SkillLoader
 from agents.ad_agent.core.tool_registry import validate_tool_input
-from agents.ad_agent.core.cross_channel import CampaignRef, BatchOperation
-from agents.ad_agent.core.auth import normalize_account_id, normalize_platform
+from agents.ad_agent.domain.ad.cross_channel import CampaignRef, BatchOperation
+from agents.ad_agent.domain.ad.auth import normalize_account_id
+from agents.ad_agent.core.platform import normalize_platform
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
 
@@ -691,7 +692,7 @@ def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
     )
 
     result = runtime.tool_executor.execute(
-        ToolContext("s1", "u1", "account-1"),
+        ToolContext("s1", "u1", account_id="account-1"),
         "provider_update",
         {"account_id": "account-1", "updates": {"account_id": "other-account"}},
     )

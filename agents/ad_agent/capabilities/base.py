@@ -18,11 +18,12 @@ from typing import Any, Callable, Optional
 
 from ..core.interfaces import (
     ToolContext, ToolResult, ToolDefinition, ToolHandler,
-    CapabilityModule, CapabilityContext, CapabilityRuntime,
+    CapabilityModule, CapabilityContext,
     WriteGuard, WriteReservation, RiskLevel, ToolEffect
 )
 from ..core.tool_registry import SimpleToolRegistry
-from ..core.security import protected_update_paths
+from ..domain.ad.security import protected_update_paths
+from ..domain.ad.contracts import AdCapabilityRuntime
 
 
 def call_with_optional_page_size(
@@ -182,7 +183,7 @@ class BaseCapability(CapabilityModule, ABC):
 {tool_list}
 """.strip()
     
-    def configure(self, context: CapabilityContext) -> CapabilityRuntime:
+    def configure(self, context: CapabilityContext) -> AdCapabilityRuntime:
         """
         配置并返回 CapabilityRuntime。
         
@@ -198,7 +199,7 @@ class BaseCapability(CapabilityModule, ABC):
         # Workflow policy belongs to the Skill contract. Capability only
         # registers executable tools and its provider-independent write guard.
         write_guard = self._build_write_guard()
-        return CapabilityRuntime(
+        return AdCapabilityRuntime(
             write_guard=write_guard,
             ad_format_catalogs=self.get_ad_format_catalog(),
             creation_blueprints=self.get_creation_blueprints(),
@@ -435,7 +436,7 @@ class SimpleIdempotencyGuard(WriteGuard):
     ) -> tuple[bool, Optional[str], Optional[WriteReservation]]:
         """Reserve and return a request-bound reservation for Runtime."""
         key = self._generate_key(tool_def.name, input_data, ctx.user_id)
-        from ..core.security import request_hash, sha256_json
+        from ..domain.ad.security import request_hash, sha256_json
         reservation = WriteReservation(
             idempotency_key=key,
             request_hash=request_hash(
@@ -443,7 +444,7 @@ class SimpleIdempotencyGuard(WriteGuard):
                 sha256_json(input_data),
             ),
             tool_name=tool_def.name,
-            account_id=str(ctx.account_id or ""),
+            scope_key=str(ctx.account_id or ""),
         )
         
         # Check executed and in-flight reservations atomically.  The previous

@@ -79,10 +79,10 @@ class ConversationTitleGenerator:
         if llm is None or not source:
             return fallback, "fallback"
         prompt = (
-            "请把下面的广告业务请求总结成一个简短、易识别的历史对话标题。"
-            "标题要体现主要平台、对象或任务，控制在 8-24 个中文字符或 6 个英文单词内。"
+            "请把下面的用户请求总结成一个简短、易识别的历史对话标题。"
+            "标题要体现主要对象或任务，控制在 8-24 个中文字符或 6 个英文单词内。"
             "不要复述整句请求，不要加入序号、引号、Markdown 或开发术语。"
-            "只返回 JSON，例如 {\"title\":\"广告资源报表\"}。\n\n"
+            "只返回 JSON，例如 {\"title\":\"资源分析\"}。\n\n"
             f"用户请求：{source[:2000]}"
         )
         try:

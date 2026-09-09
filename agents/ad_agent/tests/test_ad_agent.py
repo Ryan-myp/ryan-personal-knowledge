@@ -34,7 +34,7 @@ from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.runtime.skill import SkillLoader
 from agents.ad_agent.features.factory import discover_features
 from agents.ad_agent.core.interfaces import ExecutionMode
-from agents.ad_agent.core.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer
+from agents.ad_agent.domain.ad.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.base import (
     BasePlatformClient, RetryConfig, TemporaryError, APIError,

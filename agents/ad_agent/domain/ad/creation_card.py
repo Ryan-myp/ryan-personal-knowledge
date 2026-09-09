@@ -1,4 +1,4 @@
-"""Safe, provider-neutral UI metadata for conversational ad creation.
+"""Advertising-domain UI metadata for conversational resource creation.
 
 The objects produced here are A2UI-style descriptions, not executable UI
 code.  They are derived from the provider-owned Blueprint and Tool schema so
@@ -20,8 +20,8 @@ from .blueprint import (
     _schema_at_path,
     _value_at,
 )
-from .interfaces import ParsedIntent
-from .platform import normalize_platform
+from ...core.interfaces import ParsedIntent
+from ...core.platform import normalize_platform
 
 
 _MAX_CARDS = 8

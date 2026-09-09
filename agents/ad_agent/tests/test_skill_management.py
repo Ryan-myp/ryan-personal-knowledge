@@ -674,7 +674,7 @@ def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
 
 
 def test_runtime_turn_uses_request_tenant_managed_context():
-    from agents.ad_agent.core.auth import RequestPrincipal
+    from agents.ad_agent.domain.ad.auth import RequestPrincipal
 
     store = AdAgentStore(":memory:")
     runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
@@ -707,7 +707,7 @@ def test_runtime_turn_uses_request_tenant_managed_context():
 
 @pytest.mark.parametrize("permissions", ["ads.read", {"ads.read": True}, ["ads.read", 1]])
 def test_request_principal_rejects_malformed_permission_claims(permissions):
-    from agents.ad_agent.core.auth import RequestPrincipal
+    from agents.ad_agent.domain.ad.auth import RequestPrincipal
 
     with pytest.raises(ValueError, match="permissions"):
         RequestPrincipal(user_id="u1", permissions=permissions)

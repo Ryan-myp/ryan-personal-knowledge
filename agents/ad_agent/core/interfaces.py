@@ -47,19 +47,6 @@ class ExecutionMode(Enum):
     LIVE = "live"
 
 
-class AdFormatCoverage(Enum):
-    """Evidence level for a provider-owned campaign/ad format contract.
-
-    This is deliberately separate from ``ToolDefinition.live_support``:
-    a format can have a useful dry-run payload contract while live writes are
-    still disabled by the product safety boundary.
-    """
-
-    SUPPORTED_DRY_RUN = "supported_dry_run"
-    PARTIAL_DRY_RUN = "partial_dry_run"
-    DECLARED_ONLY = "declared_only"
-    PLANNED = "planned"
-
 # ─── Tool 定义 ──────────────────────────────────────────────────
 
 @dataclass
@@ -114,7 +101,7 @@ class ToolDefinition:
     """
     name: str                              # 工具名称，全局唯一
     skill: str                             # 所属 Skill 名称
-    platform: str                          # 所属平台（meta/google/tiktok/dv360）
+    platform: str                          # Publisher namespace
     description: str                       # 工具描述（给 LLM 使用）
     input_schema: ToolSchema               # 输入参数 Schema
     # Self-description used by the planner. A Tool declares what it acts on;
@@ -153,7 +140,7 @@ class ToolDefinition:
     max_output_bytes: int = 1_000_000
     required_permissions: list[str] = field(default_factory=list)
     # Provider schemas do not agree on identifier spelling (for example
-    # ``adset_id`` vs ``ad_group_id``). Keep the wire names on the Tool
+    # provider-specific identifier spellings. Keep wire names on the Tool
     # contract so Runtime can persist and connect resources without knowing a
     # provider's hierarchy. Mutating Tools must declare the identity they
     # create or address; Runtime never derives it from resource_type.
@@ -334,7 +321,7 @@ class WriteReservation:
     idempotency_key: str
     request_hash: str
     tool_name: str
-    account_id: str
+    scope_key: str
 
 
 class ToolResult:
@@ -391,144 +378,50 @@ class ToolResult:
         }
 
 
-RESOURCE_RESULT_STATUSES = frozenset({
-    "planned", "running", "succeeded", "failed", "skipped", "unknown",
-    "unsupported", "awaiting_confirmation",
-})
-
-
-@dataclass(frozen=True)
-class ResourceRef:
-    """Scoped identity for any provider resource in a hierarchy.
-
-    Provider IDs are only meaningful inside a platform/account/resource-type
-    namespace.  Keeping those dimensions together prevents a Campaign ID,
-    Ad Group ID, or Line Item ID from being accidentally reused across
-    channels or resource levels.
-    """
-
-    platform: str
-    account_id: str
-    resource_type: str
-    resource_id: str
-
-    def __post_init__(self) -> None:
-        values = {
-            "platform": str(self.platform or "").strip().lower(),
-            "account_id": str(self.account_id or "").strip(),
-            "resource_type": str(self.resource_type or "").strip().lower(),
-            "resource_id": str(self.resource_id or "").strip(),
-        }
-        if not all(values.values()):
-            raise ValueError(
-                "ResourceRef requires platform, account_id, resource_type and resource_id"
-            )
-        for name, value in values.items():
-            object.__setattr__(self, name, value)
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "platform": self.platform,
-            "account_id": self.account_id,
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
-        }
-
-
-@dataclass
-class ResourceResult:
-    """Uniform item-level result for campaign hierarchy operations.
-
-    Provider adapters may return different identifier shapes, but callers
-    should be able to consume one stable model for Campaign, Ad Set/Ad Group,
-    Ad, IO, Line Item, Creative and Asset Group operations.  ``logical`` and
-    ``local`` identifiers are safe planning identifiers; only
-    ``provider_resource_id`` represents a confirmed provider object.
-    """
-
-    sequence: int
-    platform: str
-    resource_type: str
-    tool_name: str
-    status: str
-    parent_resource_type: Optional[str] = None
-    account_id: Optional[str] = None
-    parent_sequence: Optional[int] = None
-    parent_resource_id: Optional[str] = None
-    provider_resource_id: Optional[str] = None
-    logical_resource_id: Optional[str] = None
-    local_resource_id: Optional[str] = None
-    error: Optional[str] = None
-    simulated: bool = False
-
-    def __post_init__(self) -> None:
-        if self.status not in RESOURCE_RESULT_STATUSES:
-            raise ValueError(f"Unsupported resource result status: {self.status}")
-
-    @property
-    def resource_ref(self) -> Optional[ResourceRef]:
-        resource_id = (
-            self.provider_resource_id
-            or self.logical_resource_id
-            or self.local_resource_id
-        )
-        if not resource_id or not self.account_id:
-            return None
-        return ResourceRef(
-            platform=self.platform,
-            account_id=self.account_id,
-            resource_type=self.resource_type,
-            resource_id=resource_id,
-        )
-
-    @property
-    def parent_ref(self) -> Optional[ResourceRef]:
-        if not self.parent_resource_id or not self.account_id or not self.parent_resource_type:
-            return None
-        return ResourceRef(
-            platform=self.platform,
-            account_id=self.account_id,
-            resource_type=self.parent_resource_type,
-            resource_id=self.parent_resource_id,
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "sequence": self.sequence,
-            "platform": self.platform,
-            "resource_type": self.resource_type,
-            "parent_resource_type": self.parent_resource_type,
-            "tool": self.tool_name,
-            "status": self.status,
-            "account_id": self.account_id,
-            "parent_sequence": self.parent_sequence,
-            "parent_resource_id": self.parent_resource_id,
-            "provider_resource_id": self.provider_resource_id,
-            "logical_resource_id": self.logical_resource_id,
-            "local_resource_id": self.local_resource_id,
-            "resource_ref": self.resource_ref.to_dict() if self.resource_ref else None,
-            "parent_ref": self.parent_ref.to_dict() if self.parent_ref else None,
-            "error": self.error,
-            "simulated": self.simulated,
-        }
-
-
 # ─── 上下文 ─────────────────────────────────────────────────────
 
-@dataclass
+@dataclass(init=False)
 class ToolContext:
-    """
-    工具执行上下文 - 对应 Go 的 core.ToolContext
-    
-    包含执行所需的所有元信息，不绑定具体实现。
-    """
+    """Opaque execution context shared with a Tool handler."""
     session_id: str
     user_id: str
-    account_id: Optional[str] = None       # 当前广告账户 ID
-    credentials: dict[str, Any] = field(default_factory=dict)  # 平台凭证（内存中，不持久化）
-    protected_state: dict[str, Any] = field(default_factory=dict)  # 受保护状态（跨 Tool 调用保持）
-    messages: list[dict] = field(default_factory=list)           # 对话历史
-    metadata: dict[str, Any] = field(default_factory=dict)       # 扩展元数据
+    scope: dict[str, Any]
+    credentials: dict[str, Any]
+    protected_state: dict[str, Any]
+    messages: list[dict]
+    metadata: dict[str, Any]
+
+    def __init__(
+        self,
+        session_id: str,
+        user_id: str,
+        scope: Optional[Mapping[str, Any]] = None,
+        credentials: Optional[Mapping[str, Any]] = None,
+        protected_state: Optional[Mapping[str, Any]] = None,
+        messages: Optional[list[dict]] = None,
+        metadata: Optional[Mapping[str, Any]] = None,
+        **extensions: Any,
+    ) -> None:
+        """Create a context with an opaque application scope.
+
+        The Core stores scope values without naming their vocabulary.  An
+        embedding may expose a convenience value through the extension map
+        (for example an account selector) without adding it to this contract.
+        """
+        self.session_id = str(session_id)
+        self.user_id = str(user_id)
+        self.scope = dict(scope or {}) if isinstance(scope, Mapping) else {}
+        self.scope.update(extensions)
+        self.credentials = dict(credentials or {})
+        self.protected_state = dict(protected_state or {})
+        self.messages = list(messages or [])
+        self.metadata = dict(metadata or {})
+
+    def __getattr__(self, name: str) -> Any:
+        scope = self.__dict__.get("scope", {})
+        if name in scope:
+            return scope[name]
+        raise AttributeError(name)
     
     def get_protected(self, key: str, default=None) -> Any:
         """获取跨 Tool 共享的受保护状态"""
@@ -738,16 +631,6 @@ class CapabilityRuntime:
     # a dynamic lookup descriptor without making the shared Runtime know a
     # provider's field names.
     parameter_catalogs: list[Any] = field(default_factory=list)
-
-    # Provider-owned campaign/ad-format coverage.  This metadata is exposed
-    # to forms, planning and release audits; it never becomes an executable
-    # handler by itself.
-    ad_format_catalogs: list[dict[str, Any]] = field(default_factory=list)
-
-    # Provider-owned declarative ad-creation blueprints.  A Blueprint only
-    # describes field composition and dependencies; it cannot register a
-    # handler or call a Provider client.
-    creation_blueprints: list[Any] = field(default_factory=list)
 
 class WriteGuard(ABC):
     """

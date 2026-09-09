@@ -34,7 +34,7 @@ class RuntimeExecutionServices(Protocol):
     """Provider- and business-neutral execution port.
 
     This port contains only services needed by generic Tool execution and
-    workflow persistence.  Account selection, business preflight, schedules,
+    workflow persistence.  Scope selection, business preflight, schedules,
     creation blueprints and other application concerns stay on the embedding
     Runtime's private feature adapter instead of expanding this contract.
     """

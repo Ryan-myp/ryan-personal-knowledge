@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Iterable, Mapping, Optional
 
-from .tool_registry import validate_tool_input
+from ...core.tool_registry import validate_tool_input
 
 
 _EMPTY = (None, "", {}, [])

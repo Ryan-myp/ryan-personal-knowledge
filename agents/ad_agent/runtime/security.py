@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from ..core.interfaces import ExecutionMode, ToolError, ToolResult
-from ..core.security import (
+from ..domain.ad.security import (
     PROTECTED_INPUT_FIELDS,
     canonical_json,
     normalize_field_name,

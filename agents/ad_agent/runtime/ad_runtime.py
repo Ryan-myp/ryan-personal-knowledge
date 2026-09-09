@@ -29,14 +29,14 @@ from ..core.interfaces import (
     ToolResult, CapabilityModule,
     ToolRegistry, WriteGuard, IntentParser, IntentRouter,
     ParsedIntent, ToolEffect, ExecutionMode, ProviderReconciler,
-    ResourceResult,
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
 from ..core.features import RuntimeFeature
 from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionTrace, ExecutionEventCallback
-from ..core.response import ResponseRenderer, ResponseSynthesizer, LLMResponseSynthesizer
+from ..core.response import ResponseRenderer, ResponseSynthesizer
+from ..domain.ad.response import LLMResponseSynthesizer
 from ..core.agent_profile import AgentProfile
 from ..core.conversation_title import ConversationTitleGenerator
 from ..core.plugins import (
@@ -50,18 +50,19 @@ from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
-from ..core.knowledge import KnowledgeProvider, MarkdownWikiKnowledgeProvider
+from ..domain.ad.knowledge import KnowledgeProvider, MarkdownWikiKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
 from ..core.memory import MemoryManager
-from ..core.parameter_catalog import ParameterCatalogRegistry
-from ..core.blueprint import BlueprintRegistry, BlueprintCascadeEngine
-from ..core.creation_card import CreationCardBuilder
-from ..core.clarification import ActionClarificationBuilder
-from ..core.parameter_selection import (
+from ..domain.ad.parameter_catalog import ParameterCatalogRegistry
+from ..domain.ad.blueprint import BlueprintRegistry, BlueprintCascadeEngine
+from ..domain.ad.creation_card import CreationCardBuilder
+from ..domain.ad.contracts import ResourceResult
+from ..domain.ad.clarification import ActionClarificationBuilder
+from ..domain.ad.parameter_selection import (
     ParameterSelectionSigner,
 )
-from ..core.auth import RequestPrincipal, normalize_account_id
-from ..core.security import (
+from ..domain.ad.auth import RequestPrincipal, normalize_account_id
+from ..domain.ad.security import (
     PROTECTED_INPUT_FIELDS,
 )
 from .skill import BaseSkill, Skill, SkillContract, SkillLoader

@@ -29,7 +29,7 @@ from agents.ad_agent.capabilities.factory import (  # noqa: E402
     discover_capability_factory,
 )
 from agents.ad_agent.scripts.audit_capabilities import discover_platform_slugs  # noqa: E402
-from agents.ad_agent.core.blueprint import (  # noqa: E402
+from agents.ad_agent.domain.ad.blueprint import (  # noqa: E402
     validate_blueprint_against_tools,
 )
 from agents.ad_agent.core.interfaces import ToolEffect  # noqa: E402

@@ -38,7 +38,7 @@ from .reference import (
     TikTokListBrandSafetyHandler,
 )
 from ...api_clients.tiktok_client import TikTokAPIClient
-from ...core.blueprint import load_blueprint_file
+from ...domain.ad.blueprint import load_blueprint_file
 from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,

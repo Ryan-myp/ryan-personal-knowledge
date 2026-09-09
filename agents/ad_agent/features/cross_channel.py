@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
-from ..core.cross_channel import (
+from ..domain.ad.cross_channel import (
     CreationPreflight,
     CreationPreflightItem,
     CrossChannelAggregator,

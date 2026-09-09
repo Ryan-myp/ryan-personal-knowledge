@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import yaml
 
-from ..core.auth import normalize_account_id
+from ..domain.ad.auth import normalize_account_id
 from ..core.platform import normalize_platform
 
 logger = logging.getLogger(__name__)

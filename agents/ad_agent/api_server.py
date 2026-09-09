@@ -44,7 +44,7 @@ load_default_local_env()
 
 # 导入 Agent 核心模块
 from agents.ad_agent import AgentRuntime
-from agents.ad_agent.core.auth import RequestPrincipal
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.core.plugin_package import PluginPackageError
 from agents.ad_agent.core.memory import MEMORY_KINDS
 from agents.ad_agent.plugin_management import PluginPackageManager

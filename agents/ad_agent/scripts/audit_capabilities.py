@@ -30,7 +30,8 @@ from agents.ad_agent.capabilities.api_surface import (  # noqa: E402
     validate_inventory,
     validate_surface,
 )
-from agents.ad_agent.core.interfaces import AdFormatCoverage, ReplayPolicy, ToolEffect  # noqa: E402
+from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
+from agents.ad_agent.domain.ad.contracts import AdFormatCoverage  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
 from agents.ad_agent.skill_management import (  # noqa: E402
     SkillPackageError,

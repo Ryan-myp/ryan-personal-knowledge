@@ -10,7 +10,7 @@ import json
 import os
 from typing import Any, Iterable, Optional
 
-from ..core.auth import RequestPrincipal
+from ..domain.ad.auth import RequestPrincipal
 from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 from .task_executor import TaskExecutionContext
 

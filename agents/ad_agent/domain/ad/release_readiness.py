@@ -1,4 +1,4 @@
-"""Release-readiness aggregation for the ad-agent harness.
+"""Release-readiness aggregation for the advertising Agent harness.
 
 This module deliberately does not decide that a provider is production-ready
 because a Tool is registered or a dry-run fixture passed.  It combines the
@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from .platform import normalize_platform
+from ...core.platform import normalize_platform
 
 
 EVIDENCE_STAGES = (

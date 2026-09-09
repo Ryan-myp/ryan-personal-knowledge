@@ -17,12 +17,12 @@ from agents.ad_agent.core.interfaces import (
     ProviderReconciler, ReconciliationObservation, CapabilityRuntime,
     ReconciliationContext, ParsedIntent, ToolResult,
 )
-from agents.ad_agent.core.knowledge import KnowledgeDocument
+from agents.ad_agent.domain.ad.knowledge import KnowledgeDocument
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry, validate_tool_input
 from agents.ad_agent.tools.wiki_query import WikiQueryTool, wiki_get_errors
-from agents.ad_agent.core.auth import RequestPrincipal
-from agents.ad_agent.core.parameter_selection import (
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
+from agents.ad_agent.domain.ad.parameter_selection import (
     ParameterSelectionError,
     ParameterSelectionSigner,
 )
@@ -1405,7 +1405,7 @@ def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
                 "account_id": "acct-1",
                 "input_data": {"widget_key": "w-1"},
             },
-            tool_context=ToolContext("session-1", "user-1", "acct-1"),
+            tool_context=ToolContext("session-1", "user-1", account_id="acct-1"),
             execute_read=lambda name, payload: (
                 calls.append((name, payload))
                 or ToolResult.ok({"payload": {"widget_key": "w-1", "state": "active"}})

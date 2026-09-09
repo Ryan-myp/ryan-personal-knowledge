@@ -1,6 +1,6 @@
 """Regression tests for the evidence-based release gate."""
 
-from agents.ad_agent.core.release_readiness import ReadinessPolicy, build_readiness_report
+from agents.ad_agent.domain.ad.release_readiness import ReadinessPolicy, build_readiness_report
 from agents.ad_agent.scripts.provider_contract_harness import run_harness
 
 

@@ -1,4 +1,4 @@
-"""No-network preflight for controlled Provider API tests.
+"""No-network preflight for controlled advertising Provider API tests.
 
 This module intentionally does not call a client or validate a live token. It
 checks the local contract and deployment configuration that must be true
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping, Optional
 
-from .platform import normalize_platform
+from ...core.platform import normalize_platform
 
 
 def _schema_properties(tool: Any) -> Mapping[str, Any]:

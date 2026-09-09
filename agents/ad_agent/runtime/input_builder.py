@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..core.interfaces import ToolContext, ToolResult
-from ..core.parameter_selection import ParameterSelectionError
+from ..domain.ad.parameter_selection import ParameterSelectionError
 from ..core.tool_registry import validate_tool_input
 
 

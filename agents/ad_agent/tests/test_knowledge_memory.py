@@ -1,6 +1,6 @@
 import pytest
 
-from agents.ad_agent.core.knowledge import MarkdownWikiKnowledgeProvider
+from agents.ad_agent.domain.ad.knowledge import MarkdownWikiKnowledgeProvider
 from agents.ad_agent.knowledge_management import (
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
@@ -8,7 +8,7 @@ from agents.ad_agent.knowledge_management import (
 )
 from agents.ad_agent.core.memory import MemoryManager
 from agents.ad_agent.core.intent import LLMIntentParser
-from agents.ad_agent.core.response import LLMResponseSynthesizer
+from agents.ad_agent.domain.ad.response import LLMResponseSynthesizer
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AgentRuntime

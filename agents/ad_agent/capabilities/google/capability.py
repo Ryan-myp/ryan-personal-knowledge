@@ -52,7 +52,7 @@ from .parameters import (
     google_feed_schema, google_conversion_goal_schema,
 )
 from ...api_clients.google_ads_client import GoogleAdsAPIClient
-from ...core.blueprint import load_blueprint_file
+from ...domain.ad.blueprint import load_blueprint_file
 from ..update_contracts import google_updates
 
 logger = logging.getLogger(__name__)

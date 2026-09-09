@@ -1,4 +1,4 @@
-"""Provider parameter option catalogs.
+"""Advertising provider parameter option catalogs.
 
 The Runtime should not own Meta/Google/TikTok/DV360 enum tables.  A Skill can
 publish a static catalog for values that are fixed by the provider contract,
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import threading
 from typing import Any, Optional
-from .platform import normalize_platform
+from ...core.platform import normalize_platform
 
 
 @dataclass(frozen=True)

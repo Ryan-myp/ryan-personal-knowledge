@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.ad_agent.core.provider_preflight import build_provider_preflight  # noqa: E402
+from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight  # noqa: E402
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
 from agents.ad_agent.capabilities.factory import (  # noqa: E402

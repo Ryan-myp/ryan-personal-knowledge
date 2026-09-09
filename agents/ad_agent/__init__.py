@@ -25,11 +25,12 @@ from .capabilities.dv360 import DV360Capability, create_dv360_capability
 from .persistence.store import AdAgentStore
 from .persistence.session_manager import SessionManager
 from .core.memory import MemoryManager, MemoryRecord, MemoryStore
-from .core.knowledge import (
+from .domain.ad.knowledge import (
     KnowledgeDocument, KnowledgeProvider, MarkdownWikiKnowledgeProvider,
 )
-from .core.response import LLMResponseSynthesizer, ResponseSynthesizer
-from .core.auth import RequestPrincipal
+from .domain.ad.response import LLMResponseSynthesizer
+from .core.response import ResponseSynthesizer
+from .domain.ad.auth import RequestPrincipal
 from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 from .core.plugin_package import PluginPackage, PluginPackageError, build_plugin_manifest
 from .plugin_management import PluginPackageManager
