@@ -111,7 +111,7 @@ def print_result(result: dict):
 def print_status(runtime: AgentRuntime, session_id: str):
     """打印当前状态"""
     tools = runtime.registry.list_all()
-    platforms = set(t.platform for t in tools)
+    platforms = set(t.namespace for t in tools)
     print(f"\n📌 当前会话: {session_id}")
     print(f"🕐 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"🛠️  已注册工具: {len(tools)}")
@@ -173,7 +173,7 @@ def main():
     )
 
     print_banner()
-    platforms = runtime.registry.list_all_platforms()
+    platforms = runtime.registry.list_all_namespaces()
     tools = runtime.registry.list_all()
     print(f"✅ 已注册 {len(tools)} 个工具（dry-run，写操作只生成本地计划）")
     print(f"📦 平台: {', '.join(platforms)}")

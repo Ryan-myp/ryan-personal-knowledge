@@ -351,7 +351,7 @@ def _blueprint_required_field_gaps(
         schema = getattr(definition, "input_schema", None)
         properties = getattr(schema, "properties", {}) or {}
         required = set(getattr(schema, "required", []) or [])
-        required.update(getattr(schema, "provider_required", []) or [])
+        required.update(getattr(schema, "capability_required", []) or [])
         parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
         resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
         for field_name in sorted(required):
@@ -445,7 +445,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
         properties = getattr(getattr(definition, "input_schema", None), "properties", {})
         for path, spec, inherited_source in _iter_fields(properties or {}):
             source = _field_source(spec, path, inherited_source)
-            provider = str(getattr(definition, "platform", "") or "")
+            provider = str(getattr(definition, "namespace", "") or "")
             source_counts[provider][source or "unclassified"] += 1
             field_item = {
                 "provider": provider,
@@ -456,7 +456,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
                 "required": path.rsplit(".", 1)[-1].replace("[]", "") in set(
                     getattr(getattr(definition, "input_schema", None), "required", []) or []
                 ) | set(
-                    getattr(getattr(definition, "input_schema", None), "provider_required", []) or []
+                    getattr(getattr(definition, "input_schema", None), "capability_required", []) or []
                 ),
             }
             details = _source_details(spec)
@@ -524,7 +524,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
                     "lookup_tool": lookup_name,
                     "read_only": bool(lookup and getattr(lookup, "effect_class", None) == ToolEffect.READ),
                     "same_provider": bool(
-                        lookup and str(getattr(lookup, "platform", "")).casefold()
+                        lookup and str(getattr(lookup, "namespace", "")).casefold()
                         == provider.casefold()
                     ),
                 })
@@ -532,7 +532,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
                     issues.append(f"{definition.name}.{path}: lookup Tool is not registered: {lookup_name}")
                 elif getattr(lookup, "effect_class", None) != ToolEffect.READ:
                     issues.append(f"{definition.name}.{path}: lookup Tool must be read-only: {lookup_name}")
-                elif str(getattr(lookup, "platform", "")).casefold() != provider.casefold():
+                elif str(getattr(lookup, "namespace", "")).casefold() != provider.casefold():
                     issues.append(
                         f"{definition.name}.{path}: lookup Tool must belong to provider "
                         f"{provider}: {lookup_name}"

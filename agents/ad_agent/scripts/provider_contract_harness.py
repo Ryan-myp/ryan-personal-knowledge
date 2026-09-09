@@ -51,10 +51,10 @@ class _RecordingCampaignClient:
 class _DeterministicIntentParser:
     """A test-only parser that fixes intent; Runtime remains authoritative."""
 
-    def __init__(self, intent_type: str, platform: str, platform_params: dict[str, dict[str, str]]):
+    def __init__(self, intent_type: str, namespace: str, scoped_parameters: dict[str, dict[str, str]]):
         self.intent_type = intent_type
-        self.platform = platform
-        self.platform_params = platform_params
+        self.namespace = namespace
+        self.scoped_parameters = scoped_parameters
 
     def refresh_tool_catalog(self, _definitions: Any) -> None:
         return None
@@ -62,15 +62,15 @@ class _DeterministicIntentParser:
     def register_tool_definitions(self, _definitions: Any) -> None:
         return None
 
-    def register_platform_aliases(self, _platform: str, _aliases: Any) -> None:
+    def register_namespace_aliases(self, _namespace: str, _aliases: Any) -> None:
         return None
 
     def parse(self, raw_input: str, _context: Any) -> ParsedIntent:
         return ParsedIntent(
             intent_type=self.intent_type,
             raw_input=raw_input,
-            platforms=[self.platform],
-            platform_params=self.platform_params,
+            namespaces=[self.namespace],
+            scoped_parameters=self.scoped_parameters,
         )
 
 

@@ -21,7 +21,7 @@ from .blueprint import (
     _value_at,
 )
 from ...core.interfaces import ParsedIntent
-from ...core.platform import normalize_platform
+from ...core.namespace import normalize_namespace as normalize_platform
 
 
 _MAX_CARDS = 8
@@ -197,7 +197,7 @@ def _tool_definition(tool_registry: Any, name: str) -> Any:
 def _provider_values(intent: ParsedIntent, provider: str) -> dict[str, Any]:
     target = normalize_platform(provider)
     merged: dict[str, Any] = {}
-    for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
+    for raw_platform, values in (getattr(intent, "scoped_parameters", {}) or {}).items():
         if normalize_platform(raw_platform) != target or not isinstance(values, Mapping):
             continue
         for key, value in values.items():
@@ -715,8 +715,8 @@ class CreationCardBuilder:
             if schema is None:
                 continue
             for constraint_type, groups in (
-                ("any_of", getattr(schema, "provider_any_of", []) or []),
-                ("exactly_one_of", getattr(schema, "provider_exactly_one_of", []) or []),
+                ("any_of", getattr(schema, "capability_any_of", []) or []),
+                ("exactly_one_of", getattr(schema, "capability_exactly_one_of", []) or []),
             ):
                 for group in groups:
                     entries = []
@@ -899,7 +899,7 @@ class CreationCardBuilder:
             prefix = prefix_by_tool[tool_name]
             field_paths = unique_field_paths.get(tool_name, {})
             required = set(getattr(schema_object, "required", []) or [])
-            required.update(getattr(schema_object, "provider_required", []) or [])
+            required.update(getattr(schema_object, "capability_required", []) or [])
             parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
             resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
             conditional_rules = getattr(schema_object, "conditional_rules", []) or []
@@ -1013,7 +1013,7 @@ class CreationCardBuilder:
             field_name = schema_path.rsplit(".", 1)[-1]
             schema_object = getattr(definition, "input_schema", None)
             required = set(getattr(schema_object, "required", []) or [])
-            required.update(getattr(schema_object, "provider_required", []) or [])
+            required.update(getattr(schema_object, "capability_required", []) or [])
             if field_name in required:
                 field["required"] = True
             if not field.get("description"):
@@ -1125,11 +1125,11 @@ class CreationCardBuilder:
             ]
         else:
             intent_type = str(getattr(intent, "intent_type", "") or "").strip()
-            list_by_platform = getattr(self.tools, "list_by_platform", None)
-            if callable(list_by_platform):
-                for platform in getattr(intent, "platforms", []) or []:
+            list_by_namespace = getattr(self.tools, "list_by_namespace", None)
+            if callable(list_by_namespace):
+                for platform in getattr(intent, "namespaces", []) or []:
                     try:
-                        definitions = list_by_platform(normalize_platform(platform))
+                        definitions = list_by_namespace(normalize_platform(platform))
                     except (KeyError, LookupError, TypeError):
                         definitions = []
                     candidates.extend(
@@ -1205,19 +1205,19 @@ class CreationCardBuilder:
         ).strip()
         current_params = merged.get("scoped_parameters")
         if not isinstance(current_params, Mapping):
-            current_params = merged.get("platform_params")
+            current_params = merged.get("scoped_parameters")
         if not isinstance(current_params, Mapping):
             current_params = {}
         current_params = _copy_json(current_params)
         changed = False
 
-        follow_up_params = getattr(follow_up, "platform_params", {}) or {}
+        follow_up_params = getattr(follow_up, "scoped_parameters", {}) or {}
         for raw_platform, values in follow_up_params.items():
             if not isinstance(values, Mapping):
                 continue
             target_platform = normalize_platform(raw_platform)
             if target_platform not in {
-                normalize_platform(item) for item in (pending.platforms or [])
+                normalize_platform(item) for item in (pending.namespaces or [])
             }:
                 continue
             destination = dict(current_params.get(target_platform, {}) or {})
@@ -1228,7 +1228,7 @@ class CreationCardBuilder:
                         changed = True
             current_params[target_platform] = destination
 
-        for provider in list(pending.platforms or []):
+        for provider in list(pending.namespaces or []):
             canonical = normalize_platform(provider)
             matches = self._selector_text_matches(follow_up_text, canonical)
             if not matches:
@@ -1272,7 +1272,6 @@ class CreationCardBuilder:
         if not changed:
             return None
         merged["scoped_parameters"] = current_params
-        merged["platform_params"] = current_params
         return ParsedIntent(**{
             key: value for key, value in merged.items()
             if key in ParsedIntent.__dataclass_fields__
@@ -1937,7 +1936,7 @@ class CreationCardBuilder:
         if not self.is_creation_intent(intent, tool_plan=tool_plan):
             return []
         cards: list[dict[str, Any]] = []
-        for provider in list(getattr(intent, "platforms", []) or [])[:_MAX_CARDS]:
+        for provider in list(getattr(intent, "namespaces", []) or [])[:_MAX_CARDS]:
             canonical = normalize_platform(provider)
             blueprint, values, selector_value = self._resolve(intent, canonical)
             if blueprint is None:

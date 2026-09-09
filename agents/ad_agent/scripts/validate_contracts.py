@@ -87,7 +87,7 @@ def build_contract_snapshot(runtime: AgentRuntime) -> dict:
     definitions_by_platform: dict[str, list[dict]] = {}
     for definition in runtime.registry.list_all():
         contract = definition.to_dict()
-        definitions_by_platform.setdefault(str(definition.platform), []).append(contract)
+        definitions_by_platform.setdefault(str(definition.namespace), []).append(contract)
 
     platforms: dict[str, dict] = {}
     for platform, contracts in sorted(definitions_by_platform.items()):
@@ -198,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(names) != len(set(names)):
         errors.append("tool names must be globally unique")
     for platform, minimum in MINIMUM_COUNTS.items():
-        actual = len(runtime.registry.list_by_platform(platform))
+        actual = len(runtime.registry.list_by_namespace(platform))
         if actual < minimum:
             errors.append(f"{platform}: expected at least {minimum} built-in tools, got {actual}")
 
@@ -270,17 +270,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.check_snapshot:
         print(
             f"validated {len(tools)} tools across "
-            f"{len(runtime.registry.list_all_platforms())} platforms; "
+            f"{len(runtime.registry.list_all_namespaces())} platforms; "
             f"snapshot {args.check_snapshot} is current"
         )
     elif args.snapshot:
         print(
             f"validated {len(tools)} tools across "
-            f"{len(runtime.registry.list_all_platforms())} platforms; "
+            f"{len(runtime.registry.list_all_namespaces())} platforms; "
             f"wrote {args.snapshot}"
         )
     else:
-        print(f"validated {len(tools)} tools across {len(runtime.registry.list_all_platforms())} platforms")
+        print(f"validated {len(tools)} tools across {len(runtime.registry.list_all_namespaces())} platforms")
     return 0
 
 

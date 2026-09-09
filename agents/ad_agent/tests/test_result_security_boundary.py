@@ -37,7 +37,7 @@ def _register(runtime, name, handler):
         ToolDefinition(
             name=name,
             skill="security-test",
-            platform="security-test",
+            namespace="security-test",
             description="security boundary test tool",
             input_schema=ToolSchema(),
             action="read",

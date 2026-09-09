@@ -33,7 +33,7 @@ def build_plugin_preflight(
             "signature_required": bool(require_signature),
             "signature_verified": False,
             "executable": None,
-            "provider_calls": 0,
+            "external_calls": 0,
             "network_called": False,
             "issues": [f"{type(exc).__name__}: {message}"],
         }
@@ -56,7 +56,7 @@ def build_plugin_preflight(
         "signature_required": bool(require_signature),
         "signature_verified": package.signature_verified,
         "package_digest": package.package_digest,
-        "provider_calls": 0,
+        "external_calls": 0,
         "network_called": False,
         "issues": issues,
     }

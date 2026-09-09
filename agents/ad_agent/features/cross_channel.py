@@ -19,7 +19,7 @@ from ..domain.ad.cross_channel import (
 )
 from ..core.tool_registry import validate_tool_input
 from ..core.interfaces import ToolContext
-from ..core.platform import normalize_platform
+from ..core.namespace import normalize_namespace as normalize_platform
 
 
 class CrossChannelFeature:
@@ -150,7 +150,7 @@ class CrossChannelFeature:
         )
         platforms = {
             canonicalize(platform)
-            for platform in (getattr(intent, "platforms", []) or [])
+            for platform in (getattr(intent, "namespaces", []) or [])
         }
         return (
             getattr(intent, "intent_type", "") == "create_campaign"
@@ -222,7 +222,7 @@ class CrossChannelFeature:
             canonical = services.canonical_platform(raw_platform)
             routes_by_platform.setdefault(canonical, (raw_platform, tools))
 
-        for requested_platform in intent.platforms:
+        for requested_platform in intent.namespaces:
             platform = services.canonical_platform(requested_platform)
             route = routes_by_platform.get(platform)
             if route is None or not route[1]:
@@ -301,11 +301,11 @@ class CrossChannelFeature:
                         schema = tool_def.input_schema
                         missing_fields.extend(
                             field_name
-                            for field_name in (schema.provider_required or [])
+                            for field_name in (schema.capability_required or [])
                             if tool_input.get(field_name) in (None, "")
                             and field_name not in missing_fields
                         )
-                        for alternatives in (schema.provider_any_of or []):
+                        for alternatives in (schema.capability_any_of or []):
                             if not any(
                                 tool_input.get(field_name)
                                 not in (None, "", {}, [])
@@ -321,7 +321,7 @@ class CrossChannelFeature:
                             validate_tool_input(
                                 tool_def.input_schema,
                                 tool_input,
-                                include_provider_contract=True,
+                                include_capability_contract=True,
                             )
                         )
                         if services.execution_mode == "live":
@@ -440,7 +440,7 @@ class CrossChannelFeature:
         }
         blocked_platforms: set[str] = set()
 
-        for requested_platform in intent.platforms:
+        for requested_platform in intent.namespaces:
             actual_platform = services.canonical_platform(requested_platform)
             if actual_platform not in tools_by_platform:
                 errors.append(f"{actual_platform}: 没有已注册的 Campaign 批量管理工具")
@@ -861,7 +861,7 @@ class CrossChannelFeature:
         normalized = services.canonical_platform(platform)
         candidates = []
         for definition in services.registry.list_all():
-            if services.canonical_platform(definition.platform) != normalized:
+            if services.canonical_platform(definition.namespace) != normalized:
                 continue
             if not definition.is_read_tool:
                 continue
@@ -890,7 +890,7 @@ class CrossChannelFeature:
                 CrossChannelAnalyzer.performance_insights(summary)
             )
         elif intent.intent_type == "cross_channel_optimize_budget":
-            params = getattr(intent, "platform_params", {}) or {}
+            params = getattr(intent, "scoped_parameters", {}) or {}
             common = params.get("_common", {}) if isinstance(params, dict) else {}
             common = common if isinstance(common, dict) else {}
             result["cross_channel_budget_plan"] = CrossChannelAnalyzer.budget_plan(

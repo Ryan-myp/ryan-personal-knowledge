@@ -849,7 +849,7 @@ def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, 
 
     assert runtime is not None
     assert api_server.runtime_status["state"] == "ready"
-    assert set(runtime.registry.list_all_platforms()) == {
+    assert set(runtime.registry.list_all_namespaces()) == {
         "meta", "google-ads", "tiktok", "dv360"
     }
     assert len(runtime.registry.list_all()) >= 124

@@ -15,8 +15,8 @@ from agents.ad_agent.runtime.runtime import AgentRuntime
 
 
 def test_markdown_wiki_is_canonical_and_metadata_is_source_addressable(tmp_path):
-    (tmp_path / "platforms" / "google").mkdir(parents=True)
-    (tmp_path / "platforms" / "google" / "campaigns.md").write_text(
+    (tmp_path / "namespaces" / "google").mkdir(parents=True)
+    (tmp_path / "namespaces" / "google" / "campaigns.md").write_text(
         "---\n"
         "schema_version: \"1\"\n"
         "id: google-campaigns\n"
@@ -68,8 +68,8 @@ def test_builtin_wiki_exposes_navigation_categories_for_each_platform():
 
 
 def test_markdown_wiki_retrieves_the_matching_heading_from_long_documents(tmp_path):
-    (tmp_path / "platforms").mkdir()
-    (tmp_path / "platforms" / "bidding.md").write_text(
+    (tmp_path / "namespaces").mkdir()
+    (tmp_path / "namespaces" / "bidding.md").write_text(
         "---\n"
         "id: bidding-guide\n"
         "title: 出价策略指南\n"
@@ -176,16 +176,16 @@ def test_wiki_draft_is_not_retrieved_and_compatibility_facade_uses_same_document
 
 
 def test_query_platform_name_is_a_hard_boundary_when_selector_is_all(tmp_path):
-    (tmp_path / "platforms").mkdir()
-    (tmp_path / "platforms" / "meta.md").write_text(
+    (tmp_path / "namespaces").mkdir()
+    (tmp_path / "namespaces" / "meta.md").write_text(
         "---\nplatform: meta\ntitle: Meta 广告类型\nstatus: published\n---\n\nMeta Campaign、Ad Set 和 Ad 层级。",
         encoding="utf-8",
     )
-    (tmp_path / "platforms" / "google.md").write_text(
+    (tmp_path / "namespaces" / "google.md").write_text(
         "---\nplatform: google-ads\ntitle: Google 广告类型\nstatus: published\n---\n\nGoogle Search 广告，也提到 Meta 作为对比。",
         encoding="utf-8",
     )
-    (tmp_path / "platforms" / "general.md").write_text(
+    (tmp_path / "namespaces" / "general.md").write_text(
         "---\nplatform: all\ntitle: 跨平台广告类型总览\nstatus: published\n---\n\nMeta 和 Google 的广告类型总览。",
         encoding="utf-8",
     )
@@ -436,7 +436,7 @@ def test_runtime_recalls_explicit_memory_across_sessions_without_granting_tools(
 
         def call(self, messages):
             self.calls.append(messages)
-            return '{"intent_type":"chat","platforms":[]}'
+            return '{"intent_type":"chat","namespaces":[]}'
 
     llm = FakeLLM()
     store = AdAgentStore(":memory:")
@@ -466,7 +466,7 @@ def test_intent_prompt_keeps_stable_prefix_when_context_changes():
 
         def call(self, messages):
             self.calls.append(messages)
-            return '{"intent_type":"list_campaigns","platforms":[]}'
+            return '{"intent_type":"list_campaigns","namespaces":[]}'
 
     llm = FakeLLM()
     parser = LLMIntentParser(llm, allow_rule_fallback=False)
@@ -570,7 +570,7 @@ def test_llm_response_synthesizer_is_grounded_and_rejects_internal_protocol():
 def test_runtime_inject_llm_enables_response_synthesis_after_late_bootstrap():
     class FakeLLM:
         def call(self, _messages):
-            return '{"intent_type":"chat","platforms":[]}'
+            return '{"intent_type":"chat","namespaces":[]}'
 
     runtime = AgentRuntime(require_llm=True, features=[])
     assert runtime.response_synthesizer is None

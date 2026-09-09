@@ -53,7 +53,7 @@ class AdCapabilityLifecycleMixin:
                 self._register_builtin_plugin(
                     f"capability:{platform}",
                     module,
-                    (PluginKind.CAPABILITY.value, PluginKind.TOOL_PROVIDER.value),
+                    (PluginKind.CAPABILITY.value, PluginKind.TOOL_CAPABILITY.value),
                     version=str(
                         getattr(module, "capability_version", "1.0.0") or "1.0.0"
                     ),
@@ -76,7 +76,7 @@ class AdCapabilityLifecycleMixin:
             for skill_key, tool_names in list(self._skill_tool_names.items()):
                 if not (set(tool_names) & added_tool_names):
                     continue
-                platform = self._skill_platforms.pop(skill_key, None)
+                platform = self._skill_namespaces.pop(skill_key, None)
                 self._skill_tool_names.pop(skill_key, None)
                 self._skill_objects.pop(skill_key, None)
                 self._skill_format_ids.pop(skill_key, None)
@@ -124,7 +124,7 @@ class AdCapabilityLifecycleMixin:
         # CapabilityRuntime extension field.
         for definition in self.registry.list_all():
             self.parameter_catalogs.register_tool_schema(
-                definition.platform,
+                definition.namespace,
                 getattr(definition.input_schema, "properties", {})
                 if definition.input_schema else {},
                 tool_name=definition.name,
@@ -179,14 +179,14 @@ class AdCapabilityLifecycleMixin:
         # Keep the declarative Skill as the platform lifecycle marker so the
         # next turn does not try to register the same tools again.
         if capability_platform:
-            canonical_platform = self._canonical_platform(capability_platform)
-            skill_candidates = self.skill_loader.get_by_platform(canonical_platform)
+            canonical_namespace = self._canonical_platform(capability_platform)
+            skill_candidates = self.skill_loader.get_by_namespace(canonical_namespace)
             if skill_candidates:
                 primary_skill = skill_candidates[0]
-                skill_key = str(getattr(primary_skill, "name", "") or canonical_platform)
+                skill_key = str(getattr(primary_skill, "name", "") or canonical_namespace)
             else:
                 primary_skill = None
-                skill_key = f"{canonical_platform}:capability:{id(module)}"
+                skill_key = f"{canonical_namespace}:capability:{id(module)}"
             registered_names = sorted(
                 definition.name
                 for definition in self.registry.list_all()
@@ -194,10 +194,10 @@ class AdCapabilityLifecycleMixin:
             )
             if registered_names:
                 self._skill_tool_names[skill_key] = registered_names
-                self._skill_platforms[skill_key] = canonical_platform
+                self._skill_namespaces[skill_key] = canonical_namespace
                 if primary_skill is not None:
                     self._skill_objects[skill_key] = primary_skill
-                self._skill_keys_by_platform.setdefault(canonical_platform, []).append(
+                self._skill_keys_by_platform.setdefault(canonical_namespace, []).append(
                     skill_key
                 )
                 self._skill_format_ids[skill_key] = {
@@ -302,17 +302,17 @@ class AdCapabilityLifecycleMixin:
 
     def _register_skill(self, skill: Skill) -> None:
         """将 Skill 的工具注册到 Registry"""
-        register_aliases = getattr(self.intent_parser, "register_platform_aliases", None)
+        register_aliases = getattr(self.intent_parser, "register_namespace_aliases", None)
         if callable(register_aliases):
-            register_aliases(skill.platform, skill.platform_aliases or [])
+            register_aliases(skill.namespace, skill.namespace_aliases or [])
         registered_names: list[str] = []
         for tool_def in skill.get_tools():
-            skill_platform = self._canonical_platform(skill.platform)
-            tool_platform = self._canonical_platform(tool_def.platform)
-            if skill.platform != "multi_platform" and tool_platform != skill_platform:
+            skill_namespace = self._canonical_platform(skill.namespace)
+            tool_namespace = self._canonical_platform(tool_def.namespace)
+            if tool_namespace != skill_namespace:
                 raise ValueError(
-                    f"Tool '{tool_def.name}' platform '{tool_platform}' "
-                    f"does not match Skill platform '{skill_platform}'"
+                    f"Tool '{tool_def.name}' namespace '{tool_namespace}' "
+                    f"does not match Skill namespace '{skill_namespace}'"
                 )
             if self._read_only_mode and tool_def.is_write_tool:
                 continue
@@ -321,12 +321,12 @@ class AdCapabilityLifecycleMixin:
                 self.registry.register(tool_def, handler)
                 registered_names.append(tool_def.name)
         if registered_names:
-            skill_key = str(getattr(skill, "name", "") or skill.platform)
+            skill_key = str(getattr(skill, "name", "") or skill.namespace)
             self._skill_tool_names[skill_key] = registered_names
-            self._skill_platforms[skill_key] = skill.platform
+            self._skill_namespaces[skill_key] = skill.namespace
             self._skill_objects[skill_key] = skill
-            platform_key = self._canonical_platform(skill.platform)
-            keys = self._skill_keys_by_platform.setdefault(platform_key, [])
+            namespace_key = self._canonical_platform(skill.namespace)
+            keys = self._skill_keys_by_platform.setdefault(namespace_key, [])
             if skill_key not in keys:
                 keys.append(skill_key)
             register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
@@ -349,16 +349,16 @@ class AdCapabilityLifecycleMixin:
         # Dynamic Skill loading and the API/CLI path must use the same
         # canonical Capability factory.  The factory only constructs local
         # objects and does not contact a provider.
-        canonical_platform = self.provider_bindings.normalize_platform(platform)
-        declared_platform = self.provider_bindings.normalize_platform(
-            getattr(skill, "platform", "")
+        canonical_namespace = self.provider_bindings.normalize_namespace(platform)
+        declared_namespace = self.provider_bindings.normalize_namespace(
+            getattr(skill, "namespace", "")
         )
-        if declared_platform and declared_platform != canonical_platform:
+        if declared_namespace and declared_namespace != canonical_namespace:
             raise ValueError(
-                f"Skill '{getattr(skill, 'name', '')}' platform '{declared_platform}' "
-                f"does not match requested platform '{canonical_platform}'"
+                f"Skill '{getattr(skill, 'name', '')}' namespace '{declared_namespace}' "
+                f"does not match requested namespace '{canonical_namespace}'"
             )
-        skill_key = str(getattr(skill, "name", "") or f"{canonical_platform}:{id(skill)}")
+        skill_key = str(getattr(skill, "name", "") or f"{canonical_namespace}:{id(skill)}")
         if skill_key in self._skill_tool_names:
             logger.info("ⓘ Skill '%s' 已加载，跳过重复注册", skill_key)
             return True
@@ -378,11 +378,11 @@ class AdCapabilityLifecycleMixin:
         # A custom Skill can target a new platform and provide all of its own
         # handlers. Built-in provider packages can be discovered by convention;
         # the extension seam remains genuinely Skill + Tools based.
-        capability = self._discover_capability(canonical_platform, api_client)
+        capability = self._discover_capability(canonical_namespace, api_client)
         if capability is None:
             try:
                 capability = self.provider_bindings.create_capability(
-                    canonical_platform, api_client
+                    canonical_namespace, api_client
                 )
             except ValueError:
                 if not declared_tools:
@@ -397,13 +397,13 @@ class AdCapabilityLifecycleMixin:
         tools = []
         if declared_tools:
             for declared in declared_tools:
-                declared_tool_platform = self.provider_bindings.normalize_platform(
-                    getattr(declared, "platform", "")
+                declared_tool_namespace = self.provider_bindings.normalize_namespace(
+                    getattr(declared, "namespace", "")
                 )
-                if declared_tool_platform != canonical_platform:
+                if declared_tool_namespace != canonical_namespace:
                     raise ValueError(
-                        f"Tool '{declared.name}' platform '{declared_tool_platform}' "
-                        f"does not match Skill platform '{canonical_platform}'"
+                        f"Tool '{declared.name}' namespace '{declared_tool_namespace}' "
+                        f"does not match Skill namespace '{canonical_namespace}'"
                     )
                 handler = get_handler(declared.name)
                 if handler is None and declared.name in capability_tools:
@@ -430,13 +430,13 @@ class AdCapabilityLifecycleMixin:
         # 注册工具
         registered_count = 0
         for tool_def, handler in tools:
-            tool_platform = self.provider_bindings.normalize_platform(
-                getattr(tool_def, "platform", "")
+            tool_namespace = self.provider_bindings.normalize_namespace(
+                getattr(tool_def, "namespace", "")
             )
-            if tool_platform != canonical_platform:
+            if tool_namespace != canonical_namespace:
                 raise ValueError(
-                    f"Tool '{tool_def.name}' platform '{tool_platform}' "
-                    f"does not match Skill platform '{canonical_platform}'"
+                    f"Tool '{tool_def.name}' namespace '{tool_namespace}' "
+                    f"does not match Skill namespace '{canonical_namespace}'"
                 )
             metadata_errors = tool_def.routing_metadata_errors()
             if metadata_errors:
@@ -453,7 +453,7 @@ class AdCapabilityLifecycleMixin:
             try:
                 self.registry.register(tool_def, handler)
                 self.parameter_catalogs.register_tool_schema(
-                    tool_def.platform,
+                    tool_def.namespace,
                     getattr(tool_def.input_schema, "properties", {})
                     if tool_def.input_schema else {},
                     tool_name=tool_def.name,
@@ -474,9 +474,9 @@ class AdCapabilityLifecycleMixin:
 
         # 保存 Skill 和平台映射
         self._skill_tool_names[skill_key] = [tool_def.name for tool_def, _ in tools]
-        self._skill_platforms[skill_key] = canonical_platform
+        self._skill_namespaces[skill_key] = canonical_namespace
         self._skill_objects[skill_key] = skill
-        keys = self._skill_keys_by_platform.setdefault(canonical_platform, [])
+        keys = self._skill_keys_by_platform.setdefault(canonical_namespace, [])
         if skill_key not in keys:
             keys.append(skill_key)
 
@@ -484,7 +484,7 @@ class AdCapabilityLifecycleMixin:
         self._register_builtin_plugin(
             f"skill:{skill_key}",
             skill,
-            (PluginKind.SKILL.value, PluginKind.TOOL_PROVIDER.value),
+            (PluginKind.SKILL.value, PluginKind.TOOL_CAPABILITY.value),
             version=str(getattr(skill, "version", "1.0.0") or "1.0.0"),
             description=str(getattr(skill, "description", "") or ""),
         )
@@ -636,8 +636,8 @@ class AdCapabilityLifecycleMixin:
         Returns:
             是否卸载成功
         """
-        canonical_platform = self._canonical_platform(platform)
-        candidates = list(self._skill_keys_by_platform.get(canonical_platform, []))
+        canonical_namespace = self._canonical_platform(platform)
+        candidates = list(self._skill_keys_by_platform.get(canonical_namespace, []))
         if not candidates:
             return True
 
@@ -658,14 +658,14 @@ class AdCapabilityLifecycleMixin:
             self.parameter_catalogs.remove_tools(tool_names)
             format_ids = self._skill_format_ids.pop(target_key, set())
             if format_ids:
-                self.ad_format_catalogs[canonical_platform] = [
-                    entry for entry in self.ad_format_catalogs.get(canonical_platform, [])
+                self.ad_format_catalogs[canonical_namespace] = [
+                    entry for entry in self.ad_format_catalogs.get(canonical_namespace, [])
                     if str(entry.get("format_id")) not in format_ids
                 ]
-                if not self.ad_format_catalogs[canonical_platform]:
-                    self.ad_format_catalogs.pop(canonical_platform, None)
+                if not self.ad_format_catalogs[canonical_namespace]:
+                    self.ad_format_catalogs.pop(canonical_namespace, None)
             self._skill_tool_names.pop(target_key, None)
-            self._skill_platforms.pop(target_key, None)
+            self._skill_namespaces.pop(target_key, None)
             self._skill_objects.pop(target_key, None)
             self.plugin_registry.unregister(f"skill:{target_key}")
             if target_skill is not None:
@@ -673,17 +673,17 @@ class AdCapabilityLifecycleMixin:
 
             remaining = [key for key in candidates if key != target_key]
             if remaining:
-                self._skill_keys_by_platform[canonical_platform] = remaining
+                self._skill_keys_by_platform[canonical_namespace] = remaining
             else:
-                self._skill_keys_by_platform.pop(canonical_platform, None)
+                self._skill_keys_by_platform.pop(canonical_namespace, None)
                 # Blueprints are owned by the provider Capability. Remove
                 # them only after the final Skill for that platform is gone.
-                self.creation_blueprints.remove_owner(canonical_platform)
+                self.creation_blueprints.remove_owner(canonical_namespace)
 
             self._refresh_parser_catalog()
             logger.info(
                 "✅ 已卸载 Skill '%s' (platform=%s)，移除 %s 个工具",
-                target_key, canonical_platform, len(set(tool_names)),
+                target_key, canonical_namespace, len(set(tool_names)),
             )
             return True
         except Exception as e:
@@ -735,8 +735,8 @@ class AdCapabilityLifecycleMixin:
         """
         根据平台名称查找对应的 Skill。
         """
-        canonical_platform = self._canonical_platform(platform)
-        for skill_key in self._skill_keys_by_platform.get(canonical_platform, []):
+        canonical_namespace = self._canonical_platform(platform)
+        for skill_key in self._skill_keys_by_platform.get(canonical_namespace, []):
             skill = self._skill_objects.get(skill_key)
             if skill is not None:
                 return skill
@@ -744,7 +744,7 @@ class AdCapabilityLifecycleMixin:
         # SkillLoader owns recursive discovery and package validation.  Runtime
         # only asks for the loaded package by its declared platform; it does not
         # parse another copy of SKILL.md or inspect loader internals.
-        candidates = self.skill_loader.get_by_platform(canonical_platform)
+        candidates = self.skill_loader.get_by_namespace(canonical_namespace)
         if candidates:
             return candidates[0]
         return None
@@ -777,7 +777,7 @@ class AdCapabilityLifecycleMixin:
                 continue
             if not hasattr(handler, "client") or getattr(handler, "client") is not None:
                 continue
-            platform = self._canonical_platform(tool_def.platform)
+            platform = self._canonical_platform(tool_def.namespace)
             if platform not in clients:
                 clients[platform] = self._get_api_client(platform)
             client = clients[platform]
@@ -948,7 +948,7 @@ class AdCapabilityLifecycleMixin:
                     loaded_skill = self.skill_loader.load_skill_dir(skill_dir)
                     if loaded_skill is None or bool(getattr(loaded_skill, "context_only", False)):
                         continue
-                    platform = loaded_skill.platform
+                    platform = loaded_skill.namespace
 
                     # Loading SKILL.md supplies bounded expert context. It
                     # does not register routes or executable workflow steps.

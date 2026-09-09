@@ -138,7 +138,7 @@ def test_task_deadline_never_reports_late_handler_as_success():
 
     def late_handler(_context):
         time.sleep(0.03)
-        return {"provider_write": "possibly_completed"}
+        return {"external_write": "possibly_completed"}
 
     executor.register_handler("late", late_handler)
     task, _ = executor.submit("late", {}, tenant_id="t", user_id="u")
@@ -146,5 +146,5 @@ def test_task_deadline_never_reports_late_handler_as_success():
 
     assert final.status == "recovery_required"
     assert final.metadata["deadline_exceeded"] is True
-    assert final.metadata["provider_state"] == "unknown"
+    assert final.metadata["effect_state"] == "unknown"
     executor.shutdown()

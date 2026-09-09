@@ -1,7 +1,7 @@
 """Intent parsing and metadata-driven routing for the Agent Core.
 
 The parser and router consume only the active publisher registry. They do not
-know an application's workflows, resource catalogue, or provider vocabulary.
+know an application's workflows, resource catalogue, or integration vocabulary.
 """
 
 from __future__ import annotations
@@ -13,9 +13,9 @@ from functools import lru_cache
 from typing import Any, Mapping, Optional
 from .interfaces import (
     ToolContext, ParsedIntent, IntentParser, IntentRouter,
-    ToolDefinition, ToolRegistry
+    ToolDefinition, ToolCatalog
 )
-from .platform import normalize_platform
+from .namespace import normalize_namespace
 from .agent_profile import AgentProfile
 
 
@@ -47,7 +47,7 @@ class LLMIntentParser(IntentParser):
     """
     
     # Keep the stable prefix byte-for-byte independent of the current user,
-    # session, Memory, Skill selection and Tool results. Providers that cache
+    # session, Memory, Skill selection and Tool results. Model services that cache
     # prompt prefixes can therefore reuse this whole instruction block.
     STABLE_SYSTEM_PROMPT = """
 [STABLE · 不随请求变化]
@@ -58,7 +58,7 @@ class LLMIntentParser(IntentParser):
 输出结构：
 {
   "intent_type": "<候选值>",
-  "platforms": ["<当前已注册的命名空间>"],
+  "namespaces": ["<当前已注册的命名空间>"],
   "attributes": {"<publisher_defined_attribute>": "<value>"},
   "parameters": {"<field>": "<value>"},
   "scoped_parameters": {"<namespace>": {"<declared_field>": "<value>"}}
@@ -99,12 +99,12 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         self._tool_intents: set[str] = set()
         self._intent_aliases: dict[str, set[str]] = {}
         self._feature_intent_descriptors: dict[str, dict[str, Any]] = {}
-        # Platform identity and natural-language aliases are published by the
+        # Namespace identity and natural-language aliases are published by the
         # active Skill/Capability lifecycle. The parser never scans the
-        # repository to discover a provider.
-        self._platform_aliases: dict[str, str] = {}
-        self._known_platforms: set[str] = set()
-        self._platform_field_specs: dict[str, dict[str, dict]] = {}
+        # repository to discover an integration.
+        self._namespace_aliases: dict[str, str] = {}
+        self._known_namespaces: set[str] = set()
+        self._namespace_field_specs: dict[str, dict[str, dict]] = {}
         # The parser learns custom intent names and Tool descriptions from
         # registered ToolDefinitions. This is the extension seam for new
         # Skills/Tools; the core parser does not need a new intent branch.
@@ -130,7 +130,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             for intent in intents:
                 self._intent_catalog.setdefault(intent, {})[name] = {
                     "name": name,
-                    "platform": str(getattr(definition, "platform", "") or ""),
+                    "namespace": str(getattr(definition, "namespace", "") or ""),
                     "description": str(getattr(definition, "description", "") or ""),
                     # A Tool may expose a precise intent plus a broader
                     # declared alias.
@@ -176,7 +176,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         """Rebuild all Tool-derived parser indexes after load/unload.
 
         Runtime registration is dynamic. Incremental registration alone would
-        leave removed Tool names, intents, provider fields and platform IDs in
+        leave removed Tool names, intents, extension fields and namespace IDs in
         subsequent model prompts. Runtime republishes aliases from the
         currently active Skill set.
         """
@@ -184,9 +184,9 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         self._intent_catalog_prompt_cache.clear()
         self._tool_intents.clear()
         self._intent_aliases.clear()
-        self._platform_field_specs.clear()
-        self._known_platforms.clear()
-        self._platform_aliases.clear()
+        self._namespace_field_specs.clear()
+        self._known_namespaces.clear()
+        self._namespace_aliases.clear()
         for intent, descriptor in self._feature_intent_descriptors.items():
             aliases = descriptor.get("aliases", [])
             if isinstance(aliases, str):
@@ -195,31 +195,31 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 str(alias).strip() for alias in (aliases or []) if str(alias).strip()
             )
         for definition in definitions or []:
-            self.register_platforms([getattr(definition, "platform", "")])
+            self.register_namespaces([getattr(definition, "namespace", "")])
             schema = getattr(definition, "input_schema", None)
             if schema is not None:
                 self.register_tool_schemas(
-                    getattr(definition, "platform", ""),
+                    getattr(definition, "namespace", ""),
                     [schema.to_dict() if hasattr(schema, "to_dict") else schema],
                 )
         self.register_tool_definitions(definitions)
 
     def _intent_candidates_prompt(
-        self, platforms: Optional[list[str] | tuple[str, ...] | set[str]] = None,
+        self, namespaces: Optional[list[str] | tuple[str, ...] | set[str]] = None,
     ) -> str:
         """Return a bounded, deterministic intent catalog for the LLM.
 
         A pre-parse request may already contain an unambiguous registered
-        platform. Scope the catalog to that platform in that case; sending
-        every channel's intent description needlessly increases model input
+        namespace. Scope the catalog to that namespace in that case; sending
+        every namespace's intent description needlessly increases model input
         latency and makes the creation choice less clear.
         """
-        scoped_platforms = tuple(sorted({
-            normalize_platform(str(platform).strip().lower())
-            for platform in (platforms or ())
-            if str(platform).strip()
+        scoped_namespaces = tuple(sorted({
+            normalize_namespace(str(namespace).strip().lower())
+            for namespace in (namespaces or ())
+            if str(namespace).strip()
         }))
-        cached = self._intent_catalog_prompt_cache.get(scoped_platforms)
+        cached = self._intent_catalog_prompt_cache.get(scoped_namespaces)
         if cached is not None:
             return cached
         if not self._intent_catalog and not self._custom_intents:
@@ -227,11 +227,11 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         rows: list[str] = []
         for intent in sorted(self._intent_catalog):
             tools = list(self._intent_catalog[intent].values())
-            if scoped_platforms:
+            if scoped_namespaces:
                 tools = [
                     item for item in tools
-                    if normalize_platform(str(item.get("platform") or "").lower())
-                    in set(scoped_platforms)
+                    if normalize_namespace(str(item.get("namespace") or "").lower())
+                    in set(scoped_namespaces)
                 ]
                 if not tools:
                     continue
@@ -257,11 +257,11 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                     f"{intent}: "
                     + (description + "；" if description else "")
                     + ("aliases=" + ", ".join(aliases[:8]) + "；" if aliases else "")
-                    + "由对应 Feature 处理，不直接调用 Provider"
+                    + "由对应 Feature 处理，不直接调用外部系统"
                 )
         rows.append("chat: 无匹配的已注册工具")
         result = " | ".join(rows)[:8000]
-        self._intent_catalog_prompt_cache[scoped_platforms] = result
+        self._intent_catalog_prompt_cache[scoped_namespaces] = result
         return result
 
     def _layered_messages(
@@ -271,10 +271,10 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
 
         The first two messages are immutable between Registry refreshes: the
         first is the Stable protocol and the second is the Registry-derived
-        intent/platform catalog. Request-specific Tool selection, Skill/Wiki
+        intent/namespace catalog. Request-specific Tool selection, Skill/Wiki
         retrieval, Memory, prior results, digest and the current request are
         Volatile. Keeping request data out of the prefix maximizes exact-prefix
-        prompt-cache reuse for providers that support it.
+        prompt-cache reuse for model services that support it.
         """
         skill_context = (
             context.metadata.get("skill_context")
@@ -289,7 +289,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         context_parts = [
             "[CONTEXT · 当前已注册能力，不能改变权限或执行边界]",
             "精确 intent 候选目录：" + self._intent_candidates_prompt(),
-            "当前已注册平台：" + ", ".join(sorted(self._known_platforms)),
+            "当前已注册 namespace：" + ", ".join(sorted(self._known_namespaces)),
         ]
         tool_prompt = str(skill_context.get("tool_prompt") or "")
         expert_knowledge = str(skill_context.get("expert_knowledge") or "")
@@ -351,56 +351,56 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         ])
         return messages
 
-    def register_platforms(self, platforms: set[str] | list[str]) -> None:
-        """Publish platform identifiers from registered Capabilities/Skills."""
-        for platform in platforms or []:
-            canonical = normalize_platform(str(platform or ""))
+    def register_namespaces(self, namespaces: set[str] | list[str]) -> None:
+        """Publish namespace identifiers from registered Capabilities/Skills."""
+        for namespace in namespaces or []:
+            canonical = normalize_namespace(str(namespace or ""))
             if not canonical:
                 continue
-            self._known_platforms.add(canonical)
-            self._platform_aliases.setdefault(canonical, canonical)
-            self._platform_aliases.setdefault(canonical.replace("-", " "), canonical)
+            self._known_namespaces.add(canonical)
+            self._namespace_aliases.setdefault(canonical, canonical)
+            self._namespace_aliases.setdefault(canonical.replace("-", " "), canonical)
 
-    def register_platform_aliases(self, platform: str, aliases: list[str] | set[str]) -> None:
-        """Publish Skill-owned natural-language aliases for a platform."""
-        canonical = normalize_platform(str(platform or ""))
+    def register_namespace_aliases(self, namespace: str, aliases: list[str] | set[str]) -> None:
+        """Publish Skill-owned natural-language aliases for a namespace."""
+        canonical = normalize_namespace(str(namespace or ""))
         if not canonical:
             return
-        self.register_platforms([canonical])
+        self.register_namespaces([canonical])
         for alias in aliases or []:
             text = str(alias or "").strip().casefold()
             if text:
-                self._platform_aliases[text] = canonical
-                self._platform_aliases.setdefault(normalize_platform(text), canonical)
+                self._namespace_aliases[text] = canonical
+                self._namespace_aliases.setdefault(normalize_namespace(text), canonical)
 
     def extract_parameters(
-        self, user_input: str, platforms: list[str]
+        self, user_input: str, namespaces: list[str]
     ) -> dict[str, dict[str, Any]]:
         """Expose the schema-driven continuation extractor through the contract."""
-        return self._extract_params_from_input(user_input, platforms)
+        return self._extract_params_from_input(user_input, namespaces)
 
-    def register_tool_schemas(self, platform: str, schemas: list[dict] | tuple[dict, ...]) -> None:
-        """Publish provider fields so rule parsing also remains extensible.
+    def register_tool_schemas(self, namespace: str, schemas: list[dict] | tuple[dict, ...]) -> None:
+        """Publish extension fields so rule parsing also remains extensible.
 
-        The parser does not own a provider field table.  It keeps a bounded,
-        provider-published view of the registered schemas so a user can say
+        The parser does not own an integration field table. It keeps a bounded,
+        publisher-defined view of the registered schemas so a user can say
         ``app conversion`` or ``日预算`` without having to spell the wire
         enum/key.  Nested fields are indexed by their dotted path; assignment
-        back into ``platform_params`` preserves that object shape for the
+        back into ``scoped_parameters`` preserves that object shape for the
         normal ToolInputBuilder.
         """
-        value = str(platform or "").strip().lower()
-        canonical = normalize_platform(value)
+        value = str(namespace or "").strip().lower()
+        canonical = normalize_namespace(value)
         if not canonical:
             return
-        self.register_platforms([canonical])
-        fields = self._platform_field_specs.setdefault(canonical, {})
+        self.register_namespaces([canonical])
+        fields = self._namespace_field_specs.setdefault(canonical, {})
 
         def merge_spec(previous: Optional[dict], current: dict) -> dict:
             """Merge duplicated schema metadata without inventing values.
 
-            A platform exposes the same field in several Tools.  Keeping the
-            union of provider-declared enum/label metadata avoids last-tool
+            A namespace exposes the same field in several Tools. Keeping the
+            union of publisher-declared enum/label metadata avoids last-tool
             wins behaviour while the selected Tool still performs the final
             closed-schema validation later in the Runtime.
             """
@@ -442,7 +442,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 # JSON Schema keeps object properties inside array ``items``.
                 # Indexing them makes LLM output normalization work for
                 # creative/media collections as well, without teaching Core
-                # the shape of any provider payload.
+                # the shape of any extension payload.
                 items = raw_spec.get("items")
                 if isinstance(items, dict) and isinstance(items.get("properties"), dict):
                     publish(items["properties"], path)
@@ -496,7 +496,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 values = [values]
             if isinstance(values, (list, tuple, set)):
                 aliases.extend(str(value) for value in values)
-        # ``intent_map`` is the provider-owned bridge from a conversational
+        # ``intent_map`` is the publisher-owned bridge from a conversational
         # objective (for example ``sales``) to a canonical enum.  Treat its
         # keys as aliases only for the mapped option; Core does not maintain a
         # channel/objective vocabulary of its own.
@@ -522,7 +522,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         if _regex_search(r"[\u3400-\u9fff]", phrase):
             return phrase in haystack
         # English aliases need token boundaries so ``app`` does not match an
-        # unrelated word.  Short provider enums such as CPC/IOS are still
+        # unrelated word. Short declared enums remain
         # supported when they occur as complete tokens.
         return _regex_search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", haystack) is not None
 
@@ -555,12 +555,12 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
 
     @classmethod
     def _normalize_declared_value(cls, value: Any, spec: dict) -> Any:
-        """Map a model/user phrase to one provider-declared enum value.
+        """Map a model/user phrase to one publisher-declared enum value.
 
         A value is changed only when exactly one canonical option has the
         best matching declared alias.  This makes the normalization useful
         for both Chinese and English model output without turning a dynamic
-        resource name or ID into a guessed provider value.
+        resource name or ID into a guessed integration value.
         """
         mapping = spec.get("intent_map")
         if isinstance(mapping, dict) and isinstance(value, str):
@@ -595,7 +595,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         return normalized if isinstance(value, list) else normalized[0]
 
     def _semantic_parameter_values(
-        self, user_input: str, platforms: list[str], params: dict[str, dict]
+        self, user_input: str, namespaces: list[str], params: dict[str, dict]
     ) -> None:
         """Extract only uniquely declared enum meanings from natural language.
 
@@ -604,8 +604,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         same canonical values.  Dynamic lookup fields are intentionally absent
         here: phrases such as "my app" can never become an invented ID.
         """
-        for platform in platforms:
-            platform_specs = self._platform_field_specs.get(platform, {})
+        for namespace in namespaces:
+            namespace_specs = self._namespace_field_specs.get(namespace, {})
 
             def is_array_item_path(field_path: str) -> bool:
                 """Do not materialize ``items.properties`` as an object.
@@ -617,30 +617,30 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 """
                 parts = str(field_path).split(".")
                 for index in range(1, len(parts)):
-                    parent = platform_specs.get(".".join(parts[:index]))
+                    parent = namespace_specs.get(".".join(parts[:index]))
                     if isinstance(parent, Mapping) and parent.get("type") == "array":
                         items = parent.get("items")
                         if isinstance(items, Mapping) and isinstance(items.get("properties"), Mapping):
                             return True
                 return False
 
-            for field, spec in platform_specs.items():
+            for field, spec in namespace_specs.items():
                 if field == "updates" or field.startswith("updates."):
                     continue
                 if is_array_item_path(field):
                     continue
                 # Hidden fields remain unavailable as free-form UI inputs,
-                # but a provider may explicitly declare one as the canonical
+        # but a publisher may explicitly declare one as the canonical
                 # destination for a generic ParsedIntent value (for example
                 # an objective). That metadata-owned bridge is safe to infer;
                 # other hidden fields still require structured input.
                 if spec.get("ui_hidden") is True and not spec.get("intent_field"):
                     continue
                 options = self._schema_options(spec)
-                if not options or field in params[platform]:
+                if not options or field in params[namespace]:
                     continue
                 candidates: list[tuple[int, Any]] = []
-                # Conversational extraction uses explicit provider aliases or
+                    # Conversational extraction uses explicit publisher aliases or
                 # human labels.  Canonical wire spellings remain accepted by
                 # the normalizer, but are not scanned here: otherwise a
                 # phrase such as “daily budget” could also set a different
@@ -664,13 +664,13 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                         ):
                             candidates.append((len(self._phrase(alias)), option))
                 if not candidates:
-                    # Provider schemas may declare that a field is the
+                    # Extension schemas may declare that a field is the
                     # canonical destination for a generic ParsedIntent value.
                     # Apply that mapping only after checking explicit field
                     # aliases, so a broad phrase cannot shadow a precise one.
                     intent_field = str(spec.get("intent_field") or "").strip()
                     generic_value = (
-                        self._declared_intent_value(user_input, platforms, intent_field)
+                        self._declared_intent_value(user_input, namespaces, intent_field)
                         if intent_field
                         else None
                     )
@@ -680,7 +680,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                         )
                         if normalized_generic in options:
                             self._assign_parameter(
-                                params[platform], field, normalized_generic
+                                params[namespace], field, normalized_generic
                             )
                     continue
                 best_length = max(length for length, _option in candidates)
@@ -692,12 +692,12 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 is_array = spec.get("type") == "array"
                 if is_array:
                     self._assign_parameter(
-                        params[platform], field,
+                        params[namespace], field,
                         list(dict.fromkeys(option for _length, option in candidates
                                            if _length == best_length)),
                     )
                 elif len(best) == 1:
-                    self._assign_parameter(params[platform], field, best[0])
+                    self._assign_parameter(params[namespace], field, best[0])
 
     @staticmethod
     def _assign_parameter(target: dict[str, Any], field: str, value: Any) -> None:
@@ -760,7 +760,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             data = json.loads(json_str)
             data.setdefault("raw_input", user_input)
             normalized = self._normalize_intent(data)
-            # The model is the primary interpreter, but provider-owned schema
+            # The model is the primary interpreter, but publisher-owned schema
             # semantics are the deterministic safety net.  Re-read values that
             # are explicitly present in the user's sentence so a model that
             # returns only ``objective`` (or a human label such as ``Android
@@ -776,8 +776,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                     user_input,
                     context,
                     data,
-                    preserve_platforms=bool(
-                        intent.platforms or self._detect_platforms(user_input)
+                    preserve_namespaces=bool(
+                        intent.namespaces or self._detect_namespaces(user_input)
                     ),
                 )
                 if repaired is not None:
@@ -802,14 +802,14 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         context: ToolContext,
         previous: dict[str, Any],
         *,
-        preserve_platforms: bool = False,
+        preserve_namespaces: bool = False,
     ) -> Optional[ParsedIntent]:
         """Run one constrained LLM repair pass for an inconsistent JSON result."""
         if not self._llm:
             return None
         context_text = (
             "候选目录：" + self._intent_candidates_prompt() + "\n"
-            "当前平台：" + ", ".join(sorted(self._known_platforms))
+            "当前 namespace：" + ", ".join(sorted(self._known_namespaces))
         )
         volatile_text = (
             f"用户输入：{user_input}\n"
@@ -820,12 +820,12 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             "如果请求明确对应已注册的查询能力，必须选择对应的查询意图；"
             "不要因为缺少可由应用上下文提供的范围信息就改成 chat。只输出 JSON。"
             "intent_type 必须逐字复制 CONTEXT 中的候选；如果确实是闲聊才使用 chat，"
-            "且 platforms 必须为空。"
+            "且 namespaces 必须为空。"
         )
-        if preserve_platforms:
+        if preserve_namespaces:
             volatile_text += (
-                "\n平台边界：上一次结果已经识别出平台。除非用户原文明确提到新的已注册平台，"
-                "否则必须原样保留上一次 platforms，不能自行增加其他平台。"
+                "\nnamespace 边界：上一次结果已经识别出 namespace。除非用户原文明确提到新的已注册 namespace，"
+                "否则必须原样保留上一次 namespaces，不能自行增加其他 namespace。"
             )
         messages = self._layered_repair_messages(
             context, context_text, volatile_text, instruction
@@ -837,25 +837,25 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 return None
             repaired = json.loads(json_str)
             repaired.setdefault("raw_input", user_input)
-            if not repaired.get("platform_params"):
-                repaired["platform_params"] = previous.get("platform_params", {})
+            if not repaired.get("scoped_parameters"):
+                repaired["scoped_parameters"] = previous.get("scoped_parameters", {})
             normalized = self._normalize_intent(repaired)
-            if preserve_platforms:
+            if preserve_namespaces:
                 # A repair may fix the operation, but it must not silently
-                # widen the provider scope selected by the original parse.
-                preserved_platforms = list(
-                    self._normalize_intent(previous).get("platforms", [])
+                    # widen the namespace scope selected by the original parse.
+                preserved_namespaces = list(
+                    self._normalize_intent(previous).get("namespaces", [])
                 )
-                if not preserved_platforms:
-                    preserved_platforms = self._detect_platforms(user_input)
-                normalized["platforms"] = preserved_platforms
-                previous_params = previous.get("platform_params")
+                if not preserved_namespaces:
+                    preserved_namespaces = self._detect_namespaces(user_input)
+                normalized["namespaces"] = preserved_namespaces
+                previous_params = previous.get("scoped_parameters")
                 if isinstance(previous_params, dict):
-                    params = dict(normalized.get("platform_params") or {})
-                    for platform, values in previous_params.items():
-                        if platform not in params and isinstance(values, dict):
-                            params[platform] = dict(values)
-                    normalized["platform_params"] = params
+                    params = dict(normalized.get("scoped_parameters") or {})
+                    for namespace, values in previous_params.items():
+                        if namespace not in params and isinstance(values, dict):
+                            params[namespace] = dict(values)
+                    normalized["scoped_parameters"] = params
             # A repair response is still untrusted model output. Apply the
             # same explicit-value boundary as the first parse so repair cannot
             # re-introduce guessed dynamic identifiers.
@@ -877,30 +877,30 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
 
         A model can emit a plausible synonym or a non-existent operation. Once the
         authoritative Router reports no match, ask the model to choose from a
-        bounded, exact catalog for the selected platform(s). This keeps the
+        bounded, exact catalog for the selected namespace(s). This keeps the
         extension point in ToolDefinition metadata and avoids a silent no-op.
         """
         if not self._llm:
             return None
-        previous_platforms = [
-            str(platform).strip()
-            for platform in (getattr(previous, "platforms", []) or [])
-            if str(platform).strip()
+        previous_namespaces = [
+            str(namespace).strip()
+            for namespace in (getattr(previous, "namespaces", []) or [])
+            if str(namespace).strip()
         ]
-        if not previous_platforms:
-            previous_platforms = self._detect_platforms(user_input)
-        scoped_platforms = {
-            self._canonical_catalog_platform(platform)
-            for platform in previous_platforms
+        if not previous_namespaces:
+            previous_namespaces = self._detect_namespaces(user_input)
+        scoped_namespaces = {
+            self._canonical_catalog_namespace(namespace)
+            for namespace in previous_namespaces
         }
         scoped_catalog: list[str] = []
         for intent_name in sorted(self._intent_catalog):
             definitions = list(self._intent_catalog[intent_name].values())
-            if scoped_platforms:
+            if scoped_namespaces:
                 definitions = [
                     item for item in definitions
-                    if self._canonical_catalog_platform(item.get("platform"))
-                    in scoped_platforms
+                    if self._canonical_catalog_namespace(item.get("namespace"))
+                    in scoped_namespaces
                 ]
             if not definitions:
                 continue
@@ -913,20 +913,20 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 f"{intent_name}: {descriptions[0][:180] if descriptions else ''}"
             )
         catalog = " | ".join(scoped_catalog)[:7000] or "chat"
-        platform_rule = (
-            "如果上一次 platforms 非空，必须原样保留，不得增加其他平台。"
-            if previous_platforms
-            else "只有用户原文明确涉及已注册平台时才填写 platforms。"
+        namespace_rule = (
+            "如果上一次 namespaces 非空，必须原样保留，不得增加其他 namespace。"
+            if previous_namespaces
+            else "只有用户原文明确涉及已注册 namespace 时才填写 namespaces。"
         )
         messages = self._layered_repair_messages(
             context,
-            "精确候选目录：" + catalog + "\n已注册平台："
-            + ", ".join(sorted(self._known_platforms)),
+            "精确候选目录：" + catalog + "\n已注册 namespace："
+            + ", ".join(sorted(self._known_namespaces)),
             "用户原文：" + user_input + "\n上一次意图："
             + json.dumps(previous.to_dict(), ensure_ascii=False, default=str),
-            "上一次意图无法匹配当前已注册能力。请只修正意图，不要编造工具、平台或参数。"
+            "上一次意图无法匹配当前已注册能力。请只修正意图，不要编造工具、namespace 或参数。"
             "intent_type 必须从 CONTEXT 的精确候选中逐字选择；如果确实不属于当前能力才选择 chat。"
-            f"{platform_rule}只输出与原协议相同的 JSON。",
+            f"{namespace_rule}只输出与原协议相同的 JSON。",
         )
         try:
             response = self._llm.call(messages)
@@ -936,10 +936,10 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             repaired = json.loads(json_str)
             repaired.setdefault("raw_input", user_input)
             normalized = self._normalize_intent(repaired)
-            if previous_platforms:
-                normalized["platforms"] = list(
-                    self._normalize_intent({"platforms": previous_platforms}).get(
-                        "platforms", []
+            if previous_namespaces:
+                normalized["namespaces"] = list(
+                    self._normalize_intent({"namespaces": previous_namespaces}).get(
+                        "namespaces", []
                     )
                 )
             return ParsedIntent(**normalized)
@@ -948,8 +948,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             return None
 
     @staticmethod
-    def _canonical_catalog_platform(platform: Any) -> str:
-        return normalize_platform(str(platform or "").strip().lower())
+    def _canonical_catalog_namespace(namespace: Any) -> str:
+        return normalize_namespace(str(namespace or "").strip().lower())
 
     @staticmethod
     def _merge_missing_values(
@@ -959,7 +959,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
 
         A non-empty LLM value wins. Empty values are treated as omitted so a
         model is not required to echo every field that the user supplied. The
-        recursive merge is important for nested provider objects while list
+        recursive merge is important for nested extension objects while list
         values remain atomic (the model may have intentionally chosen a
         narrower list).
         """
@@ -989,8 +989,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
 
         The LLM may summarize a user's request with a placeholder such as
         ``my-app``. If the user also wrote ``App ID app-123``, the typed value
-        is authoritative. This overlay applies only to account/resource ID
-        fields declared by Tool metadata; ordinary enum choices remain under
+        is authoritative. This overlay applies only to scope/resource ID
+        scope/resource ID fields declared by Tool metadata; ordinary enum choices remain under
         the normal semantic/model merge.
         """
         if not isinstance(explicit, Mapping) or not isinstance(merged, Mapping):
@@ -1051,7 +1051,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         """Remove model-invented resource IDs before routing/execution.
 
         A placeholder such as ``my-app`` can satisfy ``type: string`` and
-        fail only much later at a provider. Removing it here lets the normal
+        fail only much later at an external adapter. Removing it here lets the normal
         creation card expose the missing lookup/input state. Explicit IDs
         typed by the user are retained and overlaid afterwards.
         """
@@ -1095,18 +1095,18 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
     ) -> dict[str, Any]:
         """Complete an LLM result with only declared, explicit user values."""
         result = dict(normalized or {})
-        platforms = list(result.get("platforms") or [])
-        if not platforms:
-            # Platform aliases are published by Skills/Capabilities. This is
-            # useful when the model omitted platforms, but never broadens a
-            # model-selected platform set.
-            platforms = self._detect_platforms(user_input)
-            result["platforms"] = platforms
-        if not platforms:
+        namespaces = list(result.get("namespaces") or [])
+        if not namespaces:
+            # Namespace aliases are published by Skills/Capabilities. This is
+            # useful when the model omitted namespaces, but never broadens a
+            # model-selected namespace set.
+            namespaces = self._detect_namespaces(user_input)
+            result["namespaces"] = namespaces
+        if not namespaces:
             return result
 
-        extracted = self._extract_params_from_input(user_input, platforms)
-        model_params = result.get("platform_params")
+        extracted = self._extract_params_from_input(user_input, namespaces)
+        model_params = result.get("scoped_parameters")
         merged_params = self._merge_missing_values(
             extracted,
             model_params if isinstance(model_params, Mapping) else {},
@@ -1115,34 +1115,34 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         # resource ID only when the user explicitly typed it; signed card
         # selections are merged later by the application.
         scoped_parameters = {
-            platform: self._drop_unverified_dynamic_values(
-                merged_params.get(platform, {})
+            namespace: self._drop_unverified_dynamic_values(
+                merged_params.get(namespace, {})
                 if isinstance(merged_params, Mapping) else {},
-                extracted.get(platform, {})
+                extracted.get(namespace, {})
                 if isinstance(extracted, Mapping) else {},
-                self._platform_field_specs.get(platform, {}),
+                self._namespace_field_specs.get(namespace, {}),
             )
-            for platform in platforms
+            for namespace in namespaces
         }
         result["scoped_parameters"] = scoped_parameters
-        result["platform_params"] = scoped_parameters
-        for platform in platforms:
-            result["platform_params"].setdefault(platform, {})
-            result["platform_params"][platform] = self._overlay_explicit_dynamic_values(
-                extracted.get(platform, {}) if isinstance(extracted, Mapping) else {},
-                result["platform_params"].get(platform, {}),
-                self._platform_field_specs.get(platform, {}),
+        result["scoped_parameters"] = scoped_parameters
+        for namespace in namespaces:
+            result["scoped_parameters"].setdefault(namespace, {})
+            result["scoped_parameters"][namespace] = self._overlay_explicit_dynamic_values(
+                extracted.get(namespace, {}) if isinstance(extracted, Mapping) else {},
+                result["scoped_parameters"].get(namespace, {}),
+                self._namespace_field_specs.get(namespace, {}),
             )
         # Keep both public names synchronized while adapters move to the
         # generic ``scoped_parameters`` contract.
-        result["scoped_parameters"] = result["platform_params"]
+        result["scoped_parameters"] = result["scoped_parameters"]
 
-        # Normalize any top-level ParsedIntent value that a provider schema
+        # Normalize any top-level ParsedIntent value that an extension schema
         # explicitly publishes as an ``intent_field``.  The field name is
         # metadata-owned, so adding a new capability does not require adding a
         # new Core branch.
-        for platform in platforms:
-            for _field, spec in self._platform_field_specs.get(platform, {}).items():
+        for namespace in namespaces:
+            for _field, spec in self._namespace_field_specs.get(namespace, {}).items():
                 intent_field = str(spec.get("intent_field") or "").strip()
                 generic_value = result.get(intent_field)
                 if not intent_field or generic_value in (None, ""):
@@ -1155,12 +1155,12 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
     def _parse_with_rules(self, user_input: str) -> ParsedIntent:
         """Parse only vocabulary and fields published by the active catalog."""
         text = str(user_input or "").casefold()
-        platforms = self._detect_platforms(text)
+        namespaces = self._detect_namespaces(text)
         normalized = self._normalize_intent({
             "intent_type": self._detect_intent_type(text),
             "raw_input": user_input,
-            "platforms": platforms,
-            "platform_params": self._extract_params_from_input(user_input, platforms),
+            "namespaces": namespaces,
+            "scoped_parameters": self._extract_params_from_input(user_input, namespaces),
         })
         return ParsedIntent(**self._enrich_intent_from_user_input(normalized, user_input))
 
@@ -1195,14 +1195,14 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         })
         return winners[0] if len(winners) == 1 else "chat"
 
-    def _extract_params_from_input(self, user_input: str, platforms: list[str]) -> dict:
+    def _extract_params_from_input(self, user_input: str, namespaces: list[str]) -> dict:
         """
         Extract explicitly named values from the active Tool schemas.
         """
-        params = {p: {} for p in platforms}
-        platform_aliases: dict[str, list[str]] = {}
-        for alias, canonical in self._platform_aliases.items():
-            platform_aliases.setdefault(canonical, []).append(alias)
+        params = {p: {} for p in namespaces}
+        namespace_aliases: dict[str, list[str]] = {}
+        for alias, canonical in self._namespace_aliases.items():
+            namespace_aliases.setdefault(canonical, []).append(alias)
 
         def aliases_for(field: str, spec: Mapping[str, Any]) -> list[str]:
             leaf = str(field).rsplit(".", 1)[-1]
@@ -1259,8 +1259,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         # The parser accepts a field's wire name, publisher-declared aliases,
         # or an explicitly qualified namespace form. It never maps an
         # application noun to a field owned by another Tool.
-        for platform in platforms:
-            field_specs = self._platform_field_specs.get(platform, {})
+        for namespace in namespaces:
+            field_specs = self._namespace_field_specs.get(namespace, {})
             for field, raw_spec in field_specs.items():
                 if not isinstance(raw_spec, Mapping) or is_array_item_path(field, field_specs):
                     continue
@@ -1268,7 +1268,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 # for different wire fields (for example a qualified name
                 # and a generic name). Keep the first, more specific match
                 # instead of allowing a later generic alias to overwrite it.
-                if field in params[platform]:
+                if field in params[namespace]:
                     continue
                 aliases = aliases_for(field, raw_spec)
                 alias_pattern = "|".join(re.escape(alias) for alias in sorted(aliases, key=len, reverse=True))
@@ -1283,7 +1283,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                 # greedy punctuation-only capture used to turn
                 # multiple qualified assignments into one
                 # invalid enum value. The boundary is deliberately based on
-                # assignment shape, not on a provider/business field list.
+                # assignment shape, not on a business-specific field list.
                 value_punctuation = (
                     r"[^\n;；。]+?" if raw_spec.get("type") == "array"
                     or isinstance(raw_spec.get("items"), Mapping)
@@ -1304,11 +1304,11 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                         r"(?:是|为|=|:|：)|[,，、;；。]|$"
                     )
                 if self._is_dynamic_field(field, raw_spec):
-                    # Resource identifiers are provider-owned values and do
+                    # Resource identifiers are publisher-owned values and do
                     # not contain natural-language whitespace. Stop an
                     # explicitly supplied ID before a following Chinese
                     # instruction (for example ``line_item_id=li-1 最近7天``)
-                    # without teaching Core any provider-specific field list.
+                    # without teaching Core any integration-specific field list.
                     single_boundary = (
                         r"\s+[\u3400-\u9fff]|" + single_boundary
                     )
@@ -1321,59 +1321,59 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                     rf"{separator}{single_value}",
                     user_input,
                     re.IGNORECASE,
-                ) if len(platforms) == 1 else None
-                platform_aliases_for_platform = platform_aliases.get(platform, [platform])
-                platform_pattern = "|".join(
-                    re.escape(alias) for alias in sorted(platform_aliases_for_platform, key=len, reverse=True)
+                ) if len(namespaces) == 1 else None
+                namespace_aliases_for_namespace = namespace_aliases.get(namespace, [namespace])
+                namespace_pattern = "|".join(
+                    re.escape(alias) for alias in sorted(namespace_aliases_for_namespace, key=len, reverse=True)
                 )
-                all_platform_aliases = sorted(
+                all_namespace_aliases = sorted(
                     {
                         alias
-                        for requested_platform in platforms
-                        for alias, canonical_platform in self._platform_aliases.items()
-                        if canonical_platform == requested_platform
+                        for requested_namespace in namespaces
+                        for alias, canonical_namespace in self._namespace_aliases.items()
+                        if canonical_namespace == requested_namespace
                     }
-                    | set(platforms),
+                    | set(namespaces),
                     key=len,
                     reverse=True,
                 )
-                all_platform_pattern = "|".join(
-                    re.escape(alias) for alias in all_platform_aliases
+                all_namespace_pattern = "|".join(
+                    re.escape(alias) for alias in all_namespace_aliases
                 )
                 multi_boundary = (
-                    rf"\s+(?:and|和)\s+(?:{all_platform_pattern})\s+|[;；。]|$"
+                    rf"\s+(?:and|和)\s+(?:{all_namespace_pattern})\s+|[;；。]|$"
                     if raw_spec.get("type") == "array"
                     or isinstance(raw_spec.get("items"), Mapping)
-                    else rf"\s+(?:and|和)\s+(?:{all_platform_pattern})\s+|[,，、;；。]|$"
+                    else rf"\s+(?:and|和)\s+(?:{all_namespace_pattern})\s+|[,，、;；。]|$"
                 )
                 multi_value = rf"({value_punctuation})(?={multi_boundary})"
-                qualified_value = single_value if len(platforms) == 1 else multi_value
-                qualified_platform = _regex_search(
-                    rf"(?:{platform_pattern})\s+{alias_boundary}(?:{alias_pattern})"
+                qualified_value = single_value if len(namespaces) == 1 else multi_value
+                qualified_namespace = _regex_search(
+                    rf"(?:{namespace_pattern})\s+{alias_boundary}(?:{alias_pattern})"
                     rf"{alias_end_boundary}\s*"
                     rf"(?:是|为|=|:|：)\s*{qualified_value}",
                     user_input,
                     re.IGNORECASE,
                 )
-                match = qualified_platform or qualified
+                match = qualified_namespace or qualified
                 if match:
-                    self._assign_parameter(params[platform], field, parse_value(match.group(1), field, raw_spec))
+                    self._assign_parameter(params[namespace], field, parse_value(match.group(1), field, raw_spec))
 
-        self._semantic_parameter_values(user_input, platforms, params)
+        self._semantic_parameter_values(user_input, namespaces, params)
         
         return params
     
-    def _detect_platforms(self, text: str) -> list[str]:
-        """检测目标平台"""
+    def _detect_namespaces(self, text: str) -> list[str]:
+        """检测已注册的目标 namespace。"""
         text = str(text or "").casefold()
-        platforms = []
+        namespaces = []
         # Longest aliases first prevents a generic alias from shadowing a
-        # provider's more specific spelling. Every registered platform gets
+        # namespace's more specific spelling. Every registered namespace gets
         # the same fallback recognition path as built-ins.
         first_mentions: list[tuple[int, str]] = []
-        for canonical in self._known_platforms:
+        for canonical in self._known_namespaces:
             aliases = sorted(
-                (alias for alias, value in self._platform_aliases.items() if value == canonical),
+                (alias for alias, value in self._namespace_aliases.items() if value == canonical),
                 key=len,
                 reverse=True,
             )
@@ -1381,18 +1381,18 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             if positions:
                 first_mentions.append((min(positions), canonical))
         for _position, canonical in sorted(first_mentions):
-            if canonical not in platforms:
-                platforms.append(canonical)
-        # 如果没有指定平台，返回空列表（需要用户明确指定）
-        return platforms
+            if canonical not in namespaces:
+                namespaces.append(canonical)
+        # 如果没有指定 namespace，返回空列表（需要用户明确指定）
+        return namespaces
     
     def _declared_intent_value(
-        self, text: str, platforms: list[str], intent_field: str,
+        self, text: str, namespaces: list[str], intent_field: str,
     ) -> Optional[str]:
         """Extract one value only from a publisher-declared field contract."""
         matches: list[Any] = []
-        for platform in platforms:
-            for field, spec in self._platform_field_specs.get(platform, {}).items():
+        for namespace in namespaces:
+            for field, spec in self._namespace_field_specs.get(namespace, {}).items():
                 if spec.get("intent_field") != intent_field:
                     continue
                 options = self._schema_options(spec)
@@ -1438,30 +1438,30 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             if intent_type.strip() not in allowed_intents:
                 data["intent_type"] = "chat"
 
-        # 确保 platforms 是列表，并限制为实际注册体系支持的平台。
-        platforms = data.get("platforms", [])
-        if isinstance(platforms, str):
-            platforms = [platforms]
-        platform_aliases = self._platform_aliases
-        normalized_platforms = []
-        for platform in platforms if isinstance(platforms, list) else []:
-            value = str(platform or "").strip().casefold()
-            normalized = platform_aliases.get(value, normalize_platform(value))
-            if normalized in self._known_platforms and normalized not in normalized_platforms:
-                normalized_platforms.append(normalized)
-        data["platforms"] = normalized_platforms
+        # 确保 namespaces 是列表，并限制为当前注册体系支持的 namespace。
+        namespaces = data.get("namespaces", [])
+        if isinstance(namespaces, str):
+            namespaces = [namespaces]
+        namespace_aliases = self._namespace_aliases
+        normalized_namespaces = []
+        for namespace in namespaces if isinstance(namespaces, list) else []:
+            value = str(namespace or "").strip().casefold()
+            normalized = namespace_aliases.get(value, normalize_namespace(value))
+            if normalized in self._known_namespaces and normalized not in normalized_namespaces:
+                normalized_namespaces.append(normalized)
+        data["namespaces"] = normalized_namespaces
 
         # Domain values are opaque publisher-owned attributes. The parser does
         # not normalize or whitelist an application's vocabulary here; a Tool
         # schema or Feature owns that interpretation.
         reserved = {
-            "intent_type", "raw_input", "platforms", "attributes",
-            "parameters", "scoped_parameters", "platform_params", "metadata",
+            "intent_type", "raw_input", "namespaces", "attributes",
+            "parameters", "scoped_parameters", "metadata",
         }
         attributes = data.get("attributes")
         attributes = dict(attributes) if isinstance(attributes, Mapping) else {}
         declared_attributes: set[str] = set()
-        for field_spec in self._platform_field_specs.values():
+        for field_spec in self._namespace_field_specs.values():
             for spec in field_spec.values():
                 if isinstance(spec, Mapping) and spec.get("intent_field"):
                     declared_attributes.add(str(spec["intent_field"]))
@@ -1490,27 +1490,27 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         # Ensure the namespace-scoped parameter map has all selected scopes.
         params = data.get("scoped_parameters")
         if not isinstance(params, Mapping):
-            params = data.get("platform_params", {})
+            params = data.get("scoped_parameters", {})
         params = params if isinstance(params, dict) else {}
         normalized_params = {}
         for key, value in params.items():
             key_value = str(key or "").strip().casefold()
-            normalized = platform_aliases.get(key_value, normalize_platform(key_value))
-            if normalized in self._known_platforms:
-                platform_values = value if isinstance(value, dict) else {}
+            normalized = namespace_aliases.get(key_value, normalize_namespace(key_value))
+            if normalized in self._known_namespaces:
+                namespace_values = value if isinstance(value, dict) else {}
                 # Models sometimes echo Tool routing metadata inside
-                # ``platform_params`` (for example ``action=list``). Keep
+                # ``scoped_parameters`` (for example ``action=list``). Keep
                 # namespace fields only when the current registered Tool
                 # catalog declares them; this is derived from metadata and
-                # does not maintain a provider/business field table.
-                declared_fields = self._platform_field_specs.get(normalized, {})
+                # does not maintain a business-specific field table.
+                declared_fields = self._namespace_field_specs.get(normalized, {})
                 control_fields = {
                     "action", "resource_type", "parent_resource_type",
-                    "tool", "skill", "platform", "description",
+                    "tool", "skill", "namespace", "description",
                     "intent_type", "intent_types", "activation_rules",
                     # LLMs sometimes echo a Tool's routing summary as
-                    # ``operation``/``note``. They are not provider inputs;
-                    # keep the closed contract while allowing a provider to
+                    # ``operation``/``note``. They are not execution inputs;
+                    # keep the closed contract while allowing a publisher to
                     # explicitly declare either name in its own schema.
                     "operation", "note",
                 }
@@ -1539,8 +1539,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
                         ]
                     return current
 
-                normalized_params[normalized] = normalize_values(platform_values)
-        for p in normalized_platforms:
+                normalized_params[normalized] = normalize_values(namespace_values)
+        for p in normalized_namespaces:
             normalized_params.setdefault(p, {})
         data["scoped_parameters"] = normalized_params
         # Flattening publisher attributes keeps declarative activation rules
@@ -1549,12 +1549,11 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         result = {
             "intent_type": data["intent_type"],
             "raw_input": data.get("raw_input", ""),
-            "platforms": data["platforms"],
+            "namespaces": data["namespaces"],
             "attributes": attributes,
             "parameters": data.get("parameters", {})
             if isinstance(data.get("parameters"), Mapping) else {},
             "scoped_parameters": normalized_params,
-            "platform_params": normalized_params,
             "metadata": data.get("metadata", {})
             if isinstance(data.get("metadata"), Mapping) else {},
         }
@@ -1567,7 +1566,7 @@ class SimpleIntentRouter(IntentRouter):
     根据 Tool 自描述元数据进行发现式路由。
 
     Tool 的 action/resource_type/intent_types 来自 Capability 或 Skill
-    plugin 自己的定义。这里不维护平台工具名称表，因此新增渠道只需要
+    plugin 自己的定义。这里不维护 namespace 工具名称表，因此新增扩展只需要
     注册 Capability + Skill；新增同类 Tool 也不需要修改 Router。
 
     路由只读取 ToolDefinition 的 intent_types/action/resource 元数据；不接受
@@ -1577,20 +1576,20 @@ class SimpleIntentRouter(IntentRouter):
     def route(
         self,
         intent: ParsedIntent,
-        registry: ToolRegistry
+        registry: ToolCatalog
     ) -> dict[str, list[ToolDefinition]]:
         """
-        根据意图路由到各平台的工具。
+        根据意图路由到各 namespace 的工具。
         
         Returns:
-            {platform: [ToolDefinition, ...]}
+            {namespace: [ToolDefinition, ...]}
         """
         result: dict[str, list[ToolDefinition]] = {}
-        for platform in intent.platforms:
-            canonical = normalize_platform(platform)
-            platform_definitions = registry.list_by_platform(canonical)
+        for namespace in intent.namespaces:
+            canonical = normalize_namespace(namespace)
+            namespace_definitions = registry.list_by_namespace(canonical)
             intent_candidates = [
-                definition for definition in platform_definitions
+                definition for definition in namespace_definitions
                 if self._matches_intent(definition, intent.intent_type)
             ]
             # Activation predicates narrow an ambiguous intent only. This is
@@ -1600,13 +1599,13 @@ class SimpleIntentRouter(IntentRouter):
             tools = [
                 definition for definition in intent_candidates
                 if self._matches_activation(
-                    definition, intent, platform,
+                    definition, intent, namespace,
                     narrow_candidates=narrow_candidates,
                 )
             ]
             tools = self._order_by_resource_dependencies(tools)
             if tools:
-                result[platform] = tools
+                result[namespace] = tools
         
         return result
 
@@ -1616,14 +1615,14 @@ class SimpleIntentRouter(IntentRouter):
 
     @classmethod
     def _matches_activation(
-        cls, definition: ToolDefinition, intent: ParsedIntent, platform: str,
+        cls, definition: ToolDefinition, intent: ParsedIntent, namespace: str,
         *, narrow_candidates: bool = False,
     ) -> bool:
-        """Apply provider-published Tool activation rules.
+        """Apply publisher-declared Tool activation rules.
 
-        Rules are data, not a central provider map. A rule may use ``if`` or
+        Rules are data, not a central integration map. A rule may use ``if`` or
         ``when`` with field/value pairs, or the compact form
-        ``{"field": "provider_field", "in": ["VALUE"]}``. Field aliases
+        ``{"field": "declared_field", "in": ["VALUE"]}``. Field aliases
         and defaults are declared by the publisher. Multiple rules are ORed;
         multiple conditions inside one rule are ANDed. ``not_in`` treats a
         missing field as a match, which is useful for a generic fallback Tool.
@@ -1632,8 +1631,8 @@ class SimpleIntentRouter(IntentRouter):
         if not rules or not narrow_candidates:
             return True
         params: dict[str, Any] = {}
-        for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
-            if normalize_platform(str(raw_platform)) != normalize_platform(platform):
+        for raw_namespace, values in (getattr(intent, "scoped_parameters", {}) or {}).items():
+            if normalize_namespace(str(raw_namespace)) != normalize_namespace(namespace):
                 continue
             if not isinstance(values, dict):
                 continue
@@ -1788,16 +1787,16 @@ class SimpleIntentRouter(IntentRouter):
                     emitted_resources.add(resource_type)
         return ordered
     
-    def get_tool_sequence(self, intent: ParsedIntent, registry: ToolRegistry) -> list[tuple[str, ToolDefinition]]:
+    def get_tool_sequence(self, intent: ParsedIntent, registry: ToolCatalog) -> list[tuple[str, ToolDefinition]]:
         """
         获取按顺序排列的工具调用列表。
         
         Returns:
-            [(platform, ToolDefinition), ...]
+            [(namespace, ToolDefinition), ...]
         """
         routed = self.route(intent, registry)
         sequence = []
-        for platform, tools in routed.items():
+        for namespace, tools in routed.items():
             for tool in tools:
-                sequence.append((platform, tool))
+                sequence.append((namespace, tool))
         return sequence

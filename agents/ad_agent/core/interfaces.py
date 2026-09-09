@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 import re
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 from .security import sha256_json
 
@@ -29,7 +29,7 @@ class ToolEffect(Enum):
     """工具效果分类"""
     READ = "read"           # 纯读操作
     WRITE = "write"         # 写操作
-    EXTERNAL_WRITE = "external_write"  # 外部平台写入
+    EXTERNAL_WRITE = "external_write"  # 外部系统写入
 
 class ReplayPolicy(Enum):
     """重放策略"""
@@ -55,20 +55,20 @@ class ToolSchema:
     type: str = "object"
     required: list[str] = field(default_factory=list)
     properties: dict[str, Any] = field(default_factory=dict)
-    # Provider contracts can be stricter than the fields needed to build a
-    # dry-run plan.  Keep these requirements separate so dry-run remains useful
-    # while live execution can fail before reaching a provider.
-    provider_required: list[str] = field(default_factory=list)
-    provider_any_of: list[list[str]] = field(default_factory=list)
-    # Some provider endpoints require exactly one source variant (for example
+    # An execution adapter can be stricter than the fields needed to build a
+    # dry-run plan. Keep these requirements separate so dry-run remains useful
+    # while live execution can fail before reaching an external system.
+    capability_required: list[str] = field(default_factory=list)
+    capability_any_of: list[list[str]] = field(default_factory=list)
+    # Some external operations require exactly one source variant (for example
     # a local file, URL, or existing asset ID). Keep this distinct from
-    # ``provider_any_of``, which only guarantees that at least one is present.
-    provider_exactly_one_of: list[list[str]] = field(default_factory=list)
+    # ``capability_any_of``, which only guarantees that at least one is present.
+    capability_exactly_one_of: list[list[str]] = field(default_factory=list)
     # Rules that cannot be represented by a flat ``required``/``enum`` pair.
     # The shape intentionally stays JSON-serializable because it is also
     # exposed to UI/LLM callers through /tools.
     conditional_rules: list[dict[str, Any]] = field(default_factory=list)
-    # Tool inputs are closed by default.  A provider payload can explicitly
+    # Tool inputs are closed by default. An extension payload can explicitly
     # opt into open-ended fields at the field level (for example a targeting
     # object), but an undeclared top-level argument must never disappear
     # silently before execution.
@@ -80,15 +80,15 @@ class ToolSchema:
             "type": self.type,
             "required": list(self.required),
             "properties": self.properties,
-            "provider_required": list(self.provider_required),
-            "provider_any_of": [list(group) for group in self.provider_any_of],
+            "capability_required": list(self.capability_required),
+            "capability_any_of": [list(group) for group in self.capability_any_of],
             "conditional_rules": self.conditional_rules,
             "additional_properties": self.additional_properties,
             "additionalProperties": self.additional_properties,
         }
-        if self.provider_exactly_one_of:
-            contract["provider_exactly_one_of"] = [
-                list(group) for group in self.provider_exactly_one_of
+        if self.capability_exactly_one_of:
+            contract["capability_exactly_one_of"] = [
+                list(group) for group in self.capability_exactly_one_of
             ]
         return contract
 
@@ -97,11 +97,11 @@ class ToolDefinition:
     """
     工具定义 - 对应 Go 的 core.ToolDefinition
     
-    每个 Tool 必须属于某个 Skill 和 Platform，便于路由和权限控制。
+    每个 Tool 属于一个由扩展声明的 namespace，便于路由和权限控制。
     """
     name: str                              # 工具名称，全局唯一
     skill: str                             # 所属 Skill 名称
-    platform: str                          # Publisher namespace
+    namespace: str                          # Publisher namespace
     description: str                       # 工具描述（给 LLM 使用）
     input_schema: ToolSchema               # 输入参数 Schema
     # Self-description used by the planner. A Tool declares what it acts on;
@@ -114,12 +114,12 @@ class ToolDefinition:
     intent_types: list[str] = field(default_factory=list)
     # Natural-language aliases are owned by the Tool/Skill publisher. Core
     # may use them for constrained offline parsing, but never invents a
-    # provider or business vocabulary of its own.
+    # integration or business vocabulary of its own.
     intent_aliases: list[str] = field(default_factory=list)
-    # Provider-owned routing predicates. A Tool can publish a conditional
-    # creation-chain membership without adding a provider branch to Router.
+    # Publisher-owned routing predicates. A Tool can publish a conditional
+    # creation-chain membership without adding an integration branch to Router.
     # Each rule is JSON-serializable and is evaluated against ParsedIntent and
-    # the platform's structured parameters.
+    # the namespace's structured parameters.
     activation_rules: list[dict[str, Any]] = field(default_factory=list)
     risk_level: RiskLevel = RiskLevel.LOW  # 风险等级
     effect_class: ToolEffect = ToolEffect.READ  # 效果分类
@@ -132,51 +132,55 @@ class ToolDefinition:
     # false value still permits dry-run planning, but prevents a misleading
     # live confirmation/execution path.
     # Live writes are opt-in. A newly added Tool that forgets to declare a
-    # verified provider adapter remains dry-run-only by default.
+    # verified external adapter remains dry-run-only by default.
     # Read tools are live by default; write tools must opt in explicitly.
     live_support: Optional[bool] = None
     # Operational contract used by the Runtime before a handler is invoked.
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
     required_permissions: list[str] = field(default_factory=list)
-    # Provider schemas do not agree on identifier spelling (for example
-    # provider-specific identifier spellings. Keep wire names on the Tool
+    # External systems do not agree on identifier spelling. Keep wire names on the Tool
     # contract so Runtime can persist and connect resources without knowing a
-    # provider's hierarchy. Mutating Tools must declare the identity they
+    # integration hierarchy. Mutating Tools must declare the identity they
     # create or address; Runtime never derives it from resource_type.
     resource_id_field: Optional[str] = None
     parent_resource_id_field: Optional[str] = None
     # Optional explicit read-back edge for an uncertain write.  The Runtime
     # validates and invokes this read Tool, but never derives its name from
-    # the write Tool name.  This is especially important when a provider has
+    # the write Tool name. This is especially important when an integration has
     # multiple get variants for the same logical resource.
     readback_tool: Optional[str] = None
-    # Version metadata is descriptive contract data, not routing logic.  A
-    # provider can publish a new client/Capability contract while keeping the
-    # stable Tool name; Runtime and Router do not need a provider-specific
+    # Version metadata is descriptive contract data, not routing logic. An
+    # integration can publish a new adapter contract while keeping the stable
+    # Tool name; Runtime and Router do not need an integration-specific
     # edit for that upgrade.
     contract_version: str = "1"
-    provider_api_version: Optional[str] = None
+    integration_api_version: Optional[str] = None
     # Result-shape metadata is owned by the Tool publisher.  Cross-feature
     # extensions can consume a normalized resource result without guessing a
-    # provider's result key or identifier spelling from its Tool name.
+    # integration result key or identifier spelling from its Tool name.
     result_items_key: Optional[str] = None
     result_id_fields: list[str] = field(default_factory=list)
     related_resource_type: Optional[str] = None
     related_resource_id_fields: list[str] = field(default_factory=list)
     # Immutable fingerprint of the public input contract.  It is calculated
-    # from ToolSchema rather than provider/channel names, so Registry and
+    # from ToolSchema rather than vendor/channel names, so Registry and
     # approval code can detect schema drift without a central router.
     contract_hash: str = ""
 
     def __post_init__(self) -> None:
+        from .namespace import normalize_namespace
+
+        self.namespace = normalize_namespace(self.namespace)
+        if not self.namespace:
+            raise ValueError(f"Tool '{self.name}' requires a non-empty namespace")
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes <= 0:
             raise ValueError("max_output_bytes must be positive")
         self.contract_version = str(self.contract_version or "1")
-        if self.provider_api_version is not None:
-            self.provider_api_version = str(self.provider_api_version)
+        if self.integration_api_version is not None:
+            self.integration_api_version = str(self.integration_api_version)
         calculated_contract_hash = sha256_json(
             self.input_schema.to_dict() if self.input_schema else None
         )
@@ -263,7 +267,7 @@ class ToolDefinition:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "name": self.name, "skill": self.skill, "platform": self.platform,
+            "name": self.name, "skill": self.skill, "namespace": self.namespace,
             "description": self.description, "action": self.action,
             "resource_type": self.resource_type,
             "parent_resource_type": self.parent_resource_type,
@@ -280,7 +284,7 @@ class ToolDefinition:
             "parent_resource_id_field": self.parent_resource_id_field,
             "readback_tool": self.readback_tool,
             "contract_version": self.contract_version,
-            "provider_api_version": self.provider_api_version,
+            "integration_api_version": self.integration_api_version,
             "result_items_key": self.result_items_key,
             "result_id_fields": list(self.result_id_fields),
             "related_resource_type": self.related_resource_type,
@@ -294,7 +298,7 @@ class ToolDefinition:
 
 @dataclass(frozen=True)
 class ToolError:
-    """Structured, provider-neutral error classification.
+    """Structured, application-neutral error classification.
 
     ``ToolResult.error`` remains a human-readable string for API consumers;
     callers that need recovery semantics should use ``error_detail``.
@@ -316,7 +320,7 @@ class ToolError:
 
 @dataclass(frozen=True)
 class WriteReservation:
-    """Binding returned by a write guard until a provider result is known."""
+    """Binding returned by a write guard until an external result is known."""
 
     idempotency_key: str
     request_hash: str
@@ -406,7 +410,7 @@ class ToolContext:
 
         The Core stores scope values without naming their vocabulary.  An
         embedding may expose a convenience value through the extension map
-        (for example an account selector) without adding it to this contract.
+        (for example a workspace selector) without adding it to this contract.
         """
         self.session_id = str(session_id)
         self.user_id = str(user_id)
@@ -434,7 +438,7 @@ class ToolContext:
 
 @dataclass(frozen=True)
 class ReconciliationObservation:
-    """A provider read-back result for one durable workflow item."""
+    """An external read-back result for one durable workflow item."""
 
     sequence: int
     status: str
@@ -443,7 +447,7 @@ class ReconciliationObservation:
     observed_at: str
     output_data: Optional[dict[str, Any]] = None
     error: Optional[str] = None
-    provider_resource_id: Optional[str] = None
+    external_resource_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         result = {
@@ -455,14 +459,14 @@ class ReconciliationObservation:
             "output_data": self.output_data,
             "error": self.error,
         }
-        if self.provider_resource_id:
-            result["provider_resource_id"] = self.provider_resource_id
+        if self.external_resource_id:
+            result["external_resource_id"] = self.external_resource_id
         return result
 
 
 @dataclass
 class ReconciliationContext:
-    """Safe callback surface exposed to a ProviderReconciler.
+    """Safe callback surface exposed to an EffectReconciler.
 
     A reconciler may perform only a read-tool call through Runtime. It does
     not receive a registry handler or a write-capable callback.
@@ -472,17 +476,17 @@ class ReconciliationContext:
     item: Mapping[str, Any]
     tool_context: ToolContext
     execute_read: Callable[[str, dict[str, Any]], ToolResult]
-    # Optional Runtime-owned metadata lookup. Provider reconcilers can use it
-    # to discover the matching read Tool without a shared provider table.
+    # Optional Runtime-owned metadata lookup. Effect reconcilers can use it
+    # to discover the matching read Tool without a shared integration table.
     resolve_read_tool: Optional[Callable[[str], Any]] = None
 
 
-class ProviderReconciler(ABC):
-    """Provider-owned adapter for resolving an uncertain write outcome."""
+class EffectReconciler(ABC):
+    """Extension-owned adapter for resolving an uncertain external effect."""
 
     @abstractmethod
     def reconcile(self, context: ReconciliationContext) -> ReconciliationObservation:
-        """Read the provider and return a verified item observation."""
+        """Read the external system and return a verified item observation."""
         pass
 
 
@@ -510,6 +514,21 @@ class ToolHandler(ABC):
         pass
 
 
+@runtime_checkable
+class ToolCatalog(Protocol):
+    """Read-only catalog surface used by parsers and routers.
+
+    Routing needs definitions only. Keeping this port separate from the
+    executable registry prevents a parser/router implementation from gaining
+    access to handlers, registration, or direct execution merely because it
+    needs to discover a Tool.
+    """
+
+    def list_by_namespace(self, namespace: str) -> list[ToolDefinition]:
+        """Return the active Tool definitions in one namespace."""
+        ...
+
+
 class ToolRegistry(ABC):
     """
     工具注册表接口 - 对应 Go 的 core.ToolRegistry
@@ -527,8 +546,8 @@ class ToolRegistry(ABC):
         pass
 
     @abstractmethod
-    def list_by_platform(self, platform: str) -> list[ToolDefinition]:
-        """列出某平台所有工具"""
+    def list_by_namespace(self, namespace: str) -> list[ToolDefinition]:
+        """列出某 namespace 的所有工具"""
         pass
 
     @abstractmethod
@@ -547,11 +566,28 @@ class ToolRegistry(ABC):
         pass
 
 
+class KnowledgeSource(Protocol):
+    """Read-only advisory context source used by the generic selector."""
+
+    def query(
+        self,
+        query: str,
+        *,
+        namespaces: Optional[Sequence[str]] = None,
+        intent_type: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        limit: int = 4,
+        max_excerpt_chars: int = 1200,
+    ) -> Sequence[Any]:
+        """Return bounded context records for the requested namespaces."""
+        ...
+
+
 class Skill(ABC):
     """
     Skill 接口 - 对应 Go 的 core.Skill
     
-    一个 Skill 是一组相关工具的集合，有明确的平台边界和能力描述。
+    一个 Skill 是一组相关工具的集合，有明确的 namespace 边界和能力描述。
     """
     @property
     def name(self) -> str:
@@ -559,13 +595,13 @@ class Skill(ABC):
         raise NotImplementedError("Subclasses must implement 'name'")
 
     @property
-    def platform(self) -> str:
-        """所属平台"""
-        raise NotImplementedError("Subclasses must implement 'platform'")
+    def namespace(self) -> str:
+        """所属 namespace"""
+        raise NotImplementedError("Subclasses must implement 'namespace'")
 
     @property
-    def platform_aliases(self) -> list[str]:
-        """Natural-language platform aliases published by this Skill."""
+    def namespace_aliases(self) -> list[str]:
+        """Natural-language namespace aliases published by this Skill."""
         return []
 
     @property
@@ -594,7 +630,7 @@ class CapabilityModule(ABC):
         配置并返回能力运行时。
         
         职责：
-        1. 读取业务依赖（如凭证、配置）
+        1. 读取扩展依赖（如凭证、配置）
         2. 创建工具处理器
         3. 向注册表注册工具
         4. 返回 CapabilityRuntime 生命周期声明
@@ -618,8 +654,8 @@ class CapabilityRuntime:
     
     业务模块向 Runtime 提交的能力生命周期声明。
 
-    流程和路由归 Skill 所有；Capability 只提供原子 Tool、Provider
-    schema/lookup 以及必要的运行时扩展点。
+    流程和路由归 Skill 所有；Capability 只提供原子 Tool、输入契约
+    以及必要的运行时扩展点。
     """
     # 写入前保护钩子（可选）
     write_guard: Optional["WriteGuard"] = None
@@ -629,7 +665,7 @@ class CapabilityRuntime:
 
     # Skill-owned parameter catalogs.  A catalog may expose static enums or
     # a dynamic lookup descriptor without making the shared Runtime know a
-    # provider's field names.
+    # integration field names.
     parameter_catalogs: list[Any] = field(default_factory=list)
 
 class WriteGuard(ABC):
@@ -637,7 +673,7 @@ class WriteGuard(ABC):
     写入保护接口 - 对应 Go 的 core.WriteExecutionGuard
     
     在真正调用外部 API 之前，检查是否允许写入。
-    可以检查幂等性、资源冲突、账户绑定等。
+    可以检查幂等性、资源冲突、作用域绑定等。
     """
     @abstractmethod
     def reserve_write(
@@ -654,7 +690,7 @@ class WriteGuard(ABC):
     def finalize(
         self, reservation: WriteReservation, result: ToolResult,
     ) -> None:
-        """Finalize a reservation after the provider outcome is known."""
+        """Finalize a reservation after the external outcome is known."""
         return None
 
 
@@ -662,7 +698,7 @@ class WriteGuard(ABC):
 
 @dataclass(init=False)
 class ParsedIntent:
-    """Provider-neutral intent envelope.
+    """Application-neutral intent envelope.
 
     The Core parser and router need only an intent name, a raw request, target
     namespaces and opaque publisher-owned values.  Domain fields must live in
@@ -674,12 +710,12 @@ class ParsedIntent:
     ``**extensions`` is intentionally data-only.  It lets a Skill/Feature
     publish a structured value without changing this class, while the
     application can still access it through ``intent.attributes``.
-    ``platform_params`` and dynamic attribute access remain as a narrow
-    structural bridge for existing adapters; neither contains a domain map.
+    ``scoped_parameters`` and dynamic attribute access remain generic
+    structural extension points; neither contains a domain map.
     """
     intent_type: str
     raw_input: str
-    platforms: list[str]
+    namespaces: list[str]
     attributes: dict[str, Any]
     parameters: dict[str, Any]
     scoped_parameters: dict[str, dict[str, Any]]
@@ -689,44 +725,30 @@ class ParsedIntent:
         self,
         intent_type: str,
         raw_input: str,
-        platforms: list[str] | tuple[str, ...] | None,
+        namespaces: list[str] | tuple[str, ...] | None,
         *,
         attributes: Optional[Mapping[str, Any]] = None,
         parameters: Optional[Mapping[str, Any]] = None,
         scoped_parameters: Optional[Mapping[str, Mapping[str, Any]]] = None,
-        platform_params: Optional[Mapping[str, Mapping[str, Any]]] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         **extensions: Any,
     ) -> None:
         self.intent_type = str(intent_type or "chat")
         self.raw_input = str(raw_input or "")
-        self.platforms = [str(item) for item in (platforms or []) if str(item).strip()]
+        self.namespaces = [str(item) for item in (namespaces or []) if str(item).strip()]
         self.attributes = dict(attributes or {})
         # Top-level extension values are folded into the generic envelope.
         # No Core field-name allowlist is needed because these values are not
         # executable; Tool schemas remain the only executable input contract.
         self.attributes.update(extensions)
         self.parameters = dict(parameters or {})
-        selected = scoped_parameters if scoped_parameters is not None else platform_params
+        selected = scoped_parameters
         self.scoped_parameters = {
             str(namespace): dict(values or {})
             for namespace, values in (selected or {}).items()
             if isinstance(values, Mapping)
         }
         self.metadata = dict(metadata or {})
-
-    @property
-    def platform_params(self) -> dict[str, dict[str, Any]]:
-        """Structural alias for namespace-scoped Tool parameters."""
-        return self.scoped_parameters
-
-    @platform_params.setter
-    def platform_params(self, value: Mapping[str, Mapping[str, Any]]) -> None:
-        self.scoped_parameters = {
-            str(namespace): dict(values or {})
-            for namespace, values in (value or {}).items()
-            if isinstance(values, Mapping)
-        }
 
     def __getattr__(self, name: str) -> Any:
         """Allow application extensions to be read without Core field maps."""
@@ -742,18 +764,13 @@ class ParsedIntent:
         result = {
             "intent_type": self.intent_type,
             "raw_input": self.raw_input,
-            "platforms": list(self.platforms),
+            "namespaces": list(self.namespaces),
             "attributes": dict(self.attributes),
             "parameters": dict(self.parameters),
             "scoped_parameters": {
                 key: dict(value) for key, value in self.scoped_parameters.items()
             },
             "metadata": dict(self.metadata),
-            # Keep the wire name used by Tool/HTTP adapters; it is a generic
-            # namespace map, not an application-specific concept.
-            "platform_params": {
-                key: dict(value) for key, value in self.scoped_parameters.items()
-            },
         }
         # Flat extension keys are useful to declarative activation rules and
         # preserve a simple JSON shape for application renderers.  The set is
@@ -785,8 +802,8 @@ class IntentParser(ABC):
         """Replace the parser's discoverable Tool catalog after a lifecycle change."""
         self.register_tool_definitions(definitions)
 
-    def register_platform_aliases(
-        self, platform: str, aliases: list[str] | set[str]
+    def register_namespace_aliases(
+        self, namespace: str, aliases: list[str] | set[str]
     ) -> None:
         """Publish Skill-owned display aliases for parser context."""
         return None
@@ -798,7 +815,7 @@ class IntentParser(ABC):
         return None
 
     def extract_parameters(
-        self, user_input: str, platforms: list[str]
+        self, user_input: str, namespaces: list[str]
     ) -> dict[str, dict[str, Any]]:
         """Extract only explicitly declared parameters for a continuation turn."""
         return {}
@@ -818,12 +835,12 @@ class IntentRouter(ABC):
     """
     意图路由器接口 - 对应 Go 的 PlanningRouter / TurnRouter
     
-    根据解析后的意图，查找各平台需要调用的工具。
+    根据解析后的意图，查找各 namespace 需要调用的工具。
     """
     @abstractmethod
-    def route(self, intent: ParsedIntent, registry: ToolRegistry) -> dict[str, list[ToolDefinition]]:
+    def route(self, intent: ParsedIntent, registry: ToolCatalog) -> dict[str, list[ToolDefinition]]:
         """
-        返回：{platform: [ToolDefinition, ...]}
+        返回：{namespace: [ToolDefinition, ...]}
         例如：{"namespace-a": [tool_a, tool_b], "namespace-b": [...]}
         """
         pass

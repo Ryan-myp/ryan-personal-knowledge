@@ -14,7 +14,7 @@ from .models import (
     ConversationMessageRecord, ToolCallRecord, CampaignRecord,
     ExecutionRunRecord,
 )
-from ..core.platform import normalize_platform
+from ..core.namespace import normalize_namespace as normalize_platform
 from ..core.memory import MemoryManager, MemoryRecord
 
 logger = logging.getLogger(__name__)

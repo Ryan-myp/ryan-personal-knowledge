@@ -151,7 +151,7 @@ def audit_capabilities() -> dict[str, Any]:
             platform_key = str(getattr(capability, "platform_name", slug))
             registered_names = {
                 definition.name for definition in runtime.registry.list_all()
-                if str(definition.platform) == platform_key
+                if str(definition.namespace) == platform_key
             }
             covered_tool_names = _covered_tool_names(coverage)
             surface_gaps: list[str] = []
@@ -267,7 +267,7 @@ def audit_capabilities() -> dict[str, Any]:
     all_names: list[str] = []
     definitions_by_platform: dict[str, list[Any]] = {}
     for definition in runtime.registry.list_all():
-        definitions_by_platform.setdefault(str(definition.platform), []).append(definition)
+        definitions_by_platform.setdefault(str(definition.namespace), []).append(definition)
 
     for platform, definitions in sorted(definitions_by_platform.items()):
         actions: Counter[str] = Counter()
@@ -337,7 +337,7 @@ def audit_capabilities() -> dict[str, Any]:
                     "parent_resource_id_field": parent_field,
                     "intent_types": intent_types,
                     "required": list(getattr(schema, "required", []) or []),
-                    "provider_required": list(getattr(schema, "provider_required", []) or []),
+                    "capability_required": list(getattr(schema, "capability_required", []) or []),
                     "conditional_rules": len(getattr(schema, "conditional_rules", []) or []),
                     "live_support": bool(definition.live_support),
                 })

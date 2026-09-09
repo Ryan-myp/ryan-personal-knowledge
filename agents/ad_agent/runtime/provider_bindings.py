@@ -16,10 +16,10 @@ class ProviderBindings:
     """Late-bound provider factories kept outside AgentRuntime."""
 
     @staticmethod
-    def normalize_platform(platform: str) -> str:
-        from ..capabilities.factory import normalize_platform
+    def normalize_namespace(namespace: str) -> str:
+        from ..capabilities.factory import normalize_namespace
 
-        return normalize_platform(platform)
+        return normalize_namespace(namespace)
 
     @staticmethod
     def create_client(platform: str, credentials: dict[str, Any]) -> Any:

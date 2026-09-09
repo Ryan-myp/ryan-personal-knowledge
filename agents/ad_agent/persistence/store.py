@@ -2504,7 +2504,7 @@ class AdAgentStore:
                     metadata = {}
                 metadata.update({
                     "recovery_reason": "stale_execution_run",
-                    "provider_state": "unknown",
+                    "effect_state": "unknown",
                     "recovery_detected_at": now,
                 })
                 cursor = conn.execute(

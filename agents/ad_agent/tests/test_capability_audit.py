@@ -234,7 +234,7 @@ def test_creation_contract_audit_rejects_resource_field_without_value_source():
         ToolDefinition(
             name="test_create_ad_with_unresolved_asset",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="test-only create Tool",
             input_schema=ToolSchema(
                 required=["asset_id"],
@@ -268,7 +268,7 @@ def test_creation_contract_audit_rejects_cross_provider_lookup():
         ToolDefinition(
             name="test_google_lookup",
             skill="test",
-            platform="google-ads",
+            namespace="google-ads",
             description="test-only lookup Tool",
             input_schema=ToolSchema(
                 required=[],
@@ -285,7 +285,7 @@ def test_creation_contract_audit_rejects_cross_provider_lookup():
         ToolDefinition(
             name="test_meta_create_ad",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="test-only create Tool",
             input_schema=ToolSchema(
                 required=["asset_id"],

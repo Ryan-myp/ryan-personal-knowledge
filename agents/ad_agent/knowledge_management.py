@@ -20,7 +20,7 @@ from .domain.ad.knowledge import (
     WIKI_LAYERS,
     WIKI_STATUSES,
 )
-from .core.platform import normalize_platform
+from .core.namespace import normalize_namespace as normalize_platform
 from .persistence.models import KnowledgeDocumentRecord
 from .persistence.errors import PersistenceConflictError
 
@@ -409,15 +409,17 @@ class ManagedKnowledgeProvider:
             return managed, managed_chunks
 
     def query(
-        self, query: str, *, platforms: Optional[Iterable[str]] = None,
+        self, query: str, *, namespaces: Optional[Iterable[str]] = None,
+        platforms: Optional[Iterable[str]] = None,
         intent_type: Optional[str] = None,
         knowledge_types: Optional[Iterable[str]] = None,
         limit: int = 4, max_excerpt_chars: int = 1200,
         tenant_id: Optional[str] = None,
     ) -> list[KnowledgeDocument]:
         if not tenant_id:
+            selected_platforms = namespaces if namespaces is not None else platforms
             return self.base.query(
-                query, platforms=platforms, intent_type=intent_type,
+                query, namespaces=selected_platforms, intent_type=intent_type,
                 knowledge_types=knowledge_types, limit=limit,
                 max_excerpt_chars=max_excerpt_chars,
             )
@@ -432,11 +434,12 @@ class ManagedKnowledgeProvider:
         fts_hits = self.base._search_index_hits(
             query, terms, scopes=["builtin", managed_scope]
         )
+        selected_platforms = namespaces if namespaces is not None else platforms
         return MarkdownWikiKnowledgeProvider._query_chunks(
             all_chunks,
             all_documents,
             query,
-            platforms=platforms,
+            platforms=selected_platforms,
             intent_type=intent_type,
             knowledge_types=knowledge_types,
             limit=limit,

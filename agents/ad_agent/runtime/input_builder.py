@@ -42,7 +42,7 @@ class ToolInputBuilder:
     def platform_params_for_intent(self, intent: Any, platform: str) -> dict[str, Any]:
         requested = self.services.normalize_namespace(platform)
         merged: dict[str, Any] = {}
-        for raw_platform, values in (getattr(intent, "platform_params", {}) or {}).items():
+        for raw_platform, values in (getattr(intent, "scoped_parameters", {}) or {}).items():
             if self.services.normalize_namespace(str(raw_platform)) != requested:
                 continue
             if not isinstance(values, dict):
@@ -359,7 +359,7 @@ class ToolInputBuilder:
             if options:
                 selections.append({
                     "tool_name": target_tool.name,
-                    "platform": target_tool.platform,
+                    "platform": target_tool.namespace,
                     "field": field_name,
                     "source_tool": tool_def.name,
                     "expires_at": datetime.fromtimestamp(
@@ -426,7 +426,7 @@ class ToolInputBuilder:
                             user_id=ctx.user_id,
                             scope_key=self._selection_scope_key(field_schema, ctx),
                             platform=self.services.normalize_namespace(
-                                tool_def.platform
+                                tool_def.namespace
                             ),
                             tool_name=tool_def.name,
                             field=field_name,
@@ -657,7 +657,7 @@ class ToolInputBuilder:
         errors: list[str] = []
         intent_fields = set(vars(intent)) if hasattr(intent, "__dict__") else set()
         common = intent_fields | set(self.scope_field_names) | {"selection_tokens"}
-        for platform, values in (getattr(intent, "platform_params", {}) or {}).items():
+        for platform, values in (getattr(intent, "scoped_parameters", {}) or {}).items():
             if str(platform).startswith("_") or not isinstance(values, dict):
                 continue
             canonical = services.normalize_namespace(platform)
@@ -672,7 +672,7 @@ class ToolInputBuilder:
             # another registered Tool in the same provider package declares
             # the field or one of its aliases. This keeps the contract closed
             # without maintaining a central list of application field names.
-            registered_tools = getattr(services.registry, "list_by_platform", None)
+            registered_tools = getattr(services.registry, "list_by_namespace", None)
             if callable(registered_tools):
                 tools.extend(registered_tools(canonical))
             tools = list({tool.name: tool for tool in tools}.values())

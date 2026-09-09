@@ -128,7 +128,7 @@ class ActionClarificationBuilder:
                     unknown = list(built.pop("_unknown_params", []) or [])
                     selection_errors = list(built.pop("_selection_errors", []) or [])
                     schema_errors = validate_tool_input(
-                        schema, built, include_provider_contract=True
+                        schema, built, include_capability_contract=True
                     )
                     for field_name in missing + unknown + selection_errors:
                         if str(field_name) not in errors:

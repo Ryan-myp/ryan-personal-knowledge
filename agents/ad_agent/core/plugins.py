@@ -1,7 +1,7 @@
-"""Provider-neutral plugin contracts for the ad-agent Harness.
+"""Application-neutral plugin contracts for the Agent Harness.
 
 This module deliberately owns plugin *lifecycle and metadata*, not business
-routing or provider execution.  A plugin contribution still has to enter the
+ routing or external execution. A plugin contribution still has to enter the
 existing ToolRegistry/Runtime gates before it can do work.
 
 There are two important classes of package:
@@ -12,7 +12,7 @@ There are two important classes of package:
 
 The registry is intentionally small and dependency-free.  It is the first
 common seam for the later Plugin SDK; existing convention-based discovery can
-adopt it without changing the Runtime's provider-neutral behavior.
+adopt it without changing the Runtime's application-neutral behavior.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ class PluginKind(str, Enum):
 
     SKILL = "skill"
     CAPABILITY = "capability"
-    TOOL_PROVIDER = "tool_provider"
+    TOOL_CAPABILITY = "tool_capability"
     FEATURE = "feature"
     POLICY = "policy"
     RENDERER = "renderer"
@@ -297,10 +297,10 @@ class PluginRecord:
 class PluginRegistry:
     """Thread-safe registry for trusted and advisory plugin contributions.
 
-    Registration never imports a package and never performs provider I/O.
+    Registration never imports a package and never performs external I/O.
     Lifecycle hooks run only for trusted executable contributions.  Runtime
     remains the owner of Tool execution, so this registry is not a bypass for
-    account, permission, dry-run, confirmation, or audit gates.
+    scope, permission, dry-run, confirmation, or audit gates.
     """
 
     def __init__(self, api_version: str = PLUGIN_API_VERSION):

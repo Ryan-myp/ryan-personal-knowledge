@@ -1,9 +1,9 @@
 """Canonical Capability construction for the ad-agent runtime.
 
-The runtime used to keep a second platform-to-module map in addition to the
+The runtime used to keep a second namespace-to-module map in addition to the
 public capability factories.  That made dynamic Skill loading subtly
 different from the CLI/API registration path.  This module is the single
-construction seam for platform capabilities; it only constructs Python
+construction seam for namespace capabilities; it only constructs Python
 objects and never performs network I/O.
 """
 
@@ -13,12 +13,12 @@ import importlib
 import inspect
 import pkgutil
 from typing import Any, Optional
-from ..core.platform import normalize_platform, platform_slug
+from ..core.namespace import normalize_namespace as normalize_namespace, namespace_slug
 
 
-def _module_slug(platform: str) -> str:
-    """Convert a platform identifier into its package/module spelling."""
-    return platform_slug(platform)
+def _module_slug(namespace: str) -> str:
+    """Convert a namespace identifier into its package/module spelling."""
+    return namespace_slug(namespace)
 
 
 def _discover_noncanonical_module(canonical: str):
@@ -36,7 +36,7 @@ def _discover_noncanonical_module(canonical: str):
             raise
         if not any(
             inspect.isclass(value)
-            and normalize_platform(getattr(value, "platform_name", "")) == canonical
+            and normalize_namespace(getattr(value, "platform_name", "")) == canonical
             for value in vars(module).values()
         ):
             continue
@@ -51,14 +51,14 @@ def _discover_noncanonical_module(canonical: str):
     return None
 
 
-def discover_capability_factory(platform: str):
+def discover_capability_factory(namespace: str):
     """Find a Capability factory by package convention.
 
     A provider package owns its executable surface.  The shared runtime first
     tries the conventional package/factory name, then discovers a package
-    whose Capability declares the requested platform identity.
+    whose Capability declares the requested namespace identity.
     """
-    canonical = normalize_platform(platform)
+    canonical = normalize_namespace(namespace)
     slug = _module_slug(canonical)
     module_name = f"{__package__}.{slug}.capability"
     try:
@@ -87,19 +87,19 @@ def discover_capability_factory(platform: str):
     )
 
 
-def create_capability(platform: str, api_client: Optional[Any] = None):
-    """Create a platform Capability through its public factory.
+def create_capability(namespace: str, api_client: Optional[Any] = None):
+    """Create a namespace Capability through its public factory.
 
     ``api_client`` is injected as-is.  Capability construction is deliberately
     side-effect free; a handler may perform network I/O only when Runtime
     executes a read tool or an explicitly approved live write.
     """
-    canonical = normalize_platform(platform)
+    canonical = normalize_namespace(namespace)
     factory = discover_capability_factory(canonical)
     if not callable(factory):
         raise ValueError(
-            f"Unsupported ad platform '{platform}'. "
-            "Add capabilities/<platform>/capability.py with a "
-            "create_<platform>_capability factory."
+            f"Unsupported ad namespace '{namespace}'. "
+            "Add capabilities/<namespace>/capability.py with a "
+            "create_<namespace>_capability factory."
         )
     return factory(api_client)

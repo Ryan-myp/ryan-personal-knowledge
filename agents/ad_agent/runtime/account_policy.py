@@ -9,7 +9,7 @@ from typing import Any, Optional
 import yaml
 
 from ..domain.ad.auth import normalize_account_id
-from ..core.platform import normalize_platform
+from ..core.namespace import normalize_namespace as normalize_platform
 
 logger = logging.getLogger(__name__)
 

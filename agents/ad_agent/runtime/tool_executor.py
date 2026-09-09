@@ -121,7 +121,7 @@ class ToolExecutor:
             )
 
         if definition.is_write_tool and self.services.execution_mode == "live":
-            platform = self.services.normalize_namespace(definition.platform)
+            platform = self.services.normalize_namespace(definition.namespace)
             request_client = (request_clients or {}).get(platform)
             has_client = hasattr(handler, "client")
             handler_client = getattr(handler, "client", None) if has_client else None
@@ -173,7 +173,7 @@ class ToolExecutor:
             if is_uncertain_write:
                 data.update({
                     "requires_reconciliation": True,
-                    "provider_state": "unknown",
+                    "effect_state": "unknown",
                 })
             return ToolResult(
                 success=False,
@@ -198,7 +198,7 @@ class ToolExecutor:
             timeout_setter = getattr(client_type, "set_request_timeout", None)
             timeout_attribute = "request_timeout" in getattr(source_client, "__dict__", {})
             expected = str(
-                getattr(definition, "provider_api_version", "") or ""
+                getattr(definition, "integration_api_version", "") or ""
             ).strip()
             client_state = getattr(source_client, "__dict__", {})
             actual_value = (
@@ -244,7 +244,7 @@ class ToolExecutor:
 
         def provider_version_error(client: Any) -> Optional[str]:
             expected = str(
-                getattr(definition, "provider_api_version", "") or ""
+                getattr(definition, "integration_api_version", "") or ""
             ).strip()
             if not expected or client is None:
                 return None
@@ -282,7 +282,7 @@ class ToolExecutor:
         # the request-client branch below will attach the isolated client
         # before invocation.  This ordering matters for HTTP requests where
         # credentials are scoped to one principal/turn.
-        request_platform = self.services.normalize_namespace(definition.platform)
+        request_platform = self.services.normalize_namespace(definition.namespace)
         has_request_client = bool(
             isinstance(request_clients, dict)
             and request_clients.get(request_platform) is not None
@@ -306,7 +306,7 @@ class ToolExecutor:
                 )
             else:
                 client = request_clients.get(
-                    self.services.normalize_namespace(definition.platform)
+                    self.services.normalize_namespace(definition.namespace)
                 )
                 if client is None or not hasattr(handler, "client"):
                     invocation_handler, isolated = handler, False
@@ -320,7 +320,7 @@ class ToolExecutor:
             if active_client is not None and isolated:
                 try:
                     active_client.requested_tool_api_version = str(
-                        getattr(definition, "provider_api_version", "") or ""
+                        getattr(definition, "integration_api_version", "") or ""
                     ) or None
                 except Exception:
                     pass
@@ -369,7 +369,7 @@ class ToolExecutor:
 
             # Release only when the actual handler thread exits. Releasing in
             # the timeout path would allow every timed-out call to create one
-            # more thread while the old provider call is still running.
+            # more thread while the old external call is still running.
             future.add_done_callback(lambda _future: self._in_flight_capacity.release())
             try:
                 result = future.result(

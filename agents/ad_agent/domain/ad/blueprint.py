@@ -489,7 +489,7 @@ def validate_blueprint_against_tools(
                             f"unsupported option rule values for {tool_ref}"
                             f"[{rule_index}]: {sorted(unsupported, key=str)}"
                         )
-        if str(getattr(definition, "platform", "")).strip().lower() != blueprint.provider.lower():
+        if str(getattr(definition, "namespace", "")).strip().lower() != blueprint.provider.lower():
             raise BlueprintValidationError(
                 f"blueprint provider {blueprint.provider!r} does not match {tool_name}"
             )

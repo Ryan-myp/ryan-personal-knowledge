@@ -374,7 +374,7 @@ class AdWorkflowServices:
                     })
                     continue
 
-                reconciler = self.runtime._provider_reconcilers.get(platform) or ToolReadbackReconciler(platform)
+                reconciler = self.runtime._effect_reconcilers.get(platform) or ToolReadbackReconciler(platform)
 
                 ctx = ToolContext(
                     session_id=str(workflow.get("session_id") or ""),
@@ -408,16 +408,16 @@ class AdWorkflowServices:
                     )
                 )
                 if not isinstance(observation, ReconciliationObservation):
-                    raise TypeError("ProviderReconciler must return ReconciliationObservation")
+                    raise TypeError("EffectReconciler must return ReconciliationObservation")
                 if int(observation.sequence) != int(item.get("sequence")):
-                    raise ValueError("ProviderReconciler returned a mismatched workflow sequence")
+                    raise ValueError("EffectReconciler returned a mismatched workflow sequence")
                 if not observation.verified:
-                    raise ValueError("ProviderReconciler must return verified observations")
+                    raise ValueError("EffectReconciler must return verified observations")
                 payload = dict(observation.output_data or {})
                 payload["_reconciliation"] = {
                     "source": observation.source,
                     "observed_at": observation.observed_at,
-                    "provider_resource_id": observation.provider_resource_id,
+                    "provider_resource_id": observation.external_resource_id,
                 }
                 observations.append({
                     "sequence": observation.sequence,

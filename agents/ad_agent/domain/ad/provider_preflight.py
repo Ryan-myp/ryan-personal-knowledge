@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping, Optional
 
-from ...core.platform import normalize_platform
+from ...core.namespace import normalize_namespace as normalize_platform
 
 
 def _schema_properties(tool: Any) -> Mapping[str, Any]:
@@ -66,7 +66,7 @@ def build_provider_preflight(
     canonical = normalize_platform(platform)
     requested = [str(name).strip() for name in (tool_names or ()) if str(name).strip()]
     if not requested:
-        requested = [tool.name for tool in runtime.registry.list_by_platform(canonical)]
+        requested = [tool.name for tool in runtime.registry.list_by_namespace(canonical)]
     definitions: list[Any] = []
     missing_tools: list[str] = []
     for name in requested:
@@ -75,7 +75,7 @@ def build_provider_preflight(
         except (KeyError, TypeError):
             missing_tools.append(name)
             continue
-        if normalize_platform(getattr(definition, "platform", "")) != canonical:
+        if normalize_platform(getattr(definition, "namespace", "")) != canonical:
             missing_tools.append(f"{name} (platform mismatch)")
             continue
         definitions.append(definition)

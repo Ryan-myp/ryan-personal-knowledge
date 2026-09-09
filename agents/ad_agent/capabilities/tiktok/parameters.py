@@ -215,7 +215,7 @@ def _tiktok_text_field() -> dict[str, Any]:
 def tiktok_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["account_id", "name", "objective_type", "budget_mode", "campaign_type"],
-        "provider_required": ["objective_type", "budget_mode", "campaign_type"],
+        "capability_required": ["objective_type", "budget_mode", "campaign_type"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "name": _field(
@@ -310,7 +310,7 @@ def tiktok_audience_schema() -> dict[str, Any]:
     """Schema for TikTok's customer-file custom audience creation."""
     return {
         "required": ["account_id", "name", "calculate_type", "file_paths"],
-        "provider_required": ["name", "calculate_type", "file_paths"],
+        "capability_required": ["name", "calculate_type", "file_paths"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "name": _field("string", "Audience name", minLength=1),
@@ -333,7 +333,7 @@ def tiktok_audience_update_schema() -> dict[str, Any]:
     """Schema for TikTok's official custom-audience update endpoint."""
     return {
         "required": ["account_id", "audience_id", "updates"],
-        "provider_required": ["updates"],
+        "capability_required": ["updates"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "audience_id": _field("string", "TikTok custom audience ID"),
@@ -370,7 +370,7 @@ def tiktok_audience_file_upload_schema() -> dict[str, Any]:
     """Schema for the multipart upload step preceding audience create/update."""
     return {
         "required": ["account_id", "file_path", "calculate_type"],
-        "provider_required": ["file_path", "calculate_type"],
+        "capability_required": ["file_path", "calculate_type"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "file_path": _field(
@@ -390,8 +390,8 @@ def tiktok_image_upload_schema() -> dict[str, Any]:
     """Schema for TikTok advertiser image Asset Library upload/binding."""
     return {
         "required": ["account_id"],
-        "provider_required": [],
-        "provider_exactly_one_of": [["file_path", "image_url", "file_id"]],
+        "capability_required": [],
+        "capability_exactly_one_of": [["file_path", "image_url", "file_id"]],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "file_path": _field("string", "Local image path; only used with UPLOAD_BY_FILE"),
@@ -407,8 +407,8 @@ def tiktok_video_upload_schema() -> dict[str, Any]:
     """Schema for TikTok advertiser video Asset Library upload/binding."""
     return {
         "required": ["account_id"],
-        "provider_required": [],
-        "provider_exactly_one_of": [["file_path", "video_url", "video_id", "file_id"]],
+        "capability_required": [],
+        "capability_exactly_one_of": [["file_path", "video_url", "video_id", "file_id"]],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "file_path": _field("string", "Local video path; only used with UPLOAD_BY_FILE"),
@@ -528,7 +528,7 @@ def tiktok_pixel_event_schema() -> dict[str, Any]:
     """Schema for TikTok's v1.3 single Pixel Track endpoint."""
     return {
         "required": ["account_id", "pixel_id", "event"],
-        "provider_required": ["pixel_id", "event"],
+        "capability_required": ["pixel_id", "event"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "pixel_id": _field("string", "TikTok Pixel code", minLength=1, maxLength=128),
@@ -542,7 +542,7 @@ def tiktok_pixel_batch_schema() -> dict[str, Any]:
     event_properties = _tiktok_pixel_event_properties()
     return {
         "required": ["account_id", "pixel_id", "events"],
-        "provider_required": ["pixel_id", "events"],
+        "capability_required": ["pixel_id", "events"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "pixel_id": _field("string", "TikTok Pixel code", minLength=1, maxLength=128),
@@ -564,7 +564,7 @@ def tiktok_creative_portfolio_schema() -> dict[str, Any]:
     """Schema for TikTok v1.3 Creative Portfolio creation."""
     return {
         "required": ["account_id"],
-        "provider_required": ["account_id"],
+        "capability_required": ["account_id"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "creative_portfolio_type": _field(
@@ -590,7 +590,7 @@ def tiktok_creative_portfolio_get_schema() -> dict[str, Any]:
     """Schema for reading one TikTok Creative Portfolio."""
     return {
         "required": ["account_id", "creative_portfolio_id"],
-        "provider_required": ["creative_portfolio_id"],
+        "capability_required": ["creative_portfolio_id"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "creative_portfolio_id": _field(
@@ -604,7 +604,7 @@ def tiktok_creative_portfolio_preview_schema() -> dict[str, Any]:
     """Schema for creating a TikTok Creative Portfolio preview."""
     return {
         "required": ["account_id", "creative_portfolio_id"],
-        "provider_required": ["creative_portfolio_id"],
+        "capability_required": ["creative_portfolio_id"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "creative_portfolio_id": _field(
@@ -621,7 +621,7 @@ def tiktok_identity_create_schema() -> dict[str, Any]:
     """Schema for TikTok v1.3 customized identity creation."""
     return {
         "required": ["account_id", "display_name", "image_uri"],
-        "provider_required": ["account_id", "display_name", "image_uri"],
+        "capability_required": ["account_id", "display_name", "image_uri"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "display_name": _field("string", "Customized identity display name", minLength=1, maxLength=100),
@@ -634,7 +634,7 @@ def tiktok_identity_list_schema() -> dict[str, Any]:
     """Schema for TikTok v1.3 advertiser identity lookup."""
     return {
         "required": ["account_id"],
-        "provider_required": ["account_id"],
+        "capability_required": ["account_id"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "identity_id": _field("string", "TikTok identity ID", minLength=1, maxLength=128),
@@ -649,7 +649,7 @@ def tiktok_identity_video_info_schema() -> dict[str, Any]:
     """Schema for TikTok owned-post information lookup by identity."""
     return {
         "required": ["account_id", "identity_type", "identity_id", "item_id"],
-        "provider_required": ["account_id", "identity_type", "identity_id", "item_id"],
+        "capability_required": ["account_id", "identity_type", "identity_id", "item_id"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "identity_type": _field("string", "Identity type", enum=["AUTH_CODE", "TT_USER"]),
@@ -665,7 +665,7 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "campaign_id", "name", "promotion_type", "billing_event", "budget_mode",
             "budget", "location_ids", "placement_type", "bid_type",
         ],
-        "provider_required": [
+        "capability_required": [
             "promotion_type", "billing_event", "budget_mode", "budget", "location_ids",
             "schedule_type", "schedule_start_time",
         ],
@@ -1114,7 +1114,7 @@ def tiktok_targeting_update_schema() -> dict[str, Any]:
     """Schema for independent, lookup-aware TikTok Ad Group targeting updates."""
     return {
         "required": ["account_id", "campaign_id", "adgroup_id", "updates"],
-        "provider_required": ["campaign_id", "adgroup_id", "updates"],
+        "capability_required": ["campaign_id", "adgroup_id", "updates"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "campaign_id": _field("string", "Parent campaign ID"),
@@ -1200,8 +1200,8 @@ def tiktok_ad_schema() -> dict[str, Any]:
         # TikTok validates identity inside creatives for regular Ad creates;
         # keep it provider-required so the Runtime asks for a real identity
         # selection before reaching the write endpoint.
-        "provider_required": ["campaign_id", "identity_id"],
-        "provider_any_of": [["media", "creatives"]],
+        "capability_required": ["campaign_id", "identity_id"],
+        "capability_any_of": [["media", "creatives"]],
         "properties": {
             "adgroup_id": _field("string", "Parent ad group ID"),
             "campaign_id": _field("string", "Parent campaign ID"),
@@ -1364,8 +1364,8 @@ def tiktok_creative_schema() -> dict[str, Any]:
     base = tiktok_ad_schema()
     return {
         "required": ["campaign_id", "adgroup_id", "name"],
-        "provider_required": ["campaign_id", "adgroup_id", "identity_id"],
-        "provider_any_of": list(base.get("provider_any_of", [])),
+        "capability_required": ["campaign_id", "adgroup_id", "identity_id"],
+        "capability_any_of": list(base.get("capability_any_of", [])),
         "properties": dict(base["properties"]),
         "conditional_rules": list(base.get("conditional_rules", [])),
     }
@@ -1395,7 +1395,7 @@ def tiktok_product_sales_adgroup_schema() -> dict[str, Any]:
     }
     return {
         "required": list(base["required"]),
-        "provider_required": list(base["provider_required"]),
+        "capability_required": list(base["capability_required"]),
         "properties": properties,
         "conditional_rules": [
             *base["conditional_rules"],
@@ -1435,8 +1435,8 @@ def tiktok_product_sales_ad_schema() -> dict[str, Any]:
     }
     return {
         "required": list(base["required"]),
-        "provider_required": list(base["provider_required"]),
-        "provider_any_of": [[
+        "capability_required": list(base["capability_required"]),
+        "capability_any_of": [[
             "media", "creatives", "video_id", "image_ids",
             "sku_ids", "item_group_ids", "product_set_id",
         ]],
@@ -1486,8 +1486,8 @@ def _tiktok_format_ad_schema(
         }
     return {
         "required": ["adgroup_id", "name"],
-        "provider_required": ["campaign_id"],
-        "provider_any_of": [[*asset_properties.keys()]],
+        "capability_required": ["campaign_id"],
+        "capability_any_of": [[*asset_properties.keys()]],
         "properties": properties,
         "description": description,
     }
@@ -1545,8 +1545,8 @@ def tiktok_lead_ad_schema() -> dict[str, Any]:
     """
     return {
         "required": ["campaign_id", "adgroup_id", "name", "page_id"],
-        "provider_required": ["campaign_id", "page_id"],
-        "provider_any_of": [["media", "creatives"]],
+        "capability_required": ["campaign_id", "page_id"],
+        "capability_any_of": [["media", "creatives"]],
         "properties": {
             "campaign_id": _field("string", "Parent campaign ID"),
             "adgroup_id": _field("string", "Parent ad group ID"),
@@ -1592,8 +1592,8 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
             "campaign_id", "adgroup_id", "name", "app_id", "promotion_type",
             "operating_systems",
         ],
-        "provider_required": ["campaign_id", "app_id", "promotion_type"],
-        "provider_any_of": [["media", "creatives"]],
+        "capability_required": ["campaign_id", "app_id", "promotion_type"],
+        "capability_any_of": [["media", "creatives"]],
         "properties": {
             "campaign_id": _field("string", "Parent campaign ID"),
             "adgroup_id": _field("string", "Parent ad group ID"),
@@ -1654,13 +1654,13 @@ def tiktok_all_in_one_spark_ad_schema() -> dict[str, Any]:
             "optimization_goal", "bid_type", "ad_name", "identity_type",
             "identity_id", "tiktok_item_id",
         ],
-        "provider_required": [
+        "capability_required": [
             "campaign_name", "objective_type", "adgroup_name", "budget_mode",
             "budget", "schedule_type", "schedule_start_time",
             "optimization_goal", "bid_type", "ad_name", "identity_type",
             "identity_id", "tiktok_item_id",
         ],
-        "provider_any_of": [["location_ids", "saved_audience_id"]],
+        "capability_any_of": [["location_ids", "saved_audience_id"]],
         "conditional_rules": [
             {
                 "if": {"objective_type": "REACH"},
@@ -1844,7 +1844,7 @@ def tiktok_smart_plus_campaign_schema() -> dict[str, Any]:
     """
     return {
         "required": ["campaign_name", "objective_type"],
-        "provider_required": ["campaign_name", "objective_type"],
+        "capability_required": ["campaign_name", "objective_type"],
         "conditional_rules": [
             {"if": {"objective_type": "APP_PROMOTION"}, "required": ["app_promotion_type"]},
             {"if": {"objective_type": "WEB_CONVERSIONS"}, "required": ["sales_destination"]},
@@ -1920,12 +1920,12 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             "optimization_goal", "bid_type", "billing_event",
             "schedule_type", "schedule_start_time",
         ],
-        "provider_required": [
+        "capability_required": [
             "campaign_id", "adgroup_name", "promotion_type",
             "optimization_goal", "bid_type", "billing_event",
             "schedule_type", "schedule_start_time",
         ],
-        "provider_any_of": [["location_ids", "saved_audience_id"]],
+        "capability_any_of": [["location_ids", "saved_audience_id"]],
         # The ad-group endpoint does not receive the campaign objective on
         # the wire, but the client needs the parent objective to validate its
         # cascade.  Keep it as a hidden, intent-derived context field so the
@@ -2085,8 +2085,8 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
     """Closed contract for ``smart_plus/ad/create``."""
     return {
         "required": ["campaign_id", "adgroup_id", "ad_name"],
-        "provider_required": ["campaign_id", "adgroup_id", "ad_name"],
-        "provider_any_of": [["tiktok_item_id", "video_id", "image_ids"]],
+        "capability_required": ["campaign_id", "adgroup_id", "ad_name"],
+        "capability_any_of": [["tiktok_item_id", "video_id", "image_ids"]],
         "conditional_rules": [
             {
                 "if": {"objective_type": "LEAD_GENERATION"},

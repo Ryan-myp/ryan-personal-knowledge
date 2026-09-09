@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import threading
 from typing import Any, Optional
-from ...core.platform import normalize_platform
+from ...core.namespace import normalize_namespace as normalize_platform
 
 
 @dataclass(frozen=True)

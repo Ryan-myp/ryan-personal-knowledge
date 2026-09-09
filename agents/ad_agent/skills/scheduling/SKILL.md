@@ -4,7 +4,7 @@ description: "定时 Agent 任务的需求澄清、能力预检、确认和安�
 version: 1.1.0
 author: Ryan
 tags: [agent, scheduling, clarification, capability-preflight, recovery]
-platform: scheduling
+namespace: scheduling
 aliases: [schedule, scheduled-task, 定时任务, 定时执行, 定期执行]
 triggers:
   - keywords: [定时任务, 定时执行, 定期执行, 每天, 每周, 每月, cron, schedule]

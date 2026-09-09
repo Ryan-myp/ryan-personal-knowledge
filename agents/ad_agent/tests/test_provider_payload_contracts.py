@@ -41,49 +41,49 @@ def test_creation_tools_publish_provider_payload_requirements():
         for platform, capability in capabilities.items()
     }
 
-    assert definitions["dv360"]["dv360_create_creative"].input_schema.provider_required == [
+    assert definitions["dv360"]["dv360_create_creative"].input_schema.capability_required == [
         "creative"
     ]
     assert definitions["dv360"]["dv360_create_creative"].input_schema.properties["creative"]["presentation"] == "advanced_json"
-    assert definitions["dv360"]["dv360_create_line_item_assigned_targeting_option"].input_schema.provider_required == [
+    assert definitions["dv360"]["dv360_create_line_item_assigned_targeting_option"].input_schema.capability_required == [
         "targeting_type", "assigned_targeting_option"
     ]
-    assert definitions["dv360"]["dv360_create_report"].input_schema.provider_required == [
+    assert definitions["dv360"]["dv360_create_report"].input_schema.capability_required == [
         "report"
     ]
 
-    assert definitions["google-ads"]["google_create_campaign_budget"].input_schema.provider_required == [
+    assert definitions["google-ads"]["google_create_campaign_budget"].input_schema.capability_required == [
         "name", "daily_budget"
     ]
-    assert definitions["google-ads"]["google_create_search_ad"].input_schema.provider_required == [
+    assert definitions["google-ads"]["google_create_search_ad"].input_schema.capability_required == [
         "headlines", "descriptions", "final_url"
     ]
 
-    assert definitions["meta"]["meta_create_ad"].input_schema.provider_any_of == [
+    assert definitions["meta"]["meta_create_ad"].input_schema.capability_any_of == [
         ["creative_id", "object_story_spec", "creative", "media", "image_url"]
     ]
     assert validate_tool_input(
         definitions["meta"]["meta_create_ad"].input_schema,
         {"adset_id": "adset-1", "name": "image ad", "media": [{"url": "https://cdn.example/image.png"}]},
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
-    assert definitions["meta"]["meta_create_creative"].input_schema.provider_required == [
+    assert definitions["meta"]["meta_create_creative"].input_schema.capability_required == [
         "name", "page_id", "link"
     ]
-    assert definitions["meta"]["meta_create_catalog"].input_schema.provider_required == [
+    assert definitions["meta"]["meta_create_catalog"].input_schema.capability_required == [
         "business_id", "name", "vertical"
     ]
-    assert definitions["meta"]["meta_create_product_set"].input_schema.provider_required == [
+    assert definitions["meta"]["meta_create_product_set"].input_schema.capability_required == [
         "catalog_id", "name"
     ]
-    assert definitions["meta"]["meta_upload_image_asset"].input_schema.provider_required == [
+    assert definitions["meta"]["meta_upload_image_asset"].input_schema.capability_required == [
         "image_url"
     ]
-    assert definitions["meta"]["meta_upload_video_asset"].input_schema.provider_required == [
+    assert definitions["meta"]["meta_upload_video_asset"].input_schema.capability_required == [
         "file_url"
     ]
 
-    assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.provider_required == [
+    assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.capability_required == [
         "name", "object_type"
     ]
 
@@ -92,7 +92,7 @@ def test_creation_tools_publish_provider_payload_requirements():
     errors = validate_tool_input(
         definitions["google-ads"]["google_create_campaign_budget"].input_schema,
         {"customer_id": "123", "name": "budget"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("daily_budget" in error for error in errors)
 
@@ -110,7 +110,7 @@ def test_meta_link_ad_requires_the_selected_media_asset_source():
             "adset_id": "adset-1", "name": "image ad", "page_id": "page-1",
             "link": "https://example.test", "media_type": "IMAGE",
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("image_hash" in error for error in image_errors)
 
@@ -120,7 +120,7 @@ def test_meta_link_ad_requires_the_selected_media_asset_source():
             "adset_id": "adset-1", "name": "video ad", "page_id": "page-1",
             "link": "https://example.test", "media_type": "VIDEO",
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("video_id" in error for error in video_errors)
 
@@ -247,14 +247,14 @@ def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():
         for definition, _handler in create_tiktok_capability().register_tools()
     }
     assert {"tiktok_upload_image", "tiktok_upload_video"} <= definitions.keys()
-    assert definitions["tiktok_upload_image"].input_schema.provider_exactly_one_of == [
+    assert definitions["tiktok_upload_image"].input_schema.capability_exactly_one_of == [
         ["file_path", "image_url", "file_id"]
     ]
     assert definitions["tiktok_upload_video"].live_support is False
     errors = validate_tool_input(
         definitions["tiktok_upload_image"].input_schema,
         {"account_id": "123", "image_url": "https://cdn.example/a.png", "file_id": "f1"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("exactly one" in error for error in errors)
 
@@ -349,7 +349,7 @@ def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
     assert validate_tool_input(
         definitions["tiktok_create_pixel"].input_schema,
         {"account_id": "123", "name": "Website Pixel", "object_type": "WEBSITE"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
 
 
@@ -428,7 +428,7 @@ def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_t
         definition.name: definition
         for definition, _handler in create_tiktok_capability().register_tools()
     }
-    assert definitions["tiktok_list_catalogs"].input_schema.provider_required == ["account_id"]
+    assert definitions["tiktok_list_catalogs"].input_schema.capability_required == ["account_id"]
     assert definitions["tiktok_list_product_sets"].input_schema.properties["limit"]["maximum"] == 100
     assert definitions["tiktok_list_catalogs"].traits == ["read", "catalog", "lookup"]
 
@@ -518,7 +518,7 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
             "account_id": "123", "campaign_id": "101", "adgroup_id": "201",
             **creative,
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
     assert validate_tool_input(
         definitions["tiktok_update_creative"].input_schema,
@@ -526,7 +526,7 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
             "account_id": "123", "adgroup_id": "201", "creative_id": "301",
             "updates": {"name": "Updated creative"},
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
 
 
@@ -576,7 +576,7 @@ def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints
     assert validate_tool_input(
         get_tool.input_schema,
         {"account_id": "123", "creative_portfolio_id": "portfolio-1"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
     assert validate_tool_input(
         preview_tool.input_schema,
@@ -687,9 +687,9 @@ def test_generic_campaign_type_maps_to_google_wire_field():
     intent = ParsedIntent(
         intent_type="create_campaign",
         raw_input="create DISPLAY campaign",
-        platforms=["google-ads"],
+        namespaces=["google-ads"],
         campaign_type="DISPLAY",
-        platform_params={"google-ads": {}},
+        scoped_parameters={"google-ads": {}},
     )
 
     tool_input = runtime.input_builder.build(
@@ -1165,7 +1165,7 @@ def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
     errors = validate_tool_input(
         upload.input_schema,
         {"customer_id": "123", "user_list_id": "77", "file_path": "/tmp/x.csv", "email": "x"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("not allowed" in error for error in errors)
     bidding = definitions["google_create_bidding_strategy"]
@@ -1176,7 +1176,7 @@ def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
     bidding_errors = validate_tool_input(
         bidding.input_schema,
         {"customer_id": "123", "name": "tCPA", "strategy_type": "TARGET_CPA"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("target_cpa_micros" in error for error in bidding_errors)
 
@@ -1222,14 +1222,14 @@ def test_existing_creation_contracts_keep_provider_specific_fixes():
         definition.name: definition
         for definition, _handler in create_meta_capability().register_tools()
     }
-    assert "creative" in meta_definitions["meta_create_ad"].input_schema.provider_any_of[0]
+    assert "creative" in meta_definitions["meta_create_ad"].input_schema.capability_any_of[0]
     assert not meta_definitions["meta_create_campaign"].input_schema.conditional_rules[1:]
 
     tiktok_definitions = {
         definition.name: definition
         for definition, _handler in create_tiktok_capability().register_tools()
     }
-    assert tiktok_definitions["tiktok_create_ad"].input_schema.provider_required == [
+    assert tiktok_definitions["tiktok_create_ad"].input_schema.capability_required == [
         "campaign_id", "identity_id"
     ]
 
@@ -1404,7 +1404,7 @@ def test_meta_core_hierarchy_delete_tools_are_dry_run_and_scoped():
         assert definition.action == "delete"
         assert definition.resource_type == resource_type
         assert definition.input_schema.required == ["account_id", resource_id]
-        assert definition.input_schema.provider_required == ["account_id", resource_id]
+        assert definition.input_schema.capability_required == ["account_id", resource_id]
 
 
 def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
@@ -2082,7 +2082,7 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     app_group = definitions["google_create_app_ad_group"]
     app_ad = definitions["google_create_app_ad"]
     assert app_group.live_support is True
-    assert app_group.input_schema.provider_required == []
+    assert app_group.input_schema.capability_required == []
     assert "type" not in app_group.input_schema.properties
     assert app_ad.live_support is True
     assert app_ad.input_schema.required == [
@@ -2464,7 +2464,7 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
         "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
         "budget_mode": "BUDGET_MODE_DAY", "budget": 50, "location_ids": ["US"],
     }
-    errors = validate_tool_input(schema, base, include_provider_contract=True)
+    errors = validate_tool_input(schema, base, include_capability_contract=True)
     assert any("catalog_id" in error and "product_set_id" in error for error in errors)
 
     client = TikTokAPIClient({"access_token": "test"})
@@ -2496,7 +2496,7 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
     assert "product_sales_catalog_source_requires_product_selection" in {
         rule["id"] for rule in adgroup.input_schema.conditional_rules
     }
-    assert ad.input_schema.provider_any_of == [[
+    assert ad.input_schema.capability_any_of == [[
         "media", "creatives", "video_id", "image_ids",
         "sku_ids", "item_group_ids", "product_set_id",
     ]]
@@ -2513,12 +2513,12 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
         "schedule_start_time": "2026-09-07 00:00:00",
     }
     errors = validate_tool_input(
-        adgroup.input_schema, base, include_provider_contract=True,
+        adgroup.input_schema, base, include_capability_contract=True,
     )
     assert any("store_id" in error for error in errors)
     base["store_id"] = "shop-1"
     assert validate_tool_input(
-        adgroup.input_schema, base, include_provider_contract=True,
+        adgroup.input_schema, base, include_capability_contract=True,
     ) == []
 
     client = TikTokAPIClient({"access_token": "test"})
@@ -2583,10 +2583,10 @@ def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fie
         "schedule_type": "SCHEDULE_FROM_NOW",
         "schedule_start_time": "2026-09-07 00:00:00",
     }
-    errors = validate_tool_input(schema, base, include_provider_contract=True)
+    errors = validate_tool_input(schema, base, include_capability_contract=True)
     assert any("conversion_bid_price" in error for error in errors)
     base["conversion_bid_price"] = 4
-    assert validate_tool_input(schema, base, include_provider_contract=True) == []
+    assert validate_tool_input(schema, base, include_capability_contract=True) == []
 
 
 def test_provider_creation_contracts_reject_incompatible_cascade_values():
@@ -2597,7 +2597,7 @@ def test_provider_creation_contracts_reject_incompatible_cascade_values():
     meta_errors = validate_tool_input(meta.input_schema, {
         "campaign_id": "c1", "name": "Video set", "optimization_goal": "VIDEO_VIEWS",
         "billing_event": "LINK_CLICKS", "targeting": {"geo_locations": {"countries": ["US"]}},
-    }, include_provider_contract=True)
+    }, include_capability_contract=True)
     assert any("Video-view optimization" in error for error in meta_errors)
 
     tiktok = next(
@@ -2610,7 +2610,7 @@ def test_provider_creation_contracts_reject_incompatible_cascade_values():
         "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
         "budget_mode": "BUDGET_MODE_DAY", "budget": 50, "location_ids": ["US"],
         "app_id": "app-1", "deep_bid_type": "AEO", "operating_systems": ["ANDROID"],
-    }, include_provider_contract=True)
+    }, include_capability_contract=True)
     assert any("APP_ANDROID" in error for error in tiktok_errors)
     assert any("billing_event" in error for error in tiktok_errors)
 
@@ -2626,7 +2626,7 @@ def test_google_external_identifiers_are_format_checked_without_fake_lookups():
         "account_id": "g1", "name": "App campaign", "objective": "MULTI_CHANNEL",
         "special_ad_categories": "NONE", "budget": 10,
         "app_campaign_setting": {"app_id": "not an id", "app_store": "GOOGLE_APP_STORE"},
-    }, include_provider_contract=False)
+    }, include_capability_contract=False)
     assert any("app_campaign_setting.app_id" in error for error in app_errors)
     assert "lookup_tool" not in app_setting["app_id"]
 
@@ -2634,7 +2634,7 @@ def test_google_external_identifiers_are_format_checked_without_fake_lookups():
     video_errors = validate_tool_input(asset, {
         "customer_id": "g1", "asset_type": "YOUTUBE_VIDEO",
         "youtube_video_id": "too-short", "youtube_video_title": "Video",
-    }, include_provider_contract=False)
+    }, include_capability_contract=False)
     assert any("youtube_video_id" in error for error in video_errors)
 
 
@@ -2648,7 +2648,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
     assert schema.properties["image_ids"]["lookup_tool"] == "tiktok_list_images"
     assert schema.properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
     assert schema.properties["identity_id"]["lookup_tool"] == "tiktok_list_identities"
-    assert "identity_id" in schema.provider_required
+    assert "identity_id" in schema.capability_required
     assert "SINGLE_VIDEO" in schema.properties["creative_type"]["enum"]
     assert "tiktok_item_id" in schema.properties
 
@@ -2901,7 +2901,7 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
             "sales_destination": "APP",
             "catalog_enabled": False,
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("catalog_enabled" in error for error in errors)
 
@@ -2917,7 +2917,7 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
             "schedule_start_time": "2026-09-09 00:00:00",
             "location_ids": ["1643084"], "catalog_id": "catalog-1",
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     assert any("catalog_authorized_bc_id" in error for error in errors)
 
@@ -2991,7 +2991,7 @@ def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools()
     assert definitions["tiktok_smart_plus_create_campaign"].live_support is True
     assert definitions["tiktok_smart_plus_create_adgroup"].live_support is True
     assert definitions["tiktok_smart_plus_create_ad"].live_support is True
-    assert definitions["tiktok_smart_plus_create_campaign"].provider_api_version == "v1.3"
+    assert definitions["tiktok_smart_plus_create_campaign"].integration_api_version == "v1.3"
     assert definitions["tiktok_smart_plus_create_adgroup"].input_schema.properties["location_ids"]["lookup_tool"] == "tiktok_list_regions"
     assert definitions["tiktok_smart_plus_update_campaign"].input_schema.properties["updates"]["additionalProperties"] is False
     assert definitions["tiktok_smart_plus_update_adgroup"].readback_tool == "tiktok_get_adgroup"
@@ -3758,7 +3758,7 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
             "adset_id": "as-1", "name": "Message Ad", "page_id": "page-1",
             "messaging_app": "MESSENGER", "call_to_action_type": "SEND_MESSAGE",
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
     assert validate_tool_input(
         messaging.input_schema,
@@ -3766,7 +3766,7 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
             "adset_id": "as-1", "name": "Message Ad", "page_id": "page-1",
             "messaging_app": "WHATSAPP", "call_to_action_type": "SEND_MESSAGE",
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
 
     runtime = AgentRuntime(require_llm=False)
@@ -3774,7 +3774,7 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", ["meta"],
-            platform_params={"meta": {
+            scoped_parameters={"meta": {
                 "objective": "OUTCOME_MESSAGES",
                 "optimization_goal": "MESSAGES",
                 "messaging_app": "MESSENGER",
@@ -3852,7 +3852,7 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
         routed = runtime.intent_router.route(
             ParsedIntent(
                 "create_campaign", "create", ["meta"],
-                platform_params={"meta": {
+                scoped_parameters={"meta": {
                     "objective": objective,
                     "optimization_goal": optimization_goal,
                     "page_id": "page-1",
@@ -3931,7 +3931,7 @@ def test_meta_engagement_tool_routes_post_and_video_objectives():
         routed = runtime.intent_router.route(
             ParsedIntent(
                 "create_campaign", "create", ["meta"],
-                platform_params={"meta": {
+                scoped_parameters={"meta": {
                     "objective": "OUTCOME_ENGAGEMENT",
                     "optimization_goal": optimization_goal,
                     "page_id": "page-1", **source,
@@ -4234,17 +4234,17 @@ def test_meta_adset_bid_strategy_and_inline_creative_contracts_are_explicit():
         "bid_strategy": "COST_CAP",
     }
     assert any("bid_amount" in error for error in validate_tool_input(
-        adset_schema, base, include_provider_contract=True,
+        adset_schema, base, include_capability_contract=True,
     ))
     base["bid_amount"] = 5
-    assert validate_tool_input(adset_schema, base, include_provider_contract=True) == []
+    assert validate_tool_input(adset_schema, base, include_capability_contract=True) == []
 
     min_roas = {**base, "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS"}
     assert any("roas_average_floor" in error for error in validate_tool_input(
-        adset_schema, min_roas, include_provider_contract=True,
+        adset_schema, min_roas, include_capability_contract=True,
     ))
     min_roas["roas_average_floor"] = 1.25
-    assert validate_tool_input(adset_schema, min_roas, include_provider_contract=True) == []
+    assert validate_tool_input(adset_schema, min_roas, include_capability_contract=True) == []
 
     ad_schema = definitions["meta_create_ad"].input_schema
     cta_schema = ad_schema.properties["object_story_spec"]["properties"]["link_data"]["properties"]["call_to_action"]
@@ -4479,7 +4479,7 @@ def test_google_core_hierarchy_delete_tools_are_dry_run_and_traced():
         definition = definitions[name]
         assert definition.is_write_tool
         assert definition.live_support is False
-        assert definition.input_schema.provider_required == required
+        assert definition.input_schema.capability_required == required
 
 
 def test_google_campaign_contract_covers_channel_specific_parameters():
@@ -4504,11 +4504,11 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
         "target_cpm_micros": 2500000,
         "video_setting": {"smart_performance": False},
     }
-    assert validate_tool_input(schema, valid_video, include_provider_contract=True) == []
+    assert validate_tool_input(schema, valid_video, include_capability_contract=True) == []
 
     missing_video_setting = {key: value for key, value in valid_video.items() if key != "video_setting"}
     assert any("video_setting" in error for error in validate_tool_input(
-        schema, missing_video_setting, include_provider_contract=True,
+        schema, missing_video_setting, include_capability_contract=True,
     ))
 
     engagement = {
@@ -4523,19 +4523,19 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
         "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
     }
     assert any("selective_optimization" in error for error in validate_tool_input(
-        schema, engagement, include_provider_contract=True,
+        schema, engagement, include_capability_contract=True,
     ))
     engagement["app_campaign_setting"]["selective_optimization"] = [
         "customers/123/conversionActions/9"
     ]
-    assert validate_tool_input(schema, engagement, include_provider_contract=True) == []
+    assert validate_tool_input(schema, engagement, include_capability_contract=True) == []
 
     shopping = {
         "customer_id": "123", "campaign_name": "Shopping", "daily_budget": 10,
         "advertising_channel_type": "SHOPPING", "bidding_strategy": "MANUAL_CPC",
     }
     assert any("shopping_setting" in error for error in validate_tool_input(
-        schema, shopping, include_provider_contract=True,
+        schema, shopping, include_capability_contract=True,
     ))
 
 
@@ -4936,12 +4936,12 @@ def test_google_pmax_listing_group_filter_tools_and_blueprint_are_declared():
             "parent_filter_id": "7", "product_dimension": "PRODUCT_BRAND",
             "value": "Acme",
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
     assert validate_tool_input(
         create_tool.input_schema,
         {"asset_group_id": "456", "filter_type": "UNIT_EXCLUDED"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
 
     runtime = AgentRuntime(require_llm=False, offline_mode=True)

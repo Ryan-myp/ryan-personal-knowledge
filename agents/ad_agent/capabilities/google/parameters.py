@@ -369,7 +369,7 @@ def google_experiment_schema() -> dict[str, Any]:
     }, "Experiment success metric", required=["metric", "direction"])
     return {
         "required": ["customer_id", "name", "type"],
-        "provider_required": ["name", "type"],
+        "capability_required": ["name", "type"],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
             "experiment_id": _field("string", "Experiment ID", minLength=1),
@@ -416,7 +416,7 @@ def google_conversion_action_schema() -> dict[str, Any]:
     """Schema for customer-scoped ConversionAction creation."""
     return {
         "required": ["customer_id", "name", "type", "category"],
-        "provider_required": ["name", "type", "category"],
+        "capability_required": ["name", "type", "category"],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
             "name": _field("string", "Conversion action name", minLength=1, maxLength=255),
@@ -460,7 +460,7 @@ def google_user_list_schema() -> dict[str, Any]:
     """Schemas for first-party CRM UserList lifecycle and upload Tools."""
     return {
         "required": ["customer_id", "name"],
-        "provider_required": ["name"],
+        "capability_required": ["name"],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
             "user_list_id": _field("string", "Google UserList numeric ID", minLength=1),
@@ -514,7 +514,7 @@ def google_bidding_strategy_schema() -> dict[str, Any]:
     """Schema for portfolio BiddingStrategy lifecycle Tools."""
     return {
         "required": ["customer_id", "name", "strategy_type"],
-        "provider_required": ["name", "strategy_type"],
+        "capability_required": ["name", "strategy_type"],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted"),
             "bidding_strategy_id": _field("string", "BiddingStrategy numeric ID", minLength=1),
@@ -851,11 +851,11 @@ def google_campaign_goal_setting_schema() -> dict[str, Any]:
 def google_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["customer_id", "campaign_name"],
-        "provider_required": [
+        "capability_required": [
             "advertising_channel_type", "bidding_strategy",
             "contains_eu_political_advertising",
         ],
-        "provider_any_of": [["daily_budget", "budget"]],
+        "capability_any_of": [["daily_budget", "budget"]],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted here"),
             "campaign_name": _field("string", "Campaign name", maxLength=255),
@@ -1051,7 +1051,7 @@ def google_campaign_schema() -> dict[str, Any]:
 def google_ad_group_schema() -> dict[str, Any]:
     return {
         "required": ["campaign_id", "name"],
-        "provider_required": ["type"],
+        "capability_required": ["type"],
         "properties": {
             "campaign_id": _field("string", "Parent Campaign ID"),
             "campaign_type": _field(
@@ -1120,7 +1120,7 @@ def google_app_ad_group_schema() -> dict[str, Any]:
         # App campaign ad groups do not accept the Search/Display ``type``
         # enum. Keep this schema type-free so a generic AdGroup default cannot
         # leak into the App mutation.
-        "provider_required": [],
+        "capability_required": [],
         "properties": {
             "campaign_id": _field("string", "Parent App Campaign ID", minLength=1),
             "name": _field("string", "App campaign ad group name", maxLength=255),
@@ -1134,7 +1134,7 @@ def google_app_ad_schema() -> dict[str, Any]:
     asset = _google_asset_refs("Existing Google Asset references")
     return {
         "required": ["ad_group_id", "name", "headlines", "descriptions"],
-        "provider_required": ["headlines", "descriptions"],
+        "capability_required": ["headlines", "descriptions"],
         "properties": {
             "ad_group_id": _field("string", "Parent App campaign Ad Group ID", minLength=1),
             "name": _field("string", "App ad name", maxLength=255),
@@ -1160,7 +1160,7 @@ def google_keyword_schema() -> dict[str, Any]:
     """Create contract for Ad Group Criterion keyword mutations."""
     return {
         "required": ["ad_group_id", "keywords"],
-        "provider_required": ["keywords"],
+        "capability_required": ["keywords"],
         "properties": {
             "ad_group_id": _field("string", "Parent Ad Group ID", minLength=1),
             "keywords": _field(
@@ -1348,7 +1348,7 @@ def google_product_group_schema() -> dict[str, Any]:
     ])
     return {
         "required": ["ad_group_id", "product_group_type"],
-        "provider_required": ["product_group_type"],
+        "capability_required": ["product_group_type"],
         "properties": properties,
         "conditional_rules": conditional_rules,
     }
@@ -1524,7 +1524,7 @@ def google_asset_group_listing_group_filter_schema() -> dict[str, Any]:
     ]
     return {
         "required": ["asset_group_id"],
-        "provider_required": [],
+        "capability_required": [],
         "properties": properties,
         "conditional_rules": conditional_rules,
     }
@@ -1567,8 +1567,8 @@ def google_asset_group_listing_group_filter_read_schema() -> dict[str, Any]:
 def google_ad_schema() -> dict[str, Any]:
     return {
         "required": ["ad_group_id", "name"],
-        "provider_required": ["final_url"],
-        "provider_any_of": [["headlines", "responsive_search_ad"]],
+        "capability_required": ["final_url"],
+        "capability_any_of": [["headlines", "responsive_search_ad"]],
         "properties": {
             "ad_group_id": _field("string", "Parent Ad Group ID"),
             "name": _field("string", "Ad name", maxLength=255),
@@ -1639,7 +1639,7 @@ def google_responsive_display_ad_schema() -> dict[str, Any]:
     image_asset = _google_asset_refs("Provider image asset references")
     return {
         "required": ["ad_group_id", "name", "final_url", "headlines", "long_headline", "descriptions", "business_name"],
-        "provider_required": ["headlines", "long_headline", "descriptions", "business_name"],
+        "capability_required": ["headlines", "long_headline", "descriptions", "business_name"],
         "properties": {
             "ad_group_id": _field("string", "Parent Display ad group ID"),
             "name": _field("string", "Ad name", maxLength=255),
@@ -1681,7 +1681,7 @@ def google_video_ad_schema() -> dict[str, Any]:
     """Create contract for the core Google Video Ad formats."""
     return {
         "required": ["ad_group_id", "name", "video_ad_format", "video_id", "final_url"],
-        "provider_required": ["video_ad_format", "video_id", "final_url"],
+        "capability_required": ["video_ad_format", "video_id", "final_url"],
         "properties": {
             "ad_group_id": _field("string", "Parent Video ad group ID", minLength=1),
             "name": _field("string", "Ad name", maxLength=255),
@@ -1729,7 +1729,7 @@ def google_demand_gen_multi_asset_ad_schema() -> dict[str, Any]:
     """Demand Gen multi-asset ad contract backed by ``Ad.demandGenMultiAssetAd``."""
     return {
         "required": ["ad_group_id", "name", "final_url", "headlines", "descriptions", "business_name"],
-        "provider_required": ["headlines", "descriptions", "business_name"],
+        "capability_required": ["headlines", "descriptions", "business_name"],
         "properties": {
             "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1756,7 +1756,7 @@ def google_demand_gen_carousel_ad_schema() -> dict[str, Any]:
     )
     return {
         "required": ["ad_group_id", "name", "final_url", "headline", "description", "carousel_cards"],
-        "provider_required": ["headline", "description", "carousel_cards"],
+        "capability_required": ["headline", "description", "carousel_cards"],
         "properties": {
             "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1797,7 +1797,7 @@ def google_demand_gen_video_responsive_ad_schema() -> dict[str, Any]:
     """Demand Gen video responsive ad contract."""
     return {
         "required": ["ad_group_id", "name", "business_name", "videos", "headlines", "descriptions"],
-        "provider_required": ["business_name", "videos", "headlines", "descriptions"],
+        "capability_required": ["business_name", "videos", "headlines", "descriptions"],
         "properties": {
             "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1821,7 +1821,7 @@ def google_demand_gen_product_ad_schema() -> dict[str, Any]:
     """Demand Gen product ad contract backed by Merchant Center products."""
     return {
         "required": ["ad_group_id", "name"],
-        "provider_required": ["headline", "description", "business_name", "logo_image", "call_to_action"],
+        "capability_required": ["headline", "description", "business_name", "logo_image", "call_to_action"],
         "properties": {
             "ad_group_id": _field("string", "Parent Demand Gen ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1851,7 +1851,7 @@ def google_hotel_ad_schema() -> dict[str, Any]:
     """Hotel ads are feed-backed; the v24 ``HotelAdInfo`` payload is empty."""
     return {
         "required": ["ad_group_id", "name"],
-        "provider_required": [],
+        "capability_required": [],
         "properties": {
             "ad_group_id": _field("string", "Parent Hotel ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1864,7 +1864,7 @@ def google_local_ad_schema() -> dict[str, Any]:
     """Local campaign ad contract backed by ``Ad.localAd``."""
     return {
         "required": ["ad_group_id", "name", "final_url", "headlines", "descriptions"],
-        "provider_required": ["headlines", "descriptions"],
+        "capability_required": ["headlines", "descriptions"],
         "properties": {
             "ad_group_id": _field("string", "Parent Local ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1886,7 +1886,7 @@ def google_smart_campaign_ad_schema() -> dict[str, Any]:
     """Smart campaign ad contract backed by ``Ad.smartCampaignAd``."""
     return {
         "required": ["ad_group_id", "name", "final_url", "headlines", "descriptions"],
-        "provider_required": ["headlines", "descriptions"],
+        "capability_required": ["headlines", "descriptions"],
         "properties": {
             "ad_group_id": _field("string", "Parent Smart campaign ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -1902,7 +1902,7 @@ def google_travel_ad_schema() -> dict[str, Any]:
     """Travel ads are feed-backed; the v24 ``TravelAdInfo`` payload is empty."""
     return {
         "required": ["ad_group_id", "name"],
-        "provider_required": [],
+        "capability_required": [],
         "properties": {
             "ad_group_id": _field("string", "Parent Travel ad group ID", minLength=1),
             "name": _field("string", "Ad name", minLength=1, maxLength=255),
@@ -2308,7 +2308,7 @@ def google_asset_create_schema() -> dict[str, Any]:
     """Schema for reusable text, image, video and HTML5 assets."""
     return {
         "required": ["customer_id", "asset_type"],
-        "provider_required": ["asset_type"],
+        "capability_required": ["asset_type"],
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID"),
             "asset_type": _field("string", "Asset payload type", enum=GOOGLE_ASSET_TYPES),
@@ -2403,7 +2403,7 @@ def google_asset_group_schema() -> dict[str, Any]:
             "headlines", "long_headlines", "descriptions", "images",
             "square_marketing_images", "logos", "business_names",
         ],
-        "provider_required": [
+        "capability_required": [
             "asset_group_type", "final_urls", "headlines",
             "long_headlines", "descriptions", "images",
             "square_marketing_images", "logos", "business_names",

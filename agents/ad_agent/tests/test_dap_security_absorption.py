@@ -18,7 +18,7 @@ from agents.ad_agent.runtime.tool_executor import classify_error
 
 def _tool(name="meta_update_campaign", effect=ToolEffect.WRITE):
     return ToolDefinition(
-        name=name, skill="meta", platform="meta", description="update",
+        name=name, skill="meta", namespace="meta", description="update",
         input_schema=ToolSchema(properties={"campaign_id": {"type": "string"}}),
         action="update", resource_type="campaign", intent_types=["update_campaign"],
         effect_class=effect,
@@ -118,7 +118,7 @@ def test_runtime_starts_outbox_consumer_and_workflow_publishes_once():
             ),
             SimpleNamespace(
                 intent_type="update_campaign",
-                platforms=["meta"],
+                namespaces=["meta"],
                 raw_input="更新 campaign",
             ),
             {"meta": [_tool()]},

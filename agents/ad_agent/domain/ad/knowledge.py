@@ -18,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Protocol
 
-from ...core.platform import normalize_platform
+from ...core.namespace import normalize_namespace as normalize_platform
 
 
 WIKI_SCHEMA_VERSION = "1"
@@ -108,6 +108,12 @@ class KnowledgeDocument:
             "citation": self.citation,
         }
 
+    def to_context_dict(self) -> dict[str, Any]:
+        """Adapt the advertising document to Core's generic context contract."""
+        value = self.to_dict()
+        value["namespace"] = value.pop("platform", "")
+        return value
+
 
 class KnowledgeProvider(Protocol):
     """Read-only provider used to build bounded model context."""
@@ -116,6 +122,7 @@ class KnowledgeProvider(Protocol):
         self,
         query: str,
         *,
+        namespaces: Optional[Iterable[str]] = None,
         platforms: Optional[Iterable[str]] = None,
         intent_type: Optional[str] = None,
         knowledge_types: Optional[Iterable[str]] = None,
@@ -639,6 +646,7 @@ class MarkdownWikiKnowledgeProvider:
         self,
         query: str,
         *,
+        namespaces: Optional[Iterable[str]] = None,
         platforms: Optional[Iterable[str]] = None,
         intent_type: Optional[str] = None,
         knowledge_types: Optional[Iterable[str]] = None,
@@ -651,11 +659,12 @@ class MarkdownWikiKnowledgeProvider:
         fts_hits = self._search_index_hits(
             query, terms, scopes=[self._fts_scope]
         )
+        selected_platforms = namespaces if namespaces is not None else platforms
         return self._query_chunks(
             self._chunks,
             self._documents,
             query,
-            platforms=platforms,
+            platforms=selected_platforms,
             intent_type=intent_type,
             knowledge_types=knowledge_types,
             limit=limit,

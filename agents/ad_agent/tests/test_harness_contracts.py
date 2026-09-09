@@ -14,7 +14,7 @@ from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
 from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
-    ProviderReconciler, ReconciliationObservation, CapabilityRuntime,
+    EffectReconciler, ReconciliationObservation, CapabilityRuntime,
     ReconciliationContext, ParsedIntent, ToolResult,
 )
 from agents.ad_agent.domain.ad.knowledge import KnowledgeDocument
@@ -74,7 +74,7 @@ def test_batch_planner_selects_campaign_updater_from_tool_metadata():
     lookup = ToolDefinition(
         name="new_network_list_campaigns",
         skill="new-network",
-        platform="new-network",
+        namespace="new-network",
         description="List campaigns",
         input_schema=ToolSchema(),
         action="list",
@@ -84,7 +84,7 @@ def test_batch_planner_selects_campaign_updater_from_tool_metadata():
     updater = ToolDefinition(
         name="new_network_update_campaign",
         skill="new-network",
-        platform="new-network",
+        namespace="new-network",
         description="Update a campaign",
         input_schema=ToolSchema(properties={"updates": {"type": "object"}}),
         action="update",
@@ -104,7 +104,7 @@ def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
     first = ToolDefinition(
         name="new_network_update_campaign_a",
         skill="new-network",
-        platform="new-network",
+        namespace="new-network",
         description="Update a campaign variant A",
         input_schema=ToolSchema(),
         action="update",
@@ -115,7 +115,7 @@ def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
     second = ToolDefinition(
         name="new_network_update_campaign_b",
         skill="new-network",
-        platform="new-network",
+        namespace="new-network",
         description="Update a campaign variant B",
         input_schema=ToolSchema(),
         action="update",
@@ -237,18 +237,18 @@ def test_capability_unload_clears_tools_and_derived_discovery_indexes():
     runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
     runtime.register_capability(create_meta_capability())
 
-    assert runtime.registry.list_by_platform("meta")
+    assert runtime.registry.list_by_namespace("meta")
     assert "meta_create_campaign" in runtime.intent_parser._intent_candidates_prompt()
     assert runtime.parameter_catalogs.list("meta")
     assert runtime.list_ad_formats("meta")
 
     assert runtime.unload_skill("meta") is True
 
-    assert runtime.registry.list_by_platform("meta") == []
+    assert runtime.registry.list_by_namespace("meta") == []
     assert "meta_create_campaign" not in runtime.intent_parser._intent_candidates_prompt()
     assert runtime.parameter_catalogs.list("meta") == []
     assert runtime.list_ad_formats("meta") == []
-    assert runtime.skill_loader.get_by_platform("meta") == []
+    assert runtime.skill_loader.get_by_namespace("meta") == []
 
 
 def test_capability_registration_rolls_back_partial_tool_registration():
@@ -262,7 +262,7 @@ def test_capability_registration_rolls_back_partial_tool_registration():
                 ToolDefinition(
                     name="partial_provider_first",
                     skill="partial-provider",
-                    platform="partial-provider",
+                    namespace="partial-provider",
                     description="first tool",
                     input_schema=ToolSchema(),
                 ),
@@ -274,7 +274,7 @@ def test_capability_registration_rolls_back_partial_tool_registration():
     with pytest.raises(RuntimeError, match="provider configure failed"):
         runtime.register_capability(PartialCapability())
 
-    assert runtime.registry.list_by_platform("partial-provider") == []
+    assert runtime.registry.list_by_namespace("partial-provider") == []
     assert runtime.parameter_catalogs.list("partial-provider") == []
     assert "partial-provider" not in runtime.get_loaded_skills()
 
@@ -298,7 +298,7 @@ def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
             return {
                 "selected_tools": list(all_tools[:1]), "tool_count": 1,
                 "tool_prompt": "one tool for model context", "expert_knowledge": "",
-                "context": {}, "platforms": "meta", "knowledge": [],
+                    "context": {}, "namespaces": ["meta"], "knowledge": [],
             }
 
     class Handler:
@@ -313,7 +313,7 @@ def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
     for name in ("route_first", "route_second"):
         runtime.registry.register(
             ToolDefinition(
-                name=name, skill="route-test", platform="meta", description=name,
+                name=name, skill="route-test", namespace="meta", description=name,
                 input_schema=ToolSchema(properties={
                     "account_id": {"type": "string"},
                     "name": {"type": "string"},
@@ -421,7 +421,7 @@ def test_lookup_contract_must_reference_same_provider_read_tool():
                 ToolDefinition(
                     name="bad_dynamic_tool",
                     skill="bad-skill",
-                    platform="tiktok",
+                    namespace="tiktok",
                     description="invalid dynamic field",
                     input_schema=ToolSchema(properties={
                         "app_id": {
@@ -617,12 +617,12 @@ def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
             "ad_group_id": "123", "product_group_type": "brand", "value": "Acme",
             "cpc_bid_micros": 250000,
         },
-        include_provider_contract=True,
+        include_capability_contract=True,
     ) == []
     assert validate_tool_input(
         product_group.input_schema,
         {"ad_group_id": "123", "product_group_type": "brand"},
-        include_provider_contract=True,
+        include_capability_contract=True,
     )
     runtime.register_capability(create_meta_capability())
     meta_formats = {item["format_id"]: item for item in runtime.list_ad_formats("meta")}
@@ -876,7 +876,7 @@ def test_provider_reconciler_uses_only_runtime_read_callback():
         def get_campaign(self, campaign_id):
             return {"id": campaign_id, "name": "provider-campaign", "status": "ACTIVE"}
 
-    class Reconciler(ProviderReconciler):
+    class Reconciler(EffectReconciler):
         def reconcile(self, context):
             result = context.execute_read(
                 "meta_get_campaign", {"campaign_id": "c1"}
@@ -889,7 +889,7 @@ def test_provider_reconciler_uses_only_runtime_read_callback():
                 source="test-provider-readback",
                 observed_at="2026-01-01T00:00:00+00:00",
                 output_data=result.data,
-                provider_resource_id="c1",
+                external_resource_id="c1",
             )
 
     store = AdAgentStore(":memory:")
@@ -906,7 +906,7 @@ def test_provider_reconciler_uses_only_runtime_read_callback():
     runtime = AgentRuntime(require_llm=False,
         persistence_store=store,
         whitelist_validator=_whitelist(meta=["m1"]),
-        provider_reconcilers={"meta": Reconciler()},
+        effect_reconcilers={"meta": Reconciler()},
     )
     runtime.register_capability(create_meta_capability(Client()))
     principal = RequestPrincipal(
@@ -951,7 +951,7 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
     class Parser:
         def parse(self, _text, _ctx):
             return ParsedIntent(
-                intent_type="permission_test", raw_input="test", platforms=["meta"]
+                    intent_type="permission_test", raw_input="test", namespaces=["meta"]
             )
 
     class Router:
@@ -969,7 +969,7 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
         ToolDefinition(
             name="permissioned_read",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="permission test",
             input_schema=ToolSchema(properties={"account_id": {"type": "string"}}),
             effect_class=ToolEffect.READ,
@@ -1125,7 +1125,7 @@ def test_tool_timeout_returns_explicit_timed_out_result_and_signals_handler():
     definition = ToolDefinition(
         name="slow_read",
         skill="test",
-        platform="meta",
+        namespace="meta",
         description="timeout test",
         input_schema=ToolSchema(),
         effect_class=ToolEffect.READ,
@@ -1151,7 +1151,7 @@ def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
     definition = ToolDefinition(
         name="slow_write",
         skill="test",
-        platform="meta",
+        namespace="meta",
         description="timeout test",
         input_schema=ToolSchema(),
         effect_class=ToolEffect.EXTERNAL_WRITE,
@@ -1182,7 +1182,7 @@ def test_tool_timeout_capacity_stays_reserved_until_handler_exits():
     definition = ToolDefinition(
         name="bounded_slow_read",
         skill="test",
-        platform="meta",
+        namespace="meta",
         description="bounded timeout test",
         input_schema=ToolSchema(),
         effect_class=ToolEffect.READ,
@@ -1301,17 +1301,17 @@ def test_golden_intent_cases_remain_deterministic():
     ):
         definitions.extend(definition for definition, _ in factory().register_tools())
     parser.refresh_tool_catalog(definitions)
-    parser.register_platform_aliases("google-ads", ["google", "google ads"])
-    parser.register_platform_aliases("meta", ["meta"])
-    parser.register_platform_aliases("tiktok", ["tiktok"])
-    parser.register_platform_aliases("dv360", ["dv360"])
+    parser.register_namespace_aliases("google-ads", ["google", "google ads"])
+    parser.register_namespace_aliases("meta", ["meta"])
+    parser.register_namespace_aliases("tiktok", ["tiktok"])
+    parser.register_namespace_aliases("dv360", ["dv360"])
     from agents.ad_agent.features.factory import discover_features
     for feature in discover_features():
         parser.register_intent_descriptors(feature.intent_descriptors())
     for case in cases:
         intent = parser.parse(case["input"], ToolContext("golden", "eval"))
         assert intent.intent_type == case["intent_type"], case["id"]
-        assert intent.platforms == case["platforms"], case["id"]
+        assert intent.namespaces == case["platforms"], case["id"]
 
 
 def test_wiki_error_lookup_honors_limit_without_runtime_name_error():
@@ -1330,7 +1330,7 @@ def test_readback_resolution_uses_explicit_metadata_not_tool_name_conventions():
     write = ToolDefinition(
         name="vendor_mutate_widget_v2",
         skill="vendor",
-        platform="vendor",
+        namespace="vendor",
         description="Mutate a widget",
         input_schema=ToolSchema(properties={"widget_key": {"type": "string"}}),
         action="update",
@@ -1342,7 +1342,7 @@ def test_readback_resolution_uses_explicit_metadata_not_tool_name_conventions():
     read = ToolDefinition(
         name="vendor_fetch_widget_by_key",
         skill="vendor",
-        platform="vendor",
+        namespace="vendor",
         description="Fetch a widget",
         input_schema=ToolSchema(
             required=["widget_key"],
@@ -1362,7 +1362,7 @@ def test_readback_resolution_uses_explicit_metadata_not_tool_name_conventions():
     ambiguous = ToolDefinition(
         name="vendor_fetch_widget_by_alias",
         skill="vendor",
-        platform="vendor",
+        namespace="vendor",
         description="Fetch a widget by alias",
         input_schema=read.input_schema,
         action="get",
@@ -1382,7 +1382,7 @@ def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
     read = ToolDefinition(
         name="vendor_fetch_widget",
         skill="vendor",
-        platform="vendor",
+        namespace="vendor",
         description="Fetch a widget",
         input_schema=ToolSchema(
             required=["widget_key"],
@@ -1415,5 +1415,5 @@ def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
     )
 
     assert observation.status == "succeeded"
-    assert observation.provider_resource_id == "w-1"
+    assert observation.external_resource_id == "w-1"
     assert calls == [(read.name, {"widget_key": "w-1"})]

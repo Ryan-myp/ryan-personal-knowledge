@@ -45,7 +45,7 @@ def _object(properties: dict[str, Any], description: str, *, additional_properti
 def dv360_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["advertiser_id", "name"],
-        "provider_required": ["campaign_type", "objective", "start_date", "end_date"],
+        "capability_required": ["campaign_type", "objective", "start_date", "end_date"],
         "properties": {
             "advertiser_id": _field("string", "DV360 advertiser ID"),
             "name": _field("string", "Campaign display name", minLength=1, maxLength=255),
@@ -62,7 +62,7 @@ def dv360_campaign_schema() -> dict[str, Any]:
 def dv360_io_schema() -> dict[str, Any]:
     return {
         "required": ["advertiser_id", "campaign_id", "name"],
-        "provider_required": ["budget", "start_date", "end_date"],
+        "capability_required": ["budget", "start_date", "end_date"],
         "properties": {
             "advertiser_id": _field("string", "DV360 advertiser ID"),
             "campaign_id": _field("string", "Parent Campaign ID"),
@@ -84,7 +84,7 @@ def dv360_io_schema() -> dict[str, Any]:
 def dv360_line_item_schema() -> dict[str, Any]:
     return {
         "required": ["io_id", "name"],
-        "provider_required": ["type", "goal", "targeting", "budget", "start_date", "end_date"],
+        "capability_required": ["type", "goal", "targeting", "budget", "start_date", "end_date"],
         "properties": {
             "io_id": _field("string", "Parent insertion order ID"),
             "name": _field("string", "Line item name", minLength=1, maxLength=255),

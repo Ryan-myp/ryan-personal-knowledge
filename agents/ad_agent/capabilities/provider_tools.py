@@ -40,7 +40,7 @@ def value_from(data: dict[str, Any], field: str, default: Any = None) -> Any:
 
 def method_tool(
     *,
-    platform: str,
+    namespace: str,
     skill: str,
     name: str,
     description: str,
@@ -60,13 +60,13 @@ def method_tool(
     traits: Optional[Iterable[str]] = None,
     write: bool = False,
     live_support: Optional[bool] = None,
-    provider_required: Optional[Iterable[str]] = None,
-    provider_any_of: Optional[Iterable[Iterable[str]]] = None,
-    provider_exactly_one_of: Optional[Iterable[Iterable[str]]] = None,
+    capability_required: Optional[Iterable[str]] = None,
+    capability_any_of: Optional[Iterable[Iterable[str]]] = None,
+    capability_exactly_one_of: Optional[Iterable[Iterable[str]]] = None,
     conditional_rules: Optional[Iterable[dict[str, Any]]] = None,
     additional_properties: bool = False,
     contract_version: str = "1",
-    provider_api_version: Optional[str] = None,
+    integration_api_version: Optional[str] = None,
     result_items_key: Optional[str] = None,
     result_id_fields: Optional[Iterable[str]] = None,
     related_resource_type: Optional[str] = None,
@@ -83,15 +83,15 @@ def method_tool(
     definition = ToolDefinition(
         name=name,
         skill=skill,
-        platform=platform,
+        namespace=namespace,
         description=description,
         input_schema=ToolSchema(
             required=list(required or []),
             properties=dict(properties),
-            provider_required=list(provider_required or []),
-            provider_any_of=[list(group) for group in (provider_any_of or [])],
-            provider_exactly_one_of=[
-                list(group) for group in (provider_exactly_one_of or [])
+            capability_required=list(capability_required or []),
+            capability_any_of=[list(group) for group in (capability_any_of or [])],
+            capability_exactly_one_of=[
+                list(group) for group in (capability_exactly_one_of or [])
             ],
             conditional_rules=[dict(rule) for rule in (conditional_rules or [])],
             additional_properties=bool(additional_properties),
@@ -110,7 +110,7 @@ def method_tool(
         traits=list(traits) if traits is not None else (["write"] if write else ["read"]),
         live_support=live_support,
         contract_version=contract_version,
-        provider_api_version=provider_api_version,
+        integration_api_version=integration_api_version,
         result_items_key=result_items_key,
         result_id_fields=list(result_id_fields or []),
         related_resource_type=related_resource_type,

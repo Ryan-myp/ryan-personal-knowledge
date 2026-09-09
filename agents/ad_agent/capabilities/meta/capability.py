@@ -236,7 +236,7 @@ class MetaCapability(BaseCapability):
     provider_client_class = MetaAPIClient
     provider_method_exclusions = {"resource_belongs_to_account"}
     capability_version = "1.4.0"
-    provider_api_version = "v19.0"
+    integration_api_version = "v19.0"
     # Provider endpoint -> executable Tool(s).  This lives with the provider
     # package and is consumed only by the release audit, never by Runtime
     # routing.
@@ -323,8 +323,8 @@ class MetaCapability(BaseCapability):
         test_conversion_schema = {
             **conversion_schema,
             "required": [*conversion_schema["required"], "test_event_code"],
-            "provider_required": [
-                *conversion_schema["provider_required"], "test_event_code"
+            "capability_required": [
+                *conversion_schema["capability_required"], "test_event_code"
             ],
             "properties": {
                 **conversion_schema["properties"],
@@ -349,7 +349,7 @@ class MetaCapability(BaseCapability):
         business_schema = meta_business_schema()
         tools = [
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_pages",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_pages",
                 description="查询广告账户可推广的 Facebook Page。", method_name="list_pages",
                 result_key="pages", properties={
                     "account_id": {"type": "string"}, "limit": {"type": "integer"},
@@ -360,7 +360,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_search_targeting_options",
                 description=(
                     "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；"
@@ -369,7 +369,7 @@ class MetaCapability(BaseCapability):
                 method_name="search_targeting", result_key="targeting_options",
                 properties=meta_targeting_search_schema()["properties"],
                 required=meta_targeting_search_schema()["required"],
-                provider_required=meta_targeting_search_schema()["provider_required"],
+                capability_required=meta_targeting_search_schema()["capability_required"],
                 action="search", resource_type="targeting_option",
                 intent_types=["search_targeting_options", "lookup_targeting_options"],
                 traits=["read", "targeting", "lookup"],
@@ -381,12 +381,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_upload_audience_users",
+                namespace="meta", skill="meta-marketing-api", name="meta_upload_audience_users",
                 description="向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
                 method_name="upload_audience_users", result_key="audience_upload",
                 properties=audience_properties,
                 required=audience_schema["upload_required"],
-                provider_required=["audience_id", "upload_schema", "upload_data"],
+                capability_required=["audience_id", "upload_schema", "upload_data"],
                 action="upload", resource_type="audience", resource_id_field="audience_id",
                 intent_types=["upload_audience_users"], traits=["write", "audience", "source_upload"],
                 write=True, live_support=False,
@@ -396,7 +396,7 @@ class MetaCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_pixels",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_pixels",
                 description="查询 Meta 广告账户下的 Pixel。", method_name="list_pixels",
                 result_key="pixels", properties={
                     "account_id": {"type": "string"}, "limit": {"type": "integer"},
@@ -407,7 +407,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_pixel",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_pixel",
                 description="查询 Meta Pixel 详情。", method_name="get_pixel",
                 result_key="pixel", properties={
                     "account_id": {"type": "string"},
@@ -420,7 +420,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_list_image_assets",
                 description="查询 Meta 广告账户已上传的图片素材。",
                 method_name="list_image_assets", result_key="image_assets",
@@ -434,13 +434,13 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_upload_image_asset",
                 description="上传可由 Meta 获取的 HTTPS 图片素材；默认仅生成 dry-run 计划。",
                 method_name="upload_image_asset", result_key="image_asset",
                 properties=image_asset_schema["properties"],
                 required=image_asset_schema["upload_required"],
-                provider_required=["image_url"], action="upload", resource_type="image_asset",
+                capability_required=["image_url"], action="upload", resource_type="image_asset",
                 intent_types=["upload_image_asset", "upload_asset"],
                 traits=["write", "creative", "image_asset"], write=True, live_support=False,
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
@@ -448,7 +448,7 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_list_video_assets",
                 description="查询 Meta 广告账户已上传的视频素材。",
                 method_name="list_video_assets", result_key="video_assets",
@@ -462,13 +462,13 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_upload_video_asset",
                 description="上传可由 Meta 获取的 HTTPS 视频素材；默认仅生成 dry-run 计划。",
                 method_name="upload_video_asset", result_key="video_asset",
                 properties=video_asset_schema["properties"],
                 required=video_asset_schema["upload_required"],
-                provider_required=["file_url"], action="upload", resource_type="video_asset",
+                capability_required=["file_url"], action="upload", resource_type="video_asset",
                 intent_types=["upload_video_asset", "upload_asset"],
                 traits=["write", "creative", "video_asset"], write=True, live_support=False,
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
@@ -476,11 +476,11 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_send_conversion_events",
+                namespace="meta", skill="meta-marketing-api", name="meta_send_conversion_events",
                 description="向 Meta Pixel 发送 Conversions API 事件；默认仅生成 dry-run 计划。",
                 method_name="send_conversion_events", result_key="conversion_result",
                 properties=conversion_schema["properties"], required=conversion_schema["required"],
-                provider_required=conversion_schema["provider_required"], action="send",
+                capability_required=conversion_schema["capability_required"], action="send",
                 resource_type="conversion", resource_id_field="pixel_id",
                 intent_types=["send_conversion_events", "send_capi_events"],
                 traits=["write", "conversion", "pixel", "capi"], write=True,
@@ -489,7 +489,7 @@ class MetaCapability(BaseCapability):
                 ), {"test_event_code": data.get("test_event_code")}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_test_conversion_events",
+                namespace="meta", skill="meta-marketing-api", name="meta_test_conversion_events",
                 description=(
                     "向 Meta Test Events 发送一批 Conversions API 测试事件；"
                     "默认仅生成 dry-run 计划。"
@@ -497,7 +497,7 @@ class MetaCapability(BaseCapability):
                 method_name="send_conversion_events", result_key="conversion_test_result",
                 properties=test_conversion_schema["properties"],
                 required=test_conversion_schema["required"],
-                provider_required=test_conversion_schema["provider_required"],
+                capability_required=test_conversion_schema["capability_required"],
                 action="test", resource_type="pixel_event", resource_id_field="pixel_id",
                 intent_types=["test_conversion_events", "test_capi_events"],
                 traits=["write", "conversion", "pixel", "capi", "test"],
@@ -507,12 +507,12 @@ class MetaCapability(BaseCapability):
                 ), {"test_event_code": data["test_event_code"]}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_custom_conversion",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_custom_conversion",
                 description="为 Meta Pixel 创建 Custom Conversion；默认仅生成 dry-run 计划。",
                 method_name="create_custom_conversion", result_key="custom_conversion_id",
                 properties=custom_conversion_schema["properties"],
                 required=custom_conversion_schema["required"],
-                provider_required=custom_conversion_schema["provider_required"],
+                capability_required=custom_conversion_schema["capability_required"],
                 action="create", resource_type="custom_conversion",
                 resource_id_field="custom_conversion_id",
                 intent_types=["create_custom_conversion"],
@@ -522,7 +522,7 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_list_custom_conversions",
                 description="查询 Meta 广告账户下的 Custom Conversion。",
                 method_name="list_custom_conversions", result_key="custom_conversions",
@@ -538,7 +538,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_get_custom_conversion",
                 description="查询 Meta Custom Conversion 详情。",
                 method_name="get_custom_conversion", result_key="custom_conversion",
@@ -555,7 +555,7 @@ class MetaCapability(BaseCapability):
                 ), {"fields": data.get("fields")}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_update_custom_conversion",
                 description="更新 Meta Custom Conversion 的可变字段；默认仅生成 dry-run 计划。",
                 method_name="update_custom_conversion", result_key="custom_conversion_result",
@@ -564,7 +564,7 @@ class MetaCapability(BaseCapability):
                     for key in ("account_id", "custom_conversion_id", "updates")
                 },
                 required=custom_conversion_management_schema["update_required"],
-                provider_required=["custom_conversion_id", "updates"], action="update",
+                capability_required=["custom_conversion_id", "updates"], action="update",
                 resource_type="custom_conversion", resource_id_field="custom_conversion_id",
                 intent_types=["update_custom_conversion"],
                 traits=["write", "conversion", "custom_conversion"], write=True,
@@ -573,7 +573,7 @@ class MetaCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_delete_custom_conversion",
                 description="删除 Meta Custom Conversion；默认仅生成 dry-run 计划。",
                 method_name="delete_custom_conversion", result_key="custom_conversion_result",
@@ -582,7 +582,7 @@ class MetaCapability(BaseCapability):
                     for key in ("account_id", "custom_conversion_id")
                 },
                 required=["account_id", "custom_conversion_id"],
-                provider_required=["custom_conversion_id"], action="delete",
+                capability_required=["custom_conversion_id"], action="delete",
                 resource_type="custom_conversion", resource_id_field="custom_conversion_id",
                 intent_types=["delete_custom_conversion"],
                 traits=["write", "conversion", "custom_conversion"], write=True,
@@ -591,7 +591,7 @@ class MetaCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_lead_forms",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_lead_forms",
                 description="查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
                 method_name="list_lead_forms", result_key="lead_forms", properties={
                     "page_id": {"type": "string"}, "limit": {"type": "integer"},
@@ -602,12 +602,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_leads",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_leads",
                 description="查询 Meta Instant Form 收集到的 Lead 数据。",
                 method_name="list_leads", result_key="leads",
                 properties=lead_schema["properties"],
                 required=lead_schema["required"],
-                provider_required=lead_schema["provider_required"],
+                capability_required=lead_schema["capability_required"],
                 action="list", resource_type="lead",
                 parent_resource_type="lead_form",
                 parent_resource_id_field="form_id",
@@ -620,12 +620,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_lead",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_lead",
                 description="查询 Meta Instant Form 中单个 Lead 详情。",
                 method_name="get_lead", result_key="lead",
                 properties=lead_schema["properties"],
                 required=["account_id", "page_id", "form_id", "lead_id"],
-                provider_required=["page_id", "form_id", "lead_id"],
+                capability_required=["page_id", "form_id", "lead_id"],
                 action="get", resource_type="lead",
                 parent_resource_type="lead_form",
                 parent_resource_id_field="form_id",
@@ -638,7 +638,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_creatives",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_creatives",
                 description="查询 Meta 广告账户下的 Creative。", method_name="list_creatives",
                 result_key="creatives", properties={
                     key: creative_properties[key] for key in ("account_id", "limit")
@@ -649,7 +649,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_creative",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_creative",
                 description="查询 Meta Creative 详情。", method_name="get_creative",
                 result_key="creative", properties={
                     key: creative_properties[key] for key in ("account_id", "creative_id", "fields")
@@ -660,7 +660,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_update_creative",
+                namespace="meta", skill="meta-marketing-api", name="meta_update_creative",
                 description="更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
                 method_name="update_creative", result_key="creative_result",
                 properties={key: creative_properties[key] for key in ("account_id", "creative_id", "updates")},
@@ -670,11 +670,11 @@ class MetaCapability(BaseCapability):
                 live_support=True,
                 readback_tool="meta_get_creative",
                 required_permissions=["ads.plan"],
-                provider_api_version="v19.0",
+                integration_api_version="v19.0",
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_delete_creative",
+                namespace="meta", skill="meta-marketing-api", name="meta_delete_creative",
                 description="删除 Meta Creative；默认仅生成 dry-run 计划。",
                 method_name="delete_creative", result_key="creative_result",
                 properties={key: creative_properties[key] for key in ("account_id", "creative_id")},
@@ -684,7 +684,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_lead_form",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_lead_form",
                 description="查询 Meta Lead Ads Instant Form 详情。", method_name="get_lead_form",
                 result_key="lead_form", properties={
                     "page_id": {"type": "string"},
@@ -697,12 +697,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_lead_form",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_lead_form",
                 description="创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
                 method_name="create_lead_form", result_key="lead_form_id",
                 properties=lead_form_schema["properties"],
                 required=lead_form_schema["required"],
-                provider_required=lead_form_schema["provider_required"],
+                capability_required=lead_form_schema["capability_required"],
                 action="create", resource_type="lead_form",
                 parent_resource_type="page", parent_resource_id_field="page_id",
                 resource_id_field="form_id",
@@ -714,7 +714,7 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_update_lead_form",
+                namespace="meta", skill="meta-marketing-api", name="meta_update_lead_form",
                 description="更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
                 method_name="update_lead_form", result_key="lead_form",
                 properties=lead_form_schema["properties"],
@@ -729,7 +729,7 @@ class MetaCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_accounts",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_accounts",
                 description="列出 Meta 可访问的广告账户。", method_name="list_accounts",
                 result_key="accounts", properties={"business_id": {"type": "string"}},
                 argument_builder=lambda _ctx, data: ((data.get("business_id"),), {}),
@@ -737,7 +737,7 @@ class MetaCapability(BaseCapability):
                 traits=["read", "account"],
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_businesses",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_businesses",
                 description="查询当前 Meta 用户可访问的 Business Manager 列表。",
                 method_name="list_businesses", result_key="businesses",
                 properties=business_schema["properties"],
@@ -749,7 +749,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_business",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_business",
                 description="查询 Meta Business Manager 详情。",
                 method_name="get_business", result_key="business",
                 properties=business_schema["properties"],
@@ -762,7 +762,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_account",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_account",
                 description="获取 Meta 广告账户详情。", method_name="get_account",
                 result_key="account", properties={
                     "account_id": {"type": "string"},
@@ -774,7 +774,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_catalogs",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_catalogs",
                 description="查询 Meta 商品目录。", method_name="list_catalogs",
                 result_key="catalogs", properties={
                     "account_id": {"type": "string"},
@@ -786,7 +786,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_list_product_sets",
+                namespace="meta", skill="meta-marketing-api", name="meta_list_product_sets",
                 description="查询 Meta 商品目录下的商品集。", method_name="list_product_sets",
                 result_key="product_sets", properties={
                     "account_id": {"type": "string"},
@@ -799,7 +799,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_catalog",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_catalog",
                 description="查询 Meta 商品目录详情。", method_name="get_catalog",
                 result_key="catalog", properties={
                     key: catalog_properties[key] for key in ("account_id", "catalog_id", "fields")
@@ -810,12 +810,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_catalog",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_catalog",
                 description="创建 Meta 商品目录；默认仅生成 dry-run 计划。",
                 method_name="create_catalog", result_key="catalog_id", properties={
                     key: catalog_properties[key] for key in ("business_id", "name", "vertical", "is_checkout")
                 }, required=catalog_schema["create_required"],
-                provider_required=["business_id", "name", "vertical"],
+                capability_required=["business_id", "name", "vertical"],
                 action="create", resource_type="catalog",
                 resource_id_field="catalog_id", intent_types=["create_catalog"], traits=["write", "catalog"], write=True,
                 argument_builder=lambda _ctx, data: ((data["business_id"], {
@@ -823,7 +823,7 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_update_catalog",
+                namespace="meta", skill="meta-marketing-api", name="meta_update_catalog",
                 description="更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
                 method_name="update_catalog", result_key="catalog_result", properties={
                     key: catalog_properties[key] for key in ("account_id", "catalog_id", "updates")
@@ -832,7 +832,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_delete_catalog",
+                namespace="meta", skill="meta-marketing-api", name="meta_delete_catalog",
                 description="删除 Meta 商品目录；默认仅生成 dry-run 计划。",
                 method_name="delete_catalog", result_key="catalog_result", properties={
                     key: catalog_properties[key] for key in ("account_id", "catalog_id")
@@ -841,7 +841,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_product_set",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_product_set",
                 description="查询 Meta 商品集详情。", method_name="get_product_set",
                 result_key="product_set", properties={
                     key: product_set_properties[key] for key in ("account_id", "catalog_id", "product_set_id", "fields")
@@ -853,12 +853,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_product_set",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_product_set",
                 description="在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
                 method_name="create_product_set", result_key="product_set_id", properties={
                     key: product_set_properties[key] for key in ("account_id", "catalog_id", "name", "filter")
                 }, required=product_set_schema["create_required"],
-                provider_required=["catalog_id", "name"],
+                capability_required=["catalog_id", "name"],
                 action="create", resource_type="product_set",
                 parent_resource_type="catalog", resource_id_field="product_set_id", parent_resource_id_field="catalog_id",
                 intent_types=["create_product_set"], traits=["write", "catalog", "product_set"], write=True,
@@ -867,7 +867,7 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_update_product_set",
+                namespace="meta", skill="meta-marketing-api", name="meta_update_product_set",
                 description="更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
                 method_name="update_product_set", result_key="product_set_result", properties={
                     key: product_set_properties[key] for key in ("account_id", "catalog_id", "product_set_id", "updates")
@@ -877,7 +877,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["product_set_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_delete_product_set",
+                namespace="meta", skill="meta-marketing-api", name="meta_delete_product_set",
                 description="删除 Meta 商品集；默认仅生成 dry-run 计划。",
                 method_name="delete_product_set", result_key="product_set_result", properties={
                     key: product_set_properties[key] for key in ("account_id", "catalog_id", "product_set_id")
@@ -887,7 +887,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["catalog_id"], data["product_set_id"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_adset_report",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_adset_report",
                 description="查询 Meta Ad Set 级报表。", method_name="get_adset_report",
                 result_key="report", properties={
                     "account_id": {"type": "string"},
@@ -901,7 +901,7 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_ad_report",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_ad_report",
                 description="查询 Meta Ad 级报表。", method_name="get_ad_report",
                 result_key="report", properties={
                     "account_id": {"type": "string"},
@@ -915,12 +915,12 @@ class MetaCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_lead_ad",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_lead_ad",
                 description="创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
                 method_name="create_lead_ad", result_key="ad_id",
                 properties=meta_lead_ad_schema()["properties"],
                 required=meta_lead_ad_schema()["required"],
-                provider_required=meta_lead_ad_schema()["provider_required"],
+                capability_required=meta_lead_ad_schema()["capability_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_set",
                 resource_id_field="ad_id", parent_resource_id_field="adset_id",
                 intent_types=["create_lead_ad", "create_campaign"],
@@ -934,7 +934,7 @@ class MetaCapability(BaseCapability):
                 ],
                 traits=["write", "ad", "lead", "instant_form"], write=True,
                 live_support=True, readback_tool="meta_get_ad",
-                provider_api_version="v19.0", required_permissions=["ads.plan"],
+                integration_api_version="v19.0", required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "form_id", "link", "message", "headline",
@@ -943,12 +943,12 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_catalog_ad",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_catalog_ad",
                 description="创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
                 method_name="create_catalog_ad", result_key="ad_id",
                 properties=meta_catalog_ad_schema()["properties"],
                 required=meta_catalog_ad_schema()["required"],
-                provider_required=meta_catalog_ad_schema()["provider_required"],
+                capability_required=meta_catalog_ad_schema()["capability_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_set",
                 resource_id_field="ad_id", parent_resource_id_field="adset_id",
                 intent_types=["create_catalog_ad", "create_campaign"],
@@ -962,7 +962,7 @@ class MetaCapability(BaseCapability):
                 ],
                 traits=["write", "ad", "catalog", "dynamic_product"], write=True,
                 live_support=True, readback_tool="meta_get_ad",
-                provider_api_version="v19.0", required_permissions=["ads.plan"],
+                integration_api_version="v19.0", required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "product_set_id", "link", "message",
@@ -971,13 +971,13 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_create_messaging_ad",
                 description="创建 Meta Click-to-Message 消息广告；默认仅生成 dry-run 计划。",
                 method_name="create_messaging_ad", result_key="ad_id",
                 properties=meta_messaging_ad_schema()["properties"],
                 required=meta_messaging_ad_schema()["required"],
-                provider_required=meta_messaging_ad_schema()["provider_required"],
+                capability_required=meta_messaging_ad_schema()["capability_required"],
                 conditional_rules=meta_messaging_ad_schema()["conditional_rules"],
                 action="create", resource_type="ad", parent_resource_type="ad_set",
                 resource_id_field="ad_id", parent_resource_id_field="adset_id",
@@ -993,7 +993,7 @@ class MetaCapability(BaseCapability):
                 }],
                 traits=["write", "ad", "messaging", "click_to_message"], write=True,
                 live_support=True, readback_tool="meta_get_ad",
-                provider_api_version="v19.0", required_permissions=["ads.plan"],
+                integration_api_version="v19.0", required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data, "account_id"), data["adset_id"], {
                         key: data[key] for key in meta_messaging_ad_schema()["properties"]
@@ -1017,7 +1017,7 @@ class MetaCapability(BaseCapability):
         ):
             link_schema = meta_link_ad_schema()
             tools.append(method_tool(
-                platform="meta", skill="meta-marketing-api", name=tool_name,
+                namespace="meta", skill="meta-marketing-api", name=tool_name,
                 description=(
                     "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。"
                     if intent_name == "create_traffic_ad"
@@ -1025,7 +1025,7 @@ class MetaCapability(BaseCapability):
                 ),
                 method_name="create_link_ad", result_key="ad_id",
                 properties=link_schema["properties"], required=link_schema["required"],
-                provider_required=link_schema["provider_required"],
+                capability_required=link_schema["capability_required"],
                 conditional_rules=link_schema["conditional_rules"],
                 action="create", resource_type="ad", parent_resource_type="ad_set",
                 resource_id_field="ad_id", parent_resource_id_field="adset_id",
@@ -1038,7 +1038,7 @@ class MetaCapability(BaseCapability):
                     },
                 }],
                 traits=traits, write=True, live_support=True,
-                readback_tool="meta_get_ad", provider_api_version="v19.0",
+                readback_tool="meta_get_ad", integration_api_version="v19.0",
                 required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data, "account_id"), data["adset_id"], {
@@ -1050,13 +1050,13 @@ class MetaCapability(BaseCapability):
 
         engagement_schema = meta_engagement_ad_schema()
         tools.append(method_tool(
-            platform="meta", skill="meta-marketing-api",
+            namespace="meta", skill="meta-marketing-api",
             name="meta_create_engagement_ad",
             description="创建 Meta Post Engagement/Video Views 广告；默认仅生成 dry-run 计划。",
             method_name="create_engagement_ad", result_key="ad_id",
             properties=engagement_schema["properties"],
             required=engagement_schema["required"],
-            provider_required=engagement_schema["provider_required"],
+            capability_required=engagement_schema["capability_required"],
             conditional_rules=engagement_schema["conditional_rules"],
             action="create", resource_type="ad", parent_resource_type="ad_set",
             resource_id_field="ad_id", parent_resource_id_field="adset_id",
@@ -1074,7 +1074,7 @@ class MetaCapability(BaseCapability):
                 }},
             ],
             traits=["write", "ad", "engagement"], write=True, live_support=True,
-            readback_tool="meta_get_ad", provider_api_version="v19.0",
+            readback_tool="meta_get_ad", integration_api_version="v19.0",
             required_permissions=["ads.plan"],
             argument_builder=lambda ctx, data: ((
                 account_from(ctx, data, "account_id"), data["adset_id"], {
@@ -1086,7 +1086,7 @@ class MetaCapability(BaseCapability):
 
         tools.extend([
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_get_audience",
+                namespace="meta", skill="meta-marketing-api", name="meta_get_audience",
                 description="查询 Meta Custom 或 Lookalike Audience 详情。", method_name="get_audience",
                 result_key="audience", properties={
                     key: audience_properties[key] for key in ("account_id", "audience_id")
@@ -1095,7 +1095,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_create_audience",
+                namespace="meta", skill="meta-marketing-api", name="meta_create_audience",
                 description="创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
                 method_name="create_audience", result_key="audience_id", properties={
                     key: audience_properties[key] for key in (
@@ -1104,7 +1104,7 @@ class MetaCapability(BaseCapability):
                         "origin_audience_id", "country", "ratio", "lookalike_type",
                     )
                 }, required=["account_id", "name", "subtype"],
-                provider_required=["name", "subtype"],
+                capability_required=["name", "subtype"],
                 conditional_rules=audience_schema["conditional_rules"], action="create", resource_type="audience",
                 resource_id_field="audience_id", intent_types=["create_audience"], traits=["write", "audience"],
                 write=True,
@@ -1113,7 +1113,7 @@ class MetaCapability(BaseCapability):
                     }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api",
+                namespace="meta", skill="meta-marketing-api",
                 name="meta_create_lookalike_audience",
                 description=(
                     "基于 Meta Custom Audience 创建 Lookalike Audience；"
@@ -1122,7 +1122,7 @@ class MetaCapability(BaseCapability):
                 method_name="create_audience", result_key="audience_id",
                 properties=lookalike_schema["properties"],
                 required=lookalike_schema["required"],
-                provider_required=lookalike_schema["provider_required"],
+                capability_required=lookalike_schema["capability_required"],
                 action="create", resource_type="lookalike_audience",
                 resource_id_field="audience_id",
                 intent_types=["create_lookalike_audience"],
@@ -1137,7 +1137,7 @@ class MetaCapability(BaseCapability):
                 }), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_update_audience",
+                namespace="meta", skill="meta-marketing-api", name="meta_update_audience",
                 description="更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
                 method_name="update_audience", result_key="audience_result", properties={
                     key: audience_properties[key] for key in ("account_id", "audience_id", "updates")
@@ -1147,7 +1147,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="meta", skill="meta-marketing-api", name="meta_delete_audience",
+                namespace="meta", skill="meta-marketing-api", name="meta_delete_audience",
                 description="删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
                 method_name="delete_audience", result_key="audience_result", properties={
                     key: audience_properties[key] for key in ("account_id", "audience_id")
@@ -1163,7 +1163,7 @@ class MetaCapability(BaseCapability):
             ("delete_ad", "ad", "ad_id", "delete_ad"),
         ):
             tools.append(method_tool(
-                platform="meta", skill="meta-marketing-api", name=f"meta_{method_name}",
+                namespace="meta", skill="meta-marketing-api", name=f"meta_{method_name}",
                 description=f"删除 Meta {resource_type}；默认仅生成 dry-run 计划。",
                 method_name=method_name, result_key=f"{resource_type}_result",
                 properties={
@@ -1171,7 +1171,7 @@ class MetaCapability(BaseCapability):
                     resource_id: {"type": "string"},
                 },
                 required=["account_id", resource_id],
-                provider_required=["account_id", resource_id],
+                capability_required=["account_id", resource_id],
                 action="delete", resource_type=resource_type,
                 resource_id_field=resource_id, intent_types=[intent] if intent != "delete_campaign" else [
                     "delete_campaign", "cross_channel_batch_delete"
@@ -1189,7 +1189,7 @@ class MetaCapability(BaseCapability):
             ("pause_ad", "ad", "ad_id", "pause_ad"),
         ):
             tools.append(method_tool(
-                platform="meta", skill="meta-marketing-api", name=f"meta_{method_name}",
+                namespace="meta", skill="meta-marketing-api", name=f"meta_{method_name}",
                 description=f"调用 Meta {method_name} 管理接口；默认仅生成 dry-run 计划。",
                 method_name=method_name, result_key=f"{resource_type}_result",
                 properties={resource_id: {"type": "string"}}, required=[resource_id],
@@ -1199,7 +1199,7 @@ class MetaCapability(BaseCapability):
                 argument_builder=lambda _ctx, data, field=resource_id: ((data[field],), {}),
             ))
         lookup_creative_tool = method_tool(
-            platform="meta", skill="meta-marketing-api", name="meta_lookup_creative",
+            namespace="meta", skill="meta-marketing-api", name="meta_lookup_creative",
             description="按 Creative ID 精确查询 Meta Creative，供创建广告时选择刚创建或不在首屏列表中的素材。",
             method_name="get_creative", result_key="creatives", properties={
                 key: creative_properties[key]
@@ -1226,7 +1226,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_list_campaigns",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="列出 Meta Campaign 列表。",
             input_schema=ToolSchema(
                 required=["account_id"],
@@ -1254,7 +1254,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_get_campaign",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="获取 Meta Campaign 详情。",
             input_schema=ToolSchema(
                 properties={
@@ -1280,7 +1280,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_create_campaign",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="创建 Meta Campaign。",
             input_schema=ToolSchema(**_paused_create_schema(meta_campaign_schema())),
             # ``create_campaign`` is the normal provider-composed hierarchy
@@ -1306,14 +1306,14 @@ class MetaCapability(BaseCapability):
             # ``ads.plan`` is the base contract; Runtime adds the separate
             # ``ads.write`` grant only for live execution.
             required_permissions=["ads.plan"],
-            provider_api_version="v19.0",
+            integration_api_version="v19.0",
         ), MetaCreateCampaignHandler(api_client)))
 
         # List Ad Sets
         tools.append((ToolDefinition(
             name="meta_list_ad_sets",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="列出 Meta Ad Set 列表。",
             input_schema=ToolSchema(
                 required=["campaign_id"],
@@ -1332,7 +1332,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_get_adset",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="获取 Meta Ad Set 详情。",
             input_schema=ToolSchema(
                 required=["adset_id"],
@@ -1358,7 +1358,7 @@ class MetaCapability(BaseCapability):
 
         # Exact-ID lookup keeps creation pickers bounded on large accounts.
         lookup_adset_tool = method_tool(
-            platform="meta", skill="meta-marketing-api", name="meta_lookup_adset",
+            namespace="meta", skill="meta-marketing-api", name="meta_lookup_adset",
             description="按 Ad Set ID 精确查询 Meta Ad Set，供创建广告时选择指定父级。",
             method_name="get_adset", result_key="ad_sets", properties={
                 "account_id": {"type": "string"},
@@ -1377,7 +1377,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_create_adset",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="创建 Meta Ad Set。",
             input_schema=ToolSchema(**_paused_create_schema(meta_adset_schema())),
             action="create", resource_type="ad_set", parent_resource_type="campaign",
@@ -1394,14 +1394,14 @@ class MetaCapability(BaseCapability):
             parent_resource_id_field="campaign_id",
             readback_tool="meta_get_adset",
             required_permissions=["ads.plan"],
-            provider_api_version="v19.0",
+            integration_api_version="v19.0",
         ), MetaCreateAdSetHandler(api_client)))
 
         # List Ads
         tools.append((ToolDefinition(
             name="meta_list_ads",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="列出 Meta Ad 列表。",
             input_schema=ToolSchema(
                 required=["adset_id"],
@@ -1420,7 +1420,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_get_ad",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="获取 Meta Ad 详情。",
             input_schema=ToolSchema(
                 required=["ad_id"],
@@ -1443,7 +1443,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_create_ad",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="创建 Meta Ad。",
             input_schema=ToolSchema(**_paused_create_schema(meta_ad_schema())),
             risk_level=RiskLevel.MEDIUM,
@@ -1457,7 +1457,7 @@ class MetaCapability(BaseCapability):
             parent_resource_id_field="adset_id",
             readback_tool="meta_get_ad",
             required_permissions=["ads.plan"],
-            provider_api_version="v19.0",
+            integration_api_version="v19.0",
             activation_rules=[{
                 "if": {
                     "objective": {"aliases": ["objective_type"], "not_in": [
@@ -1479,7 +1479,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_get_campaign_report",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="查询 Meta Campaign 报表。",
             input_schema=ToolSchema(
                 properties={
@@ -1517,7 +1517,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_list_audiences",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="查询 Meta Custom Audience 列表。",
             input_schema=ToolSchema(
                 required=["account_id"],
@@ -1533,7 +1533,7 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_boost_post",
             skill="meta-marketing-api",
-            platform="meta",
+            namespace="meta",
             description="将已有 Meta Page 帖子创建为推广广告。",
             input_schema=ToolSchema(
                 required=["account_id", "page_id", "post_id", "budget", "duration_days"],
@@ -1557,11 +1557,11 @@ class MetaCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="meta_create_creative",
             skill="meta-marketing-api-expert",
-            platform="meta",
+            namespace="meta",
             description="创建 Meta Creative；受控 live 路径仅允许配合 PAUSED Ad 使用。",
             input_schema=ToolSchema(
                 required=["account_id", "name", "page_id", "link"],
-                provider_required=["name", "page_id", "link"],
+                capability_required=["name", "page_id", "link"],
                 properties={
                     "account_id": {"type": "string"},
                     "name": {"type": "string"},
@@ -1590,7 +1590,7 @@ class MetaCapability(BaseCapability):
             resource_id_field="creative_id",
             readback_tool="meta_get_creative",
             required_permissions=["ads.plan"],
-            provider_api_version="v19.0",
+            integration_api_version="v19.0",
         ), MetaCreateCreativeHandler(api_client)))
 
         # Update tools: dry-run 可完整生成计划；live 仅调用已存在的 Client 方法。
@@ -1602,7 +1602,7 @@ class MetaCapability(BaseCapability):
             tools.append((ToolDefinition(
                 name=f"meta_update_{tool_suffix}",
                 skill="meta-marketing-api",
-                platform="meta",
+                namespace="meta",
                 description=f"更新 Meta {resource_type}；受控 live 路径仅允许操作已暂停测试资源。",
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"],
@@ -1645,7 +1645,7 @@ class MetaCapability(BaseCapability):
                     "ad": "meta_get_ad",
                 }[resource_type],
                 required_permissions=["ads.plan"],
-                provider_api_version="v19.0",
+                integration_api_version="v19.0",
             ), CampaignUpdateHandler(
                 api_client, resource_type, _meta_update_adapter,
                 resource_id_field=resource_id,

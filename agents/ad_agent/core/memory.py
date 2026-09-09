@@ -1,8 +1,8 @@
-"""Provider-neutral Agent Memory contracts and policy.
+"""Application-neutral Agent Memory contracts and policy.
 
 Memory is deliberately separate from the Markdown Wiki, session state and
 tool audit.  The Runtime may recall bounded, tenant/user-scoped records, but a
-memory record can never grant a Tool, permission, account or credential.
+memory record can never grant a Tool, permission, scope or credential.
 """
 
 from __future__ import annotations
@@ -229,7 +229,7 @@ class MemoryManager:
         """Extract only high-confidence preference-like memory candidates.
 
         Automatic memory is intentionally conservative: ordinary questions,
-        provider results and assistant prose are never promoted. Explicit
+        external results and assistant prose are never promoted. Explicit
         ``请记住`` requests always win; the other patterns cover stable user
         preferences without adding an LLM call to every turn.
         """

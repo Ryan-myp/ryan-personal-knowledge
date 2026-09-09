@@ -69,7 +69,7 @@ class ConversationTitleGenerator:
             return False
         if title.startswith("{") or title.startswith("["):
             return False
-        if any(term in title.lower() for term in ("intent_type", "platform_params", "provider client")):
+        if any(term in title.lower() for term in ("intent_type", "scoped_parameters", "tool client")):
             return False
         return True
 

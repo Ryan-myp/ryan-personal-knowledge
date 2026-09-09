@@ -113,7 +113,7 @@ def configured_parser():
         )
     parser.refresh_tool_catalog(definitions)
     for skill in loader.list_all().values():
-        parser.register_platform_aliases(skill.platform, skill.platform_aliases)
+        parser.register_namespace_aliases(skill.namespace, skill.namespace_aliases)
     for feature in discover_features():
         parser.register_intent_descriptors(feature.intent_descriptors())
     return parser
@@ -217,7 +217,7 @@ class TestToolRegistry:
         tool_def = ToolDefinition(
             name="test_tool",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="Test tool",
             input_schema=ToolSchema(),
         )
@@ -232,7 +232,7 @@ class TestToolRegistry:
         tool_def = ToolDefinition(
             name="test_tool",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="Test tool",
             input_schema=ToolSchema(),
         )
@@ -254,12 +254,12 @@ class TestToolRegistry:
             tool_def = ToolDefinition(
                 name=f"meta_tool_{i}",
                 skill="meta",
-                platform="meta",
+                namespace="meta",
                 description=f"Tool {i}",
                 input_schema=ToolSchema(),
             )
             registry.register(tool_def, lambda ctx, inp: ToolResult.ok({}))
-        tools = registry.list_by_platform("meta")
+        tools = registry.list_by_namespace("meta")
         assert len(tools) == 3
 
     def test_execute(self):
@@ -267,7 +267,7 @@ class TestToolRegistry:
         tool_def = ToolDefinition(
             name="test_tool",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="Test tool",
             input_schema=ToolSchema(required=["x"], properties={"x": {"type": "string"}}),
         )
@@ -358,14 +358,14 @@ class TestIntentParser:
         parser = configured_parser()
         intent = parser.parse("列出 Meta campaign 列表", None)
         assert intent.intent_type == "list_campaigns"
-        assert "meta" in intent.platforms
+        assert "meta" in intent.namespaces
 
     def test_list_campaigns_google(self):
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = configured_parser()
         intent = parser.parse("查询 Google Ads 广告系列", None)
         assert intent.intent_type == "list_campaigns"
-        assert "google-ads" in intent.platforms
+        assert "google-ads" in intent.namespaces
 
     def test_google_keyword_lifecycle_intents_are_distinct(self):
         parser = configured_parser()
@@ -406,25 +406,25 @@ class TestIntentParser:
         )
 
         assert intent.intent_type == "create_campaign"
-        assert intent.platforms == ["tiktok"]
-        assert intent.platform_params["tiktok"]["name"] == "春季促销"
-        assert intent.platform_params["tiktok"]["objective_type"] == "PRODUCT_SALES"
-        assert intent.platform_params["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
-        assert intent.platform_params["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
+        assert intent.namespaces == ["tiktok"]
+        assert intent.scoped_parameters["tiktok"]["name"] == "春季促销"
+        assert intent.scoped_parameters["tiktok"]["objective_type"] == "PRODUCT_SALES"
+        assert intent.scoped_parameters["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
+        assert intent.scoped_parameters["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
 
     def test_cross_channel_create_selects_all_registered_platforms(self):
         parser = configured_parser()
         intent = parser.parse("跨渠道创建 campaign", None)
 
         assert intent.intent_type == "chat"
-        assert intent.platforms == []
+        assert intent.namespaces == []
 
     def test_cross_channel_update_selects_all_registered_platforms(self):
         parser = configured_parser()
         intent = parser.parse("跨平台更新 campaign", None)
 
         assert intent.intent_type == "chat"
-        assert intent.platforms == []
+        assert intent.namespaces == []
 
     def test_cross_channel_delete_selects_batch_management_intent(self):
         parser = configured_parser()
@@ -433,14 +433,14 @@ class TestIntentParser:
         )
 
         assert intent.intent_type == "cross_channel_batch_delete"
-        assert intent.platforms == ["meta", "google-ads"]
+        assert intent.namespaces == ["meta", "google-ads"]
 
     def test_single_channel_create_does_not_expand_to_all_platforms(self):
         parser = configured_parser()
         intent = parser.parse("创建 campaign", None)
 
         assert intent.intent_type == "chat"
-        assert intent.platforms == []
+        assert intent.namespaces == []
 
     def test_chat_intent(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -458,7 +458,7 @@ class TestIntentParser:
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = configured_parser()
         # 使用小写关键词确保匹配
-        platforms = parser._detect_platforms("帮我查 meta 和 google 的 campaign")
+        platforms = parser._detect_namespaces("帮我查 meta 和 google 的 campaign")
         assert "meta" in platforms
         assert "google-ads" in platforms
 
@@ -467,19 +467,19 @@ class TestIntentParser:
         parser = configured_parser()
         intent = parser.parse("查询 Google Ads 报表 date_range=LAST_7_DAYS", None)
         assert intent.date_range is None
-        assert intent.platform_params["google-ads"]["date_range"] == "LAST_7_DAYS"
+        assert intent.scoped_parameters["google-ads"]["date_range"] == "LAST_7_DAYS"
 
     def test_normalize_llm_aliases_and_ignores_unknown_fields(self):
         from agents.ad_agent.core.intent import LLMIntentParser
         parser = configured_parser()
         normalized = parser._normalize_intent({
             "intent_type": "create_campaign",
-            "platforms": ["google"],
+            "namespaces": ["google"],
             "budget_daily": 100,
             "unsupported_model_field": "must be ignored",
         })
         assert "budget" not in normalized
-        assert normalized["platforms"] == ["google-ads"]
+        assert normalized["namespaces"] == ["google-ads"]
         assert "budget_daily" not in normalized
         assert "unsupported_model_field" not in normalized
 
@@ -488,7 +488,7 @@ class TestIntentParser:
 
         class FakeLLM:
             def call(self, messages):
-                return '{"intent_type":"list_campaigns","platforms":["google"]}'
+                return '{"intent_type":"list_campaigns","namespaces":["google"]}'
 
         parser = LLMIntentParser(FakeLLM())
         definition = next(
@@ -511,12 +511,12 @@ class TestIntentParser:
             def call(self, messages):
                 self.calls += 1
                 if self.calls == 1:
-                    return '{"intent_type":"chat","platforms":["google-ads"]}'
-                return '{"intent_type":"list_campaigns","platforms":["google-ads"]}'
+                    return '{"intent_type":"chat","namespaces":["google-ads"]}'
+                return '{"intent_type":"list_campaigns","namespaces":["google-ads"]}'
 
         llm = RepairingLLM()
         parser = LLMIntentParser(llm)
-        parser.register_platforms(["google-ads"])
+        parser.register_namespaces(["google-ads"])
         definition = next(
             definition
             for definition, _ in create_google_capability_mock().register_tools()
@@ -526,7 +526,7 @@ class TestIntentParser:
         intent = parser.parse("查询 Google campaign", None)
 
         assert intent.intent_type == "list_campaigns"
-        assert intent.platforms == ["google-ads"]
+        assert intent.namespaces == ["google-ads"]
         assert llm.calls == 2
 
     def test_llm_repairs_chat_result_that_omits_provider_for_a_query(self):
@@ -539,12 +539,12 @@ class TestIntentParser:
             def call(self, messages):
                 self.calls += 1
                 if self.calls == 1:
-                    return '{"intent_type":"chat","platforms":[]}'
-                return '{"intent_type":"list_campaigns","platforms":["google-ads"]}'
+                    return '{"intent_type":"chat","namespaces":[]}'
+                return '{"intent_type":"list_campaigns","namespaces":["google-ads"]}'
 
         llm = RepairingLLM()
         parser = LLMIntentParser(llm)
-        parser.register_platforms(["google-ads"])
+        parser.register_namespaces(["google-ads"])
         definition = next(
             definition
             for definition, _ in create_google_capability_mock().register_tools()
@@ -554,7 +554,7 @@ class TestIntentParser:
         intent = parser.parse("查询 Google campaign 列表", None)
 
         assert intent.intent_type == "list_campaigns"
-        assert intent.platforms == ["google-ads"]
+        assert intent.namespaces == ["google-ads"]
         assert llm.calls == 2
 
     def test_llm_parser_receives_bounded_skill_context(self):
@@ -566,7 +566,7 @@ class TestIntentParser:
 
             def call(self, messages):
                 self.calls.append(messages)
-                return '{"intent_type":"list_campaigns","platforms":["meta"]}'
+                return '{"intent_type":"list_campaigns","namespaces":["meta"]}'
 
         llm = FakeLLM()
         parser = LLMIntentParser(llm)
@@ -597,7 +597,7 @@ class TestIntentParser:
 
             def call(self, messages):
                 self.calls.append(messages)
-                return '{"intent_type":"get_campaign","platforms":["meta"]}'
+                return '{"intent_type":"get_campaign","namespaces":["meta"]}'
 
         llm = FakeLLM()
         parser = LLMIntentParser(llm)
@@ -636,7 +636,7 @@ class TestIntentParser:
         parser = configured_parser()
         intent = parser.parse("比较 Meta 和 Google 的 campaign", None)
         assert intent.intent_type == "cross_channel_compare"
-        assert intent.platforms == ["meta", "google-ads"]
+        assert intent.namespaces == ["meta", "google-ads"]
 
     def test_cross_channel_create_routes_to_create_workflow(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -646,7 +646,7 @@ class TestIntentParser:
         )
 
         assert intent.intent_type == "create_campaign"
-        assert intent.platforms == ["meta", "tiktok"]
+        assert intent.namespaces == ["meta", "tiktok"]
 
     def test_rule_parser_extracts_tiktok_creation_parameters(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -658,9 +658,9 @@ class TestIntentParser:
             None,
         )
 
-        assert intent.platform_params["tiktok"]["objective_type"] == "APP_PROMOTION"
-        assert intent.platform_params["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
-        assert intent.platform_params["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
+        assert intent.scoped_parameters["tiktok"]["objective_type"] == "APP_PROMOTION"
+        assert intent.scoped_parameters["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
+        assert intent.scoped_parameters["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
 
     def test_rule_parser_understands_multilingual_creation_phrases_from_schema(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -678,7 +678,7 @@ class TestIntentParser:
             None,
         )
 
-        values = intent.platform_params["tiktok"]
+        values = intent.scoped_parameters["tiktok"]
         assert values["objective_type"] == "APP_PROMOTION"
         assert values["operating_systems"] == ["ANDROID"]
         assert values["age_groups"] == ["AGE_18_24", "AGE_25_34", "AGE_35_44"]
@@ -689,10 +689,10 @@ class TestIntentParser:
             "Create a TikTok app conversion campaign for an Android app, daily budget 100",
             None,
         )
-        assert english.platform_params["tiktok"]["objective_type"] == "APP_PROMOTION"
-        assert english.platform_params["tiktok"]["promotion_type"] == "APP_ANDROID"
+        assert english.scoped_parameters["tiktok"]["objective_type"] == "APP_PROMOTION"
+        assert english.scoped_parameters["tiktok"]["promotion_type"] == "APP_ANDROID"
 
-        assert "updates" not in english.platform_params["tiktok"]
+        assert "updates" not in english.scoped_parameters["tiktok"]
 
     def test_llm_enum_alias_is_normalized_but_dynamic_resource_is_not_guessed(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -702,8 +702,8 @@ class TestIntentParser:
         parser.register_tool_schemas("tiktok", [tiktok_adgroup_schema()])
         normalized = parser._normalize_intent({
             "intent_type": "create_campaign",
-            "platforms": ["tiktok"],
-            "platform_params": {
+            "namespaces": ["tiktok"],
+            "scoped_parameters": {
                 "tiktok": {
                     "promotion_type": "Android app",
                     "app_id": "my app",
@@ -712,7 +712,7 @@ class TestIntentParser:
             },
         })
 
-        values = normalized["platform_params"]["tiktok"]
+        values = normalized["scoped_parameters"]["tiktok"]
         assert values["promotion_type"] == "APP_ANDROID"
         assert values["operating_systems"] == ["ANDROID"]
         assert values["app_id"] == "my app"
@@ -727,8 +727,8 @@ class TestIntentParser:
             def call(self, messages):
                 return json.dumps({
                     "intent_type": "create_campaign",
-                    "platforms": ["tiktok"],
-                    "platform_params": {
+                    "namespaces": ["tiktok"],
+                    "scoped_parameters": {
                         "tiktok": {
                             "app_id": "model-placeholder",
                             "promotion_type": "Android app",
@@ -746,7 +746,7 @@ class TestIntentParser:
             None,
         )
 
-        values = intent.platform_params["tiktok"]
+        values = intent.scoped_parameters["tiktok"]
         assert values["app_id"] == "app-123"
         assert values["objective_type"] == "APP_PROMOTION"
         assert values["promotion_type"] == "APP_ANDROID"
@@ -760,8 +760,8 @@ class TestIntentParser:
             def call(self, messages):
                 return json.dumps({
                     "intent_type": "create_campaign",
-                    "platforms": ["tiktok"],
-                    "platform_params": {
+                    "namespaces": ["tiktok"],
+                    "scoped_parameters": {
                         "tiktok": {"media": [{"type": "image"}]}
                     },
                 })
@@ -769,7 +769,7 @@ class TestIntentParser:
         parser = LLMIntentParser(CreativeLLM())
         parser.register_tool_schemas("tiktok", [tiktok_app_ad_schema()])
         intent = parser.parse("Create a TikTok app ad with an image", None)
-        assert intent.platform_params["tiktok"]["media"][0]["type"] == "IMAGE"
+        assert intent.scoped_parameters["tiktok"]["media"][0]["type"] == "IMAGE"
 
     def test_single_platform_plain_language_accepts_explicit_account_and_resource_ids(self):
         from agents.ad_agent.capabilities.tiktok.parameters import (
@@ -784,7 +784,7 @@ class TestIntentParser:
             "TikTok ad group，账户 ID 是 advertiser-7，App ID 是 app-123，Pixel ID: px-9",
             None,
         )
-        values = intent.platform_params["tiktok"]
+        values = intent.scoped_parameters["tiktok"]
         assert "account_id" not in values
         assert values["app_id"] == "app-123"
         assert values["pixel_id"] == "px-9"
@@ -834,7 +834,7 @@ class TestIntentParser:
         parser = configured_parser()
         intent = parser.parse("跨渠道暂停 Meta 和 Google campaign 12345", None)
         assert all(
-            "campaign_id" not in intent.platform_params[platform]
+            "campaign_id" not in intent.scoped_parameters[platform]
             for platform in ("meta", "google-ads")
         )
 
@@ -843,7 +843,7 @@ class TestIntentParser:
         parser = configured_parser()
         intent = parser.parse("跨渠道暂停 Meta 和 TikTok campaign campaign_id=123", None)
         assert intent.intent_type == "cross_channel_batch_pause"
-        assert intent.platforms == ["meta", "tiktok"]
+        assert intent.namespaces == ["meta", "tiktok"]
 
     def test_cross_platform_pause_routes_update_tools(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -876,8 +876,8 @@ class TestIntentParser:
             "跨渠道暂停 Meta 和 TikTok，campaign_id=123",
             None,
         )
-        assert "campaign_id" not in intent.platform_params["meta"]
-        assert "campaign_id" not in intent.platform_params["tiktok"]
+        assert "campaign_id" not in intent.scoped_parameters["meta"]
+        assert "campaign_id" not in intent.scoped_parameters["tiktok"]
 
     def test_platform_qualified_campaign_ids_are_not_copied_between_channels(self):
         from agents.ad_agent.core.intent import LLMIntentParser
@@ -886,8 +886,8 @@ class TestIntentParser:
             "跨渠道暂停 Meta campaign_id=111 和 Google campaign_id=222",
             None,
         )
-        assert intent.platform_params["meta"]["campaign_id"] == "111"
-        assert intent.platform_params["google-ads"]["campaign_id"] == "222"
+        assert intent.scoped_parameters["meta"]["campaign_id"] == "111"
+        assert intent.scoped_parameters["google-ads"]["campaign_id"] == "222"
 
     def test_platform_qualified_single_campaign_id_is_kept_in_batch_request(self):
         parser = configured_parser()
@@ -895,8 +895,8 @@ class TestIntentParser:
             "批量暂停 Meta campaign_ids=10001,10002 和 Google campaign_ids=20001",
             ToolContext(session_id="s1", user_id="u1"),
         )
-        assert intent.platform_params["meta"]["campaign_ids"] == ["10001", "10002"]
-        assert intent.platform_params["google-ads"]["campaign_ids"] == ["20001"]
+        assert intent.scoped_parameters["meta"]["campaign_ids"] == ["10001", "10002"]
+        assert intent.scoped_parameters["google-ads"]["campaign_ids"] == ["20001"]
 
 
 # ─── Runtime 集成测试 ──────────────────────────────────────────
@@ -923,9 +923,9 @@ class TestRuntimeQuery:
         class SequenceLLM:
             def __init__(self):
                 self.responses = [
-                    '{"intent_type":"chat","platforms":["google"]}',
-                    '{"intent_type":"create_report","platforms":["dv360","google"]}',
-                    '{"intent_type":"get_campaign_report","platforms":["google"]}',
+                    '{"intent_type":"chat","namespaces":["google"]}',
+                    '{"intent_type":"create_report","namespaces":["dv360","google"]}',
+                    '{"intent_type":"get_campaign_report","namespaces":["google"]}',
                 ]
 
             def call(self, _messages):
@@ -1033,7 +1033,7 @@ class TestRuntimeQuery:
 
             def call(self, messages):
                 self.calls.append(messages)
-                return '{"intent_type":"list_campaigns","platforms":["meta"]}'
+                return '{"intent_type":"list_campaigns","namespaces":["meta"]}'
 
         llm = FakeLLM()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -1174,7 +1174,7 @@ class TestRuntimeQuery:
         class LLM:
             def call(self, messages):
                 seen.extend(messages)
-                return '{"intent_type":"chat","platforms":[]}'
+                return '{"intent_type":"chat","namespaces":[]}'
 
         rt = AgentRuntime(require_llm=False, persistence_store=AdAgentStore(":memory:"), intent_parser=__import__(
             "agents.ad_agent.core.intent", fromlist=["LLMIntentParser"]
@@ -1198,7 +1198,7 @@ class TestRuntimeQuery:
     def test_runtime_persists_both_sides_of_a_conversation_turn(self):
         class LLM:
             def call(self, messages):
-                return '{"intent_type":"chat","platforms":[]}'
+                return '{"intent_type":"chat","namespaces":[]}'
 
         rt = AgentRuntime(
             require_llm=False,
@@ -1235,7 +1235,7 @@ class TestRuntimeQuery:
     def test_runtime_persists_creation_card_with_assistant_message(self):
         class LLM:
             def call(self, messages):
-                return '{"intent_type":"chat","platforms":[]}'
+                return '{"intent_type":"chat","namespaces":[]}'
 
         rt = AgentRuntime(
             require_llm=False,
@@ -1446,7 +1446,7 @@ class TestSafeWriteExecution:
             def register_tool_definitions(self, _definitions):
                 return None
 
-            def register_platforms(self, _platforms):
+            def register_namespaces(self, _platforms):
                 return None
 
             def register_tool_schemas(self, _platform, _schemas):
@@ -1485,7 +1485,7 @@ class TestSafeWriteExecution:
                     definition = ToolDefinition(
                         name="meta_test_" + resource,
                         skill="test-chain",
-                        platform="meta",
+                        namespace="meta",
                         description=resource,
                         input_schema=ToolSchema(
                             required=required, properties=properties,
@@ -2240,14 +2240,14 @@ class TestIterationContracts:
 
         class CustomSkill(CoreSkill):
             name = "custom-meta-insights"
-            platform = "meta"
+            namespace = "meta"
             description = "Custom read-only extension"
 
             def __init__(self):
                 self.definition = ToolDefinition(
                     name="custom_meta_insight",
                     skill=self.name,
-                    platform=self.platform,
+                    namespace=self.namespace,
                     description="Read a custom local insight",
                     input_schema=ToolSchema(),
                     action="read",
@@ -2291,7 +2291,7 @@ class TestIterationContracts:
         skill_dir = skill_root / "channels" / "custom-insights"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text(
-            "---\nname: custom-insights\nplatform: meta\n---\n"
+            "---\nname: custom-insights\nnamespace: meta\n---\n"
             "# Custom local Skill\n",
             encoding="utf-8",
         )
@@ -2300,10 +2300,10 @@ class TestIterationContracts:
             "from agents.ad_agent.core.interfaces import Skill as CoreSkill\n"
             "class LocalSkill(CoreSkill):\n"
             "    name = 'custom-insights'\n"
-            "    platform = 'meta'\n"
+            "    namespace = 'meta'\n"
             "    description = 'Local insight extension'\n"
             "    def __init__(self):\n"
-            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, platform=self.platform, description='local insight', input_schema=ToolSchema(), action='read', resource_type='insight', intent_types=['custom_insight'])\n"
+            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, namespace=self.namespace, description='local insight', input_schema=ToolSchema(), action='read', resource_type='insight', intent_types=['custom_insight'])\n"
             "    def get_tools(self):\n"
             "        return [self.definition]\n"
             "    def get_tool_handler(self, tool_name):\n"
@@ -2338,7 +2338,7 @@ class TestIterationContracts:
             "---\n"
             "skill:\n"
             "  name: nested-insights\n"
-            "  platform: meta\n"
+            "  namespace: meta\n"
             "  description: Nested metadata extension\n"
             "  version: '2.0'\n"
             "---\n"
@@ -2348,7 +2348,7 @@ class TestIterationContracts:
 
         skills = SkillLoader(str(tmp_path)).load_all()
 
-        assert skills["nested-insights"].platform == "meta"
+        assert skills["nested-insights"].namespace == "meta"
         assert skills["nested-insights"].description == "Nested metadata extension"
         assert skills["nested-insights"].version == "2.0.0"
 

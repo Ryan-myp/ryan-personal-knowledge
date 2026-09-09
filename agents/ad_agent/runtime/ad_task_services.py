@@ -245,7 +245,7 @@ class AdTaskServices:
             "execution_mode": self.runtime.get_execution_mode(tenant_id, user_id)
             if tenant_id and user_id else self.runtime.execution_mode,
             "tool_count": len(self.runtime.registry.list_all()),
-            "platform_count": len(self.runtime.registry.list_all_platforms()),
+            "platform_count": len(self.runtime.registry.list_all_namespaces()),
             "task_executor": task_executor.metrics() if task_executor else {"state": "disabled"},
             "outbox_consumer": outbox_consumer.metrics() if outbox_consumer else {"state": "disabled"},
             "event_repair": self.runtime.event_repair_consumer.metrics()

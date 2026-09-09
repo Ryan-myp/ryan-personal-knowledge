@@ -1,7 +1,7 @@
 """Durable, provider-neutral asynchronous task execution.
 
-This module owns queueing and lifecycle control only.  It never imports a
-Provider client, resolves a channel, or executes a Handler directly.  The
+This module owns queueing and lifecycle control only.  It never imports an
+external-system client, resolves an integration, or executes a Handler directly.  The
 embedding Runtime registers a small, trusted handler for each task kind; the
 durable record contains data, not callbacks or executable user code.
 """
@@ -58,7 +58,7 @@ def task_outcome_status(result: Any) -> str:
             for name in ("session_lease_lost", "task_lease_lost")
         ):
             return "recovery_required"
-        if result.get("recovery_required") or result.get("provider_state") == "unknown":
+        if result.get("recovery_required") or result.get("effect_state") == "unknown":
             return "recovery_required"
         if result.get("needs_input") or result.get("needs_confirmation"):
             return "awaiting_input"
@@ -336,7 +336,7 @@ class TaskExecutor:
             heartbeat_stop = threading.Event()
             deadline_event = threading.Event()
 
-            # Python cannot safely kill a provider call running in a worker
+            # Python cannot safely kill an external call running in a worker
             # thread. A watchdog still makes the deadline observable to the
             # handler and ensures a late return is recorded as uncertain.
             def expire() -> None:
@@ -397,7 +397,7 @@ class TaskExecutor:
                         result=safe_result,
                         workflow_id=workflow_id,
                         error="任务执行租约丢失；外部副作用状态未知，请先核对后再处理",
-                        metadata={"lease_lost": True, "provider_state": "unknown"},
+                        metadata={"lease_lost": True, "effect_state": "unknown"},
                         expected_statuses=["running", "cancelling"],
                     )
                 elif cancellation_requested:
@@ -422,7 +422,7 @@ class TaskExecutor:
                         ),
                         metadata={
                             "deadline_exceeded": True,
-                            "provider_state": "unknown",
+                            "effect_state": "unknown",
                         },
                         expected_statuses=["running"],
                     )
@@ -459,7 +459,7 @@ class TaskExecutor:
                     task_id, status,
                     error=self._safe_error(exc),
                     metadata=(
-                        {"deadline_exceeded": True, "provider_state": "unknown"}
+                        {"deadline_exceeded": True, "effect_state": "unknown"}
                         if deadline_exceeded else None
                     ),
                     expected_statuses=["running", "cancelling"],

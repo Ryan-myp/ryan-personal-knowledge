@@ -46,7 +46,7 @@ def test_google_specialized_creation_chains_are_metadata_driven():
         routed = runtime.intent_router.route(
             ParsedIntent(
                 "create_campaign", "create", ["google-ads"],
-                platform_params={"google-ads": {
+                scoped_parameters={"google-ads": {
                     "advertising_channel_type": campaign_type,
                 }},
             ),
@@ -64,11 +64,11 @@ def test_google_specialized_campaign_settings_are_closed_and_provider_ready():
         "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "demand_gen_campaign_settings": {"upgraded_targeting": True},
     }
-    assert validate_tool_input(campaign.input_schema, valid, include_provider_contract=True) == []
+    assert validate_tool_input(campaign.input_schema, valid, include_capability_contract=True) == []
     missing = dict(valid)
     missing.pop("demand_gen_campaign_settings")
     assert any("demand_gen_campaign_settings" in error for error in validate_tool_input(
-        campaign.input_schema, missing, include_provider_contract=True,
+        campaign.input_schema, missing, include_capability_contract=True,
     ))
 
     for campaign_type, setting in (
@@ -86,7 +86,7 @@ def test_google_specialized_campaign_settings_are_closed_and_provider_ready():
         }[campaign_type]
         payload[field] = setting
         assert validate_tool_input(
-            campaign.input_schema, payload, include_provider_contract=True,
+            campaign.input_schema, payload, include_capability_contract=True,
         ) == []
 
 

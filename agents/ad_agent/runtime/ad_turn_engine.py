@@ -107,7 +107,7 @@ def execute(
                     execution_mode=runtime.execution_mode,
                     task_id=str(task_id) if task_id else None,
                     metadata={
-                        "provider_state": "unknown",
+                        "effect_state": "unknown",
                         "user_input": runtime._redact_for_persistence(user_input),
                     },
                     created_at=datetime.now().isoformat(),
@@ -276,16 +276,16 @@ def execute(
         "Intent 识别",
         "succeeded",
         subtitle="已识别请求目标",
-        platform=", ".join(str(item) for item in (intent.platforms or [])),
+        namespace=", ".join(str(item) for item in (intent.namespaces or [])),
         safe_metadata={
             "intent_type": intent.intent_type,
-            "platform_count": len(intent.platforms or []),
+            "platform_count": len(intent.namespaces or []),
         },
         safe_output={
             "intent_type": intent.intent_type,
-            "platforms": list(intent.platforms or []),
-            "structured_parameters": bool(intent.platform_params),
-            "parameters": runtime._redact_for_persistence(intent.platform_params or {}),
+            "platforms": list(intent.namespaces or []),
+            "structured_parameters": bool(intent.scoped_parameters),
+            "parameters": runtime._redact_for_persistence(intent.scoped_parameters or {}),
         },
     )
     # A credential-shaped field can arrive through the LLM/parser output
@@ -294,7 +294,7 @@ def execute(
     # creation flow.  Reject the structured intent before Skill loading,
     # account resolution, lookup planning, or Tool execution.
     parsed_protected_paths = runtime.security.validate_input_redline(
-        intent.platform_params or {}
+        intent.scoped_parameters or {}
     )
     if parsed_protected_paths:
         error = (
@@ -428,7 +428,7 @@ def execute(
                 "confirmation_payload": None,
                 "policy_errors": [error],
             }
-        merged_params = copy.deepcopy(intent.platform_params or {})
+        merged_params = copy.deepcopy(intent.scoped_parameters or {})
         for platform, values in platform_params.items():
             canonical_platform = runtime._resolve_platform_identifier(platform)
             target_platform = next(
@@ -446,7 +446,7 @@ def execute(
                 }
             else:
                 merged_params[target_platform] = runtime._redact_for_persistence(values)
-        intent.platform_params = merged_params
+        intent.scoped_parameters = merged_params
 
     # A creation follow-up is often intentionally short (for example
     # “流量广告” after the Agent asked for a TikTok objective). Restore
@@ -466,7 +466,7 @@ def execute(
         )
 
     # Step 2.5: 动态加载相关平台的 Skill 工具
-    runtime._load_required_skills(intent.platforms)
+    runtime._load_required_skills(intent.namespaces)
 
     policy_errors = runtime._validate_policies(intent)
     if policy_errors:
@@ -511,10 +511,10 @@ def execute(
         # test-account policy even when the business type is ambiguous.
         # Clarification must not become a way to probe or operate outside
         # the caller's account scope.
-        for provider in list(getattr(intent, "platforms", []) or []):
+        for provider in list(getattr(intent, "namespaces", []) or []):
             canonical_provider = runtime._resolve_platform_identifier(provider)
             provider_values: Mapping[str, Any] = {}
-            for raw_provider, values in (getattr(intent, "platform_params", {}) or {}).items():
+            for raw_provider, values in (getattr(intent, "scoped_parameters", {}) or {}).items():
                 if runtime._resolve_platform_identifier(raw_provider) == canonical_provider and isinstance(values, Mapping):
                     provider_values = values
                     break
@@ -601,7 +601,7 @@ def execute(
         safe_metadata={"phase": "skill_selection"},
         safe_input={
             "intent_type": intent.intent_type,
-            "platforms": list(intent.platforms or []),
+            "platforms": list(intent.namespaces or []),
         },
     )
     tool_plan = runtime.intent_router.route(intent, runtime.registry)
@@ -616,7 +616,7 @@ def execute(
     }
     requested_platforms = {
         runtime._canonical_platform(platform)
-        for platform in (getattr(intent, "platforms", []) or [])
+        for platform in (getattr(intent, "namespaces", []) or [])
     }
     route_is_incomplete = bool(
         requested_platforms and routed_platforms != requested_platforms
@@ -625,7 +625,7 @@ def execute(
         tool_plan
         or route_is_incomplete
         or str(getattr(intent, "intent_type", "") or "") != "chat"
-        or bool(getattr(intent, "platforms", []) or [])
+        or bool(getattr(intent, "namespaces", []) or [])
     )
     if should_repair_route and (not tool_plan or route_is_incomplete):
         repair = getattr(runtime.intent_parser, "repair_for_routing", None)
@@ -635,7 +635,7 @@ def execute(
         )
         if repaired_intent is not None:
             intent = repaired_intent
-            runtime._load_required_skills(intent.platforms)
+            runtime._load_required_skills(intent.namespaces)
             policy_errors = runtime._validate_policies(intent)
             if not policy_errors:
                 tool_plan = runtime.intent_router.route(intent, runtime.registry)
@@ -671,7 +671,7 @@ def execute(
         # The Blueprint's declared Tool composition is authoritative;
         # preserve the original intent name so custom Capabilities do not
         # need to alias their action to ``create_campaign``.
-        intent.platforms = [next(iter(blueprint_tool_plan))]
+        intent.namespaces = [next(iter(blueprint_tool_plan))]
         tool_plan = blueprint_tool_plan or {}
 
     # Ordinary actions use the same schema boundary as creation: if the
@@ -866,7 +866,7 @@ def execute(
             "tool_selection": {
                 "tool_count": tool_selection["tool_count"],
                 "tools": [tool.name for tool in tool_selection["selected_tools"]],
-                "platforms": tool_selection["platforms"],
+                "platforms": tool_selection["namespaces"],
                 "context": tool_selection["context"],
                 "tool_prompt": tool_selection["tool_prompt"],
                 "expert_knowledge": tool_selection["expert_knowledge"],
@@ -903,7 +903,7 @@ def execute(
         )
         parameter_result = {
             "tool": first_tool.name if first_tool else "parameter_contract",
-            "platform": first_tool.platform if first_tool else "",
+            "platform": first_tool.namespace if first_tool else "",
             "success": False,
             "data": {},
             "error": "; ".join(parameter_errors),
@@ -1018,7 +1018,7 @@ def execute(
                 "tool_selection": {
                     "tool_count": tool_selection["tool_count"],
                     "tools": [tool.name for tool in tool_selection["selected_tools"]],
-                    "platforms": tool_selection["platforms"],
+                    "platforms": tool_selection["namespaces"],
                     "context": tool_selection["context"],
                     "tool_prompt": tool_selection["tool_prompt"],
                     "expert_knowledge": tool_selection["expert_knowledge"],
@@ -1088,7 +1088,7 @@ def execute(
                     "tool_selection": {
                     "tool_count": tool_selection["tool_count"],
                     "tools": [tool.name for tool in tool_selection["selected_tools"]],
-                    "platforms": tool_selection["platforms"],
+                    "platforms": tool_selection["namespaces"],
                     "context": tool_selection["context"],
                     "tool_prompt": tool_selection["tool_prompt"],
                     "expert_knowledge": tool_selection["expert_knowledge"],
@@ -1161,9 +1161,9 @@ def execute(
     if not tool_plan:
         runtime.set_action_draft(session_id, None)
         intent_type = str(getattr(intent, "intent_type", "") or "")
-        platform_params = getattr(intent, "platform_params", {}) or {}
+        platform_params = getattr(intent, "scoped_parameters", {}) or {}
         has_structured_request = bool(
-            getattr(intent, "platforms", None)
+            getattr(intent, "namespaces", None)
             or any(
                 isinstance(values, dict) and any(
                     value not in (None, "", {}, [])
@@ -1251,7 +1251,7 @@ def execute(
             "tool_selection": {
                 "tool_count": tool_selection["tool_count"],
                 "tools": [tool.name for tool in tool_selection["selected_tools"]],
-                "platforms": tool_selection["platforms"],
+                "platforms": tool_selection["namespaces"],
                 "context": tool_selection["context"],
                 "tool_prompt": tool_selection["tool_prompt"],
                 "expert_knowledge": tool_selection["expert_knowledge"],
@@ -1299,7 +1299,7 @@ def execute(
             "账户范围",
             "running",
             subtitle=f"校验 {actual_platform} 账户与访问范围",
-            platform=actual_platform,
+            namespace=actual_platform,
             safe_metadata={"phase": "account_scope"},
             safe_input={"platform": actual_platform},
         )
@@ -1352,7 +1352,7 @@ def execute(
                     "账户范围",
                     "awaiting_confirmation",
                     subtitle="等待补充账户范围",
-                    platform=actual_platform,
+                    namespace=actual_platform,
                     safe_metadata={"reason": "account_required"},
                     safe_output={"validated": False, "account_required": True},
                 )
@@ -1383,7 +1383,7 @@ def execute(
                     "账户范围",
                     "failed",
                     subtitle="账户不在允许范围内",
-                    platform=actual_platform,
+                    namespace=actual_platform,
                     safe_metadata={"reason": "account_scope_denied"},
                     safe_output={"validated": False, "account_allowed": False},
                 )
@@ -1394,7 +1394,7 @@ def execute(
             "账户范围",
             "succeeded",
             subtitle="账户范围校验通过",
-            platform=actual_platform,
+            namespace=actual_platform,
             safe_metadata={"validated": True},
             safe_output={
                 "validated": True,
@@ -1411,7 +1411,7 @@ def execute(
         plan_confirmation_mode = (
             runtime.execution_mode == ExecutionMode.LIVE.value
             and len(write_chain_tools) > 1
-            and len({runtime._canonical_platform(getattr(tool, "platform", actual_platform))
+            and len({runtime._canonical_platform(getattr(tool, "namespace", actual_platform))
                      for tool in write_chain_tools}) == 1
         )
         plan_confirmation_expected = None
@@ -1654,7 +1654,7 @@ def execute(
                 provider_errors = validate_tool_input(
                     tool_def.input_schema,
                     tool_input,
-                    include_provider_contract=True,
+                    include_capability_contract=True,
                 )
                 if provider_errors:
                     results.append({
@@ -2239,7 +2239,7 @@ def execute(
         "tool_selection": {
             "tool_count": tool_selection["tool_count"],
             "tools": [tool.name for tool in tool_selection["selected_tools"]],
-            "platforms": tool_selection["platforms"],
+            "platforms": tool_selection["namespaces"],
             "context": tool_selection["context"],
             "tool_prompt": tool_selection["tool_prompt"],
             "expert_knowledge": tool_selection["expert_knowledge"],

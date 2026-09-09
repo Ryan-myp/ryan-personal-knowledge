@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 import yaml
 
-from ...core.platform import normalize_platform
+from ...core.namespace import normalize_namespace as normalize_platform
 
 
 @dataclass(frozen=True)
@@ -85,18 +85,18 @@ class BusinessSkillPolicy:
             focus_metrics=tuple(focus_metrics),
         )
 
-    def filter_platforms(self, platforms: list[str] | tuple[str, ...]) -> list[str]:
+    def filter_namespaces(self, namespaces: list[str] | tuple[str, ...]) -> list[str]:
         allowed, denied = self._platform_sets()
         return [
-            platform for platform in platforms
-            if normalize_platform(platform) not in denied
-            and (not allowed or normalize_platform(platform) in allowed)
+            namespace for namespace in namespaces
+            if normalize_platform(namespace) not in denied
+            and (not allowed or normalize_platform(namespace) in allowed)
         ]
 
     def validate_intent(self, intent: Any) -> list[str]:
         allowed, denied = self._platform_sets()
         errors: list[str] = []
-        for platform in getattr(intent, "platforms", []) or []:
+        for platform in getattr(intent, "namespaces", []) or []:
             normalized = normalize_platform(platform)
             if normalized in denied or (allowed and normalized not in allowed):
                 errors.append(
@@ -112,7 +112,7 @@ class BusinessSkillPolicy:
             campaign_type = getattr(intent, "campaign_type", None)
             if campaign_type:
                 supplied_types.add(str(campaign_type).upper())
-            for params in (getattr(intent, "platform_params", {}) or {}).values():
+            for params in (getattr(intent, "scoped_parameters", {}) or {}).values():
                 if not isinstance(params, dict):
                     continue
                 for key in ("campaign_type", "type", "campaignType"):

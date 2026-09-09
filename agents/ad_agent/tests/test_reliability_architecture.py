@@ -53,7 +53,7 @@ def test_recovery_task_requires_provider_proof_before_requeue():
     store.create_task(TaskRecord(
         task_id="recovery-task", tenant_id="tenant", user_id="user",
         kind="local", status="recovery_required", payload={},
-        metadata={"provider_state": "unknown"},
+        metadata={"effect_state": "unknown"},
         created_at=datetime.now(timezone.utc).isoformat(),
         updated_at=datetime.now(timezone.utc).isoformat(),
     ))

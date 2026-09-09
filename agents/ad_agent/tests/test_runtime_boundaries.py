@@ -130,7 +130,7 @@ def test_task_outcome_is_not_inferred_from_handler_returning_normally():
     assert task_outcome_status({"needs_input": True}) == "awaiting_input"
     assert task_outcome_status({"results": [{"success": False}]}) == "failed"
     assert task_outcome_status({"results": [{"success": True}, {"success": False}]}) == "partially_failed"
-    assert task_outcome_status({"provider_state": "unknown"}) == "recovery_required"
+    assert task_outcome_status({"effect_state": "unknown"}) == "recovery_required"
     assert task_outcome_status({"success": True}) == "succeeded"
 
 
@@ -156,6 +156,7 @@ def test_generic_worker_modules_do_not_import_application_models_or_principal():
         source = (root / name).read_text(encoding="utf-8")
         assert "persistence.models" not in source
         assert "domain.ad" not in source
+        assert "provider_state" not in source
 
 
 def test_supervisor_receives_task_kinds_from_the_application_composition_root():

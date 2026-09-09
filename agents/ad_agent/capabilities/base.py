@@ -158,7 +158,7 @@ class BaseCapability(CapabilityModule, ABC):
     # 平台名称（子类必须覆盖）
     platform_name: str = ""
     capability_version: str = "1.0.0"
-    provider_api_version: str = ""
+    integration_api_version: str = ""
     
     # Skill 描述模板
     SKILL_DESCRIPTION_TEMPLATE = """
@@ -240,7 +240,7 @@ class BaseCapability(CapabilityModule, ABC):
                 ),
                 "issues": [],
             }
-        contract["capability_api_version"] = str(self.provider_api_version or "")
+        contract["capability_api_version"] = str(self.integration_api_version or "")
         return contract
 
     def get_api_surface(self) -> list[dict[str, Any]]:
@@ -268,16 +268,16 @@ class BaseCapability(CapabilityModule, ABC):
         supported = set(str(item).strip() for item in contract.get("supported_api_versions", []))
         adapters = set(str(item).strip() for item in contract.get("adapter_versions", []))
         compatible = supported | adapters
-        capability_version = str(self.provider_api_version or "").strip()
+        capability_version = str(self.integration_api_version or "").strip()
         client_name = getattr(client_class, "__name__", type(client_class).__name__)
         if capability_version and not compatible:
             errors.append(
-                f"Capability provider_api_version {capability_version!r} cannot be verified; "
+                f"Capability integration_api_version {capability_version!r} cannot be verified; "
                 f"Client {client_name} publishes no supported API versions"
             )
         elif capability_version and capability_version not in compatible:
             errors.append(
-                f"Capability provider_api_version {capability_version!r} is not supported by "
+                f"Capability integration_api_version {capability_version!r} is not supported by "
                 f"Client {client_name}: "
                 f"{sorted(compatible)}"
             )
@@ -297,7 +297,7 @@ class BaseCapability(CapabilityModule, ABC):
         ).strip()
         for definition, _handler in definitions:
             declared = str(
-                getattr(definition, "provider_api_version", "")
+                getattr(definition, "integration_api_version", "")
                 or capability_version
                 or contract.get("api_version", "")
                 or ""
@@ -306,7 +306,7 @@ class BaseCapability(CapabilityModule, ABC):
                 continue
             if declared not in compatible:
                 errors.append(
-                    f"Tool {definition.name} provider_api_version {declared!r} is not supported by "
+                    f"Tool {definition.name} integration_api_version {declared!r} is not supported by "
                     f"Client {sorted(compatible)}"
                 )
             elif bound_actual and bound_actual != declared and declared not in adapters:
@@ -341,7 +341,7 @@ class BaseCapability(CapabilityModule, ABC):
                     f"{self.platform_name} Tool {defn.name} is missing explicit routing metadata: "
                     + ", ".join(metadata_errors)
                 )
-            if not defn.provider_api_version:
+            if not defn.integration_api_version:
                 # An absent version is a valid extension state: a custom
                 # Capability may expose a provider-agnostic/local Tool or a
                 # client that has not published version metadata yet. Do not
@@ -350,11 +350,11 @@ class BaseCapability(CapabilityModule, ABC):
                 # reject every real client whose version is known.
                 provided_version = (
                     bound_client_version
-                    or getattr(self, "provider_api_version", "")
+                    or getattr(self, "integration_api_version", "")
                     or client_version
                 )
                 if provided_version:
-                    defn.provider_api_version = str(provided_version)
+                    defn.integration_api_version = str(provided_version)
             # Capability version is deliberately attached at registration
             # time, so a provider can publish a new Tool contract without a
             # Runtime/Router change.
@@ -440,7 +440,7 @@ class SimpleIdempotencyGuard(WriteGuard):
         reservation = WriteReservation(
             idempotency_key=key,
             request_hash=request_hash(
-                tool_def.platform, ctx.account_id, tool_def.name,
+                tool_def.namespace, ctx.account_id, tool_def.name,
                 sha256_json(input_data),
             ),
             tool_name=tool_def.name,

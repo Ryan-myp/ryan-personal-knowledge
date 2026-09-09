@@ -1,7 +1,7 @@
-"""Provider-neutral execution plan model.
+"""Application-neutral execution plan model.
 
 The plan is the boundary between model/Skill intent and Runtime execution.
-It contains Tool metadata and dependency edges, but never provider clients,
+It contains Tool metadata and dependency edges, but never external clients,
 credentials, or executable user code.
 """
 
@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
+from .namespace import normalize_namespace
+
 
 @dataclass(frozen=True)
 class PlanNode:
@@ -17,7 +19,7 @@ class PlanNode:
 
     node_id: str
     sequence: int
-    platform: str
+    namespace: str
     tool_name: str
     action: str
     resource_type: str
@@ -28,7 +30,7 @@ class PlanNode:
         return {
             "node_id": self.node_id,
             "sequence": self.sequence,
-            "platform": self.platform,
+            "namespace": self.namespace,
             "tool": self.tool_name,
             "action": self.action,
             "resource_type": self.resource_type,
@@ -56,19 +58,19 @@ class ExecutionPlan:
         nodes: list[PlanNode] = []
         latest_by_resource: dict[tuple[str, str], PlanNode] = {}
         sequence = 0
-        for raw_platform, tools in tool_plan.items():
-            platform = normalize(str(raw_platform))
+        for raw_namespace, tools in tool_plan.items():
+            namespace = normalize(str(raw_namespace))
             for tool in tools or ():
                 sequence += 1
                 resource_type = str(getattr(tool, "resource_type", "") or "")
                 parent_type = getattr(tool, "parent_resource_type", None)
                 parent_type = str(parent_type) if parent_type else None
-                dependency = latest_by_resource.get((platform, parent_type or ""))
+                dependency = latest_by_resource.get((namespace, parent_type or ""))
                 node_id = f"node-{sequence:04d}"
                 node = PlanNode(
                     node_id=node_id,
                     sequence=sequence,
-                    platform=platform,
+                    namespace=namespace,
                     tool_name=str(getattr(tool, "name", "") or ""),
                     action=str(getattr(tool, "action", "") or ""),
                     resource_type=resource_type,
@@ -77,7 +79,7 @@ class ExecutionPlan:
                 )
                 nodes.append(node)
                 if resource_type:
-                    latest_by_resource[(platform, resource_type)] = node
+                    latest_by_resource[(namespace, resource_type)] = node
         plan = cls(
             schema_version="1.0",
             intent_type=str(getattr(intent, "intent_type", "") or ""),
@@ -90,15 +92,24 @@ class ExecutionPlan:
         node_ids = [node.node_id for node in self.nodes]
         if len(node_ids) != len(set(node_ids)):
             raise ValueError("execution plan contains duplicate node IDs")
+        sequences = [int(node.sequence) for node in self.nodes]
+        if any(sequence <= 0 for sequence in sequences):
+            raise ValueError("execution plan node sequence must be positive")
+        if len(sequences) != len(set(sequences)):
+            raise ValueError("execution plan contains duplicate node sequences")
         known = set(node_ids)
         for node in self.nodes:
             if not node.tool_name:
                 raise ValueError("execution plan node requires a Tool name")
+            if not normalize_namespace(node.namespace):
+                raise ValueError(
+                    f"execution plan node {node.node_id} requires a namespace"
+                )
             if any(dependency not in known for dependency in node.depends_on):
                 raise ValueError(
                     f"execution plan node {node.node_id} has an unknown dependency"
                 )
-        # Kahn's algorithm keeps validation provider-neutral and catches
+        # Kahn's algorithm keeps validation external-system-neutral and catches
         # malformed/cyclic dependency metadata before execution.
         remaining = {
             node.node_id: set(node.depends_on) for node in self.nodes

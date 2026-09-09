@@ -73,7 +73,7 @@ def test_untrusted_or_managed_executable_plugin_is_rejected():
         PluginManifest(
             plugin_id="unsafe-plugin",
             version="1.0.0",
-            kinds=("tool_provider",),
+            kinds=("tool_capability",),
             executable=True,
         )
 
@@ -137,7 +137,7 @@ def test_manifest_loader_does_not_enable_untrusted_executable_code():
         loader.load_manifest({
             "plugin_id": "external-code",
             "version": "1.0.0",
-            "kinds": ["tool_provider"],
+            "kinds": ["tool_capability"],
             "source": "external",
             "trusted": True,
             "executable": True,
@@ -265,7 +265,7 @@ def test_runtime_publishes_capability_and_builtin_extensions_to_one_registry():
 
     plugins = {item["manifest"]["plugin_id"]: item for item in runtime.list_plugins()}
     assert plugins["capability:meta"]["state"] == "active"
-    assert "tool_provider" in plugins["capability:meta"]["manifest"]["kinds"]
+    assert "tool_capability" in plugins["capability:meta"]["manifest"]["kinds"]
     assert plugins["renderer:ad-agent"]["state"] == "active"
     assert any(
         item["manifest"]["plugin_id"].startswith("feature:")

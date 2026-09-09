@@ -1,9 +1,9 @@
-"""Provider-neutral, safe execution events for Agent turn observers.
+"""Safe, external-system-neutral execution events for Agent turn observers.
 
 The trace is an operational view of a turn, not a model-thought stream.  It
 contains only plan/tool metadata plus explicitly bounded, sanitized input and
 output summaries so it can be sent to an interactive client without exposing
-model thoughts, credentials or raw provider exceptions.
+model thoughts, credentials or raw external exceptions.
 """
 
 from __future__ import annotations
@@ -139,7 +139,7 @@ class ExecutionTrace:
         return [dict(event) for event in self._events]
 
     def snapshot(self) -> dict[str, Any]:
-        """Return a durable, provider-neutral snapshot of this turn's trace."""
+        """Return a durable, external-system-neutral snapshot of this turn's trace."""
         status = "unknown"
         for event in reversed(self._events):
             if event.get("type") == "done":
@@ -162,7 +162,7 @@ class ExecutionTrace:
         status: str,
         *,
         subtitle: str = "",
-        platform: str = "",
+        namespace: str = "",
         safe_metadata: Optional[Mapping[str, Any]] = None,
         safe_input: Any = None,
         safe_output: Any = None,
@@ -196,7 +196,7 @@ class ExecutionTrace:
             kind="stage",
             title=str(title or stage_key),
             subtitle=str(subtitle or ""),
-            platform=str(platform or ""),
+            namespace=str(namespace or ""),
             status=status,
             safe_metadata=metadata,
             safe_input=safe_input,
@@ -208,13 +208,13 @@ class ExecutionTrace:
         self._node_occurrences.clear()
         self._node_cursor.clear()
         for node in self.plan.get("nodes", []):
-            key = (str(node.get("platform") or ""), str(node.get("tool") or ""))
+            key = (str(node.get("namespace") or ""), str(node.get("tool") or ""))
             self._node_occurrences.setdefault(key, []).append(node)
         self._emit("plan", status="planned", execution_plan=self.plan)
 
     def register_dynamic_node(
         self,
-        platform: str,
+        namespace: str,
         tool_name: str,
         *,
         action: str = "",
@@ -228,7 +228,7 @@ class ExecutionTrace:
         Tool selected by the Feature, not a node inferred from a result row.
         """
 
-        key = (str(platform or ""), str(tool_name or ""))
+        key = (str(namespace or ""), str(tool_name or ""))
         existing_nodes = self._node_occurrences.get(key, [])
         if existing_nodes:
             return existing_nodes[-1]
@@ -238,12 +238,12 @@ class ExecutionTrace:
         ) + 1
         previous_nodes = [
             item for item in self.plan.get("nodes", [])
-            if str(item.get("platform") or "") == str(platform or "")
+            if str(item.get("namespace") or "") == str(namespace or "")
         ]
         node = {
             "node_id": f"node-{sequence:04d}",
             "sequence": sequence,
-            "platform": str(platform or ""),
+            "namespace": str(namespace or ""),
             "tool": str(tool_name or ""),
             "action": str(action or ""),
             "resource_type": str(resource_type or ""),
@@ -255,7 +255,7 @@ class ExecutionTrace:
         self._emit(
             "node_discovered",
             node_id=node["node_id"],
-            platform=node["platform"],
+            namespace=node["namespace"],
             tool=node["tool"],
             resource_type=node["resource_type"],
             action=node["action"],
@@ -264,8 +264,8 @@ class ExecutionTrace:
         )
         return node
 
-    def node_for(self, platform: str, tool_name: str) -> Optional[dict[str, Any]]:
-        key = (str(platform or ""), str(tool_name or ""))
+    def node_for(self, namespace: str, tool_name: str) -> Optional[dict[str, Any]]:
+        key = (str(namespace or ""), str(tool_name or ""))
         nodes = self._node_occurrences.get(key, [])
         cursor = self._node_cursor.get(key, 0)
         if cursor >= len(nodes):
@@ -299,7 +299,7 @@ class ExecutionTrace:
             parent_node_id=(node or {}).get("parent_node_id") or next(
                 iter((node or {}).get("depends_on") or ()), None
             ),
-            platform=(node or {}).get("platform"),
+            namespace=(node or {}).get("namespace"),
             tool=(node or {}).get("tool"),
             resource_type=(node or {}).get("resource_type"),
             action=(node or {}).get("action"),

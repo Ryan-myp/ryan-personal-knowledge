@@ -120,7 +120,7 @@ def test_tiktok_optional_boolean_defaults_are_materialized_in_creation_card():
     runtime.register_capability(create_tiktok_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
-        platform_params={"tiktok": {"objective_type": "TRAFFIC"}},
+        scoped_parameters={"tiktok": {"objective_type": "TRAFFIC"}},
     )
 
     card = runtime.build_creation_ui(intent)["cards"][0]
@@ -136,7 +136,7 @@ def test_creation_card_separates_safe_defaults_from_account_context_inputs():
     runtime.register_capability(create_tiktok_capability())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
-        platform_params={"tiktok": {"objective": "TRAFFIC"}},
+        scoped_parameters={"tiktok": {"objective": "TRAFFIC"}},
     ))["cards"][0]
     fields = {field["path"]: field for field in card["fields"]}
 
@@ -154,7 +154,7 @@ def test_meta_creation_card_materializes_objective_dependent_defaults():
     runtime.register_capability(create_meta_capability())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Meta 流量广告", ["meta"],
-        platform_params={"meta": {"objective": "OUTCOME_TRAFFIC"}},
+        scoped_parameters={"meta": {"objective": "OUTCOME_TRAFFIC"}},
     ))["cards"][0]
     fields = {field["path"]: field for field in card["fields"]}
 
@@ -228,7 +228,7 @@ def test_demand_gen_variants_resolve_by_explicit_format_or_declared_terms():
         card = runtime.build_creation_ui(ParsedIntent(
             "create_campaign", text, ["google-ads"],
             campaign_type="DEMAND_GEN",
-            platform_params={"google-ads": {"campaign_type": "DEMAND_GEN"}},
+            scoped_parameters={"google-ads": {"campaign_type": "DEMAND_GEN"}},
         ))["cards"][0]
         assert card["blueprint_id"] == expected
 
@@ -239,7 +239,7 @@ def test_demand_gen_without_variant_returns_specific_blueprint_choices():
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Google Demand Gen 广告", ["google-ads"],
         campaign_type="DEMAND_GEN",
-        platform_params={"google-ads": {"campaign_type": "DEMAND_GEN"}},
+        scoped_parameters={"google-ads": {"campaign_type": "DEMAND_GEN"}},
     ))["cards"][0]
 
     assert card["type"] == "ad_creation_selector"
@@ -334,7 +334,7 @@ def test_meta_blueprint_lookup_declarations_are_carried_to_creation_card():
     runtime.register_capability(create_meta_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 潜在客户广告", ["meta"],
-        platform_params={"meta": {"objective": "OUTCOME_LEADS"}},
+        scoped_parameters={"meta": {"objective": "OUTCOME_LEADS"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     page = next(item for item in card["fields"] if item["path"] == "ad.page_id")
@@ -342,7 +342,7 @@ def test_meta_blueprint_lookup_declarations_are_carried_to_creation_card():
 
     conversion_intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
-        platform_params={"meta": {
+        scoped_parameters={"meta": {
             "objective": "OUTCOME_CONVERSIONS",
             "optimization_goal": "OFFSITE_CONVERSIONS",
         }},
@@ -418,7 +418,7 @@ def test_provider_applicability_hides_unrelated_google_fields_and_keeps_derived_
     runtime.register_capability(create_google_capability())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Google Search 广告", ["google-ads"],
-        platform_params={"google-ads": {"ad_format": "SEARCH"}},
+        scoped_parameters={"google-ads": {"ad_format": "SEARCH"}},
     ))["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
 
@@ -434,7 +434,7 @@ def test_provider_applicability_switches_tiktok_asset_controls_by_selected_forma
     runtime.register_capability(create_tiktok_capability())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 商品视频广告", ["tiktok"],
-        platform_params={"tiktok": {
+        scoped_parameters={"tiktok": {
             "objective": "PRODUCT_SALES", "ad_format": "SINGLE_VIDEO",
         }},
     ))["cards"][0]
@@ -475,7 +475,7 @@ def test_google_demand_gen_does_not_expose_a_second_ad_group_type_selector():
         assert field["options"] == ["SEARCH_STANDARD"]
         card = runtime.build_creation_ui(ParsedIntent(
             "create_campaign", "创建 Google Demand Gen 广告", ["google-ads"],
-            platform_params={"google-ads": {"ad_format": blueprint.ad_format}},
+            scoped_parameters={"google-ads": {"ad_format": blueprint.ad_format}},
         ))["cards"][0]
         type_field = next(item for item in card["fields"] if item["path"] == "ad_group.type")
         assert type_field["control"] == "derived_readonly"
@@ -506,7 +506,7 @@ def test_creation_cards_expose_complete_schema_limits_and_provider_source_groups
     intent = ParsedIntent(
         "create_campaign", "创建 Google Search 广告", ["google-ads"],
         campaign_type="SEARCH",
-        platform_params={"google-ads": {"campaign_type": "SEARCH"}},
+        scoped_parameters={"google-ads": {"campaign_type": "SEARCH"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
@@ -533,7 +533,7 @@ def test_tiktok_creation_card_does_not_truncate_provider_parameter_catalog():
     runtime.register_capability(create_tiktok_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 TikTok 商品销售广告", ["tiktok"],
-        platform_params={"tiktok": {"objective": "PRODUCT_SALES"}},
+        scoped_parameters={"tiktok": {"objective": "PRODUCT_SALES"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
@@ -548,7 +548,7 @@ def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
     runtime.register_capability(create_meta_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
-        platform_params={"meta": {
+        scoped_parameters={"meta": {
             "objective": "OUTCOME_CONVERSIONS",
             "optimization_goal": "OFFSITE_CONVERSIONS",
         }},
@@ -569,7 +569,7 @@ def test_creation_contracts_expose_provider_resource_sources_and_fixed_placement
     runtime.register_capability(create_meta_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
-        platform_params={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
+        scoped_parameters={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     targeting = next(item for item in card["fields"] if item["path"] == "ad_set.targeting")
@@ -594,7 +594,7 @@ def test_provider_and_blueprint_visibility_conditions_are_deduplicated():
     runtime.register_capability(create_meta_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
-        platform_params={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
+        scoped_parameters={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     visibility = next(
@@ -608,7 +608,7 @@ def test_declared_resource_fields_inherit_provider_lookup_metadata():
     runtime.register_capability(create_meta_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 商品广告", ["meta"],
-        platform_params={"meta": {"objective": "PRODUCT_CATALOG_SALES"}},
+        scoped_parameters={"meta": {"objective": "PRODUCT_CATALOG_SALES"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
@@ -624,7 +624,7 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
     google.register_capability(create_google_capability())
     shopping = google.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Google Shopping 广告", ["google-ads"],
-        platform_params={"google-ads": {"ad_format": "SHOPPING"}},
+        scoped_parameters={"google-ads": {"ad_format": "SHOPPING"}},
     ))["cards"][0]
     shopping_fields = {item["path"]: item for item in shopping["fields"]}
     assert shopping_fields["product_group.parent_criterion_id"]["control"] == "lookup"
@@ -633,7 +633,7 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
     tiktok.register_capability(create_tiktok_capability())
     lead = tiktok.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 线索广告", ["tiktok"],
-        platform_params={"tiktok": {"objective": "LEAD_GENERATION"}},
+        scoped_parameters={"tiktok": {"objective": "LEAD_GENERATION"}},
     ))["cards"][0]
     lead_fields = {item["path"]: item for item in lead["fields"]}
     assert lead_fields["ad.video_id"]["control"] == "asset_picker"
@@ -641,7 +641,7 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
 
     sales = tiktok.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 商品广告", ["tiktok"],
-        platform_params={"tiktok": {"objective": "PRODUCT_SALES"}},
+        scoped_parameters={"tiktok": {"objective": "PRODUCT_SALES"}},
     ))["cards"][0]
     sales_fields = {item["path"]: item for item in sales["fields"]}
     assert sales_fields["ad.call_to_action_id"]["manual_entry"]["source"] == "external_provider_identifier"
@@ -664,7 +664,7 @@ def test_blueprint_submission_composes_declared_parent_child_tools():
     runtime.register_capability(create_google_capability())
     intent = ParsedIntent(
         "create_search_ad", "按 Google Search 蓝图提交", ["google-ads"],
-        platform_params={"google-ads": {
+        scoped_parameters={"google-ads": {
             "campaign_name": "Search draft",
             "advertising_channel_type": "SEARCH",
                 "bidding_strategy": "MAXIMIZE_CONVERSIONS",
@@ -763,8 +763,8 @@ def test_creation_follow_up_adopts_persisted_selector_and_then_shows_full_form()
 
     assert first["ui"]["cards"] == []
     assert second["intent"]["intent_type"] == "create_campaign"
-    assert second["intent"]["platforms"] == ["tiktok"]
-    assert second["intent"]["platform_params"]["tiktok"]["objective_type"] == "TRAFFIC"
+    assert second["intent"]["namespaces"] == ["tiktok"]
+    assert second["intent"]["scoped_parameters"]["tiktok"]["objective_type"] == "TRAFFIC"
     assert second["response_source"] == "creation_card"
     assert second["ui"]["cards"][0]["blueprint_id"] == "tiktok.traffic_video"
     assert second["tool_plan"] == {}
@@ -831,7 +831,7 @@ def test_action_clarification_draft_survives_restart_and_merges_short_follow_up(
     )
 
     assert second["intent"]["intent_type"] == "delete_campaign"
-    assert second["intent"]["platform_params"]["meta"]["campaign_id"] == "campaign-123"
+    assert second["intent"]["scoped_parameters"]["meta"]["campaign_id"] == "campaign-123"
     assert second["response_source"] != "action_clarification"
 
 
@@ -918,7 +918,7 @@ def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
     runtime.register_capability(create_google_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Google App 广告", ["google-ads"],
-        campaign_type="APP", platform_params={"google-ads": {"campaign_type": "APP"}},
+        campaign_type="APP", scoped_parameters={"google-ads": {"campaign_type": "APP"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     assert card["account_required"] is True
@@ -936,7 +936,7 @@ def test_creation_cards_publish_outer_shape_for_advanced_provider_payloads():
         ToolDefinition(
             name="test_create_payload",
             skill="test",
-            platform="test",
+            namespace="test",
             description="test payload",
             input_schema=ToolSchema(
                 properties={
@@ -990,7 +990,7 @@ def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
     runtime.register_capability(create_google_capability())
     intent = ParsedIntent(
         "create_campaign", "创建 Google App Engagement 广告", ["google-ads"],
-        campaign_type="APP", platform_params={"google-ads": {"campaign_type": "APP"}},
+        campaign_type="APP", scoped_parameters={"google-ads": {"campaign_type": "APP"}},
     )
 
     card = runtime.build_creation_ui(intent)["cards"][0]
@@ -1024,7 +1024,7 @@ def test_nested_creation_assets_keep_provider_sources_and_controls():
     intent = ParsedIntent(
         "create_campaign", "创建 Google Demand Gen 轮播广告", ["google-ads"],
         campaign_type="DEMAND_GEN",
-        platform_params={"google-ads": {"campaign_type": "DEMAND_GEN"}},
+        scoped_parameters={"google-ads": {"campaign_type": "DEMAND_GEN"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     fields = {item["path"]: item for item in card["fields"]}
@@ -1040,7 +1040,7 @@ def test_nested_creation_assets_keep_provider_sources_and_controls():
     tiktok_intent = ParsedIntent(
         "create_campaign", "创建 TikTok 视频广告", ["tiktok"],
         campaign_type="TRAFFIC",
-        platform_params={"tiktok": {"objective_type": "TRAFFIC"}},
+        scoped_parameters={"tiktok": {"objective_type": "TRAFFIC"}},
     )
     tiktok_card = runtime.build_creation_ui(tiktok_intent)["cards"][0]
     tiktok_fields = {item["path"]: item for item in tiktok_card["fields"]}
@@ -1075,7 +1075,7 @@ def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
         "create_campaign",
         "创建 TikTok App 转化广告，投放给 18 到 35 岁用户",
         ["tiktok"],
-        platform_params={
+        scoped_parameters={
             "tiktok": {
                 "objective_type": "APP_PROMOTION",
                 "promotion_type": "APP_ANDROID",
@@ -1132,7 +1132,7 @@ def test_blueprint_tool_ref_supports_nested_schema_paths():
     registry = SimpleToolRegistry()
     registry.register(
         ToolDefinition(
-            name="test_create", skill="test", platform="test",
+            name="test_create", skill="test", namespace="test",
             description="test", action="create", resource_type="ad_group",
             intent_types=["create_campaign"], effect_class=ToolEffect.WRITE,
             input_schema=ToolSchema(properties={

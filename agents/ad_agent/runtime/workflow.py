@@ -47,7 +47,7 @@ class WorkflowCoordinator:
             return None
         workflow_id = str(uuid.uuid4())
         workflow_metadata = {
-            "platforms": list(intent.platforms),
+            "platforms": list(intent.namespaces),
             "dry_run": self.services.is_dry_run(),
             "execution_plan": (
                 execution_plan.to_dict()

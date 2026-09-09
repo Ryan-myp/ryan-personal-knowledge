@@ -98,7 +98,7 @@ def test_schedule_requires_capability_and_explicit_confirmation_before_persistin
         ToolDefinition(
             name="google_campaign_report",
             skill="google-ads",
-            platform="google-ads",
+            namespace="google-ads",
             description="Read campaign performance report",
             input_schema=ToolSchema(
                 required=["account_id"],
@@ -180,7 +180,7 @@ def test_schedule_preflight_checks_tool_required_parameters_before_confirmation(
         ToolDefinition(
             name="google_campaign_report_with_id",
             skill="google-ads",
-            platform="google-ads",
+            namespace="google-ads",
             description="Read one campaign performance report",
             input_schema=ToolSchema(
                 required=["account_id", "campaign_id"],

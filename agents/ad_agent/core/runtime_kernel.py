@@ -8,7 +8,7 @@ The kernel owns only transport and concurrency concerns:
 * install a request-scoped execution mode;
 * delegate the actual turn to an application-provided executor.
 
-It deliberately knows nothing about application domains, Providers, Skills,
+It deliberately knows nothing about application domains, external systems, Skills,
 Tools, workflows, or UI.  An application Runtime composes this kernel
 with its own turn executor and policy services.
 """
@@ -166,7 +166,7 @@ class SessionLease:
                 except Exception:
                     # The lease is bounded and will expire server-side. Never
                     # mask an application result with a best-effort cleanup
-                    # failure (especially after a provider side effect).
+                    # failure (especially after an external side effect).
                     pass
         self._thread = None
         self._acquired = False

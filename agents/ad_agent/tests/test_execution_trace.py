@@ -87,7 +87,7 @@ def test_trace_emits_real_lifecycle_stages_and_keeps_plan_metadata():
     assert events[1]["node_id"] == "stage:intent"
     assert events[1]["kind"] == "stage"
     assert events[3]["execution_plan"]["nodes"][0]["tool"] == "google.list_campaigns"
-    assert events[3]["execution_plan"]["nodes"][0]["platform"] == "google"
+    assert events[3]["execution_plan"]["nodes"][0]["namespace"] == "google"
 
 
 def test_trace_registers_feature_discovered_tool_before_status_events():

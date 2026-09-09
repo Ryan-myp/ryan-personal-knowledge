@@ -16,7 +16,7 @@ from agents.ad_agent.core.interfaces import (
 from agents.ad_agent.core.intent import LLMIntentParser, SimpleIntentRouter
 from agents.ad_agent.domain.ad.creation_card import CreationCardBuilder
 from agents.ad_agent.domain.ad.blueprint import BlueprintRegistry
-from agents.ad_agent.core.platform import normalize_platform
+from agents.ad_agent.core.namespace import normalize_namespace as normalize_platform
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
@@ -50,7 +50,7 @@ def test_core_does_not_infer_routing_metadata_from_tool_name():
     definition = ToolDefinition(
         name="new_network_create_campaign",
         skill="new-network-skill",
-        platform="new-network",
+        namespace="new-network",
         description="An intentionally incomplete low-level fixture",
         input_schema=ToolSchema(),
     )
@@ -138,7 +138,7 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", ["google-ads"],
-            platform_params={
+            scoped_parameters={
                 "google-ads": {"advertising_channel_type": campaign_type},
             },
         ),
@@ -154,7 +154,7 @@ def test_google_app_campaign_route_selects_app_hierarchy_chain():
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", ["google-ads"],
-            platform_params={
+            scoped_parameters={
                 "google-ads": {
                     "advertising_channel_type": "MULTI_CHANNEL",
                     "advertising_channel_sub_type": "APP_CAMPAIGN",
@@ -295,7 +295,7 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
     runtime.register_capability(factory())
     routed = runtime.intent_router.route(
         ParsedIntent(
-            "create_campaign", "create", [platform], platform_params={platform: params},
+            "create_campaign", "create", [platform], scoped_parameters={platform: params},
         ),
         runtime.registry,
     )
@@ -341,7 +341,7 @@ def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
             intent_type,
             "create TikTok Traffic child resource",
             ["tiktok"],
-            platform_params={"tiktok": {"objective_type": "TRAFFIC"}},
+            scoped_parameters={"tiktok": {"objective_type": "TRAFFIC"}},
         ),
         runtime.registry,
     )
@@ -354,7 +354,7 @@ def test_meta_campaign_only_route_does_not_expand_hierarchy():
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign_only", "create campaign only", ["meta"],
-            platform_params={"meta": {
+            scoped_parameters={"meta": {
                 "objective": "OUTCOME_SALES",
                 "special_ad_categories": ["NONE"],
                 "daily_budget": 10,
@@ -388,7 +388,7 @@ def test_campaign_only_routes_are_provider_declared_and_do_not_expand_hierarchy(
         }
         intent = ParsedIntent(
             "create_campaign_only", "create campaign only", [platform],
-            platform_params={platform: params},
+            scoped_parameters={platform: params},
         )
         routed = runtime.intent_router.route(intent, runtime.registry)
         assert [definition.name for definition in routed[platform]] == [expected_tool]
@@ -464,7 +464,7 @@ def test_new_standard_tool_is_discovered_without_router_configuration():
         ToolDefinition(
             name="new_network_create_campaign",
             skill="new-network-skill",
-            platform="new-network",
+            namespace="new-network",
             description="Create a campaign on a new network",
             input_schema=ToolSchema(),
             action="create",
@@ -497,7 +497,7 @@ def test_router_orders_custom_resource_hierarchy_without_core_resource_table():
         ToolDefinition(
             name="new_create_leaf",
             skill="new-network",
-            platform="new-network",
+            namespace="new-network",
             description="Create a leaf",
             input_schema=ToolSchema(),
             action="create",
@@ -511,7 +511,7 @@ def test_router_orders_custom_resource_hierarchy_without_core_resource_table():
         ToolDefinition(
             name="new_create_container",
             skill="new-network",
-            platform="new-network",
+            namespace="new-network",
             description="Create a container",
             input_schema=ToolSchema(),
             action="create",
@@ -541,7 +541,7 @@ def test_new_custom_intent_is_declared_on_tool_not_router():
         ToolDefinition(
             name="new_network_estimate_reach",
             skill="new-network-skill",
-            platform="new-network",
+            namespace="new-network",
             description="Estimate reach",
             input_schema=ToolSchema(),
             action="estimate",
@@ -569,7 +569,7 @@ def test_activation_narrowing_uses_candidate_ambiguity_not_intent_names():
 
     common = dict(
         skill="new-network-skill",
-        platform="new-network",
+        namespace="new-network",
         description="Create an asset",
         input_schema=ToolSchema(
             properties={"mode": {"type": "string"}},
@@ -592,14 +592,14 @@ def test_activation_narrowing_uses_candidate_ambiguity_not_intent_names():
     ordinary = router.route(
         ParsedIntent(
             "opaque_operation", "ordinary", ["new-network"],
-            platform_params={"new-network": {"mode": "ordinary"}},
+            scoped_parameters={"new-network": {"mode": "ordinary"}},
         ),
         registry,
     )
     special = router.route(
         ParsedIntent(
             "opaque_operation", "special", ["new-network"],
-            platform_params={"new-network": {"mode": "special"}},
+            scoped_parameters={"new-network": {"mode": "special"}},
         ),
         registry,
     )
@@ -623,7 +623,7 @@ def test_creation_surface_uses_tool_action_not_intent_name_prefix():
         ToolDefinition(
             name="new_launch_asset",
             skill="new-network-skill",
-            platform="new-network",
+            namespace="new-network",
             description="Create an asset",
             input_schema=ToolSchema(),
             action="create",
@@ -643,7 +643,7 @@ def test_new_tool_publishes_dynamic_intent_context_without_parser_edit():
     definition = ToolDefinition(
         name="new_network_estimate_reach",
         skill="new-network-skill",
-        platform="new-network",
+        namespace="new-network",
         description="Estimate audience reach",
         input_schema=ToolSchema(),
         action="estimate",
@@ -651,7 +651,7 @@ def test_new_tool_publishes_dynamic_intent_context_without_parser_edit():
         intent_types=["estimate_reach"],
     )
     parser = LLMIntentParser()
-    parser.register_platform_aliases("new-network", ["新网络"])
+    parser.register_namespace_aliases("new-network", ["新网络"])
     parser.register_tool_definitions([definition])
     assert "estimate_reach" in parser._intent_candidates_prompt()
     assert "Estimate audience reach" in parser._intent_candidates_prompt()
@@ -661,8 +661,8 @@ def test_platform_identity_is_published_by_the_active_skill():
     """Core normalizes identifiers; aliases are published by the active Skill."""
     assert normalize_platform("google ads") == "google-ads"
     parser = LLMIntentParser()
-    parser.register_platform_aliases("new-network", ["新网络"])
-    assert parser._detect_platforms("查询新网络数据") == ["new-network"]
+    parser.register_namespace_aliases("new-network", ["新网络"])
+    assert parser._detect_namespaces("查询新网络数据") == ["new-network"]
 
 
 def test_standard_skill_ignores_workflow_yaml_as_package_data(tmp_path):
@@ -702,12 +702,12 @@ def test_llm_prompt_uses_registered_intent_catalog():
 
         def call(self, messages):
             self.calls.append(messages)
-            return '{"intent_type":"estimate_reach","platforms":["new-network"]}'
+            return '{"intent_type":"estimate_reach","namespaces":["new-network"]}'
 
     definition = ToolDefinition(
         name="new_network_estimate_reach",
         skill="new-network-skill",
-        platform="new-network",
+        namespace="new-network",
         description="Estimate audience reach",
         input_schema=ToolSchema(),
         action="estimate",
@@ -787,7 +787,7 @@ def test_plugin_only_channel_auto_discovers_without_capability_or_central_config
         "---\n"
         "skill:\n"
         "  name: new-network-skill\n"
-        "  platform: new-network\n"
+        "  namespace: new-network\n"
         "  aliases: [新网络]\n"
         "---\n",
         encoding="utf-8",
@@ -796,11 +796,11 @@ def test_plugin_only_channel_auto_discovers_without_capability_or_central_config
         "from agents.ad_agent.core.interfaces import Skill, ToolDefinition, ToolSchema, ToolResult\n"
         "class NewNetworkSkill(Skill):\n"
         "    name = 'new-network-skill'\n"
-        "    platform = 'new-network'\n"
+        "    namespace = 'new-network'\n"
         "    description = 'new network'\n"
-        "    platform_aliases = ['新网络']\n"
+        "    namespace_aliases = ['新网络']\n"
         "    def get_tools(self):\n"
-        "        return [ToolDefinition(name='new_network_list_campaigns', skill=self.name, platform=self.platform, description='list', input_schema=ToolSchema(), action='list', resource_type='campaign', intent_types=['list_campaigns'])]\n"
+        "        return [ToolDefinition(name='new_network_list_campaigns', skill=self.name, namespace=self.namespace, description='list', input_schema=ToolSchema(), action='list', resource_type='campaign', intent_types=['list_campaigns'])]\n"
         "    def get_tool_handler(self, name):\n"
         "        return lambda _ctx, _input: ToolResult.ok({'source': 'plugin'})\n"
         "def create_skill(api_client=None):\n"
@@ -816,7 +816,7 @@ def test_plugin_only_channel_auto_discovers_without_capability_or_central_config
     assert [tool.name for tool in runtime.registry.list_all()] == [
         "new_network_list_campaigns"
     ]
-    assert runtime.skill_loader.get("new-network-skill").platform_aliases == ["新网络"]
+    assert runtime.skill_loader.get("new-network-skill").namespace_aliases == ["新网络"]
 
 
 def test_standard_skill_discovery_does_not_require_category_directories(tmp_path):
@@ -827,7 +827,7 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
     (skill_dir / "SKILL.md").write_text(
         "---\n"
         "name: campaign-planning\n"
-        "platform: new-network\n"
+        "namespace: new-network\n"
         "description: planning extension\n"
         "---\n\n"
         "Use the registered planning tool.\n",
@@ -841,10 +841,10 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
         "from agents.ad_agent.core.interfaces import Skill, ToolDefinition, ToolSchema, ToolResult\n"
         "class PlanningSkill(Skill):\n"
         "    name = 'campaign-planning'\n"
-        "    platform = 'new-network'\n"
+        "    namespace = 'new-network'\n"
         "    description = 'planning extension'\n"
         "    def get_tools(self):\n"
-        "        return [ToolDefinition(name='new_network_plan', skill=self.name, platform=self.platform, description='plan', input_schema=ToolSchema(), action='estimate', resource_type='plan', intent_types=['plan_campaign'])]\n"
+        "        return [ToolDefinition(name='new_network_plan', skill=self.name, namespace=self.namespace, description='plan', input_schema=ToolSchema(), action='estimate', resource_type='plan', intent_types=['plan_campaign'])]\n"
         "    def get_tool_handler(self, name):\n"
         "        return lambda _ctx, _input: ToolResult.ok({'planned': True})\n"
         "def create_skill(api_client=None):\n"
@@ -910,7 +910,7 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
     definition = ToolDefinition(
         name="provider_operation",
         skill="provider-skill",
-        platform="new-network",
+        namespace="new-network",
         description="Create a campaign",
         input_schema=ToolSchema(properties={"name": {"type": "string"}}),
         action="create",
@@ -937,7 +937,7 @@ def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():
     definition = ToolDefinition(
         name="new_network_create_resource",
         skill="new-network",
-        platform="new-network",
+        namespace="new-network",
         description="Create a resource",
         input_schema=ToolSchema(properties={
             "name": {"type": "string"},
@@ -956,8 +956,8 @@ def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():
     intent = ParsedIntent(
         intent_type="create_resource",
         raw_input="create resource",
-        platforms=["new-network"],
-        platform_params={"new-network": {
+        namespaces=["new-network"],
+        scoped_parameters={"new-network": {
             "campaign_name": "demo",
             "adset_id": "set-1",
             "origin_id": "source-1",
@@ -1014,7 +1014,7 @@ def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
         routed = runtime.intent_router.route(
             ParsedIntent(
                 "create_campaign", "create", ["tiktok"],
-                platform_params={"tiktok": {"objective_type": objective}},
+                scoped_parameters={"tiktok": {"objective_type": objective}},
             ),
             runtime.registry,
         )

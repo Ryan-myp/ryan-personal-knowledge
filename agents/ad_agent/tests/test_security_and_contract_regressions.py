@@ -28,7 +28,7 @@ from agents.ad_agent.runtime.skill import BaseSkill, SkillContract, SkillLoader
 from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.domain.ad.cross_channel import CampaignRef, BatchOperation
 from agents.ad_agent.domain.ad.auth import normalize_account_id
-from agents.ad_agent.core.platform import normalize_platform
+from agents.ad_agent.core.namespace import normalize_namespace as normalize_platform
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
 
@@ -43,7 +43,7 @@ def test_live_write_support_is_opt_in_for_new_tools():
     definition = ToolDefinition(
         name="new_provider_update_campaign",
         skill="new-provider",
-        platform="new-provider",
+        namespace="new-provider",
         description="Update a campaign",
         input_schema=ToolSchema(),
         effect_class=ToolEffect.WRITE,
@@ -56,7 +56,7 @@ def test_live_write_support_is_opt_in_for_new_tools():
         ToolDefinition(
             name="unsafe_contract_test",
             skill="new-provider",
-            platform="new-provider",
+            namespace="new-provider",
             description="invalid replay policy",
             input_schema=ToolSchema(),
             effect_class=ToolEffect.WRITE,
@@ -64,7 +64,7 @@ def test_live_write_support_is_opt_in_for_new_tools():
         )
 
 
-def test_provider_api_version_is_bound_to_every_client_endpoint_builder():
+def test_integration_api_version_is_bound_to_every_client_endpoint_builder():
     meta = MetaAPIClient({"api_version": "v19.0"})
     google = GoogleAdsAPIClient({"api_version": "v24"})
     tiktok = TikTokAPIClient({"api_version": "open_api/v1.3"})
@@ -162,7 +162,7 @@ def test_skill_loader_public_lifecycle_returns_snapshots(tmp_path):
     assert loaded is not loader.list_all()
     assert loader.roots == (tmp_path,)
     assert loader.load_skill_dir(skill_dir).name == "snapshot-provider"
-    assert loader.list_all()["snapshot-provider"].platform == "snapshot-provider"
+    assert loader.list_all()["snapshot-provider"].namespace == "snapshot-provider"
     assert loader.unload("snapshot-provider") is True
     assert loader.list_all() == {}
     assert loader.unload("snapshot-provider") is False
@@ -213,7 +213,7 @@ def test_nested_skill_frontmatter_preserves_aliases_and_triggers(tmp_path):
 
     contract = SkillContract(str(skill_dir)).load()
 
-    assert contract.platform_aliases == ["network", "网络"]
+    assert contract.namespace_aliases == ["network", "网络"]
     assert contract.triggers[0].keywords == ["创建网络广告"]
     assert contract.triggers[0].patterns == ["network.*create"]
 
@@ -296,7 +296,7 @@ def test_cross_channel_batch_operation_exposes_scoped_campaign_ref():
 
 def test_intent_parser_accepts_new_registered_platform_without_core_edit():
     parser = LLMIntentParser()
-    parser.register_platforms(["snapchat-ads"])
+    parser.register_namespaces(["snapchat-ads"])
     parser.register_tool_schemas(
         "snapchat-ads",
         [{"properties": {"optimization_goal": {"type": "string"}}}],
@@ -306,8 +306,8 @@ def test_intent_parser_accepts_new_registered_platform_without_core_edit():
         "查询 Snapchat Ads campaign optimization_goal=CONVERSIONS", None
     )
 
-    assert intent.platforms == ["snapchat-ads"]
-    assert intent.platform_params["snapchat-ads"]["optimization_goal"] == "CONVERSIONS"
+    assert intent.namespaces == ["snapchat-ads"]
+    assert intent.scoped_parameters["snapchat-ads"]["optimization_goal"] == "CONVERSIONS"
 
 
 def test_account_whitelist_normalizes_platform_and_account_ids_fail_closed():
@@ -332,7 +332,7 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
     definition = ToolDefinition(
         name="contract_test",
         skill="test",
-        platform="meta",
+        namespace="meta",
         description="contract test",
         input_schema=ToolSchema(additional_properties=True),
         timeout_seconds=7,
@@ -529,7 +529,7 @@ def test_tool_selector_discovers_platform_from_registered_tools():
     definition = ToolDefinition(
         name="snapchat_create_campaign",
         skill="snapchat-ads",
-        platform="snapchat-ads",
+        namespace="snapchat-ads",
         description="create a campaign",
         input_schema=ToolSchema(),
         intent_types=["create_campaign"],
@@ -547,7 +547,7 @@ def test_tool_selector_discovers_platform_from_registered_tools():
         [definition],
     )
 
-    assert selection.platform == "snapchat-ads"
+    assert selection.namespaces == ["snapchat-ads"]
     assert [tool.name for tool in selection.selected_tools] == [definition.name]
 
 
@@ -555,7 +555,7 @@ def test_tool_selector_uses_tool_published_intents_without_core_mapping():
     definition = ToolDefinition(
         name="snapchat_sync_product_feed",
         skill="snapchat-ads",
-        platform="snapchat-ads",
+        namespace="snapchat-ads",
         description="Synchronize a merchant feed",
         input_schema=ToolSchema(),
         action="sync",
@@ -604,7 +604,7 @@ def test_read_result_without_evidence_status_is_marked_unknown():
         ToolDefinition(
             name="statusless_read",
             skill="test",
-            platform="meta",
+            namespace="meta",
             description="read without evidence metadata",
             input_schema=ToolSchema(),
             required_permissions=["ads.read"],
@@ -683,7 +683,7 @@ def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
         ToolDefinition(
             name="provider_update",
             skill="provider",
-            platform="provider",
+            namespace="provider",
             description="update",
             input_schema=ToolSchema(additional_properties=True),
             effect_class=ToolEffect.WRITE,
@@ -717,7 +717,7 @@ def test_live_write_rejects_custom_handler_without_provider_client():
         ToolDefinition(
             name="custom_live_write",
             skill="custom",
-            platform="custom-provider",
+            namespace="custom-provider",
             description="write",
             input_schema=ToolSchema(),
             effect_class=ToolEffect.WRITE,
@@ -1587,10 +1587,10 @@ def test_runtime_rejects_tool_version_not_supported_by_provider_client():
         ToolDefinition(
             name="versioned_read",
             skill="provider",
-            platform="version-probe",
+            namespace="version-probe",
             description="read",
             input_schema=ToolSchema(),
-            provider_api_version="v0",
+            integration_api_version="v0",
         ),
         Handler(),
     )
@@ -1625,7 +1625,7 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
                 ToolDefinition(
                     name="versionless_read",
                     skill="versionless-provider",
-                    platform="versionless-provider",
+                    namespace="versionless-provider",
                         description="read without a published provider version",
                         input_schema=ToolSchema(),
                         action="read",
@@ -1639,7 +1639,7 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
     runtime.register_capability(VersionlessCapability())
     definition, _handler = runtime._get_registered_tool("versionless_read")
 
-    assert definition.provider_api_version is None
+    assert definition.integration_api_version is None
     result = runtime.tool_executor.execute(
         ToolContext("s1", "u1"), "versionless_read", {}
     )

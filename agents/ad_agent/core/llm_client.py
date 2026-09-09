@@ -87,8 +87,8 @@ class LLMClient:
             )
             return response.choices[0].message.content or ""
         except Exception as e:
-            # Provider exception text can contain request URLs or headers.
-            # Keep logs useful without copying model/provider payloads into
+            # External exception text can contain request URLs or headers.
+            # Keep logs useful without copying model/transport payloads into
             # the application log stream.
             logger.error("LLM 调用失败: %s", type(e).__name__)
             raise

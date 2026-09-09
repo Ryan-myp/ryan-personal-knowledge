@@ -12,11 +12,11 @@ import copy
 import importlib
 import inspect
 from typing import Any, Optional
-from ..core.platform import normalize_platform, platform_slug
+from ..core.namespace import normalize_namespace as normalize_platform, namespace_slug
 
 
 def _module_slug(platform: str) -> str:
-    return platform_slug(platform)
+    return namespace_slug(platform)
 
 
 def discover_client_factory(platform: str):

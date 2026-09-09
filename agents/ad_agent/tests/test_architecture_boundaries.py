@@ -58,9 +58,45 @@ def test_core_has_no_provider_or_advertising_security_catalog():
     )
     for forbidden in (
         "bc_id", "partner_id", "perter_id", "mcc", "campaign",
-        "ad_group", "tiktok", "google", "dv360",
+        "ad_group", "tiktok", "google", "dv360", "platform", "provider",
     ):
         assert forbidden not in source
+
+
+def test_router_only_requires_a_read_only_tool_catalog():
+    """Routing must not depend on the executable registry implementation."""
+    from agents.ad_agent.core.interfaces import ToolCatalog
+
+    tool = ToolDefinition(
+        name="catalog_read",
+        skill="custom",
+        namespace="custom",
+        description="read a resource",
+        input_schema=ToolSchema(),
+        action="read",
+        resource_type="resource",
+        intent_types=["read_resource"],
+    )
+
+    class Catalog:
+        def list_by_namespace(self, namespace):
+            return [tool] if namespace == "custom" else []
+
+    catalog = Catalog()
+    assert isinstance(catalog, ToolCatalog)
+    assert [item.name for item in SimpleIntentRouter().route(
+        ParsedIntent("read_resource", "read", ["custom"]), catalog
+    )["custom"]] == ["catalog_read"]
+
+
+def test_execution_plan_rejects_invalid_namespace_and_sequence():
+    """A persisted plan must have stable, unambiguous node identity."""
+    for node in (
+        PlanNode("empty-namespace", 1, "", "tool", "read", "resource"),
+        PlanNode("zero-sequence", 0, "custom", "tool", "read", "resource"),
+    ):
+        with pytest.raises(ValueError):
+            ExecutionPlan("1.0", "read_resource", (node,)).validate()
 
 
 def test_core_security_accepts_application_specific_redaction_policy():
@@ -147,7 +183,7 @@ def test_business_skill_policy_is_loaded_and_enforced_outside_runtime(tmp_path):
     intent = ParsedIntent(
         intent_type="create_campaign",
         raw_input="create",
-        platforms=["tiktok"],
+        namespaces=["tiktok"],
         campaign_type="APP",
         budget=100,
     )
@@ -164,7 +200,7 @@ def test_execution_plan_is_provider_neutral_and_validates_dependencies():
     campaign = ToolDefinition(
         name="provider_create_campaign",
         skill="provider",
-        platform="provider",
+        namespace="provider",
         description="create",
         input_schema=ToolSchema(),
         action="create",
@@ -174,7 +210,7 @@ def test_execution_plan_is_provider_neutral_and_validates_dependencies():
     child = ToolDefinition(
         name="provider_create_child",
         skill="provider",
-        platform="provider",
+        namespace="provider",
         description="create child",
         input_schema=ToolSchema(),
         action="create",
@@ -214,7 +250,7 @@ def test_parsed_intent_is_an_opaque_publisher_extension_envelope():
     )
 
     assert {
-        "intent_type", "raw_input", "platforms", "attributes", "parameters",
+        "intent_type", "raw_input", "namespaces", "attributes", "parameters",
         "scoped_parameters", "metadata",
     } == set(ParsedIntent.__dataclass_fields__)
     assert "campaign_type" not in ParsedIntent.__dataclass_fields__
@@ -254,7 +290,7 @@ def test_generic_workflow_coordinator_receives_scope_from_application_boundary()
     tool = ToolDefinition(
         name="custom_write",
         skill="custom",
-        platform="custom-namespace",
+        namespace="custom-namespace",
         description="write",
         input_schema=ToolSchema(),
         action="create",
@@ -282,7 +318,7 @@ def test_unpublished_intent_is_not_executable():
 
     normalized = parser._normalize_intent({
         "intent_type": "create_partner_bundle",
-        "platforms": [],
+        "namespaces": [],
         "objective": "retention",
     })
 
@@ -323,7 +359,7 @@ def test_router_requires_an_exact_registered_intent():
     report_tool = ToolDefinition(
         name="new_network_download_report",
         skill="new-network",
-        platform="new-network",
+        namespace="new-network",
         description="Query reports",
         input_schema=ToolSchema(),
         action="report",
@@ -340,9 +376,9 @@ def test_router_requires_an_exact_registered_intent():
     assert routed == {}
 
 
-def test_parser_drops_unregistered_routing_metadata_from_platform_params():
+def test_parser_drops_unregistered_routing_metadata_from_scoped_parameters():
     parser = LLMIntentParser()
-    parser.register_platforms(["new-network"])
+    parser.register_namespaces(["new-network"])
     parser.register_tool_schemas(
         "new-network",
         [{"properties": {"account_id": {"type": "string"}}}],
@@ -350,8 +386,8 @@ def test_parser_drops_unregistered_routing_metadata_from_platform_params():
 
     normalized = parser._normalize_intent({
         "intent_type": "list_resources",
-        "platforms": ["new-network"],
-        "platform_params": {
+        "namespaces": ["new-network"],
+        "scoped_parameters": {
             "new-network": {
                 "action": "list",
                 "resource_type": "resource",
@@ -360,14 +396,14 @@ def test_parser_drops_unregistered_routing_metadata_from_platform_params():
         },
     })
 
-    assert normalized["platform_params"]["new-network"] == {
+    assert normalized["scoped_parameters"]["new-network"] == {
         "account_id": "a1"
     }
 
 
-def test_parser_drops_llm_operation_and_note_metadata_from_platform_params():
+def test_parser_drops_llm_operation_and_note_metadata_from_scoped_parameters():
     parser = LLMIntentParser()
-    parser.register_platforms(["new-network"])
+    parser.register_namespaces(["new-network"])
     parser.register_tool_schemas(
         "new-network",
         [{"properties": {"account_id": {"type": "string"}}}],
@@ -375,8 +411,8 @@ def test_parser_drops_llm_operation_and_note_metadata_from_platform_params():
 
     normalized = parser._normalize_intent({
         "intent_type": "list_resources",
-        "platforms": ["new-network"],
-        "platform_params": {
+        "namespaces": ["new-network"],
+        "scoped_parameters": {
             "new-network": {
                 "operation": "list",
                 "note": "campaign list",
@@ -385,7 +421,7 @@ def test_parser_drops_llm_operation_and_note_metadata_from_platform_params():
         },
     })
 
-    assert normalized["platform_params"]["new-network"] == {
+    assert normalized["scoped_parameters"]["new-network"] == {
         "account_id": "a1"
     }
 
@@ -410,7 +446,7 @@ def test_non_chat_request_without_a_tool_never_uses_greeting_fallback():
         def parse(self, _text, _ctx):
             return ParsedIntent(
                 "query_report", "query report", ["new-network"],
-                platform_params={"new-network": {}},
+                scoped_parameters={"new-network": {}},
             )
 
     runtime.intent_parser = Parser()

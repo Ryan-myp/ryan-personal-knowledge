@@ -36,7 +36,7 @@ def test_builtin_provider_and_capability_versions_are_consistent(
 
     assert contract["issues"] == []
     assert contract["api_version"] in contract["supported_api_versions"]
-    assert capability_class.provider_api_version in {
+    assert capability_class.integration_api_version in {
         *contract["supported_api_versions"],
         *contract["adapter_versions"],
     }

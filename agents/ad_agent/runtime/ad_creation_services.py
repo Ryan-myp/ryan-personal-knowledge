@@ -113,11 +113,11 @@ class AdCreationServicesMixin:
             values["attributes"] = {
                 str(key): copy.deepcopy(value)
                 for key, value in raw.items()
-                if key not in fields and key not in {"platform_params"}
+                if key not in fields and key not in {"scoped_parameters"}
             }
         if "scoped_parameters" not in values:
             values["scoped_parameters"] = copy.deepcopy(
-                raw.get("platform_params") or {}
+                raw.get("scoped_parameters") or {}
             )
         # ParsedIntent.to_dict() intentionally omits raw_input from the public
         # contract. A durable draft still needs a safe seed for deterministic
@@ -163,8 +163,8 @@ class AdCreationServicesMixin:
         if pending is None or self.creation_card_builder.is_creation_intent(pending):
             return intent
         current_type = str(getattr(intent, "intent_type", "") or "")
-        current_platforms = list(getattr(intent, "platforms", []) or [])
-        pending_platforms = list(getattr(pending, "platforms", []) or [])
+        current_platforms = list(getattr(intent, "namespaces", []) or [])
+        pending_platforms = list(getattr(pending, "namespaces", []) or [])
         if current_type not in {"", "chat"} and current_type != pending.intent_type:
             return intent
         if current_platforms and set(current_platforms) != set(pending_platforms):
@@ -198,10 +198,9 @@ class AdCreationServicesMixin:
         attributes = dict(merged.get("attributes") or {})
         attributes.update(copy.deepcopy(getattr(intent, "attributes", {}) or {}))
         merged["attributes"] = attributes
-        merged["platform_params"] = merged_params
         merged["scoped_parameters"] = merged_params
         merged["intent_type"] = pending.intent_type
-        merged["platforms"] = pending_platforms
+        merged["namespaces"] = pending_platforms
         try:
             return ParsedIntent(**{
                 key: value for key, value in merged.items()
@@ -560,7 +559,7 @@ class AdCreationServicesMixin:
             return None, f"广告创建蓝图不存在：{blueprint_id}@{blueprint_version or 'latest'}"
         requested_platforms = {
             self._canonical_platform(platform)
-            for platform in (getattr(intent, "platforms", []) or [])
+            for platform in (getattr(intent, "namespaces", []) or [])
         }
         blueprint_platform = self._canonical_platform(blueprint.provider)
         if requested_platforms and requested_platforms != {blueprint_platform}:
@@ -573,7 +572,7 @@ class AdCreationServicesMixin:
             except (KeyError, LookupError):
                 missing_tools.append(str(tool_name))
                 continue
-            if self._canonical_platform(definition.platform) != blueprint_platform:
+            if self._canonical_platform(definition.namespace) != blueprint_platform:
                 missing_tools.append(str(tool_name))
                 continue
             definitions.append(definition)
@@ -868,7 +867,7 @@ class AdCreationServicesMixin:
                     schema_errors = validate_tool_input(
                         tool_def.input_schema,
                         tool_input,
-                        include_provider_contract=True,
+                        include_capability_contract=True,
                     )
                     for message in schema_errors:
                         field_match = re.search(r"Field '([^']+)'", str(message))
@@ -978,7 +977,7 @@ class AdCreationServicesMixin:
         definition, _handler = self._get_registered_tool(source_tool)
         if not definition.is_read_tool:
             raise PermissionError("parameter lookup source must be read-only")
-        if self._canonical_platform(definition.platform) != actual_platform:
+        if self._canonical_platform(definition.namespace) != actual_platform:
             raise ValueError("parameter lookup source belongs to a different platform")
         account_value = str(account_id or "").strip()
         source_properties = getattr(definition.input_schema, "properties", {}) or {}
@@ -1107,8 +1106,8 @@ class AdCreationServicesMixin:
                         f"{tool.name}.{field_name} references unknown lookup tool {lookup_tool}"
                     )
                     continue
-                tool_platform = self._canonical_platform(tool.platform)
-                source_platform = self._canonical_platform(source.platform)
+                tool_platform = self._canonical_platform(tool.namespace)
+                source_platform = self._canonical_platform(source.namespace)
                 if tool_platform != source_platform:
                     errors.append(
                         f"{tool.name}.{field_name} lookup tool {lookup_tool} "
@@ -1264,9 +1263,9 @@ class AdCreationServicesMixin:
             str(item).strip() for item in (platforms or []) if str(item).strip()
         ]
         if supplied_platforms:
-            candidate.platforms = list(dict.fromkeys(supplied_platforms))
+            candidate.namespaces = list(dict.fromkeys(supplied_platforms))
         if platform_params:
-            merged_params = dict(getattr(candidate, "platform_params", {}) or {})
+            merged_params = dict(getattr(candidate, "scoped_parameters", {}) or {})
             for platform, values in platform_params.items():
                 if isinstance(values, dict):
                     merged = dict(merged_params.get(platform, {}) or {})
@@ -1282,7 +1281,7 @@ class AdCreationServicesMixin:
                 "status": "needs_input", "missing": ["action"],
                 "reason": "请明确到期后要执行的业务动作，例如查询资源 performance 或创建资源。",
             }
-        if not candidate.platforms:
+        if not candidate.namespaces:
             return {
                 "status": "needs_input", "missing": ["platform"],
                 "reason": "请明确一个当前已注册的执行渠道，或说明需要跨渠道处理。",
@@ -1294,12 +1293,12 @@ class AdCreationServicesMixin:
                 "status": "unsupported", "missing": [],
                 "reason": "当前已注册的 Tool/Capability 没有匹配该动作和渠道的执行能力。",
                 "intent_type": candidate.intent_type,
-                "platforms": list(candidate.platforms),
+                "platforms": list(candidate.namespaces),
             }
         account_values = []
         if account_id not in (None, ""):
             account_values.append(str(account_id))
-        for values in (getattr(candidate, "platform_params", {}) or {}).values():
+        for values in (getattr(candidate, "scoped_parameters", {}) or {}).values():
             if not isinstance(values, dict):
                 continue
             for field_name in ("account_id", "advertiser_id", "customer_id"):
@@ -1358,7 +1357,7 @@ class AdCreationServicesMixin:
         # structured fields. Check only the declarative required contract here;
         # no lookup or Provider call is allowed during schedule creation.
         platform_params_by_canonical: dict[str, dict[str, Any]] = {}
-        for platform_name, values in (getattr(candidate, "platform_params", {}) or {}).items():
+        for platform_name, values in (getattr(candidate, "scoped_parameters", {}) or {}).items():
             if not isinstance(values, dict):
                 continue
             canonical = self._canonical_platform(str(platform_name))
@@ -1386,7 +1385,7 @@ class AdCreationServicesMixin:
                 ]
                 required.extend(
                     str(field_name)
-                    for field_name in (getattr(schema, "provider_required", []) or [])
+                    for field_name in (getattr(schema, "capability_required", []) or [])
                     if str(field_name) not in required
                 )
                 missing = {
@@ -1394,7 +1393,7 @@ class AdCreationServicesMixin:
                     if candidate_input.get(field_name) in (None, "", {}, [])
                 }
                 for alternatives in (
-                    (getattr(schema, "provider_any_of", []) or [])
+                    (getattr(schema, "capability_any_of", []) or [])
                     if schema else ()
                 ):
                     if not any(candidate_input.get(str(field_name)) not in (None, "", {}, []) for field_name in alternatives):

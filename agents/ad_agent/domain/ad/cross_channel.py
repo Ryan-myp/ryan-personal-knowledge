@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import csv
 import io
 from typing import Any, Iterable, Optional
-from ...core.platform import normalize_platform
+from ...core.namespace import normalize_namespace as normalize_platform
 
 
 @dataclass(frozen=True)
@@ -249,7 +249,7 @@ def build_batch_operations(
     blocked = {
         normalize_platform(platform) for platform in (blocked_platforms or set())
     }
-    for platform in getattr(intent, "platforms", []) or []:
+    for platform in getattr(intent, "namespaces", []) or []:
         actual_platform = normalize_platform(platform)
         # Tool discovery is authoritative for whether a provider can take
         # part in this batch. The Runtime reports the unsupported platform;
@@ -259,7 +259,7 @@ def build_batch_operations(
         if actual_platform in blocked:
             continue
 
-        platform_params = getattr(intent, "platform_params", {}) or {}
+        platform_params = getattr(intent, "scoped_parameters", {}) or {}
         params = platform_params.get(platform, {})
         if not isinstance(params, dict):
             params = platform_params.get(actual_platform, {})

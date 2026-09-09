@@ -312,7 +312,7 @@ def _init_runtime():
         )
 
         print(f"\n📊 服务状态:")
-        print(f"- ✅ {len(runtime.registry.list_all_platforms())} 平台 {len(runtime.registry.list_all())} 工具")
+        print(f"- ✅ {len(runtime.registry.list_all_namespaces())} 平台 {len(runtime.registry.list_all())} 工具")
         print(f"- ✅ Skills 系统已就绪")
         runtime_status.update({"state": "ready", "error": None})
         return runtime
@@ -458,7 +458,7 @@ async def index():
 @app.get("/health", tags=["health"])
 async def health():
     tools = runtime.registry.list_all() if runtime else []
-    platforms = set(t.platform for t in tools)
+    platforms = set(t.namespace for t in tools)
     state = runtime_status.get("state", "not_initialized")
     if runtime is not None and state == "not_initialized":
         # Useful for tests/embedding callers that inject an already-created
@@ -1665,7 +1665,7 @@ async def get_platforms(
     _authorize_request(x_api_key, http_request)
     if not runtime:
         return {"platforms": []}
-    return {"platforms": runtime.registry.list_all_platforms()}
+    return {"platforms": runtime.registry.list_all_namespaces()}
 
 
 class PluginPackageRequest(BaseModel):
@@ -1860,7 +1860,7 @@ async def get_tools(
         "tools": [
             {
                 "name": t.name,
-                "platform": t.platform,
+                "platform": t.namespace,
                 "skill": t.skill,
                 "description": t.description,
                 "action": t.action,
@@ -1876,7 +1876,7 @@ async def get_tools(
                 "max_output_bytes": t.max_output_bytes,
                 "required_permissions": list(t.required_permissions),
                 "contract_version": t.contract_version,
-                "provider_api_version": t.provider_api_version,
+                "integration_api_version": t.integration_api_version,
                 "input_schema": t.input_schema.to_dict() if t.input_schema else None,
             }
             for t in tools

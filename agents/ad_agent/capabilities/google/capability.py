@@ -256,7 +256,7 @@ class GoogleCapability(BaseCapability):
         "update_feed_item", "delete_feed_item",
     }
     capability_version = "1.4.0"
-    provider_api_version = "v24"
+    integration_api_version = "v24"
     provider_method_coverage = {
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
         "list_ad_groups": ["google_list_ad_groups"], "get_ad_group": ["google_get_ad_group"],
@@ -447,7 +447,7 @@ class GoogleCapability(BaseCapability):
 
         tools = [
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_experiments",
                 description="查询 Google Ads Campaign Experiment。",
                 method_name="list_experiments", result_key="experiments",
@@ -463,7 +463,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_experiment_arms",
                 description="查询 Google Ads Experiment Arm。",
                 method_name="list_experiment_arms", result_key="experiment_arms",
@@ -479,7 +479,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_experiment",
                 description="查询 Google Ads 单个 Experiment 详情。",
                 method_name="get_experiment", result_key="experiment",
@@ -490,12 +490,12 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["experiment_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_experiment",
                 description="创建 Google Ads Experiment；默认仅生成 dry-run 计划。",
                 method_name="create_experiment", result_key="experiment_id",
                 properties=experiment_schema["properties"],
-                required=["name", "type"], provider_required=["name", "type"],
+                required=["name", "type"], capability_required=["name", "type"],
                 conditional_rules=experiment_schema["conditional_rules"],
                 action="create", resource_type="experiment", resource_id_field="experiment_id",
                 intent_types=["create_experiment"], traits=["write", "experiment"],
@@ -503,7 +503,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((_experiment_input(data),), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_experiment",
                 description="更新 Google Ads Experiment 可变字段；默认仅生成 dry-run 计划。",
                 method_name="update_experiment", result_key="experiment_result",
@@ -511,14 +511,14 @@ class GoogleCapability(BaseCapability):
                     "experiment_id": experiment_schema["properties"]["experiment_id"],
                     "updates": experiment_update_schema,
                 },
-                required=["experiment_id", "updates"], provider_required=["updates"],
+                required=["experiment_id", "updates"], capability_required=["updates"],
                 action="update", resource_type="experiment", resource_id_field="experiment_id",
                 intent_types=["update_experiment"], traits=["write", "experiment"],
                 write=True, live_support=False,
                 argument_builder=lambda _ctx, data: ((data["experiment_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_experiment",
                 description="删除 Google Ads Experiment；默认仅生成 dry-run 计划。",
                 method_name="delete_experiment", result_key="experiment_result",
@@ -529,12 +529,12 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["experiment_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_campaign",
                 description="删除 Google Ads Campaign；默认仅生成 dry-run 计划。",
                 method_name="delete_campaign", result_key="campaign_result",
                 properties={"campaign_id": {"type": "string"}},
-                required=["campaign_id"], provider_required=["campaign_id"],
+                required=["campaign_id"], capability_required=["campaign_id"],
                 action="delete", resource_type="campaign", resource_id_field="campaign_id",
                 intent_types=["delete_campaign", "cross_channel_batch_delete"],
                 intent_aliases=["删除 Google Ads campaign", "删除 Google campaign"],
@@ -542,13 +542,13 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_app_ad_group",
                 description="创建 Google App Campaign Ad Group；live 仅在受控测试账号和确认后执行。",
                 method_name="create_ad_group", result_key="ad_group_id",
                 properties=app_ad_group_schema["properties"],
                 required=app_ad_group_schema["required"],
-                provider_required=app_ad_group_schema["provider_required"],
+                capability_required=app_ad_group_schema["capability_required"],
                 action="create", resource_type="ad_group", parent_resource_type="campaign",
                 resource_id_field="ad_group_id", parent_resource_id_field="campaign_id",
                 intent_types=["create_app_ad_group", "create_campaign"],
@@ -572,13 +572,13 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_app_ad",
                 description="创建 Google App Campaign AppAd 素材广告；live 仅在受控测试账号和确认后执行。",
                 method_name="create_app_ad", result_key="app_ad_plan",
                 properties=app_ad_schema["properties"],
                 required=app_ad_schema["required"],
-                provider_required=app_ad_schema["provider_required"],
+                capability_required=app_ad_schema["capability_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["create_app_ad", "create_campaign"],
@@ -604,18 +604,18 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_ad_group",
                 description="删除 Google Ads Ad Group；默认仅生成 dry-run 计划。",
                 method_name="delete_ad_group", result_key="ad_group_result",
                 properties={"ad_group_id": {"type": "string"}},
-                required=["ad_group_id"], provider_required=["ad_group_id"],
+                required=["ad_group_id"], capability_required=["ad_group_id"],
                 action="delete", resource_type="ad_group", resource_id_field="ad_group_id",
                 intent_types=["delete_ad_group"], traits=["write", "ad_group"], write=True,
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_ad",
                 description="删除 Google Ads Ad；默认仅生成 dry-run 计划。",
                 method_name="delete_ad", result_key="ad_result",
@@ -624,14 +624,14 @@ class GoogleCapability(BaseCapability):
                     "ad_id": {"type": "string"},
                 },
                 required=["ad_group_id", "ad_id"],
-                provider_required=["ad_group_id", "ad_id"],
+                capability_required=["ad_group_id", "ad_id"],
                 action="delete", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["delete_ad"], traits=["write", "ad"], write=True,
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["ad_id"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_assets", description="查询 Google Ads 客户级可复用 Asset 列表。",
                 method_name="list_assets", result_key="assets",
                 properties=asset_schema["properties"], required=["customer_id"],
@@ -642,7 +642,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_asset", description="查询 Google Ads 客户级 Asset 详情。",
                 method_name="get_asset", result_key="asset",
                 properties=asset_schema["properties"], required=["customer_id", "asset_id"],
@@ -651,7 +651,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_asset",
                 description=(
                     "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；"
@@ -660,7 +660,7 @@ class GoogleCapability(BaseCapability):
                 method_name="create_asset", result_key="asset_id",
                 properties=asset_create_schema["properties"],
                 required=asset_create_schema["required"],
-                provider_required=asset_create_schema["provider_required"],
+                capability_required=asset_create_schema["capability_required"],
                 conditional_rules=asset_create_schema["conditional_rules"],
                 action="create", resource_type="asset", resource_id_field="asset_id",
                 intent_types=["create_asset"], traits=["write", "asset"], write=True,
@@ -675,7 +675,7 @@ class GoogleCapability(BaseCapability):
                 },), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_asset",
                 description=(
                     "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；"
@@ -689,7 +689,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_campaign_assets",
                 description="查询 Google Ads Campaign 已关联的 Asset 列表。",
                 method_name="list_campaign_assets", result_key="campaign_assets",
@@ -705,13 +705,13 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_campaign_asset",
                 description="将 Google Asset 关联到 Campaign；默认仅生成 dry-run 计划。",
                 method_name="create_campaign_asset", result_key="campaign_asset_id",
                 properties=campaign_asset_schema["properties"],
                 required=["customer_id", "campaign_id", "asset_id", "field_type"],
-                provider_required=["campaign_id", "asset_id", "field_type"],
+                capability_required=["campaign_id", "asset_id", "field_type"],
                 action="create", resource_type="campaign_asset",
                 parent_resource_type="campaign",
                 resource_id_field="campaign_asset_id",
@@ -723,13 +723,13 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_campaign_asset",
                 description="移除 Campaign 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
                 method_name="delete_campaign_asset", result_key="campaign_asset_result",
                 properties=campaign_asset_schema["properties"],
                 required=["customer_id", "campaign_id", "asset_id", "field_type"],
-                provider_required=["campaign_id", "asset_id", "field_type"],
+                capability_required=["campaign_id", "asset_id", "field_type"],
                 action="delete", resource_type="campaign_asset",
                 parent_resource_type="campaign",
                 resource_id_field="campaign_asset_id",
@@ -741,7 +741,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_asset_group_assets",
                 description="查询 Google PMax Asset Group 已关联的 Asset 列表。",
                 method_name="list_asset_group_assets", result_key="asset_group_assets",
@@ -758,13 +758,13 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_asset_group_asset",
                 description="将 Google Asset 关联到 PMax Asset Group；默认仅生成 dry-run 计划。",
                 method_name="create_asset_group_asset", result_key="asset_group_asset_id",
                 properties=asset_group_asset_schema["properties"],
                 required=["customer_id", "asset_group_id", "asset_id", "field_type"],
-                provider_required=["asset_group_id", "asset_id", "field_type"],
+                capability_required=["asset_group_id", "asset_id", "field_type"],
                 action="create", resource_type="asset_group_asset",
                 parent_resource_type="asset_group",
                 resource_id_field="asset_group_asset_id",
@@ -776,13 +776,13 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_asset_group_asset",
                 description="移除 PMax Asset Group 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
                 method_name="delete_asset_group_asset", result_key="asset_group_asset_result",
                 properties=asset_group_asset_schema["properties"],
                 required=["customer_id", "asset_group_id", "asset_id", "field_type"],
-                provider_required=["asset_group_id", "asset_id", "field_type"],
+                capability_required=["asset_group_id", "asset_id", "field_type"],
                 action="delete", resource_type="asset_group_asset",
                 parent_resource_type="asset_group",
                 resource_id_field="asset_group_asset_id",
@@ -794,7 +794,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_campaign_budgets", description="查询 Google Ads CampaignBudget 列表。",
                 method_name="list_campaign_budgets", result_key="budgets",
                 properties=budget_schema["properties"], required=["customer_id"],
@@ -803,7 +803,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_campaign_budget", description="查询 Google Ads CampaignBudget 详情。",
                 method_name="get_campaign_budget", result_key="budget",
                 properties=budget_schema["properties"], required=["budget_id"],
@@ -812,11 +812,11 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["budget_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_campaign_budget", description="创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
                 method_name="create_campaign_budget", result_key="budget_id",
                 properties=budget_schema["properties"], required=["customer_id", "name", "daily_budget"],
-                provider_required=["name", "daily_budget"],
+                capability_required=["name", "daily_budget"],
                 action="create", resource_type="campaign_budget", resource_id_field="budget_id",
                 intent_types=["create_campaign_budget"], traits=["write", "campaign_budget"], write=True,
                 argument_builder=lambda _ctx, data: ((data["name"], data["daily_budget"]), {
@@ -825,7 +825,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_campaign_budget", description="更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
                 method_name="update_campaign_budget", result_key="budget_result",
                 properties={**budget_schema["properties"], "updates": google_campaign_budget_update_schema()},
@@ -835,7 +835,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["budget_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_campaign_budget", description="删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
                 method_name="delete_campaign_budget", result_key="budget_result",
                 properties=budget_schema["properties"], required=["budget_id"], action="delete",
@@ -844,13 +844,13 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["budget_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_conversion_action",
                 description="创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
                 method_name="create_conversion_action", result_key="conversion_action_id",
                 properties=conversion_action_schema["properties"],
                 required=conversion_action_schema["required"],
-                provider_required=conversion_action_schema["provider_required"],
+                capability_required=conversion_action_schema["capability_required"],
                 action="create", resource_type="conversion_action",
                 resource_id_field="conversion_action_id",
                 intent_types=["create_conversion_action"],
@@ -860,7 +860,7 @@ class GoogleCapability(BaseCapability):
                 },), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_conversion_action",
                 description="更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
                 method_name="update_conversion_action", result_key="conversion_action_result",
@@ -879,7 +879,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_conversion_action",
                 description="删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
                 method_name="delete_conversion_action", result_key="conversion_action_result",
@@ -895,7 +895,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["conversion_action_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_campaign_criteria", description="查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
                 method_name="list_campaign_criteria", result_key="criteria",
                 properties=list_criterion_properties, required=[],
@@ -906,7 +906,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_campaign_criterion", description="查询 Google Ads 单个 CampaignCriterion 详情。",
                 method_name="get_campaign_criterion", result_key="criterion",
                 properties=get_criterion_properties, required=["campaign_id", "criterion_id"],
@@ -915,18 +915,18 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_campaign_criteria", description="批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
                 method_name="create_campaign_criteria", result_key="criterion_ids",
                 properties=create_criterion_properties, required=["campaign_id", "criteria"],
-                provider_required=["criteria"], action="create", resource_type="campaign_criterion",
+                capability_required=["criteria"], action="create", resource_type="campaign_criterion",
                 parent_resource_type="campaign", resource_id_field="criterion_ids",
                 parent_resource_id_field="campaign_id", intent_types=["create_campaign_criteria"],
                 traits=["write", "campaign_criterion", "targeting"], write=True,
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criteria"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_campaign_criterion", description="更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
                 method_name="update_campaign_criterion", result_key="criterion_result",
                 properties=update_criterion_properties,
@@ -937,7 +937,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_campaign_criterion", description="删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
                 method_name="delete_campaign_criterion", result_key="criterion_result",
                 properties=delete_criterion_properties, required=["campaign_id", "criterion_id"],
@@ -947,7 +947,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["campaign_id"], data["criterion_id"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_conversion_actions", description="查询 Google Ads 转化动作列表。",
                 method_name="list_conversion_actions", result_key="conversion_actions",
                 properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
@@ -956,7 +956,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_conversion_action", description="查询 Google Ads 转化动作详情。",
                 method_name="get_conversion_action", result_key="conversion_action",
                 properties={
@@ -969,7 +969,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["conversion_action_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_bidding_strategies", description="查询 Google Ads 出价策略列表。",
                 method_name="list_bidding_strategies", result_key="bidding_strategies",
                 properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
@@ -978,7 +978,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_bidding_strategy", description="查询 Google Ads 出价策略详情。",
                 method_name="get_bidding_strategy", result_key="bidding_strategy",
                 properties={
@@ -991,7 +991,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_bidding_strategy",
                 description="创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
                 method_name="create_bidding_strategy", result_key="bidding_strategy_id",
@@ -1005,7 +1005,7 @@ class GoogleCapability(BaseCapability):
                     )
                 },
                 required=bidding_strategy_schema["required"],
-                provider_required=bidding_strategy_schema["provider_required"],
+                capability_required=bidding_strategy_schema["capability_required"],
                 conditional_rules=bidding_strategy_schema["conditional_rules"],
                 action="create", resource_type="bidding_strategy",
                 resource_id_field="bidding_strategy_id",
@@ -1022,7 +1022,7 @@ class GoogleCapability(BaseCapability):
                 },), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_bidding_strategy",
                 description="更新 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
                 method_name="update_bidding_strategy", result_key="bidding_strategy_result",
@@ -1038,7 +1038,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_bidding_strategy",
                 description="删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
                 method_name="delete_bidding_strategy", result_key="bidding_strategy_result",
@@ -1053,7 +1053,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["bidding_strategy_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_user_lists", description="查询 Google Ads 第一方 User List 列表。",
                 method_name="list_user_lists", result_key="user_lists",
                 properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
@@ -1062,7 +1062,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_user_list", description="查询 Google Ads 第一方 User List 详情。",
                 method_name="get_user_list", result_key="user_list",
                 properties={
@@ -1075,13 +1075,13 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["user_list_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_user_list",
                 description="创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
                 method_name="create_user_list", result_key="user_list_id",
                 properties=create_user_list_properties,
                 required=user_list_schema["required"],
-                provider_required=user_list_schema["provider_required"],
+                capability_required=user_list_schema["capability_required"],
                 conditional_rules=user_list_schema["conditional_rules"],
                 action="create", resource_type="user_list", resource_id_field="user_list_id",
                 intent_types=["create_user_list"], traits=["write", "audience"], write=True,
@@ -1096,7 +1096,7 @@ class GoogleCapability(BaseCapability):
                 },), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_user_list",
                 description="更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
                 method_name="update_user_list", result_key="user_list_result",
@@ -1111,7 +1111,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["user_list_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_user_list",
                 description="删除 Google Ads User List；默认仅生成 dry-run 计划。",
                 method_name="delete_user_list", result_key="user_list_result",
@@ -1125,7 +1125,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["user_list_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_upload_user_list_data",
                 description=(
                     "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；"
@@ -1143,7 +1143,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["user_list_id"], data["file_path"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_customer_clients",
                 description="查询 Google Ads 经理账户下可访问的客户账户。",
                 method_name="list_customer_clients", result_key="customer_clients",
@@ -1158,7 +1158,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_search_ad", description="创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
                 method_name="create_search_ad", result_key="ad_id",
                 properties=search_ad_properties,
@@ -1167,7 +1167,7 @@ class GoogleCapability(BaseCapability):
                 # management-contract ``name`` field.  Keep that distinction
                 # explicit while reusing the provider-owned field schemas.
                 required=["ad_group_id", "headlines", "descriptions", "final_url"],
-                provider_required=["headlines", "descriptions", "final_url"],
+                capability_required=["headlines", "descriptions", "final_url"],
                 conditional_rules=search_ad_contract["conditional_rules"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
@@ -1179,12 +1179,12 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_keywords", description="批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
                 method_name="create_keywords", result_key="keyword_ids",
                 properties=google_keyword_schema()["properties"],
                 required=google_keyword_schema()["required"],
-                provider_required=google_keyword_schema()["provider_required"],
+                capability_required=google_keyword_schema()["capability_required"],
                 action="create", resource_type="keyword", parent_resource_type="ad_group",
                 resource_id_field="keyword_ids", parent_resource_id_field="ad_group_id",
                 intent_types=["create_keywords"],
@@ -1193,7 +1193,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["keywords"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_keyword",
                 description="更新 Google Ad Group 关键词状态或 CPC 出价；默认仅生成 dry-run 计划。",
                 method_name="update_keyword", result_key="keyword_id",
@@ -1203,7 +1203,7 @@ class GoogleCapability(BaseCapability):
                     "updates": google_keyword_update_schema(),
                 },
                 required=["ad_group_id", "criterion_id", "updates"],
-                provider_required=["updates"], action="update", resource_type="keyword",
+                capability_required=["updates"], action="update", resource_type="keyword",
                 parent_resource_type="ad_group", resource_id_field="keyword_id",
                 parent_resource_id_field="ad_group_id",
                 intent_types=["update_keyword"], traits=["write", "keyword"], write=True,
@@ -1212,7 +1212,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_keyword",
                 description="删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
                 method_name="delete_keyword", result_key="keyword_id",
@@ -1229,11 +1229,11 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_pmax_asset_group", description="创建 Google PMax Asset Group；live 仅在受控测试账号和确认后执行。",
                 method_name="create_pmax_asset_group", result_key="asset_group_plan",
                 properties=asset_group_schema["properties"], required=asset_group_schema["required"],
-                provider_required=asset_group_schema["provider_required"], action="create",
+                capability_required=asset_group_schema["capability_required"], action="create",
                 resource_type="asset_group", parent_resource_type="campaign",
                 resource_id_field="asset_group_id", parent_resource_id_field="campaign_id",
                 intent_types=["create_pmax_asset_group", "create_campaign"],
@@ -1254,13 +1254,13 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_product_group",
                 description="创建 Google Shopping Product Group/Listing Group；live 仅在受控测试账号和确认后执行。",
                 method_name="create_product_group", result_key="product_group_id",
                 properties=google_product_group_schema()["properties"],
                 required=google_product_group_schema()["required"],
-                provider_required=google_product_group_schema()["provider_required"],
+                capability_required=google_product_group_schema()["capability_required"],
                 conditional_rules=google_product_group_schema()["conditional_rules"],
                 action="create", resource_type="product_group", parent_resource_type="ad_group",
                 resource_id_field="product_group_id", parent_resource_id_field="ad_group_id",
@@ -1281,7 +1281,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_product_groups",
                 description="查询 Google Shopping Ad Group 下的 Product Group/Listing Group 列表。",
                 method_name="list_product_groups", result_key="product_groups",
@@ -1294,7 +1294,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_product_group",
                 description="查询 Google Shopping 单个 Product Group/Listing Group 详情。",
                 method_name="get_product_group", result_key="product_group",
@@ -1308,7 +1308,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_product_group",
                 description="更新 Google Shopping Product Group 状态或 CPC 出价；默认仅生成 dry-run 计划。",
                 method_name="update_product_group", result_key="product_group_result",
@@ -1317,7 +1317,7 @@ class GoogleCapability(BaseCapability):
                     "updates": product_group_update_schema,
                 },
                 required=["ad_group_id", "product_group_id", "updates"],
-                provider_required=["updates"], action="update", resource_type="product_group",
+                capability_required=["updates"], action="update", resource_type="product_group",
                 parent_resource_type="ad_group", resource_id_field="product_group_id",
                 parent_resource_id_field="ad_group_id", intent_types=["update_product_group"],
                 traits=["write", "product_group", "shopping"], write=True,
@@ -1327,7 +1327,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_product_group",
                 description="删除 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
                 method_name="delete_product_group", result_key="product_group_result",
@@ -1342,7 +1342,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_asset_group_listing_group_filters",
                 description="查询 Google PMax Asset Group 下的 Listing Group Filter 树。",
                 method_name="list_asset_group_listing_group_filters",
@@ -1359,7 +1359,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_asset_group_listing_group_filter",
                 description="查询 Google PMax 单个 Listing Group Filter 节点。",
                 method_name="get_asset_group_listing_group_filter",
@@ -1377,14 +1377,14 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_asset_group_listing_group_filter",
                 description="创建 Google PMax Listing Group Filter；根节点或商品/网页/Retail 子节点，默认仅生成 dry-run 计划。",
                 method_name="create_asset_group_listing_group_filter",
                 result_key="listing_group_filter_id",
                 properties=listing_filter_schema["properties"],
                 required=listing_filter_schema["required"],
-                provider_required=listing_filter_schema["provider_required"],
+                capability_required=listing_filter_schema["capability_required"],
                 conditional_rules=listing_filter_schema["conditional_rules"],
                 action="create", resource_type="listing_group_filter",
                 parent_resource_type="asset_group",
@@ -1411,7 +1411,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_asset_group_listing_group_filter",
                 description="更新 Google PMax Listing Group Filter 的 case value；默认仅生成 dry-run 计划。",
                 method_name="update_asset_group_listing_group_filter",
@@ -1421,7 +1421,7 @@ class GoogleCapability(BaseCapability):
                     "updates": listing_filter_update_schema,
                 },
                 required=["asset_group_id", "listing_group_filter_id", "updates"],
-                provider_required=["updates"], action="update",
+                capability_required=["updates"], action="update",
                 resource_type="listing_group_filter",
                 parent_resource_type="asset_group",
                 resource_id_field="listing_group_filter_id",
@@ -1435,7 +1435,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_asset_group_listing_group_filter",
                 description="删除 Google PMax Listing Group Filter 节点；需先删除其子节点，默认仅生成 dry-run 计划。",
                 method_name="delete_asset_group_listing_group_filter",
@@ -1455,13 +1455,13 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_responsive_display_ad",
                 description="创建 Google Responsive Display Ad；默认仅生成 dry-run 计划。",
                 method_name="create_responsive_display_ad", result_key="ad_id",
                 properties=google_responsive_display_ad_schema()["properties"],
                 required=google_responsive_display_ad_schema()["required"],
-                provider_required=google_responsive_display_ad_schema()["provider_required"],
+                capability_required=google_responsive_display_ad_schema()["capability_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["create_responsive_display_ad", "create_campaign"],
@@ -1470,7 +1470,7 @@ class GoogleCapability(BaseCapability):
                     "in": ["DISPLAY"],
                 }],
                 traits=["write", "ad", "display"], write=True, live_support=True,
-                readback_tool="google_get_ad", provider_api_version="v24",
+                readback_tool="google_get_ad", integration_api_version="v24",
                 required_permissions=["ads.plan"],
                 argument_builder=lambda _ctx, data: ((data["ad_group_id"], data["name"], data["final_url"]), {
                     "headlines": data["headlines"], "long_headline": data["long_headline"],
@@ -1485,13 +1485,13 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_video_ad",
                 description="创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
                 method_name="create_video_ad", result_key="ad_id",
                 properties=google_video_ad_schema()["properties"],
                 required=google_video_ad_schema()["required"],
-                provider_required=google_video_ad_schema()["provider_required"],
+                capability_required=google_video_ad_schema()["capability_required"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
                 intent_types=["create_video_ad", "create_campaign"],
@@ -1500,7 +1500,7 @@ class GoogleCapability(BaseCapability):
                     "in": ["VIDEO"],
                 }],
                 traits=["write", "ad", "video"], write=True, live_support=True,
-                readback_tool="google_get_ad", provider_api_version="v24",
+                readback_tool="google_get_ad", integration_api_version="v24",
                 required_permissions=["ads.plan"],
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["name"], data["video_ad_format"],
@@ -1514,7 +1514,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_adgroup_report", description="查询 Google Ads Ad Group 级报表。",
                 method_name="get_adgroup_report", result_key="report",
                 properties={
@@ -1535,7 +1535,7 @@ class GoogleCapability(BaseCapability):
         ]
         for method_name, intent in (("pause_campaign", "pause_campaign"), ("resume_campaign", "resume_campaign")):
             tools.append(method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name=f"google_{method_name}", description=f"调用 Google Ads {method_name} 管理接口；默认仅生成 dry-run 计划。",
                 method_name=method_name, result_key="campaign_result",
                 properties={"campaign_id": {"type": "string"}}, required=["campaign_id"],
@@ -1554,7 +1554,7 @@ class GoogleCapability(BaseCapability):
             ("promote_experiment", "promote_experiment", "推广 Google Ads Experiment 结果"),
         ):
             tools.append(method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name=f"google_{method_name}",
                 description=f"{description}；默认仅生成 dry-run 计划。",
                 method_name=method_name, result_key="experiment_result",
@@ -1571,13 +1571,13 @@ class GoogleCapability(BaseCapability):
         # compose an explicit creation chain and callers never have to pass a
         # provider-specific discriminator through an untyped payload object.
         tools.append(method_tool(
-            platform="google-ads", skill="google-ads-api-expert",
+            namespace="google-ads", skill="google-ads-api-expert",
             name="google_create_specialized_ad_group",
             description="创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
             method_name="create_ad_group", result_key="ad_group_id",
             properties=google_ad_group_schema()["properties"],
             required=google_ad_group_schema()["required"],
-            provider_required=google_ad_group_schema()["provider_required"],
+            capability_required=google_ad_group_schema()["capability_required"],
             action="create", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="ad_group_id",
             parent_resource_id_field="campaign_id",
@@ -1588,7 +1588,7 @@ class GoogleCapability(BaseCapability):
             }],
             traits=["write", "ad_group", "specialized_campaign"], write=True,
             live_support=True, readback_tool="google_get_ad_group",
-            provider_api_version="v24", required_permissions=["ads.plan"],
+            integration_api_version="v24", required_permissions=["ads.plan"],
             argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"]), {
                 "cpc_bid_micros": data.get("cpc_bid_micros") or int(float(data.get("cpc_bid", 0.5)) * 1_000_000),
                 "type": ({
@@ -1609,11 +1609,11 @@ class GoogleCapability(BaseCapability):
             channel_types: list[str], positional: list[str], optional: list[str],
         ) -> tuple[ToolDefinition, ToolHandler]:
             return method_tool(
-                platform="google-ads", skill="google-ads-api-expert", name=name,
+                namespace="google-ads", skill="google-ads-api-expert", name=name,
                 description=description, method_name=method_name, result_key="ad_plan",
                 properties=schema["properties"], required=schema["required"],
-                provider_required=schema.get("provider_required", []),
-                provider_any_of=schema.get("provider_any_of", []),
+                capability_required=schema.get("capability_required", []),
+                capability_any_of=schema.get("capability_any_of", []),
                 conditional_rules=schema.get("conditional_rules", []),
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
@@ -1624,7 +1624,7 @@ class GoogleCapability(BaseCapability):
                 }],
                 traits=["write", "ad", "specialized_campaign"], write=True,
                 live_support=True, readback_tool="google_get_ad",
-                provider_api_version="v24", required_permissions=["ads.plan"],
+                integration_api_version="v24", required_permissions=["ads.plan"],
                 argument_builder=lambda _ctx, data, p=positional, o=optional: _build_specialized_ad_args(
                     data, p, o, name
                 ),
@@ -1695,7 +1695,7 @@ class GoogleCapability(BaseCapability):
         # Skills can compose them without a generic passthrough endpoint.
         tools.extend([
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_feeds",
                 description="查询 Google Ads Feed 列表。",
                 method_name="list_feeds", result_key="feeds",
@@ -1707,7 +1707,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_feed",
                 description="查询 Google Ads Feed 详情。",
                 method_name="get_feed", result_key="feed",
@@ -1717,12 +1717,12 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["feed_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_feed",
                 description="创建 Google Ads Feed；默认仅生成 dry-run 计划。",
                 method_name="create_feed", result_key="feed_id",
                 properties=feed_schema["properties"], required=["customer_id", "name"],
-                provider_required=["name"],
+                capability_required=["name"],
                 action="create", resource_type="feed", resource_id_field="feed_id",
                 intent_types=["create_feed"], traits=["write", "feed"],
                 write=True,
@@ -1733,7 +1733,7 @@ class GoogleCapability(BaseCapability):
                 },), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_feed",
                 description="更新 Google Ads Feed；默认仅生成 dry-run 计划。",
                 method_name="update_feed", result_key="feed_result",
@@ -1744,14 +1744,14 @@ class GoogleCapability(BaseCapability):
                     },
                 },
                 required=["customer_id", "feed_id", "updates"],
-                provider_required=["feed_id", "updates"],
+                capability_required=["feed_id", "updates"],
                 action="update", resource_type="feed", resource_id_field="feed_id",
                 intent_types=["update_feed"], traits=["write", "feed"],
                 write=True,
                 argument_builder=lambda _ctx, data: ((data["feed_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_feed",
                 description="删除 Google Ads Feed；默认仅生成 dry-run 计划。",
                 method_name="delete_feed", result_key="feed_result",
@@ -1762,7 +1762,7 @@ class GoogleCapability(BaseCapability):
                 argument_builder=lambda _ctx, data: ((data["feed_id"],), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_feed_items",
                 description="查询 Google Ads FeedItem 列表。",
                 method_name="list_feed_items", result_key="feed_items",
@@ -1776,7 +1776,7 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_feed_item",
                 description="查询 Google Ads FeedItem 详情。",
                 method_name="get_feed_item", result_key="feed_item",
@@ -1792,13 +1792,13 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_feed_item",
                 description="创建 Google Ads FeedItem；默认仅生成 dry-run 计划。",
                 method_name="create_feed_item", result_key="feed_item_id",
                 properties=feed_schema["properties"],
                 required=["customer_id", "feed_id", "attribute_values"],
-                provider_required=["feed_id", "attribute_values"],
+                capability_required=["feed_id", "attribute_values"],
                 action="create", resource_type="feed_item",
                 parent_resource_type="feed", parent_resource_id_field="feed_id",
                 resource_id_field="feed_item_id",
@@ -1809,7 +1809,7 @@ class GoogleCapability(BaseCapability):
                 ),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_feed_item",
                 description="更新 Google Ads FeedItem；默认仅生成 dry-run 计划。",
                 method_name="update_feed_item", result_key="feed_item_result",
@@ -1826,7 +1826,7 @@ class GoogleCapability(BaseCapability):
                     },
                 },
                 required=["customer_id", "feed_item_resource_name", "updates"],
-                provider_required=["feed_item_resource_name", "updates"],
+                capability_required=["feed_item_resource_name", "updates"],
                 action="update", resource_type="feed_item",
                 resource_id_field="feed_item_resource_name",
                 intent_types=["update_feed_item"], traits=["write", "feed", "feed_item"],
@@ -1836,7 +1836,7 @@ class GoogleCapability(BaseCapability):
                 ),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_delete_feed_item",
                 description="删除 Google Ads FeedItem；默认仅生成 dry-run 计划。",
                 method_name="delete_feed_item", result_key="feed_item_result",
@@ -1851,7 +1851,7 @@ class GoogleCapability(BaseCapability):
                 ),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_customer_conversion_goals",
                 description="查询 Google Ads Customer Conversion Goal 列表。",
                 method_name="list_customer_conversion_goals",
@@ -1866,14 +1866,14 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_customer_conversion_goal",
                 description="更新 Google Ads Customer Conversion Goal；默认仅生成 dry-run 计划。",
                 method_name="update_customer_conversion_goal",
                 result_key="conversion_goal_result",
                 properties=conversion_goal_schema["properties"],
                 required=["customer_id", "category", "origin", "updates"],
-                provider_required=["category", "origin", "updates"],
+                capability_required=["category", "origin", "updates"],
                 action="update", resource_type="customer_conversion_goal",
                 resource_id_field="category",
                 intent_types=["update_customer_conversion_goal"],
@@ -1884,7 +1884,7 @@ class GoogleCapability(BaseCapability):
                 ), {}),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_campaign_conversion_goals",
                 description="查询 Google Ads Campaign Conversion Goal 列表。",
                 method_name="list_campaign_conversion_goals",
@@ -1901,14 +1901,14 @@ class GoogleCapability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="google-ads", skill="google-ads-api-expert",
+                namespace="google-ads", skill="google-ads-api-expert",
                 name="google_update_campaign_conversion_goal",
                 description="更新 Google Ads Campaign Conversion Goal；默认仅生成 dry-run 计划。",
                 method_name="update_campaign_conversion_goal",
                 result_key="conversion_goal_result",
                 properties=conversion_goal_schema["properties"],
                 required=["customer_id", "campaign_id", "category", "origin", "updates"],
-                provider_required=["campaign_id", "category", "origin", "updates"],
+                capability_required=["campaign_id", "category", "origin", "updates"],
                 action="update", resource_type="campaign_conversion_goal",
                 parent_resource_type="campaign",
                 parent_resource_id_field="campaign_id",
@@ -1946,7 +1946,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_list_campaigns",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Campaign 列表。",
             input_schema=ToolSchema(
                 required=["customer_id"],
@@ -1982,7 +1982,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_get_campaign",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
             input_schema=ToolSchema(
                 properties={
@@ -2006,7 +2006,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_create_campaign",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="创建 Google Ads Campaign。",
             input_schema=ToolSchema(**google_campaign_schema()),
             action="create", resource_type="campaign",
@@ -2030,7 +2030,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_list_ad_groups",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Ad Group 列表。",
             input_schema=ToolSchema(
                 required=["campaign_id"],
@@ -2049,7 +2049,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_get_ad_group",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Ad Group 详情。",
             input_schema=ToolSchema(
                 required=["ad_group_id"],
@@ -2076,7 +2076,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_create_ad_group",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="创建 Google Ads Ad Group。",
             input_schema=ToolSchema(**google_ad_group_schema()),
             action="create", resource_type="ad_group", parent_resource_type="campaign",
@@ -2103,7 +2103,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_list_ads",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Ad 列表。",
             input_schema=ToolSchema(
                 required=["ad_group_id"],
@@ -2122,7 +2122,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_get_ad",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Ad 详情。",
             input_schema=ToolSchema(
                 required=["ad_id"],
@@ -2145,7 +2145,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_create_ad",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="创建 Google Ads Ad。",
             input_schema=ToolSchema(**google_ad_schema()),
             action="create", resource_type="ad", parent_resource_type="ad_group",
@@ -2170,7 +2170,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_list_asset_groups",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 PMax Campaign 的 Asset Group 列表。",
             input_schema=ToolSchema(
                 required=["campaign_id"],
@@ -2189,7 +2189,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_get_asset_group",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 PMax Asset Group 详情。",
             input_schema=ToolSchema(
                 required=["asset_group_id"],
@@ -2211,7 +2211,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_create_asset_group",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="创建 Google PMax Asset Group；live 仅在受控测试账号和确认后执行。",
             input_schema=ToolSchema(**google_asset_group_schema()),
             action="create", resource_type="asset_group", parent_resource_type="campaign",
@@ -2230,7 +2230,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_get_campaign_report",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
             input_schema=ToolSchema(
                 required=[],
@@ -2257,7 +2257,7 @@ class GoogleCapability(BaseCapability):
         tools.append((ToolDefinition(
             name="google_list_keywords",
             skill="google-ads-api-expert",
-            platform="google-ads",
+            namespace="google-ads",
             description="查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
             input_schema=ToolSchema(
                 properties={
@@ -2283,7 +2283,7 @@ class GoogleCapability(BaseCapability):
             tools.append((ToolDefinition(
                 name=f"google_update_{resource_type}",
                 skill="google-ads-api-expert",
-                platform="google-ads",
+                namespace="google-ads",
                 description=f"更新 Google Ads {resource_type}，默认仅生成 dry-run 计划。",
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"],

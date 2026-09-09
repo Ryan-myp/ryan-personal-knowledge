@@ -2,7 +2,7 @@
 core/tool_registry.py - 工具注册表实现
 
 借鉴 DAP Agent internal/core/registry/registry.go
-线程安全的工具注册与执行中心，所有平台 Skill 的工具最终都注册到这里。
+线程安全的工具注册与执行中心，所有扩展 Skill 的工具最终都注册到这里。
 """
 
 import hashlib
@@ -11,11 +11,12 @@ import logging
 import math
 import re
 import threading
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from .interfaces import (
     ToolDefinition, ToolHandler, ToolRegistry, ToolResult,
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema
 )
+from .namespace import normalize_namespace
 
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class SimpleToolRegistry(ToolRegistry):
     
     特点：
     - 线程安全（读写锁）
-    - 支持按平台/Skill 查询
+    - 支持按 namespace/Skill 查询
     - 执行前自动 Schema 校验
     - 支持幂等键生成（用于 WriteGuard 检查）
     """
@@ -36,7 +37,7 @@ class SimpleToolRegistry(ToolRegistry):
         self._lock = threading.RLock()
         self._tools: dict[str, tuple[ToolDefinition, ToolHandler]] = {}
         self._by_skill: dict[str, list[str]] = {}  # skill_name -> [tool_names]
-        self._by_platform: dict[str, list[str]] = {}  # platform -> [tool_names]
+        self._by_namespace: dict[str, list[str]] = {}  # namespace -> [tool_names]
         self._skill_tool_defs: dict[str, list[ToolDefinition]] = {}  # skill_name -> [tool_defs]
     
     def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
@@ -55,9 +56,9 @@ class SimpleToolRegistry(ToolRegistry):
             self._tools[definition.name] = (definition, handler)
 
             # 更新索引
-            skill = definition.skill or definition.platform
+            skill = definition.skill or definition.namespace
             self._by_skill.setdefault(skill, []).append(definition.name)
-            self._by_platform.setdefault(definition.platform, []).append(definition.name)
+            self._by_namespace.setdefault(definition.namespace, []).append(definition.name)
 
             # 记录 Skill 的工具定义（用于动态加载/卸载）
             if skill not in self._skill_tool_defs:
@@ -72,12 +73,13 @@ class SimpleToolRegistry(ToolRegistry):
                 raise KeyError(f"Tool '{name}' not found")
             return self._tools[name]
     
-    def list_by_platform(self, platform: str) -> list[ToolDefinition]:
-        """列出某平台所有工具"""
+    def list_by_namespace(self, namespace: str) -> list[ToolDefinition]:
+        """列出某 namespace 的所有工具。"""
+        namespace = normalize_namespace(namespace)
         with self._lock:
             return [
                 self._tools[name][0]
-                for name in self._by_platform.get(platform, [])
+                for name in self._by_namespace.get(namespace, [])
                 if name in self._tools
             ]
     
@@ -90,8 +92,12 @@ class SimpleToolRegistry(ToolRegistry):
                 if name in self._tools
             ]
     
-    def load_skill_tools(self, skill_name: str, tool_defs: list[ToolDefinition], 
-                         handler_factory: callable) -> None:
+    def load_skill_tools(
+        self,
+        skill_name: str,
+        tool_defs: list[ToolDefinition],
+        handler_factory: Callable[[ToolDefinition], ToolHandler],
+    ) -> None:
         """
         动态加载某个 Skill 的所有工具
         
@@ -117,35 +123,39 @@ class SimpleToolRegistry(ToolRegistry):
         Args:
             skill_name: Skill 名称
         """
-        tool_names = self._by_skill.get(skill_name, []).copy()
-        for name in tool_names:
-            if name in self._tools:
-                # 先获取 definition，再从 registry 删除
-                defn, _ = self._tools.pop(name)
-                # 从 platform 索引中移除
-                platform_tools = self._by_platform.get(defn.platform, [])
-                if name in platform_tools:
-                    platform_tools.remove(name)
+        with self._lock:
+            tool_names = self._by_skill.get(skill_name, []).copy()
+            for name in tool_names:
+                if name in self._tools:
+                    # 先获取 definition，再从 registry 删除
+                    defn, _ = self._tools.pop(name)
+                    # 从 namespace 索引中移除
+                    namespace_tools = self._by_namespace.get(defn.namespace, [])
+                    if name in namespace_tools:
+                        namespace_tools.remove(name)
+                    if not namespace_tools:
+                        self._by_namespace.pop(defn.namespace, None)
 
-        # 清理索引
-        self._by_skill.pop(skill_name, None)
-        self._skill_tool_defs.pop(skill_name, None)
+            # 清理索引
+            self._by_skill.pop(skill_name, None)
+            self._skill_tool_defs.pop(skill_name, None)
 
         logger.info(f"已卸载 Skill '{skill_name}'，移除 {len(tool_names)} 个工具")
     
     def get_skill_tool_defs(self, skill_name: str) -> list[ToolDefinition]:
         """获取 Skill 的工具定义（未注册前）"""
-        return self._skill_tool_defs.get(skill_name, [])
+        with self._lock:
+            return list(self._skill_tool_defs.get(skill_name, []))
     
     def list_all(self) -> list[ToolDefinition]:
         """列出所有工具"""
         with self._lock:
             return [defn for defn, _ in self._tools.values()]
 
-    def list_all_platforms(self) -> list[str]:
-        """列出所有已注册的平台"""
+    def list_all_namespaces(self) -> list[str]:
+        """列出所有已注册的 namespace。"""
         with self._lock:
-            return list(self._by_platform.keys())
+            return list(self._by_namespace.keys())
 
     def unregister(self, tool_name: str) -> None:
         """从注册表中移除工具"""
@@ -154,16 +164,16 @@ class SimpleToolRegistry(ToolRegistry):
                 return
             defn, _ = self._tools.pop(tool_name)
             # 清理索引
-            skill = defn.skill or defn.platform
+            skill = defn.skill or defn.namespace
             if tool_name in self._by_skill.get(skill, []):
                 self._by_skill[skill].remove(tool_name)
-            if tool_name in self._by_platform.get(defn.platform, []):
-                self._by_platform[defn.platform].remove(tool_name)
+            if tool_name in self._by_namespace.get(defn.namespace, []):
+                self._by_namespace[defn.namespace].remove(tool_name)
             # 清理空列表
             if skill in self._by_skill and not self._by_skill[skill]:
                 del self._by_skill[skill]
-            if defn.platform in self._by_platform and not self._by_platform[defn.platform]:
-                del self._by_platform[defn.platform]
+            if defn.namespace in self._by_namespace and not self._by_namespace[defn.namespace]:
+                del self._by_namespace[defn.namespace]
             definitions = self._skill_tool_defs.get(skill, [])
             self._skill_tool_defs[skill] = [
                 item for item in definitions if item.name != tool_name
@@ -190,14 +200,14 @@ class SimpleToolRegistry(ToolRegistry):
         # 所有工具统一执行 Schema 校验，避免只依赖 Handler 自己实现校验。
         if defn.input_schema:
             # A direct registry call is an execution seam, not a dry-run
-            # preview.  Write Tools must enforce their Provider contract here
+            # preview. Write Tools must enforce their capability contract here
             # too, otherwise a caller could reach an argument builder with a
-            # missing provider field (or a live adapter) outside Runtime's
+            # missing capability field (or a live adapter) outside Runtime's
             # normal policy path.
             errors = validate_tool_input(
                 defn.input_schema,
                 input_data,
-                include_provider_contract=bool(defn.is_write_tool),
+                include_capability_contract=bool(defn.is_write_tool),
             )
             if errors:
                 return ToolResult.error(f"Input validation failed: {errors}")
@@ -228,9 +238,9 @@ class GuardedToolRegistry(ToolRegistry):
     """Runtime-facing registry that removes the unsafe direct execute path.
 
     ``SimpleToolRegistry`` remains useful as a low-level unit-test registry.
-    Production Runtime instances wrap it so callers cannot reach a provider
+    Production Runtime instances wrap it so callers cannot reach an external
     Handler by invoking ``runtime.registry.execute`` and bypassing Runtime's
-    account, mode, approval and idempotency gates.
+    scope, mode, approval and idempotency gates.
     """
 
     def __init__(self, inner: ToolRegistry):
@@ -255,8 +265,8 @@ class GuardedToolRegistry(ToolRegistry):
             raise PermissionError("Raw tool handlers are only available to AgentRuntime")
         return self._inner.get(name)
 
-    def list_by_platform(self, platform: str) -> list[ToolDefinition]:
-        return self._inner.list_by_platform(platform)
+    def list_by_namespace(self, namespace: str) -> list[ToolDefinition]:
+        return self._inner.list_by_namespace(normalize_namespace(namespace))
 
     def list_by_skill(self, skill_name: str) -> list[ToolDefinition]:
         return self._inner.list_by_skill(skill_name)
@@ -283,8 +293,8 @@ class GuardedToolRegistry(ToolRegistry):
     def list_all(self) -> list[ToolDefinition]:
         return self._inner.list_all()
 
-    def list_all_platforms(self) -> list[str]:
-        return self._inner.list_all_platforms()
+    def list_all_namespaces(self) -> list[str]:
+        return self._inner.list_all_namespaces()
 
     def generate_idempotency_key(
         self, tool_name: str, input_data: dict[str, Any], user_id: str
@@ -312,7 +322,7 @@ class _BlockedToolHandler:
 def validate_tool_input(
     schema: ToolSchema,
     data: dict[str, Any],
-    include_provider_contract: bool = False,
+    include_capability_contract: bool = False,
 ) -> list[str]:
     """
     校验输入数据是否符合 Schema
@@ -337,7 +347,7 @@ def validate_tool_input(
         return value
 
     def validate_finite_numbers(value: Any, path: str = "") -> None:
-        """Reject non-JSON numeric values even inside open provider objects."""
+        """Reject non-JSON numeric values even inside open extension objects."""
         if isinstance(value, bool):
             return
         if isinstance(value, (int, float)) and not math.isfinite(value):
@@ -360,33 +370,33 @@ def validate_tool_input(
         if field_name not in data or is_missing(data.get(field_name)):
             errors.append(f"Missing required field: {field_name}")
 
-    if include_provider_contract:
-        for field_name in schema.provider_required:
+    if include_capability_contract:
+        for field_name in schema.capability_required:
             if data.get(field_name) in (None, ""):
-                errors.append(f"Provider contract requires field: {field_name}")
-        for alternatives in schema.provider_any_of:
+                errors.append(f"Capability contract requires field: {field_name}")
+        for alternatives in schema.capability_any_of:
             if not any(
                 data.get(field_name) not in (None, "", {}, [])
                 for field_name in alternatives
             ):
                 errors.append(
-                    "Provider contract requires one of: "
+                    "Capability contract requires one of: "
                     + ", ".join(alternatives)
                 )
-        for alternatives in getattr(schema, "provider_exactly_one_of", []) or []:
+        for alternatives in getattr(schema, "capability_exactly_one_of", []) or []:
             present = [
                 field_name for field_name in alternatives
                 if data.get(field_name) not in (None, "", {}, [])
             ]
             if len(present) != 1:
                 errors.append(
-                    "Provider contract requires exactly one of: "
+                    "Capability contract requires exactly one of: "
                     + ", ".join(alternatives)
                 )
 
     # Closed-world tool contracts prevent a caller from believing an
     # unsupported parameter was applied when a Handler simply ignored it.
-    # Open-ended provider objects remain possible by setting
+    # Open-ended extension objects remain possible by setting
     # ``additional_properties=True`` on the top-level schema, or by using a
     # field-level object schema with its own explicit policy.
     if (
@@ -397,11 +407,11 @@ def validate_tool_input(
         for field_name in unknown:
             errors.append(f"Field '{field_name}' is not allowed")
 
-    # Conditional rules model provider relationships such as
+    # Conditional rules model extension relationships such as
     # objective_type=APP_PROMOTION -> promotion_type must be APP_ANDROID and
     # app_id/deep_bid_type are required. The compact operators are data-only
     # and shared with declarative conditions, so a publisher can publish a
-    # complete allowed-value matrix without a Core/provider branch.
+    # complete allowed-value matrix without a Core-specific branch.
     def condition_matches(conditions: Any) -> bool:
         if not isinstance(conditions, dict):
             return False
@@ -472,7 +482,7 @@ def validate_tool_input(
         """Validate the small JSON-Schema subset used by ToolSchema.
 
         Nested validation is important for ``updates``: accepting only an
-        outer object previously allowed arbitrary provider fields to bypass
+        outer object previously allowed arbitrary extension fields to bypass
         the contract and fail much later in a live adapter.
         """
         if not isinstance(field_schema, dict):
@@ -573,7 +583,7 @@ def validate_tool_input(
                 if key in value:
                     validate_value(f"{path}.{key}", value[key], child_schema)
 
-    # Check field types and nested provider contracts.
+    # Check field types and nested capability contracts.
     for field_name, field_schema in schema.properties.items():
         if field_name in data:
             validate_value(field_name, data[field_name], field_schema)

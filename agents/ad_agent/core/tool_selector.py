@@ -2,21 +2,20 @@
 core/tool_selector.py - 动态工具选择器
 
 核心功能：
-1. 根据用户意图 + 目标平台，动态选择相关工具
-2. 注入平台专家知识作为上下文
+1. 根据用户意图 + 目标 namespace，动态选择相关工具
+2. 注入 namespace/Skill 专家知识作为上下文
 3. 优化 LLM 的 tool 列表，避免信息过载
 """
 
 import re
 import logging
 import threading
-import inspect
 from typing import Any, List, Dict, Optional, Set
 from dataclasses import dataclass, field
 
-from .interfaces import ToolDefinition, ParsedIntent, ToolContext
+from .interfaces import ToolDefinition, ParsedIntent, ToolContext, KnowledgeSource
 from .policy import RuntimePolicy, apply_policies, policy_metadata
-from .platform import normalize_platform
+from .namespace import normalize_namespace
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +33,13 @@ def _safe_search(pattern: str, text: str) -> bool:
 class ToolSelection:
     """工具选择结果"""
     selected_tools: List[ToolDefinition] = field(default_factory=list)
-    platform: str = ""
+    namespaces: List[str] = field(default_factory=list)
     context: Dict = field(default_factory=dict)
     expert_knowledge: str = ""
     
     def to_dict(self) -> dict:
         return {
-            "platform": self.platform,
+            "namespaces": list(self.namespaces),
             "tool_count": len(self.selected_tools),
             "tools": [t.name for t in self.selected_tools],
             "context_keys": list(self.context.keys()),
@@ -53,21 +52,21 @@ class DynamicToolSelector:
     动态工具选择器
     
     工作原理：
-    1. 根据用户意图识别目标平台
-    2. 从 Skill Registry 获取该平台的所有工具
+    1. 根据用户意图识别目标 namespace
+    2. 从 Skill Registry 获取该 namespace 的所有工具
     3. 根据意图类型筛选相关工具（如查询→只选报表类工具）
-    4. 注入平台专家知识作为上下文
+    4. 注入 namespace/Skill 专家知识作为上下文
     5. 返回精简的工具列表给 LLM
     """
     
     def __init__(
         self,
         skill_loader,
-        knowledge_provider: Optional[Any] = None,
+        knowledge_source: Optional[KnowledgeSource] = None,
         policies: Optional[list[RuntimePolicy]] = None,
     ):
         self.skill_loader = skill_loader
-        self.knowledge_provider = knowledge_provider
+        self.knowledge_source = knowledge_source
         self.policies: list[RuntimePolicy] = list(policies or [])
         # Managed Skills are tenant-owned advisory context.  Keep them out of
         # the executable SkillLoader and select them per request so the
@@ -96,7 +95,7 @@ class DynamicToolSelector:
                 self._context_skills.pop(tenant, None)
     
     def set_policies(self, policies: list[RuntimePolicy]) -> None:
-        """Replace the policy set used for platform filtering and context."""
+        """Replace the policy set used for namespace filtering and context."""
         self.policies = list(policies or [])
 
     def select_tools(
@@ -116,36 +115,36 @@ class DynamicToolSelector:
         Returns:
             ToolSelection: 选中的工具 + 上下文
         """
-        # 1. 确定目标平台
-        platforms = intent.platforms or self._detect_platforms(user_input, available_tools)
+        # 1. 确定目标 namespace
+        namespaces = intent.namespaces or self._detect_namespaces(user_input, available_tools)
         
-        # 2. 根据业务上下文过滤平台
+        # 2. 根据策略上下文过滤 namespace
         if self.policies:
-            platforms = apply_policies(self.policies, platforms)
-            if not platforms:
-                platforms = apply_policies(
+            namespaces = apply_policies(self.policies, namespaces)
+            if not namespaces:
+                namespaces = apply_policies(
                     self.policies,
-                    self._registered_platforms(available_tools),
+                    self._registered_namespaces(available_tools),
                 )
         
         # 3. 根据意图类型筛选工具
         intent_type = intent.intent_type
         selected_tools = []
         
-        for platform in platforms:
-            # 从 Skill Registry 获取该平台工具
-            platform_tools = self._get_platform_tools(platform, available_tools)
+        for namespace in namespaces:
+            # 从 Skill Registry 获取该 namespace 工具
+            namespace_tools = self._get_namespace_tools(namespace, available_tools)
             
             # 根据意图类型筛选
-            filtered_tools = self._filter_by_intent(platform_tools, intent_type)
+            filtered_tools = self._filter_by_intent(namespace_tools, intent_type)
             
             # 4. 获取专家知识
-            expert_knowledge = self._get_expert_knowledge(platform, intent_type)
+            expert_knowledge = self._get_expert_knowledge(namespace, intent_type)
             
             if filtered_tools:
                 selection = ToolSelection(
                     selected_tools=filtered_tools,
-                    platform=platform,
+                    namespaces=[namespace],
                     context={
                         "intent_type": intent_type,
                         "intent_attributes": dict(
@@ -159,7 +158,7 @@ class DynamicToolSelector:
         
         return ToolSelection(
             selected_tools=selected_tools,
-            platform=",".join(platforms),
+            namespaces=list(namespaces),
             expert_knowledge=self._merge_expert_knowledge(selected_tools),
             context={
                 **policy_metadata(self.policies),
@@ -178,19 +177,19 @@ class DynamicToolSelector:
         Intent parsing used to happen before the selector was consulted, which
         meant the LLM never saw the channel tool contracts or expert guidance
         that the selector had already prepared.  Use an intentionally neutral
-        intent here: it only narrows by detected platform and keeps the first
+        intent here: it only narrows by detected namespace and keeps the first
         few registered tools, while the authoritative post-parse route still
         comes from ``IntentRouter``.
         """
-        platforms = self._detect_platforms(user_input, available_tools)
+        namespaces = self._detect_namespaces(user_input, available_tools)
         probe_intent = ParsedIntent(
             intent_type=intent_type or "",
             raw_input=user_input,
-            platforms=platforms,
+            namespaces=namespaces,
         )
         selection = self.select_tools(user_input, probe_intent, available_tools)
         knowledge = self._query_knowledge(
-            user_input, platforms, intent_type=intent_type, tenant_id=tenant_id
+            user_input, namespaces, intent_type=intent_type, tenant_id=tenant_id
         )
         if knowledge:
             selection.expert_knowledge = self._format_knowledge(knowledge)
@@ -207,7 +206,7 @@ class DynamicToolSelector:
         return {
             "tool_prompt": self.build_tool_prompt(selection),
             "expert_knowledge": selection.expert_knowledge,
-            "platforms": selection.platform,
+            "namespaces": list(selection.namespaces),
             "knowledge": knowledge,
         }
 
@@ -289,34 +288,33 @@ class DynamicToolSelector:
     def _query_knowledge(
         self,
         user_input: str,
-        platforms: List[str],
+        namespaces: List[str],
         *,
         intent_type: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> list[dict]:
         """Query advisory knowledge without changing executable routing."""
-        if self.knowledge_provider is None:
+        if self.knowledge_source is None:
             return []
         try:
-            kwargs = {
-                "platforms": platforms,
-                "intent_type": intent_type,
-                "limit": 4,
-                "max_excerpt_chars": 1000,
-            }
-            try:
-                parameters = inspect.signature(self.knowledge_provider.query).parameters
-                if tenant_id is not None and (
-                    "tenant_id" in parameters or any(
-                        item.kind == inspect.Parameter.VAR_KEYWORD
-                        for item in parameters.values()
-                    )
-                ):
-                    kwargs["tenant_id"] = tenant_id
-            except (TypeError, ValueError):
-                pass
-            documents = self.knowledge_provider.query(user_input, **kwargs)
-            return [document.to_dict() for document in documents]
+            documents = self.knowledge_source.query(
+                user_input,
+                namespaces=namespaces,
+                intent_type=intent_type,
+                tenant_id=tenant_id,
+                limit=4,
+                max_excerpt_chars=1000,
+            )
+            result = []
+            for document in documents:
+                serializer = getattr(document, "to_context_dict", None)
+                if not callable(serializer):
+                    serializer = getattr(document, "to_dict", None)
+                if callable(serializer):
+                    value = serializer()
+                    if isinstance(value, dict):
+                        result.append(value)
+            return result
         except Exception as exc:
             logger.debug("知识库查询失败，继续无知识上下文: %s", exc)
             return []
@@ -324,30 +322,29 @@ class DynamicToolSelector:
     @staticmethod
     def _format_knowledge(knowledge: list[dict], max_chars: int = 4000) -> str:
         return "\n\n".join(
-            f"[{item['platform']}] {item['topic']} (source={item['source']}, "
+            f"[{item['namespace']}] {item['topic']} (source={item['source']}, "
             f"version={item['version']}, confidence={item['confidence']}):\n"
             f"{item['excerpt']}"
             for item in knowledge
         )[:max_chars]
     
-    def _registered_platforms(self, available_tools: List[ToolDefinition]) -> List[str]:
-        """Return platforms published by the current Tool/Skill registry."""
-        platforms = {
-            self._normalize_platform(tool.platform)
+    def _registered_namespaces(self, available_tools: List[ToolDefinition]) -> List[str]:
+        """Return namespaces published by the current Tool/Skill registry."""
+        namespaces = {
+            self._normalize_namespace(tool.namespace)
             for tool in (available_tools or [])
-            if getattr(tool, "platform", None)
-            and str(tool.platform).lower() != "multi_platform"
+            if getattr(tool, "namespace", None)
         }
         loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
         for skill in loaded_skills.values():
-            platform = getattr(skill, "platform", "")
-            if platform and str(platform).lower() != "multi_platform":
-                platforms.add(self._normalize_platform(platform))
-        return sorted(platforms)
+            namespace = getattr(skill, "namespace", "")
+            if namespace:
+                namespaces.add(self._normalize_namespace(namespace))
+        return sorted(namespaces)
 
-    def _platform_aliases(self, platform: str) -> set[str]:
-        """Build recognition aliases from registered platform/Skill identity."""
-        normalized = self._normalize_platform(platform)
+    def _namespace_aliases(self, namespace: str) -> set[str]:
+        """Build recognition aliases from registered namespace/Skill identity."""
+        normalized = self._normalize_namespace(namespace)
         aliases = {
             normalized,
             normalized.replace("-", " "),
@@ -355,49 +352,49 @@ class DynamicToolSelector:
         }
         loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
         for skill in loaded_skills.values():
-            if self._normalize_platform(getattr(skill, "platform", "")) != normalized:
+            if self._normalize_namespace(getattr(skill, "namespace", "")) != normalized:
                 continue
             name = str(getattr(skill, "name", "") or "").lower()
             if name:
                 aliases.update({name, name.replace("-", " "), name.replace("_", " ")})
-            for alias in getattr(skill, "platform_aliases", []) or []:
+            for alias in getattr(skill, "namespace_aliases", []) or []:
                 alias = str(alias).lower().strip()
                 if alias:
                     aliases.add(alias)
         return {alias for alias in aliases if alias}
 
-    def _detect_platforms(
+    def _detect_namespaces(
         self,
         user_input: str,
         available_tools: Optional[List[ToolDefinition]] = None,
     ) -> List[str]:
-        """从当前注册的 Tool/Skill 身份中检测平台，不维护渠道表。"""
+        """从当前注册的 Tool/Skill 身份中检测 namespace，不维护固定目录。"""
         text = (user_input or "").lower()
         mentions = []
-        for platform in self._registered_platforms(available_tools or []):
+        for namespace in self._registered_namespaces(available_tools or []):
             positions = [
                 text.find(alias)
-                for alias in self._platform_aliases(platform)
+                for alias in self._namespace_aliases(namespace)
                 if text.find(alias) >= 0
             ]
             if positions:
-                mentions.append((min(positions), platform))
-        return [platform for _position, platform in sorted(mentions)]
+                mentions.append((min(positions), namespace))
+        return [namespace for _position, namespace in sorted(mentions)]
 
-    _normalize_platform = staticmethod(normalize_platform)
-    
-    def _get_platform_tools(
-        self, 
-        platform: str, 
+    _normalize_namespace = staticmethod(normalize_namespace)
+
+    def _get_namespace_tools(
+        self,
+        namespace: str,
         available_tools: List[ToolDefinition]
     ) -> List[ToolDefinition]:
-        """获取指定平台的所有工具"""
-        normalized = self._normalize_platform(platform)
+        """获取指定 namespace 的所有工具"""
+        normalized = self._normalize_namespace(namespace)
         return [
             t for t in available_tools
-            if self._normalize_platform(t.platform) == normalized
+            if self._normalize_namespace(t.namespace) == normalized
         ]
-    
+
     def _filter_by_intent(
         self,
         tools: List[ToolDefinition],
@@ -408,7 +405,7 @@ class DynamicToolSelector:
             return tools[:5]  # 限制返回数量，避免过长
         
         # Tool metadata is the routing contract.  In particular, do not add a
-        # new intent to a core ``intent -> keyword`` table: a provider Skill or
+        # new intent to a core ``intent -> keyword`` table: an extension Skill or
         # Capability must be able to publish a new intent without changing the
         # shared selector.
         exact = [
@@ -419,16 +416,16 @@ class DynamicToolSelector:
             return exact[:8]
 
         # An intent without an owning Tool is not executable. Do not expose
-        # an arbitrary subset of provider Tools and invite the model to guess.
+        # an arbitrary subset of Tools and invite the model to guess.
         return []
     
     def _get_expert_knowledge(
-        self, 
-        platform: str, 
+        self,
+        namespace: str,
         intent_type: str
     ) -> str:
-        """获取平台专家知识"""
-        skills = self._get_skills_by_platform(platform)
+        """获取 namespace 关联的专家知识"""
+        skills = self._get_skills_by_namespace(namespace)
         if not skills:
             return ""
         knowledge: dict[str, str] = {}
@@ -464,17 +461,17 @@ class DynamicToolSelector:
     
     def _merge_expert_knowledge(self, tools: List[ToolDefinition]) -> str:
         """合并多个工具的专家知识"""
-        platforms = sorted(set(t.platform for t in tools))
+        namespaces = sorted(set(t.namespace for t in tools))
         knowledge = []
         
-        for platform in platforms:
-            for skill in self._get_skills_by_platform(platform):
+        for namespace in namespaces:
+            for skill in self._get_skills_by_namespace(namespace):
                 skill_knowledge = getattr(skill, "expert_knowledge", {}) or {}
                 if isinstance(skill_knowledge, dict):
                     for key, content in list(skill_knowledge.items())[:2]:
                         summary = content[:500] + "..." if len(content) > 500 else content
-                        knowledge.append(f"[{platform}] {key}: {summary}")
-                # Channel SKILL.md is advisory context, not an executable
+                        knowledge.append(f"[{namespace}] {key}: {summary}")
+                # Namespace Skill markdown is advisory context, not an executable
                 # registry. Keep a bounded excerpt in the model context so
                 # channel-specific hierarchy, parameter dependencies and
                 # failure semantics actually guide intent parsing. The
@@ -491,23 +488,23 @@ class DynamicToolSelector:
                     ).strip()
                     if body:
                         knowledge.append(
-                            f"[{platform}] channel_skill_guidance:\n{body[:1800]}"
+                            f"[{namespace}] channel_skill_guidance:\n{body[:1800]}"
                         )
                 elif getattr(skill, "description", None):
-                    knowledge.append(f"[{platform}] skill_scope: {skill.description[:500]}")
+                    knowledge.append(f"[{namespace}] skill_scope: {skill.description[:500]}")
         
         return "\n\n".join(knowledge)
 
-    def _get_skills_by_platform(self, platform: str) -> list:
-        """Return every active Skill declaring the requested platform."""
-        normalized = self._normalize_platform(platform)
+    def _get_skills_by_namespace(self, namespace: str) -> list:
+        """Return every active Skill declaring the requested namespace."""
+        normalized = self._normalize_namespace(namespace)
         list_all = getattr(self.skill_loader, "list_all", None)
         skills = list_all() if callable(list_all) else getattr(self.skill_loader, "_skills", {})
         if isinstance(skills, dict):
             skills = skills.values()
         return [
             skill for skill in skills
-            if self._normalize_platform(getattr(skill, "platform", "")) == normalized
+            if self._normalize_namespace(getattr(skill, "namespace", "")) == normalized
         ]
     
     def build_tool_prompt(self, selection: ToolSelection) -> str:
@@ -515,7 +512,8 @@ class DynamicToolSelector:
         if not selection.selected_tools:
             return "暂无可用工具"
         
-        lines = [f"## 可用工具（平台: {selection.platform}）"]
+        scope = ", ".join(selection.namespaces) or "未指定"
+        lines = [f"## 可用工具（namespace: {scope}）"]
         
         for i, tool in enumerate(selection.selected_tools, 1):
             lines.append(f"{i}. **{tool.name}** ({tool.risk_level.value})")
@@ -549,14 +547,14 @@ class DynamicToolSelector:
                     lines.append(f"   动态选项查询工具: {lookup_fields}")
             if tool.input_schema.required:
                 lines.append(f"   必填: {tool.input_schema.required}")
-            if tool.input_schema.provider_required:
-                lines.append(f"   Provider 必填: {tool.input_schema.provider_required}")
-            if tool.input_schema.provider_any_of:
-                lines.append(f"   Provider 至少选择一项: {tool.input_schema.provider_any_of}")
-            if tool.input_schema.provider_exactly_one_of:
+            if tool.input_schema.capability_required:
+                lines.append(f"   执行契约必填: {tool.input_schema.capability_required}")
+            if tool.input_schema.capability_any_of:
+                lines.append(f"   执行契约至少选择一项: {tool.input_schema.capability_any_of}")
+            if tool.input_schema.capability_exactly_one_of:
                 lines.append(
-                    f"   Provider 必须且只能选择一项: "
-                    f"{tool.input_schema.provider_exactly_one_of}"
+                    f"   执行契约必须且只能选择一项: "
+                    f"{tool.input_schema.capability_exactly_one_of}"
                 )
             if tool.input_schema.conditional_rules:
                 lines.append(f"   条件依赖: {tool.input_schema.conditional_rules}")
@@ -587,9 +585,9 @@ class DynamicToolSelector:
             }
         """
         selection = self.select_tools(user_input, intent, all_tools)
-        platforms = intent.platforms or self._detect_platforms(user_input, all_tools)
+        namespaces = intent.namespaces or self._detect_namespaces(user_input, all_tools)
         knowledge = self._query_knowledge(
-            user_input, platforms, intent_type=intent.intent_type, tenant_id=tenant_id
+            user_input, namespaces, intent_type=intent.intent_type, tenant_id=tenant_id
         )
         if knowledge:
             selection.expert_knowledge = "\n\n".join(
@@ -605,7 +603,7 @@ class DynamicToolSelector:
             "tool_prompt": self.build_tool_prompt(selection),
             "expert_knowledge": selection.expert_knowledge,
             "context": selection.context,
-            "platforms": selection.platform,
+            "namespaces": list(selection.namespaces),
             "knowledge": knowledge,
         }
 

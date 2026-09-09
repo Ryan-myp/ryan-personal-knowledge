@@ -337,9 +337,9 @@ class SchedulingFeature:
             timezone_invalid = True
         if not timezone_explicit:
             timezone_name = str(previous.get("timezone") or timezone_name)
-        current_platforms = [str(item).strip() for item in (getattr(intent, "platforms", []) or []) if str(item).strip()]
+        current_platforms = [str(item).strip() for item in (getattr(intent, "namespaces", []) or []) if str(item).strip()]
         platforms = list(dict.fromkeys(current_platforms or previous.get("platforms") or []))
-        params = self._merge_params(previous.get("platform_params"), getattr(intent, "platform_params", {}), platform_params)
+        params = self._merge_params(previous.get("platform_params"), getattr(intent, "scoped_parameters", {}), platform_params)
         selected_account = str(
             account_id or previous.get("account_id")
             or self._account_from_params(params)

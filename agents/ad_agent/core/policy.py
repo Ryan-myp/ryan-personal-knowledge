@@ -1,8 +1,8 @@
-"""Provider- and business-neutral policy extension contracts.
+"""External-system- and business-neutral policy extension contracts.
 
 Policies constrain an Agent turn without becoming a second router or
 execution engine.  A business Skill can implement this contract to filter
-platforms and validate domain rules; AgentRuntime only invokes the generic
+namespaces and validate domain rules; AgentRuntime only invokes the generic
 methods and never knows the policy's business vocabulary.
 """
 
@@ -11,41 +11,41 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
 
-from .platform import normalize_platform
+from .namespace import normalize_namespace
 
 
 @dataclass(frozen=True)
 class PolicyContext:
-    """Provider-neutral policy context used by selectors and extensions."""
+    """Namespace policy context used by selectors and extensions."""
 
     name: str = ""
-    allowed_platforms: tuple[str, ...] = ()
-    denied_platforms: tuple[str, ...] = ()
+    allowed_namespaces: tuple[str, ...] = ()
+    denied_namespaces: tuple[str, ...] = ()
     attributes: dict[str, Any] = field(default_factory=dict)
 
-    def is_platform_allowed(self, platform: str) -> bool:
-        normalized = normalize_platform(platform)
+    def is_namespace_allowed(self, namespace: str) -> bool:
+        normalized = normalize_namespace(namespace)
         denied = {
-            normalize_platform(value) for value in self.denied_platforms
+            normalize_namespace(value) for value in self.denied_namespaces
         }
         allowed = {
-            normalize_platform(value) for value in self.allowed_platforms
+            normalize_namespace(value) for value in self.allowed_namespaces
         }
         return normalized not in denied and (
             not allowed or normalized in allowed
         )
 
-    def filter_platforms(self, platforms: Sequence[str]) -> list[str]:
+    def filter_namespaces(self, namespaces: Sequence[str]) -> list[str]:
         return [
-            platform for platform in platforms
-            if self.is_platform_allowed(platform)
+            namespace for namespace in namespaces
+            if self.is_namespace_allowed(namespace)
         ]
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
-            "allowed_platforms": list(self.allowed_platforms),
-            "denied_platforms": list(self.denied_platforms),
+            "allowed_namespaces": list(self.allowed_namespaces),
+            "denied_namespaces": list(self.denied_namespaces),
             "attributes": dict(self.attributes),
         }
 
@@ -55,8 +55,8 @@ class RuntimePolicy(Protocol):
 
     name: str
 
-    def filter_platforms(self, platforms: Sequence[str]) -> list[str]:
-        """Return the subset of requested platforms allowed by this policy."""
+    def filter_namespaces(self, namespaces: Sequence[str]) -> list[str]:
+        """Return the subset of requested namespaces allowed by this policy."""
 
     def validate_intent(self, intent: Any) -> list[str]:
         """Return blocking policy errors for a parsed intent."""
@@ -67,14 +67,14 @@ class RuntimePolicy(Protocol):
 
 def apply_policies(
     policies: Sequence[RuntimePolicy],
-    platforms: Sequence[str],
+    namespaces: Sequence[str],
 ) -> list[str]:
-    """Apply all policy platform filters in declaration order."""
-    result = list(platforms)
+    """Apply all policy namespace filters in declaration order."""
+    result = list(namespaces)
     for policy in policies:
-        filter_platforms = getattr(policy, "filter_platforms", None)
-        if callable(filter_platforms):
-            result = list(filter_platforms(result))
+        filter_namespaces = getattr(policy, "filter_namespaces", None)
+        if callable(filter_namespaces):
+            result = list(filter_namespaces(result))
     return result
 
 

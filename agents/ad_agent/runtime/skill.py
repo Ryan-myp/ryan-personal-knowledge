@@ -19,7 +19,7 @@ from pathlib import Path
 from ..core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
 )
-from ..core.platform import normalize_platform
+from ..core.namespace import normalize_namespace
 from ..core.plugins import normalize_plugin_version
 
 
@@ -65,7 +65,7 @@ class SkillCapability:
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
     contract_version: str = "1"
-    provider_api_version: Optional[str] = None
+    integration_api_version: Optional[str] = None
     result_items_key: Optional[str] = None
     result_id_fields: list[str] = field(default_factory=list)
     related_resource_type: Optional[str] = None
@@ -84,8 +84,8 @@ class SkillContract:
         self.name: str = ""
         self.version: str = "1.0.0"
         self.description: str = ""
-        self.platform: str = ""
-        self.platform_aliases: list[str] = []
+        self.namespace: str = ""
+        self.namespace_aliases: list[str] = []
         self.triggers: list[SkillTrigger] = []
         self.capabilities: dict[str, SkillCapability] = {}
         self.references: dict[str, str] = {}  # ref_name -> file_path
@@ -142,32 +142,32 @@ class SkillContract:
                 raise ValueError(
                     f"Skill {field_name}.properties.{property_name} must be an object"
                 )
-        provider_required = schema.get("provider_required", []) or []
-        if not isinstance(provider_required, list) or not all(
-            isinstance(item, str) and item.strip() for item in provider_required
+        capability_required = schema.get("capability_required", []) or []
+        if not isinstance(capability_required, list) or not all(
+            isinstance(item, str) and item.strip() for item in capability_required
         ):
             raise ValueError(
-                f"Skill {field_name}.provider_required must be a list of strings"
+                f"Skill {field_name}.capability_required must be a list of strings"
             )
-        provider_any_of = schema.get("provider_any_of", []) or []
-        if not isinstance(provider_any_of, list) or any(
+        capability_any_of = schema.get("capability_any_of", []) or []
+        if not isinstance(capability_any_of, list) or any(
             not isinstance(group, list)
             or not group
             or not all(isinstance(item, str) and item.strip() for item in group)
-            for group in provider_any_of
+            for group in capability_any_of
         ):
             raise ValueError(
-                f"Skill {field_name}.provider_any_of must be a list of string lists"
+                f"Skill {field_name}.capability_any_of must be a list of string lists"
             )
-        provider_exactly_one_of = schema.get("provider_exactly_one_of", []) or []
-        if not isinstance(provider_exactly_one_of, list) or any(
+        capability_exactly_one_of = schema.get("capability_exactly_one_of", []) or []
+        if not isinstance(capability_exactly_one_of, list) or any(
             not isinstance(group, list)
             or not group
             or not all(isinstance(item, str) and item.strip() for item in group)
-            for group in provider_exactly_one_of
+            for group in capability_exactly_one_of
         ):
             raise ValueError(
-                f"Skill {field_name}.provider_exactly_one_of must be a list of string lists"
+                f"Skill {field_name}.capability_exactly_one_of must be a list of string lists"
             )
         conditional_rules = schema.get("conditional_rules", []) or []
         if not isinstance(conditional_rules, list) or any(
@@ -230,12 +230,12 @@ class SkillContract:
         contract_version = spec.get("contract_version", "1")
         if not isinstance(contract_version, (str, int, float)) or isinstance(contract_version, bool):
             raise ValueError(f"Skill tool {name}.contract_version must be scalar")
-        provider_api_version = spec.get("provider_api_version")
-        if provider_api_version is not None and (
-            not isinstance(provider_api_version, (str, int, float))
-            or isinstance(provider_api_version, bool)
+        integration_api_version = spec.get("integration_api_version")
+        if integration_api_version is not None and (
+            not isinstance(integration_api_version, (str, int, float))
+            or isinstance(integration_api_version, bool)
         ):
-            raise ValueError(f"Skill tool {name}.provider_api_version must be scalar")
+            raise ValueError(f"Skill tool {name}.integration_api_version must be scalar")
         def optional_string(field_name: str) -> Optional[str]:
             value = spec.get(field_name)
             if value is None or value == "":
@@ -274,8 +274,8 @@ class SkillContract:
             replay_policy=replay_policy, traits=traits,
             timeout_seconds=float(timeout_seconds), max_output_bytes=max_output_bytes,
             contract_version=str(contract_version),
-            provider_api_version=(
-                str(provider_api_version) if provider_api_version is not None else None
+            integration_api_version=(
+                str(integration_api_version) if integration_api_version is not None else None
             ),
             result_items_key=result_items_key,
             result_id_fields=result_id_fields,
@@ -366,11 +366,11 @@ class SkillContract:
             description = metadata.get("description", "")
             if not isinstance(description, str):
                 raise ValueError("Skill frontmatter.description must be a string")
-            platform = metadata.get(
-                "platform", os.path.basename(os.path.dirname(path))
+            namespace = metadata.get(
+                "namespace", os.path.basename(os.path.dirname(path))
             )
-            if not isinstance(platform, str) or not platform.strip():
-                raise ValueError("Skill frontmatter.platform must be a non-empty string")
+            if not isinstance(namespace, str) or not namespace.strip():
+                raise ValueError("Skill frontmatter.namespace must be a non-empty string")
             version = metadata.get("version", "1.0.0")
             if not isinstance(version, (str, int, float)) or isinstance(version, bool):
                 raise ValueError("Skill frontmatter.version must be scalar")
@@ -378,12 +378,12 @@ class SkillContract:
             self.name = name.strip()
             self.version = normalize_plugin_version(version)
             self.description = description
-            self.platform = platform.strip().lower()
+            self.namespace = namespace.strip().lower()
 
             # Metadata belongs either at the root or under ``skill``. Root
             # values remain accepted for existing Skills; nested values win.
             aliases = metadata.get("aliases", fm_yaml.get("aliases", []))
-            self.platform_aliases = [
+            self.namespace_aliases = [
                 alias.lower() for alias in self._string_list(aliases, "aliases")
             ]
             triggers = metadata.get("triggers", fm_yaml.get("triggers", []))
@@ -508,8 +508,8 @@ class BaseSkill(Skill):
         return self._contract.name
     
     @property
-    def platform(self) -> str:
-        return self._contract.platform
+    def namespace(self) -> str:
+        return self._contract.namespace
     
     @property
     def description(self) -> str:
@@ -530,8 +530,8 @@ class BaseSkill(Skill):
         return self._contract.version
 
     @property
-    def platform_aliases(self) -> list[str]:
-        return list(self._contract.platform_aliases)
+    def namespace_aliases(self) -> list[str]:
+        return list(self._contract.namespace_aliases)
 
     @property
     def triggers(self) -> list[SkillTrigger]:
@@ -563,13 +563,13 @@ class BaseSkill(Skill):
                     declared_schema.get("properties")
                     or self._build_properties(name)
                 ),
-                provider_required=list(declared_schema.get("provider_required", []) or []),
-                provider_any_of=[
-                    list(group) for group in (declared_schema.get("provider_any_of", []) or [])
+                capability_required=list(declared_schema.get("capability_required", []) or []),
+                capability_any_of=[
+                    list(group) for group in (declared_schema.get("capability_any_of", []) or [])
                 ],
-                provider_exactly_one_of=[
+                capability_exactly_one_of=[
                     list(group) for group in (
-                        declared_schema.get("provider_exactly_one_of", []) or []
+                        declared_schema.get("capability_exactly_one_of", []) or []
                     )
                 ],
                 conditional_rules=list(declared_schema.get("conditional_rules", []) or []),
@@ -583,7 +583,7 @@ class BaseSkill(Skill):
             tools.append(ToolDefinition(
                 name=name,
                 skill=self.name,
-                platform=self.platform,
+                namespace=self.namespace,
                 description=cap.description,
                 input_schema=schema,
                 risk_level=self._parse_risk(cap.risk_level),
@@ -603,7 +603,7 @@ class BaseSkill(Skill):
                 timeout_seconds=cap.timeout_seconds,
                 max_output_bytes=cap.max_output_bytes,
                 contract_version=cap.contract_version,
-                provider_api_version=cap.provider_api_version,
+                integration_api_version=cap.integration_api_version,
                 result_items_key=cap.result_items_key,
                 result_id_fields=list(cap.result_id_fields),
                 related_resource_type=cap.related_resource_type,
@@ -812,14 +812,14 @@ class SkillLoader:
         """获取已加载的 Skill（显式命名入口）"""
         return self.get(name)
     
-    def get_by_platform(self, platform: str) -> list[Skill]:
-        """获取某平台的所有 Skills"""
-        normalized = normalize_platform(platform)
+    def get_by_namespace(self, namespace: str) -> list[Skill]:
+        """获取某 namespace 的所有 Skills"""
+        normalized = normalize_namespace(namespace)
         return [
             s for s in self._skills.values()
-            if normalize_platform(s.platform) == normalized
+            if normalize_namespace(s.namespace) == normalized
         ]
 
-    def get_tools_by_platform(self, platform: str) -> list[ToolDefinition]:
-        """获取某平台的所有工具"""
-        return [tool for skill in self.get_by_platform(platform) for tool in skill.get_tools()]
+    def get_tools_by_namespace(self, namespace: str) -> list[ToolDefinition]:
+        """获取某 namespace 的所有工具"""
+        return [tool for skill in self.get_by_namespace(namespace) for tool in skill.get_tools()]

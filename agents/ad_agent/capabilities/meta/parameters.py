@@ -304,7 +304,7 @@ def meta_targeting_search_schema() -> dict[str, Any]:
     """Schema for Meta's account-scoped Targeting Search endpoint."""
     return {
         "required": ["account_id", "query"],
-        "provider_required": ["account_id", "query"],
+        "capability_required": ["account_id", "query"],
         "properties": {
             "account_id": _field("string", "Meta ad account ID"),
             "query": _field("string", "Search text or location name", minLength=1, maxLength=200),
@@ -321,7 +321,7 @@ def meta_audience_schema() -> dict[str, Any]:
     """Contract for Meta Custom and Lookalike Audience management."""
     return {
         "required": ["account_id", "name", "subtype"],
-        "provider_required": ["name", "subtype"],
+        "capability_required": ["name", "subtype"],
         "properties": {
             "account_id": _field("string", "Meta ad account ID"),
             "audience_id": _field("string", "Meta Custom Audience ID", minLength=1),
@@ -416,7 +416,7 @@ def meta_lookalike_audience_schema() -> dict[str, Any]:
     """
     return {
         "required": ["account_id", "name", "origin_audience_id", "country"],
-        "provider_required": [
+        "capability_required": [
             "name", "origin_audience_id", "country",
         ],
         "properties": {
@@ -554,7 +554,7 @@ def meta_conversion_event_schema() -> dict[str, Any]:
     event["required"] = ["event_name", "event_time", "action_source", "user_data"]
     return {
         "required": ["account_id", "pixel_id", "events"],
-        "provider_required": ["pixel_id", "events"],
+        "capability_required": ["pixel_id", "events"],
         "properties": {
             "account_id": _field("string", "Meta ad account ID"),
             "pixel_id": _field(
@@ -586,7 +586,7 @@ def meta_custom_conversion_schema() -> dict[str, Any]:
         "required": ["account_id", "pixel_id", "name", "rule"],
         # ``pixel_id`` is translated to the provider's ``event_source_id``
         # inside the Client; provider validation runs before that adapter.
-        "provider_required": ["name", "rule"],
+        "capability_required": ["name", "rule"],
         "properties": {
             "account_id": _field("string", "Meta ad account ID"),
             "pixel_id": pixel_id,
@@ -674,7 +674,7 @@ def meta_lead_form_schema() -> dict[str, Any]:
     presentation = _object({}, "Provider presentation block", additional_properties=True)
     return {
         "required": ["account_id", "page_id", "name", "questions", "privacy_policy"],
-        "provider_required": ["name", "questions", "privacy_policy"],
+        "capability_required": ["name", "questions", "privacy_policy"],
         "properties": {
             "account_id": _field("string", "Meta ad account authorization scope"),
             "page_id": _field(
@@ -707,7 +707,7 @@ def meta_lead_schema() -> dict[str, Any]:
     """Schema for reading leads submitted through a Meta Instant Form."""
     return {
         "required": ["account_id", "page_id", "form_id"],
-        "provider_required": ["page_id", "form_id"],
+        "capability_required": ["page_id", "form_id"],
         "properties": {
             "account_id": _field("string", "Meta ad account authorization scope"),
             "page_id": _field(
@@ -850,8 +850,8 @@ def meta_promoted_object_schema() -> dict[str, Any]:
 def meta_campaign_schema() -> dict[str, Any]:
     return {
         "required": ["account_id", "name"],
-        "provider_required": ["objective", "special_ad_categories"],
-        "provider_any_of": [["daily_budget", "lifetime_budget", "budget"]],
+        "capability_required": ["objective", "special_ad_categories"],
+        "capability_any_of": [["daily_budget", "lifetime_budget", "budget"]],
         "properties": {
             "account_id": _field("string", "Meta ad account ID"),
             "name": _field("string", "Campaign name", maxLength=400),
@@ -932,10 +932,10 @@ def meta_campaign_schema() -> dict[str, Any]:
 def meta_adset_schema() -> dict[str, Any]:
     return {
         "required": ["campaign_id", "name"],
-        "provider_required": ["optimization_goal", "billing_event", "targeting"],
+        "capability_required": ["optimization_goal", "billing_event", "targeting"],
         # The parent Campaign may own the budget. Sending a second Ad Set
         # budget is rejected by Meta, so this cannot be a global one-of.
-        "provider_any_of": [],
+        "capability_any_of": [],
         "properties": {
             "campaign_id": _field("string", "Parent Campaign ID"),
             "name": _field("string", "Ad Set name", maxLength=400),
@@ -1107,7 +1107,7 @@ def meta_ad_schema() -> dict[str, Any]:
         # ``media`` is a supported provider-side shortcut for a simple image
         # ad. Keep it in the same source contract as the explicit Creative
         # variants so the Tool schema matches MetaClient.create_ad.
-        "provider_any_of": [[
+        "capability_any_of": [[
             "creative_id", "object_story_spec", "creative", "media", "image_url"
         ]],
         "properties": {
@@ -1205,7 +1205,7 @@ def meta_lead_ad_schema() -> dict[str, Any]:
     """Create contract for a Meta Lead Ads Instant Form creative."""
     return {
         "required": ["adset_id", "name", "page_id", "form_id"],
-        "provider_required": ["page_id", "form_id"],
+        "capability_required": ["page_id", "form_id"],
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
@@ -1238,7 +1238,7 @@ def meta_catalog_ad_schema() -> dict[str, Any]:
     """Create contract for a Meta Catalog/Dynamic Product Ad."""
     return {
         "required": ["adset_id", "name", "page_id", "product_set_id", "link", "ad_style"],
-        "provider_required": ["page_id", "product_set_id", "link"],
+        "capability_required": ["page_id", "product_set_id", "link"],
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
@@ -1280,7 +1280,7 @@ def meta_messaging_ad_schema() -> dict[str, Any]:
             "adset_id", "name", "page_id", "messaging_app",
             "call_to_action_type",
         ],
-        "provider_required": ["page_id", "messaging_app", "call_to_action_type"],
+        "capability_required": ["page_id", "messaging_app", "call_to_action_type"],
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
@@ -1330,7 +1330,7 @@ def meta_link_ad_schema() -> dict[str, Any]:
     """Create contract for a website-link image or video creative."""
     return {
         "required": ["adset_id", "name", "page_id", "link"],
-        "provider_required": ["page_id", "link"],
+        "capability_required": ["page_id", "link"],
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
@@ -1390,7 +1390,7 @@ def meta_engagement_ad_schema() -> dict[str, Any]:
     """Create contract for post-engagement and video-view creatives."""
     return {
         "required": ["adset_id", "name", "page_id", "engagement_type"],
-        "provider_required": ["page_id", "engagement_type"],
+        "capability_required": ["page_id", "engagement_type"],
         "properties": {
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),

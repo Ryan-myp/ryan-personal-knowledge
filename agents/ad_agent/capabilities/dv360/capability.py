@@ -31,7 +31,7 @@ class DV360Capability(BaseCapability):
     platform_name = "dv360"
     provider_client_class = DV360APIClient
     capability_version = "1.2.0"
-    provider_api_version = "v4"
+    integration_api_version = "v4"
     provider_method_coverage = {
         "list_advertisers": ["dv360_list_advertisers"], "get_advertiser": ["dv360_get_advertiser"],
         "list_campaigns": ["dv360_list_campaigns"], "get_campaign": ["dv360_get_campaign"],
@@ -72,7 +72,7 @@ class DV360Capability(BaseCapability):
         account = lambda ctx, data: account_from(ctx, data, "advertiser_id", "account_id")
         tools = [
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_delete_campaign",
+                namespace="dv360", skill="dv360-api", name="dv360_delete_campaign",
                 description="删除 DV360 Campaign；默认仅生成 dry-run 计划。",
                 method_name="delete_campaign", result_key="campaign_result",
                 properties={"advertiser_id": {"type": "string"}, "campaign_id": {"type": "string"}},
@@ -83,7 +83,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_delete_io",
+                namespace="dv360", skill="dv360-api", name="dv360_delete_io",
                 description="删除 DV360 Insertion Order；默认仅生成 dry-run 计划。",
                 method_name="delete_io", result_key="io_result",
                 properties={"advertiser_id": {"type": "string"}, "io_id": {"type": "string"}},
@@ -92,7 +92,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["io_id"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_delete_line_item",
+                namespace="dv360", skill="dv360-api", name="dv360_delete_line_item",
                 description="删除 DV360 Line Item；默认仅生成 dry-run 计划。",
                 method_name="delete_line_item", result_key="line_item_result",
                 properties={"advertiser_id": {"type": "string"}, "io_id": {"type": "string"},
@@ -103,7 +103,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["io_id"], data["line_item_id"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_list_creatives",
+                namespace="dv360", skill="dv360-api", name="dv360_list_creatives",
                 description="查询 DV360 Advertiser 下的 Creative 列表。", method_name="list_creatives",
                 result_key="creatives", properties={"advertiser_id": {"type": "string"},
                 "filter": {"type": "string"}, "limit": {"type": "integer"}},
@@ -114,7 +114,7 @@ class DV360Capability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_get_creative",
+                namespace="dv360", skill="dv360-api", name="dv360_get_creative",
                 description="查询 DV360 Creative 详情。", method_name="get_creative", result_key="creative",
                 properties={"advertiser_id": {"type": "string"}, "creative_id": {"type": "string"}},
                 required=["advertiser_id", "creative_id"], action="get", resource_type="creative",
@@ -122,7 +122,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_create_creative",
+                namespace="dv360", skill="dv360-api", name="dv360_create_creative",
                 description="创建 DV360 Creative；默认仅生成 dry-run 计划。", method_name="create_creative",
                 result_key="creative_id", properties={"advertiser_id": {"type": "string"},
                 "creative": {
@@ -138,11 +138,11 @@ class DV360Capability(BaseCapability):
                 }}, required=["advertiser_id", "creative"], action="create",
                 resource_type="creative", resource_id_field="creative_id", intent_types=["create_creative"],
                 traits=["write", "creative"], write=True,
-                provider_required=["creative"],
+                capability_required=["creative"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_update_creative",
+                namespace="dv360", skill="dv360-api", name="dv360_update_creative",
                 description="更新 DV360 Creative；默认仅生成 dry-run 计划。", method_name="update_creative",
                 result_key="creative_result", properties={"advertiser_id": {"type": "string"},
                 "creative_id": {"type": "string"}, "updates": {"type": "object"}},
@@ -152,7 +152,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"], data["updates"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_delete_creative",
+                namespace="dv360", skill="dv360-api", name="dv360_delete_creative",
                 description="删除 DV360 Creative；默认仅生成 dry-run 计划。", method_name="delete_creative",
                 result_key="creative_result", properties={"advertiser_id": {"type": "string"},
                 "creative_id": {"type": "string"}}, required=["advertiser_id", "creative_id"], action="delete",
@@ -161,7 +161,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_list_targeting_options",
+                namespace="dv360", skill="dv360-api", name="dv360_list_targeting_options",
                 description="查询 DV360 Targeting Option 目录（枚举/参考数据）。", method_name="list_targeting_options",
                 result_key="targeting_options", properties={"targeting_type": {"type": "string"},
                 "filter": {"type": "string"}, "limit": {"type": "integer"}},
@@ -172,7 +172,7 @@ class DV360Capability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_list_line_item_assigned_targeting_options",
+                namespace="dv360", skill="dv360-api", name="dv360_list_line_item_assigned_targeting_options",
                 description="查询 DV360 Line Item 已绑定的定向选项。",
                 method_name="list_line_item_assigned_targeting_options", result_key="assigned_targeting_options",
                 properties={"advertiser_id": {"type": "string"}, "line_item_id": {"type": "string"},
@@ -186,7 +186,7 @@ class DV360Capability(BaseCapability):
                 }),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_create_line_item_assigned_targeting_option",
+                namespace="dv360", skill="dv360-api", name="dv360_create_line_item_assigned_targeting_option",
                 description="为 DV360 Line Item 绑定定向选项；默认仅生成 dry-run 计划。",
                 method_name="create_line_item_assigned_targeting_option", result_key="assigned_targeting_option_id",
                 properties={"advertiser_id": {"type": "string"}, "line_item_id": {"type": "string"},
@@ -206,12 +206,12 @@ class DV360Capability(BaseCapability):
                 action="create", resource_type="targeting_assignment", parent_resource_type="line_item",
                 resource_id_field="assigned_targeting_option_id", parent_resource_id_field="line_item_id",
                 intent_types=["create_targeting_assignment"], traits=["write", "targeting"], write=True,
-                provider_required=["targeting_type", "assigned_targeting_option"],
+                capability_required=["targeting_type", "assigned_targeting_option"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["line_item_id"], data["targeting_type"],
                     data["assigned_targeting_option"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_delete_line_item_assigned_targeting_option",
+                namespace="dv360", skill="dv360-api", name="dv360_delete_line_item_assigned_targeting_option",
                 description="解除 DV360 Line Item 的定向绑定；默认仅生成 dry-run 计划。",
                 method_name="delete_line_item_assigned_targeting_option", result_key="targeting_result",
                 properties={"advertiser_id": {"type": "string"}, "line_item_id": {"type": "string"},
@@ -224,7 +224,7 @@ class DV360Capability(BaseCapability):
                     data["assigned_targeting_option_id"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_get_advertiser",
+                namespace="dv360", skill="dv360-api", name="dv360_get_advertiser",
                 description="获取 DV360 Advertiser 详情。", method_name="get_advertiser",
                 result_key="advertiser", properties={"advertiser_id": {"type": "string"}},
                 required=["advertiser_id"], action="get", resource_type="advertiser",
@@ -232,7 +232,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_create_report",
+                namespace="dv360", skill="dv360-api", name="dv360_create_report",
                 description="创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
                 method_name="create_report", result_key="report_id",
                 properties={"advertiser_id": {"type": "string"},
@@ -250,11 +250,11 @@ class DV360Capability(BaseCapability):
                 required=["advertiser_id", "report"], action="create", resource_type="report",
                 resource_id_field="report_id",
                 intent_types=["create_report"], traits=["write", "report"], write=True,
-                provider_required=["report"],
+                capability_required=["report"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["report"]), {}),
             ),
             method_tool(
-                platform="dv360", skill="dv360-api", name="dv360_get_report_result",
+                namespace="dv360", skill="dv360-api", name="dv360_get_report_result",
                 description="获取 DV360 异步报表结果。", method_name="get_report_result", result_key="report",
                 properties={"advertiser_id": {"type": "string"}, "report_id": {"type": "string"},
                             "limit": {"type": "integer"}},
@@ -270,7 +270,7 @@ class DV360Capability(BaseCapability):
             ("pause_io", "io", "io_id", "pause_io"),
         ):
             tools.append(method_tool(
-                platform="dv360", skill="dv360-api", name=f"dv360_{method_name}",
+                namespace="dv360", skill="dv360-api", name=f"dv360_{method_name}",
                 description=f"调用 DV360 {method_name} 管理接口；默认仅生成 dry-run 计划。",
                 method_name=method_name, result_key="io_result",
                 properties={"advertiser_id": {"type": "string"}, resource_id: {"type": "string"}},
@@ -280,7 +280,7 @@ class DV360Capability(BaseCapability):
                 argument_builder=lambda ctx, data, field=resource_id: ((account(ctx, data), data[field]), {}),
             ))
         tools.append(method_tool(
-            platform="dv360", skill="dv360-api", name="dv360_activate_line_item",
+            namespace="dv360", skill="dv360-api", name="dv360_activate_line_item",
             description="激活 DV360 Line Item；默认仅生成 dry-run 计划。",
             method_name="activate_line_item", result_key="line_item_result",
             properties={"advertiser_id": {"type": "string"}, "io_id": {"type": "string"},
@@ -301,7 +301,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_list_campaigns",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Campaign 列表。",
             input_schema=ToolSchema(
                 required=["advertiser_id"],
@@ -325,7 +325,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_get_campaign",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
             input_schema=ToolSchema(
                 properties={
@@ -345,7 +345,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_list_ios",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Insertion Order 列表。",
             input_schema=ToolSchema(
                 required=["advertiser_id"],
@@ -362,7 +362,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_get_io",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Insertion Order 详情。",
             input_schema=ToolSchema(
                 required=["io_id"],
@@ -381,7 +381,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_list_advertisers",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Advertiser 列表。",
             input_schema=ToolSchema(
                 required=[],
@@ -398,7 +398,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_create_io",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="创建 DV360 IO（Order & Invoice）。",
             input_schema=ToolSchema(**dv360_io_schema()),
             action="create", resource_type="io", parent_resource_type="campaign",
@@ -416,7 +416,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_create_line_item",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="创建 DV360 Line Item。",
             input_schema=ToolSchema(**dv360_line_item_schema()),
             action="create", resource_type="line_item", parent_resource_type="io",
@@ -433,7 +433,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_list_line_items",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Line Item 列表，可按 IO 过滤。",
             input_schema=ToolSchema(
                 required=["advertiser_id"],
@@ -455,7 +455,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_get_line_item",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Line Item 详情。",
             input_schema=ToolSchema(
                 required=["io_id", "line_item_id"],
@@ -481,7 +481,7 @@ class DV360Capability(BaseCapability):
         tools.append((ToolDefinition(
             name="dv360_get_line_item_report",
             skill="dv360-api",
-            platform="dv360",
+            namespace="dv360",
             description="查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
             input_schema=ToolSchema(
                 required=["advertiser_id", "line_item_id"],
@@ -518,7 +518,7 @@ class DV360Capability(BaseCapability):
             tools.append((ToolDefinition(
                 name=f"dv360_update_{resource_type}",
                 skill="dv360-expert",
-                platform="dv360",
+                namespace="dv360",
                 description=f"更新 DV360 {resource_type}，默认仅生成 dry-run 计划。",
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"], properties=properties,

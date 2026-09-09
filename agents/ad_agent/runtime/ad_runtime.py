@@ -28,7 +28,7 @@ from typing import Any, Callable, Iterable, Mapping, Optional
 from ..core.interfaces import (
     ToolResult, CapabilityModule,
     ToolRegistry, WriteGuard, IntentParser, IntentRouter,
-    ParsedIntent, ToolEffect, ExecutionMode, ProviderReconciler,
+    ParsedIntent, ToolEffect, ExecutionMode, EffectReconciler,
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
@@ -167,7 +167,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         turn_timeout_seconds: float = 120.0,
         max_user_input_chars: int = 12_000,
         max_platform_params_bytes: int = 256_000,
-        provider_reconcilers: Optional[Mapping[str, ProviderReconciler]] = None,
+        effect_reconcilers: Optional[Mapping[str, EffectReconciler]] = None,
         features: Optional[Iterable[RuntimeFeature]] = None,
         response_renderer: Optional[ResponseRenderer] = None,
         response_synthesizer: Optional[ResponseSynthesizer] = None,
@@ -224,9 +224,9 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         # validated platform aliases to the parser before the first turn;
         # Parser/Core must not scan the filesystem independently.
         for skill in self.skill_loader.list_all().values():
-            register_aliases = getattr(self.intent_parser, "register_platform_aliases", None)
+            register_aliases = getattr(self.intent_parser, "register_namespace_aliases", None)
             if callable(register_aliases):
-                register_aliases(skill.platform, skill.platform_aliases or [])
+                register_aliases(skill.namespace, skill.namespace_aliases or [])
         self._llm = llm_client
         self.conversation_title_generator = ConversationTitleGenerator()
         # A conversation title is presentation metadata and must never add a
@@ -305,7 +305,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         self._skill_objects: dict[str, Skill] = {}
         self._skill_keys_by_platform: dict[str, list[str]] = {}
         self._skill_tool_names: dict[str, list[str]] = {}
-        self._skill_platforms: dict[str, str] = {}
+        self._skill_namespaces: dict[str, str] = {}
         self._skill_format_ids: dict[str, set[str]] = {}
         # User-managed Skills are tenant-owned context packages.  They are
         # deliberately tracked separately from executable provider Skills so
@@ -334,7 +334,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         )
         self.tool_selector = tool_selector or DynamicToolSelector(
             skill_loader=self.skill_loader,
-            knowledge_provider=self.knowledge_provider,
+            knowledge_source=self.knowledge_provider,
         )
         self.parameter_catalogs = ParameterCatalogRegistry()
         # Provider-owned declarative creation metadata.  The registry is a
@@ -439,12 +439,12 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         # without adding provider branches to the Runtime.
         # Custom provider reconcilers are optional. The default reconciler
         # discovers a matching read Tool from registered metadata at use time.
-        self._provider_reconcilers: dict[str, ProviderReconciler] = {}
-        for platform, reconciler in (provider_reconcilers or {}).items():
-            if not isinstance(reconciler, ProviderReconciler):
-                raise TypeError("provider reconciler must implement ProviderReconciler")
+        self._effect_reconcilers: dict[str, EffectReconciler] = {}
+        for platform, reconciler in (effect_reconcilers or {}).items():
+            if not isinstance(reconciler, EffectReconciler):
+                raise TypeError("provider reconciler must implement EffectReconciler")
             canonical = self._canonical_platform(platform)
-            self._provider_reconcilers[canonical] = reconciler
+            self._effect_reconcilers[canonical] = reconciler
 
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
@@ -686,7 +686,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         if not getattr(tool, "is_write_tool", False):
             fallback = (
                 getattr(getattr(session, "ctx", None), "account_id", None)
-                if len(getattr(intent, "platforms", []) or []) == 1 else None
+                if len(getattr(intent, "namespaces", []) or []) == 1 else None
             )
         return self.account_resolver.resolve(intent, platform, tools, fallback)
 
@@ -756,14 +756,14 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         # lifecycle as their active Skill.  Provider identity itself remains
         # discovered from Tool metadata; aliases never create Tools.
         for skill in list(self._skill_objects.values()):
-            register_aliases = getattr(self.intent_parser, "register_platform_aliases", None)
+            register_aliases = getattr(self.intent_parser, "register_namespace_aliases", None)
             if callable(register_aliases):
-                register_aliases(skill.platform, skill.platform_aliases or [])
+                register_aliases(skill.namespace, skill.namespace_aliases or [])
 
     @staticmethod
     def _canonical_platform(platform: str) -> str:
         """Normalize aliases without keeping a Runtime platform registry."""
-        return ProviderBindings.normalize_platform(platform)
+        return ProviderBindings.normalize_namespace(platform)
 
     def _resolve_platform_identifier(self, platform: str) -> str:
         """Resolve a caller-facing platform alias from active Skill metadata.
@@ -778,7 +778,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         if not raw:
             return ""
         for skill in self.skill_loader.list_all().values():
-            canonical = self._canonical_platform(getattr(skill, "platform", ""))
+            canonical = self._canonical_platform(getattr(skill, "namespace", ""))
             aliases = {
                 str(getattr(skill, "platform", "") or "").strip().casefold(),
                 canonical,
@@ -786,7 +786,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             }
             aliases.update(
                 str(alias or "").strip().casefold()
-                for alias in (getattr(skill, "platform_aliases", []) or [])
+                for alias in (getattr(skill, "namespace_aliases", []) or [])
             )
             aliases.update(
                 self._canonical_platform(alias)
@@ -795,7 +795,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             if raw in aliases or normalized in aliases:
                 return canonical
         for definition in self.registry.list_all():
-            canonical = self._canonical_platform(getattr(definition, "platform", ""))
+            canonical = self._canonical_platform(getattr(definition, "namespace", ""))
             if normalized == canonical:
                 return canonical
         return normalized
@@ -1244,7 +1244,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         provider_errors = validate_tool_input(
             tool_def.input_schema,
             input_data,
-            include_provider_contract=True,
+            include_capability_contract=True,
         ) if tool_def.input_schema else []
         data["provider_validation"] = {
             "ready": not provider_errors,
@@ -1410,7 +1410,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             write_definition, _handler = self._get_registered_tool(write_tool)
         except KeyError:
             return None
-        platform = self._canonical_platform(write_definition.platform)
+        platform = self._canonical_platform(write_definition.namespace)
         declared_readback = str(
             getattr(write_definition, "readback_tool", "") or ""
         ).strip()
@@ -1421,7 +1421,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
                 return None
             if not candidate.is_read_tool:
                 return None
-            if self._canonical_platform(candidate.platform) != platform:
+            if self._canonical_platform(candidate.namespace) != platform:
                 return None
             if candidate.action != "get" or candidate.resource_type != write_definition.resource_type:
                 return None
@@ -1433,7 +1433,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         for definition in self.registry.list_all():
             if not definition.is_read_tool:
                 continue
-            if self._canonical_platform(definition.platform) != platform:
+            if self._canonical_platform(definition.namespace) != platform:
                 continue
             if definition.action != "get" or definition.resource_type != write_definition.resource_type:
                 continue
@@ -1643,7 +1643,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
                 if run_id and callable(updater):
                     updater(
                         str(run_id), status="recovery_required",
-                        metadata={"provider_state": "unknown", "session_lease_lost": True},
+                        metadata={"effect_state": "unknown", "session_lease_lost": True},
                     )
         return result
 

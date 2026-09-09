@@ -85,7 +85,7 @@ def test_channel_skill_body_is_available_to_model_context():
             tool = ToolDefinition(
                 name=f"{platform}_list_campaigns",
                 skill=f"{platform}-capability",
-                platform=platform,
+                namespace=platform,
                 description="list campaigns",
                 input_schema=ToolSchema(),
                 intent_types=["list_campaigns"],

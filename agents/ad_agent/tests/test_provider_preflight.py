@@ -23,7 +23,7 @@ def _tool(name, *, action="list", resource="campaign", effect=ToolEffect.READ,
     return ToolDefinition(
         name=name,
         skill="test",
-        platform="meta",
+        namespace="meta",
         description=name,
         input_schema=ToolSchema(properties={"account_id": {"type": "string"}}, required=["account_id"]),
         intent_types=[action],

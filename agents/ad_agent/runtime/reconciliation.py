@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 from ..core.interfaces import (
-    ProviderReconciler,
+    EffectReconciler,
     ReconciliationContext,
     ReconciliationObservation,
 )
@@ -16,7 +16,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class ToolReadbackReconciler(ProviderReconciler):
+class ToolReadbackReconciler(EffectReconciler):
     """Resolve an uncertain write through a provider-owned read Tool.
 
     The Runtime supplies the selected read Tool's definition. Identity and
@@ -107,7 +107,7 @@ class ToolReadbackReconciler(ProviderReconciler):
                 "resource": resource,
                 "provider_resource_id": observed_id,
             },
-            provider_resource_id=str(observed_id),
+            external_resource_id=str(observed_id),
         )
 
     @classmethod
