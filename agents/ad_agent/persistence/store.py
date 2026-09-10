@@ -293,8 +293,9 @@ class AdAgentStore:
     );
 
     CREATE INDEX IF NOT EXISTS idx_workflow_items_workflow ON workflow_items(workflow_id, sequence);
-    CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON sessions(tenant_id, user_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_workflows_tenant ON workflows(tenant_id, status, updated_at DESC);
+    -- Tenant indexes for sessions/workflows are created by migration 16.
+    -- Keeping them out of the bootstrap script is important: an older
+    -- database can still be missing tenant_id until that migration runs.
 
     CREATE TABLE IF NOT EXISTS skill_versions (
         version_id TEXT PRIMARY KEY,

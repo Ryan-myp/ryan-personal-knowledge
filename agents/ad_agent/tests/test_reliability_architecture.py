@@ -29,6 +29,76 @@ def test_worker_liveness_is_durable_and_visible_to_monitoring():
     store.close()
 
 
+def test_legacy_sqlite_schema_migrates_tenant_columns_before_indexes(tmp_path):
+    """An older database must reach the migration that owns tenant indexes."""
+    path = tmp_path / "legacy.db"
+    import sqlite3
+
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        CREATE TABLE schema_migrations (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        );
+        CREATE TABLE sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            account_id TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            metadata TEXT DEFAULT '{}',
+            lease_owner TEXT,
+            lease_expires_at TEXT
+        );
+        CREATE TABLE workflows (
+            workflow_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            intent_type TEXT NOT NULL,
+            execution_mode TEXT NOT NULL,
+            status TEXT NOT NULL,
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            lease_owner TEXT,
+            lease_expires_at TEXT
+        );
+        INSERT INTO schema_migrations(version, applied_at)
+        VALUES
+            (1, 'legacy'), (2, 'legacy'), (3, 'legacy'), (4, 'legacy'),
+            (5, 'legacy'), (6, 'legacy'), (7, 'legacy'), (8, 'legacy'),
+            (9, 'legacy'), (10, 'legacy'), (11, 'legacy');
+        INSERT INTO sessions(
+            session_id, user_id, account_id, created_at, updated_at, metadata
+        ) VALUES (
+            'legacy-session', 'legacy-user', NULL, '2026-01-01', '2026-01-01',
+            '{"tenant_id":"tenant-from-metadata"}'
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    store = AdAgentStore(str(path))
+    try:
+        columns = {
+            row[1]
+            for row in store._get_conn().execute("PRAGMA table_info(sessions)")
+        }
+        assert "tenant_id" in columns
+        assert store._get_conn().execute(
+            "SELECT tenant_id FROM sessions WHERE session_id = ?",
+            ("legacy-session",),
+        ).fetchone()[0] == "tenant-from-metadata"
+        indexes = {
+            row[1]
+            for row in store._get_conn().execute("PRAGMA index_list(sessions)")
+        }
+        assert "idx_sessions_tenant" in indexes
+    finally:
+        store.close()
+
+
 def test_execution_event_repair_is_idempotent():
     store = AdAgentStore(":memory:")
     store.create_execution_run(ExecutionRunRecord(
