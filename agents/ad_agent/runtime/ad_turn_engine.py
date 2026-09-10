@@ -129,10 +129,33 @@ def execute(
         redactor=runtime._redact_for_persistence,
     )
     trace.start()
+
+    def finalize_run(status: str, metadata: Optional[Mapping[str, Any]] = None) -> None:
+        """Best-effortly close the durable run for every terminal branch."""
+        if not durable_run:
+            return
+        try:
+            merged_metadata = None
+            if metadata:
+                current = runtime._session_manager.get_execution_run(run_id)
+                current_metadata = getattr(current, "metadata", {}) if current else {}
+                merged_metadata = {
+                    **(current_metadata if isinstance(current_metadata, dict) else {}),
+                    **dict(metadata),
+                }
+            runtime._session_manager.update_execution_run(
+                run_id, status=status, metadata=merged_metadata,
+            )
+        except Exception:
+            # A missing final update is observable through the run event repair
+            # path and must never replace the user-facing result.
+            logger.debug("failed to finalize execution run", exc_info=True)
+
     input_error = runtime._validate_request_limits(user_input, platform_params)
     if input_error:
         trace.error(reason="request_invalid")
         trace.done("failed", safe_metadata={"reason": "request_invalid"})
+        finalize_run("failed", {"reason": "request_invalid"})
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -192,6 +215,7 @@ def execute(
         runtime.persist_conversation_turn(
             session, turn_id, safe_user_input, error, execution_trace=trace,
         )
+        finalize_run("failed", {"reason": "protected_input"})
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -247,11 +271,11 @@ def execute(
     # an intent.  The post-parse IntentRouter remains authoritative, so
     # this context can improve recognition but cannot grant execution.
     trace.stage_status(
-        "intent",
-        "Intent 识别",
+        "context",
+        "上下文构建",
         "running",
-        subtitle="理解用户目标与约束",
-        safe_metadata={"phase": "intent_parsing"},
+        subtitle="加载有限的 Skill、工具、记忆与会话状态",
+        safe_metadata={"phase": "context_build"},
         safe_input={
             "request": safe_user_input,
             "request_length": len(safe_user_input),
@@ -270,7 +294,57 @@ def execute(
         session.ctx.metadata["skill_context"] = skill_context
     except Exception as exc:
         logger.debug("构建 Skill 解析上下文失败: %s", exc)
-    intent = runtime.intent_parser.parse(safe_user_input, session.ctx)
+        trace.stage_status(
+            "context", "上下文构建", "failed",
+            subtitle="上下文加载失败，继续使用最小上下文",
+            safe_metadata={"error_type": type(exc).__name__},
+        )
+    else:
+        trace.stage_status(
+            "context", "上下文构建", "succeeded",
+            subtitle="已完成有限上下文组装",
+            safe_metadata={
+                "phase": "context_build",
+                "memory_count": len(recalled_memories),
+                "has_conversation_digest": bool(
+                    session.ctx.metadata.get("conversation_digest")
+                ),
+            },
+        )
+    trace.stage_status(
+        "intent",
+        "Intent 识别",
+        "running",
+        subtitle="理解用户目标与约束",
+        safe_metadata={"phase": "intent_parsing"},
+        safe_input={"request_length": len(safe_user_input)},
+    )
+    try:
+        intent = runtime.intent_parser.parse(safe_user_input, session.ctx)
+    except Exception as exc:
+        # A model/structured-output failure must not leave a durable run in
+        # ``running`` forever. Keep the response generic and persist only the
+        # exception class; raw provider/model text may contain sensitive data.
+        trace.stage_status(
+            "intent", "Intent 识别", "failed",
+            subtitle="暂时无法完成意图解析",
+            safe_metadata={"error_type": type(exc).__name__},
+        )
+        trace.reply()
+        trace.done("failed", safe_metadata={"reason": "intent_parse_failed"})
+        reply = "暂时无法完成请求理解，请稍后重试。"
+        runtime.persist_conversation_turn(
+            session, turn_id, safe_user_input, reply, execution_trace=trace,
+        )
+        finalize_run("failed", {"reason": "intent_parse_failed", "error_type": type(exc).__name__})
+        return {
+            "session_id": session_id, "run_id": run_id, "turn_id": turn_id,
+            "timestamp": datetime.now().isoformat(), "intent": None,
+            "tool_plan": {}, "execution_plan": {}, "tool_selection": None,
+            "results": [], "reply": reply, "needs_confirmation": False,
+            "confirmation_payload": None,
+            "policy_errors": ["intent parsing failed"],
+        }
     trace.stage_status(
         "intent",
         "Intent 识别",
@@ -307,6 +381,7 @@ def execute(
             session, turn_id, safe_user_input, error,
             execution_trace=trace,
         )
+        finalize_run("failed", {"reason": "protected_input"})
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -368,13 +443,9 @@ def execute(
         trace.reply()
         trace.done("awaiting_confirmation" if needs_input else "succeeded" if success else "failed")
         runtime.persist_conversation_turn(session, turn_id, safe_user_input, reply, execution_trace=trace)
-        if durable_run:
-            try:
-                runtime._session_manager.update_execution_run(
-                    run_id, status="awaiting_confirmation" if needs_input else "succeeded" if success else "failed",
-                )
-            except Exception:
-                logger.debug("failed to finalize control-plane execution run", exc_info=True)
+        finalize_run(
+            "awaiting_confirmation" if needs_input else "succeeded" if success else "failed",
+        )
         return {
             "session_id": session_id, "run_id": run_id, "turn_id": turn_id,
             "timestamp": datetime.now().isoformat(), "intent": intent.to_dict(),
@@ -387,6 +458,13 @@ def execute(
     # Refresh advisory context with the parsed intent.  This changes only
     # the model-facing explanation/context; IntentRouter remains the sole
     # authority for the executable plan below.
+    trace.stage_status(
+        "context_enrichment",
+        "意图上下文补充",
+        "running",
+        subtitle="根据已识别目标收敛可用知识",
+        safe_metadata={"phase": "context_enrichment"},
+    )
     try:
         skill_context = runtime._build_skill_context(
             safe_user_input,
@@ -403,6 +481,20 @@ def execute(
         session.ctx.metadata["skill_context"] = skill_context
     except Exception as exc:
         logger.debug("构建意图级 Skill/知识上下文失败: %s", exc)
+        trace.stage_status(
+            "context_enrichment", "意图上下文补充", "failed",
+            subtitle="补充上下文失败，保留前一阶段上下文",
+            safe_metadata={"error_type": type(exc).__name__},
+        )
+    else:
+        trace.stage_status(
+            "context_enrichment", "意图上下文补充", "succeeded",
+            subtitle="已按意图收敛上下文",
+            safe_metadata={
+                "phase": "context_enrichment",
+                "intent_type": intent.intent_type,
+            },
+        )
 
     # 如果提供了 platform_params（来自确认请求），合并到意图中
     if platform_params:
@@ -414,6 +506,7 @@ def execute(
             runtime.persist_conversation_turn(
                 session, turn_id, safe_user_input, error, execution_trace=trace
             )
+            finalize_run("failed", {"reason": "protected_input"})
             return {
             "session_id": session_id,
             "run_id": run_id,
@@ -477,6 +570,7 @@ def execute(
             session, turn_id, safe_user_input, reply,
             execution_trace=trace,
         )
+        finalize_run("failed", {"reason": "policy_blocked"})
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -651,6 +745,7 @@ def execute(
                 session, turn_id, safe_user_input, reply,
                 execution_trace=trace,
             )
+            finalize_run("failed", {"reason": "creation_blueprint_invalid"})
             return {
             "session_id": session_id,
             "run_id": run_id,
@@ -855,6 +950,7 @@ def execute(
             session, turn_id, safe_user_input, reply,
             execution_trace=trace, ui=creation_ui,
         )
+        finalize_run("awaiting_confirmation")
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -916,6 +1012,7 @@ def execute(
             session, turn_id, safe_user_input, reply,
             execution_trace=trace, ui=creation_ui,
         )
+        finalize_run("failed", {"reason": "parameter_contract"})
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -1007,6 +1104,7 @@ def execute(
                 session, turn_id, safe_user_input, creation_reply,
                 execution_trace=trace, ui=creation_ui,
             )
+            finalize_run("failed", {"reason": "creation_validation_failed"})
             return {
             "session_id": session_id,
             "run_id": run_id,
@@ -1078,6 +1176,7 @@ def execute(
                 session, turn_id, safe_user_input, reply,
                 execution_trace=trace, ui=creation_ui,
             )
+            finalize_run("failed", {"reason": "preflight_blocked"})
             return {
             "session_id": session_id,
             "run_id": run_id,
@@ -1154,6 +1253,17 @@ def execute(
         trace.done(
             "awaiting_confirmation" if isinstance(batch_result, dict) and batch_result.get("needs_confirmation") else "succeeded",
             safe_metadata={"batch_plan": True},
+        )
+        runtime.persist_conversation_turn(
+            session, turn_id, safe_user_input,
+            str((batch_result or {}).get("reply") or "批量任务已处理。")
+            if isinstance(batch_result, dict) else "批量任务已处理。",
+            execution_trace=trace,
+        )
+        finalize_run(
+            "awaiting_confirmation"
+            if isinstance(batch_result, dict) and batch_result.get("needs_confirmation")
+            else "succeeded",
         )
         return batch_result
 
@@ -1239,6 +1349,10 @@ def execute(
         runtime.persist_conversation_turn(
             session, turn_id, safe_user_input, no_tool_reply,
             execution_trace=trace, ui=creation_ui,
+        )
+        finalize_run(
+            "failed" if has_structured_request or intent_type != "chat" else "succeeded",
+            {"reason": "no_tool"},
         )
         return {
             "session_id": session_id,
@@ -2120,6 +2234,8 @@ def execute(
             runtime._persist_tool_result(
                 session, turn_id, tool_def, actual_platform,
                 tool_input, result,
+                started_at=started_at,
+                ended_at=datetime.now().isoformat(),
             )
 
             # 恢复原始账户上下文
@@ -2227,6 +2343,11 @@ def execute(
     runtime.persist_conversation_turn(
         session, turn_id, safe_user_input, reply,
         execution_trace=trace, ui=creation_ui,
+    )
+    finalize_run(
+        "awaiting_confirmation"
+        if needs_confirmation else "failed" if has_failure else "succeeded",
+        {"tool_count": len(results)},
     )
 
     return {

@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from ..core.durable_ports import ScheduleStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -147,7 +149,7 @@ class SchedulerService:
 
     def __init__(
         self,
-        store: Any,
+        store: ScheduleStore,
         submit_turn: Callable[[Any, Any], Any],
         *, poll_interval: float = 5.0,
         lease_seconds: float = 60.0,
@@ -172,21 +174,38 @@ class SchedulerService:
             self._stop.clear()
             self._metrics.state = "running"
             register = getattr(self.store, "register_worker", None)
-            if callable(register):
-                lease_seconds = min(max(self.lease_seconds, 15.0), 120.0)
-                register(
-                    self.worker_id, "scheduler",
-                    metadata={"poll_interval_seconds": self.poll_interval},
-                    lease_seconds=lease_seconds,
+            registered = False
+            try:
+                if callable(register):
+                    lease_seconds = min(max(self.lease_seconds, 15.0), 120.0)
+                    register(
+                        self.worker_id, "scheduler",
+                        metadata={"poll_interval_seconds": self.poll_interval},
+                        lease_seconds=lease_seconds,
+                    )
+                    registered = True
+                    self._heartbeat_thread = threading.Thread(
+                        target=self._heartbeat, name="ad-agent-scheduler-heartbeat", daemon=True,
+                    )
+                    self._heartbeat_thread.start()
+                self._thread = threading.Thread(
+                    target=self._run, name="ad-agent-scheduler", daemon=True
                 )
-                self._heartbeat_thread = threading.Thread(
-                    target=self._heartbeat, name="ad-agent-scheduler-heartbeat", daemon=True,
-                )
-                self._heartbeat_thread.start()
-            self._thread = threading.Thread(
-                target=self._run, name="ad-agent-scheduler", daemon=True
-            )
-            self._thread.start()
+                self._thread.start()
+            except Exception:
+                self._stop.set()
+                self._metrics.state = "stopped"
+                self._thread = None
+                heartbeat_thread = self._heartbeat_thread
+                self._heartbeat_thread = None
+                if heartbeat_thread:
+                    heartbeat_thread.join(timeout=0.5)
+                if registered and callable(getattr(self.store, "unregister_worker", None)):
+                    try:
+                        self.store.unregister_worker(self.worker_id)
+                    except Exception:
+                        logger.warning("failed to roll back scheduler worker registration", exc_info=True)
+                raise
 
     def stop(self, wait: bool = False) -> None:
         with self._lock:

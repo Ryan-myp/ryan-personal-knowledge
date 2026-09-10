@@ -206,9 +206,11 @@ class AdRuntimeServices(RuntimeExecutionServices):
     def persist_tool_result(
         self, session: Any, turn_id: str, tool: Any, platform: str,
         input_data: dict[str, Any], result: Any,
+        *, started_at: Optional[str] = None, ended_at: Optional[str] = None,
     ) -> None:
         self._runtime._persist_tool_result(
-            session, turn_id, tool, platform, input_data, result
+            session, turn_id, tool, platform, input_data, result,
+            started_at=started_at, ended_at=ended_at,
         )
 
     def is_dry_run(self) -> bool:

@@ -178,6 +178,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         max_task_queue: int = 32,
         task_timeout_seconds: float = 900.0,
         task_lease_seconds: float = 300.0,
+        task_queue_poll_interval: float = 0.5,
         session_lease_seconds: float = 300.0,
         outbox_delivery: Optional[Callable[[Any], None]] = None,
         outbox_poll_interval: float = 0.25,
@@ -543,6 +544,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
             max_task_queue=max_task_queue,
             task_timeout_seconds=task_timeout_seconds,
             task_lease_seconds=task_lease_seconds,
+            task_queue_poll_interval=task_queue_poll_interval,
             outbox_poll_interval=outbox_poll_interval,
             start_background_workers=start_background_workers,
         )
@@ -1397,9 +1399,11 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
     def _persist_tool_result(
         self, session: "SessionContext", turn_id: str, tool_def: Any,
         platform: str, input_data: dict, result: ToolResult,
+        *, started_at: Optional[str] = None, ended_at: Optional[str] = None,
     ) -> None:
         self.persistence_services.persist_tool_result(
             session, turn_id, tool_def, platform, input_data, result,
+            started_at=started_at, ended_at=ended_at,
         )
 
 

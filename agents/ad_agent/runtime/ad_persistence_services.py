@@ -143,11 +143,16 @@ class AdPersistenceServices:
     def persist_tool_result(
         self, session: "SessionContext", turn_id: str, tool_def: Any,
         platform: str, input_data: dict, result: ToolResult,
+        *, started_at: Optional[str] = None, ended_at: Optional[str] = None,
     ) -> None:
         """记录安全的工具审计信息和模拟资源状态。"""
         if not self.runtime._session_manager:
             return
-        now = datetime.now().isoformat()
+        # The caller starts the clock immediately before invoking the Tool.
+        # Do not recreate ``started_at`` here: doing so makes provider latency
+        # appear as persistence latency in the monitoring console.
+        started = started_at or datetime.now().isoformat()
+        ended = ended_at or datetime.now().isoformat()
         safe_input = self.runtime._redact_for_persistence(input_data)
         safe_output = self.runtime._redact_for_persistence(result.data)
         self.runtime._session_manager.record_tool_call(
@@ -158,6 +163,6 @@ class AdPersistenceServices:
                 tool_name=tool_def.name, platform=platform, input_data=safe_input,
                 output_data=safe_output, success=result.success,
                 error=self.runtime._redact_for_persistence(result.error),
-                started_at=now, ended_at=datetime.now().isoformat(),
+                started_at=started, ended_at=ended,
             ),
         )

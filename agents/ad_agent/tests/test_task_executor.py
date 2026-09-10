@@ -115,6 +115,57 @@ def test_task_scope_isolated_and_queue_capacity_is_bounded():
     executor.shutdown()
 
 
+def test_durable_queue_refills_after_startup_batch_completes():
+    """Queued durable tasks must not require a process restart to progress."""
+    store = AdAgentStore(":memory:")
+    now = "2026-01-01T00:00:00+00:00"
+    for index in range(4):
+        store.create_task(TaskRecord(
+            task_id=f"durable-{index}", tenant_id="t", user_id="u",
+            kind="local", status="queued", payload={},
+            created_at=now, updated_at=now,
+        ))
+    executor = TaskExecutor(
+        store, max_workers=1, max_queue=1, queue_poll_interval=0.01,
+    )
+    executor.register_handler("local", lambda _context: {"ok": True})
+
+    assert executor.start() == 2
+    for index in range(4):
+        assert _wait_for(executor, f"durable-{index}", {"succeeded"}, timeout=2)
+
+    assert all(store.get_task(f"durable-{index}").status == "succeeded" for index in range(4))
+    assert executor.metrics()["queue_poller"]["refill_total"] >= 4
+    assert executor.metrics()["in_process_tasks"] == 0
+    executor.shutdown(wait=True)
+    store.close()
+
+
+def test_start_failure_is_retryable_and_rolls_back_worker_lease(monkeypatch):
+    store = AdAgentStore(":memory:")
+    executor = TaskExecutor(store, max_workers=1, max_queue=0)
+    executor.register_handler("local", lambda _context: {"ok": True})
+    original_recover = store.recover_stale_tasks
+    attempts = {"count": 0}
+
+    def fail_once(_lease_seconds):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("temporary persistence failure")
+        return original_recover(_lease_seconds)
+
+    monkeypatch.setattr(store, "recover_stale_tasks", fail_once)
+    with pytest.raises(RuntimeError, match="temporary persistence failure"):
+        executor.start()
+
+    assert executor.metrics()["queue_poller"]["state"] == "stopped"
+    workers = [worker for worker in store.list_workers() if worker["worker_id"] == executor._worker_id]
+    assert workers and workers[0]["status"] == "stopped"
+    assert executor.start() == 0
+    executor.shutdown()
+    store.close()
+
+
 def test_stale_running_task_is_recovery_required_and_not_auto_replayed():
     store = AdAgentStore(":memory:")
     now = "2000-01-01T00:00:00"

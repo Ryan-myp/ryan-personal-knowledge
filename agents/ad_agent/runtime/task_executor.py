@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
+from ..core.durable_ports import TaskQueueStore
+
 from ..core.task import TaskSubmission
 
 logger = logging.getLogger(__name__)
@@ -115,12 +117,13 @@ class TaskExecutor:
 
     def __init__(
         self,
-        store: Any,
+        store: TaskQueueStore,
         *,
         max_workers: int = 4,
         max_queue: int = 32,
         task_timeout_seconds: float = 900.0,
         lease_seconds: float = 300.0,
+        queue_poll_interval: float = 0.5,
         redact: Optional[Callable[[Any], Any]] = None,
         task_record_factory: Optional[Callable[..., Any]] = None,
     ):
@@ -128,11 +131,14 @@ class TaskExecutor:
             raise ValueError("max_workers must be positive and max_queue cannot be negative")
         if task_timeout_seconds <= 0 or lease_seconds <= 0:
             raise ValueError("task and lease timeouts must be positive")
+        if queue_poll_interval <= 0:
+            raise ValueError("queue_poll_interval must be positive")
         self.store = store
         self.max_workers = int(max_workers)
         self.max_queue = int(max_queue)
         self.task_timeout_seconds = float(task_timeout_seconds)
         self.lease_seconds = float(lease_seconds)
+        self.queue_poll_interval = max(0.1, float(queue_poll_interval))
         self._redact = redact or (lambda value: value)
         # The default value is generic. Applications may inject a richer
         # persistence record without coupling this queue to that model.
@@ -145,9 +151,16 @@ class TaskExecutor:
         self._handles: dict[str, _TaskHandle] = {}
         self._lock = threading.RLock()
         self._closed = False
+        self._started = False
         self._worker_id = f"task-worker:{uuid.uuid4()}"
         self._worker_heartbeat_stop = threading.Event()
         self._worker_heartbeat_thread: Optional[threading.Thread] = None
+        self._queue_poller_stop = threading.Event()
+        self._queue_poller_wakeup = threading.Event()
+        self._queue_poller_thread: Optional[threading.Thread] = None
+        self._queue_poll_total = 0
+        self._queue_poll_errors = 0
+        self._last_queue_poll_at: Optional[str] = None
 
     def register_handler(
         self, kind: str, handler: Callable[[TaskExecutionContext], Any]
@@ -183,6 +196,16 @@ class TaskExecutor:
             "in_process_tasks": handles,
             "in_process_queued": internal_queue,
             "admission_capacity": self.max_workers + self.max_queue,
+            "queue_poll_interval_seconds": self.queue_poll_interval,
+            "queue_poller": {
+                "state": (
+                    "running" if self._queue_poller_thread
+                    and self._queue_poller_thread.is_alive() else "stopped"
+                ),
+                "refill_total": self._queue_poll_total,
+                "error_total": self._queue_poll_errors,
+                "last_poll_at": self._last_queue_poll_at,
+            },
             "registered_kinds": list(kinds),
         }
 
@@ -207,8 +230,9 @@ class TaskExecutor:
             raise UnknownTaskKind(kind)
         if not isinstance(payload, dict):
             raise ValueError("task payload must be an object")
-        if self._closed:
-            raise TaskExecutorError("task executor is closed")
+        with self._lock:
+            if self._closed:
+                raise TaskExecutorError("task executor is closed")
         if idempotency_key:
             existing = self.store.find_task_by_idempotency(
                 str(tenant_id), str(user_id), str(idempotency_key)
@@ -240,32 +264,126 @@ class TaskExecutor:
             if not self._schedule(record.task_id, slot_reserved=True):
                 raise TaskExecutorError("task could not be scheduled")
         except Exception as exc:
-            self.store.update_task(
-                record.task_id, "failed", error=self._safe_error(exc),
-                expected_statuses=["queued"],
-            )
+            # Shutdown is a lifecycle event, not a task failure. Keep the
+            # durable row queued so another process can claim it after a
+            # restart; only actual submission failures are terminal here.
+            with self._lock:
+                closing = self._closed
+            if not closing:
+                self.store.update_task(
+                    record.task_id, "failed", error=self._safe_error(exc),
+                    expected_statuses=["queued"],
+                )
             self._capacity.release()
             raise
         return self.store.get_task(record.task_id) or record, True
 
     def start(self) -> int:
         """Recover stale workers and schedule durable queued records."""
+        with self._lock:
+            if self._closed:
+                raise TaskExecutorError("task executor is closed")
+            if self._started:
+                return 0
+            self._started = True
         register = getattr(self.store, "register_worker", None)
-        if callable(register):
-            register(
-                self._worker_id, "task_executor",
-                metadata={"pid": __import__("os").getpid(), "max_workers": self.max_workers},
-                lease_seconds=min(max(self.lease_seconds, 10.0), 60.0),
-            )
-            self._start_worker_heartbeat()
-        recovered = self.store.recover_stale_tasks(self.lease_seconds)
-        if recovered:
-            logger.warning("marked %s stale Agent tasks for recovery", recovered)
+        registered = False
+        try:
+            if callable(register):
+                register(
+                    self._worker_id, "task_executor",
+                    metadata={"pid": __import__("os").getpid(), "max_workers": self.max_workers},
+                    lease_seconds=min(max(self.lease_seconds, 10.0), 60.0),
+                )
+                registered = True
+                self._start_worker_heartbeat()
+            recovered = self.store.recover_stale_tasks(self.lease_seconds)
+            if recovered:
+                logger.warning("marked %s stale Agent tasks for recovery", recovered)
+            scheduled = self._refill_queue()
+            self._start_queue_poller()
+            return scheduled
+        except Exception:
+            # ``start`` is retryable after a transient database or schema
+            # failure. Do not leave an in-memory started flag or worker lease
+            # behind, otherwise a later health-recovery attempt becomes a
+            # silent no-op and the next process sees a false live worker.
+            self._worker_heartbeat_stop.set()
+            heartbeat_thread = self._worker_heartbeat_thread
+            if heartbeat_thread:
+                heartbeat_thread.join(timeout=0.5)
+            self._worker_heartbeat_thread = None
+            if registered and callable(getattr(self.store, "unregister_worker", None)):
+                try:
+                    self.store.unregister_worker(self._worker_id)
+                except Exception:
+                    logger.warning("failed to roll back task worker registration", exc_info=True)
+            with self._lock:
+                self._started = False
+            raise
+
+    def _refill_queue(self) -> int:
+        """Admit durable queued tasks until this worker reaches capacity.
+
+        The database is the source of truth.  The in-process semaphore only
+        bounds local concurrency; it must not make queued durable records
+        disappear after the first batch has completed.
+        """
+        with self._lock:
+            if self._closed:
+                return 0
         scheduled = 0
-        for record in self.store.list_tasks(statuses=["queued"], limit=self.max_workers + self.max_queue):
-            if self._schedule(record.task_id):
+        now = self._now()
+        try:
+            records = self.store.list_tasks(
+                statuses=["queued"],
+                limit=self.max_workers + self.max_queue,
+            )
+            for record in records:
+                task_id = str(record.task_id)
+                with self._lock:
+                    already_scheduled = task_id in self._handles
+                if already_scheduled:
+                    continue
+                if not self._schedule(task_id):
+                    # A false result here means local admission is full (or
+                    # shutdown raced this poll).  Later polls will retry.
+                    break
                 scheduled += 1
-        return scheduled
+            with self._lock:
+                self._queue_poll_total += scheduled
+                self._last_queue_poll_at = now
+            return scheduled
+        except Exception:
+            with self._lock:
+                self._queue_poll_errors += 1
+                self._last_queue_poll_at = now
+            raise
+
+    def _start_queue_poller(self) -> None:
+        with self._lock:
+            if self._queue_poller_thread and self._queue_poller_thread.is_alive():
+                return
+            self._queue_poller_stop.clear()
+            self._queue_poller_wakeup.clear()
+            self._queue_poller_thread = threading.Thread(
+                target=self._poll_durable_queue,
+                name="ad-agent-task-queue-poller",
+                daemon=True,
+            )
+            self._queue_poller_thread.start()
+
+    def _poll_durable_queue(self) -> None:
+        """Continuously refill local capacity from the durable task table."""
+        while not self._queue_poller_stop.is_set():
+            try:
+                self._refill_queue()
+            except Exception:
+                # A transient persistence outage must not terminate the worker;
+                # durable rows remain queued and are retried on the next poll.
+                logger.warning("durable task queue poll failed", exc_info=True)
+            self._queue_poller_wakeup.wait(self.queue_poll_interval)
+            self._queue_poller_wakeup.clear()
 
     def _start_worker_heartbeat(self) -> None:
         if self._worker_heartbeat_thread and self._worker_heartbeat_thread.is_alive():
@@ -302,16 +420,29 @@ class TaskExecutor:
             if not slot_reserved and not self._capacity.acquire(blocking=False):
                 return False
             cancel_event = threading.Event()
+            # A very fast handler can finish before ``submit`` returns. Hold
+            # it behind a one-shot gate until the handle is visible; otherwise
+            # ``_run`` can remove a not-yet-installed handle and leave a stale
+            # entry that blocks future durable refills.
+            start_gate = threading.Event()
             try:
-                future = self._pool.submit(self._run, str(task_id), cancel_event)
+                future = self._pool.submit(
+                    self._run, str(task_id), cancel_event, start_gate
+                )
             except Exception:
                 if not slot_reserved:
                     self._capacity.release()
                 raise
             self._handles[str(task_id)] = _TaskHandle(cancel_event, future)
+            start_gate.set()
             return True
 
-    def _run(self, task_id: str, cancel_event: threading.Event) -> None:
+    def _run(
+        self, task_id: str, cancel_event: threading.Event,
+        start_gate: Optional[threading.Event] = None,
+    ) -> None:
+        if start_gate is not None:
+            start_gate.wait()
         try:
             record = self.store.claim_task(task_id, self._worker_id, self.lease_seconds)
             if record is None:
@@ -472,6 +603,7 @@ class TaskExecutor:
             with self._lock:
                 self._handles.pop(task_id, None)
             self._capacity.release()
+            self._queue_poller_wakeup.set()
 
     def get(
         self, task_id: str, *, tenant_id: Optional[str] = None,
@@ -517,13 +649,9 @@ class TaskExecutor:
         if record is None or record.status != "queued":
             return record
         if not self._schedule(record.task_id):
-            self.store.update_task(
-                record.task_id, "paused", error="task queue is full",
-                expected_statuses=["queued"],
-            )
-            return self.store.get_task(
-                record.task_id, tenant_id=tenant_id, user_id=user_id,
-            )
+            # Queue saturation is transient. Keep the durable task queued so
+            # the poller can admit it when a local slot is released.
+            self._queue_poller_wakeup.set()
         return self.store.get_task(
             record.task_id, tenant_id=tenant_id, user_id=user_id,
         ) or record
@@ -543,13 +671,10 @@ class TaskExecutor:
         if record is None or record.status != "queued":
             return record
         if not self._schedule(record.task_id):
-            self.store.update_task(
-                record.task_id, "paused", error="task queue is full",
-                expected_statuses=["queued"],
-            )
-            return self.store.get_task(
-                record.task_id, tenant_id=tenant_id, user_id=user_id,
-            )
+            # Recovery has already been explicitly verified. Admission is a
+            # local concern and must not turn a durable queued task into a
+            # user-visible pause.
+            self._queue_poller_wakeup.set()
         return self.store.get_task(
             record.task_id, tenant_id=tenant_id, user_id=user_id,
         ) or record
@@ -562,6 +687,12 @@ class TaskExecutor:
             for handle in self._handles.values():
                 handle.cancel_event.set()
         self._worker_heartbeat_stop.set()
+        self._queue_poller_stop.set()
+        self._queue_poller_wakeup.set()
+        queue_poller = self._queue_poller_thread
+        if queue_poller:
+            queue_poller.join(timeout=0.5)
+        self._queue_poller_thread = None
         heartbeat_thread = self._worker_heartbeat_thread
         if heartbeat_thread:
             heartbeat_thread.join(timeout=0.5)

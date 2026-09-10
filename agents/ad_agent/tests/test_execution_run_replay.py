@@ -59,3 +59,35 @@ def test_runtime_exposes_durable_latest_run_after_async_free_turn():
         assert latest["status"] == "succeeded"
     finally:
         runtime.close(wait=True)
+
+
+def test_parser_failure_closes_durable_run_instead_of_leaving_it_running():
+    class BrokenParser:
+        def parse(self, _user_input, _context):
+            raise RuntimeError("model transport failed")
+
+    store = AdAgentStore(":memory:")
+    runtime = AgentRuntime(
+        require_llm=False,
+        intent_parser=BrokenParser(),
+        persistence_store=store,
+        offline_mode=True,
+        enforce_account_scope=False,
+        features=[],
+    )
+    try:
+        result = runtime.run("请帮我分析", user_id="user-1", tenant_id="tenant-1")
+        latest = runtime.get_latest_run(
+            result["session_id"], user_id="user-1", tenant_id="tenant-1"
+        )
+        assert result["reply"] == "暂时无法完成请求理解，请稍后重试。"
+        assert latest["status"] == "failed"
+        assert latest["metadata"]["reason"] == "intent_parse_failed"
+        assert any(
+            event.get("type") == "stage_status"
+            and event.get("stage_id") == "intent"
+            and event.get("status") == "failed"
+            for event in latest["events"]
+        )
+    finally:
+        runtime.close(wait=True)

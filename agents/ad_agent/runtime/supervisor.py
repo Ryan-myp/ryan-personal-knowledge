@@ -25,6 +25,7 @@ class RuntimeSupervisor:
         max_task_queue: int,
         task_timeout_seconds: float,
         task_lease_seconds: float,
+        task_queue_poll_interval: float,
         outbox_poll_interval: float,
         start_background_workers: bool,
     ) -> None:
@@ -55,6 +56,7 @@ class RuntimeSupervisor:
             max_queue=max_task_queue,
             task_timeout_seconds=task_timeout_seconds,
             lease_seconds=task_lease_seconds,
+            queue_poll_interval=task_queue_poll_interval,
             redact=redact,
         )
         for kind, handler in task_handlers.items():

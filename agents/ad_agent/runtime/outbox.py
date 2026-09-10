@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
+from ..core.durable_ports import OutboxStore
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +35,7 @@ class OutboxConsumer:
 
     def __init__(
         self,
-        store: Any,
+        store: OutboxStore,
         publish: Callable[[Any], None],
         *,
         poll_interval: float = 0.25,
@@ -49,12 +51,19 @@ class OutboxConsumer:
         # claims are a cross-instance coordination boundary.
         self.consumer_id = f"outbox:{uuid.uuid4().hex}"
         self._stop = threading.Event()
+        self._lock = threading.RLock()
         self._thread: Optional[threading.Thread] = None
         self._heartbeat_thread: Optional[threading.Thread] = None
+        self._claimed_total = 0
+        self._delivered_total = 0
+        self._retry_total = 0
+        self._error_total = 0
 
     def drain_once(self) -> int:
         delivered = 0
         events = self.store.claim_outbox_events(self.batch_size, self.consumer_id)
+        with self._lock:
+            self._claimed_total += len(events)
         for event in events:
             try:
                 self.publish(event)
@@ -72,31 +81,55 @@ class OutboxConsumer:
                     event.event_id, next_retry, "outbox delivery failed",
                     self.consumer_id,
                 )
+                with self._lock:
+                    self._retry_total += 1
             else:
                 if self.store.mark_outbox_delivered(
                     event.event_id, self.consumer_id
                 ):
                     delivered += 1
+                    with self._lock:
+                        self._delivered_total += 1
         return delivered
 
     def start(self) -> None:
-        if self._thread and self._thread.is_alive():
-            return
-        register = getattr(self.store, "register_worker", None)
-        if callable(register):
-            register(
-                self.consumer_id, "outbox_consumer",
-                metadata={"batch_size": self.batch_size}, lease_seconds=30.0,
-            )
-        self._stop.clear()
-        self._heartbeat_thread = threading.Thread(
-            target=self._heartbeat, name="ad-agent-outbox-heartbeat", daemon=True,
-        )
-        self._heartbeat_thread.start()
-        self._thread = threading.Thread(
-            target=self._run, name="ad-agent-outbox", daemon=True
-        )
-        self._thread.start()
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return
+            self._stop.clear()
+            register = getattr(self.store, "register_worker", None)
+            registered = False
+            try:
+                if callable(register):
+                    register(
+                        self.consumer_id, "outbox_consumer",
+                        metadata={"batch_size": self.batch_size}, lease_seconds=30.0,
+                    )
+                    registered = True
+                self._heartbeat_thread = threading.Thread(
+                    target=self._heartbeat, name="ad-agent-outbox-heartbeat", daemon=True,
+                )
+                self._heartbeat_thread.start()
+                self._thread = threading.Thread(
+                    target=self._run, name="ad-agent-outbox", daemon=True
+                )
+                self._thread.start()
+            except Exception:
+                self._stop.set()
+                thread = self._thread
+                heartbeat_thread = self._heartbeat_thread
+                self._thread = None
+                self._heartbeat_thread = None
+                if thread:
+                    thread.join(timeout=0.5)
+                if heartbeat_thread:
+                    heartbeat_thread.join(timeout=0.5)
+                if registered and callable(getattr(self.store, "unregister_worker", None)):
+                    try:
+                        self.store.unregister_worker(self.consumer_id)
+                    except Exception:
+                        logger.warning("failed to roll back outbox worker registration", exc_info=True)
+                raise
 
     def _heartbeat(self) -> None:
         heartbeat = getattr(self.store, "heartbeat_worker", None)
@@ -113,28 +146,37 @@ class OutboxConsumer:
 
     def metrics(self) -> dict[str, Any]:
         """Return process-local delivery state for the monitoring console."""
-        thread = self._thread
-        return {
-            "consumer_id": self.consumer_id,
-            "state": "running" if thread and thread.is_alive() else "stopped",
-            "poll_interval_seconds": self.poll_interval,
-            "batch_size": self.batch_size,
-        }
+        with self._lock:
+            thread = self._thread
+            return {
+                "consumer_id": self.consumer_id,
+                "state": "running" if thread and thread.is_alive() else "stopped",
+                "poll_interval_seconds": self.poll_interval,
+                "batch_size": self.batch_size,
+                "claimed_total": self._claimed_total,
+                "delivered_total": self._delivered_total,
+                "retry_total": self._retry_total,
+                "error_total": self._error_total,
+            }
 
     def stop(self, timeout: float = 2.0) -> None:
-        self._stop.set()
-        if self._thread:
-            self._thread.join(max(0.0, float(timeout)))
-        if self._heartbeat_thread:
-            self._heartbeat_thread.join(max(0.0, min(float(timeout), 0.5)))
+        with self._lock:
+            self._stop.set()
+            thread = self._thread
+            heartbeat_thread = self._heartbeat_thread
+        if thread:
+            thread.join(max(0.0, float(timeout)))
+        if heartbeat_thread:
+            heartbeat_thread.join(max(0.0, min(float(timeout), 0.5)))
         unregister = getattr(self.store, "unregister_worker", None)
         if callable(unregister):
             try:
                 unregister(self.consumer_id)
             except Exception:
                 logger.warning("failed to unregister outbox worker", exc_info=True)
-        self._thread = None
-        self._heartbeat_thread = None
+        with self._lock:
+            self._thread = None
+            self._heartbeat_thread = None
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -150,6 +192,8 @@ class OutboxConsumer:
                     "Outbox poll failed; retrying: %s",
                     type(exc).__name__,
                 )
+                with self._lock:
+                    self._error_total += 1
                 if self._stop.wait(min(max(self.poll_interval * 4, 0.5), 5.0)):
                     break
                 continue
