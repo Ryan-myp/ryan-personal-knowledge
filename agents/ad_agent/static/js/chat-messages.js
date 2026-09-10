@@ -460,7 +460,7 @@
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('#scheduleOverlay') && !event.target.closest('#memoryOverlay') && !event.target.closest('.system-ops-wrap')) {
+            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('#scheduleOverlay') && !event.target.closest('#memoryOverlay') && !event.target.closest('.mcp-overlay') && !event.target.closest('.system-ops-wrap')) {
                 closeWorkspacePopovers();
             }
         });
@@ -489,6 +489,9 @@
         document.getElementById('memoryOverlay')?.addEventListener('click', (event) => {
             if (event.target.id === 'memoryOverlay') closeMemoryManager();
         });
+        document.getElementById('mcpOverlay')?.addEventListener('click', (event) => {
+            if (event.target === event.currentTarget) closeMCPManager();
+        });
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') return;
             if (document.getElementById('monitoringOverlay')?.classList.contains('active')) {
@@ -501,6 +504,10 @@
             }
             if (document.getElementById('memoryOverlay')?.classList.contains('active')) {
                 closeMemoryManager();
+                return;
+            }
+            if (document.getElementById('mcpOverlay')?.classList.contains('active')) {
+                closeMCPManager();
                 return;
             }
             const renameOverlay = document.getElementById('historyRenameOverlay');

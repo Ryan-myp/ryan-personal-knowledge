@@ -3841,6 +3841,8 @@
         .mcp-server-list { min-height: 0; overflow-y: auto; padding: 16px 12px; background: #f0f7f7; border-right: 1px solid #d0e0e2; }
         .mcp-server-item { width: 100%; display: flex; align-items: center; gap: 9px; margin-bottom: 7px; padding: 12px 10px; text-align: left; color: #44636b; background: transparent; border: 1px solid transparent; border-radius: 11px; cursor: pointer; }
         .mcp-server-item:hover, .mcp-server-item.active { color: #16333b; background: #fff; border-color: #0b9f91; box-shadow: 0 5px 14px rgba(31,76,82,.08); }
+        .mcp-server-item-builtin { margin-bottom: 14px; color: #0b746b; background: #e7f6f3; border-color: #bfe4de; }
+        .mcp-server-item-builtin .mcp-server-item-mark { color: #0b9f91; }
         .mcp-server-item-mark { color: #91a9ac; font-size: 12px; }
         .mcp-server-item.active .mcp-server-item-mark, .mcp-server-item:hover .mcp-server-item-mark { color: #0b9f91; }
         .mcp-server-item-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
