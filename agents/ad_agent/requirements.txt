@@ -8,6 +8,7 @@ PyYAML>=6.0
 fastapi>=0.100.0
 uvicorn>=0.22.0
 PyMySQL>=1.1.0
+fastmcp>=3.4.0,<4.0.0
 
 # 可选依赖（启用时使用）
 # google-ads>=25.0.0  # Google Ads SDK（可选，默认使用 HTTP）

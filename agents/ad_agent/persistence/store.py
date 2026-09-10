@@ -86,7 +86,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 16
+    SCHEMA_VERSION = 17
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -367,6 +367,53 @@ class AdAgentStore:
     );
     CREATE INDEX IF NOT EXISTS idx_plugin_packages_tenant
         ON plugin_packages(tenant_id, plugin_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS mcp_servers (
+        server_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        endpoint TEXT NOT NULL,
+        transport TEXT NOT NULL DEFAULT 'streamable_http',
+        auth_type TEXT NOT NULL DEFAULT 'none',
+        credential_ref TEXT,
+        auth_header TEXT NOT NULL DEFAULT 'Authorization',
+        timeout_seconds REAL NOT NULL DEFAULT 20,
+        status TEXT NOT NULL DEFAULT 'draft',
+        enabled INTEGER NOT NULL DEFAULT 0,
+        validation_status TEXT NOT NULL DEFAULT 'not_run',
+        validation_report TEXT NOT NULL DEFAULT '{}',
+        protocol_version TEXT,
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_checked_at TEXT,
+        last_error TEXT,
+        UNIQUE (tenant_id, name)
+    );
+    CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope
+        ON mcp_servers(tenant_id, status, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS mcp_tools (
+        tool_id TEXT PRIMARY KEY,
+        server_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        remote_name TEXT NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        input_schema TEXT NOT NULL DEFAULT '{}',
+        annotations TEXT NOT NULL DEFAULT '{}',
+        status TEXT NOT NULL DEFAULT 'discovered',
+        enabled INTEGER NOT NULL DEFAULT 0,
+        validation_status TEXT NOT NULL DEFAULT 'pending',
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (server_id, remote_name),
+        FOREIGN KEY (server_id) REFERENCES mcp_servers(server_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_mcp_tools_server
+        ON mcp_tools(tenant_id, server_id, status, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS write_reservations (
         idempotency_key TEXT PRIMARY KEY,
@@ -838,6 +885,18 @@ class AdAgentStore:
                             f"UPDATE {table} SET tenant_id = ? WHERE {key} = ?",
                             (tenant_id, str(row[key])),
                         )
+        elif version == 17:
+            # MCP control-plane tables are present in the bootstrap schema;
+            # this explicit migration records when an older database gained
+            # the externally managed Server/Tool contract.
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope "
+                "ON mcp_servers(tenant_id, status, updated_at DESC)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mcp_tools_server "
+                "ON mcp_tools(tenant_id, server_id, status, updated_at DESC)"
+            )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -3162,6 +3221,192 @@ class AdAgentStore:
                 (str(row["package_id"]),),
             ).fetchone()
             return self._plugin_row(removed)
+
+    # -- External MCP control plane -----------------------------------
+
+    @staticmethod
+    def _mcp_decode(row: Any) -> Optional[dict]:
+        if not row:
+            return None
+        value = dict(row)
+        for key in ("validation_report", "input_schema", "annotations"):
+            if isinstance(value.get(key), str):
+                try:
+                    value[key] = json.loads(value[key] or "{}")
+                except (TypeError, ValueError):
+                    value[key] = {}
+        for key in ("enabled",):
+            value[key] = bool(value.get(key))
+        return value
+
+    def create_mcp_server(self, data: dict[str, Any]) -> dict:
+        """Persist a tenant-scoped external MCP Server declaration."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO mcp_servers
+                   (server_id, tenant_id, name, description, endpoint, transport,
+                    auth_type, credential_ref, auth_header, timeout_seconds, status,
+                    enabled, validation_status, validation_report, created_by,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, 'not_run', '{}', ?, ?, ?)""",
+                (
+                    str(data["server_id"]), str(data["tenant_id"]), str(data["name"]),
+                    str(data.get("description") or ""), str(data["endpoint"]),
+                    str(data.get("transport") or "streamable_http"),
+                    str(data.get("auth_type") or "none"), data.get("credential_ref"),
+                    str(data.get("auth_header") or "Authorization"),
+                    float(data.get("timeout_seconds") or 20.0), str(data["created_by"]),
+                    now, now,
+                ),
+            )
+            conn.commit()
+            return self._mcp_decode(conn.execute(
+                "SELECT * FROM mcp_servers WHERE server_id = ?",
+                (str(data["server_id"]),),
+            ).fetchone()) or {}
+
+    def get_mcp_server(self, tenant_id: str, server_id: str) -> Optional[dict]:
+        with self._lock:
+            row = self._get_conn().execute(
+                "SELECT * FROM mcp_servers WHERE tenant_id = ? AND server_id = ?",
+                (str(tenant_id), str(server_id)),
+            ).fetchone()
+            return self._mcp_decode(row)
+
+    def list_mcp_servers(self, tenant_id: str, limit: int = 50) -> list[dict]:
+        limit = max(1, min(int(limit), 200))
+        with self._lock:
+            rows = self._get_conn().execute(
+                "SELECT * FROM mcp_servers WHERE tenant_id = ? "
+                "ORDER BY updated_at DESC LIMIT ?", (str(tenant_id), limit),
+            ).fetchall()
+            return [self._mcp_decode(row) for row in rows]
+
+    def update_mcp_server(self, server_id: str, tenant_id: str, data: dict[str, Any]) -> Optional[dict]:
+        allowed = {
+            "name", "description", "endpoint", "transport", "auth_type", "credential_ref",
+            "auth_header", "timeout_seconds", "status", "enabled", "validation_status",
+            "validation_report", "protocol_version", "last_checked_at", "last_error",
+        }
+        updates = {key: value for key, value in data.items() if key in allowed}
+        if not updates:
+            return self.get_mcp_server(tenant_id, server_id)
+        if "validation_report" in updates:
+            updates["validation_report"] = json.dumps(
+                updates["validation_report"] or {}, ensure_ascii=False, sort_keys=True
+            )
+        if "enabled" in updates:
+            updates["enabled"] = int(bool(updates["enabled"]))
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = list(updates.values()) + [str(tenant_id), str(server_id)]
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                f"UPDATE mcp_servers SET {assignments} WHERE tenant_id = ? AND server_id = ?",
+                values,
+            )
+            conn.commit()
+            if cursor.rowcount == 0:
+                return None
+            return self._mcp_decode(conn.execute(
+                "SELECT * FROM mcp_servers WHERE tenant_id = ? AND server_id = ?",
+                (str(tenant_id), str(server_id)),
+            ).fetchone())
+
+    def _mcp_tool_decode(self, row: Any) -> Optional[dict]:
+        return self._mcp_decode(row)
+
+    def upsert_mcp_tool(self, data: dict[str, Any]) -> dict:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            existing = conn.execute(
+                "SELECT tool_id FROM mcp_tools WHERE server_id = ? AND remote_name = ?",
+                (str(data["server_id"]), str(data["remote_name"])),
+            ).fetchone()
+            encoded_schema = json.dumps(data.get("input_schema") or {}, ensure_ascii=False, sort_keys=True)
+            encoded_annotations = json.dumps(data.get("annotations") or {}, ensure_ascii=False, sort_keys=True)
+            if existing:
+                conn.execute(
+                    """UPDATE mcp_tools SET tool_id = ?, tenant_id = ?, title = ?,
+                       description = ?, input_schema = ?, annotations = ?,
+                       validation_status = ?, updated_at = ?
+                       WHERE server_id = ? AND remote_name = ?""",
+                    (
+                        str(data["tool_id"]), str(data["tenant_id"]), str(data.get("title") or ""),
+                        str(data.get("description") or ""), encoded_schema, encoded_annotations,
+                        str(data.get("validation_status") or "pending"), now,
+                        str(data["server_id"]), str(data["remote_name"]),
+                    ),
+                )
+            else:
+                conn.execute(
+                    """INSERT INTO mcp_tools
+                       (tool_id, server_id, tenant_id, remote_name, title, description,
+                        input_schema, annotations, status, enabled, validation_status,
+                        created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'discovered', 0, ?, ?, ?)""",
+                    (
+                        str(data["tool_id"]), str(data["server_id"]), str(data["tenant_id"]),
+                        str(data["remote_name"]), str(data.get("title") or ""),
+                        str(data.get("description") or ""), encoded_schema, encoded_annotations,
+                        str(data.get("validation_status") or "pending"), now, now,
+                    ),
+                )
+            conn.commit()
+            return self._mcp_tool_decode(conn.execute(
+                "SELECT * FROM mcp_tools WHERE server_id = ? AND remote_name = ?",
+                (str(data["server_id"]), str(data["remote_name"])),
+            ).fetchone()) or {}
+
+    def list_mcp_tools(self, server_id: str, tenant_id: Optional[str] = None) -> list[dict]:
+        with self._lock:
+            if tenant_id is None:
+                rows = self._get_conn().execute(
+                    "SELECT * FROM mcp_tools WHERE server_id = ? ORDER BY remote_name",
+                    (str(server_id),),
+                ).fetchall()
+            else:
+                rows = self._get_conn().execute(
+                    "SELECT * FROM mcp_tools WHERE server_id = ? AND tenant_id = ? ORDER BY remote_name",
+                    (str(server_id), str(tenant_id)),
+                ).fetchall()
+            return [self._mcp_tool_decode(row) for row in rows]
+
+    def get_mcp_tool(self, tool_id: str, tenant_id: str) -> Optional[dict]:
+        with self._lock:
+            row = self._get_conn().execute(
+                "SELECT * FROM mcp_tools WHERE tool_id = ? AND tenant_id = ?",
+                (str(tool_id), str(tenant_id)),
+            ).fetchone()
+            return self._mcp_tool_decode(row)
+
+    def update_mcp_tool(self, tool_id: str, tenant_id: str, data: dict[str, Any]) -> Optional[dict]:
+        allowed = {"status", "enabled", "validation_status", "last_error"}
+        updates = {key: value for key, value in data.items() if key in allowed}
+        if not updates:
+            return self.get_mcp_tool(tool_id, tenant_id)
+        if "enabled" in updates:
+            updates["enabled"] = int(bool(updates["enabled"]))
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        values = list(updates.values()) + [str(tenant_id), str(tool_id)]
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                f"UPDATE mcp_tools SET {assignments} WHERE tenant_id = ? AND tool_id = ?",
+                values,
+            )
+            conn.commit()
+            if cursor.rowcount == 0:
+                return None
+            return self._mcp_tool_decode(conn.execute(
+                "SELECT * FROM mcp_tools WHERE tenant_id = ? AND tool_id = ?",
+                (str(tenant_id), str(tool_id)),
+            ).fetchone())
     
     # -- Session --
     

@@ -48,6 +48,8 @@ from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.core.plugin_package import PluginPackageError
 from agents.ad_agent.core.memory import MEMORY_KINDS
 from agents.ad_agent.plugin_management import PluginPackageManager
+from agents.ad_agent.mcp_management import MCPManagementError, MCPServerManager
+from agents.ad_agent.builtin_mcp import BuiltinChannelMCP
 from agents.ad_agent.skill_management import (
     BuiltinSkillCatalog,
     ManagedSkillManager,
@@ -74,6 +76,9 @@ builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 
 # 全局 runtime
 runtime: Optional[AgentRuntime] = None
+mcp_manager: Optional[MCPServerManager] = None
+builtin_channel_mcp: Optional[BuiltinChannelMCP] = None
+builtin_channel_mcp_app = None
 runtime_status = {
     "state": "not_initialized",
     "error": None,
@@ -240,7 +245,10 @@ def _init_runtime():
             granted_permissions=set(
                 config.get(
                     "granted_permissions",
-                    ["ads.read", "ads.plan", "knowledge.read", "knowledge.write"],
+                    [
+                        "ads.read", "ads.plan", "knowledge.read", "knowledge.write",
+                        "mcp.read", "mcp.manage",
+                    ],
                 ) or []
             ),
             offline_mode=False,
@@ -310,10 +318,21 @@ def _init_runtime():
         skill_manager.activate_published(
             os.environ.get("AD_AGENT_SERVICE_TENANT", "default"), runtime
         )
+        # Only explicitly validated and enabled external MCP servers can
+        # surface Tools to Runtime. Skill files and user package uploads never
+        # register an MCP endpoint or executable handler.
+        global mcp_manager
+        mcp_manager = MCPServerManager(store)
+        registered_mcp_tools = mcp_manager.sync_tenant(
+            os.environ.get("AD_AGENT_SERVICE_TENANT", "default"), runtime
+        )
+        builtin_channel_count = builtin_channel_mcp.refresh(runtime) if builtin_channel_mcp else 0
 
         print(f"\n📊 服务状态:")
         print(f"- ✅ {len(runtime.registry.list_all_namespaces())} 平台 {len(runtime.registry.list_all())} 工具")
         print(f"- ✅ Skills 系统已就绪")
+        print(f"- ✅ MCP 管理已就绪（{registered_mcp_tools} 个已启用 Tool）")
+        print(f"- ✅ 内置渠道 MCP 已准备（{builtin_channel_count} 个 Registry Tool，HTTP 暴露默认关闭）")
         runtime_status.update({"state": "ready", "error": None})
         return runtime
     except Exception as e:
@@ -326,15 +345,20 @@ def _init_runtime():
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Initialize and shut down the Runtime at ASGI lifecycle boundaries."""
-    global runtime
+    global runtime, mcp_manager
     if runtime is None:
         if _init_runtime() is None:
             # Fail ASGI startup instead of serving a process that reports
             # healthy while every data endpoint is unusable.
             raise RuntimeError("ad-agent Runtime 初始化失败")
     active_runtime = runtime
+    mcp_lifespan = getattr(builtin_channel_mcp_app, "lifespan", None)
     try:
-        yield
+        if callable(mcp_lifespan):
+            async with mcp_lifespan(_app):
+                yield
+        else:
+            yield
     finally:
         # Runtime owns the durable worker lifecycle. Shut it down through the
         # generic lifecycle seam so ASGI reloads/tests do not leave task
@@ -351,6 +375,7 @@ async def lifespan(_app: FastAPI):
             # Permit a later ASGI lifespan (reload/test restart) to create a
             # fresh Runtime instead of reusing one whose workers are closed.
             runtime = None
+            mcp_manager = None
         print("👋 ad-agent 服务已停止")
 
 
@@ -369,6 +394,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
+builtin_channel_mcp = BuiltinChannelMCP(lambda: runtime, _authorize_request)
+builtin_channel_mcp_app = builtin_channel_mcp.asgi_app()
 
 
 class ChatRequest(BaseModel):
@@ -1679,6 +1706,50 @@ class PluginPackageRequest(BaseModel):
     files: dict[str, object]
 
 
+class MCPServerRequest(BaseModel):
+    """External HTTP MCP declaration; secrets are deployment references only."""
+
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=500)
+    endpoint: str = Field(min_length=10, max_length=2048)
+    transport: Literal["streamable_http"] = "streamable_http"
+    auth_type: Literal["none", "bearer", "api_key"] = "none"
+    credential_ref: Optional[str] = Field(default=None, max_length=128)
+    auth_header: str = Field(default="", max_length=64)
+    timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
+
+
+class MCPServerPatchRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=500)
+    endpoint: Optional[str] = Field(default=None, min_length=10, max_length=2048)
+    transport: Optional[Literal["streamable_http"]] = None
+    auth_type: Optional[Literal["none", "bearer", "api_key"]] = None
+    credential_ref: Optional[str] = Field(default=None, max_length=128)
+    auth_header: Optional[str] = Field(default=None, max_length=64)
+    timeout_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
+
+
+class MCPValidationRequest(BaseModel):
+    checks: list[Literal["all", "configuration", "connectivity", "tool_schema", "policy"]] = Field(
+        default_factory=lambda: ["all"], max_length=5
+    )
+
+
+class MCPBuiltinToolTestRequest(BaseModel):
+    """A data-only request for a dry-run/read test of a registered Tool."""
+
+    input: dict = Field(default_factory=dict)
+    account_id: Optional[str] = Field(default=None, max_length=200)
+
+
+class MCPToolTestRequest(BaseModel):
+    """Input for a safe test of an enabled external read-only MCP Tool."""
+
+    input: dict = Field(default_factory=dict)
+    account_id: Optional[str] = Field(default=None, max_length=200)
+
+
 @app.get("/plugins", tags=["info"])
 async def get_plugins(
     http_request: Request,
@@ -1845,6 +1916,247 @@ async def uninstall_plugin_package(
     if not result:
         raise HTTPException(status_code=404, detail="Plugin package not found")
     return result
+
+
+def _mcp_manager_or_503() -> MCPServerManager:
+    if not mcp_manager or not runtime or not getattr(runtime, "persistence_store", None):
+        raise HTTPException(status_code=503, detail="MCP 管理服务未初始化")
+    return mcp_manager
+
+
+def _require_mcp_permission(principal: RequestPrincipal, permission: str) -> None:
+    if permission not in principal.permissions and "admin" not in principal.permissions:
+        raise HTTPException(status_code=403, detail=f"缺少 MCP 管理权限：{permission}")
+
+
+@app.get("/mcp/servers", tags=["mcp"])
+async def list_mcp_servers(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.read")
+    return {"tenant_id": principal.tenant_id, "servers": _mcp_manager_or_503().list_servers(principal.tenant_id, limit)}
+
+
+@app.post("/mcp/servers", tags=["mcp"])
+async def create_mcp_server(
+    body: MCPServerRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        result = _mcp_manager_or_503().create_server(principal.tenant_id, body.model_dump(), principal.user_id)
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return JSONResponse(status_code=201, content=result)
+
+
+@app.get("/mcp/servers/{server_id}", tags=["mcp"])
+async def get_mcp_server(
+    server_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.read")
+    result = _mcp_manager_or_503().get_server(principal.tenant_id, server_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    return result
+
+
+@app.patch("/mcp/servers/{server_id}", tags=["mcp"])
+async def patch_mcp_server(
+    server_id: str,
+    body: MCPServerPatchRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        return _mcp_manager_or_503().update_server(
+            principal.tenant_id, server_id, body.model_dump(exclude_unset=True), runtime
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/mcp/servers/{server_id}/validate", tags=["mcp"])
+async def validate_mcp_server(
+    server_id: str,
+    body: MCPValidationRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        result = await run_in_threadpool(
+            _mcp_manager_or_503().validate_server,
+            principal.tenant_id, server_id, body.checks, runtime,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return result
+
+
+@app.post("/mcp/servers/{server_id}/enable", tags=["mcp"])
+async def enable_mcp_server(
+    server_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        return _mcp_manager_or_503().enable_server(principal.tenant_id, server_id, runtime)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/mcp/servers/{server_id}/disable", tags=["mcp"])
+async def disable_mcp_server(
+    server_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        return _mcp_manager_or_503().disable_server(principal.tenant_id, server_id, runtime)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+
+
+@app.delete("/mcp/servers/{server_id}", tags=["mcp"])
+async def delete_mcp_server(
+    server_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        return _mcp_manager_or_503().delete_server(principal.tenant_id, server_id, runtime)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+
+
+async def _set_mcp_tool_state(
+    server_id: str, tool_id: str, enabled: bool, http_request: Request,
+    x_api_key: Optional[str],
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        manager = _mcp_manager_or_503()
+        if enabled:
+            return manager.enable_tool(principal.tenant_id, server_id, tool_id, runtime)
+        return manager.disable_tool(principal.tenant_id, server_id, tool_id, runtime)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Tool not found")
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.post("/mcp/servers/{server_id}/tools/{tool_id}/enable", tags=["mcp"])
+async def enable_mcp_tool(
+    server_id: str, tool_id: str, http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    return await _set_mcp_tool_state(server_id, tool_id, True, http_request, x_api_key)
+
+
+@app.post("/mcp/servers/{server_id}/tools/{tool_id}/disable", tags=["mcp"])
+async def disable_mcp_tool(
+    server_id: str, tool_id: str, http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    return await _set_mcp_tool_state(server_id, tool_id, False, http_request, x_api_key)
+
+
+@app.post("/mcp/servers/{server_id}/tools/{tool_id}/test", tags=["mcp"])
+async def test_mcp_tool(
+    server_id: str,
+    tool_id: str,
+    body: MCPToolTestRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        return await run_in_threadpool(
+            _mcp_manager_or_503().test_tool,
+            principal.tenant_id, server_id, tool_id, runtime, principal,
+            body.input, account_id=body.account_id,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Tool not found")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _builtin_channel_mcp_or_503() -> BuiltinChannelMCP:
+    if not builtin_channel_mcp or not runtime:
+        raise HTTPException(status_code=503, detail="内置渠道 MCP 未初始化")
+    return builtin_channel_mcp
+
+
+@app.get("/mcp/builtin/tools", tags=["mcp"])
+async def list_builtin_mcp_tools(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.read")
+    gateway = _builtin_channel_mcp_or_503()
+    return {
+        "enabled": gateway.enabled,
+        "endpoint": "/mcp/builtin/mcp",
+        "tools": gateway.list_tools(runtime),
+    }
+
+
+@app.post("/mcp/builtin/tools/{tool_name:path}/test", tags=["mcp"])
+async def test_builtin_mcp_tool(
+    tool_name: str,
+    body: MCPBuiltinToolTestRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    gateway = _builtin_channel_mcp_or_503()
+    try:
+        return await run_in_threadpool(
+            gateway.invoke_for_principal,
+            runtime,
+            principal,
+            tool_name,
+            body.input,
+            source="ui_test",
+            account_id=body.account_id,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Registry Tool not found")
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.get("/tools", tags=["info"])
@@ -2647,3 +2959,9 @@ async def reconcile_workflow_from_provider(
         raise HTTPException(status_code=404, detail="workflow not found")
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+# FastMCP's own streamable HTTP endpoint is mounted after the FastAPI routes
+# so it cannot shadow the authenticated management/test APIs above. The
+# endpoint is still disabled unless AD_AGENT_MCP_CHANNELS_ENABLED=1.
+app.mount("/mcp/builtin", builtin_channel_mcp_app)

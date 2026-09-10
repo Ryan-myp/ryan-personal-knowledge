@@ -35,6 +35,11 @@ granted_permissions:
   - skills.evaluate
   - knowledge.read
   - knowledge.write
+  # MCP control-plane access is separate from external Tool write access.
+  # mcp.write remains intentionally absent; enabling a remote write Tool does
+  # not grant it execution permission.
+  - mcp.read
+  - mcp.manage
 
 # For multi-user HTTP deployments prefer AD_AGENT_API_KEY_PRINCIPALS, whose
 # values contain trusted user_id/tenant_id/permissions/account_scope claims.

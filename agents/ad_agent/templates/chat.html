@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20260909-frontend-split-v1">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20260910-ui-polish-v2">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -313,6 +313,10 @@
             <span class="nav-icon">🧩</span>
             <span>Skills 管理</span>
         </button>
+        <button class="new-chat-btn mcp-nav-btn workspace-nav" onclick="openMCPManager()" aria-label="MCP 能力接入">
+            <span class="nav-icon">⌘</span>
+            <span>MCP 能力接入</span>
+        </button>
         <button class="new-chat-btn knowledge-nav-btn workspace-nav" id="knowledgeNavButton" onclick="toggleKnowledgePopover()" aria-label="知识库" aria-expanded="false">
             <span class="nav-icon">▤</span>
             <span>知识库</span>
@@ -504,6 +508,68 @@
                         <button class="btn btn-secondary" id="skillCloneButton" type="button" onclick="cloneSelectedBuiltin()">复制为新版本</button>
                     </div>
                 </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- MCP control plane: remote HTTP declarations and discovered Tool policy. -->
+    <div class="mcp-overlay" id="mcpOverlay" aria-hidden="true">
+        <section class="mcp-console" role="dialog" aria-modal="true" aria-labelledby="mcpConsoleTitle">
+            <header class="mcp-console-header">
+                <div>
+                    <div class="mcp-console-kicker">EXTENSION CONTROL PLANE</div>
+                    <div class="mcp-console-title" id="mcpConsoleTitle">MCP 能力接入</div>
+                    <div class="mcp-console-subtitle">连接外部 MCP Server，先完成校验，再按 Tool 精细启用；凭证只引用部署环境，不会保存到页面或数据库。</div>
+                </div>
+                <button class="icon-btn" type="button" onclick="closeMCPManager()" aria-label="关闭 MCP 管理">×</button>
+            </header>
+            <div class="mcp-toolbar">
+                <button class="btn btn-secondary" type="button" onclick="loadMCPServers()">刷新</button>
+                <button class="btn btn-primary" type="button" onclick="newMCPServer()">接入 MCP Server</button>
+                <button class="btn btn-secondary" type="button" onclick="toggleBuiltinMCPPanel()">渠道 Tools</button>
+                <span class="mcp-toolbar-note">支持 Streamable HTTP · 禁止命令、脚本和 URL 内嵌密钥</span>
+            </div>
+            <div class="mcp-notice" id="mcpNotice" role="status" aria-live="polite"></div>
+            <div class="mcp-console-body">
+                <aside class="mcp-server-list" id="mcpServerList"><div class="mcp-empty">打开管理台后加载 MCP Server。</div></aside>
+                <main class="mcp-detail">
+                    <div class="mcp-detail-header"><div><span class="mcp-section-kicker">SERVER DECLARATION</span><h2 id="mcpDetailTitle">新建 MCP Server</h2></div><span class="mcp-status-pill" id="mcpServerStatus">草稿</span></div>
+                    <div class="mcp-form-grid">
+                        <label><span>显示名称</span><input id="mcpNameInput" maxlength="120" placeholder="例如：内部报表 MCP"></label>
+                        <label class="wide"><span>Endpoint</span><input id="mcpEndpointInput" maxlength="2048" placeholder="https://mcp.example.com/mcp"></label>
+                        <label><span>认证方式</span><select id="mcpAuthTypeInput" onchange="updateMCPAuthHint()"><option value="none">无认证</option><option value="bearer">Bearer Token</option><option value="api_key">API Key Header</option></select></label>
+                        <label><span>credential_ref</span><input id="mcpCredentialRefInput" maxlength="128" placeholder="例如 reporting_prod"></label>
+                        <label><span>认证 Header</span><input id="mcpAuthHeaderInput" maxlength="64" placeholder="Authorization / X-API-Key"></label>
+                        <label><span>超时（秒）</span><input id="mcpTimeoutInput" type="number" min="1" max="120" value="20"></label>
+                        <label class="wide"><span>说明</span><textarea id="mcpDescriptionInput" maxlength="500" rows="2" placeholder="说明 Server 能提供什么能力"></textarea></label>
+                    </div>
+                    <div class="mcp-auth-hint" id="mcpAuthHint">认证密钥由部署环境提供：AD_AGENT_MCP_CREDENTIAL_&lt;CREDENTIAL_REF&gt;，页面只保存引用。</div>
+                    <div class="mcp-action-row">
+                        <button class="btn btn-primary" id="mcpSaveButton" type="button" onclick="saveMCPServer()">保存 Server</button>
+                        <select id="mcpValidationSelect" aria-label="MCP 校验方式"><option value="all">完整校验</option><option value="configuration">配置校验</option><option value="connectivity">连通性与握手</option><option value="tool_schema">Tool Schema</option><option value="policy">安全策略</option></select>
+                        <button class="btn btn-secondary" id="mcpValidateButton" type="button" onclick="validateMCPServer()">运行校验</button>
+                        <button class="btn btn-secondary" id="mcpEnableButton" type="button" onclick="toggleMCPServer()">启用 Server</button>
+                        <button class="btn btn-danger" id="mcpDeleteButton" type="button" onclick="deleteMCPServer()">移除</button>
+                    </div>
+                    <section class="mcp-validation-panel"><div class="mcp-panel-heading"><div><span class="mcp-section-kicker">VALIDATION REPORT</span><h3>校验结果</h3></div><span id="mcpValidationMeta">尚未运行</span></div><div class="mcp-check-grid" id="mcpCheckGrid"><div class="mcp-empty">完整校验会检查配置、握手、Tool Schema 和策略。</div></div></section>
+                    <section class="mcp-tools-panel"><div class="mcp-panel-heading"><div><span class="mcp-section-kicker">DISCOVERED TOOLS</span><h3>已发现的 MCP Tools</h3></div><span class="mcp-panel-note">非只读 Tool 默认高风险且不可重放</span></div><div class="mcp-tool-list" id="mcpToolList"><div class="mcp-empty">完成连通性校验后显示远端 Tool。</div></div></section>
+                    <section class="mcp-external-test-panel mcp-builtin-test-panel" id="mcpExternalTestPanel" hidden>
+                        <div class="mcp-panel-heading"><div><span class="mcp-section-kicker">SAFE READ TEST</span><h3 id="mcpExternalSelectedName">选择一个只读 Tool</h3></div><span class="mcp-panel-note">外部写 Tool 不支持直测</span></div>
+                        <p class="mcp-builtin-description" id="mcpExternalSelectedDescription">选择已启用的只读 MCP Tool 后，可以用 JSON 输入直接验证远端返回；测试会记录到 Tool 审计。</p>
+                        <label class="mcp-builtin-account">账户范围（可选）<input id="mcpExternalAccountInput" maxlength="200" placeholder="随 Tool 请求传入的账户范围上下文"></label>
+                        <label class="mcp-builtin-input-label">JSON 输入<textarea id="mcpExternalInput" spellcheck="false" rows="8">{}</textarea></label>
+                        <div class="mcp-builtin-test-actions"><button class="btn btn-primary" id="mcpExternalTestButton" type="button" onclick="testMCPTool()">测试 Tool</button><span id="mcpExternalTestStatus"></span></div>
+                        <pre class="mcp-builtin-result" id="mcpExternalResult">尚未测试</pre>
+                    </section>
+                    <section class="mcp-builtin-panel" id="mcpBuiltinPanel" hidden>
+                        <div class="mcp-panel-heading"><div><span class="mcp-section-kicker">REGISTERED CHANNEL TOOLS</span><h3>内置渠道 MCP Tools</h3></div><span class="mcp-panel-note" id="mcpBuiltinMeta">来自当前 Runtime Registry</span></div>
+                        <div class="mcp-builtin-toolbar"><input id="mcpBuiltinSearch" type="search" maxlength="120" placeholder="搜索 Tool、渠道或能力" oninput="filterBuiltinMCPTools()"><button class="btn btn-secondary" type="button" onclick="loadBuiltinMCPTools()">刷新目录</button></div>
+                        <div class="mcp-builtin-layout">
+                            <div class="mcp-builtin-tool-list" id="mcpBuiltinToolList"><div class="mcp-empty">点击“渠道 Tools”加载当前已注册的渠道能力。</div></div>
+                            <div class="mcp-builtin-test-panel"><div class="mcp-panel-heading"><div><span class="mcp-section-kicker">SAFE TOOL TEST</span><h3 id="mcpBuiltinSelectedName">选择一个 Tool</h3></div><span class="mcp-panel-note">写 Tool 仅 dry-run</span></div><p class="mcp-builtin-description" id="mcpBuiltinSelectedDescription">选择一个渠道 Tool 后，可用 JSON 输入进行测试；调用会沿用权限、账户白名单、Schema 和审计。</p><label class="mcp-builtin-account">账户范围（可选）<input id="mcpBuiltinAccountInput" maxlength="200" placeholder="用于校验当前 principal 的账户范围"></label><label class="mcp-builtin-input-label">JSON 输入<textarea id="mcpBuiltinInput" spellcheck="false" rows="9">{}</textarea></label><div class="mcp-builtin-test-actions"><button class="btn btn-primary" id="mcpBuiltinTestButton" type="button" onclick="testBuiltinMCPTool()" disabled>测试 Tool</button><span id="mcpBuiltinTestStatus"></span></div><pre class="mcp-builtin-result" id="mcpBuiltinResult">尚未测试</pre></div>
+                        </div>
+                    </section>
+                </main>
             </div>
         </section>
     </div>

@@ -8,6 +8,7 @@
         'chat-blueprint-core.js',
         'chat-blueprint-editor.js',
         'chat-skills.js',
+        'chat-mcp.js',
         'chat-creation.js',
         'chat-messages.js',
     ];

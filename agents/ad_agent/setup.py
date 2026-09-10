@@ -15,6 +15,7 @@ setup(
         "PyYAML>=6.0",
         "fastapi>=0.100.0",
         "uvicorn>=0.22.0",
+        "fastmcp>=3.4.0,<4.0.0",
     ],
     extras_require={
         "claude": [

@@ -283,6 +283,9 @@ def _mysql_schema(sql: str) -> str:
     large_columns = {
         "metadata", "content", "tags", "template_values", "input_data", "output_data", "files",
         "manifest", "evaluation_report", "report", "payload", "result", "error",
+        # External MCP schemas and validation reports are bounded by the
+        # control-plane contract, not by the 191-char index-safe fallback.
+        "input_schema", "annotations", "validation_report", "description", "last_error",
     }
     for column in large_columns:
         sql = re.sub(
@@ -291,6 +294,7 @@ def _mysql_schema(sql: str) -> str:
         )
     sql = re.sub(r"\btitle\s+VARCHAR\(191\)", "title VARCHAR(255)", sql, flags=re.IGNORECASE)
     sql = re.sub(r"\bsource_ref\s+VARCHAR\(191\)", "source_ref VARCHAR(1024)", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bendpoint\s+VARCHAR\(191\)", "endpoint VARCHAR(2048)", sql, flags=re.IGNORECASE)
     # Index prefixes are valid for character columns, not numeric columns.
     # In particular execution_event_repairs has UNIQUE(run_id, seq); blindly
     # appending ``(191)`` to ``seq`` makes the generated MySQL DDL invalid.
@@ -693,6 +697,18 @@ class MySQLStore(AdAgentStore):
                             f"UPDATE `{table}` SET tenant_id = ? WHERE `{key}` = ?",
                             (tenant_id, str(row[key])),
                         )
+        elif version == 17:
+            # The current bootstrap DDL creates these tables before the
+            # version loop. Keep the migration explicit so an older MySQL
+            # database records the MCP control-plane contract as well.
+            conn.executescript(_mysql_schema(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope
+                    ON mcp_servers(tenant_id, status, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_mcp_tools_server
+                    ON mcp_tools(tenant_id, server_id, status, updated_at);
+                """
+            ))
 
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,

@@ -20,6 +20,8 @@
             document.getElementById('scheduleOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('memoryOverlay')?.classList.remove('active');
             document.getElementById('memoryOverlay')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('mcpOverlay')?.classList.remove('active');
+            document.getElementById('mcpOverlay')?.setAttribute('aria-hidden', 'true');
             if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
             monitoringRefreshTimer = null;
         }
@@ -561,4 +563,3 @@
             document.getElementById('memoryOverlay')?.classList.remove('active');
             document.getElementById('memoryOverlay')?.setAttribute('aria-hidden', 'true');
         }
-
