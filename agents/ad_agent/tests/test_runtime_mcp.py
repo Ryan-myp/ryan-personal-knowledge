@@ -75,6 +75,42 @@ def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
         runtime.close(wait=True)
 
 
+def test_runtime_mcp_server_uses_principal_scoped_mode_for_write_guard():
+    runtime = AgentRuntime(require_llm=False, features=[])
+    definition = ToolDefinition(
+        name="test_channel_create",
+        skill="test-capability",
+        namespace="test-channel",
+        description="Test channel create",
+        input_schema=ToolSchema(type="object", required=["name"], properties={"name": {"type": "string"}}),
+        action="create",
+        resource_type="campaign",
+        risk_level=RiskLevel.HIGH,
+        effect_class=ToolEffect.WRITE,
+        replay_policy=ReplayPolicy.UNSAFE,
+        required_permissions=["ads.plan"],
+    )
+    runtime.registry.register(definition, _NeverCalledHandler())
+    principal = RequestPrincipal(
+        user_id="operator", tenant_id="tenant-a", permissions=frozenset({"ads.plan"}),
+    )
+    runtime.set_execution_mode("live", tenant_id="tenant-a", user_id="operator")
+    gateway = RuntimeMCPServers(lambda: runtime, lambda *_args, **_kwargs: principal)
+    try:
+        assert gateway.list_servers(runtime, principal)[0]["execution_mode"] == "live"
+        try:
+            gateway.test_tool(
+                "channel-test_channel", "test_channel_create", runtime, principal,
+                {"name": "must-not-run"},
+            )
+        except PermissionError as exc:
+            assert "当前为 live 模式" in str(exc)
+        else:
+            raise AssertionError("live scoped mode must block direct MCP write tests")
+    finally:
+        runtime.close(wait=True)
+
+
 def test_runtime_mcp_server_streamable_http_starts_lifespan_and_calls_tool(monkeypatch):
     """The mounted protocol endpoint must initialize FastMCP's session manager."""
     monkeypatch.setenv("AD_AGENT_MCP_CHANNELS_ENABLED", "1")

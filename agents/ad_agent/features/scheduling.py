@@ -380,8 +380,6 @@ class SchedulingFeature:
             missing.append("instruction")
         if not platforms:
             missing.append("platform")
-        if not selected_account:
-            missing.append("account")
         if not missing:
             preflight = services.preflight_scheduled_prompt(
                 prompt, session_id=session_id, platforms=platforms,

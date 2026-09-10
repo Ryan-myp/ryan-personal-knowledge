@@ -198,7 +198,11 @@ class DynamicToolSelector:
             selection.expert_knowledge = "\n\n".join(
                 part for part in (selection.expert_knowledge, triggered_context) if part
             )[:6000]
-        managed_context = self._managed_skill_context(user_input, tenant_id=tenant_id)
+        managed_context = self._managed_skill_context(
+            user_input,
+            tenant_id=tenant_id,
+            skill_refs=self._associated_skill_refs(selection.selected_tools),
+        )
         if managed_context:
             selection.expert_knowledge = "\n\n".join(
                 part for part in (selection.expert_knowledge, managed_context) if part
@@ -209,6 +213,18 @@ class DynamicToolSelector:
             "namespaces": list(selection.namespaces),
             "knowledge": knowledge,
         }
+
+    @staticmethod
+    def _associated_skill_refs(tools: List[ToolDefinition]) -> set[str]:
+        """Return explicit Skill bindings without inferring names from Tools."""
+        refs: set[str] = set()
+        for tool in tools:
+            refs.update(
+                str(item).strip()
+                for item in (getattr(tool, "skill_refs", None) or [])
+                if str(item).strip()
+            )
+        return refs
 
     def _triggered_skill_context(
         self, user_input: str, max_chars: int = 3600
@@ -254,6 +270,7 @@ class DynamicToolSelector:
         user_input: str,
         max_chars: int = 6000,
         tenant_id: str = "default",
+        skill_refs: Optional[set[str]] = None,
     ) -> str:
         """Build bounded, clearly non-executable context from managed Skills."""
         tenant = str(tenant_id or "default")
@@ -262,7 +279,17 @@ class DynamicToolSelector:
         if not context_skills:
             return ""
         sections: list[str] = []
+        requested_refs = {
+            str(item).strip() for item in (skill_refs or set()) if str(item).strip()
+        }
         for name, skill in sorted(context_skills.items()):
+            # An explicit binding narrows advisory context. With no binding
+            # the tenant-wide context remains available; either path cannot
+            # add Tools, permissions, credentials or account scope.
+            if requested_refs and name not in requested_refs and str(
+                getattr(skill, "version", "") or ""
+            ) not in requested_refs:
+                continue
             markdown = str(getattr(skill, "raw_markdown", "") or "")
             description = str(getattr(skill, "description", "") or "")
             if not markdown and not description:
@@ -596,6 +623,15 @@ class DynamicToolSelector:
                     self._format_knowledge(knowledge),
                 ) if part
             )[:4000]
+        managed_context = self._managed_skill_context(
+            user_input,
+            tenant_id=str(tenant_id or "default"),
+            skill_refs=self._associated_skill_refs(selection.selected_tools),
+        )
+        if managed_context:
+            selection.expert_knowledge = "\n\n".join(
+                part for part in (selection.expert_knowledge, managed_context) if part
+            )[:6000]
 
         return {
             "selected_tools": selection.selected_tools,

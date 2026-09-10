@@ -86,7 +86,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 17
+    SCHEMA_VERSION = 18
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -403,6 +403,16 @@ class AdAgentStore:
         description TEXT NOT NULL DEFAULT '',
         input_schema TEXT NOT NULL DEFAULT '{}',
         annotations TEXT NOT NULL DEFAULT '{}',
+        intent_types TEXT NOT NULL DEFAULT '[]',
+        intent_aliases TEXT NOT NULL DEFAULT '[]',
+        skill_refs TEXT NOT NULL DEFAULT '[]',
+        action TEXT NOT NULL DEFAULT 'invoke',
+        resource_type TEXT NOT NULL DEFAULT 'mcp_invocation',
+        resource_id_field TEXT,
+        readback_tool TEXT,
+        idempotency_key_field TEXT,
+        required_permissions TEXT NOT NULL DEFAULT '[]',
+        traits TEXT NOT NULL DEFAULT '["external", "mcp"]',
         status TEXT NOT NULL DEFAULT 'discovered',
         enabled INTEGER NOT NULL DEFAULT 0,
         validation_status TEXT NOT NULL DEFAULT 'pending',
@@ -897,6 +907,20 @@ class AdAgentStore:
                 "CREATE INDEX IF NOT EXISTS idx_mcp_tools_server "
                 "ON mcp_tools(tenant_id, server_id, status, updated_at DESC)"
             )
+        elif version == 18:
+            for column, definition in {
+                "intent_types": "TEXT NOT NULL DEFAULT '[]'",
+                "intent_aliases": "TEXT NOT NULL DEFAULT '[]'",
+                "skill_refs": "TEXT NOT NULL DEFAULT '[]'",
+                "action": "TEXT NOT NULL DEFAULT 'invoke'",
+                "resource_type": "TEXT NOT NULL DEFAULT 'mcp_invocation'",
+                "resource_id_field": "TEXT",
+                "readback_tool": "TEXT",
+                "idempotency_key_field": "TEXT",
+                "required_permissions": "TEXT NOT NULL DEFAULT '[]'",
+                "traits": "TEXT NOT NULL DEFAULT '[\"external\", \"mcp\"]'",
+            }.items():
+                cls._add_column_if_missing(conn, "mcp_tools", column, definition)
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -3229,12 +3253,15 @@ class AdAgentStore:
         if not row:
             return None
         value = dict(row)
-        for key in ("validation_report", "input_schema", "annotations"):
+        for key in (
+            "validation_report", "input_schema", "annotations", "intent_types",
+            "intent_aliases", "skill_refs", "required_permissions", "traits",
+        ):
             if isinstance(value.get(key), str):
                 try:
                     value[key] = json.loads(value[key] or "{}")
                 except (TypeError, ValueError):
-                    value[key] = {}
+                    value[key] = {} if key in {"validation_report", "input_schema", "annotations"} else []
         for key in ("enabled",):
             value[key] = bool(value.get(key))
         return value
@@ -3345,14 +3372,27 @@ class AdAgentStore:
             else:
                 conn.execute(
                     """INSERT INTO mcp_tools
-                       (tool_id, server_id, tenant_id, remote_name, title, description,
-                        input_schema, annotations, status, enabled, validation_status,
+                    (tool_id, server_id, tenant_id, remote_name, title, description,
+                        input_schema, annotations, intent_types, intent_aliases,
+                        skill_refs, action, resource_type, resource_id_field,
+                        readback_tool, idempotency_key_field, required_permissions,
+                        traits, status, enabled, validation_status,
                         created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'discovered', 0, ?, ?, ?)""",
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                               'discovered', 0, ?, ?, ?)""",
                     (
                         str(data["tool_id"]), str(data["server_id"]), str(data["tenant_id"]),
                         str(data["remote_name"]), str(data.get("title") or ""),
                         str(data.get("description") or ""), encoded_schema, encoded_annotations,
+                        json.dumps(data.get("intent_types") or [], ensure_ascii=False),
+                        json.dumps(data.get("intent_aliases") or [], ensure_ascii=False),
+                        json.dumps(data.get("skill_refs") or [], ensure_ascii=False),
+                        str(data.get("action") or "invoke"),
+                        str(data.get("resource_type") or "mcp_invocation"),
+                        data.get("resource_id_field"), data.get("readback_tool"),
+                        data.get("idempotency_key_field"),
+                        json.dumps(data.get("required_permissions") or [], ensure_ascii=False),
+                        json.dumps(data.get("traits") or ["external", "mcp"], ensure_ascii=False),
                         str(data.get("validation_status") or "pending"), now, now,
                     ),
                 )
@@ -3385,12 +3425,25 @@ class AdAgentStore:
             return self._mcp_tool_decode(row)
 
     def update_mcp_tool(self, tool_id: str, tenant_id: str, data: dict[str, Any]) -> Optional[dict]:
-        allowed = {"status", "enabled", "validation_status", "last_error"}
+        allowed = {
+            "status", "enabled", "validation_status", "last_error",
+            "intent_types", "intent_aliases", "skill_refs", "action",
+            "resource_type", "resource_id_field", "readback_tool",
+            "idempotency_key_field", "required_permissions", "traits",
+        }
         updates = {key: value for key, value in data.items() if key in allowed}
         if not updates:
             return self.get_mcp_tool(tool_id, tenant_id)
         if "enabled" in updates:
             updates["enabled"] = int(bool(updates["enabled"]))
+        for key in (
+            "intent_types", "intent_aliases", "skill_refs",
+            "required_permissions", "traits",
+        ):
+            if key in updates:
+                updates[key] = json.dumps(
+                    updates[key] or [], ensure_ascii=False, sort_keys=True
+                )
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         assignments = ", ".join(f"{key} = ?" for key in updates)
         values = list(updates.values()) + [str(tenant_id), str(tool_id)]

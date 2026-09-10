@@ -166,10 +166,11 @@ runtime.register_capability(capability)
 
 页面顶部的“执行模式”面板可以切换当前 principal 的 `dry_run` / `live` 模式；该选择不修改
 `config.yaml`，而是按 tenant/user 通过 `PersistenceBackend` 持久化，重启服务后仍保持。
-切换 live 需要当前身份同时拥有 `ads.plan`、
-`ads.write`，并满足 `AD_AGENT_ENABLE_LIVE=1`、`allow_live_writes: true` 和非只读配置。
-模式切换本身不会调用广告平台 API；live 写操作仍必须显式账户、命中测试白名单，并携带
-当前计划的二次确认信息。
+切换面板只需要当前身份拥有 `ads.plan`，并将模式按 tenant/user 隔离持久化；这一步不会授予
+写权限，也不会调用广告平台 API。实际 live 写操作仍必须同时满足 `ads.write`、
+`AD_AGENT_ENABLE_LIVE=1`、`allow_live_writes: true`、非只读配置、显式账户、测试白名单、
+Tool 批准清单和当前计划的二次确认信息。若这些条件未满足，模式可以显示为 live，但写 Tool
+会在统一 Runtime 执行门禁处被拒绝，并记录原因。
 
 ### 异步任务与身份、权限和恢复边界
 

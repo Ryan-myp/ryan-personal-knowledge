@@ -165,6 +165,51 @@ def test_health_is_safe_and_does_not_require_api_key(fake_server, monkeypatch):
     assert payload["live_mode_reason"] == "服务未开启 live 环境开关"
 
 
+def test_execution_mode_read_uses_authenticated_principal_scope(fake_server, monkeypatch):
+    fake_server.get_execution_mode = lambda tenant_id=None, user_id=None: (
+        "live" if (tenant_id, user_id) == ("tenant-a", "operator") else "dry_run"
+    )
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "operator-key": {
+                "user_id": "operator",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan"],
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/settings/execution-mode", headers={"X-API-Key": "operator-key"}
+        )
+    assert response.status_code == 200
+    assert response.json()["mode"] == "live"
+    assert response.json()["live_mode_reason"] == "服务未开启 live 环境开关"
+
+
+def test_execution_mode_read_reports_principal_live_permission_gap(fake_server, monkeypatch):
+    fake_server.allow_live_writes = True
+    monkeypatch.setenv("AD_AGENT_ENABLE_LIVE", "1")
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "plan-key": {
+                "user_id": "planner",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan"],
+            }
+        }),
+    )
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/settings/execution-mode", headers={"X-API-Key": "plan-key"}
+        )
+    assert response.status_code == 200
+    assert response.json()["live_mode_available"] is False
+    assert response.json()["live_mode_reason"] == "当前身份缺少 live 执行权限：ads.write"
+
+
 def test_readiness_exposes_model_and_runtime_gate_without_provider_calls(fake_server):
     fake_server.registry.list_all = lambda: [object()]
     with TestClient(api_server.app) as client:
@@ -259,7 +304,7 @@ def test_task_recovery_api_enforces_proof_permission_and_tenant_scope(
     assert fake_server.recovery_calls[-1][1]["tenant_id"] == "tenant-b"
 
 
-def test_execution_mode_live_requires_write_permission_and_deployment_gate(
+def test_execution_mode_switch_does_not_grant_live_write_permission(
     monkeypatch, fake_server
 ):
     fake_server.allow_live_writes = True
@@ -280,20 +325,23 @@ def test_execution_mode_live_requires_write_permission_and_deployment_gate(
         }),
     )
     with TestClient(api_server.app) as client:
-        missing_permission = client.post(
+        planner_can_select_live = client.post(
             "/settings/execution-mode",
             headers={"X-API-Key": "plan-key"},
             json={"mode": "live"},
         )
-        deployment_disabled = client.post(
+        writer_can_select_live = client.post(
             "/settings/execution-mode",
             headers={"X-API-Key": "write-key"},
             json={"mode": "live"},
         )
-    assert missing_permission.status_code == 403
-    assert deployment_disabled.status_code == 409
-    assert deployment_disabled.json()["detail"] == "服务未开启 live 环境开关"
-    assert fake_server.execution_mode == "dry_run"
+    assert planner_can_select_live.status_code == 200
+    assert planner_can_select_live.json()["mode"] == "live"
+    assert planner_can_select_live.json()["live_mode_available"] is False
+    assert planner_can_select_live.json()["live_mode_reason"] == "服务未开启 live 环境开关"
+    assert writer_can_select_live.status_code == 200
+    assert writer_can_select_live.json()["mode"] == "live"
+    assert fake_server.execution_mode == "live"
 
 
 def test_execution_mode_can_switch_live_then_return_to_dry_run(monkeypatch, fake_server):
@@ -390,7 +438,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "knowledge-table-wrap", "knowledge-task", "knowledge-render-v3",
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
         "executionModeSelect", "/settings/execution-mode", "live_mode_available",
-        "live_mode_reason", "应用模式", "live · 受控执行",
+        "live_mode_reason", "应用模式", "live · 受控执行", "handleWorkspaceModeChange",
         "系统运维", "systemOpsMenu", "toggleSystemOpsMenu", "运行监控", "/monitoring/overview", "monitoringTaskBars",
         "monitoringLeaseList", "Tool 调用审计", "当前实例",
         "sidebar > .new-chat-btn", "nav-icon", "blueprintOverlay",

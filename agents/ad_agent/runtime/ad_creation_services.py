@@ -1313,16 +1313,27 @@ class AdCreationServicesMixin:
                 "platforms": list(plan),
                 "account_candidates": account_values[:10],
             }
-        if not account_values:
+        matched_tools = [
+            definition for definitions in plan.values() for definition in definitions
+        ]
+        # Account scope is required by a Tool contract, not by the generic
+        # scheduling protocol. This keeps an account-less MCP/reporting task
+        # schedulable while preserving the advertising safety boundary for
+        # Provider Tools that declare an account field.
+        account_fields = {"account_id", "ad_account_id", "advertiser_id", "customer_id"}
+        account_scoped = any(
+            account_fields.intersection(
+                set((getattr(getattr(definition, "input_schema", None), "properties", {}) or {}).keys())
+            )
+            for definition in matched_tools
+        )
+        if account_scoped and not account_values:
             return {
                 "status": "needs_input", "missing": ["account"],
                 "reason": "请明确要使用的广告账户，并确保当前身份有该账户权限。",
                 "intent_type": candidate.intent_type,
                 "platforms": list(plan),
             }
-        matched_tools = [
-            definition for definitions in plan.values() for definition in definitions
-        ]
         permission_errors = []
         for definition in matched_tools:
             error = self._check_tool_permissions(definition, permissions)
@@ -1337,7 +1348,7 @@ class AdCreationServicesMixin:
             }
         write_tools = [definition for definition in matched_tools if definition.is_write_tool]
         account_errors = []
-        if account_scope is not None or self.enforce_account_scope:
+        if account_values and (account_scope is not None or self.enforce_account_scope):
             for platform in plan:
                 platform_account = account_values[0]
                 allowed, account_error = self._validate_account_with_principal(

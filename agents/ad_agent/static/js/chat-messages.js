@@ -431,7 +431,7 @@
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
                     <h1 class="welcome-title">把投放问题，交给一个懂执行的 Agent。</h1>
-                    <p class="welcome-desc">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
+                    <p class="welcome-desc" id="welcomeModeDescription">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
 
                     <div class="feature-grid">
                         <div class="feature-card" onclick="setInput('帮我列出 Meta 账户')">

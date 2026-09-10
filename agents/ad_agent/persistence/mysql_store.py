@@ -286,6 +286,7 @@ def _mysql_schema(sql: str) -> str:
         # External MCP schemas and validation reports are bounded by the
         # control-plane contract, not by the 191-char index-safe fallback.
         "input_schema", "annotations", "validation_report", "description", "last_error",
+        "intent_types", "intent_aliases", "skill_refs", "required_permissions", "traits",
     }
     for column in large_columns:
         sql = re.sub(
@@ -709,6 +710,20 @@ class MySQLStore(AdAgentStore):
                     ON mcp_tools(tenant_id, server_id, status, updated_at);
                 """
             ))
+        elif version == 18:
+            for column, definition in {
+                "intent_types": "LONGTEXT NOT NULL",
+                "intent_aliases": "LONGTEXT NOT NULL",
+                "skill_refs": "LONGTEXT NOT NULL",
+                "action": "VARCHAR(64) NOT NULL DEFAULT 'invoke'",
+                "resource_type": "VARCHAR(191) NOT NULL DEFAULT 'mcp_invocation'",
+                "resource_id_field": "VARCHAR(191)",
+                "readback_tool": "VARCHAR(255)",
+                "idempotency_key_field": "VARCHAR(191)",
+                "required_permissions": "LONGTEXT NOT NULL",
+                "traits": "LONGTEXT NOT NULL",
+            }.items():
+                self._add_mysql_column_if_missing(conn, "mcp_tools", column, definition)
 
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,

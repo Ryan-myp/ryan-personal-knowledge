@@ -323,9 +323,15 @@ def _init_runtime():
         # register an MCP endpoint or executable handler.
         global mcp_manager
         mcp_manager = MCPServerManager(store)
-        registered_mcp_tools = mcp_manager.sync_tenant(
+        registered_mcp_tools = mcp_manager.sync_tenant_if_changed(
             os.environ.get("AD_AGENT_SERVICE_TENANT", "default"), runtime
         )
+        if runtime.task_executor is not None:
+            runtime.task_executor.set_before_execute_hook(
+                lambda context: mcp_manager.sync_tenant_if_changed(
+                    context.tenant_id, runtime
+                )
+            )
         runtime_mcp_count = runtime_mcp_servers.refresh(runtime) if runtime_mcp_servers else 0
 
         print(f"\n📊 服务状态:")
@@ -586,6 +592,16 @@ def _live_mode_unavailable_reason() -> Optional[str]:
     return None
 
 
+def _principal_live_mode_unavailable_reason(principal: RequestPrincipal) -> Optional[str]:
+    """Add the authenticated principal's live permission gate to the status."""
+    deployment_reason = _live_mode_unavailable_reason()
+    if deployment_reason:
+        return deployment_reason
+    if "ads.write" not in principal.permissions:
+        return "当前身份缺少 live 执行权限：ads.write"
+    return None
+
+
 def _principal_execution_mode(principal: RequestPrincipal) -> str:
     """Resolve scoped mode while keeping lightweight embedding fakes compatible."""
     if runtime is None:
@@ -611,6 +627,25 @@ def _set_principal_execution_mode(principal: RequestPrincipal, mode: str) -> Non
         setter(mode)
 
 
+@app.get("/settings/execution-mode", tags=["settings"])
+async def get_execution_mode(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Return the authenticated principal's current mode and live gates."""
+    if not runtime:
+        raise HTTPException(status_code=503, detail="服务未初始化")
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.plan")
+    live_reason = _principal_live_mode_unavailable_reason(principal)
+    return {
+        "mode": _principal_execution_mode(principal),
+        "execution_mode_options": ["dry_run", "live"],
+        "live_mode_available": live_reason is None,
+        "live_mode_reason": live_reason,
+    }
+
+
 @app.post("/settings/execution-mode", tags=["settings"])
 async def change_execution_mode(
     request: ExecutionModeRequest,
@@ -630,16 +665,16 @@ async def change_execution_mode(
     if mode not in {"dry_run", "live"}:
         raise HTTPException(status_code=422, detail="执行模式只能是 dry_run 或 live")
     _require_principal_permission(principal, "ads.plan")
-    if mode == "live":
-        _require_principal_permission(principal, "ads.write")
-        reason = _live_mode_unavailable_reason()
-        if reason:
-            raise HTTPException(status_code=409, detail=reason)
+    # Selecting live is a scoped execution preference, not a grant of
+    # mutation authority.  The actual write path still requires ads.write
+    # plus every deployment, account, Tool and confirmation gate. Keeping
+    # those checks at execution time lets a planner switch the mode here
+    # without making the UI itself an authorization boundary.
     try:
         await run_in_threadpool(_set_principal_execution_mode, principal, mode)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    live_reason = _live_mode_unavailable_reason()
+    live_reason = _principal_live_mode_unavailable_reason(principal)
     return {
         "mode": _principal_execution_mode(principal),
         "execution_mode_options": ["dry_run", "live"],
@@ -648,7 +683,10 @@ async def change_execution_mode(
         "message": (
             "已切换到安全预览模式"
             if _principal_execution_mode(principal) == "dry_run"
-            else "已切换到受控 live 模式；写操作仍需账户、权限和二次确认"
+            else (
+                "已切换到受控 live 模式；写操作仍需账户、权限和二次确认，"
+                "并满足部署开关、ads.write、测试账户和 Tool 白名单"
+            )
         ),
     }
 
@@ -832,6 +870,7 @@ async def chat(
     try:
         principal = _authorize_request(x_api_key, http_request)
         _activate_request_tenant_skills(principal)
+        _sync_request_tenant_extensions(principal)
         if request.confirmed and not request.confirmation_payload:
             raise HTTPException(
                 status_code=400,
@@ -1743,6 +1782,21 @@ class MCPToolTestRequest(BaseModel):
     account_id: Optional[str] = Field(default=None, max_length=200)
 
 
+class MCPToolMetadataPatchRequest(BaseModel):
+    """Publisher metadata for routing/context; remote schema stays immutable."""
+
+    intent_types: Optional[list[str]] = Field(default=None, max_length=32)
+    intent_aliases: Optional[list[str]] = Field(default=None, max_length=32)
+    skill_refs: Optional[list[str]] = Field(default=None, max_length=32)
+    action: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    resource_type: Optional[str] = Field(default=None, min_length=1, max_length=191)
+    resource_id_field: Optional[str] = Field(default=None, max_length=128)
+    readback_tool: Optional[str] = Field(default=None, max_length=128)
+    idempotency_key_field: Optional[str] = Field(default=None, max_length=128)
+    required_permissions: Optional[list[str]] = Field(default=None, max_length=16)
+    traits: Optional[list[str]] = Field(default=None, max_length=32)
+
+
 @app.get("/plugins", tags=["info"])
 async def get_plugins(
     http_request: Request,
@@ -1930,7 +1984,7 @@ async def list_mcp_servers(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.read")
-    channel_servers = runtime_mcp_servers.list_servers(runtime) if runtime_mcp_servers and runtime else []
+    channel_servers = runtime_mcp_servers.list_servers(runtime, principal) if runtime_mcp_servers and runtime else []
     external_servers = _mcp_manager_or_503().list_servers(principal.tenant_id, limit)
     return {"tenant_id": principal.tenant_id, "servers": [*channel_servers, *external_servers]}
 
@@ -1959,7 +2013,7 @@ async def get_mcp_server(
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.read")
     if runtime_mcp_servers and runtime:
-        channel_server = runtime_mcp_servers.get_server(server_id, runtime)
+        channel_server = runtime_mcp_servers.get_server(server_id, runtime, principal)
         if channel_server:
             return channel_server
     result = _mcp_manager_or_503().get_server(principal.tenant_id, server_id)
@@ -2070,7 +2124,7 @@ async def _set_mcp_tool_state(
     _require_mcp_permission(principal, "mcp.manage")
     try:
         manager = _mcp_manager_or_503()
-        if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+        if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime, principal):
             raise MCPManagementError("Runtime MCP Server 的 Tool 随 Registry 自动启用，不能单独修改")
         if enabled:
             return manager.enable_tool(principal.tenant_id, server_id, tool_id, runtime)
@@ -2123,6 +2177,34 @@ async def test_mcp_tool(
         raise HTTPException(status_code=404, detail="MCP Tool not found")
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
+    except MCPManagementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@app.patch("/mcp/servers/{server_id}/tools/{tool_id}", tags=["mcp"])
+async def patch_mcp_tool_metadata(
+    server_id: str,
+    tool_id: str,
+    body: MCPToolMetadataPatchRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Edit a validated MCP Tool's declarative routing contract."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_mcp_permission(principal, "mcp.manage")
+    try:
+        manager = _mcp_manager_or_503()
+        if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime, principal):
+            raise MCPManagementError("Runtime Registry Tool 不能在管理台修改，请修改其 Capability/Skill 发布定义")
+        return await run_in_threadpool(
+            manager.update_tool_metadata,
+            principal.tenant_id, server_id, tool_id,
+            body.model_dump(exclude_unset=True), runtime,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="MCP Tool not found")
     except MCPManagementError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -2332,6 +2414,20 @@ def _activate_request_tenant_skills(principal: RequestPrincipal) -> None:
             _safe_exception_text(exc),
         )
         raise HTTPException(status_code=503, detail="租户 Skill 上下文加载失败") from exc
+
+
+def _sync_request_tenant_extensions(principal: RequestPrincipal) -> None:
+    """Refresh durable MCP declarations before a request enters Runtime."""
+    if not runtime or mcp_manager is None:
+        return
+    try:
+        mcp_manager.sync_tenant_if_changed(principal.tenant_id, runtime)
+    except Exception as exc:
+        logger.error(
+            "无法同步租户 %s 的 MCP 扩展：%s",
+            principal.tenant_id, _safe_exception_text(exc),
+        )
+        raise HTTPException(status_code=503, detail="MCP 扩展同步失败，请稍后重试") from exc
 
 
 @app.get("/skills", tags=["skills"])
@@ -2581,6 +2677,7 @@ async def chat_stream(
     try:
         principal = _authorize_request(x_api_key, http_request)
         _activate_request_tenant_skills(principal)
+        _sync_request_tenant_extensions(principal)
         if request.confirmed and not request.confirmation_payload:
             raise HTTPException(
                 status_code=400,

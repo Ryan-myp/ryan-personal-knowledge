@@ -38,14 +38,13 @@
             <strong id="workspaceModeTitle">正在读取服务模式…</strong>
             <p id="workspaceModeDescription">正在读取当前 Runtime 的执行策略。</p>
             <label class="workspace-mode-select-label" for="executionModeSelect">选择执行模式（应用模式）
-                <select id="executionModeSelect" onchange="clearWorkspaceModeStatus()" disabled>
+                <select id="executionModeSelect" onchange="handleWorkspaceModeChange()" disabled>
                     <option value="dry_run">dry-run · 安全预览</option>
                     <option value="live">live · 受控执行</option>
                 </select>
             </label>
             <div class="workspace-mode-actions">
                 <span class="workspace-mode-status" id="workspaceModeStatus" role="status" aria-live="polite"></span>
-                <button type="button" class="workspace-mode-apply" id="workspaceModeApply" onclick="applyWorkspaceMode()" disabled>立即切换</button>
             </div>
         </div>
     </section>
@@ -369,7 +368,7 @@
                 <div class="welcome-page" id="welcomePage">
                     <div class="welcome-icon">🤖</div>
                     <h1 class="welcome-title">把投放问题，交给一个懂执行的 Agent。</h1>
-                    <p class="welcome-desc">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
+                    <p class="welcome-desc" id="welcomeModeDescription">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
                     
                     <div class="feature-grid">
                         <div class="feature-card" onclick="setInput('帮我列出 Meta 账户')">
@@ -533,7 +532,15 @@
                 <aside class="mcp-server-list" id="mcpServerList"><div class="mcp-empty">打开管理台后加载 MCP Server。</div></aside>
                 <main class="mcp-detail">
                     <div class="mcp-detail-header"><div><span class="mcp-section-kicker">SERVER DECLARATION</span><h2 id="mcpDetailTitle">新建 MCP Server</h2></div><span class="mcp-status-pill" id="mcpServerStatus">草稿</span></div>
-                    <div class="mcp-managed-summary" id="mcpManagedSummary" hidden><div><span class="mcp-section-kicker">SERVER ENDPOINT</span><code id="mcpManagedEndpoint"></code></div><p id="mcpManagedExposure"></p></div>
+                    <div class="mcp-managed-summary" id="mcpManagedSummary" hidden>
+                        <div class="mcp-managed-summary-grid">
+                            <div><span class="mcp-section-kicker">SERVER ENDPOINT</span><code id="mcpManagedEndpoint"></code></div>
+                            <div><span class="mcp-section-kicker">AUTHENTICATION</span><strong id="mcpManagedAuth">服务身份认证</strong></div>
+                            <div><span class="mcp-section-kicker">EXPOSURE</span><strong id="mcpManagedExposure"></strong></div>
+                            <div><span class="mcp-section-kicker">REGISTERED TOOLS</span><strong id="mcpManagedToolCount"></strong></div>
+                        </div>
+                        <p>Runtime MCP 由当前服务的 Tool Registry 提供，渠道能力仍遵守统一权限、确认、审计和超时策略。</p>
+                    </div>
                     <div class="mcp-form-grid" id="mcpServerForm">
                         <label><span>显示名称</span><input id="mcpNameInput" maxlength="120" placeholder="例如：内部报表 MCP"></label>
                         <label class="wide"><span>Endpoint</span><input id="mcpEndpointInput" maxlength="2048" placeholder="https://mcp.example.com/mcp"></label>
@@ -552,14 +559,34 @@
                         <button class="btn btn-danger" id="mcpDeleteButton" type="button" onclick="deleteMCPServer()">移除</button>
                     </div>
                     <section class="mcp-validation-panel" id="mcpValidationPanel"><div class="mcp-panel-heading"><div><span class="mcp-section-kicker">VALIDATION REPORT</span><h3>校验结果</h3></div><span id="mcpValidationMeta">尚未运行</span></div><div class="mcp-check-grid" id="mcpCheckGrid"><div class="mcp-empty">完整校验会检查配置、握手、Tool Schema 和策略。</div></div></section>
-                    <section class="mcp-tools-panel" id="mcpToolsPanel"><div class="mcp-panel-heading"><div><span class="mcp-section-kicker">DISCOVERED TOOLS</span><h3>已发现的 MCP Tools</h3></div><span class="mcp-panel-note">非只读 Tool 默认高风险且不可重放</span></div><div class="mcp-tool-list" id="mcpToolList"><div class="mcp-empty">完成连通性校验后显示远端 Tool。</div></div></section>
-                    <section class="mcp-test-panel" id="mcpExternalTestPanel" hidden>
-                        <div class="mcp-panel-heading"><div><span class="mcp-section-kicker">SAFE TOOL TEST</span><h3 id="mcpExternalSelectedName">选择一个 Tool</h3></div><span class="mcp-panel-note">外部只读可测 · Runtime 写入为 Dry-run</span></div>
+                    <section class="mcp-tools-panel" id="mcpToolsPanel"><div class="mcp-panel-heading"><div><span class="mcp-section-kicker">DISCOVERED TOOLS</span><h3>已发现的 MCP Tools</h3></div><div class="mcp-tool-heading-actions"><label class="mcp-tool-search"><span class="sr-only">搜索 Tool</span><input id="mcpToolSearch" type="search" placeholder="搜索名称、描述或能力" autocomplete="off" oninput="filterMCPTools()"><span id="mcpToolCount"></span></label><span class="mcp-panel-note">非只读 Tool 默认高风险且不可重放</span></div></div><div class="mcp-tool-list" id="mcpToolList"><div class="mcp-empty">完成连通性校验后显示远端 Tool。</div></div></section>
+                    <section class="mcp-test-overlay" id="mcpExternalTestPanel" hidden aria-label="Tool 测试弹窗">
+                        <div class="mcp-test-panel" role="dialog" aria-modal="true" aria-labelledby="mcpExternalSelectedName" onclick="event.stopPropagation()">
+                        <div class="mcp-panel-heading"><div><span class="mcp-section-kicker">TOOL TEST CONSOLE</span><h3 id="mcpExternalSelectedName">选择一个 Tool</h3></div><div class="mcp-test-heading-actions"><span class="mcp-panel-note">只读 Tool 可直接测试 · 写 Tool 遵守当前模式与确认链路</span><button class="icon-btn mcp-test-close" type="button" onclick="hideMCPToolTestPanel()" aria-label="关闭 Tool 测试">×</button></div></div>
+                        <section class="mcp-tool-metadata-editor" id="mcpToolMetadataEditor" hidden>
+                            <div class="mcp-parameter-heading"><div><strong>能力契约</strong><span>把远端 Tool 映射到 Agent 的意图、Skill 上下文和资源语义</span></div><span class="mcp-required-note">仅修改声明，不修改远端 Schema</span></div>
+                            <div class="mcp-metadata-grid">
+                                <label><span>意图类型</span><input id="mcpIntentTypesInput" placeholder="例如 campaign_report,performance_analysis"></label>
+                                <label><span>自然语言别名</span><input id="mcpIntentAliasesInput" placeholder="用逗号分隔，例如分析投放效果"></label>
+                                <label><span>绑定 Skill</span><input id="mcpSkillRefsInput" placeholder="Skill 名称或版本，用逗号分隔"></label>
+                                <label><span>动作</span><input id="mcpActionInput" placeholder="例如 query、create、invoke"></label>
+                                <label><span>资源类型</span><input id="mcpResourceTypeInput" placeholder="例如 campaign、report"></label>
+                                <label><span>资源 ID 字段</span><input id="mcpResourceIdFieldInput" placeholder="写操作需要，例如 campaign_id"></label>
+                                <label><span>读回 Tool</span><input id="mcpReadbackToolInput" placeholder="不确定写入结果时使用的远端 Tool"></label>
+                                <label><span>幂等字段</span><input id="mcpIdempotencyFieldInput" placeholder="例如 request_id"></label>
+                                <label class="wide"><span>额外权限</span><input id="mcpPermissionsInput" placeholder="用逗号分隔；系统仍强制保留 mcp.read / mcp.write"></label>
+                            </div>
+                            <div class="mcp-test-actions"><button class="btn btn-primary" type="button" onclick="saveMCPToolMetadata()">保存能力契约</button><span id="mcpMetadataStatus"></span></div>
+                        </section>
                         <p class="mcp-test-description" id="mcpExternalSelectedDescription">选择一个已启用的 MCP Tool 后，可以用 JSON 输入验证返回；测试会沿用 Schema、权限和审计。</p>
                         <label class="mcp-test-account">账户范围（可选）<input id="mcpExternalAccountInput" maxlength="200" placeholder="随 Tool 请求传入的账户范围上下文"></label>
-                        <label class="mcp-test-input-label">JSON 输入<textarea id="mcpExternalInput" spellcheck="false" rows="8">{}</textarea></label>
-                        <div class="mcp-test-actions"><button class="btn btn-primary" id="mcpExternalTestButton" type="button" onclick="testMCPTool()">测试 Tool</button><span id="mcpExternalTestStatus"></span></div>
+                        <div class="mcp-parameter-heading"><div><strong>请求参数</strong><span id="mcpParameterSummary">按 Tool Schema 填写</span></div><span class="mcp-required-note">* 必填</span></div>
+                        <div class="mcp-parameter-form" id="mcpParameterForm"><div class="mcp-empty">选择 Tool 后加载参数。</div></div>
+                        <details class="mcp-advanced-input"><summary>高级 JSON 输入</summary><p>复杂对象、数组或未被表单覆盖的字段可以直接编辑 JSON。测试时以这里的内容为准。</p><textarea id="mcpExternalInput" spellcheck="false" rows="8">{}</textarea></details>
+                        <div class="mcp-test-inline-notice" id="mcpTestInlineNotice" role="status" aria-live="polite" hidden></div>
+                        <div class="mcp-test-actions"><button class="btn btn-primary" id="mcpExternalTestButton" type="button" onclick="testMCPTool()">点击运行</button><span id="mcpExternalTestStatus"></span></div>
                         <pre class="mcp-test-result" id="mcpExternalResult">尚未测试</pre>
+                        </div>
                     </section>
                 </main>
             </div>
@@ -643,6 +670,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20260909-frontend-split-v1" defer></script>
+    <script src="/static/js/chat.js?v=20260910-mcp-inline-error-v1" defer></script>
 </body>
 </html>

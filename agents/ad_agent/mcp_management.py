@@ -52,6 +52,9 @@ _REMOTE_TOOL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _MAX_TOOLS = 200
 _MAX_SCHEMA_BYTES = 64 * 1024
 _MAX_RESPONSE_BYTES = 1_000_000
+_FIELD_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
+_ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,63}$")
+_PERMISSION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,127}$")
 
 
 class MCPManagementError(ValueError):
@@ -373,11 +376,15 @@ class MCPHTTPClient:
 class MCPToolHandler:
     """Runtime handler for one already-validated remote MCP Tool."""
 
-    def __init__(self, client: MCPHTTPClient, server_id: str, tenant_id: str, remote_name: str):
+    def __init__(
+        self, client: MCPHTTPClient, server_id: str, tenant_id: str,
+        remote_name: str, *, write_effect: bool = False,
+    ):
         self.client = client
         self.server_id = server_id
         self.tenant_id = tenant_id
         self.remote_name = remote_name
+        self.write_effect = bool(write_effect)
 
     def execute(self, ctx: Any, input_data: dict[str, Any]) -> ToolResult:
         context_tenant = str((getattr(ctx, "metadata", {}) or {}).get("tenant_id") or "default")
@@ -386,8 +393,32 @@ class MCPToolHandler:
         try:
             result = self.client.call_tool(self.remote_name, input_data)
         except Exception as exc:
+            if self.write_effect:
+                # A timeout, connection reset, or protocol error does not
+                # prove that a remote mutation was not accepted. Preserve
+                # uncertainty so TaskExecutor/recovery UI cannot retry it as
+                # an ordinary failure.
+                return ToolResult(
+                    success=False,
+                    data={
+                        "execution_status": "unknown",
+                        "effect_state": "unknown",
+                        "requires_reconciliation": True,
+                    },
+                    error="MCP 写 Tool 调用结果未知，必须先核对远端状态",
+                )
             return ToolResult.error("MCP Tool 调用失败", detail=None)
         if bool(result.get("isError")):
+            if self.write_effect:
+                return ToolResult(
+                    success=False,
+                    data={
+                        "execution_status": "unknown",
+                        "effect_state": "unknown",
+                        "requires_reconciliation": True,
+                    },
+                    error="MCP Server 返回写操作错误，远端结果需要核对",
+                )
             return ToolResult.error("MCP Server 报告 Tool 执行失败")
         return ToolResult.ok({
             "mcp_server_id": self.server_id,
@@ -405,20 +436,46 @@ class MCPServerManager:
         self._lock = threading.RLock()
         self._clients: dict[str, MCPHTTPClient] = {}
         self._registered: dict[str, list[str]] = {}
+        self._registered_tenants: dict[str, str] = {}
+        self._server_fingerprints: dict[str, str] = {}
+        self._tenant_fingerprints: dict[str, str] = {}
 
     @staticmethod
     def _public_tool(record: Mapping[str, Any]) -> dict[str, Any]:
         value = dict(record)
         value["enabled"] = bool(value.get("enabled"))
-        for key in ("input_schema", "annotations"):
+        for key in (
+            "input_schema", "annotations", "intent_types", "intent_aliases",
+            "skill_refs", "required_permissions", "traits",
+        ):
             if isinstance(value.get(key), str):
                 try:
                     value[key] = json.loads(value[key] or "{}")
                 except (TypeError, ValueError):
+                    value[key] = {} if key in {"input_schema", "annotations"} else []
+            if key in {"input_schema", "annotations"}:
+                if not isinstance(value.get(key), dict):
                     value[key] = {}
+            elif not isinstance(value.get(key), list):
+                value[key] = []
+        if not value.get("intent_types"):
+            value["intent_types"] = [str(value.get("remote_name") or "")]
+        if not value.get("intent_aliases") and value.get("title"):
+            value["intent_aliases"] = [str(value.get("title"))]
+        if not value.get("traits"):
+            value["traits"] = ["external", "mcp"]
+        read_only = (
+            (value.get("annotations") or {}).get("readOnlyHint") is True
+            and (value.get("annotations") or {}).get("destructiveHint") is not True
+        )
+        if not value.get("required_permissions"):
+            value["required_permissions"] = ["mcp.read" if read_only else "mcp.write"]
         return {key: value.get(key) for key in (
             "tool_id", "server_id", "tenant_id", "remote_name", "title", "description",
-            "input_schema", "annotations", "status", "enabled", "validation_status",
+            "input_schema", "annotations", "intent_types", "intent_aliases", "skill_refs",
+            "action", "resource_type", "resource_id_field", "readback_tool",
+            "idempotency_key_field", "required_permissions", "traits",
+            "status", "enabled", "validation_status",
             "last_error", "created_at", "updated_at",
         )}
 
@@ -648,6 +705,106 @@ class MCPServerManager:
         self.sync_server(tenant_id, server_id, runtime)
         return self.get_server(tenant_id, server_id) or {}
 
+    def update_tool_metadata(
+        self, tenant_id: str, server_id: str, tool_id: str,
+        data: Mapping[str, Any], runtime: Any,
+    ) -> dict[str, Any]:
+        """Update publisher metadata without changing the discovered wire schema.
+
+        MCP discovery remains the source of truth for the remote input schema
+        and safety annotations. This method only edits the declarative routing
+        and advisory contract that lets a generic Tool participate in the
+        Agent's normal selection flow.
+        """
+        server = self.store.get_mcp_server(str(tenant_id or "default"), str(server_id))
+        tool = self.store.get_mcp_tool(str(tool_id), str(tenant_id or "default"))
+        if not server or not tool or str(tool.get("server_id")) != str(server_id):
+            raise KeyError(tool_id)
+        updates = dict(data or {})
+        allowed = {
+            "intent_types", "intent_aliases", "skill_refs", "action",
+            "resource_type", "resource_id_field", "readback_tool",
+            "idempotency_key_field", "required_permissions", "traits",
+        }
+        unknown = sorted(set(updates) - allowed)
+        if unknown:
+            raise MCPManagementError("不支持的 MCP Tool 元数据字段：" + ", ".join(unknown))
+
+        def string_list(key: str, *, required: bool = False, max_items: int = 32) -> list[str]:
+            value = updates.get(key, tool.get(key))
+            if value is None:
+                value = []
+            if isinstance(value, str):
+                value = [value]
+            if not isinstance(value, list) or len(value) > max_items:
+                raise MCPManagementError(f"{key} 必须是最多 {max_items} 项的字符串列表")
+            result = []
+            for item in value:
+                text = str(item or "").strip()
+                if not text or len(text) > 200:
+                    raise MCPManagementError(f"{key} 含有空值或过长项")
+                result.append(text)
+            result = list(dict.fromkeys(result))
+            if required and not result:
+                raise MCPManagementError(f"{key} 不能为空")
+            return result
+
+        intent_types = string_list("intent_types", required=True)
+        intent_aliases = string_list("intent_aliases")
+        skill_refs = string_list("skill_refs")
+        permissions = string_list("required_permissions")
+        if any(not _PERMISSION_RE.fullmatch(item) for item in permissions):
+            raise MCPManagementError("required_permissions 含有非法权限名")
+        traits = string_list("traits")
+        if "mcp" not in traits:
+            traits.append("mcp")
+        if "external" not in traits:
+            traits.append("external")
+
+        action = str(updates.get("action", tool.get("action") or "invoke")).strip().lower()
+        resource_type = str(
+            updates.get("resource_type", tool.get("resource_type") or "mcp_invocation")
+        ).strip().lower()
+        if not _ACTION_RE.fullmatch(action):
+            raise MCPManagementError("action 必须是小写扩展动作标识")
+        if not _FIELD_NAME_RE.fullmatch(resource_type):
+            raise MCPManagementError("resource_type 必须是合法标识")
+
+        def optional_field(key: str) -> Optional[str]:
+            value = updates.get(key, tool.get(key))
+            if value in (None, ""):
+                return None
+            value = str(value).strip()
+            valid = _REMOTE_TOOL_RE if key == "readback_tool" else _FIELD_NAME_RE
+            if not valid.fullmatch(value):
+                raise MCPManagementError(f"{key} 必须是合法字段名")
+            return value
+
+        resource_id_field = optional_field("resource_id_field")
+        readback_tool = optional_field("readback_tool")
+        idempotency_key_field = optional_field("idempotency_key_field")
+        if action in {"create", "update", "delete", "pause", "resume", "enable", "disable"} and not resource_id_field:
+            raise MCPManagementError("可变更动作必须声明 resource_id_field；不能使用内部请求 ID 冒充远端资源 ID")
+
+        metadata = {
+            "intent_types": intent_types,
+            "intent_aliases": intent_aliases,
+            "skill_refs": skill_refs,
+            "action": action,
+            "resource_type": resource_type,
+            "resource_id_field": resource_id_field,
+            "readback_tool": readback_tool,
+            "idempotency_key_field": idempotency_key_field,
+            "required_permissions": permissions,
+            "traits": traits,
+        }
+        updated = self.store.update_mcp_tool(str(tool_id), str(tenant_id or "default"), metadata)
+        if not updated:
+            raise KeyError(tool_id)
+        if server.get("status") == "active" and server.get("enabled"):
+            self.sync_server(str(tenant_id or "default"), str(server_id), runtime)
+        return self.get_server(str(tenant_id or "default"), str(server_id)) or {}
+
     def test_tool(
         self,
         tenant_id: str,
@@ -733,12 +890,74 @@ class MCPServerManager:
         records = self.store.list_mcp_servers(tenant_id, 200)
         active = {str(record["server_id"]) for record in records if record.get("status") == "active" and record.get("enabled")}
         for server_id in list(self._registered):
-            if server_id not in active:
+            if self._registered_tenants.get(server_id) == str(tenant_id) and server_id not in active:
                 self._unregister(server_id, runtime)
         count = 0
         for server_id in sorted(active):
+            record = next(item for item in records if str(item["server_id"]) == server_id)
+            tools = self.store.list_mcp_tools(server_id, tenant_id)
+            fingerprint = self._fingerprint(record, tools)
+            if (
+                self._registered_tenants.get(server_id) == str(tenant_id)
+                and self._server_fingerprints.get(server_id) == fingerprint
+            ):
+                count += len(self._registered.get(server_id, []))
+                continue
             count += self.sync_server(tenant_id, server_id, runtime)
+            if server_id in self._registered:
+                self._server_fingerprints[server_id] = fingerprint
+                self._registered_tenants[server_id] = str(tenant_id)
         return count
+
+    def sync_tenant_if_changed(self, tenant_id: str, runtime: Any) -> int:
+        """Refresh this process only when durable MCP metadata changed.
+
+        The fingerprint is intentionally derived from durable control-plane
+        rows, including ``updated_at``. Every instance can therefore observe a
+        change made by another instance without a broadcast channel, while a
+        normal chat request does not unregister/re-register unchanged Tools.
+        """
+        tenant = str(tenant_id or "default")
+        records = self.store.list_mcp_servers(tenant, 200)
+        parts = []
+        for record in records:
+            tools = self.store.list_mcp_tools(str(record["server_id"]), tenant)
+            parts.append(self._fingerprint(record, tools))
+        fingerprint = hashlib.sha256(
+            json.dumps(sorted(parts), ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
+        with self._lock:
+            if self._tenant_fingerprints.get(tenant) == fingerprint:
+                return 0
+            count = self.sync_tenant(tenant, runtime)
+            self._tenant_fingerprints[tenant] = fingerprint
+            return count
+
+    @staticmethod
+    def _fingerprint(record: Mapping[str, Any], tools: list[Mapping[str, Any]]) -> str:
+        payload = {
+            "server": {
+                key: record.get(key) for key in (
+                    "server_id", "tenant_id", "status", "enabled", "validation_status",
+                    "endpoint", "transport", "auth_type", "credential_ref", "auth_header",
+                    "timeout_seconds", "updated_at",
+                )
+            },
+            "tools": [
+                {
+                    key: tool.get(key) for key in (
+                        "tool_id", "remote_name", "status", "enabled", "validation_status",
+                        "updated_at", "intent_types", "intent_aliases", "skill_refs",
+                        "action", "resource_type", "resource_id_field", "readback_tool",
+                        "idempotency_key_field", "required_permissions", "traits",
+                    )
+                }
+                for tool in tools
+            ],
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()
+        ).hexdigest()
 
     def sync_server(self, tenant_id: str, server_id: str, runtime: Any) -> int:
         record = self.store.get_mcp_server(tenant_id, server_id)
@@ -765,25 +984,46 @@ class MCPServerManager:
                 schema, _ = _validate_schema(tool.get("input_schema") or {})
                 read_only = bool((tool.get("annotations") or {}).get("readOnlyHint") is True and (tool.get("annotations") or {}).get("destructiveHint") is not True)
                 public_name = _runtime_tool_name(server_id, str(tool["remote_name"]))
+                required_permissions = list(dict.fromkeys(
+                    ["mcp.read" if read_only else "mcp.write"]
+                    + list(tool.get("required_permissions") or [])
+                ))
                 definition = ToolDefinition(
                     name=public_name, skill=f"mcp:{server_id}", namespace=f"mcp:{server_id}",
                     description=f"{record.get('name')}: {tool.get('description') or tool.get('remote_name')}",
-                    input_schema=schema, action="invoke", resource_type="mcp_invocation",
-                    intent_types=[str(tool.get("remote_name"))], intent_aliases=[str(tool.get("title") or "")],
+                    input_schema=schema,
+                    action=str(tool.get("action") or "invoke"),
+                    resource_type=str(tool.get("resource_type") or "mcp_invocation"),
+                    intent_types=list(tool.get("intent_types") or [str(tool.get("remote_name"))]),
+                    intent_aliases=list(tool.get("intent_aliases") or [str(tool.get("title") or "")]),
+                    skill_refs=list(tool.get("skill_refs") or []),
                     risk_level=RiskLevel.LOW if read_only else RiskLevel.HIGH,
                     effect_class=ToolEffect.READ if read_only else ToolEffect.EXTERNAL_WRITE,
                     replay_policy=ReplayPolicy.SAFE if read_only else ReplayPolicy.UNSAFE,
                     traits=["external", "mcp"], live_support=read_only,
                     timeout_seconds=min(float(record.get("timeout_seconds") or 20.0), 120.0),
                     max_output_bytes=1_000_000,
-                    required_permissions=["mcp.read" if read_only else "mcp.write"],
-                    resource_id_field=None if read_only else "mcp_request_id",
+                    required_permissions=required_permissions,
+                    resource_id_field=tool.get("resource_id_field"),
+                    readback_tool=tool.get("readback_tool"),
+                    idempotency_key_field=tool.get("idempotency_key_field"),
                 )
-                runtime.registry.register(definition, MCPToolHandler(client, server_id, tenant_id, str(tool["remote_name"])))
+                definition.traits = list(dict.fromkeys(
+                    list(tool.get("traits") or []) + ["external", "mcp"]
+                ))
+                runtime.registry.register(
+                    definition,
+                    MCPToolHandler(
+                        client, server_id, tenant_id, str(tool["remote_name"]),
+                        write_effect=not read_only,
+                    ),
+                )
                 names.append(public_name)
             except Exception as exc:
                 logger.warning("MCP Tool %s registration failed: %s", tool.get("remote_name"), _safe_error(exc))
         self._registered[server_id] = names
+        self._registered_tenants[server_id] = str(tenant_id)
+        self._server_fingerprints[server_id] = self._fingerprint(record, self.store.list_mcp_tools(server_id, tenant_id))
         refresh = getattr(runtime, "_refresh_parser_catalog", None)
         if callable(refresh):
             refresh()
@@ -796,6 +1036,8 @@ class MCPServerManager:
             except Exception:
                 logger.warning("failed to unregister MCP Tool %s", name, exc_info=True)
         self._clients.pop(str(server_id), None)
+        self._registered_tenants.pop(str(server_id), None)
+        self._server_fingerprints.pop(str(server_id), None)
         refresh = getattr(runtime, "_refresh_parser_catalog", None)
         if callable(refresh):
             refresh()

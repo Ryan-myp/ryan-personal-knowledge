@@ -116,6 +116,10 @@ class ToolDefinition:
     # may use them for constrained offline parsing, but never invents a
     # integration or business vocabulary of its own.
     intent_aliases: list[str] = field(default_factory=list)
+    # Optional advisory Skill bindings published by the Tool owner. These
+    # bindings narrow which managed Skill packages are loaded as context; they
+    # never grant execution permission and never turn a Skill into a Tool.
+    skill_refs: list[str] = field(default_factory=list)
     # Publisher-owned routing predicates. A Tool can publish a conditional
     # creation-chain membership without adding an integration branch to Router.
     # Each rule is JSON-serializable and is evaluated against ParsedIntent and
@@ -150,6 +154,11 @@ class ToolDefinition:
     # the write Tool name. This is especially important when an integration has
     # multiple get variants for the same logical resource.
     readback_tool: Optional[str] = None
+    # If the remote system accepts a caller-supplied idempotency field, the
+    # Tool publisher may declare it. Runtime treats this as contract metadata;
+    # it never invents a remote field or uses an internal request ID as a
+    # remote resource identifier.
+    idempotency_key_field: Optional[str] = None
     # Version metadata is descriptive contract data, not routing logic. An
     # integration can publish a new adapter contract while keeping the stable
     # Tool name; Runtime and Router do not need an integration-specific
@@ -212,6 +221,8 @@ class ToolDefinition:
             )
         if self.readback_tool is not None:
             self.readback_tool = str(self.readback_tool).strip() or None
+        if self.idempotency_key_field is not None:
+            self.idempotency_key_field = str(self.idempotency_key_field).strip() or None
         if self.result_items_key is not None:
             self.result_items_key = str(self.result_items_key).strip() or None
         self.result_id_fields = list(dict.fromkeys(
@@ -228,6 +239,9 @@ class ToolDefinition:
         self.intent_types = list(dict.fromkeys(str(item) for item in self.intent_types))
         self.intent_aliases = list(dict.fromkeys(
             str(item).strip() for item in self.intent_aliases if str(item).strip()
+        ))
+        self.skill_refs = list(dict.fromkeys(
+            str(item).strip() for item in self.skill_refs if str(item).strip()
         ))
 
     def routing_metadata_errors(self) -> list[str]:
@@ -273,6 +287,7 @@ class ToolDefinition:
             "parent_resource_type": self.parent_resource_type,
             "intent_types": list(self.intent_types),
             "intent_aliases": list(self.intent_aliases),
+            "skill_refs": list(self.skill_refs),
             "activation_rules": [dict(rule) for rule in self.activation_rules],
             "risk_level": self.risk_level.value,
             "effect_class": self.effect_class.value, "replay_policy": self.replay_policy.value,
@@ -283,6 +298,7 @@ class ToolDefinition:
             "resource_id_field": self.resource_id_field,
             "parent_resource_id_field": self.parent_resource_id_field,
             "readback_tool": self.readback_tool,
+            "idempotency_key_field": self.idempotency_key_field,
             "contract_version": self.contract_version,
             "integration_api_version": self.integration_api_version,
             "result_items_key": self.result_items_key,

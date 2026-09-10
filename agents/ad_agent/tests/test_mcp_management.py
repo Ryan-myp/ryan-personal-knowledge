@@ -83,7 +83,22 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
             "tenant-a", created["server_id"], validated["tools"][0]["tool_id"], runtime
         )
         assert enabled["tools"][0]["enabled"] is True
+        configured = manager.update_tool_metadata(
+            "tenant-a", created["server_id"], validated["tools"][0]["tool_id"],
+            {
+                "intent_types": ["campaign_report"],
+                "intent_aliases": ["分析 Campaign 表现"],
+                "skill_refs": ["reporting-sop"],
+                "action": "query",
+                "resource_type": "campaign_report",
+                "required_permissions": ["ads.read"],
+            }, runtime,
+        )
+        assert configured["tools"][0]["intent_types"] == ["campaign_report"]
+        assert configured["tools"][0]["skill_refs"] == ["reporting-sop"]
         tool = next(item for item in runtime.registry.list_all() if item.name.startswith("mcp__"))
+        assert tool.intent_types == ["campaign_report"]
+        assert tool.skill_refs == ["reporting-sop"]
         _definition, handler = runtime._get_registered_tool(tool.name)
         result = handler.execute(
             ToolContext(session_id="session", user_id="user", metadata={"tenant_id": "tenant-a"}),
@@ -96,7 +111,7 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
             runtime,
             RequestPrincipal(
                 user_id="operator", tenant_id="tenant-a",
-                permissions=frozenset({"mcp.read", "mcp.manage"}),
+                permissions=frozenset({"mcp.read", "mcp.manage", "ads.read"}),
             ),
             {"account": "account-1"},
         )

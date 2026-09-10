@@ -358,12 +358,10 @@
             const toggleLabel = document.getElementById('modeToggleLabel');
             const toggleIcon = document.getElementById('modeToggleIcon');
             const select = document.getElementById('executionModeSelect');
-            const apply = document.getElementById('workspaceModeApply');
             if (workspaceMode.loading) {
                 title.textContent = '正在读取服务模式…';
                 description.textContent = '正在读取当前 Runtime 的执行策略。';
                 if (select) select.disabled = true;
-                if (apply) apply.disabled = true;
                 return;
             }
             if (workspaceMode.mode === 'live') {
@@ -377,19 +375,33 @@
                 if (toggleLabel) toggleLabel.textContent = 'dry-run';
                 if (toggleIcon) toggleIcon.textContent = '◈';
             }
+            const welcomeDescription = document.getElementById('welcomeModeDescription');
+            if (welcomeDescription) welcomeDescription.textContent = workspaceMode.mode === 'live'
+                ? '从账户查询、效果分析到广告创建，当前处于受控 live 模式；写操作仍需确认并通过全部安全门禁。'
+                : '从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。';
+            const blueprintModeBadge = document.querySelector('.blueprint-dry-run-badge');
+            if (blueprintModeBadge) {
+                const live = workspaceMode.mode === 'live';
+                blueprintModeBadge.textContent = live ? 'LIVE · 确认后提交' : 'DRY-RUN';
+                blueprintModeBadge.classList.toggle('live', live);
+            }
             if (select) {
                 select.disabled = workspaceMode.saving;
-                if (select.value !== workspaceMode.mode) select.value = workspaceMode.mode || 'dry_run';
+                // Keep the user's selection visible while the request is in
+                // flight. On failure applyWorkspaceMode explicitly restores
+                // the last server-confirmed mode.
+                if (!workspaceMode.saving && select.value !== workspaceMode.mode) {
+                    select.value = workspaceMode.mode || 'dry_run';
+                }
                 const liveOption = select.querySelector('option[value="live"]');
                 if (liveOption) {
                     liveOption.disabled = false;
                     liveOption.textContent = workspaceMode.liveAvailable
                         ? 'live · 受控执行'
-                        : 'live · 受控执行（需开启）';
+                        : 'live · 受控执行（写入需授权）';
                     liveOption.title = workspaceMode.liveAvailable ? '' : (workspaceMode.liveReason || 'live 当前不可用');
                 }
             }
-            if (apply) apply.disabled = workspaceMode.saving || !workspaceMode.mode;
             const traceMode = document.getElementById('traceMode');
             if (traceMode) traceMode.textContent = workspaceMode.mode === 'live'
                 ? 'live · 受控执行，写操作需确认'
@@ -400,11 +412,15 @@
             workspaceMode.loading = true;
             renderWorkspaceMode();
             try {
-                const response = await authenticatedFetch('/health');
-                const data = await response.json();
-                workspaceMode.mode = data.execution_mode || 'dry_run';
+                const response = await authenticatedFetch('/settings/execution-mode');
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                if (!response.ok) throw new Error(data.detail || data.error || `读取失败（${response.status}）`);
+                workspaceMode.mode = data.mode || 'dry_run';
                 workspaceMode.liveAvailable = Boolean(data.live_mode_available);
                 workspaceMode.liveReason = data.live_mode_reason || '';
+                syncMCPExecutionMode(workspaceMode.mode);
             } catch (_) {
                 workspaceMode.mode = 'dry_run';
                 workspaceMode.liveAvailable = false;
@@ -428,17 +444,20 @@
             }
         }
 
+        function handleWorkspaceModeChange() {
+            clearWorkspaceModeStatus();
+            const select = document.getElementById('executionModeSelect');
+            if (!select || select.value === workspaceMode.mode || workspaceMode.saving) return;
+            // The select is the action: changing it persists the scoped mode
+            // immediately, so the next run uses the new policy without a
+            // second confirmation click.
+            applyWorkspaceMode();
+        }
+
         async function applyWorkspaceMode() {
             const select = document.getElementById('executionModeSelect');
             const status = document.getElementById('workspaceModeStatus');
             const mode = select?.value || 'dry_run';
-            if (mode === 'live' && !workspaceMode.liveAvailable) {
-                if (status) {
-                    status.textContent = workspaceMode.liveReason || 'live 当前不可用，请先完成服务端安全配置';
-                    status.className = 'workspace-mode-status error';
-                }
-                return;
-            }
             workspaceMode.saving = true;
             clearWorkspaceModeStatus();
             renderWorkspaceMode();
@@ -455,11 +474,13 @@
                 workspaceMode.mode = data.mode || mode;
                 workspaceMode.liveAvailable = Boolean(data.live_mode_available);
                 workspaceMode.liveReason = data.live_mode_reason || '';
+                syncMCPExecutionMode(workspaceMode.mode);
                 if (status) {
                     status.textContent = data.message || '已切换当前会话模式，无需重启服务';
                     status.className = 'workspace-mode-status success';
                 }
             } catch (error) {
+                if (select) select.value = workspaceMode.mode || 'dry_run';
                 if (status) {
                     status.textContent = error.message || '模式切换失败';
                     status.className = 'workspace-mode-status error';

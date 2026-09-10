@@ -58,6 +58,7 @@ class SkillToolSpec:
     resource_id_field: Optional[str] = None
     parent_resource_id_field: Optional[str] = None
     readback_tool: Optional[str] = None
+    idempotency_key_field: Optional[str] = None
     intent_types: list[str] = field(default_factory=list)
     intent_aliases: list[str] = field(default_factory=list)
     replay_policy: str = ""
@@ -265,6 +266,7 @@ class SkillContract:
             resource_id_field=optional_string("resource_id_field"),
             parent_resource_id_field=optional_string("parent_resource_id_field"),
             readback_tool=optional_string("readback_tool"),
+            idempotency_key_field=optional_string("idempotency_key_field"),
             intent_types=cls._string_list(
                 spec.get("intent_types", []), f"tool {name}.intent_types"
             ),
@@ -596,6 +598,7 @@ class BaseSkill(Skill):
                 resource_id_field=spec.resource_id_field,
                 parent_resource_id_field=spec.parent_resource_id_field,
                 readback_tool=spec.readback_tool,
+                idempotency_key_field=spec.idempotency_key_field,
                 intent_types=list(spec.intent_types),
                 intent_aliases=list(spec.intent_aliases),
                 replay_policy=self._parse_replay_policy(spec.replay_policy, spec.effect),

@@ -126,6 +126,7 @@ class TaskExecutor:
         queue_poll_interval: float = 0.5,
         redact: Optional[Callable[[Any], Any]] = None,
         task_record_factory: Optional[Callable[..., Any]] = None,
+        before_execute: Optional[Callable[[TaskExecutionContext], None]] = None,
     ):
         if max_workers <= 0 or max_queue < 0:
             raise ValueError("max_workers must be positive and max_queue cannot be negative")
@@ -148,6 +149,7 @@ class TaskExecutor:
             max_workers=self.max_workers, thread_name_prefix="ad-agent-task"
         )
         self._handlers: dict[str, Callable[[TaskExecutionContext], Any]] = {}
+        self._before_execute = before_execute
         self._handles: dict[str, _TaskHandle] = {}
         self._lock = threading.RLock()
         self._closed = False
@@ -172,6 +174,18 @@ class TaskExecutor:
             if self._closed:
                 raise TaskExecutorError("task executor is closed")
             self._handlers[kind] = handler
+
+    def set_before_execute_hook(
+        self, hook: Optional[Callable[[TaskExecutionContext], None]]
+    ) -> None:
+        """Install an embedding-owned hook before a claimed task runs.
+
+        The queue remains provider-neutral. An embedding can use this seam to
+        refresh tenant-scoped extension registries before a recovered task
+        re-enters the Runtime without teaching the queue about MCP or Skills.
+        """
+        with self._lock:
+            self._before_execute = hook
 
     def registered_kinds(self) -> tuple[str, ...]:
         with self._lock:
@@ -461,6 +475,18 @@ class TaskExecutor:
                 tenant_id=record.tenant_id, user_id=record.user_id,
                 metadata=record.metadata, cancel_event=cancel_event, deadline=deadline,
             )
+            with self._lock:
+                before_execute = self._before_execute
+            if before_execute is not None:
+                try:
+                    before_execute(context)
+                except Exception as exc:
+                    self.store.update_task(
+                        task_id, "failed",
+                        error=f"pre-execution hook failed: {type(exc).__name__}",
+                        expected_statuses=["running"],
+                    )
+                    return
             current_before_run = self.store.get_task(task_id)
             if current_before_run and current_before_run.status == "cancelling":
                 cancel_event.set()

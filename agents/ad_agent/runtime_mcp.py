@@ -49,6 +49,12 @@ def _tool_metadata(definition: Any) -> dict[str, Any]:
         "description": str(definition.description),
         "action": str(definition.action),
         "resource_type": str(definition.resource_type),
+        "intent_types": list(getattr(definition, "intent_types", []) or []),
+        "intent_aliases": list(getattr(definition, "intent_aliases", []) or []),
+        "skill_refs": list(getattr(definition, "skill_refs", []) or []),
+        "resource_id_field": getattr(definition, "resource_id_field", None),
+        "readback_tool": getattr(definition, "readback_tool", None),
+        "idempotency_key_field": getattr(definition, "idempotency_key_field", None),
         "risk_level": definition.risk_level.value,
         "effect_class": definition.effect_class.value,
         "replay_policy": definition.replay_policy.value,
@@ -56,6 +62,14 @@ def _tool_metadata(definition: Any) -> dict[str, Any]:
         "required_permissions": list(definition.required_permissions),
         "input_schema": schema,
     }
+
+
+def _execution_mode_for_principal(runtime: Any, principal: Any = None) -> str:
+    """Resolve the same tenant/user mode used by the HTTP chat path."""
+    getter = getattr(runtime, "get_execution_mode", None)
+    if callable(getter) and principal is not None:
+        return str(getter(principal.tenant_id, principal.user_id))
+    return str(getattr(runtime, "execution_mode", "dry_run"))
 
 
 class RuntimeMCPServers:
@@ -144,8 +158,9 @@ class RuntimeMCPServers:
         }
         return labels.get(server_key, server_key.replace("_", " ").title())
 
-    def list_servers(self, runtime: Any) -> list[dict[str, Any]]:
+    def list_servers(self, runtime: Any, principal: Any = None) -> list[dict[str, Any]]:
         """Return channel MCP servers using the same shape as managed servers."""
+        execution_mode = _execution_mode_for_principal(runtime, principal)
         grouped: dict[str, list[dict[str, Any]]] = {}
         for item in self.list_tools(runtime):
             grouped.setdefault(self._server_key(item["namespace"]), []).append(item)
@@ -163,12 +178,13 @@ class RuntimeMCPServers:
             "http_enabled": self.enabled,
             "source": "runtime_registry",
             "managed": True,
+            "execution_mode": execution_mode,
             "tools": [self._public_channel_tool(item) for item in items],
         } for server_key, items in sorted(grouped.items())]
 
-    def get_server(self, server_id: str, runtime: Any) -> Optional[dict[str, Any]]:
+    def get_server(self, server_id: str, runtime: Any, principal: Any = None) -> Optional[dict[str, Any]]:
         return next(
-            (server for server in self.list_servers(runtime)
+            (server for server in self.list_servers(runtime, principal)
              if str(server["server_id"]) == str(server_id)),
             None,
         )
@@ -178,7 +194,7 @@ class RuntimeMCPServers:
         input_data: Mapping[str, Any], *, account_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Run a Registry tool through the same safe management-console path."""
-        server = self.get_server(server_id, runtime)
+        server = self.get_server(server_id, runtime, principal)
         if not server:
             raise KeyError(server_id)
         tool = next(
@@ -201,6 +217,11 @@ class RuntimeMCPServers:
             "title": item["name"],
             "description": item["description"],
             "input_schema": item["input_schema"],
+            "intent_types": item.get("intent_types", []),
+            "intent_aliases": item.get("intent_aliases", []),
+            "skill_refs": item.get("skill_refs", []),
+            "action": item.get("action", "invoke"),
+            "resource_type": item.get("resource_type", "mcp_invocation"),
             "annotations": {
                 "readOnlyHint": item["effect_class"] == "read",
                 "destructiveHint": item["effect_class"] != "read",
@@ -222,8 +243,12 @@ class RuntimeMCPServers:
         )
         if missing and "admin" not in set(principal.permissions or ()):
             raise PermissionError("Tool 所需权限未授予：" + ", ".join(missing))
-        if definition.is_write_tool and not runtime.is_dry_run:
-            raise PermissionError("渠道写 Tool 测试只允许在 dry-run 模式执行")
+        execution_mode = _execution_mode_for_principal(runtime, principal)
+        if definition.is_write_tool and execution_mode != "dry_run":
+            raise PermissionError(
+                "当前为 live 模式；渠道写 Tool 不能在 MCP 管理台直接测试，"
+                "请通过 Agent 的确认、幂等和 live 执行链路调用"
+            )
         if account_id:
             validator = getattr(runtime, "_validate_account_with_principal", None)
             if callable(validator):
@@ -247,6 +272,7 @@ class RuntimeMCPServers:
                 "tenant_id": str(principal.tenant_id),
                 "mcp_source": source,
                 "mcp_tool_test": True,
+                "execution_mode": execution_mode,
             },
         )
         started_at = _now()
@@ -264,7 +290,7 @@ class RuntimeMCPServers:
         return {
             "success": bool(result.success),
             "tool": str(tool_name),
-            "mode": "dry_run" if runtime.is_dry_run else "live",
+            "mode": execution_mode,
             "data": result.data,
             "error": result.error,
         }
