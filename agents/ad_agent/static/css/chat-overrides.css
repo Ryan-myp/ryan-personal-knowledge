@@ -3824,9 +3824,12 @@
         }
 
         /* MCP control plane */
-        .mcp-overlay { position: fixed; inset: 0; z-index: 910; display: none; padding: 24px; background: rgba(4,13,22,.72); backdrop-filter: blur(10px); }
+        /* MCP follows the same workspace geometry as the other consoles.
+           The global topbar owns the 0..topbar-height band, so this layer
+           must begin below it instead of being hidden behind the bar. */
+        .mcp-overlay { position: fixed; top: var(--global-topbar-height, 60px); right: 0; bottom: 0; left: 0; z-index: 900; display: none; padding: 24px; background: rgba(4,13,22,.72); backdrop-filter: blur(10px); }
         .mcp-overlay.active { display: flex; }
-        .mcp-console { width: min(1240px,100%); height: min(900px,calc(100vh - 48px)); margin: auto; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #356078; border-radius: 20px; background: #f7fbfb; box-shadow: 0 28px 90px rgba(2,17,28,.38); }
+        .mcp-console { width: min(1240px,100%); height: min(900px,calc(100vh - var(--global-topbar-height, 60px) - 48px)); margin: auto; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #356078; border-radius: 20px; background: #f7fbfb; box-shadow: 0 28px 90px rgba(2,17,28,.38); }
         .mcp-console-header { min-height: 76px; display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 18px 24px; background: #fff; border-bottom: 1px solid #d5e3e5; }
         .mcp-console-kicker, .mcp-section-kicker { color: #0b9f91; font-size: 10px; font-weight: 700; letter-spacing: .12em; }
         .mcp-console-title { margin-top: 3px; color: #16333b; font-size: 20px; font-weight: 700; letter-spacing: -.035em; }
@@ -3906,3 +3909,4 @@
         .mcp-test-actions span { color: #0b8f83; font-size: 11px; }
         .mcp-test-result { max-height: 180px; overflow: auto; margin: 10px 0 0; padding: 10px; color: #42636a; background: #f1f6f6; border-radius: 8px; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
         @media (max-width: 900px) { .mcp-overlay { padding: 0; } .mcp-console { height: 100%; border-radius: 0; } .mcp-console-body { grid-template-columns: 1fr; grid-template-rows: 190px minmax(0,1fr); } .mcp-server-list { border-right: 0; border-bottom: 1px solid #d0e0e2; } .mcp-check-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+        @media (max-width: 760px) { .mcp-overlay { top: 56px; } }
