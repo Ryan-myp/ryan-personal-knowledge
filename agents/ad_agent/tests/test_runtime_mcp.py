@@ -6,7 +6,7 @@ from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from agents.ad_agent import AgentRuntime
-from agents.ad_agent.builtin_mcp import BuiltinChannelMCP, _current_principal
+from agents.ad_agent.runtime_mcp import RuntimeMCPServers, _current_principal
 from agents.ad_agent.core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolResult, ToolSchema,
 )
@@ -23,7 +23,7 @@ class _ReadHandler(ToolHandler):
         return ToolResult(success=True, data={"input": input_data})
 
 
-def test_builtin_mcp_wraps_registry_tool_and_keeps_writes_dry_run():
+def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
     runtime = AgentRuntime(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_create",
@@ -43,15 +43,25 @@ def test_builtin_mcp_wraps_registry_tool_and_keeps_writes_dry_run():
     principal = RequestPrincipal(
         user_id="operator", tenant_id="tenant-a", permissions=frozenset({"ads.plan"}),
     )
-    gateway = BuiltinChannelMCP(lambda: runtime, lambda *_args, **_kwargs: principal)
+    gateway = RuntimeMCPServers(lambda: runtime, lambda *_args, **_kwargs: principal)
     try:
         assert gateway.refresh(runtime) == 1
+        servers = gateway.list_servers(runtime)
+        assert [server["server_id"] for server in servers] == ["channel-test_channel"]
+        assert servers[0]["source"] == "runtime_registry"
+        assert servers[0]["endpoint"] == "/mcp/channels/test_channel/mcp"
+        tested = gateway.test_tool(
+            "channel-test_channel", "test_channel_create", runtime, principal,
+            {"name": "draft"},
+        )
+        assert tested["success"] is True
+        assert tested["data"]["simulated"] is True
 
         async def call_tool():
             token = _current_principal.set(principal)
             try:
-                tools = await gateway._mcp.list_tools()
-                result = await gateway._mcp.call_tool("test_channel_create", {"name": "draft"})
+                tools = await gateway._mcps["test_channel"].list_tools()
+                result = await gateway._mcps["test_channel"].call_tool("test_channel_create", {"name": "draft"})
                 return tools, result
             finally:
                 _current_principal.reset(token)
@@ -65,7 +75,7 @@ def test_builtin_mcp_wraps_registry_tool_and_keeps_writes_dry_run():
         runtime.close(wait=True)
 
 
-def test_builtin_mcp_streamable_http_starts_lifespan_and_calls_tool(monkeypatch):
+def test_runtime_mcp_server_streamable_http_starts_lifespan_and_calls_tool(monkeypatch):
     """The mounted protocol endpoint must initialize FastMCP's session manager."""
     monkeypatch.setenv("AD_AGENT_MCP_CHANNELS_ENABLED", "1")
     runtime = AgentRuntime(require_llm=False, features=[])
@@ -88,7 +98,7 @@ def test_builtin_mcp_streamable_http_starts_lifespan_and_calls_tool(monkeypatch)
     principal = RequestPrincipal(
         user_id="operator", tenant_id="tenant-a", permissions=frozenset({"ads.read"}),
     )
-    gateway = BuiltinChannelMCP(lambda: runtime, lambda *_args, **_kwargs: principal)
+    gateway = RuntimeMCPServers(lambda: runtime, lambda *_args, **_kwargs: principal)
     gateway.refresh(runtime)
     child = gateway.asgi_app()
 
@@ -114,7 +124,7 @@ def test_builtin_mcp_streamable_http_starts_lifespan_and_calls_tool(monkeypatch)
                 "Content-Type": "application/json",
             }
             initialize = client.post(
-                "/mcp", headers=headers, json={
+                "/test_channel/mcp", headers=headers, json={
                     "jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {
                         "protocolVersion": "2025-06-18", "capabilities": {},
@@ -122,16 +132,16 @@ def test_builtin_mcp_streamable_http_starts_lifespan_and_calls_tool(monkeypatch)
                     },
                 },
             )
-            assert rpc_response(initialize)["result"]["serverInfo"]["name"] == "ad-agent-channel-tools"
+            assert rpc_response(initialize)["result"]["serverInfo"]["name"] == "ad-agent-test_channel-tools"
 
             initialized = client.post(
-                "/mcp", headers=headers,
+                "/test_channel/mcp", headers=headers,
                 json={"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}},
             )
             assert initialized.status_code == 202
 
             called = client.post(
-                "/mcp", headers=headers, json={
+                "/test_channel/mcp", headers=headers, json={
                     "jsonrpc": "2.0", "id": 2, "method": "tools/call",
                     "params": {"name": "test_channel_read", "arguments": {"value": "ok"}},
                 },

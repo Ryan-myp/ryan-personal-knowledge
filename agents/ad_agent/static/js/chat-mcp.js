@@ -2,38 +2,11 @@
             servers: [],
             selectedId: '',
             selected: null,
-            builtinTools: [],
-            selectedBuiltin: null,
-            selectedExternalTool: null,
+            selectedTool: null,
         };
 
-        const BUILTIN_MCP_SERVER_ID = '__builtin_channel_mcp__';
-
-        function builtinMCPServer() {
-            return {
-                server_id: BUILTIN_MCP_SERVER_ID,
-                name: '内置渠道 MCP',
-                description: '由当前 Runtime Registry 提供的 Meta、Google、TikTok、DV360 渠道 Tools。',
-                status: 'active',
-                enabled: true,
-                is_builtin: true,
-                tools: mcpState.builtinTools.map(tool => ({
-                    tool_id: tool.name,
-                    remote_name: tool.name,
-                    title: tool.name,
-                    description: tool.description,
-                    annotations: {
-                        readOnlyHint: tool.effect_class === 'read',
-                        destructiveHint: tool.effect_class !== 'read',
-                    },
-                    enabled: true,
-                    validation_status: 'passed',
-                })),
-            };
-        }
-
-        function setMCPExternalSections(hidden) {
-            for (const id of ['mcpServerForm', 'mcpAuthHint', 'mcpServerActions', 'mcpValidationPanel', 'mcpToolsPanel']) {
+        function setMCPConfigSections(hidden) {
+            for (const id of ['mcpServerForm', 'mcpAuthHint', 'mcpServerActions', 'mcpValidationPanel']) {
                 const element = document.getElementById(id);
                 if (element) element.hidden = hidden;
             }
@@ -79,9 +52,9 @@
         function newMCPServer() {
             mcpState.selectedId = '';
             mcpState.selected = null;
-            setMCPExternalSections(false);
-            document.getElementById('mcpBuiltinPanel').hidden = true;
-            hideMCPExternalTestPanel();
+            setMCPConfigSections(false);
+            setMCPManagedSummary(false);
+            hideMCPToolTestPanel();
             document.getElementById('mcpDetailTitle').textContent = '新建 MCP Server';
             document.getElementById('mcpServerStatus').textContent = '草稿';
             for (const [id, value] of [['mcpNameInput', ''], ['mcpEndpointInput', ''], ['mcpCredentialRefInput', ''], ['mcpAuthHeaderInput', ''], ['mcpDescriptionInput', '']]) {
@@ -91,7 +64,7 @@
             document.getElementById('mcpAuthTypeInput').value = 'none';
             document.getElementById('mcpTimeoutInput').value = '20';
             document.getElementById('mcpToolList').innerHTML = '<div class="mcp-empty">保存并完成连通性校验后显示远端 Tool。</div>';
-            hideMCPExternalTestPanel();
+            hideMCPToolTestPanel();
             document.getElementById('mcpCheckGrid').innerHTML = '<div class="mcp-empty">完整校验会检查配置、握手、Tool Schema 和策略。</div>';
             document.getElementById('mcpValidationMeta').textContent = '尚未运行';
             document.getElementById('mcpEnableButton').disabled = true;
@@ -120,24 +93,18 @@
         async function loadMCPServers(selectId = null) {
             clearMCPNotice();
             try {
-                const [data, builtin] = await Promise.all([
-                    apiFetch('/mcp/servers?limit=200'),
-                    apiFetch('/mcp/builtin/tools'),
-                ]);
+                const data = await apiFetch('/mcp/servers?limit=200');
                 mcpState.servers = Array.isArray(data.servers) ? data.servers : [];
-                mcpState.builtinTools = Array.isArray(builtin.tools) ? builtin.tools : [];
                 renderMCPServerList();
                 const ids = new Set(mcpState.servers.map(item => String(item.server_id)));
                 const currentId = selectId || mcpState.selectedId;
-                const id = currentId === BUILTIN_MCP_SERVER_ID || ids.has(String(currentId))
+                const id = ids.has(String(currentId))
                     ? currentId
-                    : (mcpState.servers[0]?.server_id || BUILTIN_MCP_SERVER_ID);
-                if (id === BUILTIN_MCP_SERVER_ID) selectBuiltinMCPServer();
-                else if (id) selectMCPServer(id);
+                    : (mcpState.servers[0]?.server_id || '');
+                if (id) selectMCPServer(id);
                 else newMCPServer();
             } catch (error) {
                 mcpState.servers = [];
-                mcpState.builtinTools = [];
                 renderMCPServerList();
                 showMCPNotice(error.message || 'MCP Server 读取失败', true);
             }
@@ -147,19 +114,19 @@
             const list = document.getElementById('mcpServerList');
             if (!list) return;
             list.replaceChildren();
-            const servers = [builtinMCPServer(), ...mcpState.servers];
-            for (const server of servers) {
+            for (const server of mcpState.servers) {
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = `mcp-server-item${server.is_builtin ? ' mcp-server-item-builtin' : ''}${mcpState.selectedId === server.server_id ? ' active' : ''}`;
-                button.innerHTML = `<span class="mcp-server-item-mark">${server.enabled ? '●' : '○'}</span><span class="mcp-server-item-copy"><strong>${escapeHtml(server.name || server.server_id)}</strong><small>${escapeHtml(mcpStatusLabel(server.status))} · ${(server.tools || []).length} Tools</small></span><span class="mcp-server-item-arrow">›</span>`;
-                button.addEventListener('click', () => server.is_builtin ? selectBuiltinMCPServer() : selectMCPServer(server.server_id));
+                button.className = `mcp-server-item${server.source === 'runtime_registry' ? ' mcp-server-item-runtime' : ''}${mcpState.selectedId === server.server_id ? ' active' : ''}`;
+                const sourceLabel = server.source === 'runtime_registry' ? 'Runtime MCP' : '外部 MCP';
+                button.innerHTML = `<span class="mcp-server-item-mark">${server.enabled ? '●' : '○'}</span><span class="mcp-server-item-copy"><strong>${escapeHtml(server.name || server.server_id)}</strong><small>${escapeHtml(sourceLabel)} · ${escapeHtml(mcpStatusLabel(server.status))} · ${(server.tools || []).length} Tools</small></span><span class="mcp-server-item-arrow">›</span>`;
+                button.addEventListener('click', () => selectMCPServer(server.server_id));
                 list.appendChild(button);
             }
             if (!mcpState.servers.length) {
                 const empty = document.createElement('div');
                 empty.className = 'mcp-empty';
-                empty.textContent = '还没有外部 MCP Server。点击“接入 MCP Server”开始。';
+                empty.textContent = '还没有 MCP Server。点击“接入 MCP Server”开始。';
                 list.appendChild(empty);
             }
         }
@@ -169,40 +136,41 @@
             if (!server) return;
             mcpState.selectedId = server.server_id;
             mcpState.selected = server;
-            setMCPExternalSections(false);
-            document.getElementById('mcpBuiltinPanel').hidden = true;
-            hideMCPExternalTestPanel();
+            const managed = server.source === 'runtime_registry';
+            setMCPConfigSections(managed);
+            setMCPManagedSummary(managed, server);
+            hideMCPToolTestPanel();
             document.getElementById('mcpDetailTitle').textContent = server.name || server.server_id;
             document.getElementById('mcpServerStatus').textContent = mcpStatusLabel(server.status);
-            document.getElementById('mcpNameInput').value = server.name || '';
-            document.getElementById('mcpEndpointInput').value = server.endpoint || '';
-            document.getElementById('mcpAuthTypeInput').value = server.auth_type || 'none';
-            document.getElementById('mcpCredentialRefInput').value = server.credential_ref || '';
-            document.getElementById('mcpAuthHeaderInput').value = server.auth_header || '';
-            document.getElementById('mcpTimeoutInput').value = server.timeout_seconds || 20;
-            document.getElementById('mcpDescriptionInput').value = server.description || '';
-            document.getElementById('mcpEnableButton').disabled = server.validation_status !== 'passed' && !server.enabled;
-            document.getElementById('mcpEnableButton').textContent = server.enabled ? '停用 Server' : '启用 Server';
-            document.getElementById('mcpDeleteButton').disabled = false;
-            updateMCPAuthHint();
-            renderMCPValidation(server);
+            if (!managed) {
+                document.getElementById('mcpNameInput').value = server.name || '';
+                document.getElementById('mcpEndpointInput').value = server.endpoint || '';
+                document.getElementById('mcpAuthTypeInput').value = server.auth_type || 'none';
+                document.getElementById('mcpCredentialRefInput').value = server.credential_ref || '';
+                document.getElementById('mcpAuthHeaderInput').value = server.auth_header || '';
+                document.getElementById('mcpTimeoutInput').value = server.timeout_seconds || 20;
+                document.getElementById('mcpDescriptionInput').value = server.description || '';
+                document.getElementById('mcpEnableButton').disabled = server.validation_status !== 'passed' && !server.enabled;
+                document.getElementById('mcpEnableButton').textContent = server.enabled ? '停用 Server' : '启用 Server';
+                document.getElementById('mcpDeleteButton').disabled = false;
+                updateMCPAuthHint();
+                renderMCPValidation(server);
+            } else {
+                document.getElementById('mcpServerStatus').textContent = `运行中 · ${(server.tools || []).length} Tools`;
+            }
             renderMCPTools(server);
-            hideMCPExternalTestPanel();
             renderMCPServerList();
         }
 
-        function selectBuiltinMCPServer() {
-            mcpState.selectedId = BUILTIN_MCP_SERVER_ID;
-            mcpState.selected = builtinMCPServer();
-            setMCPExternalSections(true);
-            document.getElementById('mcpBuiltinPanel').hidden = false;
-            hideMCPExternalTestPanel();
-            document.getElementById('mcpDetailTitle').textContent = '内置渠道 MCP';
-            document.getElementById('mcpServerStatus').textContent = `${mcpState.builtinTools.length} 个 Tool · 已启用`;
-            document.getElementById('mcpBuiltinMeta').textContent = `${mcpState.builtinTools.length} 个 Registry Tool · ${mcpState.builtinTools.length ? '可直接测试' : '暂无 Tool'}`;
-            renderBuiltinMCPTools();
-            if (!mcpState.selectedBuiltin && mcpState.builtinTools[0]) selectBuiltinMCPTool(mcpState.builtinTools[0].name);
-            renderMCPServerList();
+        function setMCPManagedSummary(visible, server = null) {
+            const summary = document.getElementById('mcpManagedSummary');
+            if (!summary) return;
+            summary.hidden = !visible;
+            if (!visible || !server) return;
+            document.getElementById('mcpManagedEndpoint').textContent = server.endpoint || '由部署配置提供';
+            document.getElementById('mcpManagedExposure').textContent = server.http_enabled
+                ? 'HTTP MCP 已开启，可作为独立 MCP Server 被其他服务接入。'
+                : 'Agent 内部已启用；HTTP 暴露需设置 AD_AGENT_MCP_CHANNELS_ENABLED=1。';
         }
 
         function renderMCPValidation(server) {
@@ -226,18 +194,35 @@
             const list = document.getElementById('mcpToolList');
             if (!list) return;
             const tools = Array.isArray(server.tools) ? server.tools : [];
-            if (!tools.length) { list.innerHTML = '<div class="mcp-empty">完成连通性校验后显示远端 Tool。</div>'; return; }
+            if (!tools.length) {
+                list.innerHTML = server.source === 'runtime_registry'
+                    ? '<div class="mcp-empty">当前 Runtime MCP Server 暂无已注册 Tool。</div>'
+                    : '<div class="mcp-empty">完成连通性校验后显示远端 Tool。</div>';
+                return;
+            }
+            const managed = server.source === 'runtime_registry';
             list.replaceChildren();
             for (const tool of tools) {
                 const row = document.createElement('div');
                 const readOnly = tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true;
                 row.className = `mcp-tool-row ${tool.enabled ? 'enabled' : ''}`;
-                const testAction = readOnly && tool.enabled
+                const testAction = managed && tool.enabled
+                    ? `<button class="btn btn-secondary mcp-tool-test-button" type="button">${readOnly ? '测试' : 'Dry-run'}</button>`
+                    : readOnly && tool.enabled
                     ? '<button class="btn btn-secondary mcp-tool-test-button" type="button">测试</button>'
                     : readOnly ? '<span class="mcp-tool-test-note">启用后可测试</span>' : '<span class="mcp-tool-test-note">写入不可直测</span>';
-                row.innerHTML = `<div class="mcp-tool-copy"><div><strong>${escapeHtml(tool.title || tool.remote_name)}</strong><span class="mcp-tool-risk ${readOnly ? 'read' : 'write'}">${readOnly ? '只读' : '写入 · 高风险'}</span></div><small>${escapeHtml(tool.description || tool.remote_name)}</small><code>${escapeHtml(tool.remote_name)}</code></div><div class="mcp-tool-actions">${testAction}<button class="btn ${tool.enabled ? 'btn-secondary' : 'btn-primary'} mcp-tool-toggle-button" type="button">${tool.enabled ? '停用' : '启用'}</button></div>`;
-                row.querySelector('.mcp-tool-toggle-button').addEventListener('click', () => setMCPToolState(server.server_id, tool.tool_id, !tool.enabled));
-                row.querySelector('.mcp-tool-test-button')?.addEventListener('click', () => selectMCPExternalTool(server.server_id, tool.tool_id));
+                const toggleAction = managed
+                    ? '<span class="mcp-tool-test-note">Registry 已启用</span>'
+                    : `<button class="btn ${tool.enabled ? 'btn-secondary' : 'btn-primary'} mcp-tool-toggle-button" type="button">${tool.enabled ? '停用' : '启用'}</button>`;
+                row.innerHTML = `<div class="mcp-tool-copy"><div><strong>${escapeHtml(tool.title || tool.remote_name)}</strong><span class="mcp-tool-risk ${readOnly ? 'read' : 'write'}">${readOnly ? '只读' : '写入 · 高风险'}</span></div><small>${escapeHtml(tool.description || tool.remote_name)}</small><code>${escapeHtml(tool.remote_name)}</code></div><div class="mcp-tool-actions">${testAction}${toggleAction}</div>`;
+                row.querySelector('.mcp-tool-toggle-button')?.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    setMCPToolState(server.server_id, tool.tool_id, !tool.enabled);
+                });
+                row.querySelector('.mcp-tool-test-button')?.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    selectMCPTool(server.server_id, tool.tool_id);
+                });
                 list.appendChild(row);
             }
         }
@@ -296,34 +281,41 @@
             } catch (error) { showMCPNotice(error.message || 'MCP Tool 状态更新失败', true); }
         }
 
-        function hideMCPExternalTestPanel() {
+        function hideMCPToolTestPanel() {
             const panel = document.getElementById('mcpExternalTestPanel');
             if (panel) panel.hidden = true;
-            mcpState.selectedExternalTool = null;
+            mcpState.selectedTool = null;
         }
 
-        function selectMCPExternalTool(serverId, toolId) {
+        function selectMCPTool(serverId, toolId) {
             const server = mcpState.servers.find(item => String(item.server_id) === String(serverId));
             const tool = server?.tools?.find(item => String(item.tool_id) === String(toolId));
             if (!server || !tool) return;
             const readOnly = tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true;
-            if (!readOnly || !tool.enabled) {
-                showMCPNotice(readOnly ? '请先启用该 MCP Tool，再执行只读测试。' : '外部 MCP 写 Tool 不支持管理台直测。', true);
+            const managed = server.source === 'runtime_registry';
+            if (!tool.enabled) {
+                showMCPNotice('该 MCP Tool 当前未启用，不能测试。', true);
                 return;
             }
-            mcpState.selectedExternalTool = { serverId: server.server_id, toolId: tool.tool_id, tool };
+            if (!managed && !readOnly) {
+                showMCPNotice('外部 MCP 写 Tool 不支持管理台直测，请通过 Agent 的确认链路执行。', true);
+                return;
+            }
+            mcpState.selectedTool = { serverId: server.server_id, toolId: tool.tool_id, tool, managed };
             const panel = document.getElementById('mcpExternalTestPanel');
             if (!panel) return;
             panel.hidden = false;
             document.getElementById('mcpExternalSelectedName').textContent = tool.title || tool.remote_name;
-            document.getElementById('mcpExternalSelectedDescription').textContent = `${tool.description || tool.remote_name}；这是只读测试，会沿用 Runtime Schema、权限和审计。`;
+            document.getElementById('mcpExternalSelectedDescription').textContent = managed && !readOnly
+                ? `${tool.description || tool.remote_name}；这是安全 Dry-run，不会触发真实写入，会沿用 Schema、权限和审计。`
+                : `${tool.description || tool.remote_name}；这是只读测试，会沿用 Schema、权限和审计。`;
             document.getElementById('mcpExternalInput').value = JSON.stringify({}, null, 2);
             document.getElementById('mcpExternalTestStatus').textContent = '';
             document.getElementById('mcpExternalResult').textContent = '尚未测试';
         }
 
         async function testMCPTool() {
-            const selected = mcpState.selectedExternalTool;
+            const selected = mcpState.selectedTool;
             if (!selected) return;
             let input;
             try { input = JSON.parse(document.getElementById('mcpExternalInput').value || '{}'); } catch (_) { showMCPNotice('JSON 输入格式不正确。', true); return; }
@@ -339,11 +331,11 @@
                 });
                 document.getElementById('mcpExternalResult').textContent = JSON.stringify(result, null, 2);
                 status.textContent = result.success ? '测试成功' : '测试完成但 Tool 返回失败';
-                showMCPNotice(result.success ? '外部 MCP 只读 Tool 测试完成。' : '外部 MCP Tool 返回失败。', !result.success);
+                showMCPNotice(result.success ? (selected.managed && selected.tool.annotations?.readOnlyHint !== true ? 'Runtime MCP Tool Dry-run 完成。' : 'MCP Tool 只读测试完成。') : 'MCP Tool 返回失败。', !result.success);
             } catch (error) {
                 document.getElementById('mcpExternalResult').textContent = error.message || 'Tool 测试失败';
                 status.textContent = '测试失败';
-                showMCPNotice(error.message || '外部 MCP Tool 测试失败', true);
+                showMCPNotice(error.message || 'MCP Tool 测试失败', true);
             } finally { button.disabled = false; }
         }
 
@@ -355,95 +347,4 @@
                 mcpState.selectedId = '';
                 await loadMCPServers();
             } catch (error) { showMCPNotice(error.message || 'MCP Server 移除失败', true); }
-        }
-
-        function toggleBuiltinMCPPanel() {
-            if (mcpState.builtinTools.length) selectBuiltinMCPServer();
-            else loadBuiltinMCPTools().then(selectBuiltinMCPServer);
-        }
-
-        async function loadBuiltinMCPTools() {
-            try {
-                const data = await apiFetch('/mcp/builtin/tools');
-                mcpState.builtinTools = Array.isArray(data.tools) ? data.tools : [];
-                const meta = document.getElementById('mcpBuiltinMeta');
-                if (meta) meta.textContent = `${mcpState.builtinTools.length} 个 Registry Tool · ${data.enabled ? 'HTTP MCP 已开启' : 'HTTP 暴露默认关闭'}`;
-                renderBuiltinMCPTools();
-                renderMCPServerList();
-                if (!mcpState.selectedBuiltin && mcpState.builtinTools[0]) selectBuiltinMCPTool(mcpState.builtinTools[0].name);
-            } catch (error) {
-                mcpState.builtinTools = [];
-                renderBuiltinMCPTools();
-                showMCPNotice(error.message || '渠道 Tool 目录读取失败', true);
-            }
-        }
-
-        function filterBuiltinMCPTools() {
-            renderBuiltinMCPTools();
-        }
-
-        function renderBuiltinMCPTools() {
-            const list = document.getElementById('mcpBuiltinToolList');
-            if (!list) return;
-            const query = (document.getElementById('mcpBuiltinSearch')?.value || '').trim().toLowerCase();
-            const tools = mcpState.builtinTools.filter(tool => !query || `${tool.name} ${tool.namespace} ${tool.description} ${tool.action} ${tool.resource_type}`.toLowerCase().includes(query));
-            list.replaceChildren();
-            if (!tools.length) {
-                const empty = document.createElement('div');
-                empty.className = 'mcp-empty';
-                empty.textContent = query ? '没有匹配的渠道 Tool。' : '当前 Runtime 没有已注册的 Tool。';
-                list.appendChild(empty);
-                return;
-            }
-            for (const tool of tools) {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = `mcp-builtin-tool-item${mcpState.selectedBuiltin?.name === tool.name ? ' active' : ''}`;
-                const name = document.createElement('strong');
-                name.textContent = tool.name;
-                const detail = document.createElement('small');
-                detail.textContent = `${tool.namespace} · ${tool.action || 'invoke'} · ${tool.effect_class}`;
-                button.append(name, detail);
-                button.addEventListener('click', () => selectBuiltinMCPTool(tool.name));
-                list.appendChild(button);
-            }
-        }
-
-        function selectBuiltinMCPTool(toolName) {
-            const tool = mcpState.builtinTools.find(item => item.name === toolName);
-            if (!tool) return;
-            mcpState.selectedBuiltin = tool;
-            document.getElementById('mcpBuiltinSelectedName').textContent = tool.name;
-            document.getElementById('mcpBuiltinSelectedDescription').textContent = `${tool.description} 所需权限：${(tool.required_permissions || []).join(', ') || '无'}；${tool.effect_class === 'read' ? '可执行只读测试' : '写入只生成 dry-run 模拟结果'}`;
-            document.getElementById('mcpBuiltinInput').value = JSON.stringify({
-                ...(tool.input_schema?.properties ? Object.fromEntries(Object.entries(tool.input_schema.properties).filter(([, value]) => value.default !== undefined).map(([key, value]) => [key, value.default])) : {}),
-            }, null, 2);
-            document.getElementById('mcpBuiltinTestButton').disabled = false;
-            document.getElementById('mcpBuiltinTestStatus').textContent = '';
-            renderBuiltinMCPTools();
-        }
-
-        async function testBuiltinMCPTool() {
-            const tool = mcpState.selectedBuiltin;
-            if (!tool) return;
-            let input;
-            try { input = JSON.parse(document.getElementById('mcpBuiltinInput').value || '{}'); } catch (_) { showMCPNotice('JSON 输入格式不正确。', true); return; }
-            if (!input || typeof input !== 'object' || Array.isArray(input)) { showMCPNotice('JSON 输入必须是 object。', true); return; }
-            const button = document.getElementById('mcpBuiltinTestButton');
-            const status = document.getElementById('mcpBuiltinTestStatus');
-            button.disabled = true;
-            status.textContent = '测试中…';
-            try {
-                const result = await apiFetch(`/mcp/builtin/tools/${encodeURIComponent(tool.name)}/test`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ input, account_id: document.getElementById('mcpBuiltinAccountInput').value.trim() || null }),
-                });
-                document.getElementById('mcpBuiltinResult').textContent = JSON.stringify(result, null, 2);
-                status.textContent = result.success ? '测试成功' : '测试完成但 Tool 返回失败';
-                showMCPNotice(result.mode === 'dry_run' ? 'Tool 测试完成；写入能力只生成 dry-run 结果。' : 'Tool 测试完成。', !result.success);
-            } catch (error) {
-                document.getElementById('mcpBuiltinResult').textContent = error.message || 'Tool 测试失败';
-                status.textContent = '测试失败';
-                showMCPNotice(error.message || '渠道 Tool 测试失败', true);
-            } finally { button.disabled = false; }
         }

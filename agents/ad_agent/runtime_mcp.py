@@ -1,4 +1,4 @@
-"""FastMCP adapter for the already registered channel Tools.
+"""FastMCP adapter for the already registered Runtime capabilities.
 
 This is an integration adapter, not a second Agent or channel router.  Tool
 metadata and handlers always come from the Runtime Registry.  The optional
@@ -11,8 +11,10 @@ from __future__ import annotations
 import contextvars
 import logging
 import os
+import re
 import threading
 import uuid
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
 
@@ -28,7 +30,7 @@ from .persistence.models import ToolCallRecord
 
 logger = logging.getLogger(__name__)
 _current_principal: contextvars.ContextVar[Any] = contextvars.ContextVar(
-    "ad_agent_builtin_mcp_principal", default=None
+    "ad_agent_runtime_mcp_principal", default=None
 )
 
 
@@ -56,23 +58,14 @@ def _tool_metadata(definition: Any) -> dict[str, Any]:
     }
 
 
-class BuiltinChannelMCP:
-    """Expose Registry tools through FastMCP and provide safe UI invocation."""
+class RuntimeMCPServers:
+    """Publish Registry capabilities as one independently addressable MCP Server per namespace."""
 
     def __init__(self, runtime_provider: Callable[[], Any], authorize: Callable[..., Any]):
         self._runtime_provider = runtime_provider
         self._authorize = authorize
-        self._mcp = FastMCP(
-            "ad-agent-channel-tools",
-            instructions=(
-                "Channel tools published by the ad-agent Runtime Registry. "
-                "Writes remain dry-run unless the host Runtime explicitly "
-                "enables its existing live safety gates."
-            ),
-            version="1.0.0",
-            strict_input_validation=True,
-        )
-        self._registered_names: set[str] = set()
+        self._mcps: dict[str, FastMCP] = {}
+        self._mcp_apps: dict[str, Any] = {}
         self._lock = threading.RLock()
 
     @property
@@ -80,16 +73,31 @@ class BuiltinChannelMCP:
         return os.environ.get("AD_AGENT_MCP_CHANNELS_ENABLED", "0") == "1"
 
     def refresh(self, runtime: Any) -> int:
-        """Synchronize FastMCP tools from the single Runtime Registry."""
+        """Synchronize one FastMCP server per Runtime namespace."""
         with self._lock:
-            definitions = list(runtime.registry.list_all())
-            for name in list(self._registered_names):
-                self._mcp.remove_tool(name)
-            self._registered_names.clear()
-            for definition in definitions:
-                self._mcp.add_tool(self._build_function_tool(runtime, definition))
-                self._registered_names.add(str(definition.name))
-            return len(definitions)
+            definitions_by_server: dict[str, list[Any]] = {}
+            for definition in runtime.registry.list_all():
+                definitions_by_server.setdefault(self._server_key(definition.namespace), []).append(definition)
+            self._mcps.clear()
+            self._mcp_apps.clear()
+            for server_key, definitions in sorted(definitions_by_server.items()):
+                mcp = FastMCP(
+                    f"ad-agent-{server_key}-tools",
+                    instructions=(
+                        f"Tools published by the {self._display_name(server_key)} Runtime namespace. "
+                        "Writes remain dry-run unless the host Runtime explicitly enables its existing live gates."
+                    ),
+                    version="1.0.0", strict_input_validation=True,
+                )
+                names: set[str] = set()
+                for definition in definitions:
+                    mcp.add_tool(self._build_function_tool(runtime, definition))
+                    names.add(str(definition.name))
+                self._mcps[server_key] = mcp
+                self._mcp_apps[server_key] = mcp.http_app(
+                    transport="streamable-http", stateless_http=True,
+                )
+            return sum(len(items) for items in definitions_by_server.values())
 
     def _build_function_tool(self, runtime: Any, definition: Any) -> FunctionTool:
         tool_name = str(definition.name)
@@ -97,7 +105,7 @@ class BuiltinChannelMCP:
         def invoke(**kwargs: Any) -> dict[str, Any]:
             return self.invoke_for_principal(
                 runtime, _current_principal.get(), tool_name, kwargs,
-                source="builtin_mcp",
+                source="runtime_mcp_server",
             )
 
         return FunctionTool(
@@ -120,6 +128,86 @@ class BuiltinChannelMCP:
 
     def list_tools(self, runtime: Any) -> list[dict[str, Any]]:
         return [_tool_metadata(item) for item in runtime.registry.list_all()]
+
+    @staticmethod
+    def _server_key(namespace: Any) -> str:
+        value = re.sub(r"[^a-z0-9]+", "_", str(namespace or "channel").strip().lower()).strip("_")
+        return value or "channel"
+
+    @staticmethod
+    def _display_name(server_key: str) -> str:
+        labels = {
+            "google_ads": "Google Ads",
+            "meta": "Meta",
+            "tiktok": "TikTok",
+            "dv360": "DV360",
+        }
+        return labels.get(server_key, server_key.replace("_", " ").title())
+
+    def list_servers(self, runtime: Any) -> list[dict[str, Any]]:
+        """Return channel MCP servers using the same shape as managed servers."""
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for item in self.list_tools(runtime):
+            grouped.setdefault(self._server_key(item["namespace"]), []).append(item)
+        return [{
+            "server_id": f"channel-{server_key}",
+            "name": f"{self._display_name(server_key)} MCP",
+            "description": f"{self._display_name(server_key)} 渠道能力，由当前 Runtime Registry 提供。",
+            "endpoint": f"/mcp/channels/{server_key}/mcp",
+            "transport": "streamable_http",
+            "auth_type": "service",
+            # Registry-backed servers are always available to this Agent
+            # process.  HTTP exposure is a separate deployment concern.
+            "status": "active",
+            "enabled": True,
+            "http_enabled": self.enabled,
+            "source": "runtime_registry",
+            "managed": True,
+            "tools": [self._public_channel_tool(item) for item in items],
+        } for server_key, items in sorted(grouped.items())]
+
+    def get_server(self, server_id: str, runtime: Any) -> Optional[dict[str, Any]]:
+        return next(
+            (server for server in self.list_servers(runtime)
+             if str(server["server_id"]) == str(server_id)),
+            None,
+        )
+
+    def test_tool(
+        self, server_id: str, tool_id: str, runtime: Any, principal: Any,
+        input_data: Mapping[str, Any], *, account_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Run a Registry tool through the same safe management-console path."""
+        server = self.get_server(server_id, runtime)
+        if not server:
+            raise KeyError(server_id)
+        tool = next(
+            (item for item in server.get("tools", [])
+             if str(item.get("tool_id")) == str(tool_id)),
+            None,
+        )
+        if not tool:
+            raise KeyError(tool_id)
+        return self.invoke_for_principal(
+            runtime, principal, str(tool["remote_name"]), input_data,
+            source="ui_test", account_id=account_id,
+        )
+
+    @staticmethod
+    def _public_channel_tool(item: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "tool_id": item["name"],
+            "remote_name": item["name"],
+            "title": item["name"],
+            "description": item["description"],
+            "input_schema": item["input_schema"],
+            "annotations": {
+                "readOnlyHint": item["effect_class"] == "read",
+                "destructiveHint": item["effect_class"] != "read",
+            },
+            "enabled": True,
+            "validation_status": "passed",
+        }
 
     def invoke_for_principal(
         self, runtime: Any, principal: Any, tool_name: str,
@@ -204,10 +292,16 @@ class BuiltinChannelMCP:
             logger.warning("MCP Tool test audit persistence failed", exc_info=True)
 
     def asgi_app(self) -> Any:
-        child = self._mcp.http_app(
-            transport="streamable-http", stateless_http=True,
-        )
         gateway = self
+
+        @asynccontextmanager
+        async def mcp_lifespan(app: Any):
+            async with AsyncExitStack() as stack:
+                for child in list(gateway._mcp_apps.values()):
+                    await stack.enter_async_context(child.lifespan(app))
+                yield
+
+        self._mcp_lifespan = mcp_lifespan
 
         class AuthenticatedApp:
             # Starlette Mount does not automatically run a mounted app's
@@ -221,14 +315,26 @@ class BuiltinChannelMCP:
                 # A property is intentional: assigning the function directly
                 # on this class would make Python bind it as a method and add
                 # an unexpected ``self`` argument.
-                return child.lifespan
+                return gateway._mcp_lifespan
 
             async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
                 if scope.get("type") != "http":
-                    await child(scope, receive, send)
+                    await JSONResponse({"detail": "MCP 仅支持 HTTP transport"}, status_code=404)(scope, receive, send)
                     return
                 if not gateway.enabled:
-                    await JSONResponse({"detail": "内置渠道 MCP 未启用"}, status_code=404)(scope, receive, send)
+                    await JSONResponse({"detail": "Runtime MCP Server HTTP 暴露未启用"}, status_code=404)(scope, receive, send)
+                    return
+                path_parts = [part for part in str(scope.get("path") or "").split("/") if part]
+                # Depending on whether the adapter is mounted at the app
+                # root or at /mcp/channels, Starlette may preserve the mount
+                # prefix in scope["path"].  The endpoint contract is always
+                # /{server_key}/mcp, so resolve the final two segments.
+                if len(path_parts) < 2 or path_parts[-1] != "mcp":
+                    await JSONResponse({"detail": "MCP Server endpoint 不存在"}, status_code=404)(scope, receive, send)
+                    return
+                child = gateway._mcp_apps.get(path_parts[-2])
+                if child is None:
+                    await JSONResponse({"detail": "MCP Server endpoint 不存在"}, status_code=404)(scope, receive, send)
                     return
                 request = Request(scope, receive)
                 key = request.headers.get("x-api-key")
@@ -241,11 +347,14 @@ class BuiltinChannelMCP:
                     return
                 token = _current_principal.set(principal)
                 try:
-                    await child(scope, receive, send)
+                    child_scope = dict(scope)
+                    child_scope["path"] = "/mcp"
+                    child_scope["raw_path"] = b"/mcp"
+                    await child(child_scope, receive, send)
                 finally:
                     _current_principal.reset(token)
 
         return AuthenticatedApp()
 
 
-__all__ = ["BuiltinChannelMCP"]
+__all__ = ["RuntimeMCPServers"]

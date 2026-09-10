@@ -49,7 +49,7 @@ from agents.ad_agent.core.plugin_package import PluginPackageError
 from agents.ad_agent.core.memory import MEMORY_KINDS
 from agents.ad_agent.plugin_management import PluginPackageManager
 from agents.ad_agent.mcp_management import MCPManagementError, MCPServerManager
-from agents.ad_agent.builtin_mcp import BuiltinChannelMCP
+from agents.ad_agent.runtime_mcp import RuntimeMCPServers
 from agents.ad_agent.skill_management import (
     BuiltinSkillCatalog,
     ManagedSkillManager,
@@ -77,8 +77,8 @@ builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 # 全局 runtime
 runtime: Optional[AgentRuntime] = None
 mcp_manager: Optional[MCPServerManager] = None
-builtin_channel_mcp: Optional[BuiltinChannelMCP] = None
-builtin_channel_mcp_app = None
+runtime_mcp_servers: Optional[RuntimeMCPServers] = None
+runtime_mcp_servers_app = None
 runtime_status = {
     "state": "not_initialized",
     "error": None,
@@ -326,13 +326,13 @@ def _init_runtime():
         registered_mcp_tools = mcp_manager.sync_tenant(
             os.environ.get("AD_AGENT_SERVICE_TENANT", "default"), runtime
         )
-        builtin_channel_count = builtin_channel_mcp.refresh(runtime) if builtin_channel_mcp else 0
+        runtime_mcp_count = runtime_mcp_servers.refresh(runtime) if runtime_mcp_servers else 0
 
         print(f"\n📊 服务状态:")
         print(f"- ✅ {len(runtime.registry.list_all_namespaces())} 平台 {len(runtime.registry.list_all())} 工具")
         print(f"- ✅ Skills 系统已就绪")
         print(f"- ✅ MCP 管理已就绪（{registered_mcp_tools} 个已启用 Tool）")
-        print(f"- ✅ 内置渠道 MCP 已准备（{builtin_channel_count} 个 Registry Tool，HTTP 暴露默认关闭）")
+        print(f"- ✅ Runtime MCP Servers 已准备（{runtime_mcp_count} 个 Registry Tool，HTTP 暴露默认关闭）")
         runtime_status.update({"state": "ready", "error": None})
         return runtime
     except Exception as e:
@@ -352,7 +352,7 @@ async def lifespan(_app: FastAPI):
             # healthy while every data endpoint is unusable.
             raise RuntimeError("ad-agent Runtime 初始化失败")
     active_runtime = runtime
-    mcp_lifespan = getattr(builtin_channel_mcp_app, "lifespan", None)
+    mcp_lifespan = getattr(runtime_mcp_servers_app, "lifespan", None)
     try:
         if callable(mcp_lifespan):
             async with mcp_lifespan(_app):
@@ -394,8 +394,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
-builtin_channel_mcp = BuiltinChannelMCP(lambda: runtime, _authorize_request)
-builtin_channel_mcp_app = builtin_channel_mcp.asgi_app()
+runtime_mcp_servers = RuntimeMCPServers(lambda: runtime, _authorize_request)
+runtime_mcp_servers_app = runtime_mcp_servers.asgi_app()
 
 
 class ChatRequest(BaseModel):
@@ -1736,13 +1736,6 @@ class MCPValidationRequest(BaseModel):
     )
 
 
-class MCPBuiltinToolTestRequest(BaseModel):
-    """A data-only request for a dry-run/read test of a registered Tool."""
-
-    input: dict = Field(default_factory=dict)
-    account_id: Optional[str] = Field(default=None, max_length=200)
-
-
 class MCPToolTestRequest(BaseModel):
     """Input for a safe test of an enabled external read-only MCP Tool."""
 
@@ -1937,7 +1930,9 @@ async def list_mcp_servers(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.read")
-    return {"tenant_id": principal.tenant_id, "servers": _mcp_manager_or_503().list_servers(principal.tenant_id, limit)}
+    channel_servers = runtime_mcp_servers.list_servers(runtime) if runtime_mcp_servers and runtime else []
+    external_servers = _mcp_manager_or_503().list_servers(principal.tenant_id, limit)
+    return {"tenant_id": principal.tenant_id, "servers": [*channel_servers, *external_servers]}
 
 
 @app.post("/mcp/servers", tags=["mcp"])
@@ -1963,6 +1958,10 @@ async def get_mcp_server(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.read")
+    if runtime_mcp_servers and runtime:
+        channel_server = runtime_mcp_servers.get_server(server_id, runtime)
+        if channel_server:
+            return channel_server
     result = _mcp_manager_or_503().get_server(principal.tenant_id, server_id)
     if not result:
         raise HTTPException(status_code=404, detail="MCP Server not found")
@@ -1978,6 +1977,8 @@ async def patch_mcp_server(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.manage")
+    if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+        raise HTTPException(status_code=422, detail="Runtime MCP Server 由 Registry 管理，不能在此修改")
     try:
         return _mcp_manager_or_503().update_server(
             principal.tenant_id, server_id, body.model_dump(exclude_unset=True), runtime
@@ -1997,6 +1998,8 @@ async def validate_mcp_server(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.manage")
+    if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+        raise HTTPException(status_code=422, detail="Runtime MCP Server 随 Registry 自动校验，无需单独校验")
     try:
         result = await run_in_threadpool(
             _mcp_manager_or_503().validate_server,
@@ -2017,6 +2020,8 @@ async def enable_mcp_server(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.manage")
+    if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+        raise HTTPException(status_code=422, detail="Runtime MCP Server 已由当前服务启用")
     try:
         return _mcp_manager_or_503().enable_server(principal.tenant_id, server_id, runtime)
     except KeyError:
@@ -2033,6 +2038,8 @@ async def disable_mcp_server(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.manage")
+    if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+        raise HTTPException(status_code=422, detail="Runtime MCP Server 不能单独停用")
     try:
         return _mcp_manager_or_503().disable_server(principal.tenant_id, server_id, runtime)
     except KeyError:
@@ -2047,6 +2054,8 @@ async def delete_mcp_server(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.manage")
+    if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+        raise HTTPException(status_code=422, detail="Runtime MCP Server 由 Registry 管理，不能移除")
     try:
         return _mcp_manager_or_503().delete_server(principal.tenant_id, server_id, runtime)
     except KeyError:
@@ -2061,6 +2070,8 @@ async def _set_mcp_tool_state(
     _require_mcp_permission(principal, "mcp.manage")
     try:
         manager = _mcp_manager_or_503()
+        if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+            raise MCPManagementError("Runtime MCP Server 的 Tool 随 Registry 自动启用，不能单独修改")
         if enabled:
             return manager.enable_tool(principal.tenant_id, server_id, tool_id, runtime)
         return manager.disable_tool(principal.tenant_id, server_id, tool_id, runtime)
@@ -2097,6 +2108,12 @@ async def test_mcp_tool(
     principal = _authorize_request(x_api_key, http_request)
     _require_mcp_permission(principal, "mcp.manage")
     try:
+        if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime):
+            return await run_in_threadpool(
+                runtime_mcp_servers.test_tool,
+                server_id, tool_id, runtime, principal,
+                body.input, account_id=body.account_id,
+            )
         return await run_in_threadpool(
             _mcp_manager_or_503().test_tool,
             principal.tenant_id, server_id, tool_id, runtime, principal,
@@ -2107,55 +2124,6 @@ async def test_mcp_tool(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc))
     except MCPManagementError as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
-
-
-def _builtin_channel_mcp_or_503() -> BuiltinChannelMCP:
-    if not builtin_channel_mcp or not runtime:
-        raise HTTPException(status_code=503, detail="内置渠道 MCP 未初始化")
-    return builtin_channel_mcp
-
-
-@app.get("/mcp/builtin/tools", tags=["mcp"])
-async def list_builtin_mcp_tools(
-    http_request: Request,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-):
-    principal = _authorize_request(x_api_key, http_request)
-    _require_mcp_permission(principal, "mcp.read")
-    gateway = _builtin_channel_mcp_or_503()
-    return {
-        "enabled": gateway.enabled,
-        "endpoint": "/mcp/builtin/mcp",
-        "tools": gateway.list_tools(runtime),
-    }
-
-
-@app.post("/mcp/builtin/tools/{tool_name:path}/test", tags=["mcp"])
-async def test_builtin_mcp_tool(
-    tool_name: str,
-    body: MCPBuiltinToolTestRequest,
-    http_request: Request,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-):
-    principal = _authorize_request(x_api_key, http_request)
-    _require_mcp_permission(principal, "mcp.manage")
-    gateway = _builtin_channel_mcp_or_503()
-    try:
-        return await run_in_threadpool(
-            gateway.invoke_for_principal,
-            runtime,
-            principal,
-            tool_name,
-            body.input,
-            source="ui_test",
-            account_id=body.account_id,
-        )
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Registry Tool not found")
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
-    except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
@@ -2964,4 +2932,4 @@ async def reconcile_workflow_from_provider(
 # FastMCP's own streamable HTTP endpoint is mounted after the FastAPI routes
 # so it cannot shadow the authenticated management/test APIs above. The
 # endpoint is still disabled unless AD_AGENT_MCP_CHANNELS_ENABLED=1.
-app.mount("/mcp/builtin", builtin_channel_mcp_app)
+app.mount("/mcp/channels", runtime_mcp_servers_app)
