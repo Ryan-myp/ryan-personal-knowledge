@@ -629,7 +629,9 @@ class CrossChannelFeature:
         reply = services.response_renderer.render(
             intent, results, needs_confirmation
         )
-        services.persist_conversation_turn(session, turn_id, user_input, reply)
+        # The application turn engine owns conversation durability. Keeping
+        # persistence here would duplicate messages when this Feature is
+        # invoked through the normal Runtime pipeline.
         services.finish_workflow(
             workflow_id, tool_plan, results, workflow_inputs,
             planning_errors=errors,
