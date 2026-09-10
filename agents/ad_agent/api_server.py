@@ -532,6 +532,22 @@ async def readiness():
     Provider request or exposing credentials.
     """
     state = runtime_status.get("state", "not_initialized")
+    get_readiness = getattr(runtime, "get_readiness", None) if runtime else None
+    if callable(get_readiness):
+        report = get_readiness()
+        checks = dict(report.get("checks") or {})
+        checks["runtime"] = state in {"ready", "not_initialized"}
+        ready = all(checks.values()) and state in {"ready", "not_initialized"}
+        payload = {
+            "status": "ready" if ready else "not_ready",
+            "state": "ready" if state == "not_initialized" else state,
+            "checks": checks,
+            "tool_count": report.get("tool_count", 0),
+            "supervisor": report.get("supervisor"),
+            "error": runtime_status.get("error"),
+            "service": "ad-agent",
+        }
+        return JSONResponse(status_code=200 if ready else 503, content=payload)
     runtime_ready = runtime is not None and state in {"ready", "not_initialized"}
     if runtime is not None and state == "not_initialized":
         # Embedded/test callers may inject an already-created Runtime without

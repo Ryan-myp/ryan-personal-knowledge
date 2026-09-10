@@ -1512,6 +1512,7 @@ class AdAgentStore:
                 run_statuses.get("recovery_required", 0),
                 workflow_statuses.get("recovery_required", 0),
                 task_expired, workflow_expired, outbox_statuses.get("failed", 0),
+                outbox_statuses.get("dead_letter", 0),
             )
         )
         warning_count = sum(value > 0 for value in (task_expiring, workflow_expiring, queued_age or 0))
@@ -1542,6 +1543,7 @@ class AdAgentStore:
                 "pending_depth": outbox_statuses.get("pending", 0),
                 "claimed": outbox_statuses.get("claimed", 0),
                 "retrying": outbox_retrying,
+                "dead_letter": outbox_statuses.get("dead_letter", 0),
             },
             "workers": {
                 "total": len(workers),
@@ -1573,6 +1575,7 @@ class AdAgentStore:
                 "expired_leases": task_expired + workflow_expired + session_expired,
                 "expiring_leases": task_expiring + workflow_expiring,
                 "failed_outbox": outbox_statuses.get("failed", 0),
+                "dead_letter_outbox": outbox_statuses.get("dead_letter", 0),
             },
         }
 
@@ -2368,6 +2371,32 @@ class AdAgentStore:
             cursor = self._get_conn().execute(
                 """UPDATE outbox_events SET status = 'pending',
                    retry_count = retry_count + 1, next_retry_at = ?,
+                   last_error = ?, claimed_by = NULL, claimed_at = NULL
+                   WHERE event_id = ? AND status = 'claimed'""" + owner_clause,
+                params,
+            )
+            self._get_conn().commit()
+            return cursor.rowcount == 1
+
+    def mark_outbox_failed(
+        self, event_id: str, error: Optional[str] = None,
+        consumer_id: Optional[str] = None,
+    ) -> bool:
+        """Move an event to a terminal dead-letter state.
+
+        Delivery is at-least-once, so retrying forever is not a safe default:
+        a malformed event or permanently unavailable sink would otherwise
+        occupy every future poll indefinitely.  The consumer owns the retry
+        policy; the store only performs the owner-checked terminal transition.
+        """
+        with self._lock:
+            owner_clause = ""
+            params: list[Any] = [str(error) if error else None, str(event_id)]
+            if consumer_id is not None:
+                owner_clause = " AND claimed_by = ?"
+                params.append(str(consumer_id))
+            cursor = self._get_conn().execute(
+                """UPDATE outbox_events SET status = 'dead_letter',
                    last_error = ?, claimed_by = NULL, claimed_at = NULL
                    WHERE event_id = ? AND status = 'claimed'""" + owner_clause,
                 params,

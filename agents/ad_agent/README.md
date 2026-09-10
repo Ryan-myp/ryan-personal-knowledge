@@ -205,7 +205,8 @@ reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified
 而是恢复 worker 对观测来源完成校验后的声明。
 
 部署探针使用 `GET /health` 做进程存活检查，使用 `GET /readyz` 做请求就绪检查。后者会
-检查 Runtime、必需的 LLM 和 Tool Registry 是否已完成初始化，不会调用 Provider，也不会
+检查 Runtime、必需的 LLM、Tool Registry、持久化后端和已启用的 durable worker 是否已就绪，
+不会调用 Provider，也不会
 返回凭证；ASGI 生命周期结束时会关闭 Runtime-owned TaskExecutor，避免热重载留下后台任务。
 
 运行监控入口位于页面顶部“系统运维”菜单中的“运行监控”，后端接口为
@@ -219,8 +220,12 @@ Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新�
 Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 仍由
 进程内锁保护并明确限制为单进程；配置 `AD_AGENT_DATABASE_URL=mysql+pymysql://...`
 后使用 MySQL/InnoDB 的事务、`FOR UPDATE SKIP LOCKED` 和跨实例 Session lease，
-Runtime、Skill、Tool、Capability 代码无需修改。运行中的 workflow 会 heartbeat，恢复
-worker 通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
+Runtime、Skill、Tool、Capability 代码无需修改。运行中的 workflow 会 heartbeat，恢复 worker
+通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
+
+Outbox 投递采用有界重试（默认 10 次）；超过上限的事件进入 `dead_letter`，不会无限占用
+投递轮询，并会在运行监控的告警中显示。这里仍然是 at-least-once 投递语义，外部 sink
+必须按 `event_id` 做幂等处理。
 
 当任务已经进入 `recovery_required` 时，HTTP 只能通过
 `POST /tasks/{task_id}/recover` 显式提交 `provider_verified=true`、回查记录
@@ -336,6 +341,21 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 回滚（重新激活旧版本）、停用和卸载。这个 API 只做校验和控制面状态变更，不会导入
 `entrypoint`、执行 `tools.py`，也不会向 Runtime 注册 Provider Tool；可执行插件仍需
 受信任部署宿主绑定已审核的源码贡献对象。
+
+### Runtime 边界结论
+
+`AdAgentRuntime` 保留为广告应用组合根是有必要的：它把广告 Skill、Capability、Feature、
+Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
+通用队列、租约或 Provider 分支。通用执行壳是 `core/runtime_kernel.py`，队列/Outbox/
+Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
+Capability 或独立 Feature。后续若继续拆分，优先拆它的装配配置和应用门面，而不是删除这个
+组合根或在 HTTP 层复制另一套 Agent。
+
+当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AdAgentRuntime` 负责广告应用
+配置、能力注册入口和稳定门面，`AdRuntimeAssembly` 负责把 `PersistenceBackend`、通用
+`AgentRuntimeKernel`、Tool 执行器、Schedule/Task/Outbox worker 与广告应用服务接起来。
+Assembly 只做依赖连接，不根据渠道或业务流程分支；新的简单能力仍应通过 Skill + Tool/MCP
+Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制面的能力才新增 Capability/Feature。
 
 暂留的工程缺口：
 

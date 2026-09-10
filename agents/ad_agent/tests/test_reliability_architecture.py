@@ -258,6 +258,22 @@ def test_outbox_ack_and_retry_require_the_current_consumer_owner():
     store.close()
 
 
+def test_outbox_can_be_dead_lettered_by_its_current_consumer_owner():
+    store = AdAgentStore(":memory:")
+    now = datetime.now(timezone.utc).isoformat()
+    store.insert_outbox_event(OutboxEvent(
+        event_id="dead-letter-event", run_id="run", event_type="started",
+        payload={}, created_at=now,
+    ))
+    claimed = store.claim_outbox_events(1, "consumer-a")[0]
+    assert store.mark_outbox_failed(claimed.event_id, "permanent", "consumer-b") is False
+    assert store.mark_outbox_failed(claimed.event_id, "permanent", "consumer-a") is True
+    snapshot = store.get_monitoring_snapshot()
+    assert snapshot["outbox"]["dead_letter"] == 1
+    assert snapshot["alerts"]["dead_letter_outbox"] == 1
+    store.close()
+
+
 def test_schedule_claim_ack_and_advance_require_the_current_scheduler_owner():
     store = AdAgentStore(":memory:")
     now = datetime.now(timezone.utc).isoformat()
@@ -383,8 +399,33 @@ def test_runtime_can_disable_background_workers_for_in_memory_tests():
     assert runtime.outbox_consumer is None
     assert runtime.scheduler is not None
     assert runtime.scheduler.metrics()["state"] == "stopped"
+    assert runtime.get_readiness()["checks"]["workers"] is False
     runtime.close(wait=True)
     store.close()
+
+
+def test_runtime_readiness_includes_backend_and_started_worker_health():
+    store = AdAgentStore(":memory:")
+    runtime = AgentRuntime(
+        require_llm=False,
+        persistence_store=store,
+        features=[],
+    )
+    try:
+        report = runtime.get_readiness()
+        assert report["status"] == "not_ready"
+        assert report["checks"] == {
+            "runtime": True,
+            "llm": True,
+            "tool_registry": False,
+            "persistence": True,
+            "workers": True,
+        }
+        assert report["supervisor"]["backend"]["status"] == "healthy"
+        assert report["supervisor"]["components"]["task_executor"]["state"] == "running"
+    finally:
+        runtime.close(wait=True)
+        store.close()
 
 
 class _FakeMySQLConnection:

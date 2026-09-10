@@ -93,6 +93,24 @@ def test_outbox_claim_is_single_delivery_and_consumer_acknowledges():
     assert seen == ["e1"]
 
 
+def test_outbox_delivery_moves_to_dead_letter_after_bounded_retries():
+    store = AdAgentStore(":memory:")
+    store.insert_outbox_event(OutboxEvent("dead", "w1", "workflow.updated", {}))
+
+    def failing_sink(_event):
+        raise RuntimeError("sink down")
+
+    consumer = OutboxConsumer(store, failing_sink, max_attempts=1)
+    assert consumer.drain_once() == 0
+    event = store._get_conn().execute(
+        "SELECT status, retry_count FROM outbox_events WHERE event_id = ?", ("dead",)
+    ).fetchone()
+    assert event["status"] == "dead_letter"
+    assert event["retry_count"] == 0
+    assert consumer.metrics()["dead_letter_total"] == 1
+    store.close()
+
+
 def test_runtime_starts_outbox_consumer_and_workflow_publishes_once():
     store = AdAgentStore(":memory:")
     delivered = []

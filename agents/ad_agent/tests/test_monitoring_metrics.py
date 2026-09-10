@@ -83,6 +83,7 @@ def test_monitoring_http_endpoint_is_authenticated_and_scoped(monkeypatch):
             assert payload["scope"] == {"tenant_id": "default", "user_id": "ad-agent-service"}
             assert "instance" in payload
             assert "tasks" in payload and "outbox" in payload and "tools" in payload
+            assert "backend_health" in payload
     finally:
         if api_server.runtime is runtime:
             runtime.close(wait=True)

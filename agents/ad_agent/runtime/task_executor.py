@@ -196,6 +196,7 @@ class TaskExecutor:
         with self._lock:
             handles = len(self._handles)
             closed = self._closed
+            started = self._started
             worker_id = self._worker_id
             kinds = tuple(sorted(self._handlers))
         try:
@@ -204,7 +205,7 @@ class TaskExecutor:
             internal_queue = None
         return {
             "worker_id": worker_id,
-            "state": "closed" if closed else "running",
+            "state": "closed" if closed else "running" if started else "stopped",
             "max_workers": self.max_workers,
             "max_queue": self.max_queue,
             "in_process_tasks": handles,

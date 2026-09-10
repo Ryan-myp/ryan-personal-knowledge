@@ -41,12 +41,14 @@ class OutboxConsumer:
         poll_interval: float = 0.25,
         batch_size: int = 20,
         max_backoff_seconds: float = 60.0,
+        max_attempts: int = 10,
     ):
         self.store = store
         self.publish = publish
         self.poll_interval = max(0.01, float(poll_interval))
         self.batch_size = max(1, min(int(batch_size), 100))
         self.max_backoff_seconds = max(0.1, float(max_backoff_seconds))
+        self.max_attempts = max(1, int(max_attempts))
         # ``id(self)`` is only process-local and can collide after a restart;
         # claims are a cross-instance coordination boundary.
         self.consumer_id = f"outbox:{uuid.uuid4().hex}"
@@ -57,6 +59,7 @@ class OutboxConsumer:
         self._claimed_total = 0
         self._delivered_total = 0
         self._retry_total = 0
+        self._dead_letter_total = 0
         self._error_total = 0
 
     def drain_once(self) -> int:
@@ -68,6 +71,17 @@ class OutboxConsumer:
             try:
                 self.publish(event)
             except Exception:
+                next_attempt = int(event.retry_count or 0) + 1
+                if next_attempt >= self.max_attempts:
+                    marked = self.store.mark_outbox_failed(
+                        event.event_id,
+                        "outbox delivery exceeded retry limit",
+                        self.consumer_id,
+                    )
+                    if marked:
+                        with self._lock:
+                            self._dead_letter_total += 1
+                    continue
                 delay = min(
                     self.max_backoff_seconds,
                     max(0.1, 2 ** min(int(event.retry_count), 8)),
@@ -153,9 +167,11 @@ class OutboxConsumer:
                 "state": "running" if thread and thread.is_alive() else "stopped",
                 "poll_interval_seconds": self.poll_interval,
                 "batch_size": self.batch_size,
+                "max_attempts": self.max_attempts,
                 "claimed_total": self._claimed_total,
                 "delivered_total": self._delivered_total,
                 "retry_total": self._retry_total,
+                "dead_letter_total": self._dead_letter_total,
                 "error_total": self._error_total,
             }
 

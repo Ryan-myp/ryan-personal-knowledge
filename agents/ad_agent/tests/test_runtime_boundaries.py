@@ -147,6 +147,32 @@ def test_application_runtime_has_no_direct_provider_factory_imports():
     assert direct_provider_imports == []
 
 
+def test_ad_runtime_assembly_is_the_only_application_composition_graph():
+    """The facade delegates infrastructure wiring to an explicit assembly."""
+    from pathlib import Path
+
+    root = Path("agents/ad_agent/runtime")
+    facade = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    assembly = (root / "ad_runtime_assembly.py").read_text(encoding="utf-8")
+
+    # The facade may expose the assembly, but it must not recreate the worker
+    # graph in its constructor as more application services are added.
+    assert "AdRuntimeAssembly.compose" in facade
+    assert "RuntimeSupervisor(" not in facade
+    assert "TaskExecutor(" not in facade
+    assert "OutboxConsumer(" not in facade
+    assert "SchedulingService(" not in facade
+
+    # Assembly code is application composition, not a provider dispatch
+    # table. Provider discovery remains behind Capability factories.
+    assert "api_clients" not in assembly
+    assert "capabilities" not in assembly
+    assert "google" not in assembly.lower()
+    assert '"meta"' not in assembly.lower()
+    assert "tiktok" not in assembly.lower()
+    assert "dv360" not in assembly.lower()
+
+
 def test_generic_worker_modules_do_not_import_application_models_or_principal():
     """Queue/schedule infrastructure must remain reusable outside ad-agent."""
     import pathlib

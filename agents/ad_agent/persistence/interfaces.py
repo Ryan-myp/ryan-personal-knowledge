@@ -143,6 +143,10 @@ class PersistenceBackend(Protocol):
         self, event_id: str, next_retry_at: str, error: Optional[str] = None,
         consumer_id: Optional[str] = None,
     ) -> bool: ...
+    def mark_outbox_failed(
+        self, event_id: str, error: Optional[str] = None,
+        consumer_id: Optional[str] = None,
+    ) -> bool: ...
 
     # -- Durable Agent run/event replay -------------------------------
     def create_execution_run(self, record: Any) -> Any: ...

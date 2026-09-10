@@ -50,9 +50,9 @@ from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
+from ..core.memory import MemoryManager
 from ..domain.ad.knowledge import KnowledgeProvider, MarkdownWikiKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
-from ..core.memory import MemoryManager
 from ..domain.ad.parameter_catalog import ParameterCatalogRegistry
 from ..domain.ad.blueprint import BlueprintRegistry, BlueprintCascadeEngine
 from ..domain.ad.creation_card import CreationCardBuilder
@@ -67,29 +67,17 @@ from ..domain.ad.security import (
     PROTECTED_INPUT_FIELDS,
 )
 from .skill import BaseSkill, Skill, SkillContract, SkillLoader
-from .input_builder import ToolInputBuilder
-from .account_context import AccountResolver
-from .services import AdRuntimeServices
-from .workflow import WorkflowCoordinator
 from .account_policy import AccountWhitelistValidator
 from .session_context import SessionContext
 from .security import RuntimeSecurity
-from .tool_executor import ToolExecutor
-from .outbox import OutboxPublisher
-from .scheduling_service import SchedulingService
 from .provider_bindings import ProviderBindings
-from .supervisor import RuntimeSupervisor
+from .ad_runtime_assembly import AdRuntimeAssembly, AdRuntimeAssemblyOptions
 from .ad_creation_services import AdCreationServicesMixin
 from .ad_capability_services import AdCapabilityLifecycleMixin
-from .ad_task_services import AdTaskServices
-from .ad_persistence_services import AdPersistenceServices
 from .ad_conversation_services import AdConversationServices
-from .ad_session_services import AdSessionServices
-from .ad_workflow_services import AdWorkflowServices
 from ..core.runtime_kernel import AgentRuntimeKernel, TurnRequest
-from ..persistence.session_manager import SessionManager
 from ..persistence.interfaces import PersistenceBackend
-from ..persistence.models import ScheduledTaskRecord
+from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +170,7 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         session_lease_seconds: float = 300.0,
         outbox_delivery: Optional[Callable[[Any], None]] = None,
         outbox_poll_interval: float = 0.25,
+        outbox_max_attempts: int = 10,
         start_background_workers: bool = True,
         conversation_title_use_llm: bool = False,
     ):
@@ -371,13 +360,6 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         self._parameter_selection_signer = ParameterSelectionSigner(
             selection_secret, parameter_selection_ttl_seconds
         )
-        self.services = AdRuntimeServices(self)
-        self.input_builder = ToolInputBuilder(
-            self.services,
-            scope_field_names=ACCOUNT_SCOPE_FIELDS,
-            scope_value_resolver=lambda context: getattr(context, "account_id", None),
-        )
-        self.account_resolver = AccountResolver(self.services)
         self.policies: list[RuntimePolicy] = list(policies or [])
         if self.policies:
             self.tool_selector.set_policies(self.policies)
@@ -450,108 +432,29 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
         # 账户白名单验证器
         self.whitelist_validator = whitelist_validator or AccountWhitelistValidator()
 
-        # 持久化层（可选）
-        self._session_manager: Optional[SessionManager] = None
-        self._memory_manager: Optional[MemoryManager] = None
-        if persistence_store:
-            self._persistence_store = persistence_store
-            self._session_manager = SessionManager(persistence_store)
-            recover_runs = getattr(
-                self._session_manager, "recover_stale_execution_runs", None
-            )
-            if callable(recover_runs):
-                try:
-                    recovered_runs = recover_runs(self.workflow_stale_after_seconds)
-                    if recovered_runs:
-                        logger.warning(
-                            "marked %s stale Agent runs for recovery", recovered_runs
-                        )
-                except Exception:
-                    logger.exception("failed to recover stale Agent runs")
-            if all(callable(getattr(persistence_store, method, None)) for method in (
-                "save_memory", "search_memories", "delete_memory"
-            )):
-                self._memory_manager = MemoryManager(persistence_store)
-            if self.write_guard and hasattr(self.write_guard, "bind_store"):
-                self.write_guard.bind_store(persistence_store)
-        else:
-            self._persistence_store = None
-        self.outbox = OutboxPublisher(self._session_manager) if self._session_manager else None
-        self.outbox_consumer = None
-        self.event_repair_consumer = None
-
         # 只读模式：只注册 READ 类工具，跳过写保护检查
         self._read_only_mode = read_only_mode
-        self.workflow = WorkflowCoordinator(
-            self.services,
-            outbox=self.outbox,
-            item_scope_resolver=self._resolve_workflow_item_scope,
-            result_scope_resolver=self._resolve_workflow_result_scope,
-        )
-        self.security = RuntimeSecurity(self)
-        self.scheduling_service = SchedulingService(
-            store=self._persistence_store,
-            submit_task=self.submit_task,
-            session_context=lambda session_id: self._sessions.get(str(session_id or "")),
-            preflight=self.preflight_scheduled_prompt,
-            redact=self._redact_for_persistence,
-            validate_input=self.security.validate_input_redline,
-            max_prompt_chars=self.max_user_input_chars,
-            schedule_record_factory=ScheduledTaskRecord,
-            task_kind="agent.turn",
-            principal_from_metadata=lambda claims: RequestPrincipal.from_claims(claims),
-            default_principal=lambda user, tenant: RequestPrincipal(
-                user_id=user, tenant_id=tenant, permissions=self._granted_permissions,
+        # The application composition root is deliberately explicit: the
+        # facade owns policy and domain metadata above, while this builder
+        # wires persistence, services, Kernel and durable workers below.
+        components = AdRuntimeAssembly.compose(
+            self,
+            AdRuntimeAssemblyOptions(
+                persistence_store=persistence_store,
+                outbox_delivery=outbox_delivery,
+                outbox_poll_interval=outbox_poll_interval,
+                outbox_max_attempts=outbox_max_attempts,
+                max_task_workers=max_task_workers,
+                max_task_queue=max_task_queue,
+                task_timeout_seconds=task_timeout_seconds,
+                task_lease_seconds=task_lease_seconds,
+                task_queue_poll_interval=task_queue_poll_interval,
+                start_background_workers=start_background_workers,
             ),
-        )
-        self.services.bind_scheduling(self.scheduling_service)
-        self.persistence_services = AdPersistenceServices(self)
-        self.conversation_services = AdConversationServices(self)
-        self.session_services = AdSessionServices(self)
-        self.workflow_services = AdWorkflowServices(self)
-        self.task_services = AdTaskServices(self)
-        # The kernel is intentionally business-neutral.  This composition
-        # point is the only place where the advertising application binds its
-        # policy/session implementation to the generic turn shell.
-        self._runtime_kernel = AgentRuntimeKernel(
-            session_manager=self._session_manager,
-            session_locks=self._session_locks,
-            session_locks_guard=self._session_locks_guard,
-            lease_owner=self._session_lease_owner,
-            lease_seconds=self.session_lease_seconds,
             mode_context=_execution_mode_context,
-            validate_mode=self._validate_execution_mode,
-            resolve_mode=lambda tenant, user, _requested: self.get_execution_mode(
-                tenant, user
-            ),
-            assert_ready=self.assert_llm_ready,
-            ensure_session=self._ensure_kernel_session,
-            refresh_session=self._refresh_kernel_session,
-            execute_unlocked=self._execute_kernel_request,
             busy_error=SessionBusyError,
         )
-        self.tool_executor = ToolExecutor(self.services)
-        # Queue, lease and repair workers are infrastructure. The supervisor
-        # owns their lifecycle; this Runtime only supplies the trusted Agent
-        # turn callback and the generic scheduled-task hand-off.
-        self.supervisor = RuntimeSupervisor(
-            store=self._persistence_store,
-            outbox_delivery=outbox_delivery or self._default_outbox_delivery,
-            scheduled_submitter=self._submit_scheduled_task,
-            task_handlers={"agent.turn": self._execute_agent_task},
-            redact=self._redact_for_persistence,
-            max_task_workers=max_task_workers,
-            max_task_queue=max_task_queue,
-            task_timeout_seconds=task_timeout_seconds,
-            task_lease_seconds=task_lease_seconds,
-            task_queue_poll_interval=task_queue_poll_interval,
-            outbox_poll_interval=outbox_poll_interval,
-            start_background_workers=start_background_workers,
-        )
-        self.outbox_consumer = self.supervisor.outbox_consumer
-        self.event_repair_consumer = self.supervisor.event_repair_consumer
-        self.task_executor = self.supervisor.task_executor
-        self.scheduler = self.supervisor.scheduler
+        components.install(self)
         if read_only_mode:
             logger.info("🔒 只读模式已启用，仅允许查询操作")
 
@@ -810,6 +713,42 @@ class AdAgentRuntime(AdCapabilityLifecycleMixin, AdCreationServicesMixin):
     def close(self, wait: bool = False) -> None:
         """Stop durable workers through the infrastructure supervisor."""
         self.supervisor.close(wait=wait)
+
+    def get_readiness(self) -> dict[str, Any]:
+        """Aggregate application readiness without making Provider requests.
+
+        The Runtime remains the advertising composition root, while the
+        supervisor contributes only generic worker/backend lifecycle state.
+        This method is the application-facing readiness contract used by the
+        HTTP adapter; it is intentionally separate from liveness.
+        """
+        try:
+            tool_count = len(self.registry.list_all())
+        except Exception:
+            tool_count = 0
+        model_ready = not self.require_llm or self._llm is not None
+        supervisor_health = self.supervisor.health()
+        checks = {
+            "runtime": True,
+            "llm": model_ready,
+            "tool_registry": tool_count > 0,
+            "persistence": (
+                self._persistence_store is None
+                or supervisor_health.get("backend", {}).get("status") == "healthy"
+            ),
+            "workers": (
+                self._persistence_store is None
+                or supervisor_health.get("status") == "healthy"
+                or not self.supervisor.task_executor
+            ),
+        }
+        ready = all(checks.values())
+        return {
+            "status": "ready" if ready else "not_ready",
+            "checks": checks,
+            "tool_count": tool_count,
+            "supervisor": supervisor_health,
+        }
 
     @staticmethod
     def _default_outbox_delivery(event: Any) -> None:
