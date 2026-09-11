@@ -173,6 +173,45 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     assert "dv360" not in assembly.lower()
 
 
+def test_turn_entrypoint_is_a_compatibility_shim_and_orchestrator_has_stage_boundaries():
+    """The legacy module must not grow a second turn implementation."""
+    from pathlib import Path
+
+    root = Path("agents/ad_agent/runtime")
+    entrypoint = (root / "ad_turn_engine.py").read_text(encoding="utf-8")
+    orchestrator = (root / "ad_turn_orchestrator.py").read_text(encoding="utf-8")
+
+    assert len(entrypoint.splitlines()) <= 10
+    assert "from .ad_turn_orchestrator import execute" in entrypoint
+    assert "AdTurnContextService" in orchestrator
+    assert "AdTurnPlanningService" in orchestrator
+    assert "AdToolExecutionService" in orchestrator
+    assert "AdTurnResultService" in orchestrator
+
+
+def test_turn_application_services_do_not_import_provider_implementations():
+    """Turn stages depend on Runtime contracts, never on channel clients."""
+    from pathlib import Path
+
+    root = Path("agents/ad_agent/runtime")
+    for name in (
+        "ad_turn_orchestrator.py",
+        "ad_turn_context.py",
+        "ad_turn_planning.py",
+        "ad_tool_execution.py",
+        "ad_turn_result.py",
+        "ad_runtime_facades.py",
+    ):
+        source = (root / name).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        provider_imports = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                if node.module.split(".", 1)[0] in {"api_clients", "capabilities"}:
+                    provider_imports.append(node.module)
+        assert provider_imports == []
+
+
 def test_generic_worker_modules_do_not_import_application_models_or_principal():
     """Queue/schedule infrastructure must remain reusable outside ad-agent."""
     import pathlib
