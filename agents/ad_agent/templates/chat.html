@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20260910-ui-polish-v2">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20260918-workbench-v1">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -419,42 +419,66 @@
         </div>
     </main>
     
-    <!-- 右侧面板 -->
-    <aside class="right-panel">
-        <div class="trace-header">
-            <div>
-                <div class="trace-title">执行轨迹 <span class="trace-live-dot"></span><span id="traceStatus">待命</span></div>
-                <div class="trace-subtitle" id="traceSubtitle">等待下一次 Agent 回合</div>
-            </div>
-            <div class="trace-header-actions">
-                <button class="trace-expand-btn trace-icon-btn" type="button" onclick="toggleTraceExpanded()" aria-label="展开轨迹视图" title="展开轨迹视图">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
-                    </svg>
-                </button>
-                <button class="trace-icon-btn" type="button" onclick="toggleTracePanel()" aria-label="收起执行轨迹">−</button>
-                <button class="trace-clear-btn" type="button" onclick="resetExecutionTrace()">清空</button>
-            </div>
+    <!-- 右侧工作区：轨迹、创建向导和提交确认共享同一个可切换面板。 -->
+    <aside class="right-panel" id="agentWorkbench" aria-label="右侧工作区">
+        <div class="workbench-tabbar" role="tablist" aria-label="右侧工作区">
+            <button class="workbench-tab active" id="workbench-tab-trace" type="button" role="tab" aria-selected="true" onclick="setWorkbenchView('trace')">
+                <span class="workbench-tab-icon" aria-hidden="true">⌁</span><span>执行轨迹</span>
+            </button>
+            <button class="workbench-tab" id="workbench-tab-creation" type="button" role="tab" aria-selected="false" onclick="setWorkbenchView('creation')">
+                <span class="workbench-tab-icon" aria-hidden="true">◇</span><span>创建工作区</span><span class="workbench-tab-count" id="workbenchCreationCount" hidden></span>
+            </button>
         </div>
-        <div class="trace-toolbar">
-            <span class="trace-legend"><i class="legend-line planned"></i>计划中</span>
-            <span class="trace-legend"><i class="legend-line running"></i>运行中</span>
-            <span class="trace-legend"><i class="legend-line succeeded"></i>已成功</span>
-            <span class="trace-legend"><i class="legend-line awaiting"></i>待确认</span>
-        </div>
-        <div class="panel-content trace-content" id="traceContent">
-            <div class="trace-flow" id="traceFlow" aria-live="polite"></div>
-            <div class="trace-detail" id="traceDetail">
-                <div class="trace-detail-empty">选择一个步骤查看格式化的输入 / 输出摘要</div>
-            </div>
-            <div class="trace-mode-bar">
+        <section id="trace-workbench-view" class="workbench-view">
+            <div class="trace-header">
                 <div>
-                    <div class="mode-label">执行模式</div>
-                    <div class="mode-value"><span class="mode-dot"></span><span id="traceMode">dry-run · 不调用线上写 API</span></div>
+                    <div class="trace-title">执行轨迹 <span class="trace-live-dot"></span><span id="traceStatus">待命</span></div>
+                    <div class="trace-subtitle" id="traceSubtitle">等待下一次 Agent 回合</div>
                 </div>
-                <span class="risk-badge">安全门禁已启用</span>
+                <div class="trace-header-actions">
+                    <button class="trace-expand-btn trace-icon-btn" type="button" onclick="toggleTraceExpanded()" aria-label="展开轨迹视图" title="展开轨迹视图">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
+                        </svg>
+                    </button>
+                    <button class="trace-icon-btn" type="button" onclick="toggleTracePanel()" aria-label="收起执行轨迹">−</button>
+                    <button class="trace-clear-btn" type="button" onclick="resetExecutionTrace()">清空</button>
+                </div>
             </div>
-        </div>
+            <div class="trace-toolbar">
+                <span class="trace-legend"><i class="legend-line planned"></i>计划中</span>
+                <span class="trace-legend"><i class="legend-line running"></i>运行中</span>
+                <span class="trace-legend"><i class="legend-line succeeded"></i>已成功</span>
+                <span class="trace-legend"><i class="legend-line awaiting"></i>待确认</span>
+            </div>
+            <div class="panel-content trace-content" id="traceContent">
+                <div class="trace-flow" id="traceFlow" aria-live="polite"></div>
+                <div class="trace-detail" id="traceDetail">
+                    <div class="trace-detail-empty">选择一个步骤查看格式化的输入 / 输出摘要</div>
+                </div>
+                <div class="trace-mode-bar">
+                    <div>
+                        <div class="mode-label">执行模式</div>
+                        <div class="mode-value"><span class="mode-dot"></span><span id="traceMode">dry-run · 不调用线上写 API</span></div>
+                    </div>
+                    <span class="risk-badge">安全门禁已启用</span>
+                </div>
+            </div>
+        </section>
+        <section id="creation-workbench-view" class="workbench-view" hidden>
+            <header class="creation-workbench-header">
+                <div>
+                    <div class="creation-workbench-kicker">AD CREATION WORKSPACE</div>
+                    <h2 id="workbenchCreationTitle">广告创建参数</h2>
+                    <p id="workbenchCreationSubtitle">在右侧完成参数、联动校验和预览；提交前仍需要你的明确确认。</p>
+                </div>
+                <button class="trace-icon-btn" type="button" onclick="closeCreationWorkbench()" aria-label="返回执行轨迹" title="返回执行轨迹">×</button>
+            </header>
+            <div class="creation-workbench-body">
+                <div id="creation-workbench-host"></div>
+                <div id="confirmation-workbench-host" hidden></div>
+            </div>
+        </section>
     </aside>
 
     <!-- 横跨聊天与轨迹区的事件时间线。 -->
@@ -670,6 +694,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20260910-mcp-inline-error-v1" defer></script>
+    <script src="/static/js/chat.js?v=20260918-workbench-v1" defer></script>
 </body>
 </html>

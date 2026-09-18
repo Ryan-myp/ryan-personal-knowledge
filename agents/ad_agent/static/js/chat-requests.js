@@ -480,6 +480,7 @@
                 }
                 pendingRequest = null;
                 document.getElementById('confirmCard')?.remove();
+                if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
                 const container = document.getElementById('chatContainer');
                 container.replaceChildren();
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
@@ -522,4 +523,3 @@
             }
             return data;
         }
-

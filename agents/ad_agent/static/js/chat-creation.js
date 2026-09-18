@@ -378,6 +378,7 @@
             renderCreationCardFieldNav(card, wrapper);
             renderCreationCardSummary(card, wrapper);
             renderCreationCardAutomation(card, wrapper);
+            if (typeof updateCreationCardLauncher === 'function') updateCreationCardLauncher(card);
         }
 
         function focusCreationCardIssue(card, wrapper = null) {
@@ -586,13 +587,18 @@
             review.id = 'confirmCard';
             review.className = 'confirm-card';
             review.innerHTML = `<div class="confirm-card-header"><span class="confirm-icon">✓</span><span class="confirm-title">请确认创建计划</span></div><div class="confirm-card-body"><p>即将为账户 <strong>${escapeHtml(card.account_id)}</strong> 提交“${escapeHtml(card.title || '广告')}”的创建计划。</p><p>请确认账户、预算、定向和素材均无误。${workspaceMode.mode === 'live' ? '确认后将提交到广告平台。' : '当前为预览状态，不会修改线上账户。'}</p></div><div class="confirm-card-footer"><button class="confirm-btn cancel" onclick="cancelCreationReview()">返回修改</button><button class="confirm-btn confirm" onclick="confirmCreationSubmission()">确认创建</button></div>`;
-            document.getElementById('confirmCardContainer').appendChild(review);
-            review.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            const target = document.getElementById('confirmation-workbench-host')
+                || document.getElementById('confirmCardContainer');
+            target?.appendChild(review);
+            if (typeof openConfirmationWorkbench === 'function') openConfirmationWorkbench();
         }
 
         function cancelCreationReview() {
+            const card = pendingCreationReview;
             pendingCreationReview = null;
             document.getElementById('confirmCard')?.remove();
+            if (typeof clearWorkbenchConfirmation === 'function') clearWorkbenchConfirmation();
+            if (card && typeof openCreationWorkbench === 'function') openCreationWorkbench(card);
         }
 
         function confirmCreationSubmission() {
@@ -1162,12 +1168,21 @@
             renderCreationCardFieldNav(card, wrapper);
             renderCreationCardSummary(card, wrapper);
             renderCreationCardAutomation(card, wrapper);
+            if (typeof updateCreationCardLauncher === 'function') updateCreationCardLauncher(card);
             return wrapper;
         }
 
         function renderUiCards(ui) {
             const fragment = document.createDocumentFragment();
-            (ui?.cards || []).forEach(card => fragment.appendChild(renderCreationCard(card)));
+            (ui?.cards || []).forEach(card => {
+                if (typeof renderCreationCardInWorkbench === 'function') {
+                    renderCreationCardInWorkbench(card);
+                }
+                const launcher = typeof renderCreationCardLauncher === 'function'
+                    ? renderCreationCardLauncher(card)
+                    : renderCreationCard(card);
+                if (launcher) fragment.appendChild(launcher);
+            });
             return fragment;
         }
 
@@ -1179,16 +1194,7 @@
                 return;
             }
             if (action === 'open_form') {
-                const selectionField = card.fields?.find(field => field.selection_kind === 'blueprint_variant');
-                const selectedOption = selectionField?.options?.find(option => option.value === selectionField.value);
-                const selected = selectedOption?.selector_value
-                    || card.fields?.find(field => field.value)?.value
-                    || null;
-                openBlueprintManager(
-                    card.provider,
-                    selected,
-                    selectedOption?.blueprint_id || null,
-                );
+                openCreationWorkbench(card);
                 return;
             }
             if (action === 'validate') {

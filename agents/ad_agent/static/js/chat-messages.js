@@ -168,14 +168,21 @@
                 </div>
             `;
 
-            // 插入到输入框上方的容器中
-            document.getElementById('confirmCardContainer').appendChild(card);
+            // Confirmation is a workbench artifact. Keep the chat transcript
+            // focused on conversation and leave the full action surface in
+            // the right-side workspace.
+            const target = document.getElementById('confirmation-workbench-host')
+                || document.getElementById('confirmCardContainer');
+            target?.appendChild(card);
+            if (typeof openConfirmationWorkbench === 'function') openConfirmationWorkbench();
 
             // 自动聚焦输入框并滚动到卡片
             setTimeout(() => {
                 const input = document.getElementById('confirmAccountInput') || document.getElementById('confirmParamInput');
                 if (input) input.focus();
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (!document.getElementById('creation-workbench-view')?.hidden) {
+                    input?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
             }, 100);
         }
 
@@ -185,6 +192,10 @@
             pendingCreationReview = null;
             const card = document.getElementById('confirmCard');
             if (card) card.remove();
+            if (typeof clearWorkbenchConfirmation === 'function') clearWorkbenchConfirmation();
+            if (typeof workbenchState !== 'undefined' && workbenchState.activeCardId) {
+                reopenCreationCard(workbenchState.activeCardId);
+            } else if (typeof closeCreationWorkbench === 'function') closeCreationWorkbench();
             addMessage('❌ 操作已取消', 'agent');
         }
 
@@ -425,6 +436,7 @@
             historySelectionMode = false;
             selectedConversationIds.clear();
             document.getElementById('confirmCard')?.remove();
+            if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
             resetExecutionTrace();
             renderConversationHistory();
             document.getElementById('chatContainer').innerHTML = `

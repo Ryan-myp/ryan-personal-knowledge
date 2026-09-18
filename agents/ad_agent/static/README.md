@@ -10,6 +10,9 @@ The web UI is split by responsibility and loaded in a stable order:
 - `css/chat-overrides.css` contains theme, responsive, and final product-polish overrides.
 - `js/chat.js` is the compatibility entrypoint and loads the ordered classic scripts.
 - `js/chat-state.js` owns shared state and trace labels.
+- `js/chat-workbench.js` owns the shared right-side artifact workspace for
+  creation cards and confirmation surfaces, while trace remains a switchable
+  view in the same panel.
 - `js/chat-workspace.js` owns runtime mode, monitoring, schedules, memory, and popovers.
 - `js/chat-knowledge.js` owns knowledge catalog, search, editing, and publication actions.
 - `js/chat-trace.js` owns execution trace rendering and durable-run updates.

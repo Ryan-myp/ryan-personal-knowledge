@@ -1,6 +1,7 @@
 (function () {
     const sources = [
         'chat-state.js',
+        'chat-workbench.js',
         'chat-workspace.js',
         'chat-knowledge.js',
         'chat-trace.js',
@@ -15,7 +16,7 @@
     const load = index => {
         if (index >= sources.length) return;
         const script = document.createElement('script');
-        script.src = `/static/js/${sources[index]}?v=20260910-mcp-inline-error-v1`;
+        script.src = `/static/js/${sources[index]}?v=20260918-workbench-v1`;
         script.onload = () => load(index + 1);
         script.onerror = () => console.error(`Failed to load ${sources[index]}`);
         document.head.appendChild(script);

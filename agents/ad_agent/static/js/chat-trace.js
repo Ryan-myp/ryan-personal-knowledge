@@ -267,6 +267,7 @@
 
         function startExecutionTrace(userInput) {
             stopDurableRunPolling();
+            if (typeof openAgentWorkbench === 'function') openAgentWorkbench('trace');
             traceState.activeTurn += 1;
             traceState.nodes = [];
             traceState.events = [];
@@ -387,4 +388,3 @@
             renderExecutionTrace();
             return event;
         }
-

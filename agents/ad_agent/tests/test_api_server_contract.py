@@ -16,7 +16,7 @@ from agents.ad_agent import api_server
 def _chat_page_javascript() -> str:
     """Read the bootstrap and split bundles as one browser contract."""
     names = [
-        "chat.js", "chat-state.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
         "chat-blueprint-editor.js", "chat-skills.js", "chat-creation.js",
         "chat-messages.js",
@@ -433,7 +433,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
         "/skills/builtin/", "managed_skills", "builtin_skills",
-        "knowledgeFileInput", "handleKnowledgeFileUpload", "view-hidden", "返回目录",
+        "knowledgeFileInput", "handleKnowledgeFileUpload", "/knowledge/raw",
+        "waitForKnowledgeIngest", "view-hidden", "返回目录",
         "knowledgeCatalogToggle", "knowledge-reader-actions", "复制为我的草稿", "编辑文档", "管理文档",
         "knowledge-table-wrap", "knowledge-task", "knowledge-render-v3",
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
@@ -444,6 +445,10 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "sidebar > .new-chat-btn", "nav-icon", "blueprintOverlay",
         "!event.target.closest('.blueprint-overlay')",
         "closeBlueprintManager()", "event.stopPropagation()",
+        "agentWorkbench", "workbench-tab-creation", "workbench-tab-trace",
+        "openCreationWorkbench", "closeCreationWorkbench",
+        "reopenCreationCard", "creation-workbench-host",
+        "message-card-launcher", "右侧工作区",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
@@ -717,10 +722,92 @@ def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
         store.close()
 
 
+def test_raw_knowledge_upload_persists_source_before_queueing_ingest(monkeypatch):
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    store = AdAgentStore(":memory:")
+
+    class RawRuntime:
+        persistence_store = store
+
+        def submit_knowledge_ingest(self, source_id, *, principal):
+            return (
+                {
+                    "task_id": "task-raw-1",
+                    "kind": "knowledge.ingest",
+                    "status": "queued",
+                    "payload": {"source_id": source_id},
+                },
+                True,
+            )
+
+    monkeypatch.setattr(api_server, "runtime", RawRuntime())
+    monkeypatch.setattr(api_server, "API_KEY", "raw-key")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "raw-key": {
+                "user_id": "raw-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["knowledge.read", "knowledge.write"],
+            }
+        }),
+    )
+    headers = {"X-API-Key": "raw-key"}
+    try:
+        with TestClient(api_server.app) as client:
+            response = client.post(
+                "/knowledge/raw",
+                headers=headers,
+                json={
+                    "filename": "team-notes.md",
+                    "content": "# Team notes\n\nUse a stable test cell.",
+                },
+            )
+            assert response.status_code == 202
+            payload = response.json()
+            assert payload["task"]["kind"] == "knowledge.ingest"
+            assert payload["source"]["status"] == "received"
+            assert payload["source"]["sha256"]
+            assert "content" not in payload["source"]
+
+            listed = client.get("/knowledge/raw", headers=headers)
+            assert listed.status_code == 200
+            assert len(listed.json()["sources"]) == 1
+            assert "content" not in listed.json()["sources"][0]
+
+            fetched = client.get(
+                f"/knowledge/raw/{payload['source']['source_id']}",
+                headers=headers,
+            )
+            assert fetched.status_code == 200
+            assert "content" not in fetched.json()
+    finally:
+        store.close()
+
+
 def test_chat_page_does_not_turn_http_errors_into_operation_complete(fake_server):
     html = api_server.TEMPLATE_PATH.read_text(encoding="utf-8") + "\n" + _chat_page_javascript()
     assert "if (!response.ok)" in html
     assert "data.detail || data.error" in html
+
+
+def test_creation_cards_are_declared_as_a_right_side_workbench_contract():
+    """Creation UI stays in the shared workbench instead of owning chat layout."""
+    html = (
+        api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+        + "\n"
+        + _chat_page_javascript()
+        + "\n"
+        + _chat_page_styles()
+    )
+    assert 'id="agentWorkbench"' in html
+    assert 'id="creation-workbench-host"' in html
+    assert "renderCreationCardInWorkbench" in html
+    assert "renderCreationCardLauncher" in html
+    assert "ui?.cards?.length" in html
+    assert "message-card-launcher" in html
 
 
 def test_api_key_principal_replaces_request_user_id(monkeypatch, fake_server):
