@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ...core.namespace import normalize_namespace as normalize_platform
+from .provider_evidence import build_provider_evidence_report
 
 
 EVIDENCE_STAGES = (
@@ -98,6 +99,7 @@ def build_readiness_report(
     capability_report: Mapping[str, Any],
     contract_gate_errors: list[str] | tuple[str, ...] = (),
     dry_run_report: Mapping[str, Any] | None = None,
+    provider_evidence: Mapping[str, Any] | None = None,
     policy: ReadinessPolicy,
     profile: str | None = None,
 ) -> dict[str, Any]:
@@ -113,6 +115,13 @@ def build_readiness_report(
     contract_errors = [str(item) for item in contract_gate_errors]
     dry_run = dict(dry_run_report or {})
     dry_run_failures = int(dry_run.get("failed", 0) or 0)
+    controlled_evidence = build_provider_evidence_report(provider_evidence) if provider_evidence else {
+        "format_version": 1,
+        "valid": False,
+        "errors": ["未提供受控 Provider E2E 证据"],
+        "run_count": 0,
+        "providers": {},
+    }
 
     code_contract_ok = not capability_issues and not contract_errors
     dry_run_ok = bool(dry_run.get("executed", False)) and dry_run_failures == 0
@@ -146,6 +155,7 @@ def build_readiness_report(
         "provider_e2e": {
             "status": "passed" if provider_e2e_ok else "not_verified",
             "evidence": "operation-specific controlled provider evidence",
+            "controlled_evidence": controlled_evidence,
             "errors": [] if provider_e2e_ok else [
                 "本地验证不等同于 Provider E2E；当前没有完整的渠道账户证据"
             ],
@@ -169,4 +179,5 @@ def build_readiness_report(
         "provider_summaries": provider_summaries,
         "capability_issue_count": len(capability_issues),
         "contract_error_count": len(contract_errors),
+        "controlled_evidence": controlled_evidence,
     }

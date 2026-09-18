@@ -60,3 +60,59 @@ def test_provider_contract_harness_covers_all_builtin_provider_factories():
     assert report["failed"] == 0
     assert report["passed"] == 4
     assert all(row["client_calls"] == 1 for row in report["scenarios"])
+
+
+def test_release_report_exposes_controlled_evidence_without_promoting_partial_runs():
+    report = build_readiness_report(
+        capability_report={
+            "issues": [],
+            "official_inventory": {
+                "meta": {
+                    "total": 1,
+                    "evidence_levels": {"provider_doc_scope": 1},
+                    "execution_statuses": {"dry_run_only": 1},
+                    "scope": "scoped_not_exhaustive",
+                    "completeness": "scoped_not_exhaustive",
+                }
+            },
+        },
+        dry_run_report={"executed": True, "failed": 0},
+        provider_evidence={
+            "schema_version": "1.0",
+            "generated_at": "2026-09-18",
+            "scope": "campaign_and_descendant_create_update",
+            "safety": {
+                "test_accounts_only": True,
+                "new_resources_paused": True,
+                "deleted": False,
+                "credentials_included": False,
+                "raw_provider_responses_included": False,
+            },
+            "runs": [{
+                "provider": "meta",
+                "test_account": "m-test",
+                "campaign_type": "TRAFFIC",
+                "status": "partial_live_verified",
+                "resources": {
+                    "campaign": {
+                        "id": "c1",
+                        "create": "passed",
+                        "update": "passed",
+                    },
+                    "ad_set": {
+                        "id": None,
+                        "create": "provider_rejected",
+                        "update": "not_run",
+                    },
+                },
+            }],
+        },
+        policy=_policy(),
+        profile="local",
+    )
+
+    evidence = report["controlled_evidence"]
+    assert evidence["valid"] is True
+    assert evidence["providers"]["meta"]["fully_verified_runs"] == 0
+    assert evidence["providers"]["meta"]["partial_runs"] == 1
+    assert report["passed"] is True

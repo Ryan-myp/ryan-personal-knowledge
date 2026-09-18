@@ -32,6 +32,7 @@ from agents.ad_agent.capabilities.api_surface import (  # noqa: E402
 )
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.domain.ad.contracts import AdFormatCoverage  # noqa: E402
+from agents.ad_agent.domain.ad.provider_evidence import load_provider_evidence  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
 from agents.ad_agent.skill_management import (  # noqa: E402
     SkillPackageError,
@@ -95,10 +96,32 @@ def _audit_skill_context(report: dict[str, Any]) -> None:
     report["issues"].extend(f"skill context: {issue}" for issue in skill_issues)
 
 
-def audit_capabilities() -> dict[str, Any]:
+def audit_capabilities(evidence_path: str | Path | None = None) -> dict[str, Any]:
     """Build a JSON-safe capability report without constructing API clients."""
     report: dict[str, Any] = {"platforms": {}, "issues": []}
     _audit_skill_context(report)
+    resolved_evidence_path = Path(evidence_path) if evidence_path else (
+        Path(__file__).resolve().parents[1] / "contracts" / "provider_e2e_evidence.json"
+    )
+    if resolved_evidence_path.is_file():
+        evidence = load_provider_evidence(resolved_evidence_path)
+        report["provider_evidence"] = {
+            **evidence,
+            "path": str(resolved_evidence_path),
+        }
+        report["issues"].extend(
+            f"provider evidence: {error}"
+            for error in evidence.get("errors", [])
+        )
+    else:
+        report["provider_evidence"] = {
+            "format_version": 1,
+            "valid": False,
+            "errors": ["受控 Provider E2E 证据文件不存在"],
+            "run_count": 0,
+            "providers": {},
+            "path": str(resolved_evidence_path),
+        }
     runtime = AgentRuntime(offline_mode=True, enforce_account_scope=False)
 
     for slug in discover_platform_slugs():
@@ -471,6 +494,20 @@ def _print_text(report: dict[str, Any]) -> None:
             )
         for issue in details["issues"]:
             print(f"  ISSUE: {issue}")
+    evidence = report.get("provider_evidence") or {}
+    if evidence:
+        print(
+            "\nprovider evidence: "
+            f"valid={evidence.get('valid', False)}, "
+            f"runs={evidence.get('run_count', 0)}, "
+            f"path={evidence.get('path', '-')}"
+        )
+        for provider, details in (evidence.get("providers") or {}).items():
+            print(
+                f"  [{provider}] fully_verified={details.get('fully_verified_runs', 0)}, "
+                f"partial={details.get('partial_runs', 0)}, "
+                f"limited={details.get('limited_runs', 0)}"
+            )
     if report["issues"]:
         print(f"\nFAILED: {len(report['issues'])} issue(s)")
     else:
@@ -480,8 +517,12 @@ def _print_text(report: dict[str, Any]) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
+    parser.add_argument(
+        "--evidence",
+        help="path to a controlled Provider E2E evidence JSON file",
+    )
     args = parser.parse_args(argv)
-    report = audit_capabilities()
+    report = audit_capabilities(args.evidence)
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
