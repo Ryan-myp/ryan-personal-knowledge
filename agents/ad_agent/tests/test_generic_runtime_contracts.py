@@ -186,26 +186,10 @@ def test_ad_runtime_is_composed_with_the_generic_turn_pipeline():
         runtime.close(wait=True)
 
 
-def test_ad_pipeline_consumes_generic_run_identity():
-    observed = []
+def test_ad_pipeline_has_no_legacy_unlocked_executor_boundary():
+    from pathlib import Path
 
-    def execute(**kwargs):
-        observed.append(kwargs)
-        return {"run_id": kwargs["run_id"], "turn_id": kwargs["turn_id"]}
-
-    runtime = SimpleNamespace(
-        _granted_permissions=frozenset(),
-        _run_unlocked=execute,
+    source = Path("agents/ad_agent/runtime/ad_turn_stages.py").read_text(
+        encoding="utf-8"
     )
-    result = AdTurnPipeline(runtime).execute(
-        TurnRequest(
-            user_input="hello",
-            session_id="session-a",
-            run_id="run-a",
-            turn_id="turn-a",
-        )
-    )
-
-    assert result == {"run_id": "run-a", "turn_id": "turn-a"}
-    assert observed[0]["run_id"] == "run-a"
-    assert observed[0]["turn_id"] == "turn-a"
+    assert "_run_unlocked" not in source

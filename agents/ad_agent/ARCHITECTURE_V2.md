@@ -15,7 +15,7 @@ PluginManifest
 
 PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。它负责唯一 ID、版本、
 依赖、来源、可信级别和状态；Provider 请求仍只能从注册的 Tool 进入。当前
-内置目录 discovery 已通过兼容适配接入该注册表，托管 Skill 只登记为不可执行的租户级
+内置目录 discovery 直接接入该注册表，托管 Skill 只登记为不可执行的租户级
 上下文插件。
 
 Tool Source/Skill 的注册、卸载、Parser catalog 刷新和 ownership index 更新由 Runtime
@@ -48,7 +48,7 @@ agents/ad_agent/
     ├── AdTurnState       advertising turn state
     ├── AdTurnStages      request/context/intent/plan/execute/response stages
     └── AdTurnFlow        advertising policy and workflow implementation
-  AdAgentRuntime          advertising composition root
+  AgentRuntime            advertising composition root
 ```
 
 `Agent` 是默认的通用执行循环：一个 user message 可以产生多个 model turn，
@@ -58,9 +58,9 @@ agents/ad_agent/
 `TurnPipeline` 表达更强的领域阶段；这两者都通过同一个 `AgentRuntime` 和 Run identity
 进入系统。
 
-广告 Provider 适配器只负责发布 Tool Source。通用 Harness 不依赖 Capability，
-也不要求 MCP；本地函数、SDK/HTTP adapter 和 MCP `tools/list` 都只需要转换成
-`ToolBinding`。旧 Capability 名称只在广告兼容边界保留。
+广告 Provider 适配器只负责发布 Tool Source。通用 Harness 不依赖任何 Provider
+抽象，也不要求 MCP；本地函数、SDK/HTTP adapter 和 MCP `tools/list` 都只需要
+转换成 `ToolBinding`。
 
 业务接入统一采用：
 
@@ -73,8 +73,8 @@ Agent Harness Registry
     AgentApplication + AgentRuntime
 ```
 
-广告只是其中一组 Skills、Tools 和 Provider adapters。现有 `AdAgentRuntime`
-暂时保留为广告安全和 Workflow 的兼容应用层；它不向
+广告只是其中一组 Skills、Tools 和 Provider adapters。广告侧 `AgentRuntime`
+负责安全和 Workflow 的应用编排；它不向
 `agents/agent_harness` 反向提供类型或路由规则。其他 Agent 可以直接注册广告
 `SkillSource` 和 `ToolSource`，也可以只取广告知识而不加载广告执行器。
 
@@ -194,7 +194,7 @@ Tool，只有复杂的二阶段、批量或聚合流程才增加 Skill-owned Fea
 `RuntimeSecurity` 分别承载 Tool 执行和安全边界；Runtime 主类只组合这些组件。
 Wiki 管理和 raw ingest 使用 `KnowledgeStorePort`，Memory 使用独立的 `MemoryStore`，
 Task/Outbox/Schedule 使用各自的 durable port；`PersistenceBackend` 只作为应用组合根的
-聚合兼容契约，业务服务不再必须依赖整套后端接口。
+聚合存储端口，业务服务不再必须依赖整套后端接口。
 
 Runtime 外壳进一步分为三层：`agents/agent_harness/runtime_kernel.py` 保留最小的请求、
 Session 并发、租约和 `run_id`/`turn_id` 生命周期；
@@ -202,14 +202,13 @@ Session 并发、租约和 `run_id`/`turn_id` 生命周期；
 阶段元数据、终止和错误语义；
 `agents/agent_harness/agent_runtime.py` 的 `AgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
 通用门面。应用 pipeline 消费 Kernel 注入的 Run identity，并将持久化、审计和响应关联到
-同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AdAgentRuntime` 只负责组装
+同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AgentRuntime` 只负责组装
 领域服务。`AdTurnPipeline` 是广告应用的阶段组合根，使用通用
 `SequentialTurnPipeline` 承载 `AdTurnState`；`AdTurnFlow` 保留广告的安全、账户、
-Blueprint、Workflow 和 Provider 业务分支，但不再充当 Runtime 入口。
-`ad_turn_orchestrator.py` 仅为旧调用方保留兼容 facade。工具选择同样拆开：
+Blueprint、Workflow 和 Provider 业务分支。工具选择同样拆开：
 `core/tool_selection.py` 的 `ToolSelector` 只消费 Tool metadata 和 ParsedIntent，
-`PromptRenderer` 只生成有界模型上下文；旧的 `DynamicToolSelector` 仅作为
-Skill、Wiki、租户上下文的兼容适配器，不能执行 Tool 或授予权限。
+`PromptRenderer` 只生成有界模型上下文；`DynamicToolSelector` 负责组合
+Skill、Wiki 和租户上下文，但不能执行 Tool 或授予权限。
 
 `core/policy_engine.py` 的 `PolicyEngine` 负责把 Tool、Effect、Scope、执行模式、
 权限、live 批准和 WriteGuard 状态转换成 `PolicyDecision`。dry-run 可以通过规划门槛，
@@ -500,8 +499,8 @@ Intent Parser / Skill 上下文
 ```
 
 当前实现不依赖向量数据库。`core.knowledge.MarkdownWikiKnowledgeProvider` 是唯一
-Runtime Provider；`tools/wiki_query.py` 仅是 CLI/历史调用的兼容 facade，不维护自己的
-文档加载和索引逻辑。文档元数据规范见
+Runtime Provider；CLI 和 Tool 都直接使用这个 Provider，不维护第二套文档加载和索引逻辑。
+文档元数据规范见
 [`knowledge_base/SCHEMA.md`](./knowledge_base/SCHEMA.md)。
 
 ### 4. Agent Memory
@@ -532,7 +531,7 @@ Tool Registry、权限、账户范围或执行计划。
 | `agents/agent_harness/runtime_kernel.py` | 当前源码 | 与业务无关的请求规范化、Session 并发、跨实例租约和执行委托 |
 | `agents/agent_harness/run_store.py` | 当前源码 | 通用 Run 启动、事件和终态持久化端口 |
 | `core/tool_selection.py` | 当前源码 | 业务无关的 Tool 选择和 Prompt 渲染 |
-| `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文兼容适配层 |
+| `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文组合与筛选 |
 | `core/policy_engine.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
 | `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
@@ -541,8 +540,6 @@ Tool Registry、权限、账户范围或执行计划。
 | `runtime/ad_turn_stages.py` | 当前源码 | 广告阶段适配与状态传递 |
 | `runtime/ad_turn_state.py` | 当前源码 | 广告回合显式状态 |
 | `runtime/ad_turn_flow.py` | 当前源码 | 广告安全、规划、Workflow、Tool 执行和结果闭环 |
-| `runtime/ad_turn_orchestrator.py` | 当前源码 | 旧入口兼容 facade，不承载业务循环 |
-| `runtime/ad_turn_engine.py` | 当前源码 | 旧模块名兼容入口 |
 | `runtime/supervisor.py` | 当前源码 | 通用 Task、Scheduler、Outbox、Event Repair worker 生命周期；任务类型由应用组合根注入 |
 | `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |
 | `runtime/tool_executor.py` | 当前源码 | Tool 执行、超时与 Provider Client 隔离 |

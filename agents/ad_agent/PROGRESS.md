@@ -7,7 +7,7 @@
 - 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前合同快照为 302 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；live 只在测试账号白名单、显式模式、权限和二次确认同时满足时执行。三渠道指定测试账号的真实验证证据见 `contracts/provider_e2e_evidence.json`，未验证项不推断为成功。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
-- 只读查询在白名单只有一个账户时允许兼容性自动选择；创建、更新、删除、暂停/恢复及批量写必须由当前请求显式指定目标账户，多账户同样必须显式指定。
+- 只读查询在白名单只有一个账户时允许自动选择；创建、更新、删除、暂停/恢复及批量写必须由当前请求显式指定目标账户，多账户同样必须显式指定。
 - 创建工具已支持参数目录：固定枚举/数组元素/条件依赖进入 ToolSchema，TikTok App 与地域等动态字段关联现有 lookup 工具，`/tools` 返回完整 Schema。
 - `access_token`、`refresh_token`、`developer_token`、`client_id`、`client_secret`、`private_key`、`bc_id`、`partner_id`、`mcc` 等字段禁止出现在工具 payload/updates 中；凭证不写入 SQLite。
 - 无 Provider Client 的读取默认 fail-closed；离线 fixture 仅在显式 `offline_mode=True` 下可用。
@@ -18,7 +18,7 @@
   `AgentRuntime.run`，不会直接调用 Provider Handler。HTTP 入口为 `/tasks`，默认仍是
   dry-run；取消/暂停只改变本地调度状态，不表示外部平台回滚。
 - 知识库已统一为 Markdown-first LLM Wiki：`core.knowledge.MarkdownWikiKnowledgeProvider`
-  是 Runtime 唯一入口，CLI Wiki 查询只是兼容 facade；文档使用 `SCHEMA.md` 的元数据，
+  是 Runtime 和 Wiki Tool 的唯一数据入口；文档使用 `SCHEMA.md` 的元数据，
   采用有界确定性词法检索，不接入向量库。
 - Memory 已与 Session、Tool Audit、Workflow 和 Wiki 分离：通过 `MemoryManager`/
   `MemoryStore` 进行租户/用户隔离的显式写入、词法召回、过期过滤和删除墓碑；当前由

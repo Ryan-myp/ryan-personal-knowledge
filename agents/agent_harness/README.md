@@ -35,9 +35,9 @@ Applications inject:
 - policy hooks such as `before_tool_call` and `after_tool_call`;
 - an optional `RunStore` and session implementation.
 
-Advertising is only one collection of Skills and Tool Sources. Its existing
-Provider/Capability objects are compatibility adapters at the integration
-boundary; the Harness does not require or expose that concept.
+Advertising is only one collection of Skills and Tool Sources. Provider
+objects publish Tool definitions at the integration boundary; the Harness
+does not require any provider-specific abstraction.
 
 The convenient `AgentApplication` assembly is the recommended starting point
 for a new Agent integration:

@@ -1,6 +1,6 @@
 """Composition of the advertising application's Runtime dependencies.
 
-``AdAgentRuntime`` is the public application facade, not the place where
+``AgentRuntime`` is the public application facade, not the place where
 every infrastructure object should be constructed.  This module owns the
 application composition graph and returns explicit components to the facade.
 
@@ -119,7 +119,7 @@ class AdRuntimeAssemblyOptions:
     """Infrastructure options supplied by the application boundary.
 
     Domain settings such as Skill roots, Tool definitions and provider
-    clients are initialized by ``AdAgentRuntime`` before this assembly runs.
+    clients are initialized by ``AgentRuntime`` before this assembly runs.
     Only lifecycle/queue options belong here, which keeps the composition
     graph explicit and makes it possible to replace SQLite with MySQL through
     the same persistence port.

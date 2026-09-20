@@ -13,7 +13,7 @@
 - **LLM 结果闭环**：执行完成后，LLM 可基于脱敏的工具结果、知识引用和分析结果生成最终回答；输出协议、dry-run 事实和失败事实经过校验，异常时回退到确定性 Renderer
 - **安全边界**：写操作必须由当前请求明确提供目标账户、命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：Tool 可以来自本地 Handler、SDK/HTTP Connector 或 MCP；新增集成不需要修改 Runtime、Router 或中心渠道表
-- **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时发布 Tool Source/Executor，广告渠道的 Capability 只是 Provider Module 兼容实现
+- **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时发布 Tool Source/Executor，广告渠道的 Provider Module 只是具体实现
 - **跨 Agent 复用**：广告 Skills 可作为标准 Markdown Skill Source 导出，广告 Tools 可转换为通用 Tool Source，能够接入其他 Agent；其他业务也按同一方式接入本 Harness
 - **广告创建蓝图**：广告 Provider Module 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
 - **统一插件内核**：Capability、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
@@ -104,7 +104,7 @@ runtime = AgentRuntime(
     ),
 )
 
-# 广告 Provider Tool Source 兼容入口（写操作仍只生成 dry-run 计划）
+# 广告 Provider Tool Source（写操作仍只生成 dry-run 计划）
 runtime.register_capability(create_meta_capability())
 runtime.register_capability(create_google_capability())
 
@@ -337,7 +337,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 门禁规则位于 [`contracts/readiness_policy.json`](./contracts/readiness_policy.json)，Provider 本地场景位于 [`contracts/provider_contract_scenarios.json`](./contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Capability、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
 
-当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和兼容适配，不代表已经支持任意第三方代码热加载。
+当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和声明式接入，不代表已经支持任意第三方代码热加载。
 Runtime 对 Capability/Skill 的注册、卸载和派生索引刷新使用同一把生命周期锁；
 执行请求仍可并发，但不会在注册中途观察到半套 Tool 或 Skill ownership 状态。卸载失败时
 会回滚 Registry、参数目录、Blueprint、SkillLoader、格式目录和 Parser catalog。
@@ -374,14 +374,13 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 ### Runtime 边界结论
 
-`AdAgentRuntime` 保留为广告应用组合根是有必要的：它把广告 Skill、Provider Module、Feature、
+广告 `AgentRuntime` 是应用组合根：它把广告 Skill、Provider Module、Feature、
 Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
 通用队列、租约或 Provider 分支。通用执行壳是 `agents/agent_harness/`，队列/Outbox/
 Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
-Tool Source/Executor 或独立 Feature。后续若继续拆分，优先拆它的装配配置和应用门面，而不是删除这个
-组合根或在 HTTP 层复制另一套 Agent。
+Tool Source/Executor 或独立 Feature。
 
-当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AdAgentRuntime` 负责广告应用
+当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AgentRuntime` 负责广告应用
 配置、能力注册入口和稳定门面，`AdRuntimeAssembly` 负责把 `PersistenceBackend`、通用
 `AgentRuntimeKernel`、Tool 执行器、Schedule/Task/Outbox worker 与广告应用服务接起来。
 Assembly 只做依赖连接，不根据渠道或业务流程分支；新的简单能力仍应通过 Skill + Tool/MCP
@@ -470,15 +469,15 @@ Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/age
 广告的 `runtime/ad_runtime.py` 是应用组合根，负责组装广告 Skills、Tools、Provider
 Modules 和业务服务。`runtime/ad_turn_pipeline.py` 是广告应用阶段组合根，按
 `AdTurnState -> AdTurnStages -> AdTurnFlow` 组织一轮请求；旧的
-`ad_turn_orchestrator.py` 只保留兼容 facade，不再承载主循环。
+`runtime/ad_turn_pipeline.py` 负责阶段组合，`runtime/ad_turn_flow.py` 负责广告业务流程。
 `runtime/runtime.py` 仅作为
 稳定导出入口。Generic Runtime 通过 opaque `TurnRequest.context` 与应用交换领域数据，
 因此新增业务 Skill/Tool 不需要把账户、渠道或业务流程分支写回 Core。
 
 工具选择也分成两个层次：`core/tool_selection.py` 的 `ToolSelector` 只读取 Tool
 publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有界的模型上下文；
-`core/tool_selector.py` 的 `DynamicToolSelector` 仅保留知识库、Skill 和租户上下文的
-兼容适配，不承担 Tool 执行、权限授予或业务路由。
+`core/tool_selector.py` 的 `DynamicToolSelector` 负责知识库、Skill 和租户上下文的
+组合与筛选，不承担 Tool 执行、权限授予或业务路由。
 
 执行策略由 `core/policy_engine.py` 的 `PolicyEngine` 统一计算。它把 Tool 声明的
 权限、Scope、Effect、live 能力、批准清单和 WriteGuard 状态转换成不可变的
@@ -527,7 +526,7 @@ publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有�
 ad_agent/
 ├── __init__.py              # 包入口
 ├── core/
-│   ├── agent_runtime.py     # 广告应用兼容入口
+│   ├── agent_runtime.py     # Agent Harness Runtime 导出
 │   ├── runtime_kernel.py    # 请求/会话/租约生命周期内核
 │   ├── interfaces.py        # 核心接口定义
 │   ├── tool_selection.py    # 通用 Tool 选择与 Prompt 渲染
@@ -540,7 +539,10 @@ ad_agent/
 ├── runtime/
 │   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
 │   ├── ad_runtime.py        # 广告应用组合根
-│   ├── ad_turn_engine.py    # 广告应用回合执行
+│   ├── ad_turn_pipeline.py  # 广告阶段组合
+│   ├── ad_turn_stages.py    # 广告阶段实现
+│   ├── ad_turn_state.py     # 广告回合状态
+│   ├── ad_turn_flow.py      # 广告业务流程
 │   ├── task_executor.py     # 通用异步 Task 队列与租约
 │   ├── scheduler.py         # 通用定时任务调度
 │   ├── supervisor.py        # 后台 worker 生命周期
@@ -581,8 +583,8 @@ agents/agent_harness/
 └── results.py          # RunResult/RunStatus
 ```
 
-广告侧 `AdAgentRuntime` 是现有广告安全策略、账户范围、Workflow 和 Provider
-恢复逻辑的兼容层，不是通用 Runtime。新业务不应继承它；应使用
+广告侧 `AgentRuntime` 负责现有广告安全策略、账户范围、Workflow 和 Provider
+恢复逻辑，但不是通用 Harness。新业务应使用
 `agents.agent_harness.AgentApplication`，通过 `SkillSource + ToolSource` 接入。
 广告侧也提供 `advertising_skill_source()` 和 `advertising_tool_source()`，用于把
 广告知识和原子工具接入其他 Agent。

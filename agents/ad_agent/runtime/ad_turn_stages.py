@@ -64,36 +64,6 @@ class ExecutionStage(_AdStage):
         account_scope = (
             principal.account_scope if principal is not None else None
         )
-        if not hasattr(self.runtime, "_validate_request_limits"):
-            legacy_result = self.runtime._run_unlocked(
-                user_input=context.request.user_input,
-                session_id=context.request.session_id,
-                run_id=context.request.run_id,
-                turn_id=context.request.turn_id,
-                user_id=context.request.user_id,
-                account_id=state.request_context.get("account_id"),
-                credentials=state.request_context.get("credentials"),
-                platform_params=state.request_context.get("platform_params"),
-                confirmed=bool(state.request_context.get("confirmed", False)),
-                confirmation_payload=state.request_context.get(
-                    "confirmation_payload"
-                ),
-                creation_blueprint_id=state.request_context.get(
-                    "creation_blueprint_id"
-                ),
-                creation_blueprint_version=state.request_context.get(
-                    "creation_blueprint_version"
-                ),
-                granted_permissions=permissions,
-                account_scope=account_scope,
-                tenant_id=context.request.tenant_id,
-                cancellation_event=context.request.cancellation_event,
-                lease_lost_event=context.request.lease_lost_event,
-                event_callback=context.request.event_callback,
-                task_id=context.request.task_id,
-            )
-            state.capture_response(legacy_result)
-            return TurnStageResult.continue_with()
         response = execute_ad_turn(
             self.runtime,
             user_input=context.request.user_input,

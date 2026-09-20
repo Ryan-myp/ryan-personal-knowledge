@@ -203,21 +203,17 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     assert "dv360" not in assembly.lower()
 
 
-def test_turn_entrypoint_is_a_compatibility_shim_and_orchestrator_has_stage_boundaries():
-    """The legacy module must not grow a second turn implementation."""
+def test_ad_turn_has_one_pipeline_entrypoint_without_compatibility_modules():
+    """New code enters directly through the application stage pipeline."""
     from pathlib import Path
 
     root = Path("agents/ad_agent/runtime")
-    entrypoint = (root / "ad_turn_engine.py").read_text(encoding="utf-8")
-    orchestrator = (root / "ad_turn_orchestrator.py").read_text(encoding="utf-8")
-
-    assert len(entrypoint.splitlines()) <= 10
-    assert "from .ad_turn_orchestrator import execute" in entrypoint
-    assert len(orchestrator.splitlines()) <= 40
-    assert "AdTurnPipeline" in orchestrator
-    assert "def execute(" in orchestrator
-    assert "AdTurnContextService" not in orchestrator
-    assert "AdToolExecutionService" not in orchestrator
+    assert not (root / "ad_turn_engine.py").exists()
+    assert not (root / "ad_turn_orchestrator.py").exists()
+    runtime_source = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    stages_source = (root / "ad_turn_stages.py").read_text(encoding="utf-8")
+    assert "def _run_unlocked" not in runtime_source
+    assert "_run_unlocked" not in stages_source
 
 
 def test_ad_turn_pipeline_is_the_application_stage_composition_root():
@@ -266,7 +262,8 @@ def test_turn_application_services_do_not_import_provider_implementations():
 
     root = Path("agents/ad_agent/runtime")
     for name in (
-        "ad_turn_orchestrator.py",
+        "ad_turn_flow.py",
+        "ad_turn_stages.py",
         "ad_turn_context.py",
         "ad_turn_planning.py",
         "ad_tool_execution.py",

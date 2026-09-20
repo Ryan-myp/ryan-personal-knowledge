@@ -449,7 +449,7 @@ class Agent:
             self._abort_event.clear()
 
     def execute(self, request: TurnRequest) -> RunResult:
-        """TurnPipeline-compatible alias for embedding the Agent in Runtime."""
+        """Execute one Run through the shared TurnPipeline contract."""
         return self.run(request)
 
 

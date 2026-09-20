@@ -1,7 +1,4 @@
-from agents.ad_agent.integration import (
-    advertising_tool_source,
-    capability_tool_source,
-)
+from agents.ad_agent.integration import advertising_tool_source
 from agents.agent_harness import InMemoryToolCatalog, TurnRequest
 
 
@@ -32,6 +29,5 @@ def test_ad_capability_can_be_consumed_as_a_generic_tool_source():
     assert binding.executor.execute(context, {"value": "ok"}) == {"value": "ok"}
 
 
-def test_capability_name_is_only_a_compatibility_wrapper_for_tool_source():
-    assert capability_tool_source(Capability()).source_id == "ad-capability:example"
+def test_advertising_tool_source_uses_the_standard_source_namespace():
     assert advertising_tool_source(Capability()).source_id == "advertising:example"

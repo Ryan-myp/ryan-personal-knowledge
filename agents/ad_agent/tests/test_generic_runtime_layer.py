@@ -1,7 +1,7 @@
 from contextvars import ContextVar
 import threading
 
-from agents.ad_agent.core.agent_runtime import GenericAgentRuntime
+from agents.agent_harness.agent_runtime import AgentRuntime
 from agents.ad_agent.core.interfaces import (
     ExecutionMode,
     ToolDefinition,
@@ -51,8 +51,15 @@ def test_tool_selector_and_prompt_renderer_are_domain_neutral():
 def test_generic_runtime_delegates_turns_through_kernel_contract():
     mode_context = ContextVar("test_generic_runtime_mode", default=None)
     calls = []
+    pipeline = SequentialTurnPipeline([
+        lambda context: calls.append(context.request) or {
+            "session_id": context.request.session_id,
+            "tenant_id": context.request.tenant_id,
+            "value": context.request.context["value"],
+        },
+    ])
 
-    runtime = GenericAgentRuntime(
+    runtime = AgentRuntime(
         session_manager=None,
         session_locks={},
         session_locks_guard=threading.RLock(),
@@ -63,11 +70,7 @@ def test_generic_runtime_delegates_turns_through_kernel_contract():
         resolve_mode=lambda _tenant, _user, _requested: "dry_run",
         assert_ready=lambda: None,
         ensure_session=lambda request: request.session_id,
-        execute_turn=lambda request: calls.append(request) or {
-            "session_id": request.session_id,
-            "tenant_id": request.tenant_id,
-            "value": request.context["value"],
-        },
+        pipeline=pipeline,
     )
 
     result = runtime.run(
@@ -88,10 +91,13 @@ def test_generic_runtime_close_is_best_effort_and_idempotent():
     closed = []
 
     class Executor:
+        def execute(self, _context):
+            return {}
+
         def close(self):
             closed.append(True)
 
-    runtime = GenericAgentRuntime(
+    runtime = AgentRuntime(
         session_manager=None,
         session_locks={},
         session_locks_guard=threading.RLock(),
@@ -102,7 +108,7 @@ def test_generic_runtime_close_is_best_effort_and_idempotent():
         resolve_mode=lambda _tenant, _user, _requested: "dry_run",
         assert_ready=lambda: None,
         ensure_session=lambda _request: None,
-        execute_turn=Executor(),
+        pipeline=Executor(),
     )
 
     runtime.close()
@@ -133,7 +139,7 @@ def test_generic_runtime_runs_a_domain_neutral_turn_pipeline():
     pipeline = SequentialTurnPipeline(
         [ParseStage(), CompleteStage(), MustNotRun()]
     )
-    runtime = GenericAgentRuntime(
+    runtime = AgentRuntime(
         session_manager=None,
         session_locks={},
         session_locks_guard=threading.RLock(),
@@ -144,7 +150,7 @@ def test_generic_runtime_runs_a_domain_neutral_turn_pipeline():
         resolve_mode=lambda _tenant, _user, _requested: "dry_run",
         assert_ready=lambda: None,
         ensure_session=lambda _request: None,
-        turn_pipeline=pipeline,
+        pipeline=pipeline,
     )
 
     result = runtime.run(TurnRequest(user_input="search"))
@@ -207,7 +213,7 @@ def test_generic_runtime_registers_tool_without_capability():
             return {"ok": True}
 
     registry = SimpleToolRegistry()
-    runtime = GenericAgentRuntime(
+    runtime = AgentRuntime(
         session_manager=None,
         session_locks={},
         session_locks_guard=threading.RLock(),
@@ -218,7 +224,7 @@ def test_generic_runtime_registers_tool_without_capability():
         resolve_mode=lambda _tenant, _user, _requested: "dry_run",
         assert_ready=lambda: None,
         ensure_session=lambda _request: None,
-        execute_turn=lambda _request: {},
+        pipeline=SequentialTurnPipeline([lambda _context: {}]),
         tool_registry=registry,
     )
     tool = _tool(name="local_search")
@@ -233,7 +239,7 @@ def test_generic_runtime_registers_tool_without_capability():
 
 def test_generic_runtime_registers_source_atomically_and_tracks_owner():
     registry = SimpleToolRegistry()
-    runtime = GenericAgentRuntime(
+    runtime = AgentRuntime(
         session_manager=None,
         session_locks={},
         session_locks_guard=threading.RLock(),
@@ -244,7 +250,7 @@ def test_generic_runtime_registers_source_atomically_and_tracks_owner():
         resolve_mode=lambda _tenant, _user, _requested: "dry_run",
         assert_ready=lambda: None,
         ensure_session=lambda _request: None,
-        execute_turn=lambda _request: {},
+        pipeline=SequentialTurnPipeline([lambda _context: {}]),
         tool_registry=registry,
     )
     source = StaticToolSource(

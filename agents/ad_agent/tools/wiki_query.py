@@ -1,8 +1,7 @@
-"""Compatibility facade for the canonical Markdown LLM Wiki provider.
+"""Tool and CLI access to the canonical Markdown LLM Wiki provider.
 
-New code should inject/use the application ``KnowledgeProvider`` contract.
-These small helpers remain for CLI and existing callers, but they do not load
-or search a second knowledge index.
+All queries use the application ``KnowledgeProvider`` and the single Markdown
+document index. This module contains no independent loading or indexing path.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from agents.ad_agent.domain.ad.knowledge import (
 
 @dataclass
 class WikiEntry:
-    """Legacy-shaped view over one canonical ``KnowledgeDocument``."""
+    """Tool-facing view over one canonical ``KnowledgeDocument``."""
 
     entry_id: str
     platform: str
@@ -56,7 +55,7 @@ def _entry(document: KnowledgeDocument) -> WikiEntry:
 
 
 class MarkdownWikiLoader:
-    """Legacy loader API backed by ``MarkdownWikiKnowledgeProvider``."""
+    """Cached loader backed by ``MarkdownWikiKnowledgeProvider``."""
 
     def __init__(self, base_path: str):
         self.base_path = Path(base_path).resolve()
@@ -124,7 +123,7 @@ def get_wiki_loader(base_path: str = None) -> MarkdownWikiLoader:
 
 
 class WikiQueryTool:
-    """Read-only Wiki facade for CLI and compatibility callers."""
+    """Read-only Tool backed by the canonical Wiki provider."""
 
     def __init__(self, base_path: str = None):
         self.loader = get_wiki_loader(base_path)

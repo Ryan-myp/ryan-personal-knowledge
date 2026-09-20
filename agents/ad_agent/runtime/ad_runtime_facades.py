@@ -1,4 +1,4 @@
-"""Stable application-facing facades for :class:`AdAgentRuntime`.
+"""Stable application-facing facades for the advertising Runtime.
 
 The runtime is the advertising composition root, not the owner of every
 application query and control API.  These small facades preserve the public

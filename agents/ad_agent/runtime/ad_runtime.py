@@ -103,7 +103,7 @@ _BLUEPRINT_CONTEXT_CACHE_MAX_ENTRIES = 128
 
 # ─── Advertising application runtime ──────────────────────────
 
-class AdAgentRuntime(
+class AgentRuntime(
     AdCapabilityLifecycleMixin,
     AdCreationServicesMixin,
     AdTaskRuntimeFacade,
@@ -120,7 +120,7 @@ class AdAgentRuntime(
 
     架构层次：
     ┌─────────────────────────────────────────┐
-    │  AdAgentRuntime（广告应用组合根）          │
+    │  AgentRuntime（广告应用组合根）             │
     │  ├─ SessionManager（会话管理）             │
     │  ├─ IntentRouter（意图路由）               │
     │  ├─ ToolRegistry（工具执行）               │
@@ -1197,7 +1197,7 @@ class AdAgentRuntime(
         """Return the trusted principal's account scope, or ``None`` if absent."""
         if account_scope is None:
             return None
-        normalized = AdAgentRuntime._canonical_platform(platform)
+        normalized = AgentRuntime._canonical_platform(platform)
         aliases = {normalized, platform}
         accounts: set[str] = set()
         for key in aliases:
@@ -1405,11 +1405,11 @@ class AdAgentRuntime(
         """Make credentials visible to handlers as a read-only snapshot."""
         if isinstance(value, dict):
             return MappingProxyType({
-                    key: AdAgentRuntime._freeze_credentials(item)
+                    key: AgentRuntime._freeze_credentials(item)
                 for key, item in value.items()
             })
         if isinstance(value, list):
-            return tuple(AdAgentRuntime._freeze_credentials(item) for item in value)
+            return tuple(AgentRuntime._freeze_credentials(item) for item in value)
         return value
 
     @staticmethod
@@ -1578,14 +1578,6 @@ class AdAgentRuntime(
             )
         )
 
-    def _execute_kernel_request(self, request: TurnRequest) -> dict:
-        """Compatibility adapter to the injected application TurnPipeline."""
-        pipeline = getattr(self._runtime_kernel, "turn_pipeline", None)
-        if pipeline is not None and hasattr(pipeline, "execute"):
-            return pipeline.execute(request)
-        from .ad_turn_pipeline import AdTurnPipeline
-        return AdTurnPipeline(self).execute(request)
-
     def _ensure_kernel_session(self, request: TurnRequest) -> "SessionContext":
         """Interpret the opaque Kernel context at the advertising boundary."""
         context = request.context if isinstance(request.context, Mapping) else {}
@@ -1601,9 +1593,3 @@ class AdAgentRuntime(
             str(request.session_id), request.user_id, context.get("account_id"),
             context.get("credentials"), tenant_id=request.tenant_id,
         )
-
-    def _run_unlocked(self, *args: Any, **kwargs: Any) -> dict:
-        """Delegate the application workflow to AdAgentTurnEngine."""
-        from .ad_turn_orchestrator import execute
-
-        return execute(self, *args, **kwargs)

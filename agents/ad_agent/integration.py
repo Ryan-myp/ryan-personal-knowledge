@@ -18,9 +18,8 @@ def advertising_tool_source(
     """Expose advertising Tools as a generic Tool Source.
 
     The input only needs to publish ``register_tools()``. It may be a local
-    provider adapter, SDK/HTTP connector, MCP-backed publisher or the legacy
-    advertising Capability object. The generic Agent Harness sees only the
-    resulting Tool bindings.
+    provider adapter, SDK/HTTP connector or MCP-backed publisher. The generic
+    Agent Harness sees only the resulting Tool bindings.
     """
     register_tools = getattr(provider_tools, "register_tools", None)
     if not callable(register_tools):
@@ -35,19 +34,6 @@ def advertising_tool_source(
         getattr(provider_tools, "platform_name", "advertising") or "advertising"
     ).strip()
     return StaticToolSource(source_id or f"advertising:{platform}", bindings)
-
-
-def capability_tool_source(
-    provider_tools: Any, *, source_id: str | None = None,
-) -> StaticToolSource:
-    """Legacy wrapper preserving the historical source-id contract."""
-    platform = str(
-        getattr(provider_tools, "platform_name", "ad") or "ad"
-    ).strip()
-    return advertising_tool_source(
-        provider_tools,
-        source_id=source_id or f"ad-capability:{platform}",
-    )
 
 
 def advertising_skill_source(*, source_id: str = "ad-skills") -> MarkdownSkillDirectorySource:
@@ -93,5 +79,4 @@ class _GenericContextExecutor:
 __all__ = [
     "advertising_skill_source",
     "advertising_tool_source",
-    "capability_tool_source",
 ]

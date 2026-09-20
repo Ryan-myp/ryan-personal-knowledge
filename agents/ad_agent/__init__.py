@@ -17,7 +17,7 @@ ad_agent - 多渠道广告投放 Agent
     result = runtime.run(user_input="投放Meta广告", user_id="user_001")
 """
 
-from .runtime.runtime import AgentRuntime, GenericAgentRuntime, SessionContext
+from .runtime.runtime import AgentRuntime, SessionContext
 from .capabilities.meta import MetaCapability, create_meta_capability
 from .capabilities.google import GoogleCapability, create_google_capability
 from .capabilities.tiktok import TikTokCapability, create_tiktok_capability
@@ -37,11 +37,7 @@ from .core.tool_sources import ToolBinding, ToolExecutor, ToolSource, StaticTool
 from .core.turn_pipeline import (
     SequentialTurnPipeline, TurnExecutionContext, TurnPipeline, TurnStageResult,
 )
-from .integration import (
-    advertising_skill_source,
-    advertising_tool_source,
-    capability_tool_source,
-)
+from .integration import advertising_skill_source, advertising_tool_source
 from .plugin_management import PluginPackageManager
 from .runtime.task_executor import (
     TaskCapacityError, TaskExecutionContext, TaskExecutor, TaskExecutorError,
@@ -51,7 +47,6 @@ from .runtime.task_executor import (
 __version__ = "1.0.0"
 __all__ = [
     "AgentRuntime",
-    "GenericAgentRuntime",
     "SessionContext",
     "MetaCapability",
     "GoogleCapability",
@@ -90,7 +85,6 @@ __all__ = [
     "TurnStageResult",
     "advertising_skill_source",
     "advertising_tool_source",
-    "capability_tool_source",
     "PluginPackageManager",
     "TaskExecutor",
     "TaskExecutionContext",

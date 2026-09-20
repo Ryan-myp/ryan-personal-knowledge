@@ -34,7 +34,6 @@ class AgentRuntime:
         skill_catalog: Any = None,
         on_tool_catalog_changed: Optional[callable] = None,
         run_store: Optional[RunStore] = None,
-        # Compatibility constructor for existing application assemblies.
         session_manager: Any = None,
         session_locks: Optional[dict[str, threading.RLock]] = None,
         session_locks_guard: Optional[threading.RLock] = None,
@@ -47,18 +46,12 @@ class AgentRuntime:
         ensure_session: Optional[callable] = None,
         refresh_session: Optional[callable] = None,
         busy_error: type[Exception] = RuntimeSessionBusyError,
-        execute_turn: Optional[Any] = None,
-        turn_pipeline: Optional[TurnPipeline] = None,
     ) -> None:
-        if pipeline is not None and turn_pipeline is not None:
-            raise ValueError("provide either pipeline or turn_pipeline, not both")
-        pipeline = pipeline or turn_pipeline
         if pipeline is not None and agent is not None:
             raise ValueError("provide either pipeline or agent, not both")
         pipeline = pipeline or agent
-        self._legacy_executor = execute_turn
         if ports is None:
-            if pipeline is None and execute_turn is None:
+            if pipeline is None:
                 raise TypeError("Agent Runtime requires ports and pipeline")
             ports = RuntimePorts(
                 session_manager=session_manager,
@@ -78,14 +71,12 @@ class AgentRuntime:
                 refresh_session=refresh_session,
                 busy_error=busy_error,
             )
-        if pipeline is None and execute_turn is not None:
-            pipeline = _LegacyExecutorPipeline(execute_turn)
         if pipeline is None or not callable(getattr(pipeline, "execute", None)):
             raise TypeError("pipeline must expose execute(request)")
         self._closed = False
         self.pipeline = pipeline
         self.turn_pipeline = pipeline
-        self._executor = execute_turn or pipeline
+        self._executor = pipeline
         self.tool_registry = tool_registry
         self.skill_catalog = skill_catalog
         self._on_tool_catalog_changed = on_tool_catalog_changed
@@ -251,21 +242,5 @@ class AgentRuntime:
         close = getattr(self._executor, "close", None)
         if callable(close):
             close()
-
-
-class _LegacyExecutorPipeline:
-    """Adapt the pre-pipeline callable/object contract during migration."""
-
-    def __init__(self, executor: Any) -> None:
-        self.executor = executor
-
-    def execute(self, request: TurnRequest) -> Any:
-        execute = getattr(self.executor, "execute", None)
-        if callable(execute):
-            return execute(request)
-        if callable(self.executor):
-            return self.executor(request)
-        raise TypeError("legacy execute_turn must be callable or expose execute()")
-
 
 __all__ = ["AgentRuntime"]

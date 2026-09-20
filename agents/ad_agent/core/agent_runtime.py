@@ -1,7 +1,5 @@
-"""Backward-compatible imports for the standalone Agent Harness."""
+"""Public import for the standalone Agent Harness Runtime."""
 
 from agents.agent_harness.agent_runtime import AgentRuntime
 
-GenericAgentRuntime = AgentRuntime
-
-__all__ = ["AgentRuntime", "GenericAgentRuntime"]
+__all__ = ["AgentRuntime"]
