@@ -30,16 +30,17 @@ Applications inject:
 - a model adapter with `complete(messages, tools, request)`;
 - standard `SKILL.md` directories through `MarkdownSkillSource` or
   `MarkdownSkillDirectorySource`;
-- a `ToolCatalog` backed by local, SDK/HTTP or MCP Tool bindings;
+- a `ToolCatalog` and `ToolSource` backed by local, SDK/HTTP or MCP Tool
+  bindings;
 - policy hooks such as `before_tool_call` and `after_tool_call`;
 - an optional `RunStore` and session implementation.
 
-Advertising remains an application package. Its `Capability` classes are
-compatibility adapters that publish Tools; they are not required by this
-Harness and must not become a second generic abstraction.
+Advertising is only one collection of Skills and Tool Sources. Its existing
+Provider/Capability objects are compatibility adapters at the integration
+boundary; the Harness does not require or expose that concept.
 
 The convenient `AgentApplication` assembly is the recommended starting point
-for a new business:
+for a new Agent integration:
 
 ```python
 from agents.agent_harness import AgentApplication, SkillBinding, StaticSkillSource
@@ -53,10 +54,10 @@ app.register_tool_source(my_tool_source)
 result = app.prompt("Help me with a ticket")
 ```
 
-Skill packages are advisory context only. They never register an executable
-Tool, receive credentials or bypass the Tool policy hook.
+Skill directories are advisory context only. They never register an
+executable Tool, receive credentials or bypass the Tool policy hook.
 
-The package is imported from the repository source tree through the existing
+The Harness is imported from the repository source tree through the existing
 Python 3.13 project environment. The repository currently runs the agent
 service with `PYTHONPATH=.`; packaging it as a separate distribution is a
 follow-up deployment concern, not a runtime dependency on `ad_agent`.

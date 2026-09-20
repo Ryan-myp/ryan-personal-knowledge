@@ -12,21 +12,42 @@ from agents.agent_harness import (
 from .core.interfaces import ToolContext
 
 
-def capability_tool_source(
-    capability: Any, *, source_id: str | None = None,
+def advertising_tool_source(
+    provider_tools: Any, *, source_id: str | None = None,
 ) -> StaticToolSource:
-    """Expose an ad Capability's Tool definitions as a generic Tool Source."""
-    register_tools = getattr(capability, "register_tools", None)
+    """Expose advertising Tools as a generic Tool Source.
+
+    The input only needs to publish ``register_tools()``. It may be a local
+    provider adapter, SDK/HTTP connector, MCP-backed publisher or the legacy
+    advertising Capability object. The generic Agent Harness sees only the
+    resulting Tool bindings.
+    """
+    register_tools = getattr(provider_tools, "register_tools", None)
     if not callable(register_tools):
-        raise TypeError("capability must expose register_tools()")
+        raise TypeError("provider_tools must expose register_tools()")
     bindings = []
     for definition, executor in register_tools():
         bindings.append(ToolBinding(
             definition,
             _GenericContextExecutor(executor),
         ))
-    platform = str(getattr(capability, "platform_name", "ad") or "ad").strip()
-    return StaticToolSource(source_id or f"ad-capability:{platform}", bindings)
+    platform = str(
+        getattr(provider_tools, "platform_name", "advertising") or "advertising"
+    ).strip()
+    return StaticToolSource(source_id or f"advertising:{platform}", bindings)
+
+
+def capability_tool_source(
+    provider_tools: Any, *, source_id: str | None = None,
+) -> StaticToolSource:
+    """Legacy wrapper preserving the historical source-id contract."""
+    platform = str(
+        getattr(provider_tools, "platform_name", "ad") or "ad"
+    ).strip()
+    return advertising_tool_source(
+        provider_tools,
+        source_id=source_id or f"ad-capability:{platform}",
+    )
 
 
 def advertising_skill_source(*, source_id: str = "ad-skills") -> MarkdownSkillDirectorySource:
@@ -69,4 +90,8 @@ class _GenericContextExecutor:
         raise TypeError("advertising Tool executor is not callable")
 
 
-__all__ = ["advertising_skill_source", "capability_tool_source"]
+__all__ = [
+    "advertising_skill_source",
+    "advertising_tool_source",
+    "capability_tool_source",
+]

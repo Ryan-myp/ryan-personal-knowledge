@@ -104,7 +104,7 @@ runtime = AgentRuntime(
     ),
 )
 
-# 广告应用的 Provider Module 兼容入口（写操作仍只生成 dry-run 计划）
+# 广告 Provider Tool Source 兼容入口（写操作仍只生成 dry-run 计划）
 runtime.register_capability(create_meta_capability())
 runtime.register_capability(create_google_capability())
 
@@ -177,9 +177,14 @@ from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.capabilities.meta import create_meta_capability
 
 api_client = MetaAPIClient(credentials["meta"])
-capability = create_meta_capability(api_client)
+provider_tools = create_meta_capability(api_client)
 
-runtime.register_capability(capability)
+runtime.register_tool_source(
+    advertising_tool_source(
+        provider_tools,
+        source_id="provider:meta",
+    )
+)
 ```
 
 切换到 `execution_mode="live"` 前，必须确认 `agents/ad_agent/config.yaml` 中已配置目标测试账号白名单，并先取得当前写入计划返回的 `confirmation_payload`，随后以同一 payload 调用 `runtime.run(..., confirmed=True, confirmation_payload=payload)`。HTTP API 会拒绝缺少该 payload 的确认请求。HTTP 的执行模式按租户和用户隔离，单回合也可以通过 `execution_mode` 覆盖；不要通过凭证内容自动扩大白名单，凭证只保存在进程内，不写入 SQLite。写操作（创建、更新、删除、暂停/恢复及批量写）即使白名单只有一个账户，也必须在当前请求中显式传入目标账户；单账户自动兜底只适用于只读查询，避免误选广告主。
@@ -576,10 +581,10 @@ agents/agent_harness/
 └── results.py          # RunResult/RunStatus
 ```
 
-广告包中 `AdAgentRuntime` 是现有广告安全策略、账户范围、Workflow 和 Provider
-恢复逻辑的应用兼容层，不是通用 Runtime。新业务不应继承它；应使用
+广告侧 `AdAgentRuntime` 是现有广告安全策略、账户范围、Workflow 和 Provider
+恢复逻辑的兼容层，不是通用 Runtime。新业务不应继承它；应使用
 `agents.agent_harness.AgentApplication`，通过 `SkillSource + ToolSource` 接入。
-广告侧也提供 `advertising_skill_source()` 和 `capability_tool_source()`，用于把
+广告侧也提供 `advertising_skill_source()` 和 `advertising_tool_source()`，用于把
 广告知识和原子工具接入其他 Agent。
 
 ## 扩展新平台
@@ -594,9 +599,9 @@ class NewPlatformClient(BasePlatformClient):
 
 # 工厂名按约定自动发现：create_new_network_client(credentials)
 
-# 2. 创建 Capability
-#    agents/ad_agent/capabilities/new_network/capability.py
-class NewPlatformCapability(BaseCapability):
+# 2. 创建只发布 Tool 的 Provider adapter
+#    agents/ad_agent/capabilities/new_network/tools.py
+class NewPlatformTools:
     platform_name = "new_platform"
     
     def register_tools(self):
@@ -610,7 +615,13 @@ class NewPlatformCapability(BaseCapability):
     # 需要异常写入回查时声明 readback_tool；
     # 不需要修改中心 Router 或 Runtime 的渠道分支
 
-# 工厂名按约定自动发现：create_new_network_capability(api_client)
+# 3. 通过普通 ToolSource 注册，也可以直接接入其他 Agent
+runtime.register_tool_source(
+    advertising_tool_source(
+        NewPlatformTools(api_client),
+        source_id="provider:new_platform",
+    )
+)
 ```
 
 如果渠道通过 `skills/channels/<name>/SKILL.md` 自动加载，广告应用可以发现同名
@@ -624,7 +635,7 @@ LLM 结果规范化会读取当前已注册的平台集合。新增渠道的自�
 平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或品牌别名，
 直接在渠道 Skill 的 frontmatter `aliases` 中声明即可，平台身份解析会自动发现，
 不需要修改 Core、中心 Router 或渠道表。平台显示别名由 Skill frontmatter 声明，只有
-注册到当前 Runtime 的 Skill/Capability 才会进入解析与执行上下文。
+注册到当前 Runtime 的 Skill/Tool Source 才会进入解析与执行上下文。
 Skill 包遵循标准目录约定：至少包含 `SKILL.md`，可包含 `references/`、`scripts/`、
 `assets/`、`evals/` 和其他包文件。管理系统负责保存、版本化和评测这些文件；
 `scripts/`、`assets/`、`evals/` 及 `workflow.yaml` 都不是 Runtime 的自动执行入口。

@@ -71,3 +71,15 @@ def test_advertising_skills_are_exportable_without_ad_runtime():
     assert names
     assert "meta" in names
     assert "cross-channel" in names
+
+
+def test_harness_has_no_business_package_or_capability_runtime_concept():
+    from pathlib import Path
+
+    harness_readme = Path("agents/agent_harness/README.md").read_text(
+        encoding="utf-8"
+    )
+    assert "application package" not in harness_readme
+    assert "business package" not in harness_readme
+    assert "Capability classes" not in harness_readme
+    assert "ToolSource" in harness_readme

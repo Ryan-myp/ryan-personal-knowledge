@@ -58,25 +58,25 @@ agents/ad_agent/
 `TurnPipeline` 表达更强的领域阶段；这两者都通过同一个 `AgentRuntime` 和 Run identity
 进入系统。
 
-广告 `Capability` 只属于应用侧的 Provider Tool Source 兼容实现。通用 Harness 不
-依赖 Capability，也不要求 MCP；本地函数、SDK/HTTP adapter 和 MCP `tools/list`
-都只需要转换成 `ToolBinding`。
+广告 Provider 适配器只负责发布 Tool Source。通用 Harness 不依赖 Capability，
+也不要求 MCP；本地函数、SDK/HTTP adapter 和 MCP `tools/list` 都只需要转换成
+`ToolBinding`。旧 Capability 名称只在广告兼容边界保留。
 
 业务接入统一采用：
 
 ```text
-业务包
-  ├── 标准 Skill Source       SKILL.md / references / assets
-  ├── Tool Source             local / SDK / HTTP / MCP
-  └── application policies    before/after Tool hooks、权限、审批与输出策略
-          ↓
+Agent Harness Registry
+  ├── Skill Source             SKILL.md / references / assets
+  ├── Tool Source              local / SDK / HTTP / MCP
+  └── Policy Hooks             before/after Tool、权限、审批与输出策略
+           ↓
     AgentApplication + AgentRuntime
 ```
 
-广告包只是其中一个业务包。它的 `AdAgentRuntime` 暂时保留为完整广告安全和
-Workflow 的兼容应用层；它不向 `agents/agent_harness` 反向提供类型或路由规则。
-其他业务可以直接复用广告 `Skill Source` 和只读/计划型 Tool Source，也可以只取
-广告知识而不加载广告执行器。
+广告只是其中一组 Skills、Tools 和 Provider adapters。现有 `AdAgentRuntime`
+暂时保留为广告安全和 Workflow 的兼容应用层；它不向
+`agents/agent_harness` 反向提供类型或路由规则。其他 Agent 可以直接注册广告
+`SkillSource` 和 `ToolSource`，也可以只取广告知识而不加载广告执行器。
 
 可部署插件包使用根目录 `plugin.manifest.json` 作为声明入口。Loader 校验包内相对路径、
 大小/数量上限、逐文件 SHA-256、确定性 package digest 和可选 HMAC 签名，但不自动导入
@@ -572,7 +572,7 @@ Tool Registry、权限、账户范围或执行计划。
 
 ### 新增平台
 
-新增平台只需要在自己的包中发布 Capability、可选的 API Client 和 Skill。
+新增平台只需要发布 Tool Source、可选的 API Client 和 Skill。
 Runtime、IntentRouter、工具选择器和跨渠道聚合入口都从已注册 Tool 的元数据发现平台，
 不再维护一份四渠道列表。内置平台名称只作为现有 Skill 的自然语言别名示例。
 ```python
@@ -580,16 +580,21 @@ Runtime、IntentRouter、工具选择器和跨渠道聚合入口都从已注册 
 class NewPlatformClient(BaseAPIClient):
     BASE_URL = "https://api.newplatform.com"
 
-# 2. 创建 Capability
-class NewPlatformCapability(BaseCapability):
+# 2. 创建一个只发布 Tool 的 Provider adapter
+class NewPlatformTools:
     def __init__(self, api_client: NewPlatformClient):
-        super().__init__(
-            platform="new_platform",
-            tool_definitions=[...]
-        )
+        self.api_client = api_client
 
-# 3. 注册到 Runtime
-runtime.register_capability(NewPlatformCapability(api_client))
+    def register_tools(self):
+        return [...]
+
+# 3. 通过普通 ToolSource 注册
+runtime.register_tool_source(
+    advertising_tool_source(
+        NewPlatformTools(api_client),
+        source_id="provider:new_platform",
+    )
+)
 ```
 
 ### 新增业务场景
