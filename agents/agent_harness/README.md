@@ -8,7 +8,8 @@ business workflows.
 AgentRuntime
   -> Runtime Kernel       identity, session lease, mode, Run lifecycle
   -> Agent / TurnPipeline model turns and application stages
-  -> ToolCatalog          Tool definitions and trusted executors
+  -> SkillCatalog          bounded advisory context
+  -> ToolCatalog            Tool definitions and trusted executors
   -> RunStore              durable Run/events port
 ```
 
@@ -27,6 +28,8 @@ user message
 Applications inject:
 
 - a model adapter with `complete(messages, tools, request)`;
+- standard `SKILL.md` directories through `MarkdownSkillSource` or
+  `MarkdownSkillDirectorySource`;
 - a `ToolCatalog` backed by local, SDK/HTTP or MCP Tool bindings;
 - policy hooks such as `before_tool_call` and `after_tool_call`;
 - an optional `RunStore` and session implementation.
@@ -34,6 +37,24 @@ Applications inject:
 Advertising remains an application package. Its `Capability` classes are
 compatibility adapters that publish Tools; they are not required by this
 Harness and must not become a second generic abstraction.
+
+The convenient `AgentApplication` assembly is the recommended starting point
+for a new business:
+
+```python
+from agents.agent_harness import AgentApplication, SkillBinding, StaticSkillSource
+
+app = AgentApplication.create(model=my_model)
+app.register_skill_source(StaticSkillSource(
+    "support",
+    [SkillBinding(name="support", instructions="...")],
+))
+app.register_tool_source(my_tool_source)
+result = app.prompt("Help me with a ticket")
+```
+
+Skill packages are advisory context only. They never register an executable
+Tool, receive credentials or bypass the Tool policy hook.
 
 The package is imported from the repository source tree through the existing
 Python 3.13 project environment. The repository currently runs the agent

@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 from .messages import AgentMessage, ModelTurn, ToolCall
 from .results import RunResult, RunStatus
 from .runtime_kernel import TurnRequest
+from .skills import SkillCatalog
 from .tool_catalog import ToolCatalog
 
 
@@ -54,6 +55,7 @@ class Agent:
         *,
         model: ModelAdapter | Callable[..., Any],
         tool_catalog: Optional[ToolCatalog] = None,
+        skill_catalog: Optional[SkillCatalog] = None,
         system_prompt: str = "",
         max_turns: int = 12,
         tool_execution: str = "parallel",
@@ -71,6 +73,7 @@ class Agent:
             raise ValueError("max_parallel_tools must be positive")
         self.model = model
         self.tool_catalog = tool_catalog
+        self.skill_catalog = skill_catalog
         self.max_turns = int(max_turns)
         self.tool_execution = tool_execution
         self.max_parallel_tools = int(max_parallel_tools)
@@ -183,11 +186,24 @@ class Agent:
 
     def _call_model(self, request: TurnRequest) -> ModelTurn:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
+        messages = self.state.snapshot()
+        if self.skill_catalog is not None:
+            skill_context = self.skill_catalog.build_context(request.user_input)
+            if skill_context:
+                messages = [
+                    AgentMessage.system(
+                        skill_context,
+                        run_id=str(request.run_id or ""),
+                        turn_id=str(request.turn_id or ""),
+                        metadata={"context_type": "skills"},
+                    ),
+                    *messages,
+                ]
         complete = getattr(self.model, "complete", None)
         if callable(complete):
-            value = complete(self.state.snapshot(), tools, request)
+            value = complete(messages, tools, request)
         elif callable(self.model):
-            value = self.model(self.state.snapshot(), tools, request)
+            value = self.model(messages, tools, request)
         else:
             raise TypeError("model must be callable or expose complete()")
         return self._normalize_turn(value)

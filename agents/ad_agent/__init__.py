@@ -37,6 +37,7 @@ from .core.tool_sources import ToolBinding, ToolExecutor, ToolSource, StaticTool
 from .core.turn_pipeline import (
     SequentialTurnPipeline, TurnExecutionContext, TurnPipeline, TurnStageResult,
 )
+from .integration import advertising_skill_source, capability_tool_source
 from .plugin_management import PluginPackageManager
 from .runtime.task_executor import (
     TaskCapacityError, TaskExecutionContext, TaskExecutor, TaskExecutorError,
@@ -83,6 +84,8 @@ __all__ = [
     "TurnExecutionContext",
     "TurnPipeline",
     "TurnStageResult",
+    "advertising_skill_source",
+    "capability_tool_source",
     "PluginPackageManager",
     "TaskExecutor",
     "TaskExecutionContext",

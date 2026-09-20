@@ -11,6 +11,7 @@ from typing import Any, Optional
 from .ports import RuntimePorts
 from .results import RunResult
 from .run_store import RunStore, run_start_payload
+from .skills import SkillSource
 from .runtime_kernel import (
     AgentRuntimeKernel,
     RuntimeSessionBusyError,
@@ -30,6 +31,7 @@ class AgentRuntime:
         pipeline: Optional[TurnPipeline] = None,
         agent: Any = None,
         tool_registry: Any = None,
+        skill_catalog: Any = None,
         on_tool_catalog_changed: Optional[callable] = None,
         run_store: Optional[RunStore] = None,
         # Compatibility constructor for existing application assemblies.
@@ -85,6 +87,7 @@ class AgentRuntime:
         self.turn_pipeline = pipeline
         self._executor = execute_turn or pipeline
         self.tool_registry = tool_registry
+        self.skill_catalog = skill_catalog
         self._on_tool_catalog_changed = on_tool_catalog_changed
         self.run_store = run_store
         self._kernel = AgentRuntimeKernel(
@@ -182,8 +185,13 @@ class AgentRuntime:
     ) -> None:
         if self.tool_registry is None:
             raise RuntimeError("Agent Runtime has no Tool Registry")
+        name = (
+            definition.get("name")
+            if isinstance(definition, dict)
+            else getattr(definition, "name", "tool")
+        )
         self.register_tool_source(StaticToolSource(
-            f"{source_id}:{getattr(definition, 'name', 'tool')}",
+            f"{source_id}:{name}",
             [ToolBinding(definition, executor)],
         ))
 
@@ -216,6 +224,25 @@ class AgentRuntime:
         if self.tool_registry is None:
             return []
         return self.tool_registry.list_all()
+
+    def register_skill_source(self, source: SkillSource) -> list[str]:
+        if self.skill_catalog is None:
+            raise RuntimeError("Agent Runtime has no Skill Catalog")
+        return self.skill_catalog.register_source(source)
+
+    def unregister_skill_source(self, source_id: str) -> list[str]:
+        if self.skill_catalog is None:
+            raise RuntimeError("Agent Runtime has no Skill Catalog")
+        unregister = getattr(self.skill_catalog, "unregister_source", None)
+        if not callable(unregister):
+            raise TypeError("Skill Catalog does not support source removal")
+        return unregister(source_id)
+
+    def list_skills(self) -> list[Any]:
+        if self.skill_catalog is None:
+            return []
+        list_skills = getattr(self.skill_catalog, "list_skills", None)
+        return list_skills() if callable(list_skills) else []
 
     def close(self) -> None:
         if self._closed:

@@ -14,6 +14,7 @@
 - **安全边界**：写操作必须由当前请求明确提供目标账户、命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：Tool 可以来自本地 Handler、SDK/HTTP Connector 或 MCP；新增集成不需要修改 Runtime、Router 或中心渠道表
 - **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时发布 Tool Source/Executor，广告渠道的 Capability 只是 Provider Module 兼容实现
+- **跨 Agent 复用**：广告 Skills 可作为标准 Markdown Skill Source 导出，广告 Tools 可转换为通用 Tool Source，能够接入其他 Agent；其他业务也按同一方式接入本 Harness
 - **广告创建蓝图**：广告 Provider Module 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
 - **统一插件内核**：Capability、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
 - **动态平台识别**：解析器从已注册 Tool/Skill 发布 namespace 和自然语言别名，不维护固定四渠道路由表
@@ -572,6 +573,12 @@ agents/agent_harness/
 ├── run_store.py        # durable Run port
 └── results.py          # RunResult/RunStatus
 ```
+
+广告包中 `AdAgentRuntime` 是现有广告安全策略、账户范围、Workflow 和 Provider
+恢复逻辑的应用兼容层，不是通用 Runtime。新业务不应继承它；应使用
+`agents.agent_harness.AgentApplication`，通过 `SkillSource + ToolSource` 接入。
+广告侧也提供 `advertising_skill_source()` 和 `capability_tool_source()`，用于把
+广告知识和原子工具接入其他 Agent。
 
 ## 扩展新平台
 

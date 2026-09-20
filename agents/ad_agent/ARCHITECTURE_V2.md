@@ -59,6 +59,22 @@ agents/ad_agent/
 依赖 Capability，也不要求 MCP；本地函数、SDK/HTTP adapter 和 MCP `tools/list`
 都只需要转换成 `ToolBinding`。
 
+业务接入统一采用：
+
+```text
+业务包
+  ├── 标准 Skill Source       SKILL.md / references / assets
+  ├── Tool Source             local / SDK / HTTP / MCP
+  └── application policies    before/after Tool hooks、权限、审批与输出策略
+          ↓
+    AgentApplication + AgentRuntime
+```
+
+广告包只是其中一个业务包。它的 `AdAgentRuntime` 暂时保留为完整广告安全和
+Workflow 的兼容应用层；它不向 `agents/agent_harness` 反向提供类型或路由规则。
+其他业务可以直接复用广告 `Skill Source` 和只读/计划型 Tool Source，也可以只取
+广告知识而不加载广告执行器。
+
 可部署插件包使用根目录 `plugin.manifest.json` 作为声明入口。Loader 校验包内相对路径、
 大小/数量上限、逐文件 SHA-256、确定性 package digest 和可选 HMAC 签名，但不自动导入
 入口代码。只有受信任部署宿主可以把已审核源码贡献绑定到可执行 Manifest；托管 Skill

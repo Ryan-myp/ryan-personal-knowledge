@@ -18,8 +18,10 @@ from .ad_runtime import (
     time,
 )
 
-# The application package exposes AgentRuntime at its application boundary.
-# Generic embedders should depend on agents.agent_harness.AgentRuntime.
+# Compatibility only: the advertising facade remains available for the
+# existing HTTP/API surface. Generic embedders must use
+# agents.agent_harness.AgentRuntime or AgentApplication; this module must not
+# become the home of another generic runtime implementation.
 AgentRuntime = AdAgentRuntime
 
 __all__ = [
