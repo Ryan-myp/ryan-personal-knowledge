@@ -174,6 +174,14 @@ def test_ad_runtime_is_composed_with_the_generic_turn_pipeline():
     runtime = AgentRuntime(require_llm=False, features=[])
     try:
         assert isinstance(runtime._runtime_kernel.turn_pipeline, AdTurnPipeline)
+        assert runtime._runtime_kernel.turn_pipeline.stage_names == (
+            "request_validation",
+            "session_context",
+            "intent",
+            "planning",
+            "execution",
+            "response",
+        )
     finally:
         runtime.close(wait=True)
 

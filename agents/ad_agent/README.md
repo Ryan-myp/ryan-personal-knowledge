@@ -463,7 +463,9 @@ Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/age
 也可以注入自己的 `TurnPipeline`。
 
 广告的 `runtime/ad_runtime.py` 是应用组合根，负责组装广告 Skills、Tools、Provider
-Modules、业务服务和 `AdTurnPipeline` 适配器。
+Modules 和业务服务。`runtime/ad_turn_pipeline.py` 是广告应用阶段组合根，按
+`AdTurnState -> AdTurnStages -> AdTurnFlow` 组织一轮请求；旧的
+`ad_turn_orchestrator.py` 只保留兼容 facade，不再承载主循环。
 `runtime/runtime.py` 仅作为
 稳定导出入口。Generic Runtime 通过 opaque `TurnRequest.context` 与应用交换领域数据，
 因此新增业务 Skill/Tool 不需要把账户、渠道或业务流程分支写回 Core。

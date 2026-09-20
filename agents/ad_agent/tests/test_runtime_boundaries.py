@@ -213,10 +213,51 @@ def test_turn_entrypoint_is_a_compatibility_shim_and_orchestrator_has_stage_boun
 
     assert len(entrypoint.splitlines()) <= 10
     assert "from .ad_turn_orchestrator import execute" in entrypoint
-    assert "AdTurnContextService" in orchestrator
-    assert "AdTurnPlanningService" in orchestrator
-    assert "AdToolExecutionService" in orchestrator
-    assert "AdTurnResultService" in orchestrator
+    assert len(orchestrator.splitlines()) <= 40
+    assert "AdTurnPipeline" in orchestrator
+    assert "def execute(" in orchestrator
+    assert "AdTurnContextService" not in orchestrator
+    assert "AdToolExecutionService" not in orchestrator
+
+
+def test_ad_turn_pipeline_is_the_application_stage_composition_root():
+    from pathlib import Path
+
+    source = Path("agents/ad_agent/runtime/ad_turn_pipeline.py").read_text(
+        encoding="utf-8"
+    )
+    assert "SequentialTurnPipeline" in source
+    for stage_name in (
+        "RequestValidationStage",
+        "SessionContextStage",
+        "IntentStage",
+        "PlanningStage",
+        "ExecutionStage",
+        "ResponseStage",
+    ):
+        assert stage_name in source
+
+
+def test_ad_turn_state_is_explicit_and_keeps_domain_data_out_of_harness():
+    from pathlib import Path
+
+    state_source = Path("agents/ad_agent/runtime/ad_turn_state.py").read_text(
+        encoding="utf-8"
+    )
+    harness_source = Path("agents/agent_harness/turn_pipeline.py").read_text(
+        encoding="utf-8"
+    )
+    assert "class AdTurnState" in state_source
+    for field in (
+        "safe_user_input",
+        "intent",
+        "tool_plan",
+        "execution_plan",
+        "results",
+        "response",
+    ):
+        assert field in state_source
+    assert "ad_agent" not in harness_source
 
 
 def test_turn_application_services_do_not_import_provider_implementations():

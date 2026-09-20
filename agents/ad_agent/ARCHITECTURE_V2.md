@@ -44,7 +44,10 @@ agents/agent_harness/
 
 agents/ad_agent/
   Skills / domain policy / Provider Tool Sources / persistence
-  AdTurnPipeline          advertising adapter
+  AdTurnPipeline          advertising stage composition root
+    ├── AdTurnState       advertising turn state
+    ├── AdTurnStages      request/context/intent/plan/execute/response stages
+    └── AdTurnFlow        advertising policy and workflow implementation
   AdAgentRuntime          advertising composition root
 ```
 
@@ -200,8 +203,10 @@ Session 并发、租约和 `run_id`/`turn_id` 生命周期；
 `agents/agent_harness/agent_runtime.py` 的 `AgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
 通用门面。应用 pipeline 消费 Kernel 注入的 Run identity，并将持久化、审计和响应关联到
 同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AdAgentRuntime` 只负责组装
-领域服务，当前通过 `AdTurnPipeline` 兼容适配现有广告阶段，后续可逐步把广告阶段替换
-为通用 Stage。工具选择同样拆开：
+领域服务。`AdTurnPipeline` 是广告应用的阶段组合根，使用通用
+`SequentialTurnPipeline` 承载 `AdTurnState`；`AdTurnFlow` 保留广告的安全、账户、
+Blueprint、Workflow 和 Provider 业务分支，但不再充当 Runtime 入口。
+`ad_turn_orchestrator.py` 仅为旧调用方保留兼容 facade。工具选择同样拆开：
 `core/tool_selection.py` 的 `ToolSelector` 只消费 Tool metadata 和 ParsedIntent，
 `PromptRenderer` 只生成有界模型上下文；旧的 `DynamicToolSelector` 仅作为
 Skill、Wiki、租户上下文的兼容适配器，不能执行 Tool 或授予权限。
@@ -532,7 +537,12 @@ Tool Registry、权限、账户范围或执行计划。
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
 | `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
 | `runtime/ad_runtime_assembly.py` | 当前源码 | 广告组合图与 `AdRunStoreAdapter` |
-| `runtime/ad_turn_engine.py` | 当前源码 | 广告应用回合执行：意图、Tool 计划、策略和结果闭环 |
+| `runtime/ad_turn_pipeline.py` | 当前源码 | 广告应用阶段组合根 |
+| `runtime/ad_turn_stages.py` | 当前源码 | 广告阶段适配与状态传递 |
+| `runtime/ad_turn_state.py` | 当前源码 | 广告回合显式状态 |
+| `runtime/ad_turn_flow.py` | 当前源码 | 广告安全、规划、Workflow、Tool 执行和结果闭环 |
+| `runtime/ad_turn_orchestrator.py` | 当前源码 | 旧入口兼容 facade，不承载业务循环 |
+| `runtime/ad_turn_engine.py` | 当前源码 | 旧模块名兼容入口 |
 | `runtime/supervisor.py` | 当前源码 | 通用 Task、Scheduler、Outbox、Event Repair worker 生命周期；任务类型由应用组合根注入 |
 | `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |
 | `runtime/tool_executor.py` | 当前源码 | Tool 执行、超时与 Provider Client 隔离 |
