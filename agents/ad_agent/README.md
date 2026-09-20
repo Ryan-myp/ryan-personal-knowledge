@@ -370,7 +370,7 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 `AdAgentRuntime` 保留为广告应用组合根是有必要的：它把广告 Skill、Provider Module、Feature、
 Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
-通用队列、租约或 Provider 分支。通用执行壳是 `core/runtime_kernel.py`，队列/Outbox/
+通用队列、租约或 Provider 分支。通用执行壳是 `agents/agent_harness/`，队列/Outbox/
 Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
 Tool Source/Executor 或独立 Feature。后续若继续拆分，优先拆它的装配配置和应用门面，而不是删除这个
 组合根或在 HTTP 层复制另一套 Agent。
@@ -453,11 +453,16 @@ Google Ads 当前使用 REST Client 而不是可选的 `google-ads` SDK。Client
 可直接打开交互式架构图：[`docs/ad_agent_architecture.html`](../../docs/ad_agent_architecture.html)。
 图中标注了单 Agent、多 Skills、Tool Registry、Tool Sources/Executors，以及异步 Task、Outbox、Run Event、恢复和后续 MySQL 演进关系。
 
-Runtime 分为三层：`core/runtime_kernel.py` 负责最底层的请求身份规范化、Session 并发/租约、
-执行模式和回合委托；`core/turn_pipeline.py` 定义通用回合阶段、终止和错误语义；
-`core/agent_runtime.py` 提供可嵌入的 `GenericAgentRuntime` 门面，
-让任意应用只需注入自己的 `TurnPipeline`；`runtime/ad_runtime.py` 是广告应用组合根，负责
-组装广告 Skills、Tools、Provider Modules、业务服务和 `AdTurnPipeline` 适配器。
+Runtime Harness 分为四个可组合部分：`agents/agent_harness/runtime_kernel.py` 负责最底层的请求身份规范化、
+Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/agent.py`
+提供维护 transcript 的通用 model→Tool→model loop；`agents/agent_harness/turn_pipeline.py`
+定义应用阶段、终止和错误语义；`agents/agent_harness/agent_runtime.py`
+提供可嵌入的 `AgentRuntime` 门面；`agents/agent_harness/tool_catalog.py`
+提供不依赖广告域的 Tool catalog。任意应用可以选择直接使用 Stateful `Agent`，
+也可以注入自己的 `TurnPipeline`。
+
+广告的 `runtime/ad_runtime.py` 是应用组合根，负责组装广告 Skills、Tools、Provider
+Modules、业务服务和 `AdTurnPipeline` 适配器。
 `runtime/runtime.py` 仅作为
 稳定导出入口。Generic Runtime 通过 opaque `TurnRequest.context` 与应用交换领域数据，
 因此新增业务 Skill/Tool 不需要把账户、渠道或业务流程分支写回 Core。
@@ -514,7 +519,7 @@ publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有�
 ad_agent/
 ├── __init__.py              # 包入口
 ├── core/
-│   ├── agent_runtime.py     # 可嵌入的通用 Runtime 门面
+│   ├── agent_runtime.py     # 广告应用兼容入口
 │   ├── runtime_kernel.py    # 请求/会话/租约生命周期内核
 │   ├── interfaces.py        # 核心接口定义
 │   ├── tool_selection.py    # 通用 Tool 选择与 Prompt 渲染
@@ -551,6 +556,21 @@ ad_agent/
 └── tests/
     ├── test_ad_agent.py      # 核心回归测试
     └── ...                   # Harness、契约与 Provider 回归测试
+```
+
+通用 Harness 位于同级的 `agents/agent_harness/`，不依赖 `ad_agent`：
+
+```text
+agents/agent_harness/
+├── agent.py             # Stateful Agent loop、transcript、Tool turns
+├── messages.py         # AgentMessage、ModelTurn、ToolCall
+├── tool_catalog.py      # 通用 Tool catalog
+├── tool_sources.py     # Tool Source/Binding/Executor 端口
+├── agent_runtime.py    # Run facade，可注入 Agent 或 TurnPipeline
+├── runtime_kernel.py   # identity/session/lease/mode
+├── turn_pipeline.py    # 可组合应用阶段
+├── run_store.py        # durable Run port
+└── results.py          # RunResult/RunStatus
 ```
 
 ## 扩展新平台

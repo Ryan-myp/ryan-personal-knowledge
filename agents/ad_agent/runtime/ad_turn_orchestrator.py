@@ -75,8 +75,12 @@ def execute(
     session_id = session_id or str(uuid.uuid4())
     turn_id = str(turn_id or uuid.uuid4())[:8]
     run_id = str(run_id or uuid.uuid4())
+    generic_run_store_bound = bool(
+        getattr(getattr(runtime, "_runtime_kernel", None), "run_store", None)
+    )
     durable_run = bool(
-        runtime._session_manager
+        not generic_run_store_bound
+        and runtime._session_manager
         and callable(getattr(runtime._session_manager, "create_execution_run", None))
     )
 
@@ -293,6 +297,10 @@ def execute(
             "results": [], "reply": reply, "needs_confirmation": False,
             "confirmation_payload": None,
             "policy_errors": ["intent parsing failed"],
+            "run_metadata": {
+                "reason": "intent_parse_failed",
+                "error_type": type(exc).__name__,
+            },
         }
     trace.stage_status(
         "intent",

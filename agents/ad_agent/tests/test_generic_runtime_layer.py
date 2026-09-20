@@ -149,10 +149,10 @@ def test_generic_runtime_runs_a_domain_neutral_turn_pipeline():
 
     result = runtime.run(TurnRequest(user_input="search"))
 
-    assert result == {
-        "intent": "search",
-        "events": ["parse", "complete"],
-    }
+    assert result["intent"] == "search"
+    assert result["events"] == ["parse", "complete"]
+    assert result["run_id"]
+    assert result["turn_id"]
 
 
 def test_turn_pipeline_can_return_a_stage_error_without_leaking_exception():

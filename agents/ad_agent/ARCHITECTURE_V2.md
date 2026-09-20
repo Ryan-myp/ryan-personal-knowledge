@@ -29,6 +29,36 @@ Tool Source/Skill 的注册、卸载、Parser catalog 刷新和 ownership index 
 并可用 `PluginLoader.upgrade()` 在进程内升级失败时恢复旧贡献对象。
 这样既保留“一切皆插件”的统一生命周期模型，也避免把用户数据包误当成可执行扩展。
 
+### 0. 通用 Agent Harness
+
+通用 Harness 与广告应用分开维护，目录边界如下：
+
+```text
+agents/agent_harness/
+  Agent                 transcript + model/tool loop
+  AgentRuntime          Run facade and Tool Source ownership
+  Runtime Kernel         identity, session lock, lease, mode
+  TurnPipeline           application stage composition
+  ToolCatalog             definitions + trusted executors
+  RunStore                durable Run/event port
+
+agents/ad_agent/
+  Skills / domain policy / Provider Tool Sources / persistence
+  AdTurnPipeline          advertising adapter
+  AdAgentRuntime          advertising composition root
+```
+
+`Agent` 是默认的通用执行循环：一个 user message 可以产生多个 model turn，
+每个 turn 可以执行零个或多个 Tool，再把 Tool result 放回 transcript 继续下一轮。
+它提供稳定事件顺序、并行/串行 Tool 策略、取消、最大回合数和
+`before_tool_call`/`after_tool_call` hooks。业务应用可以直接使用它，也可以选择
+`TurnPipeline` 表达更强的领域阶段；这两者都通过同一个 `AgentRuntime` 和 Run identity
+进入系统。
+
+广告 `Capability` 只属于应用侧的 Provider Tool Source 兼容实现。通用 Harness 不
+依赖 Capability，也不要求 MCP；本地函数、SDK/HTTP adapter 和 MCP `tools/list`
+都只需要转换成 `ToolBinding`。
+
 可部署插件包使用根目录 `plugin.manifest.json` 作为声明入口。Loader 校验包内相对路径、
 大小/数量上限、逐文件 SHA-256、确定性 package digest 和可选 HMAC 签名，但不自动导入
 入口代码。只有受信任部署宿主可以把已审核源码贡献绑定到可执行 Manifest；托管 Skill
@@ -147,10 +177,11 @@ Wiki 管理和 raw ingest 使用 `KnowledgeStorePort`，Memory 使用独立的 `
 Task/Outbox/Schedule 使用各自的 durable port；`PersistenceBackend` 只作为应用组合根的
 聚合兼容契约，业务服务不再必须依赖整套后端接口。
 
-Runtime 外壳进一步分为三层：`core/runtime_kernel.py` 保留最小的请求、Session
-并发、租约和 `run_id`/`turn_id` 生命周期；`core/turn_pipeline.py` 定义通用回合阶段、
+Runtime 外壳进一步分为三层：`agents/agent_harness/runtime_kernel.py` 保留最小的请求、
+Session 并发、租约和 `run_id`/`turn_id` 生命周期；
+`agents/agent_harness/turn_pipeline.py` 定义通用回合阶段、
 阶段元数据、终止和错误语义；
-`core/agent_runtime.py` 的 `GenericAgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
+`agents/agent_harness/agent_runtime.py` 的 `AgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
 通用门面。应用 pipeline 消费 Kernel 注入的 Run identity，并将持久化、审计和响应关联到
 同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AdAgentRuntime` 只负责组装
 领域服务，当前通过 `AdTurnPipeline` 兼容适配现有广告阶段，后续可逐步把广告阶段替换
@@ -472,14 +503,19 @@ Tool Registry、权限、账户范围或执行计划。
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `core/agent_runtime.py` | 当前源码 | 通用 Runtime 门面，注入任意应用 `TurnPipeline` |
-| `core/turn_pipeline.py` | 当前源码 | 通用回合阶段、终止和错误处理契约 |
-| `core/runtime_kernel.py` | 325 | 与业务无关的请求规范化、Session 并发、跨实例租约和执行委托 |
+| `agents/agent_harness/agent.py` | 当前源码 | Stateful transcript 与 model/Tool loop |
+| `agents/agent_harness/messages.py` | 当前源码 | 通用消息、ModelTurn 和 ToolCall 合约 |
+| `agents/agent_harness/tool_catalog.py` | 当前源码 | 通用 Tool catalog 与 source ownership |
+| `agents/agent_harness/agent_runtime.py` | 当前源码 | 通用 Runtime 门面，可注入 Agent 或 TurnPipeline |
+| `agents/agent_harness/turn_pipeline.py` | 当前源码 | 通用回合阶段、终止和错误处理契约 |
+| `agents/agent_harness/runtime_kernel.py` | 当前源码 | 与业务无关的请求规范化、Session 并发、跨实例租约和执行委托 |
+| `agents/agent_harness/run_store.py` | 当前源码 | 通用 Run 启动、事件和终态持久化端口 |
 | `core/tool_selection.py` | 当前源码 | 业务无关的 Tool 选择和 Prompt 渲染 |
 | `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文兼容适配层 |
 | `core/policy_engine.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
 | `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
+| `runtime/ad_runtime_assembly.py` | 当前源码 | 广告组合图与 `AdRunStoreAdapter` |
 | `runtime/ad_turn_engine.py` | 当前源码 | 广告应用回合执行：意图、Tool 计划、策略和结果闭环 |
 | `runtime/supervisor.py` | 当前源码 | 通用 Task、Scheduler、Outbox、Event Repair worker 生命周期；任务类型由应用组合根注入 |
 | `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |

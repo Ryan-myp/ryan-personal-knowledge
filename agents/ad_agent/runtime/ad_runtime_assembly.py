@@ -16,10 +16,11 @@ from __future__ import annotations
 import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
+from agents.agent_harness import AgentRuntime, RuntimePorts
 from ..core.memory import MemoryManager
-from ..core.agent_runtime import GenericAgentRuntime
 from ..domain.ad.auth import RequestPrincipal
 from ..domain.ad.security import ACCOUNT_SCOPE_FIELDS
 from ..persistence.interfaces import PersistenceBackend
@@ -42,6 +43,75 @@ from .tool_executor import ToolExecutor
 from .workflow import WorkflowCoordinator
 
 logger = logging.getLogger(__name__)
+
+
+class AdRunStoreAdapter:
+    """Expose the advertising persistence API through the generic RunStore port."""
+
+    def __init__(self, session_manager: SessionManager, runtime: Any) -> None:
+        self.session_manager = session_manager
+        self.runtime = runtime
+
+    def start_run(self, **payload: Any) -> Any:
+        from ..persistence.models import ExecutionRunRecord
+
+        now = datetime.now(timezone.utc).isoformat()
+        return self.session_manager.create_execution_run(
+            ExecutionRunRecord(
+                run_id=str(payload.get("run_id") or ""),
+                session_id=str(payload.get("session_id") or ""),
+                turn_id=str(payload.get("turn_id") or ""),
+                user_id=str(payload.get("user_id") or "anonymous"),
+                tenant_id=str(payload.get("tenant_id") or "default"),
+                execution_mode=str(
+                    payload.get("execution_mode")
+                    or getattr(self.runtime, "execution_mode", "dry_run")
+                ),
+                task_id=(
+                    str(payload["task_id"]) if payload.get("task_id") else None
+                ),
+                metadata={"effect_state": "unknown"},
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    def append_event(self, run_id: str, event: dict[str, Any]) -> bool:
+        try:
+            accepted = self.session_manager.append_execution_run_event(
+                str(run_id), dict(event),
+            )
+        except Exception:
+            accepted = False
+        if accepted:
+            return True
+        enqueue = getattr(
+            self.runtime._persistence_store,
+            "enqueue_execution_event_repair",
+            None,
+        )
+        if callable(enqueue):
+            enqueue(str(run_id), dict(event))
+        return False
+
+    def finish_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> bool:
+        current = self.session_manager.get_execution_run(str(run_id))
+        current_metadata = getattr(current, "metadata", {}) if current else {}
+        merged = {
+            **(current_metadata if isinstance(current_metadata, dict) else {}),
+            **dict(metadata or {}),
+        }
+        return bool(self.session_manager.update_execution_run(
+            str(run_id),
+            status=str(status),
+            metadata=merged,
+        ))
 
 
 @dataclass(frozen=True)
@@ -92,7 +162,7 @@ class AdRuntimeComponents:
     session_services: AdSessionServices
     workflow_services: AdWorkflowServices
     task_services: AdTaskServices
-    runtime_kernel: GenericAgentRuntime
+    runtime_kernel: AgentRuntime
     tool_executor: ToolExecutor
     supervisor: RuntimeSupervisor
     start_background_workers: bool
@@ -210,24 +280,31 @@ class AdRuntimeAssembly:
         workflow_services = AdWorkflowServices(runtime)
         task_services = AdTaskServices(runtime)
         turn_pipeline = AdTurnPipeline(runtime)
-        runtime_kernel = GenericAgentRuntime(
-            session_manager=session_manager,
-            session_locks=runtime._session_locks,
-            session_locks_guard=runtime._session_locks_guard,
-            lease_owner=runtime._session_lease_owner,
-            lease_seconds=runtime.session_lease_seconds,
-            mode_context=mode_context,
-            validate_mode=runtime._validate_execution_mode,
-            resolve_mode=lambda tenant, user, _requested: runtime.get_execution_mode(
-                tenant, user
+        run_store = (
+            AdRunStoreAdapter(session_manager, runtime)
+            if session_manager is not None else None
+        )
+        runtime_kernel = AgentRuntime(
+            ports=RuntimePorts(
+                session_manager=session_manager,
+                session_locks=runtime._session_locks,
+                session_locks_guard=runtime._session_locks_guard,
+                lease_owner=runtime._session_lease_owner,
+                lease_seconds=runtime.session_lease_seconds,
+                mode_context=mode_context,
+                validate_mode=runtime._validate_execution_mode,
+                resolve_mode=lambda tenant, user, _requested: runtime.get_execution_mode(
+                    tenant, user
+                ),
+                assert_ready=runtime.assert_llm_ready,
+                ensure_session=runtime._ensure_kernel_session,
+                refresh_session=runtime._refresh_kernel_session,
+                busy_error=busy_error,
             ),
-            assert_ready=runtime.assert_llm_ready,
-            ensure_session=runtime._ensure_kernel_session,
-            refresh_session=runtime._refresh_kernel_session,
-            turn_pipeline=turn_pipeline,
+            pipeline=turn_pipeline,
+            run_store=run_store,
             tool_registry=runtime.registry,
             on_tool_catalog_changed=runtime._on_generic_tool_catalog_changed,
-            busy_error=busy_error,
         )
         tool_executor = ToolExecutor(services)
         supervisor = RuntimeSupervisor(
@@ -279,4 +356,5 @@ __all__ = [
     "AdRuntimeAssembly",
     "AdRuntimeAssemblyOptions",
     "AdRuntimeComponents",
+    "AdRunStoreAdapter",
 ]

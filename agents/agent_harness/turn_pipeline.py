@@ -1,0 +1,124 @@
+"""Application-neutral stage pipeline."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
+
+from .runtime_kernel import TurnRequest
+
+
+@dataclass
+class TurnExecutionContext:
+    request: TurnRequest
+    state: dict[str, Any] = field(default_factory=dict)
+    result: Any = None
+
+
+@dataclass(frozen=True)
+class TurnStageResult:
+    stop: bool = False
+    value: Any = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def complete(
+        cls, value: Any = None, *, metadata: Optional[Mapping[str, Any]] = None,
+    ) -> "TurnStageResult":
+        return cls(stop=True, value=value, metadata=dict(metadata or {}))
+
+    @classmethod
+    def continue_with(
+        cls, value: Any = None, *, metadata: Optional[Mapping[str, Any]] = None,
+    ) -> "TurnStageResult":
+        return cls(stop=False, value=value, metadata=dict(metadata or {}))
+
+
+class TurnStage(Protocol):
+    def execute(self, context: TurnExecutionContext) -> Any:
+        ...
+
+
+class TurnPipeline(Protocol):
+    def execute(self, request: TurnRequest) -> Any:
+        ...
+
+
+class SequentialTurnPipeline:
+    """Deterministic pipeline with explicit terminal and error semantics."""
+
+    def __init__(
+        self,
+        stages: Sequence[TurnStage | Callable[[TurnExecutionContext], Any]],
+        *,
+        on_error: Optional[Callable[[TurnExecutionContext, Exception], Any]] = None,
+        on_complete: Optional[Callable[[TurnExecutionContext], Any]] = None,
+    ) -> None:
+        self._stages = tuple(stages)
+        self._on_error = on_error
+        self._on_complete = on_complete
+
+    @staticmethod
+    def _run_stage(stage: Any, context: TurnExecutionContext) -> Any:
+        execute = getattr(stage, "execute", None)
+        if callable(execute):
+            return execute(context)
+        if callable(stage):
+            return stage(context)
+        raise TypeError("turn pipeline stage must be callable or expose execute()")
+
+    @staticmethod
+    def _stage_name(stage: Any) -> str:
+        name = getattr(stage, "name", None)
+        if name:
+            return str(name)
+        if callable(stage) and getattr(stage, "__name__", None):
+            return str(stage.__name__)
+        return type(stage).__name__
+
+    def execute(self, request: TurnRequest) -> Any:
+        context = TurnExecutionContext(request=request)
+
+        def complete() -> Any:
+            if self._on_complete is not None:
+                value = self._on_complete(context)
+                if value is not None:
+                    context.result = value
+            return context.result
+
+        try:
+            for stage in self._stages:
+                value = self._run_stage(stage, context)
+                if isinstance(value, TurnStageResult):
+                    if value.value is not None:
+                        context.result = value.value
+                    stage_name = self._stage_name(stage)
+                    metadata = dict(value.metadata or {})
+                    if metadata:
+                        context.state.setdefault(
+                            "stage_metadata", {}
+                        )[stage_name] = metadata
+                    context.state.setdefault("stage_results", []).append({
+                        "stage": stage_name,
+                        "stop": bool(value.stop),
+                        "metadata": metadata,
+                    })
+                    if value.stop:
+                        return complete()
+                    continue
+                if value is not None:
+                    context.result = value
+            return complete()
+        except Exception as error:
+            if self._on_error is None:
+                raise
+            return self._on_error(context, error)
+
+
+__all__ = [
+    "SequentialTurnPipeline",
+    "TurnExecutionContext",
+    "TurnPipeline",
+    "TurnStage",
+    "TurnStageResult",
+]
