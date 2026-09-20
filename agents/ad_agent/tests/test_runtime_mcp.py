@@ -27,7 +27,7 @@ def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
     runtime = AgentRuntime(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_create",
-        skill="test-capability",
+        skill="test-tool_source",
         namespace="test-channel",
         description="Test channel create",
         input_schema=ToolSchema(type="object", required=["name"], properties={"name": {"type": "string"}}),
@@ -79,7 +79,7 @@ def test_runtime_mcp_server_uses_principal_scoped_mode_for_write_guard():
     runtime = AgentRuntime(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_create",
-        skill="test-capability",
+        skill="test-tool_source",
         namespace="test-channel",
         description="Test channel create",
         input_schema=ToolSchema(type="object", required=["name"], properties={"name": {"type": "string"}}),
@@ -117,7 +117,7 @@ def test_runtime_mcp_server_streamable_http_starts_lifespan_and_calls_tool(monke
     runtime = AgentRuntime(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_read",
-        skill="test-capability",
+        skill="test-tool_source",
         namespace="test-channel",
         description="Test channel read",
         input_schema=ToolSchema(

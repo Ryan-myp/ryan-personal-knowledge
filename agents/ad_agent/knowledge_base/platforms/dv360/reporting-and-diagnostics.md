@@ -5,7 +5,7 @@ title: DV360 报表生命周期、费用口径与诊断
 layer: platform
 knowledge_type: workflow
 platform: dv360
-source: Display & Video 360 API Reporting 官方文档 + 当前 Capability
+source: Display & Video 360 API Reporting 官方文档 + 当前 Tool Source
 source_ref: "https://developers.google.com/display-video/api/concepts/reporting"
 version: "1.0.0"
 confidence: 0.86
@@ -58,4 +58,4 @@ Definition 创建成功不等于报告结果生成，result 可读不等于数�
 
 ## 当前执行边界
 
-当前 Capability 支持部分异步报告创建/读取和 Line Item 报告。具体可用的 report definition、维度/指标组合、导出和 live 状态以当前 Tool schema 与账户权限为准。
+当前 Tool Source 支持部分异步报告创建/读取和 Line Item 报告。具体可用的 report definition、维度/指标组合、导出和 live 状态以当前 Tool schema 与账户权限为准。

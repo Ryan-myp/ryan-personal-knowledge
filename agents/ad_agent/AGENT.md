@@ -14,14 +14,14 @@
   -> Skill 上下文、SOP 和业务策略
   -> Tool metadata 选择与参数计划
   -> Runtime policy gates
-  -> Provider Capability Tool
+  -> Provider Tool Source Tool
   -> Provider API Client
 ```
 
 - Agent 负责理解、拆解、询问缺失信息、编排和总结。
 - Skill 负责自然语言知识、业务流程、渠道规则、前置条件和安全提示。
 - Tool 是一个有明确输入/输出、权限、风险、重放、超时和资源层级的可执行动作。
-- Capability 是渠道拥有的 Tool 注册和 Provider 适配边界。
+- Tool Source 是渠道拥有的 Tool 注册和 Provider 适配边界。
 - Client 负责认证后的请求、版本适配、限流、重试、错误分类和 payload 转换。
 - Runtime/Core 只实现通用规划、校验、授权、dry-run、幂等和恢复，
   不为某个渠道或业务流程增加分支。
@@ -38,7 +38,7 @@ Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动
   调度语义，不代表外部广告平台已回滚。
 - `RuntimeServices` / `ToolExecutor` / `RuntimeSecurity`：分别提供 Feature 端口、
   Tool 执行和安全边界实现。
-- `PluginRegistry`：统一管理扩展的 Manifest、版本、依赖和生命周期；Capability、
+- `PluginRegistry`：统一管理扩展的 Manifest、版本、依赖和生命周期；Tool Source、
   Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文都通过它登记。它不执行
   Provider 请求，也不替代 ToolRegistry 的权限、账户、dry-run 和审计门禁。
 - 最终回答经过 `ResponseSynthesizer`/`ResponseRenderer` 边界：LLM 只能基于脱敏的
@@ -81,7 +81,7 @@ Core 或 Router 中维护渠道表。Markdown 表格、`workflow.yaml`、`script
 
 Plugin 是比 Skill 更宽的扩展协议，不等同于“上传任意代码即可执行”。每个 Plugin
 必须有 `PluginManifest`，声明唯一 ID、语义化版本、Plugin API 版本、贡献类型、依赖、
-权限、来源和是否可执行。当前内置源码扩展可以贡献 Capability/Tool Provider、Feature、
+权限、来源和是否可执行。当前内置源码扩展可以贡献 Tool Source/Tool Provider、Feature、
 Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-scoped advisory Plugin，
 不会导入其 `tools.py`/`scripts/`，也不会获得生命周期执行钩子。
 
@@ -124,7 +124,7 @@ Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-sc
 
 只有流程包含跨回合状态机、二阶段数据采集、批量展开或专用结果聚合时，才增加
 Skill-owned `RuntimeFeature`；Feature 通过 Runtime 的通用扩展上下文工作，仍不需要
-修改 Runtime 主循环。新增外部 API 动作时，才增加 Provider Client + Capability Tool。
+修改 Runtime 主循环。新增外部 API 动作时，才增加 Provider Client + Tool Source Tool。
 
 ### 3.1.1 Wiki 与 Memory
 
@@ -153,7 +153,7 @@ exact-prefix cache 命中机会。会话工作记忆同时受消息数和字符�
 如果确实需要新的外部动作，按以下顺序在渠道包内完成最小闭环：
 
 1. 在 `api_clients/<provider>_client.py` 增加固定方法；方法名和 endpoint 不能来自用户输入。
-2. 在 `capabilities/<provider>/capability.py` 增加 Tool Schema、handler/adapter、
+2. 在 `tools/providers/<provider>/provider.py` 增加 Tool Schema、handler/adapter、
    资源层级、`intent_types`、权限、风险、重放、超时和输出上限。
 3. 静态选项放在渠道 Tool schema；账户、App、地域、事件等动态值增加同渠道只读
    lookup Tool，并通过 `lookup_tool`/selection token 关联，不在 Core 写渠道枚举。Provider
@@ -173,7 +173,7 @@ exact-prefix cache 命中机会。会话工作记忆同时受消息数和字符�
 ```text
 官方能力基线 OFFICIAL_INVENTORY
   -> 当前实现 API_SURFACE
-  -> Client method -> Capability Tool -> Runtime
+  -> Client method -> Tool Source Tool -> Runtime
 ```
 
 `API_SURFACE.status=implemented` 只表示已有代码契约；`execution_status=dry_run_only`
@@ -183,8 +183,8 @@ exact-prefix cache 命中机会。会话工作记忆同时受消息数和字符�
 ### 3.3 API 版本升级
 
 保持稳定的 Tool 名称和业务输入契约，在渠道 Client 内通过
-`version_contract()` 声明实际版本、完整兼容版本列表和请求/响应 adapter；Capability
-注册与 `audit_capabilities.py` 会校验 Client、Capability、Tool 三者一致。每次升级都要
+`version_contract()` 声明实际版本、完整兼容版本列表和请求/响应 adapter；Tool Source
+注册与 `audit_provider_tools.py` 会校验 Client、Tool Source、Tool 三者一致。每次升级都要
 补 provider-owned adapter 回归测试和指定测试账户 E2E；不能只修改 `/tools` 返回的版本
 字符串。若语义不能安全转换，新版本必须先保持 dry-run 或返回版本不兼容，禁止静默发送
 未知 payload。
@@ -196,22 +196,22 @@ Google REST Client 的 OAuth access token 必须带过期管理：优先复用�
 
 ### 3.4 广告创建 Blueprint
 
-广告创建的级联参数使用 Provider Capability 拥有的声明式 JSON Blueprint，不能把这类
+广告创建的级联参数使用 Provider Tool Source 拥有的声明式 JSON Blueprint，不能把这类
 机器可读规则塞进 Skill 的 `references/` 作为唯一事实来源，也不要求用户编写
 `workflow.yaml`：
 
 ```text
-capabilities/<provider>/blueprints/<ad-format>.v<major>.json
+tools/providers/<provider>/blueprints/<ad-format>.v<major>.json
 ```
 
 Blueprint 只描述广告类型、资源层级、Tool Schema 字段引用、可见/必填条件、动态选项
 来源以及父字段变化后的 `reset`/`revalidate`/`preserve`/`ask` 影响。它不能包含脚本、
 表达式执行、Provider client、MCP、凭证或 HTTP 请求。通用 `BlueprintRegistry` 在
-Capability 注册时校验配置，并由 `BlueprintCascadeEngine` 确定性计算字段状态；最终
+Tool Source 注册时校验配置，并由 `BlueprintCascadeEngine` 确定性计算字段状态；最终
 参数仍必须经过注册 Tool 的 schema、权限、账户和 dry-run/live gate。
 
 Skill 的 `SKILL.md`/`references/` 继续负责自然语言 SOP、业务解释和用户沟通。Blueprint
-中的 `tool_ref` 只能引用同一 Capability 已注册的 Tool，静态枚举复用 Tool Schema，
+中的 `tool_ref` 只能引用同一 Tool Source 已注册的 Tool，静态枚举复用 Tool Schema，
 动态值复用只读 lookup Tool。Blueprint 版本不可变，用户保存的 Preset/Template 绑定
 具体 Blueprint 版本，升级必须显式预览和迁移，不能静默改变旧模板。
 
@@ -226,7 +226,7 @@ Blueprint 可声明一个入口 `selector`（例如 Meta/TikTok 的 `objective`�
 身份，不能把不同渠道的数字 ID 互相复用。当前跨渠道 Campaign 批量管理支持暂停、
 恢复、预算更新和删除的 dry-run 计划；每个动作均由目标渠道发布的 Campaign Tool
 元数据驱动选择，不能在 Core 中写渠道分支。跨渠道操作先生成带逐项状态的本地计划，
-再由每个渠道的 Capability 执行或回查；回查 Tool、资源 ID 字段和父资源字段必须来自
+再由每个渠道的 Tool Source 执行或回查；回查 Tool、资源 ID 字段和父资源字段必须来自
 渠道 Tool 合约，Runtime 不从工具名推断；失败或不确定结果进入
 `unknown`/`recovery_required`，不得把缺失指标填成 0，也不得把一个渠道的成功推断成
 另一个渠道的成功。
@@ -276,5 +276,5 @@ reservation、workflow lease 和租户隔离语义。
 make ad-agent-check
 ```
 
-任何能力只有在 Client、Capability、Schema、Surface、测试和契约快照一致后，才算
+任何能力只有在 Client、Tool Source、Schema、Surface、测试和契约快照一致后，才算
 “已接入”；只有经过指定测试账户的手动验证并加入 live 白名单后，才算“live 已验证”。

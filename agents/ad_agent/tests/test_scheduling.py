@@ -90,7 +90,7 @@ def test_schedule_occurrence_is_unique_and_aggregates_terminal_result():
             os.unlink(path)
 
 
-def test_schedule_requires_capability_and_explicit_confirmation_before_persisting():
+def test_schedule_requires_tool_source_and_explicit_confirmation_before_persisting():
     path = tempfile.mktemp(suffix=".db")
     store = AdAgentStore(path)
     registry = SimpleToolRegistry()

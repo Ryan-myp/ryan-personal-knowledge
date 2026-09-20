@@ -62,11 +62,11 @@ def test_channel_and_cross_channel_skills_are_natural_language_guidance():
         content = skill_path.read_text(encoding="utf-8")
         # Internal intent labels and provider Tool names are Runtime concerns.
         # Keeping them out of Skill prose prevents the LLM from treating a
-        # capability description as an executable Tool registry.
+        # tool_source description as an executable Tool registry.
         assert "cross_channel_" not in content, skill_path
         assert "workflow.yaml" not in content, skill_path
         assert "meta_list_pixels" not in content, skill_path
-        assert "ToolDefinition" in content or "Capability" in content, skill_path
+        assert "ToolDefinition" in content or "Tool Source" in content, skill_path
 
 
 def test_channel_skill_body_is_available_to_model_context():
@@ -84,7 +84,7 @@ def test_channel_skill_body_is_available_to_model_context():
             # a real Provider client.
             tool = ToolDefinition(
                 name=f"{platform}_list_campaigns",
-                skill=f"{platform}-capability",
+                skill=f"{platform}-tool_source",
                 namespace=platform,
                 description="list campaigns",
                 input_schema=ToolSchema(),

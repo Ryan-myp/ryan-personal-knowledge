@@ -270,14 +270,14 @@ class SimpleToolRegistry(ToolRegistry):
         # 所有工具统一执行 Schema 校验，避免只依赖 Handler 自己实现校验。
         if defn.input_schema:
             # A direct registry call is an execution seam, not a dry-run
-            # preview. Write Tools must enforce their capability contract here
+            # preview. Write Tools must enforce their requirements here
             # too, otherwise a caller could reach an argument builder with a
-            # missing capability field (or a live adapter) outside Runtime's
+            # missing requirement (or a live adapter) outside Runtime's
             # normal policy path.
             errors = validate_tool_input(
                 defn.input_schema,
                 input_data,
-                include_capability_contract=bool(defn.is_write_tool),
+                include_tool_requirements=bool(defn.is_write_tool),
             )
             if errors:
                 return ToolResult.error(f"Input validation failed: {errors}")
@@ -453,7 +453,7 @@ class _BlockedToolHandler:
 def validate_tool_input(
     schema: ToolSchema,
     data: dict[str, Any],
-    include_capability_contract: bool = False,
+    include_tool_requirements: bool = False,
 ) -> list[str]:
     """
     校验输入数据是否符合 Schema
@@ -501,27 +501,27 @@ def validate_tool_input(
         if field_name not in data or is_missing(data.get(field_name)):
             errors.append(f"Missing required field: {field_name}")
 
-    if include_capability_contract:
-        for field_name in schema.capability_required:
+    if include_tool_requirements:
+        for field_name in schema.requires:
             if data.get(field_name) in (None, ""):
-                errors.append(f"Capability contract requires field: {field_name}")
-        for alternatives in schema.capability_any_of:
+                errors.append(f"Tool requirements require field: {field_name}")
+        for alternatives in schema.requires_any_of:
             if not any(
                 data.get(field_name) not in (None, "", {}, [])
                 for field_name in alternatives
             ):
                 errors.append(
-                    "Capability contract requires one of: "
+                    "Tool requirements require one of: "
                     + ", ".join(alternatives)
                 )
-        for alternatives in getattr(schema, "capability_exactly_one_of", []) or []:
+        for alternatives in getattr(schema, "requires_exactly_one_of", []) or []:
             present = [
                 field_name for field_name in alternatives
                 if data.get(field_name) not in (None, "", {}, [])
             ]
             if len(present) != 1:
                 errors.append(
-                    "Capability contract requires exactly one of: "
+                    "Tool requirements require exactly one of: "
                     + ", ".join(alternatives)
                 )
 
@@ -714,7 +714,7 @@ def validate_tool_input(
                 if key in value:
                     validate_value(f"{path}.{key}", value[key], child_schema)
 
-    # Check field types and nested capability contracts.
+    # Check field types and nested tool requirements.
     for field_name, field_schema in schema.properties.items():
         if field_name in data:
             validate_value(field_name, data[field_name], field_schema)

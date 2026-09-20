@@ -3,7 +3,7 @@ name: scheduled-agent-task
 description: "定时 Agent 任务的需求澄清、能力预检、确认和安全执行指导"
 version: 1.1.0
 author: Ryan
-tags: [agent, scheduling, clarification, capability-preflight, recovery]
+tags: [agent, scheduling, clarification, tool_source-preflight, recovery]
 namespace: scheduling
 aliases: [schedule, scheduled-task, 定时任务, 定时执行, 定期执行]
 triggers:
@@ -19,7 +19,7 @@ triggers:
 本 Skill 只指导定时任务的理解、澄清、能力预检和确认，不注册 Tool、不持有凭证，
 也不直接调用 Provider。创建、暂停、恢复、删除和立即执行由 Runtime 的 scheduling
 Feature 处理；到期后必须重新进入当前 Agent Runtime，由已注册的 Skills、Tools、
-Capabilities、权限、账户范围、dry-run/live gate、幂等和审计链路决定实际结果。
+Tools、权限、账户范围、dry-run/live gate、幂等和审计链路决定实际结果。
 
 ## 创建前必须收集的字段
 
@@ -45,7 +45,7 @@ Capabilities、权限、账户范围、dry-run/live gate、幂等和审计链路
 - 用户补充信息后，合并到同一个可恢复草稿，不要求用户重新描述已确认的字段。
 - 用户说“取消/算了/不用创建”时，清除草稿，不创建任务。
 - 用户说“确认/就这样/创建吧”时，只有草稿已完成能力预检且摘要完整，才创建任务。
-- 能力预检失败时，明确说明“当前 Registry 没有匹配的 Tool/Capability”以及缺少的
+- 能力预检失败时，明确说明“当前 Registry 没有匹配的 Tool/Tool Source”以及缺少的
   渠道或参数；不能把相近 Tool 当成支持，也不能先创建再等到期失败。
 - 能力预检只能读取当前 Registry 的 Tool metadata/schema，不能调用 Provider API，
   不能把预检结果描述成已经查询或已经创建。

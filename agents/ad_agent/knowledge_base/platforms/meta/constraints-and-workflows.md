@@ -5,7 +5,7 @@ title: Meta Ads 预算、定向与创建工作流
 layer: platform
 knowledge_type: constraint
 platform: meta
-source: Meta Marketing API 官方文档 + 当前 Capability schema
+source: Meta Marketing API 官方文档 + 当前 Tool Source schema
 source_ref: "https://developers.facebook.com/docs/marketing-api/campaign-structure/creation"
 version: "1.0.0"
 confidence: 0.88

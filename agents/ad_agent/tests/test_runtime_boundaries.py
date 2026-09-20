@@ -171,7 +171,7 @@ def test_application_runtime_has_no_direct_provider_factory_imports():
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             if node.level >= 2 and node.module.split(".", 1)[0] in {
-                "api_clients", "capabilities",
+                "api_clients", "tools.providers",
             }:
                 direct_provider_imports.append(node.module)
     assert direct_provider_imports == []
@@ -194,9 +194,9 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     assert "SchedulingService(" not in facade
 
     # Assembly code is application composition, not a provider dispatch
-    # table. Provider discovery remains behind Capability factories.
+    # table. Provider discovery remains behind Tool Source factories.
     assert "api_clients" not in assembly
-    assert "capabilities" not in assembly
+    assert "tools.providers" not in assembly
     assert "google" not in assembly.lower()
     assert '"meta"' not in assembly.lower()
     assert "tiktok" not in assembly.lower()
@@ -275,7 +275,7 @@ def test_turn_application_services_do_not_import_provider_implementations():
         provider_imports = []
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
-                if node.module.split(".", 1)[0] in {"api_clients", "capabilities"}:
+                if node.module in {"api_clients", "tools.providers"}:
                     provider_imports.append(node.module)
         assert provider_imports == []
 
@@ -299,13 +299,13 @@ def test_supervisor_receives_task_kinds_from_the_application_composition_root():
     assert "task_handlers" in source
 
 
-def test_capability_context_has_no_skill_back_reference():
-    """Capabilities receive execution dependencies, not Skill objects."""
-    from agents.ad_agent.core.interfaces import CapabilityContext
-    from agents.ad_agent.runtime.capability_context import CapabilityContextWrapper
+def test_tool_source_context_has_no_skill_back_reference():
+    """Tool Sources receive execution dependencies, not Skill objects."""
+    from agents.ad_agent.core.interfaces import ToolSourceContext
+    from agents.ad_agent.runtime.tool_source_context import ToolSourceContextWrapper
 
-    assert "skills" not in CapabilityContext.__dataclass_fields__
-    assert not hasattr(CapabilityContextWrapper(object()), "skills")
+    assert "skills" not in ToolSourceContext.__dataclass_fields__
+    assert not hasattr(ToolSourceContextWrapper(object()), "skills")
 
 
 def test_monitoring_tool_counts_are_tenant_scoped_by_session_column():

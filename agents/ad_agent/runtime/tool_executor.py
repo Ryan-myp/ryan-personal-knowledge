@@ -277,7 +277,7 @@ class ToolExecutor:
             )
 
         # A request may provide an isolated, credential-bound Provider Client
-        # without mutating the shared Capability Handler.  Do not reject that
+        # without mutating the shared Tool Source Handler.  Do not reject that
         # request merely because the shared handler is intentionally unbound;
         # the request-client branch below will attach the isolated client
         # before invocation.  This ordering matters for HTTP requests where
@@ -393,7 +393,7 @@ class ToolExecutor:
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)
             if not isinstance(result, ToolResult):
-                # A Capability implementation must return the common result
+                # A Tool Source implementation must return the common result
                 # contract. Fail closed here so an arbitrary handler return
                 # value cannot be mistaken for successful provider evidence.
                 result = ToolResult.error(

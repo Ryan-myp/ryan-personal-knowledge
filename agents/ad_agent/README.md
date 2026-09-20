@@ -16,7 +16,7 @@
 - **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时发布 Tool Source/Executor，广告渠道的 Provider Module 只是具体实现
 - **跨 Agent 复用**：广告 Skills 可作为标准 Markdown Skill Source 导出，广告 Tools 可转换为通用 Tool Source，能够接入其他 Agent；其他业务也按同一方式接入本 Harness
 - **广告创建蓝图**：广告 Provider Module 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
-- **统一插件内核**：Capability、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
+- **统一插件内核**：Tool Source、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
 - **动态平台识别**：解析器从已注册 Tool/Skill 发布 namespace 和自然语言别名，不维护固定四渠道路由表
 - **版本兼容**：Tool 声明 Provider API 版本；版本差异由渠道 Client 自己的 adapter 处理，Runtime 不增加渠道分支
 - **开发契约**：后续模块遵循 [`AGENT.md`](./AGENT.md)；仓库安全与操作约束见 [`AGENTS.md`](./AGENTS.md)
@@ -31,7 +31,7 @@
 | DV360 | dv360-expert | dv360_client.py | 31（Advertiser、Campaign 查询、IO、Line Item、Creative、定向与异步报表接口） |
 | **合计** |  |  | **302** |
 
-> 302 是当前四个 Capability 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Capability 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。Meta 图片/视频素材当前提供 HTTPS URL 上传与列表，未伪造删除或任意文件上传；DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
+> 302 是当前四个 Tool Source 已注册的业务 Tool 数量，不是 Meta、Google Ads、TikTok 或 DV360 官方 API 的完整接口总量。各渠道包的 `_surface_data.py` 同时维护实现 Surface 和 `OFFICIAL_INVENTORY` 官方能力基线；后者必须带 endpoint/Provider operation、API version、官方来源和状态，并明确是否为完整清单。新增官方接口时，应在对应渠道 Client 增加固定方法，在 Tool Source 增加 Tool Schema/adapter，再由 Surface、官方清单审计和契约快照阻止漏注册或漂移。Meta 图片/视频素材当前提供 HTTPS URL 上传与列表，未伪造删除或任意文件上传；DV360 Campaign 创建当前明确为 planned，不会暴露一个无 Client 适配器的假 Tool。
 
 能力完整度要以审计报告为准，而不是 Tool 数量。运行：
 
@@ -54,7 +54,7 @@ live。
 - Google Ads：Search、Performance Max、Shopping、Video、Display、App，以及 RSA、PMax Asset Group、Product Group、Video/Display 子格式。
 - Meta：Traffic、Conversion、Lead、Engagement、Catalog、Messaging，以及图文、视频、Instant Form、Dynamic Product、Click-to-Message 子格式。
 - TikTok：Product Sales、Spark、Lead Generation、App Promotion、Brand，以及 Shop、Instant Form、TopView、Brand Takeover 子格式；Lead Instant Form 与 App Install 已有专用 dry-run contract。
-- DV360：暂保留已有基础 Capability，详细广告类型目录和专用 payload 暂缓建设。
+- DV360：暂保留已有基础 Tool Source，详细广告类型目录和专用 payload 暂缓建设。
 
 目录中的 `supported_dry_run` 表示已有专用 payload contract，`partial_dry_run` 表示层级或部分字段可规划，`declared_only` 只表示已纳入能力地图，不能当作可执行或已验证的 live 能力。所有写操作当前仍为 dry-run。
 
@@ -88,7 +88,7 @@ scripts/ad-agent-python；不要直接使用 macOS 系统的 python3。包装器
 ```python
 import os
 
-from ad_agent import AgentRuntime, create_meta_capability, create_google_capability
+from ad_agent import AgentRuntime, create_meta_tool_source, create_google_tool_source
 from ad_agent.core.llm_client import create_llm_client
 from ad_agent.persistence.store import AdAgentStore
 
@@ -104,9 +104,9 @@ runtime = AgentRuntime(
     ),
 )
 
-# 广告 Provider Tool Source（写操作仍只生成 dry-run 计划）
-runtime.register_capability(create_meta_capability())
-runtime.register_capability(create_google_capability())
+# 广告 Tool Source（写操作仍只生成 dry-run 计划）
+runtime.register_tool_source(create_meta_tool_source())
+runtime.register_tool_source(create_google_tool_source())
 
 # 通用 Harness 入口也可以直接注册 Tool 或 MCP/HTTP Tool Source：
 # runtime.register_tool(tool_definition, executor)
@@ -174,10 +174,10 @@ with open("credentials.json") as f:
 
 # 传入真实客户端；Runtime 仍默认为 dry-run
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
-from agents.ad_agent.capabilities.meta import create_meta_capability
+from agents.ad_agent.tools.providers.meta import create_meta_tool_source
 
 api_client = MetaAPIClient(credentials["meta"])
-provider_tools = create_meta_capability(api_client)
+provider_tools = create_meta_tool_source(api_client)
 
 runtime.register_tool_source(
     advertising_tool_source(
@@ -247,7 +247,7 @@ Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新�
 Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 仍由
 进程内锁保护并明确限制为单进程；配置 `AD_AGENT_DATABASE_URL=mysql+pymysql://...`
 后使用 MySQL/InnoDB 的事务、`FOR UPDATE SKIP LOCKED` 和跨实例 Session lease，
-Runtime、Skill、Tool、Capability 代码无需修改。运行中的 workflow 会 heartbeat，恢复 worker
+Runtime、Skill、Tool、Tool Source 代码无需修改。运行中的 workflow 会 heartbeat，恢复 worker
 通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
 
 Outbox 投递采用有界重试（默认 10 次）；超过上限的事件进入 `dead_letter`，不会无限占用
@@ -280,7 +280,7 @@ AD_AGENT_DB_MAX_OVERFLOW=10
 
 MySQL schema 使用 InnoDB，启动时执行版本化 schema baseline；任务抢占、Outbox 抢占、
 幂等键、Session lease 和 Run Event replay 使用同一个后端契约。SQLite 与 MySQL 的差异
-只存在于 `persistence/`，HTTP、Runtime 和 Provider Capability 不直接写 SQL。
+只存在于 `persistence/`，HTTP、Runtime 和 Provider Tool Source 不直接写 SQL。
 
 动态 Skill 可以提供 `skill.manifest.json`，其中包含插件文件 SHA-256；生产环境可
 通过 `AD_AGENT_REQUIRE_SKILL_MANIFEST=1` 和 `AD_AGENT_SKILL_MANIFEST_KEY` 要求签名。
@@ -304,7 +304,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_capabilities.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 302 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_provider_tools.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 302 个工具数或单元测试通过当成 Provider live 已验证。
 
 #### 发布就绪门禁与证据分层
 
@@ -312,8 +312,8 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 | 层级 | 证明什么 | 本地是否可运行 |
 |------|----------|----------------|
-| `code_contract` | Capability、Tool schema、权限、版本和 snapshot 一致 | 是 |
-| `dry_run` | Runtime → Tool → Capability → Client 的本地调用链和 Skill-up case | 是 |
+| `code_contract` | Tool Source、Tool schema、权限、版本和 snapshot 一致 | 是 |
+| `dry_run` | Runtime → Tool → Tool Source → Client 的本地调用链和 Skill-up case | 是 |
 | `provider_e2e` | 指定渠道测试账户上的逐接口真实读写证据 | 否（需受控环境） |
 | `live_verified` | 经过 live fuse、白名单、确认和审计的逐接口证据 | 否（需批准环境） |
 
@@ -335,10 +335,10 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 ./scripts/ad-agent-python agents/ad_agent/scripts/release_readiness.py --profile release
 ```
 
-门禁规则位于 [`contracts/readiness_policy.json`](./contracts/readiness_policy.json)，Provider 本地场景位于 [`contracts/provider_contract_scenarios.json`](./contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Capability、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
+门禁规则位于 [`contracts/readiness_policy.json`](./contracts/readiness_policy.json)，Provider 本地场景位于 [`contracts/provider_contract_scenarios.json`](./contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Tool Source、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
 
-当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和声明式接入，不代表已经支持任意第三方代码热加载。
-Runtime 对 Capability/Skill 的注册、卸载和派生索引刷新使用同一把生命周期锁；
+当前已增加统一 `PluginRegistry`：所有内置 Tool Source、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和声明式接入，不代表已经支持任意第三方代码热加载。
+Runtime 对 Tool Source/Skill 的注册、卸载和派生索引刷新使用同一把生命周期锁；
 执行请求仍可并发，但不会在注册中途观察到半套 Tool 或 Skill ownership 状态。卸载失败时
 会回滚 Registry、参数目录、Blueprint、SkillLoader、格式目录和 Parser catalog。
 
@@ -350,8 +350,8 @@ Runtime 对 Capability/Skill 的注册、卸载和派生索引刷新使用同一
 管理端还支持 `POST /plugins/packages/archive` 导入标准 ZIP，并提供版本级 `health` 检查；
 健康检查只验证摘要、声明一致性和租户内依赖，不进行代码探针。
 
-可用 `./scripts/ad-agent-python agents/ad_agent/scripts/audit_capabilities.py` 做无网络能力审计；它按
-Capability 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
+可用 `./scripts/ad-agent-python agents/ad_agent/scripts/audit_provider_tools.py` 做无网络能力审计；它按
+Tool Source 包约定自动发现渠道，输出 action/resource 矩阵和创建链，不是 Runtime 的第二套
 渠道注册表。
 
 创建参数还可用 `./scripts/ad-agent-python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided`
@@ -402,7 +402,7 @@ Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制
   已进入底层网络调用的线程。ToolExecutor 已对这类超时中的后台调用设置有界容量，
   防止连续网络阻塞造成线程无界增长；容量耗尽时会明确返回资源繁忙，不伪装成 Provider
   结果。
-- 当前四个 Client 已提供版本元数据和 adapter 接口，Capability 注册与能力审计会校验 Client、Capability、Tool 三者的 Provider contract；每个平台目前仍只声明一个实际支持版本。升级时仍需要在渠道 Client 增加真实新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
+- 当前四个 Client 已提供版本元数据和 adapter 接口，Tool Source 注册与能力审计会校验 Client、Tool Source、Tool 三者的 Provider contract；每个平台目前仍只声明一个实际支持版本。升级时仍需要在渠道 Client 增加真实新版本、请求/响应 adapter、Provider contract 回归和测试账户 E2E，不能只修改 Tool 上的版本字符串。
 
 因此下一阶段应优先做“Provider schema 对照 + 测试账户 E2E”，再逐个把工具加入 `live_approved_tools`，而不是一次性开放全部渠道写入。代码契约漂移可先通过以下 release gate：
 
@@ -419,10 +419,10 @@ dry-run 结果中的 `provider_validation` 会单独标记 Provider 必填字段
 新增接口的最小闭环是：
 
 1. 在渠道自己的 `api_clients/<provider>_client.py` 增加固定、可测试的方法；不要把用户输入的方法名直接转发到 HTTP。
-2. 在渠道自己的 `capabilities/<provider>/capability.py` 用 `method_tool()` 或显式 `ToolDefinition` 暴露 Schema、枚举、条件依赖、权限、超时和资源层级。
+2. 在渠道自己的 `tools/providers/<provider>/provider.py` 用 `method_tool()` 或显式 `ToolDefinition` 暴露 Schema、枚举、条件依赖、权限、超时和资源层级。
 3. 需要账户 App、地域、事件等运行时选项时，增加同渠道只读 lookup Tool，并在字段上声明 `lookup_tool`。
 4. 对可能需要结果回查的写 Tool，声明 `resource_id_field`、`parent_resource_id_field` 和可选 `readback_tool`；Runtime 不从 Tool 名称或资源类型猜 ID/回查接口。
-5. 运行 `audit_capabilities.py`、`validate_contracts.py` 和 Provider 回归测试，确认接口已注册、契约稳定且创建链没有断点。
+5. 运行 `audit_provider_tools.py`、`validate_contracts.py` 和 Provider 回归测试，确认接口已注册、契约稳定且创建链没有断点。
 
 Provider API 升级时，保持稳定的 Tool 名称和业务输入契约，在渠道 Client 中增加
 `SUPPORTED_API_VERSIONS` 与 `VERSION_ADAPTERS[旧版本]`，并通过
@@ -494,7 +494,7 @@ publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有�
 │   └─────────────┘  └─────────────┘  └───────────────────┘   │
 │                             │                                │
 │   ┌─────────────────────────┼─────────────────────────────┐  │
-│   │                   CapabilityLayer                      │  │
+│   │                   ToolSourceLayer                     │  │
 │   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │  │
 │   │  │ Meta     │ │ Google   │ │ TikTok   │ │ DV360    │ │  │
 │   │  │ Cap      │ │ Cap      │ │ Cap      │ │ Cap      │ │  │
@@ -547,10 +547,10 @@ ad_agent/
 │   ├── scheduler.py         # 通用定时任务调度
 │   ├── supervisor.py        # 后台 worker 生命周期
 │   └── skill.py             # Skill 加载
-├── capabilities/
+├── tools/providers/
 │   ├── base.py              # 能力基类
-│   ├── factory.py           # 按包约定发现 Capability
-│   └── <platform>/capability.py  # 渠道能力包
+│   ├── factory.py           # 按包约定发现 Tool Source
+│   └── <platform>/provider.py  # 渠道能力包
 ├── api_clients/
 │   ├── base.py              # 客户端基类（重试/限流）
 │   └── <platform>_client.py # 按约定可选的 Provider Client
@@ -602,7 +602,7 @@ class NewPlatformClient(BasePlatformClient):
 # 工厂名按约定自动发现：create_new_network_client(credentials)
 
 # 2. 创建只发布 Tool 的 Provider adapter
-#    agents/ad_agent/capabilities/new_network/tools.py
+#    agents/ad_agent/tools/providers/new_network/tools.py
 class NewPlatformTools:
     platform_name = "new_platform"
     
@@ -660,7 +660,7 @@ def create_skill(api_client=None):
 工具；没有可执行 Handler 的声明不会被注册，也不会因为 Skill 文档存在而伪造执行能力。
 所有扩展工具继续经过 schema 校验、账户白名单、dry-run/live gate、红线字段检查和审计。
 
-内置四渠道的 Provider 实现仍位于 `capabilities/` 和 `api_clients/`，Skill plugin
+内置四渠道的 Provider 实现仍位于 `tools/providers/` 和 `api_clients/`，Skill plugin
 只负责扩展工具编排和 Handler；默认模式不会触发线上写 API。
 
 ## 使用 skill-up 评测

@@ -298,13 +298,13 @@ def build_batch_operations(
 
         if action == "pause":
             # Keep the cross-channel model provider-neutral.  The selected
-            # Capability's update contract owns the wire field/value mapping.
+            # Tool Source's update contract owns the wire field/value mapping.
             updates = {"status": "PAUSED"}
         elif action == "resume":
             updates = {"status": "ACTIVE"}
         elif action == "delete":
             # Deletion has no provider-neutral update payload.  The selected
-            # Capability's delete Tool owns the actual provider operation;
+            # Tool Source's delete Tool owns the actual provider operation;
             # this layer only carries the scoped identity into the dry-run
             # plan.
             updates = {}

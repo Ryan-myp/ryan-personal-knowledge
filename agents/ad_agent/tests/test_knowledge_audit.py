@@ -99,7 +99,7 @@ wiki_type: concept
 
 def test_audit_infers_legacy_source_kind_without_overclaiming():
     assert infer_source_kind("https://developers.google.com/google-ads/api") == "official"
-    assert infer_source_kind("agents/ad_agent/capabilities/google/tool.py") == "code"
+    assert infer_source_kind("agents/ad_agent/tools/providers/google/tool.py") == "code"
     assert infer_source_kind("agents/ad_agent/knowledge_base/page.md") == "internal"
     assert infer_source_kind("") == "inferred"
 

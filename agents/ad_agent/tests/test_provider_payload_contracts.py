@@ -4,10 +4,10 @@ import json
 import hashlib
 import pytest
 
-from agents.ad_agent.capabilities.meta import create_meta_capability
-from agents.ad_agent.capabilities.google import create_google_capability
-from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+from agents.ad_agent.tools.providers.google import create_google_tool_source
+from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
 from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.runtime.runtime import AgentRuntime
@@ -16,74 +16,74 @@ from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.base import APIError
-from agents.ad_agent.capabilities.tiktok.campaigns import TikTokGetCampaignHandler
-from agents.ad_agent.capabilities.google.campaigns import GoogleCreateCampaignHandler
-from agents.ad_agent.capabilities.meta.capability import _meta_update_adapter
-from agents.ad_agent.capabilities.tiktok.capability import _tiktok_update_adapter
-from agents.ad_agent.capabilities.google.capability import _google_update_adapter
-from agents.ad_agent.capabilities.base import CampaignUpdateHandler
-from agents.ad_agent.capabilities.meta.creatives import MetaCreateCreativeHandler
+from agents.ad_agent.tools.providers.tiktok.campaigns import TikTokGetCampaignHandler
+from agents.ad_agent.tools.providers.google.campaigns import GoogleCreateCampaignHandler
+from agents.ad_agent.tools.providers.meta.provider import _meta_update_adapter
+from agents.ad_agent.tools.providers.tiktok.provider import _tiktok_update_adapter
+from agents.ad_agent.tools.providers.google.provider import _google_update_adapter
+from agents.ad_agent.tools.providers.provider_base import CampaignUpdateHandler
+from agents.ad_agent.tools.providers.meta.creatives import MetaCreateCreativeHandler
 
 
 def test_creation_tools_publish_provider_payload_requirements():
     """Provider contracts must describe payload fields beyond account scope."""
-    capabilities = {
-        "dv360": create_dv360_capability(),
-        "google-ads": create_google_capability(),
-        "meta": create_meta_capability(),
-        "tiktok": create_tiktok_capability(),
+    tool_sources = {
+        "dv360": create_dv360_tool_source(),
+        "google-ads": create_google_tool_source(),
+        "meta": create_meta_tool_source(),
+        "tiktok": create_tiktok_tool_source(),
     }
     definitions = {
         platform: {
             definition.name: definition
-            for definition, _handler in capability.register_tools()
+            for definition, _handler in tool_source.register_tools()
         }
-        for platform, capability in capabilities.items()
+        for platform, tool_source in tool_sources.items()
     }
 
-    assert definitions["dv360"]["dv360_create_creative"].input_schema.capability_required == [
+    assert definitions["dv360"]["dv360_create_creative"].input_schema.requires == [
         "creative"
     ]
     assert definitions["dv360"]["dv360_create_creative"].input_schema.properties["creative"]["presentation"] == "advanced_json"
-    assert definitions["dv360"]["dv360_create_line_item_assigned_targeting_option"].input_schema.capability_required == [
+    assert definitions["dv360"]["dv360_create_line_item_assigned_targeting_option"].input_schema.requires == [
         "targeting_type", "assigned_targeting_option"
     ]
-    assert definitions["dv360"]["dv360_create_report"].input_schema.capability_required == [
+    assert definitions["dv360"]["dv360_create_report"].input_schema.requires == [
         "report"
     ]
 
-    assert definitions["google-ads"]["google_create_campaign_budget"].input_schema.capability_required == [
+    assert definitions["google-ads"]["google_create_campaign_budget"].input_schema.requires == [
         "name", "daily_budget"
     ]
-    assert definitions["google-ads"]["google_create_search_ad"].input_schema.capability_required == [
+    assert definitions["google-ads"]["google_create_search_ad"].input_schema.requires == [
         "headlines", "descriptions", "final_url"
     ]
 
-    assert definitions["meta"]["meta_create_ad"].input_schema.capability_any_of == [
+    assert definitions["meta"]["meta_create_ad"].input_schema.requires_any_of == [
         ["creative_id", "object_story_spec", "creative", "media", "image_url"]
     ]
     assert validate_tool_input(
         definitions["meta"]["meta_create_ad"].input_schema,
         {"adset_id": "adset-1", "name": "image ad", "media": [{"url": "https://cdn.example/image.png"}]},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
-    assert definitions["meta"]["meta_create_creative"].input_schema.capability_required == [
+    assert definitions["meta"]["meta_create_creative"].input_schema.requires == [
         "name", "page_id", "link"
     ]
-    assert definitions["meta"]["meta_create_catalog"].input_schema.capability_required == [
+    assert definitions["meta"]["meta_create_catalog"].input_schema.requires == [
         "business_id", "name", "vertical"
     ]
-    assert definitions["meta"]["meta_create_product_set"].input_schema.capability_required == [
+    assert definitions["meta"]["meta_create_product_set"].input_schema.requires == [
         "catalog_id", "name"
     ]
-    assert definitions["meta"]["meta_upload_image_asset"].input_schema.capability_required == [
+    assert definitions["meta"]["meta_upload_image_asset"].input_schema.requires == [
         "image_url"
     ]
-    assert definitions["meta"]["meta_upload_video_asset"].input_schema.capability_required == [
+    assert definitions["meta"]["meta_upload_video_asset"].input_schema.requires == [
         "file_url"
     ]
 
-    assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.capability_required == [
+    assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.requires == [
         "name", "object_type"
     ]
 
@@ -92,7 +92,7 @@ def test_creation_tools_publish_provider_payload_requirements():
     errors = validate_tool_input(
         definitions["google-ads"]["google_create_campaign_budget"].input_schema,
         {"customer_id": "123", "name": "budget"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("daily_budget" in error for error in errors)
 
@@ -100,7 +100,7 @@ def test_creation_tools_publish_provider_payload_requirements():
 def test_meta_link_ad_requires_the_selected_media_asset_source():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     schema = definitions["meta_create_traffic_ad"].input_schema
 
@@ -110,7 +110,7 @@ def test_meta_link_ad_requires_the_selected_media_asset_source():
             "adset_id": "adset-1", "name": "image ad", "page_id": "page-1",
             "link": "https://example.test", "media_type": "IMAGE",
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("image_hash" in error for error in image_errors)
 
@@ -120,7 +120,7 @@ def test_meta_link_ad_requires_the_selected_media_asset_source():
             "adset_id": "adset-1", "name": "video ad", "page_id": "page-1",
             "link": "https://example.test", "media_type": "VIDEO",
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("video_id" in error for error in video_errors)
 
@@ -244,17 +244,17 @@ def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert {"tiktok_upload_image", "tiktok_upload_video"} <= definitions.keys()
-    assert definitions["tiktok_upload_image"].input_schema.capability_exactly_one_of == [
+    assert definitions["tiktok_upload_image"].input_schema.requires_exactly_one_of == [
         ["file_path", "image_url", "file_id"]
     ]
     assert definitions["tiktok_upload_video"].live_support is False
     errors = validate_tool_input(
         definitions["tiktok_upload_image"].input_schema,
         {"account_id": "123", "image_url": "https://cdn.example/a.png", "file_id": "f1"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("exactly one" in error for error in errors)
 
@@ -284,7 +284,7 @@ def test_tiktok_pixel_track_and_batch_build_v13_payloads_and_tools():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert definitions["tiktok_send_pixel_event"].live_support is False
     assert definitions["tiktok_send_pixel_events"].input_schema.properties["events"]["maxItems"] == 50
@@ -335,7 +335,7 @@ def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert {
         "tiktok_list_pixels", "tiktok_get_pixel",
@@ -349,7 +349,7 @@ def test_tiktok_pixel_lifecycle_builds_scoped_v13_payloads_and_tools():
     assert validate_tool_input(
         definitions["tiktok_create_pixel"].input_schema,
         {"account_id": "123", "name": "Website Pixel", "object_type": "WEBSITE"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
 
 
@@ -426,9 +426,9 @@ def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_t
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
-    assert definitions["tiktok_list_catalogs"].input_schema.capability_required == ["account_id"]
+    assert definitions["tiktok_list_catalogs"].input_schema.requires == ["account_id"]
     assert definitions["tiktok_list_product_sets"].input_schema.properties["limit"]["maximum"] == 100
     assert definitions["tiktok_list_catalogs"].traits == ["read", "catalog", "lookup"]
 
@@ -453,7 +453,7 @@ def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_
     )]
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     tool = definitions["tiktok_create_creative_portfolio"]
     assert tool.live_support is False
@@ -499,7 +499,7 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability(client).register_tools()
+        for definition, _handler in create_tiktok_tool_source(client).register_tools()
     }
     assert {
         "tiktok_create_creative", "tiktok_update_creative", "tiktok_delete_creative"
@@ -518,7 +518,7 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
             "account_id": "123", "campaign_id": "101", "adgroup_id": "201",
             **creative,
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
     assert validate_tool_input(
         definitions["tiktok_update_creative"].input_schema,
@@ -526,7 +526,7 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
             "account_id": "123", "adgroup_id": "201", "creative_id": "301",
             "updates": {"name": "Updated creative"},
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
 
 
@@ -566,7 +566,7 @@ def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints
     ]
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     get_tool = definitions["tiktok_get_creative_portfolio"]
     preview_tool = definitions["tiktok_preview_creative_portfolio"]
@@ -576,7 +576,7 @@ def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints
     assert validate_tool_input(
         get_tool.input_schema,
         {"account_id": "123", "creative_portfolio_id": "portfolio-1"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
     assert validate_tool_input(
         preview_tool.input_schema,
@@ -623,7 +623,7 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert definitions["tiktok_list_languages"].effect_class.value == "read"
     assert definitions["tiktok_list_device_models"].input_schema.required == ["account_id"]
@@ -665,7 +665,7 @@ def test_tiktok_identity_tools_cover_create_lookup_and_spark_video_preflight():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert definitions["tiktok_create_identity"].live_support is False
     assert definitions["tiktok_create_identity"].input_schema.properties.keys() == {
@@ -681,7 +681,7 @@ def test_generic_campaign_type_maps_to_google_wire_field():
     runtime = AgentRuntime(require_llm=False, )
     definition = next(
         definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
         if definition.name == "google_create_campaign"
     )
     intent = ParsedIntent(
@@ -936,7 +936,7 @@ def test_google_experiment_service_lifecycle_builds_v24_payloads():
 def test_google_experiment_tools_publish_explicit_dry_run_lifecycle_contracts():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     expected = {
         "google_get_experiment", "google_create_experiment", "google_update_experiment",
@@ -1147,7 +1147,7 @@ def test_google_user_list_upload_rejects_raw_or_unknown_columns(tmp_path):
 def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     assert {
         "google_create_user_list", "google_update_user_list",
@@ -1165,7 +1165,7 @@ def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
     errors = validate_tool_input(
         upload.input_schema,
         {"customer_id": "123", "user_list_id": "77", "file_path": "/tmp/x.csv", "email": "x"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("not allowed" in error for error in errors)
     bidding = definitions["google_create_bidding_strategy"]
@@ -1176,7 +1176,7 @@ def test_google_user_list_tools_expose_lifecycle_and_closed_upload_contract():
     bidding_errors = validate_tool_input(
         bidding.input_schema,
         {"customer_id": "123", "name": "tCPA", "strategy_type": "TARGET_CPA"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("target_cpa_micros" in error for error in bidding_errors)
 
@@ -1209,7 +1209,7 @@ def test_google_customer_client_queries_normalize_manager_rows():
 def test_google_customer_client_tool_is_read_only():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     tool = definitions["google_list_customer_clients"]
     assert tool.resource_type == "customer_client"
@@ -1220,22 +1220,22 @@ def test_google_customer_client_tool_is_read_only():
 def test_existing_creation_contracts_keep_provider_specific_fixes():
     meta_definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
-    assert "creative" in meta_definitions["meta_create_ad"].input_schema.capability_any_of[0]
+    assert "creative" in meta_definitions["meta_create_ad"].input_schema.requires_any_of[0]
     assert not meta_definitions["meta_create_campaign"].input_schema.conditional_rules[1:]
 
     tiktok_definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
-    assert tiktok_definitions["tiktok_create_ad"].input_schema.capability_required == [
+    assert tiktok_definitions["tiktok_create_ad"].input_schema.requires == [
         "campaign_id", "identity_id"
     ]
 
     dv360_definitions = {
         definition.name: definition
-        for definition, _handler in create_dv360_capability().register_tools()
+        for definition, _handler in create_dv360_tool_source().register_tools()
     }
     assert dv360_definitions["dv360_get_line_item_report"].live_support is True
 
@@ -1390,7 +1390,7 @@ def test_meta_core_hierarchy_delete_methods_are_scoped_and_use_graph_delete():
 def test_meta_core_hierarchy_delete_tools_are_dry_run_and_scoped():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     expected = {
         "meta_delete_campaign": ("campaign_id", "campaign"),
@@ -1404,7 +1404,7 @@ def test_meta_core_hierarchy_delete_tools_are_dry_run_and_scoped():
         assert definition.action == "delete"
         assert definition.resource_type == resource_type
         assert definition.input_schema.required == ["account_id", resource_id]
-        assert definition.input_schema.capability_required == ["account_id", resource_id]
+        assert definition.input_schema.requires == ["account_id", resource_id]
 
 
 def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
@@ -1526,7 +1526,7 @@ def test_meta_custom_conversion_lifecycle_builds_scoped_graph_requests():
 def test_meta_custom_conversion_management_tools_publish_closed_lifecycle_contracts():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     assert {
         "meta_list_custom_conversions", "meta_get_custom_conversion",
@@ -1590,7 +1590,7 @@ def test_meta_capi_events_validate_pixel_ownership_and_build_provider_envelope()
 def test_meta_capi_tool_exposes_pixel_lookup_and_is_dry_run_only():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     tool = definitions["meta_send_conversion_events"]
     assert tool.input_schema.properties["pixel_id"]["lookup_tool"] == "meta_list_pixels"
@@ -1603,7 +1603,7 @@ def test_meta_capi_tool_exposes_pixel_lookup_and_is_dry_run_only():
 def test_meta_custom_conversion_tool_exposes_pixel_lookup_and_dry_run():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     tool = definitions["meta_create_custom_conversion"]
     assert tool.live_support is False
@@ -1629,7 +1629,7 @@ def test_meta_test_capi_tool_requires_test_code_and_uses_test_endpoint_contract(
 
     definitions = {
         definition.name: (definition, handler)
-        for definition, handler in create_meta_capability(Client()).register_tools()
+        for definition, handler in create_meta_tool_source(Client()).register_tools()
     }
     tool, handler = definitions["meta_test_conversion_events"]
     event = {
@@ -1769,7 +1769,7 @@ def test_meta_lead_form_update_verifies_page_ownership_before_mutation():
 def test_meta_lead_form_tools_expose_closed_create_and_update_contracts():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     create_tool = definitions["meta_create_lead_form"]
     update_tool = definitions["meta_update_lead_form"]
@@ -1869,7 +1869,7 @@ def test_google_asset_creation_rejects_wrong_payload_variants_and_exposes_tool()
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     create_tool = definitions["google_create_asset"]
     assert create_tool.live_support is False
@@ -1890,7 +1890,7 @@ def test_google_asset_delete_uses_customer_scoped_asset_remove():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     delete_tool = definitions["google_delete_asset"]
     assert delete_tool.live_support is False
@@ -1900,7 +1900,7 @@ def test_google_asset_delete_uses_customer_scoped_asset_remove():
 def test_google_asset_tools_publish_read_contracts():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     assert definitions["google_list_assets"].input_schema.required == ["customer_id"]
     assert definitions["google_get_asset"].input_schema.required == ["customer_id", "asset_id"]
@@ -1955,7 +1955,7 @@ def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     for name in ("google_create_pmax_asset_group", "google_create_asset_group"):
         assert definitions[name].live_support is True
@@ -2032,7 +2032,7 @@ def test_google_asset_association_lifecycle_builds_v24_payloads_and_tools():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     expected = {
         "google_list_campaign_assets", "google_create_campaign_asset",
@@ -2077,12 +2077,12 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     app_group = definitions["google_create_app_ad_group"]
     app_ad = definitions["google_create_app_ad"]
     assert app_group.live_support is True
-    assert app_group.input_schema.capability_required == []
+    assert app_group.input_schema.requires == []
     assert "type" not in app_group.input_schema.properties
     assert app_ad.live_support is True
     assert app_ad.input_schema.required == [
@@ -2322,7 +2322,7 @@ def test_meta_lookalike_tool_exposes_source_lookup_and_fixed_subtype():
 
     definitions = {
         definition.name: (definition, handler)
-        for definition, handler in create_meta_capability(Client()).register_tools()
+        for definition, handler in create_meta_tool_source(Client()).register_tools()
     }
     tool, handler = definitions["meta_create_lookalike_audience"]
 
@@ -2393,7 +2393,7 @@ def test_meta_audience_source_upload_accepts_only_sha256_rows():
 def test_meta_audience_upload_tool_is_dry_run_and_closed():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     tool = definitions["meta_upload_audience_users"]
     assert tool.live_support is False
@@ -2451,7 +2451,7 @@ def test_tiktok_ad_creation_preserves_existing_schema_fields():
 def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     schema = definitions["tiktok_create_adgroup"].input_schema
     assert "CATALOG" in schema.properties["promotion_type"]["enum"]
@@ -2464,7 +2464,7 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
         "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
         "budget_mode": "BUDGET_MODE_DAY", "budget": 50, "location_ids": ["US"],
     }
-    errors = validate_tool_input(schema, base, include_capability_contract=True)
+    errors = validate_tool_input(schema, base, include_tool_requirements=True)
     assert any("catalog_id" in error and "product_set_id" in error for error in errors)
 
     client = TikTokAPIClient({"access_token": "test"})
@@ -2485,7 +2485,7 @@ def test_tiktok_catalog_adgroup_contract_requires_and_forwards_product_selection
 def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     adgroup = definitions["tiktok_create_product_sales_adgroup"]
     ad = definitions["tiktok_create_product_sales_ad"]
@@ -2496,7 +2496,7 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
     assert "product_sales_catalog_source_requires_product_selection" in {
         rule["id"] for rule in adgroup.input_schema.conditional_rules
     }
-    assert ad.input_schema.capability_any_of == [[
+    assert ad.input_schema.requires_any_of == [[
         "media", "creatives", "video_id", "image_ids",
         "sku_ids", "item_group_ids", "product_set_id",
     ]]
@@ -2513,12 +2513,12 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
         "schedule_start_time": "2026-09-07 00:00:00",
     }
     errors = validate_tool_input(
-        adgroup.input_schema, base, include_capability_contract=True,
+        adgroup.input_schema, base, include_tool_requirements=True,
     )
     assert any("store_id" in error for error in errors)
     base["store_id"] = "shop-1"
     assert validate_tool_input(
-        adgroup.input_schema, base, include_capability_contract=True,
+        adgroup.input_schema, base, include_tool_requirements=True,
     ) == []
 
     client = TikTokAPIClient({"access_token": "test"})
@@ -2557,7 +2557,7 @@ def test_tiktok_product_selection_validation_uses_product_set_lookup():
 
 def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fields():
     definition = next(
-        definition for definition, _handler in create_tiktok_capability().register_tools()
+        definition for definition, _handler in create_tiktok_tool_source().register_tools()
         if definition.name == "tiktok_create_adgroup"
     )
     schema = definition.input_schema
@@ -2583,25 +2583,25 @@ def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fie
         "schedule_type": "SCHEDULE_FROM_NOW",
         "schedule_start_time": "2026-09-07 00:00:00",
     }
-    errors = validate_tool_input(schema, base, include_capability_contract=True)
+    errors = validate_tool_input(schema, base, include_tool_requirements=True)
     assert any("conversion_bid_price" in error for error in errors)
     base["conversion_bid_price"] = 4
-    assert validate_tool_input(schema, base, include_capability_contract=True) == []
+    assert validate_tool_input(schema, base, include_tool_requirements=True) == []
 
 
 def test_provider_creation_contracts_reject_incompatible_cascade_values():
     meta = next(
-        definition for definition, _handler in create_meta_capability().register_tools()
+        definition for definition, _handler in create_meta_tool_source().register_tools()
         if definition.name == "meta_create_adset"
     )
     meta_errors = validate_tool_input(meta.input_schema, {
         "campaign_id": "c1", "name": "Video set", "optimization_goal": "VIDEO_VIEWS",
         "billing_event": "LINK_CLICKS", "targeting": {"geo_locations": {"countries": ["US"]}},
-    }, include_capability_contract=True)
+    }, include_tool_requirements=True)
     assert any("Video-view optimization" in error for error in meta_errors)
 
     tiktok = next(
-        definition for definition, _handler in create_tiktok_capability().register_tools()
+        definition for definition, _handler in create_tiktok_tool_source().register_tools()
         if definition.name == "tiktok_create_adgroup"
     )
     tiktok_errors = validate_tool_input(tiktok.input_schema, {
@@ -2610,7 +2610,7 @@ def test_provider_creation_contracts_reject_incompatible_cascade_values():
         "bid_type": "BID_TYPE_NO_BID", "placement_type": "PLACEMENT_TYPE_AUTOMATIC",
         "budget_mode": "BUDGET_MODE_DAY", "budget": 50, "location_ids": ["US"],
         "app_id": "app-1", "deep_bid_type": "AEO", "operating_systems": ["ANDROID"],
-    }, include_capability_contract=True)
+    }, include_tool_requirements=True)
     assert any("APP_ANDROID" in error for error in tiktok_errors)
     assert any("billing_event" in error for error in tiktok_errors)
 
@@ -2618,7 +2618,7 @@ def test_provider_creation_contracts_reject_incompatible_cascade_values():
 def test_google_external_identifiers_are_format_checked_without_fake_lookups():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     campaign = definitions["google_create_campaign"].input_schema
     app_setting = campaign.properties["app_campaign_setting"]["properties"]
@@ -2626,7 +2626,7 @@ def test_google_external_identifiers_are_format_checked_without_fake_lookups():
         "account_id": "g1", "name": "App campaign", "objective": "MULTI_CHANNEL",
         "special_ad_categories": "NONE", "budget": 10,
         "app_campaign_setting": {"app_id": "not an id", "app_store": "GOOGLE_APP_STORE"},
-    }, include_capability_contract=False)
+    }, include_tool_requirements=False)
     assert any("app_campaign_setting.app_id" in error for error in app_errors)
     assert "lookup_tool" not in app_setting["app_id"]
 
@@ -2634,13 +2634,13 @@ def test_google_external_identifiers_are_format_checked_without_fake_lookups():
     video_errors = validate_tool_input(asset, {
         "customer_id": "g1", "asset_type": "YOUTUBE_VIDEO",
         "youtube_video_id": "too-short", "youtube_video_title": "Video",
-    }, include_capability_contract=False)
+    }, include_tool_requirements=False)
     assert any("youtube_video_id" in error for error in video_errors)
 
 
 def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_fields():
     definition = next(
-        definition for definition, _handler in create_tiktok_capability().register_tools()
+        definition for definition, _handler in create_tiktok_tool_source().register_tools()
         if definition.name == "tiktok_create_ad"
     )
     schema = definition.input_schema
@@ -2648,7 +2648,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
     assert schema.properties["image_ids"]["lookup_tool"] == "tiktok_list_images"
     assert schema.properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
     assert schema.properties["identity_id"]["lookup_tool"] == "tiktok_list_identities"
-    assert "identity_id" in schema.capability_required
+    assert "identity_id" in schema.requires
     assert "SINGLE_VIDEO" in schema.properties["creative_type"]["enum"]
     assert "tiktok_item_id" in schema.properties
 
@@ -2693,7 +2693,7 @@ def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert definitions["tiktok_create_single_video_ad"].input_schema.properties["ad_format"]["enum"] == [
         "SINGLE_VIDEO",
@@ -2889,7 +2889,7 @@ def test_tiktok_smart_plus_catalog_context_is_normalized_and_forwarded():
 def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     campaign_schema = definitions["tiktok_smart_plus_create_campaign"].input_schema
     errors = validate_tool_input(
@@ -2901,7 +2901,7 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
             "sales_destination": "APP",
             "catalog_enabled": False,
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("catalog_enabled" in error for error in errors)
 
@@ -2917,7 +2917,7 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
             "schedule_start_time": "2026-09-09 00:00:00",
             "location_ids": ["1643084"], "catalog_id": "catalog-1",
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
     assert any("catalog_authorized_bc_id" in error for error in errors)
 
@@ -2986,7 +2986,7 @@ def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools()
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     assert definitions["tiktok_smart_plus_create_campaign"].live_support is True
     assert definitions["tiktok_smart_plus_create_adgroup"].live_support is True
@@ -3168,7 +3168,7 @@ def test_tiktok_audience_delete_tool_calls_provider_method():
 
     definitions = {
         definition.name: (definition, handler)
-        for definition, handler in create_tiktok_capability(client).register_tools()
+        for definition, handler in create_tiktok_tool_source(client).register_tools()
     }
     definition, handler = definitions["tiktok_delete_audience"]
     result = handler.execute(
@@ -3425,7 +3425,7 @@ def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
 def test_tiktok_lead_and_app_tools_publish_provider_contracts():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     lead = definitions["tiktok_create_lead_ad"]
     assert lead.input_schema.properties["page_id"]["minLength"] == 1
@@ -3445,7 +3445,7 @@ def test_tiktok_lead_and_app_tools_publish_provider_contracts():
 def test_tiktok_targeting_tool_exposes_lookup_backed_schema_and_is_dry_run_only():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_tiktok_capability().register_tools()
+        for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     targeting = definitions["tiktok_update_adgroup_targeting"]
     assert targeting.input_schema.required == [
@@ -3740,10 +3740,10 @@ def test_meta_messaging_ad_builds_click_to_message_story_spec():
 
 
 def test_meta_messaging_tool_publishes_destination_contract_and_route():
-    capability = create_meta_capability()
+    tool_source = create_meta_tool_source()
     definitions = {
         definition.name: definition
-        for definition, _handler in capability.register_tools()
+        for definition, _handler in tool_source.register_tools()
     }
     messaging = definitions["meta_create_messaging_ad"]
     assert messaging.input_schema.properties["messaging_app"]["enum"] == [
@@ -3758,7 +3758,7 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
             "adset_id": "as-1", "name": "Message Ad", "page_id": "page-1",
             "messaging_app": "MESSENGER", "call_to_action_type": "SEND_MESSAGE",
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
     assert validate_tool_input(
         messaging.input_schema,
@@ -3766,11 +3766,11 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
             "adset_id": "as-1", "name": "Message Ad", "page_id": "page-1",
             "messaging_app": "WHATSAPP", "call_to_action_type": "SEND_MESSAGE",
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
 
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(capability)
+    runtime.register_tool_source(tool_source)
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", ["meta"],
@@ -3827,10 +3827,10 @@ def test_meta_link_ad_builds_object_story_spec(media_type, extra, expected_key):
 
 
 def test_meta_traffic_and_conversion_tools_route_link_creatives():
-    capability = create_meta_capability()
+    tool_source = create_meta_tool_source()
     definitions = {
         definition.name: definition
-        for definition, _handler in capability.register_tools()
+        for definition, _handler in tool_source.register_tools()
     }
     for name in ("meta_create_traffic_ad", "meta_create_conversion_ad"):
         assert definitions[name].input_schema.properties["link"]["minLength"] == 1
@@ -3839,7 +3839,7 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
         ]
 
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(capability)
+    runtime.register_tool_source(tool_source)
     cases = [
         (
             "OUTCOME_TRAFFIC", "LINK_CLICKS", "meta_create_traffic_ad",
@@ -3912,17 +3912,17 @@ def test_meta_engagement_ad_builds_post_or_video_story_spec(
 
 
 def test_meta_engagement_tool_routes_post_and_video_objectives():
-    capability = create_meta_capability()
+    tool_source = create_meta_tool_source()
     definitions = {
         definition.name: definition
-        for definition, _handler in capability.register_tools()
+        for definition, _handler in tool_source.register_tools()
     }
     engagement = definitions["meta_create_engagement_ad"]
     assert engagement.input_schema.properties["engagement_type"]["enum"] == [
         "POST_ENGAGEMENT", "VIDEO_VIEWS"
     ]
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(capability)
+    runtime.register_tool_source(tool_source)
     cases = [
         ("POST_ENGAGEMENT", {"post_id": "post-1"}),
         ("VIDEO_VIEWS", {"video_id": "video-1"}),
@@ -4033,7 +4033,7 @@ def test_meta_create_creative_dry_run_never_calls_graph_api():
 def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     assert {
         "meta_list_creatives", "meta_get_creative", "meta_lookup_creative", "meta_create_creative",
@@ -4055,7 +4055,7 @@ def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
 def test_meta_create_ad_uses_exact_creative_lookup_contract():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     assert "meta_lookup_adset" in definitions
     adset = definitions["meta_create_ad"].input_schema.properties["adset_id"]
@@ -4067,10 +4067,10 @@ def test_meta_create_ad_uses_exact_creative_lookup_contract():
 
 
 def test_meta_catalog_tools_expose_lookup_and_format_contract():
-    capability = create_meta_capability()
+    tool_source = create_meta_tool_source()
     definitions = {
         definition.name: definition
-        for definition, _handler in capability.register_tools()
+        for definition, _handler in tool_source.register_tools()
     }
     assert "meta_list_catalogs" in definitions
     assert "meta_list_product_sets" in definitions
@@ -4150,7 +4150,7 @@ def test_meta_catalog_and_product_set_tools_cover_scoped_crud():
 def test_meta_catalog_tools_require_scope_and_keep_writes_dry_run():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     expected = {
         "meta_get_catalog", "meta_create_catalog", "meta_update_catalog", "meta_delete_catalog",
@@ -4193,7 +4193,7 @@ def test_meta_targeting_search_is_scoped_read_only_and_published():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     targeting = definitions["meta_search_targeting_options"]
     assert targeting.is_write_tool is False
@@ -4219,7 +4219,7 @@ def test_meta_campaign_special_categories_are_validated_before_graph_request():
 def test_meta_adset_bid_strategy_and_inline_creative_contracts_are_explicit():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_meta_capability().register_tools()
+        for definition, _handler in create_meta_tool_source().register_tools()
     }
     adset_schema = definitions["meta_create_adset"].input_schema
     base = {
@@ -4234,17 +4234,17 @@ def test_meta_adset_bid_strategy_and_inline_creative_contracts_are_explicit():
         "bid_strategy": "COST_CAP",
     }
     assert any("bid_amount" in error for error in validate_tool_input(
-        adset_schema, base, include_capability_contract=True,
+        adset_schema, base, include_tool_requirements=True,
     ))
     base["bid_amount"] = 5
-    assert validate_tool_input(adset_schema, base, include_capability_contract=True) == []
+    assert validate_tool_input(adset_schema, base, include_tool_requirements=True) == []
 
     min_roas = {**base, "bid_strategy": "LOWEST_COST_WITH_MIN_ROAS"}
     assert any("roas_average_floor" in error for error in validate_tool_input(
-        adset_schema, min_roas, include_capability_contract=True,
+        adset_schema, min_roas, include_tool_requirements=True,
     ))
     min_roas["roas_average_floor"] = 1.25
-    assert validate_tool_input(adset_schema, min_roas, include_capability_contract=True) == []
+    assert validate_tool_input(adset_schema, min_roas, include_tool_requirements=True) == []
 
     ad_schema = definitions["meta_create_ad"].input_schema
     cta_schema = ad_schema.properties["object_story_spec"]["properties"]["link_data"]["properties"]["call_to_action"]
@@ -4342,7 +4342,7 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
 
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     setting = definitions["google_create_campaign"].input_schema.properties["shopping_setting"]
     assert setting["ui_visible_when"]["in"] == ["SHOPPING", "PERFORMANCE_MAX"]
@@ -4468,7 +4468,7 @@ def test_google_core_hierarchy_delete_methods_use_customer_mutate_remove():
 def test_google_core_hierarchy_delete_tools_are_dry_run_and_traced():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     expected = {
         "google_delete_campaign": ["campaign_id"],
@@ -4479,13 +4479,13 @@ def test_google_core_hierarchy_delete_tools_are_dry_run_and_traced():
         definition = definitions[name]
         assert definition.is_write_tool
         assert definition.live_support is False
-        assert definition.input_schema.capability_required == required
+        assert definition.input_schema.requires == required
 
 
 def test_google_campaign_contract_covers_channel_specific_parameters():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     schema = definitions["google_create_campaign"].input_schema
 
@@ -4504,11 +4504,11 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
         "target_cpm_micros": 2500000,
         "video_setting": {"smart_performance": False},
     }
-    assert validate_tool_input(schema, valid_video, include_capability_contract=True) == []
+    assert validate_tool_input(schema, valid_video, include_tool_requirements=True) == []
 
     missing_video_setting = {key: value for key, value in valid_video.items() if key != "video_setting"}
     assert any("video_setting" in error for error in validate_tool_input(
-        schema, missing_video_setting, include_capability_contract=True,
+        schema, missing_video_setting, include_tool_requirements=True,
     ))
 
     engagement = {
@@ -4523,19 +4523,19 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
         "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
     }
     assert any("selective_optimization" in error for error in validate_tool_input(
-        schema, engagement, include_capability_contract=True,
+        schema, engagement, include_tool_requirements=True,
     ))
     engagement["app_campaign_setting"]["selective_optimization"] = [
         "customers/123/conversionActions/9"
     ]
-    assert validate_tool_input(schema, engagement, include_capability_contract=True) == []
+    assert validate_tool_input(schema, engagement, include_tool_requirements=True) == []
 
     shopping = {
         "customer_id": "123", "campaign_name": "Shopping", "daily_budget": 10,
         "advertising_channel_type": "SHOPPING", "bidding_strategy": "MANUAL_CPC",
     }
     assert any("shopping_setting" in error for error in validate_tool_input(
-        schema, shopping, include_capability_contract=True,
+        schema, shopping, include_tool_requirements=True,
     ))
 
 
@@ -4790,7 +4790,7 @@ def test_google_product_group_update_and_delete_use_composite_criterion_resource
 def test_google_product_group_lifecycle_tools_are_scoped_and_live_gated():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     expected = {
         "google_create_product_group", "google_list_product_groups",
@@ -4913,7 +4913,7 @@ def test_google_pmax_listing_group_filter_update_delete_are_typed_and_scoped():
 def test_google_pmax_listing_group_filter_tools_and_blueprint_are_declared():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
     expected = {
         "google_list_asset_group_listing_group_filters",
@@ -4936,16 +4936,16 @@ def test_google_pmax_listing_group_filter_tools_and_blueprint_are_declared():
             "parent_filter_id": "7", "product_dimension": "PRODUCT_BRAND",
             "value": "Acme",
         },
-        include_capability_contract=True,
+        include_tool_requirements=True,
     ) == []
     assert validate_tool_input(
         create_tool.input_schema,
         {"asset_group_id": "456", "filter_type": "UNIT_EXCLUDED"},
-        include_capability_contract=True,
+        include_tool_requirements=True,
     )
 
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
     blueprint = runtime.creation_blueprints.get("google-ads.performance_max")
     assert "google_create_asset_group_listing_group_filter" in blueprint.tools
     assert any(
@@ -5226,7 +5226,7 @@ def test_dv360_creative_targeting_and_delete_methods_use_verified_endpoints():
 def test_dv360_extended_methods_are_published_as_tools():
     definitions = {
         definition.name: definition
-        for definition, _handler in create_dv360_capability().register_tools()
+        for definition, _handler in create_dv360_tool_source().register_tools()
     }
     expected = {
         "dv360_delete_campaign", "dv360_delete_io", "dv360_delete_line_item",
@@ -5439,10 +5439,10 @@ def test_google_extended_provider_tools_resolve_customer_scoped_client():
             return scoped
 
     client = TrackingGoogleClient({"access_token": "test", "customer_id": "base"})
-    capability = create_google_capability(client)
+    tool_source = create_google_tool_source(client)
     definitions = {
         definition.name: handler
-        for definition, handler in capability.register_tools()
+        for definition, handler in tool_source.register_tools()
     }
     handler = definitions["google_get_campaign_budget"]
     result = handler.execute(

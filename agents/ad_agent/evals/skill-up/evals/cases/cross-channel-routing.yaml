@@ -1,5 +1,5 @@
 id: cross-channel-routing
-title: Cross-channel request reaches both provider capabilities
+title: Cross-channel request reaches both provider Tool Sources
 tag: functional_test
 input:
   prompt: 比较 Meta 和 Google 的 campaign 报表

@@ -47,7 +47,7 @@
 
 ### 内容边界
 
-- 所有平台动态枚举、资源 ID、权限和可执行能力仍以当前 Provider Capability/Tool schema 为准。
+- 所有平台动态枚举、资源 ID、权限和可执行能力仍以当前 Provider Tool Source/Tool schema 为准。
 - 文档不承载凭证、原始 PII、MCP、Provider client 或执行脚本。
 - 文档中的优化建议是方法论，不承诺固定结果或跨账户通用 benchmark。
 

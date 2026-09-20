@@ -5,7 +5,7 @@ title: DV360 预算、定向、创意与投放工作流
 layer: platform
 knowledge_type: constraint
 platform: dv360
-source: Display & Video 360 API 官方文档 + 当前 Capability schema
+source: Display & Video 360 API 官方文档 + 当前 Tool Source schema
 source_ref: "https://developers.google.com/display-video/api/concepts/targeting"
 version: "1.0.0"
 confidence: 0.88

@@ -5,7 +5,7 @@ title: Meta Catalog、Lead 与转化质量运营
 layer: platform
 knowledge_type: workflow
 platform: meta
-source: Meta Marketing API 官方文档 + 当前 Capability/Skill
+source: Meta Marketing API 官方文档 + 当前 Tool Source/Skill
 source_ref: "https://developers.facebook.com/docs/marketing-api/catalog/"
 version: "1.0.0"
 confidence: 0.86

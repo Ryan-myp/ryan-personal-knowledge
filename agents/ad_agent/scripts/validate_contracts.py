@@ -2,7 +2,7 @@
 """Validate the executable ad-agent tool contract without provider I/O.
 
 This is intentionally a release gate rather than a unit-test helper.  It
-loads the same built-in Capabilities through AgentRuntime, so a new Skill or
+loads the same built-in Tool Sources through AgentRuntime, so a new Skill or
 Tool must satisfy the same registration boundary used by the service.
 """
 
@@ -20,16 +20,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.ad_agent import AgentRuntime  # noqa: E402
-from agents.ad_agent.capabilities.factory import (  # noqa: E402
-    discover_capability_factory,
+from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
+    discover_tool_source_factory,
 )
-from agents.ad_agent.scripts.audit_capabilities import discover_platform_slugs  # noqa: E402
+from agents.ad_agent.scripts.audit_provider_tools import discover_platform_slugs  # noqa: E402
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.domain.ad.security import PROTECTED_INPUT_FIELDS  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
 
 
-# Built-in capabilities are a regression baseline, not a closed-world count.
+# Built-in Tool Sources are a regression baseline, not a closed-world count.
 # Additional Skill-owned tools must be allowed without editing this release
 # gate; every discovered tool is still checked below for its contract.
 MINIMUM_COUNTS = {"meta": 16, "google-ads": 18, "tiktok": 24, "dv360": 14}
@@ -61,9 +61,9 @@ def build_runtime() -> AgentRuntime:
         start_background_workers=False,
     )
     for slug in discover_platform_slugs():
-        factory = discover_capability_factory(slug)
+        factory = discover_tool_source_factory(slug)
         if callable(factory):
-            runtime.register_capability(factory())
+            runtime.register_tool_source(factory())
     # Keep the in-memory backend reachable for callers that want to close it
     # after inspecting the runtime without changing AgentRuntime's public API.
     runtime._contract_gate_store = store
@@ -86,7 +86,7 @@ def _digest(value: object) -> str:
 def build_contract_snapshot(runtime: AgentRuntime) -> dict:
     """Return a deterministic, JSON-safe snapshot of executable contracts.
 
-    This is a release artifact, not Runtime configuration.  A new Capability
+    This is a release artifact, not Runtime configuration.  A new Tool Source
     is discovered by convention and appears in the snapshot automatically;
     updating the checked-in artifact is the deliberate review step for a
     contract change.

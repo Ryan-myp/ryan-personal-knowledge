@@ -5,7 +5,7 @@ the entry point, while ``scripts/``, ``references/``, ``assets/`` and other
 package files are preserved as part of the version snapshot.  The important
 security boundary is that this package is *context*, not a new executable
 provider integration.  The Runtime never imports files from a managed
-package; advertising side effects remain behind the existing Capability/Tool
+package; advertising side effects remain behind the existing Tool Source/Tool
 registry and its policy gates.
 """
 

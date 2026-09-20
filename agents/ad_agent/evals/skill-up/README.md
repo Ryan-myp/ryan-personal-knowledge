@@ -46,7 +46,7 @@ Runtime 集成评测。
 
 用户管理的标准 Skill 版本可以在自身目录放置 `evals/eval.yaml` 和
 `evals/cases/*.yaml`，管理 API 会用内置 Engine 评估文本效果，或用平台托管的
-`ad-agent-runtime` 适配器评估与 Google/Meta/TikTok/DV360 Capability 的
+`ad-agent-runtime` 适配器评估与 Google/Meta/TikTok/DV360 Tool Source 的
 dry-run 路由。用户不能通过评测配置提交任意 Custom Engine、MCP Server 或
 Judge Script。配置了 `evals/eval.yaml` 的版本只有在评测状态为 `passed` 后才可
 发布；没有评测配置的上下文 Skill 不受此门禁影响。

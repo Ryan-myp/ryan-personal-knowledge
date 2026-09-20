@@ -5,7 +5,7 @@ title: Meta Ads 账户、层级与目标体系
 layer: platform
 knowledge_type: hierarchy
 platform: meta
-source: Meta Marketing API 官方文档 + Meta Capability/Skill
+source: Meta Marketing API 官方文档 + Meta Tool Source/Skill
 source_ref: "https://developers.facebook.com/docs/marketing-api/campaign-structure"
 version: "1.0.0"
 confidence: 0.9
@@ -56,4 +56,4 @@ Page/Instagram identity、Pixel、Catalog、Product Set、Lead Form、Custom Con
 
 ## 当前平台边界
 
-当前 Capability 覆盖 Campaign、Ad Set、Ad、Creative、资产、Audience、Catalog/Product Set、Page、Pixel/CAPI、Lead、Insights 等一组已注册动作；具体字段和可写范围以 Registry Tool contract 为准。知识库不凭空增加 Graph API endpoint，也不把 Skill 中的建议当作 Tool。
+当前 Tool Source 覆盖 Campaign、Ad Set、Ad、Creative、资产、Audience、Catalog/Product Set、Page、Pixel/CAPI、Lead、Insights 等一组已注册动作；具体字段和可写范围以 Registry Tool contract 为准。知识库不凭空增加 Graph API endpoint，也不把 Skill 中的建议当作 Tool。

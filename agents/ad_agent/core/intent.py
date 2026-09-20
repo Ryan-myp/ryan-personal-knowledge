@@ -100,7 +100,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         self._intent_aliases: dict[str, set[str]] = {}
         self._feature_intent_descriptors: dict[str, dict[str, Any]] = {}
         # Namespace identity and natural-language aliases are published by the
-        # active Skill/Capability lifecycle. The parser never scans the
+        # active Skill/Tool Source lifecycle. The parser never scans the
         # repository to discover an integration.
         self._namespace_aliases: dict[str, str] = {}
         self._known_namespaces: set[str] = set()
@@ -352,7 +352,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         return messages
 
     def register_namespaces(self, namespaces: set[str] | list[str]) -> None:
-        """Publish namespace identifiers from registered Capabilities/Skills."""
+        """Publish namespace identifiers from registered Tool Sources/Skills."""
         for namespace in namespaces or []:
             canonical = normalize_namespace(str(namespace or ""))
             if not canonical:
@@ -1097,7 +1097,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         result = dict(normalized or {})
         namespaces = list(result.get("namespaces") or [])
         if not namespaces:
-            # Namespace aliases are published by Skills/Capabilities. This is
+            # Namespace aliases are published by Skills/Tool Sources. This is
             # useful when the model omitted namespaces, but never broadens a
             # model-selected namespace set.
             namespaces = self._detect_namespaces(user_input)
@@ -1139,7 +1139,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
 
         # Normalize any top-level ParsedIntent value that an extension schema
         # explicitly publishes as an ``intent_field``.  The field name is
-        # metadata-owned, so adding a new capability does not require adding a
+        # metadata-owned, so adding a new tool_source does not require adding a
         # new Core branch.
         for namespace in namespaces:
             for _field, spec in self._namespace_field_specs.get(namespace, {}).items():
@@ -1565,9 +1565,9 @@ class SimpleIntentRouter(IntentRouter):
     """
     根据 Tool 自描述元数据进行发现式路由。
 
-    Tool 的 action/resource_type/intent_types 来自 Capability 或 Skill
+    Tool 的 action/resource_type/intent_types 来自 Tool Source 或 Skill
     plugin 自己的定义。这里不维护 namespace 工具名称表，因此新增扩展只需要
-    注册 Capability + Skill；新增同类 Tool 也不需要修改 Router。
+    注册 Tool Source + Skill；新增同类 Tool 也不需要修改 Router。
 
     路由只读取 ToolDefinition 的 intent_types/action/resource 元数据；不接受
     中心化的 intent-to-tool 配置，避免新增 Skill/Tool 时还要修改 Router。
@@ -1593,7 +1593,7 @@ class SimpleIntentRouter(IntentRouter):
                 if self._matches_intent(definition, intent.intent_type)
             ]
             # Activation predicates narrow an ambiguous intent only. This is
-            # structural metadata behavior: a new Capability can publish any
+            # structural metadata behavior: a new Tool Source can publish any
             # intent name without adding it to a Core allowlist.
             narrow_candidates = len(intent_candidates) > 1
             tools = [
@@ -1776,7 +1776,7 @@ class SimpleIntentRouter(IntentRouter):
             ]
             if not ready:
                 # Malformed/cyclic metadata remains visible and deterministic;
-                # the capability audit can report the bad graph separately.
+                # the tool_source audit can report the bad graph separately.
                 ready = [min(remaining, key=lambda tool: tool.name)]
             ready.sort(key=lambda tool: tool.name)
             for tool in ready:

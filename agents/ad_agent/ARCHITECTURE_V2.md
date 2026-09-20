@@ -43,7 +43,7 @@ agents/agent_harness/
   RunStore                durable Run/event port
 
 agents/ad_agent/
-  Skills / domain policy / Provider Tool Sources / persistence
+  Skills / domain policy / Tool Sources / persistence
   AdTurnPipeline          advertising stage composition root
     ├── AdTurnState       advertising turn state
     ├── AdTurnStages      request/context/intent/plan/execute/response stages
@@ -247,8 +247,8 @@ class SimpleToolRegistry:
 
 ### 4. Tool Sources 与 Provider Modules
 ```python
-# 位置: capabilities/
-class MetaProviderModule(BaseCapability):
+# 位置: tools/providers/
+class MetaProviderModule(BaseProviderToolSource):
     """广告应用中的 Meta Provider Module 兼容实现"""
     def __init__(self, api_client: MetaAPIClient):
         super().__init__(
@@ -268,15 +268,15 @@ class MetaProviderModule(BaseCapability):
         }
         return handlers.get(tool_name)
 
-class GoogleAdsProviderModule(BaseCapability):
+class GoogleAdsProviderModule(BaseProviderToolSource):
     """Google Ads Provider Module 兼容实现"""
     # 18 tools: list/get/create campaign/adgroup/ad + keywords/report/update
 
-class TikTokProviderModule(BaseCapability):
+class TikTokProviderModule(BaseProviderToolSource):
     """TikTok Provider Module 兼容实现"""
     # 18 tools: list/get/create campaign/adgroup/ad + media/report/update
 
-class DV360ProviderModule(BaseCapability):
+class DV360ProviderModule(BaseProviderToolSource):
     """DV360 Provider Module 兼容实现"""
     # 14 tools: list/get campaign/advertiser/io/line_item + report/update
 ```
@@ -360,7 +360,7 @@ class TikTokAPIClient(BaseAPIClient):
                                          ToolRegistry.execute()
                                               │
                                               ▼
-                                         CapabilityHandler
+                                         ToolSourceHandler
                                               │
                                               ▼
                                          APIClient.request()
@@ -385,7 +385,7 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 
 当前 302 个 Tool 是四个广告 Provider Module 对其已实现 Client 方法的覆盖基线，不等于四个
 官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
-参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
+参数目录/lookup 和 payload adapter，再通过 `audit_provider_tools.py` 与契约快照进入
 发布门禁。
 
 `ToolDefinition.provider_api_version` 是 Tool 与 Provider Client 之间的版本契约。
@@ -534,7 +534,7 @@ Tool Registry、权限、账户范围或执行计划。
 | `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文组合与筛选 |
 | `core/policy_engine.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
-| `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
+| `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Tool Sources、业务服务和 Kernel |
 | `runtime/ad_runtime_assembly.py` | 当前源码 | 广告组合图与 `AdRunStoreAdapter` |
 | `runtime/ad_turn_pipeline.py` | 当前源码 | 广告应用阶段组合根 |
 | `runtime/ad_turn_stages.py` | 当前源码 | 广告阶段适配与状态传递 |
@@ -550,12 +550,12 @@ Tool Registry、权限、账户范围或执行计划。
 | `runtime/session_context.py` | 当前源码 | 会话与跨 Tool 状态 |
 | `core/intent.py` | 533 | 意图解析、路由逻辑 |
 | `core/tool_registry.py` | 150 | 工具注册与执行 |
-| `capabilities/base.py` | 227 | 能力模块基类 |
-| `capabilities/meta/capability.py` | 当前源码 | Meta 渠道 Capability |
-| `capabilities/google/capability.py` | 当前源码 | Google Ads 渠道 Capability |
-| `capabilities/tiktok/capability.py` | 当前源码 | TikTok 渠道 Capability |
-| `capabilities/dv360/capability.py` | 当前源码 | DV360 渠道 Capability |
-| `capabilities/factory.py` | 当前源码 | 按包约定发现 Capability |
+| `tools/providers/provider_base.py` | 227 | Provider Tool Source 基类 |
+| `tools/providers/meta/provider.py` | 当前源码 | Meta 渠道 Tool Source |
+| `tools/providers/google/provider.py` | 当前源码 | Google Ads 渠道 Tool Source |
+| `tools/providers/tiktok/provider.py` | 当前源码 | TikTok 渠道 Tool Source |
+| `tools/providers/dv360/provider.py` | 当前源码 | DV360 渠道 Tool Source |
+| `tools/providers/source_factory.py` | 当前源码 | 按包约定发现 Tool Source |
 | `api_clients/base.py` | 280 | API 客户端基类 |
 | `api_clients/meta_client.py` | 19K | Meta API 实现 |
 | `api_clients/google_ads_client.py` | 20K | Google Ads API 实现 |
@@ -639,7 +639,7 @@ runtime = AgentRuntime(llm_client=create_llm_client(...), require_llm=True)
 runtime.auto_load_skills(
     str(skills_root), credentials,
     allow_executable_plugins=True,
-    allow_capability_discovery=True,
+    allow_provider_tool_discovery=True,
 )
 
 # 输出: ✅ 已加载当前 Skill 根目录下发现的 Skills
@@ -650,18 +650,18 @@ runtime.auto_load_skills(
 `SkillContract` 类支持多种 SKILL.md frontmatter 格式：
 
 自动发现默认只加载标准 Skill 文本和声明式资料。只有受信部署入口显式传入
-`allow_executable_plugins=True, allow_capability_discovery=True` 时，Runtime 才会导入
-插件代码或发现内置渠道 Capability；管理端上传目录永远走 advisory-only 路径，不能把
+`allow_executable_plugins=True, allow_provider_tool_discovery=True` 时，Runtime 才会导入
+插件代码或发现内置渠道 Tool Source；管理端上传目录永远走 advisory-only 路径，不能把
 `tools.py`、`scripts/` 或渠道 frontmatter 变成可执行能力。
 
 1. **Frontmatter 解析**：
    - 嵌套格式: `skill: {name: ..., description: ..., platform: ...}`
    - 直接格式: `name: ..., description: ...`
 
-2. **执行能力发现**：SKILL.md 不提取 Tool 定义；渠道 Capability 或 Skill plugin
+2. **执行能力发现**：SKILL.md 不提取 Tool 定义；渠道 Tool Source 或 Skill plugin
    提供 `ToolDefinition` 与 Handler，Runtime 只注册真实存在的 executable Tool。
 
-### 4. Skills vs Capabilities
+### 4. Skills vs Tool Sources
 
 | 概念 | 说明 | 数量 |
 |------|------|------|
@@ -697,6 +697,6 @@ description: New Platform API 专家技能
 Tool 清单代替可执行注册。
 EOF
 
-# Capability 按约定导出 create_new_platform_capability(api_client=None)
+# Tool Source 按约定导出 create_new_platform_tool_source(api_client=None)
 # Client 按约定导出 create_new_platform_client(credentials)（可选）
 # Runtime/CLI 自动发现，无需修改中心列表

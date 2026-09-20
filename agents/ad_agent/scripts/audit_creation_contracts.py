@@ -1,12 +1,12 @@
 #!/usr/bin/env python3.13
 """Audit declarative ad-creation contracts without provider I/O.
 
-This is the creation-form counterpart to ``audit_capabilities.py``.  It
+This is the creation-form counterpart to ``audit_provider_tools.py``.  It
 checks the contract chain that is easy to break when a provider adds a field:
 
 ``Blueprint -> create Tool schema -> lookup Tool/manual source -> read-only``
 
-The audit only imports built-in Capability metadata.  It never executes a
+The audit only imports built-in Tool Source metadata.  It never executes a
 Tool, constructs a provider client, or makes a network request.
 """
 
@@ -25,10 +25,10 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.ad_agent.capabilities.factory import (  # noqa: E402
-    discover_capability_factory,
+from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
+    discover_tool_source_factory,
 )
-from agents.ad_agent.scripts.audit_capabilities import discover_platform_slugs  # noqa: E402
+from agents.ad_agent.scripts.audit_provider_tools import discover_platform_slugs  # noqa: E402
 from agents.ad_agent.domain.ad.blueprint import (  # noqa: E402
     validate_blueprint_against_tools,
 )
@@ -351,7 +351,7 @@ def _blueprint_required_field_gaps(
         schema = getattr(definition, "input_schema", None)
         properties = getattr(schema, "properties", {}) or {}
         required = set(getattr(schema, "required", []) or [])
-        required.update(getattr(schema, "capability_required", []) or [])
+        required.update(getattr(schema, "requires", []) or [])
         parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
         resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
         for field_name in sorted(required):
@@ -456,7 +456,7 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
                 "required": path.rsplit(".", 1)[-1].replace("[]", "") in set(
                     getattr(getattr(definition, "input_schema", None), "required", []) or []
                 ) | set(
-                    getattr(getattr(definition, "input_schema", None), "capability_required", []) or []
+                    getattr(getattr(definition, "input_schema", None), "requires", []) or []
                 ),
             }
             details = _source_details(spec)
@@ -578,9 +578,9 @@ def build_runtime() -> AgentRuntime:
         enforce_account_scope=False,
     )
     for slug in discover_platform_slugs():
-        factory = discover_capability_factory(slug)
+        factory = discover_tool_source_factory(slug)
         if callable(factory):
-            runtime.register_capability(factory())
+            runtime.register_tool_source(factory())
     return runtime
 
 

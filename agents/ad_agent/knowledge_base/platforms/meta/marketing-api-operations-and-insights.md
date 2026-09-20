@@ -40,7 +40,7 @@ Meta Marketing API 建立在 Graph API 的节点、边和字段模型上。Campa
 
 ## Graph API 调用与分页
 
-Meta 端点随 Graph API 版本演进，字段和权限也会变化。Capability 应固定 API 版本和字段白名单，由工具 schema 暴露业务参数，不允许用户输入任意 endpoint、edge 或字段名。
+Meta 端点随 Graph API 版本演进，字段和权限也会变化。Tool Source 应固定 API 版本和字段白名单，由工具 schema 暴露业务参数，不允许用户输入任意 endpoint、edge 或字段名。
 
 1. 读取列表时处理 cursor 分页，设置 page size、最大页数和总返回上限。
 2. 读取详情时只请求决策所需字段，避免把大对象、素材二进制或无关扩展字段注入上下文。

@@ -14,29 +14,29 @@ from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
-from agents.ad_agent.capabilities.dv360.capability import DV360Capability
-from agents.ad_agent.capabilities.google.capability import GoogleCapability
-from agents.ad_agent.capabilities.meta.capability import MetaCapability
-from agents.ad_agent.capabilities.tiktok.capability import TikTokCapability
+from agents.ad_agent.tools.providers.dv360.provider import DV360ToolSource
+from agents.ad_agent.tools.providers.google.provider import GoogleToolSource
+from agents.ad_agent.tools.providers.meta.provider import MetaToolSource
+from agents.ad_agent.tools.providers.tiktok.provider import TikTokToolSource
 
 
 @pytest.mark.parametrize(
-    ("client_class", "capability_class"),
+    ("client_class", "tool_source_class"),
     [
-        (MetaAPIClient, MetaCapability),
-        (GoogleAdsAPIClient, GoogleCapability),
-        (TikTokAPIClient, TikTokCapability),
-        (DV360APIClient, DV360Capability),
+        (MetaAPIClient, MetaToolSource),
+        (GoogleAdsAPIClient, GoogleToolSource),
+        (TikTokAPIClient, TikTokToolSource),
+        (DV360APIClient, DV360ToolSource),
     ],
 )
-def test_builtin_provider_and_capability_versions_are_consistent(
-    client_class, capability_class
+def test_builtin_provider_and_tool_source_versions_are_consistent(
+    client_class, tool_source_class
 ):
     contract = client_class.version_contract()
 
     assert contract["issues"] == []
     assert contract["api_version"] in contract["supported_api_versions"]
-    assert capability_class.integration_api_version in {
+    assert tool_source_class.integration_api_version in {
         *contract["supported_api_versions"],
         *contract["adapter_versions"],
     }

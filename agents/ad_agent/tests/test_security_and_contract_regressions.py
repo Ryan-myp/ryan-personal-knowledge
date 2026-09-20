@@ -1,9 +1,9 @@
 import pytest
 
-from agents.ad_agent.capabilities.meta import create_meta_capability
-from agents.ad_agent.capabilities.google import create_google_capability
-from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+from agents.ad_agent.tools.providers.google import create_google_tool_source
+from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 from agents.ad_agent.core.interfaces import (
     ExecutionMode, ParsedIntent, ReplayPolicy, ToolContext, ToolDefinition,
     ToolEffect, ToolResult,
@@ -81,13 +81,13 @@ def test_integration_api_version_is_bound_to_every_client_endpoint_builder():
 
 def test_builtin_write_handlers_never_report_success_without_a_provider_client():
     context = ToolContext(session_id="s1", user_id="u1", account_id="account-1")
-    for capability_factory in (
-        create_meta_capability,
-        create_google_capability,
-        create_tiktok_capability,
-        create_dv360_capability,
+    for tool_source_factory in (
+        create_meta_tool_source,
+        create_google_tool_source,
+        create_tiktok_tool_source,
+        create_dv360_tool_source,
     ):
-        for definition, handler in capability_factory().register_tools():
+        for definition, handler in tool_source_factory().register_tools():
             if not definition.is_write_tool:
                 continue
             result = handler.execute(context, {})
@@ -96,13 +96,13 @@ def test_builtin_write_handlers_never_report_success_without_a_provider_client()
 
 def test_builtin_no_client_reads_are_explicitly_marked_offline():
     context = ToolContext(session_id="s1", user_id="u1", account_id="account-1")
-    for capability_factory in (
-        create_meta_capability,
-        create_google_capability,
-        create_tiktok_capability,
-        create_dv360_capability,
+    for tool_source_factory in (
+        create_meta_tool_source,
+        create_google_tool_source,
+        create_tiktok_tool_source,
+        create_dv360_tool_source,
     ):
-        for definition, handler in capability_factory().register_tools():
+        for definition, handler in tool_source_factory().register_tools():
             if not definition.is_read_tool:
                 continue
             result = handler.execute(context, {})
@@ -350,7 +350,7 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
     "platform, account_id, factory, platform_params, expected_tools",
     [
         (
-            "meta", "m1", create_meta_capability,
+            "meta", "m1", create_meta_tool_source,
             {"account_id": "m1", "name": "smoke", "objective": "OUTCOME_SALES",
              "special_ad_categories": "NONE", "budget": 100,
              "optimization_goal": "OFFSITE_CONVERSIONS", "billing_event": "IMPRESSIONS",
@@ -359,7 +359,7 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
             ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
         ),
         (
-            "google-ads", "g1", create_google_capability,
+            "google-ads", "g1", create_google_tool_source,
                 {"customer_id": "g1", "campaign_name": "smoke",
                  "advertising_channel_type": "SEARCH", "bidding_strategy": "MAXIMIZE_CONVERSIONS",
                  "budget": 100,
@@ -369,7 +369,7 @@ def test_public_tool_contract_includes_operational_and_json_schema_fields():
             ["google_create_campaign", "google_create_ad_group", "google_create_ad"],
         ),
         (
-            "tiktok", "t1", create_tiktok_capability,
+            "tiktok", "t1", create_tiktok_tool_source,
             {"account_id": "t1", "campaign_name": "smoke", "objective_type": "PRODUCT_SALES",
              "sales_destination": "WEBSITE", "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
              "campaign_type": "REGULAR_CAMPAIGN", "budget": 100,
@@ -395,7 +395,7 @@ def test_four_channel_create_chains_are_dry_run_only(
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {platform: [account_id]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(factory())
+    runtime.register_tool_source(factory())
 
     result = runtime.run(
         f"创建 {platform} campaign 名称=smoke",
@@ -416,7 +416,7 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
         require_llm=False,
         whitelist_validator=whitelist(tiktok=["t1"]),
     )
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
 
     result = runtime.run(
         "创建 TikTok campaign 名称=daily-budget-chain",
@@ -458,8 +458,8 @@ def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
         require_llm=False,
         whitelist_validator=whitelist(meta=["m1"], tiktok=["t1"]),
     )
-    runtime.register_capability(create_meta_capability())
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_meta_tool_source())
+    runtime.register_tool_source(create_tiktok_tool_source())
 
     result = runtime.run(
         "创建 Meta campaign，并创建 TikTok campaign 名称=preflight",
@@ -505,7 +505,7 @@ def test_structured_google_platform_alias_params_reach_provider_tool():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["g1"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
         "更新 Google Ads campaign campaign_id=123",
@@ -578,17 +578,17 @@ def test_tool_selector_uses_tool_published_intents_without_core_mapping():
 
 def test_provider_free_detail_reads_fail_closed_for_all_channels():
     cases = [
-        ("meta", "m1", create_meta_capability),
-        ("google-ads", "g1", create_google_capability),
-        ("tiktok", "t1", create_tiktok_capability),
-        ("dv360", "d1", create_dv360_capability),
+        ("meta", "m1", create_meta_tool_source),
+        ("google-ads", "g1", create_google_tool_source),
+        ("tiktok", "t1", create_tiktok_tool_source),
+        ("dv360", "d1", create_dv360_tool_source),
     ]
     for platform, account, factory in cases:
         runtime = AgentRuntime(require_llm=False,
             whitelist_validator=whitelist(**{platform: [account]}),
             offline_mode=False,
         )
-        runtime.register_capability(factory())
+        runtime.register_tool_source(factory())
         result = runtime.run(
             f"查询 {'Google Ads' if platform == 'google-ads' else platform} campaign 详情 campaign_id=123",
             account_id=account,
@@ -623,7 +623,7 @@ def test_read_result_without_evidence_status_is_marked_unknown():
 
 def test_structured_red_line_fields_are_rejected_without_mutating_credentials():
     runtime = AgentRuntime(require_llm=False, whitelist_validator=whitelist(meta=["m1"]))
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
     credentials = {"meta": {"access_token": "caller-secret"}}
     result = runtime.run(
         "更新 Meta campaign campaign_id=123",
@@ -643,7 +643,7 @@ def test_structured_red_line_fields_are_rejected_without_mutating_credentials():
 
 def test_generic_token_is_a_red_line_in_structured_inputs():
     runtime = AgentRuntime(require_llm=False, whitelist_validator=whitelist(meta=["m1"]))
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "更新 Meta campaign campaign_id=123",
         account_id="m1",
@@ -799,7 +799,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan():
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
-    runtime.register_capability(create_meta_capability(client))
+    runtime.register_tool_source(create_meta_tool_source(client))
     runtime.registry.get("meta_update_campaign")[0].live_support = True
     planned = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -839,7 +839,7 @@ def test_live_cross_channel_batch_is_explicitly_unsupported():
         allow_live_writes=True,
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "批量暂停 Meta campaign_ids=101,102",
         account_id="m1",
@@ -850,7 +850,7 @@ def test_live_cross_channel_batch_is_explicitly_unsupported():
 
 
 def test_create_tools_are_not_marked_safe_to_replay():
-    for factory in (create_meta_capability, create_google_capability, create_dv360_capability):
+    for factory in (create_meta_tool_source, create_google_tool_source, create_dv360_tool_source):
         definitions = [definition for definition, _ in factory().register_tools()]
         create_definitions = [definition for definition in definitions if "_create_" in definition.name]
         assert create_definitions
@@ -873,7 +873,7 @@ def test_skill_markdown_is_context_only_without_executable_binding(tmp_path):
 def test_tiktok_creation_contract_exposes_enums_and_conditional_dependencies():
     definitions = {
         definition.name: definition
-        for definition, _ in create_tiktok_capability().register_tools()
+        for definition, _ in create_tiktok_tool_source().register_tools()
     }
     campaign = definitions["tiktok_create_campaign"].input_schema
     adgroup = definitions["tiktok_create_adgroup"].input_schema
@@ -914,7 +914,7 @@ def test_tiktok_creation_contract_exposes_enums_and_conditional_dependencies():
 
 def test_tiktok_website_contract_requires_landing_url():
     definition = next(
-        definition for definition, _ in create_tiktok_capability().register_tools()
+        definition for definition, _ in create_tiktok_tool_source().register_tools()
         if definition.name == "tiktok_create_adgroup"
     )
     data = {
@@ -931,7 +931,7 @@ def test_tiktok_website_contract_requires_landing_url():
 def test_tiktok_campaign_and_app_ios_contracts_are_explicit():
     definitions = {
         definition.name: definition
-        for definition, _ in create_tiktok_capability().register_tools()
+        for definition, _ in create_tiktok_tool_source().register_tools()
     }
     campaign = definitions["tiktok_create_campaign"].input_schema
     adgroup = definitions["tiktok_create_adgroup"].input_schema
@@ -948,7 +948,7 @@ def test_tiktok_campaign_and_app_ios_contracts_are_explicit():
 
     get_definitions = {
         definition.name: definition
-        for definition, _ in create_tiktok_capability().register_tools()
+        for definition, _ in create_tiktok_tool_source().register_tools()
         if definition.name in {"tiktok_get_adgroup", "tiktok_get_ad"}
     }
     assert get_definitions["tiktok_get_adgroup"].input_schema.required == [
@@ -1031,7 +1031,7 @@ def test_tiktok_parent_scoped_reads_filter_provider_broad_pages_locally():
 def test_update_contract_rejects_unknown_nested_provider_fields():
     definitions = {
         definition.name: definition
-        for definition, _ in create_meta_capability().register_tools()
+        for definition, _ in create_meta_tool_source().register_tools()
     }
     schema = definitions["meta_update_adset"].input_schema
     errors = validate_tool_input(schema, {
@@ -1045,7 +1045,7 @@ def test_tool_specific_unknown_creation_parameter_is_not_silently_dropped():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "创建 Meta campaign",
         account_id="m1",
@@ -1067,7 +1067,7 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     result = runtime.run(
         "创建 TikTok campaign",
         account_id="t1",
@@ -1101,8 +1101,8 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
 def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     validator = whitelist(meta=["m1"], tiktok=["t1"])
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_meta_capability())
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_meta_tool_source())
+    runtime.register_tool_source(create_tiktok_tool_source())
 
     result = runtime.run(
         "创建 Meta campaign，并创建 TikTok campaign 名称=explicit-accounts-only",
@@ -1128,7 +1128,7 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
         whitelist_validator=validator,
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_tiktok_capability(LookupClient()))
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
 
     lookup = runtime.run(
         "查询 TikTok apps",
@@ -1198,7 +1198,7 @@ def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
         whitelist_validator=validator,
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_tiktok_capability(LookupClient()))
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
 
     selection = runtime.resolve_parameter_options(
         "tiktok", "app_id", "tiktok_create_adgroup", "t1",
@@ -1226,7 +1226,7 @@ def test_tiktok_adgroup_lookup_populates_specialized_ad_creation_picker():
         whitelist_validator=whitelist(tiktok=["t1"]),
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_tiktok_capability(LookupClient()))
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
 
     selection = runtime.resolve_parameter_options(
         "tiktok",
@@ -1249,7 +1249,7 @@ def test_tiktok_typed_ad_tool_binds_injected_provider_client():
 
     client = ProviderClient()
     definition, handler = next(
-        item for item in create_tiktok_capability(client).register_tools()
+        item for item in create_tiktok_tool_source(client).register_tools()
         if item[0].name == "tiktok_create_single_video_ad"
     )
 
@@ -1272,7 +1272,7 @@ def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
         whitelist_validator=whitelist(tiktok=["t1"]),
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_tiktok_capability(LookupClient()))
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
 
     selection = runtime.resolve_parameter_options(
         "tiktok", "app_id", "tiktok_create_adgroup",
@@ -1296,7 +1296,7 @@ def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
 
 def test_nested_google_manual_app_identifier_is_explicit_not_a_fake_lookup():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
     definition = runtime.registry.get("google_create_campaign")[0]
     app_id = definition.input_schema.properties["app_campaign_setting"]["properties"]["app_id"]
 
@@ -1319,7 +1319,7 @@ def test_lookup_dependency_is_checked_before_meta_provider_call():
         require_llm=False,
         whitelist_validator=whitelist(meta=["m1"]),
     )
-    runtime.register_capability(create_meta_capability(LookupClient()))
+    runtime.register_tool_source(create_meta_tool_source(LookupClient()))
 
     with pytest.raises(ValueError, match="所属商品目录"):
         runtime.resolve_parameter_options(
@@ -1344,7 +1344,7 @@ def test_lookup_dependency_context_is_forwarded_to_google_provider_tool():
         whitelist_validator=whitelist(**{"google-ads": ["g1"]}),
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_google_capability(LookupClient()))
+    runtime.register_tool_source(create_google_tool_source(LookupClient()))
 
     selection = runtime.resolve_parameter_options(
         "google-ads", "ad_group_id", "google_create_ad", "g1",
@@ -1364,9 +1364,9 @@ def test_live_dynamic_parameter_rejects_unattested_raw_value():
         allow_live_writes=True,
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     definition = next(
-        definition for definition, _ in create_tiktok_capability().register_tools()
+        definition for definition, _ in create_tiktok_tool_source().register_tools()
         if definition.name == "tiktok_create_adgroup"
     )
     errors = runtime.input_builder.apply_selection_tokens(
@@ -1389,7 +1389,7 @@ def test_live_creation_chain_trusts_parent_id_from_prior_runtime_result():
         allow_live_writes=True,
         selection_token_secret="selection-secret-1234",
     )
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     definition = runtime.registry.get("tiktok_create_adgroup")[0]
     tool_input = {"campaign_id": "created-by-prior-node"}
     errors = runtime.input_builder.apply_selection_tokens(
@@ -1410,10 +1410,10 @@ def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
         allow_live_writes=True,
         selection_token_secret="selection-secret-1234",
     )
-    capability = create_google_capability()
-    runtime.register_capability(capability)
+    tool_source = create_google_tool_source()
+    runtime.register_tool_source(tool_source)
     definition = next(
-        definition for definition, _ in capability.register_tools()
+        definition for definition, _ in tool_source.register_tools()
         if definition.name == "google_create_campaign"
     )
     errors = runtime.input_builder.apply_selection_tokens(
@@ -1429,8 +1429,8 @@ def test_provider_status_is_normalized_before_dry_run_update_plan():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"], "google-ads": ["g1"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_tiktok_capability())
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
+    runtime.register_tool_source(create_google_tool_source())
 
     tiktok = runtime.run(
         "更新 TikTok campaign campaign_id=123 status=PAUSED",
@@ -1451,8 +1451,8 @@ def test_common_business_objective_uses_skill_owned_provider_mapping():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_meta_capability())
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_meta_tool_source())
+    runtime.register_tool_source(create_tiktok_tool_source())
 
     meta = runtime.run("创建 Meta campaign objective=销售 名称=Sales", account_id="m1")
     assert meta["results"] == []
@@ -1479,7 +1479,7 @@ def test_dry_run_reports_provider_fields_still_pending_without_calling_api():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "创建 Meta campaign 名称=Pending provider fields",
         account_id="m1",
@@ -1602,8 +1602,8 @@ def test_runtime_rejects_tool_version_not_supported_by_provider_client():
     assert calls == []
 
 
-def test_capability_without_version_metadata_does_not_create_unknown_contract():
-    from agents.ad_agent.capabilities.base import BaseCapability
+def test_tool_source_without_version_metadata_does_not_create_unknown_contract():
+    from agents.ad_agent.tools.providers.provider_base import BaseProviderToolSource
 
     client = object()
 
@@ -1612,9 +1612,9 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
             self.client = client
 
         def execute(self, _ctx, _input):
-            return ToolResult.ok({"source": "versionless-capability"})
+            return ToolResult.ok({"source": "versionless-tool_source"})
 
-    class VersionlessCapability(BaseCapability):
+    class VersionlessToolSource(BaseProviderToolSource):
         platform_name = "versionless-provider"
 
         def __init__(self):
@@ -1636,7 +1636,7 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
             )]
 
     runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
-    runtime.register_capability(VersionlessCapability())
+    runtime.register_tool_source(VersionlessToolSource())
     definition, _handler = runtime._get_registered_tool("versionless_read")
 
     assert definition.integration_api_version is None
@@ -1644,7 +1644,7 @@ def test_capability_without_version_metadata_does_not_create_unknown_contract():
         ToolContext("s1", "u1"), "versionless_read", {}
     )
     assert result.success is True
-    assert result.data["source"] == "versionless-capability"
+    assert result.data["source"] == "versionless-tool_source"
 
 
 def test_401_recovery_retries_safe_reads_but_not_writes():
@@ -1732,7 +1732,7 @@ def test_write_reservation_survives_runtime_restart():
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
-    first_runtime.register_capability(create_meta_capability(first_client))
+    first_runtime.register_tool_source(create_meta_tool_source(first_client))
     first_runtime.registry.get("meta_update_campaign")[0].live_support = True
     planned = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -1760,7 +1760,7 @@ def test_write_reservation_survives_runtime_restart():
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
-    second_runtime.register_capability(create_meta_capability(second_client))
+    second_runtime.register_tool_source(create_meta_tool_source(second_client))
     second_runtime.registry.get("meta_update_campaign")[0].live_support = True
     duplicate = second_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -1789,7 +1789,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
-    first_runtime.register_capability(create_meta_capability(first_client))
+    first_runtime.register_tool_source(create_meta_tool_source(first_client))
     first_runtime.registry.get("meta_update_campaign")[0].live_support = True
 
     planned = first_runtime.run(
@@ -1825,7 +1825,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
     )
-    second_runtime.register_capability(create_meta_capability(second_client))
+    second_runtime.register_tool_source(create_meta_tool_source(second_client))
     second_runtime.registry.get("meta_update_campaign")[0].live_support = True
     retry = second_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",

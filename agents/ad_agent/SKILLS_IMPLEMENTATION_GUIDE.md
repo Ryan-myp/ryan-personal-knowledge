@@ -1,6 +1,6 @@
 # Skills 实现指南
 
-> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `capabilities/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Capability 共 312 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
+> 状态说明：本文保留为设计参考。`SKILL.md` 只负责自然语言专家知识、SOP 和安全边界；它不是 Tool 注册表，也不提供可执行代码。可执行实现以 `tools/providers/`、`api_clients/`、`core/` 和 `runtime/` 源码为准。当前四个平台 Tool Source 共 312 个工具，跨渠道编排由 Runtime + `core/cross_channel.py` 提供。
 
 ## 架构分层
 
@@ -22,12 +22,12 @@ skills/
 | core/tool_registry.py (注册层) | ✅ 完成 | 统一注册与执行前 Schema 校验 |
 | core/tool_selector.py (选择层) | ✅ 完成 | 动态选择相关工具 |
 | runtime/runtime.py + core/intent.py | ✅ | 构建 Stable/Context/Volatile 分层上下文 |
-| capabilities/ (实现层) | ✅ | 当前 Runtime 的实际 Handler/API Client 入口 |
+| tools/providers/ (实现层) | ✅ | 当前 Runtime 的实际 Handler/API Client 入口 |
 
 ## 如何补充实现
 
-新增内置渠道能力时，在 `capabilities/<platform>/capability.py` 中定义
-`ToolDefinition` 与 Handler，并导出 `create_<platform>_capability(api_client=None)`。
+新增内置渠道能力时，在 `tools/providers/<platform>/provider.py` 中定义
+`ToolDefinition` 与 Handler，并导出 `create_<platform>_tool_source(api_client=None)`。
 如果需要真实 Provider 访问，再在 `api_clients/<platform>_client.py` 中导出
 `create_<platform>_client(credentials)`。Runtime 会按包约定发现它们；无需修改
 中心 Router、平台列表或其他渠道的 Skill。
@@ -36,7 +36,7 @@ skills/
 `references/`、`scripts/`、`assets/`、`evals/` 等包文件提供上下文；这些文件由管理
 系统保存、版本化和评测，但不会自动执行。`SKILL.md` 只补充自然语言知识、SOP 与
 安全边界，不能用 Markdown 工具清单代替 executable Tool 注册。可执行能力必须在
-受注册和审计的 Capability/Tool 中实现；`workflow.yaml` 不是 Skill 的上传、编辑或
+受注册和审计的 Tool Source/Tool 中实现；`workflow.yaml` 不是 Skill 的上传、编辑或
 执行入口。LLM 根据 Skill 上下文提出计划，Runtime + Tool metadata + Harness 负责
 顺序、参数、权限、账户、dry-run、确认、幂等和恢复。
 
@@ -110,17 +110,17 @@ skill:
 中声明 Tool 名称来暗示其可执行。
 ```
 
-### 步骤 2：实现 Capability 与可选 Client
+### 步骤 2：实现 Tool Source 与可选 Client
 
 ```python
 # agents/ad_agent/api_clients/new_platform_client.py（可选）
 def create_new_platform_client(credentials): ...
 
-# agents/ad_agent/capabilities/new_platform/capability.py
-def create_new_platform_capability(api_client=None): ...
+# agents/ad_agent/tools/providers/new_platform/provider.py
+def create_new_platform_tool_source(api_client=None): ...
 ```
 
-Capability 的 `ToolDefinition` 自己声明 `action`、`resource_type`、参数 Schema
+Tool Source 的 `ToolDefinition` 自己声明 `action`、`resource_type`、参数 Schema
 和可选 `intent_types`；Client 通过 `api_clients/<platform>_client.py` 的命名约定
 自动发现。
 
@@ -133,7 +133,7 @@ make ad-agent-run
 
 ## 当前推荐的可执行扩展契约（仅仓库内受信任源码）
 
-对于不需要修改内置 Capability 的新增功能，使用以下目录结构：
+对于不需要修改内置 Tool Source 的新增功能，使用以下目录结构：
 
 ```text
 skills/channels/<skill-name>/
@@ -171,7 +171,7 @@ Runtime 自动加载受信任 plugin 后，工具仍由统一 Registry 执行；
 
 服务启动时会自动：
 1. 扫描 `skills/` 目录下所有 SKILL.md，加载受限上下文
-2. 按 `capabilities/<platform>/capability.py` 约定发现 Capability
+2. 按 `tools/providers/<platform>/provider.py` 约定发现 Tool Source
 3. 按 `api_clients/<platform>_client.py` 约定创建可选 Client
-4. 将 Capability 或 Skill plugin 提供的 Tool 注册到 ToolRegistry
+4. 将 Tool Source 或 Skill plugin 提供的 Tool 注册到 ToolRegistry
 5. 参与动态工具选择，并继续经过统一安全门禁

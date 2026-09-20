@@ -301,11 +301,11 @@ class CrossChannelFeature:
                         schema = tool_def.input_schema
                         missing_fields.extend(
                             field_name
-                            for field_name in (schema.capability_required or [])
+                            for field_name in (schema.requires or [])
                             if tool_input.get(field_name) in (None, "")
                             and field_name not in missing_fields
                         )
-                        for alternatives in (schema.capability_any_of or []):
+                        for alternatives in (schema.requires_any_of or []):
                             if not any(
                                 tool_input.get(field_name)
                                 not in (None, "", {}, [])
@@ -321,7 +321,7 @@ class CrossChannelFeature:
                             validate_tool_input(
                                 tool_def.input_schema,
                                 tool_input,
-                                include_capability_contract=True,
+                                include_tool_requirements=True,
                             )
                         )
                         if services.execution_mode == "live":

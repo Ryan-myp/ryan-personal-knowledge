@@ -1,7 +1,7 @@
 # Agent Harness
 
 `agents.agent_harness` is the application-neutral Agent core. It does not know
-advertising channels, Skills, Capabilities, MCP servers, credentials or
+advertising channels, provider details, MCP servers, credentials or
 business workflows.
 
 ```text

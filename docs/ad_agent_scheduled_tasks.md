@@ -2,7 +2,7 @@
 
 定时任务是 Runtime 控制面能力，不是新的渠道 Agent。它只持久化：任务名称、五段 cron、时区、脱敏后的自然语言指令、会话/账户范围和安全 principal claims。
 
-到期后 SchedulerService 通过共享数据库租约抢占一个 occurrence，并以幂等键 `schedule:{schedule_id}:{scheduled_for}` 提交普通 `agent.turn`。TaskExecutor 随后重新进入 `AgentRuntime.run()`，因此当时生效的 Skills、Tools、Capabilities、权限、dry-run/live gate、ExecutionRun、ToolCall 和 Outbox 仍然是唯一执行边界。
+到期后 SchedulerService 通过共享数据库租约抢占一个 occurrence，并以幂等键 `schedule:{schedule_id}:{scheduled_for}` 提交普通 `agent.turn`。TaskExecutor 随后重新进入 `AgentRuntime.run()`，因此当时生效的 Skills、Tools、Tool Sources、权限、dry-run/live gate、ExecutionRun、ToolCall 和 Outbox 仍然是唯一执行边界。
 
 ## API
 

@@ -4,7 +4,7 @@
 
 ## 当前契约（2026-09-09）
 
-- 单 Agent + 多 Skills + Tools；平台 Capability 是可执行注册表的来源，当前合同快照为 302 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Capability 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 302 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；live 只在测试账号白名单、显式模式、权限和二次确认同时满足时执行。三渠道指定测试账号的真实验证证据见 `contracts/provider_e2e_evidence.json`，未验证项不推断为成功。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 只读查询在白名单只有一个账户时允许自动选择；创建、更新、删除、暂停/恢复及批量写必须由当前请求显式指定目标账户，多账户同样必须显式指定。
@@ -37,7 +37,7 @@
 - `scripts/validate_contracts.py` 支持生成和校验版本化契约快照：
   `contracts/builtin_tools.json`；它用于审查已有 Tool 的 Schema/元数据漂移，
   不参与 Runtime 路由或渠道配置。
-- `scripts/audit_capabilities.py` 按 Capability 包约定生成 action/resource 矩阵和创建链
+- `scripts/audit_provider_tools.py` 按 Tool Source 包约定生成 action/resource 矩阵和创建链
   缺口报告；它是 release gate，不是 Runtime 的第二套渠道注册表。
 - `scripts/audit_creation_contracts.py` 已补充创建字段来源审计：逐字段区分固定枚举、同渠道
   只读 Lookup、人工录入、素材上传、账户/父级上下文、级联继承、自由输入和结构化输入，
@@ -45,7 +45,7 @@
   发布门禁，不参与 Runtime 路由。对于缺少子字段 Schema、只能退化为 JSON 的结构化字段，
   审计会额外列出字段是否必填及是否出现在 Blueprint 中，作为后续按渠道补齐表单契约的
   清单。
-- 每个渠道 Capability 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
+- 每个渠道 Tool Source 包另有 `api_surface.py`，声明已实现与计划中的官方资源操作；审计会
   检查已实现项是否同时存在 Client 方法、覆盖映射和 executable Tool，并把计划项显式列为
   后续建设缺口。
 - Google Ads 已补齐 Experiment 的 GAQL 读、ExperimentService mutation 和
@@ -53,7 +53,7 @@
   只读查询，arm mutation 保留为后续缺口。Experiment 写 Tool 仍为 dry-run-only，
   尚未进行指定测试账户 E2E。
 - Meta 已将 Lookalike Audience 从泛化 Audience 能力中拆出专用创建 Tool；源 Audience
-  通过 `meta_list_audiences` 的动态 lookup 选择，固定 `LOOKALIKE` subtype 由 Capability
+  通过 `meta_list_audiences` 的动态 lookup 选择，固定 `LOOKALIKE` subtype 由 Tool Source
   注入，且不在 Runtime/Core 增加渠道分支。
 - Runtime 参数兼容已改为 Schema `input_aliases` 加 provider-neutral 归一化；Core 不再维护
   `adset_id`/`adgroup_id` 等渠道资源别名表，新增 Provider 字段可由自身 Tool 合约声明。
@@ -61,7 +61,7 @@
   或 Provider operation、API version、来源和状态；审计会单独输出官方基线覆盖率、缺口和
   `dry_run_only`/`live_verified` 证据。当前基线明确为 `scoped_not_exhaustive`，不能把
   Tool 数量当成 Provider 官方接口总量。
-- 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Capability
+- 当前已实现的 Provider Client 方法均纳入三段式追踪：Client method → Tool Source
   `provider_method_coverage` → `api_surface.py` → executable Tool。现有覆盖为 DV360
   29/29、Google Ads 90/90、Meta 69/69、TikTok 72/72；同一 Client 方法映射多个业务
   Tool 时会在审计 JSON 中保留全部映射，不以工具数量冒充官方接口完整度。
@@ -75,7 +75,7 @@
   协调；Runtime 主循环只组合这些服务，不再实现 Workflow 收尾算法。
 - Tool 执行与安全边界已独立：`ToolExecutor` 负责超时、Provider Client 隔离和版本校验，
   `RuntimeSecurity` 负责红线字段、确认令牌、结果证据和不确定失败；账户白名单、
-  会话上下文和 Capability 配置上下文也分别位于独立模块。
+  会话上下文和 Tool Source 配置上下文也分别位于独立模块。
 - Plugin 包控制面已接入 `PersistenceBackend`：用户可按租户保存不可变的 Manifest +
   文件快照，进行版本发布指针切换、依赖激活校验、显式回滚、停用和卸载；管理 API
   只做数据校验和控制面状态变更，不导入或执行 `entrypoint`/`tools.py`，不会把用户包
@@ -90,9 +90,9 @@
 ## 架构特点
 
 ### 1. 单 Agent + 多 Skills
-- 通过 IntentRouter 自动识别用户意图并路由到对应平台的 Capability
-- 每个平台是一个独立的 CapabilityModule，可独立扩展
-- 新增平台只需按约定添加渠道 Capability（以及可选的同名 API Client）；无需修改 Core、Runtime、Router 或 CLI 中心列表
+- 通过 IntentRouter 自动识别用户意图并路由到对应平台的 Tool Source
+- 每个平台是一个独立的 ToolSourceModule，可独立扩展
+- 新增平台只需按约定添加渠道 Tool Source（以及可选的同名 API Client）；无需修改 Core、Runtime、Router 或 CLI 中心列表
 
 ### 2. API 客户端封装
 - **重试机制**: 指数退避重试（可配置最大重试次数和延迟）
@@ -133,10 +133,10 @@ ad_agent/
 │   ├── runtime.py           # AgentRuntime 主循环
 │   └── skill.py             # Skill 加载器
 │
-├── capabilities/            # 业务能力层
-│   ├── base.py              # Capability 基类
-│   ├── factory.py           # 按包约定发现 Capability
-│   └── <platform>/capability.py
+├── tools/providers/            # 业务能力层
+│   ├── base.py              # Tool Source 基类
+│   ├── factory.py           # 按包约定发现 Tool Source
+│   └── <platform>/provider.py
 │
 ├── api_clients/             # API 客户端层
 │   ├── base.py              # 基类（重试/限流/错误分类）
@@ -169,12 +169,12 @@ make ad-agent-install
 
 ### 离线契约评测模式（无需凭证）
 ```python
-from ad_agent import AgentRuntime, create_meta_capability, create_google_capability
+from ad_agent import AgentRuntime, create_meta_tool_source, create_google_tool_source
 
 # 仅用于显式离线测试/评测；产品 Runtime 默认必须配置 LLM。
 runtime = AgentRuntime(require_llm=False, offline_mode=True)
-runtime.register_capability(create_meta_capability())
-runtime.register_capability(create_google_capability())
+runtime.register_tool_source(create_meta_tool_source())
+runtime.register_tool_source(create_google_tool_source())
 
 result = runtime.run(
     user_input="帮我投放Meta和Google广告，预算100元/天",
@@ -190,7 +190,7 @@ import os
 from ad_agent import AgentRuntime
 from ad_agent.core.llm_client import create_llm_client
 from ad_agent.api_clients.meta_client import MetaAPIClient
-from ad_agent.capabilities.meta import create_meta_capability
+from ad_agent.tools.providers.meta import create_meta_tool_source
 
 # 加载凭证
 with open("credentials.json") as f:
@@ -198,14 +198,14 @@ with open("credentials.json") as f:
 
 # 创建真实 API 客户端；Runtime 仍默认为 dry-run
 api_client = MetaAPIClient(credentials["meta"])
-capability = create_meta_capability(api_client)
+tool_source = create_meta_tool_source(api_client)
 
 # 生产入口仍需注入 LLM；真实 API 客户端只负责渠道调用，写操作仍默认为 dry-run。
 runtime = AgentRuntime(
     llm_client=create_llm_client(model=os.environ["LLM_MODEL"], api_key=os.environ["OPENAI_API_KEY"]),
     require_llm=True,
 )
-runtime.register_capability(capability)
+runtime.register_tool_source(tool_source)
 ```
 
 ## 测试覆盖
@@ -230,9 +230,9 @@ class NewPlatformClient(BasePlatformClient):
 
 # 工厂名：create_new_platform_client(credentials)
 
-# 2. 创建 Capability
-# agents/ad_agent/capabilities/new_platform/capability.py
-class NewPlatformCapability(BaseCapability):
+# 2. 创建 Tool Source
+# agents/ad_agent/tools/providers/new_platform/provider.py
+class NewPlatformToolSource(BaseProviderToolSource):
     platform_name = "new_platform"
     
     def register_tools(self):
@@ -244,11 +244,11 @@ class NewPlatformCapability(BaseCapability):
     # ToolDefinition 自描述 action/resource_type/parent_resource_type，
     # 不需要修改中心 Router
 
-# 工厂名：create_new_platform_capability(api_client)
+# 工厂名：create_new_platform_tool_source(api_client)
 ```
 
 将 `SKILL.md` 放入 `skills/channels/<platform>/` 后，Runtime/CLI 会自动发现渠道
-Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；只有渠道确实需要
+Tool Source。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；只有渠道确实需要
 补充使用指导时才修改它。
 
 ## 生产级特性清单
@@ -264,7 +264,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | WriteGuard | ✅ | 持久化幂等、显式确认、unknown 结果保留 reservation、workflow lease/claim 已接入 |
 | 单元测试 | ✅ | `agents/ad_agent/tests/`：当前全量回归已通过；具体数量以测试运行结果为准 |
 | 多平台支持 | ✅ | Meta/Google/TikTok/DV360 |
-| 可扩展性 | ✅ | Capability 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
+| 可扩展性 | ✅ | Tool Source 与 Provider Client 按包约定自动发现，无需修改中心 Router/Runtime |
 
 ## 与 DAP Agent 对标
 
@@ -274,7 +274,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
 | SkillLoader | SkillLoader | Skill 加载 |
 | ToolRegistry | ToolRegistry | 工具注册表 |
 | IntentRouter | SimpleIntentRouter | 意图路由 |
-| CapabilityModule | BaseCapability | 能力模块基类 |
+| ToolSourceModule | BaseProviderToolSource | 能力模块基类 |
 | WriteGuard | WriteGuard | 写入保护 |
 | - | SQLite Persistence | 持久化层（新增） |
 | - | JSON Logger | 结构化日志（新增） |
@@ -417,7 +417,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
    - 从 `/customers/{login_customer_id}/googleAds:search`
    - 改为 `/customers/{customer_id}/googleAds:search`
 
-2. **capabilities/google/campaigns.py:GoogleListCampaignsHandler**
+2. **tools/providers/google/campaigns.py:GoogleListCampaignsHandler**
    - 在执行时使用 `ctx.account_id` 更新 client 的 customer_id
 
 ### 测试结果
@@ -431,7 +431,7 @@ Capability。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；�
   - 错误: `/customers/{login_customer_id}/googleAds:search`
   - 正确: `/customers/{customer_id}/googleAds:search`
 - **修改 2**: 添加 `_ensure_valid_token` 方法，自动刷新过期的 access_token
-- **文件**: agents/ad_agent/capabilities/google/campaigns.py
+- **文件**: agents/ad_agent/tools/providers/google/campaigns.py
 - **修改**: `GoogleListCampaignsHandler.execute` 使用 `ctx.account_id` 更新 client 的 customer_id
 
 ### 测试结果

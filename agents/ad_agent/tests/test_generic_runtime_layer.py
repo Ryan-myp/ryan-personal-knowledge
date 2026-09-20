@@ -204,7 +204,7 @@ def test_turn_pipeline_exposes_stage_metadata_to_completion_hook():
     assert completed[0].state["stage_results"][0]["stage"] == "parse"
 
 
-def test_generic_runtime_registers_tool_without_capability():
+def test_generic_runtime_registers_tool_without_tool_source():
     calls = []
 
     class Executor:

@@ -2,7 +2,7 @@ from agents.ad_agent.integration import advertising_tool_source
 from agents.agent_harness import InMemoryToolCatalog, TurnRequest
 
 
-class Capability:
+class ToolSource:
     platform_name = "example"
 
     def register_tools(self):
@@ -14,9 +14,9 @@ class Capability:
         ]
 
 
-def test_ad_capability_can_be_consumed_as_a_generic_tool_source():
+def test_ad_tool_source_can_be_consumed_as_a_generic_tool_source():
     catalog = InMemoryToolCatalog()
-    catalog.register_source(advertising_tool_source(Capability()))
+    catalog.register_source(advertising_tool_source(ToolSource()))
 
     binding = catalog.get_binding("example_lookup")
     context = type("Context", (), {
@@ -30,4 +30,4 @@ def test_ad_capability_can_be_consumed_as_a_generic_tool_source():
 
 
 def test_advertising_tool_source_uses_the_standard_source_namespace():
-    assert advertising_tool_source(Capability()).source_id == "advertising:example"
+    assert advertising_tool_source(ToolSource()).source_id == "advertising:example"

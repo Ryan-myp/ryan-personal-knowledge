@@ -5,7 +5,7 @@ title: Google Shopping 与 PMax 商品源、资产组和放量方法
 layer: platform
 knowledge_type: best_practice
 platform: google-ads
-source: Google Ads 与 Merchant Center 官方文档 + 当前 Capability
+source: Google Ads 与 Merchant Center 官方文档 + 当前 Tool Source
 source_ref: "https://developers.google.com/google-ads/api/docs/performance-max/overview"
 version: "1.0.0"
 confidence: 0.88
@@ -58,4 +58,4 @@ Asset Group 是围绕一个产品主题、受众意图和页面承诺组织文�
 
 ## 当前执行边界
 
-当前 Capability 覆盖部分 Asset、Asset Group、Listing/Product Group、Feed、Campaign Budget 和报告动作。Merchant Center 侧资格、账户连接、商品状态与字段兼容性必须通过当前配置和 Tool 结果确认；本文不把未注册能力描述为已实现。
+当前 Tool Source 覆盖部分 Asset、Asset Group、Listing/Product Group、Feed、Campaign Budget 和报告动作。Merchant Center 侧资格、账户连接、商品状态与字段兼容性必须通过当前配置和 Tool 结果确认；本文不把未注册能力描述为已实现。

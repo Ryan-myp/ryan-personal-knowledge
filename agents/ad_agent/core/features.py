@@ -2,7 +2,7 @@
 
 The Core package owns the extension seam, not an application's domain model.
 Feature implementations may expose richer methods, but those methods belong
-to the embedding application and are intentionally resolved by capability
+to the embedding application and are intentionally resolved by tool_source
 inspection there.  Keeping the Core protocol small prevents a new business
 feature from becoming a mandatory Runtime service.
 """
@@ -60,7 +60,7 @@ class RuntimeExecutionServices(Protocol):
     def validate_input_redline(self, value: Any) -> list[str]: ...
     def validate_tool_input(
         self, tool: Any, value: dict[str, Any],
-        include_capability_contract: bool = False,
+        include_tool_requirements: bool = False,
     ) -> list[str]: ...
     def resource_id_field(self, tool: Any) -> str | None: ...
     def parent_resource_id_field(self, tool: Any) -> str | None: ...

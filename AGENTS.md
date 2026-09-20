@@ -46,7 +46,7 @@
 
 ## 评测与交付
 
-- Runtime/Capability dry-run 场景使用 `agents/ad_agent/evals/skill-up/skill_up_engine.py`。
+- Runtime/Tool Source dry-run 场景使用 `agents/ad_agent/evals/skill-up/skill_up_engine.py`。
 - 通用自然语言 Skill 效果可以使用平台托管的 `claude_sdk` Engine 或 skill-up 内置 Engine；Claude SDK 适配器只提供 Skill、Tool 描述和只读文件上下文，不执行广告 Tool。
 - 评测配置必须是声明式、可审计、可复现的；用户包不能自定义执行命令、MCP server 或 judge script。
 - 代码变更至少运行编译、相关单测、全量 Agent 测试、能力审计和 `git diff --check`；Provider contract 变化必须补充回归用例。

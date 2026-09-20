@@ -96,7 +96,7 @@ def _provider_inventory_status(report: Mapping[str, Any]) -> dict[str, Any]:
 
 def build_readiness_report(
     *,
-    capability_report: Mapping[str, Any],
+    tool_source_report: Mapping[str, Any],
     contract_gate_errors: list[str] | tuple[str, ...] = (),
     dry_run_report: Mapping[str, Any] | None = None,
     provider_evidence: Mapping[str, Any] | None = None,
@@ -107,11 +107,11 @@ def build_readiness_report(
 
     ``provider_e2e`` and ``live_verified`` are never inferred from local
     tests.  Callers that have controlled evidence may provide it separately;
-    the local capability audit remains the source of provider inventory facts.
+    the local tool_source audit remains the source of provider inventory facts.
     """
     selected_profile = str(profile or policy.default_profile).strip()
     required = policy.stages_for(selected_profile)
-    capability_issues = [str(item) for item in (capability_report.get("issues") or [])]
+    tool_source_issues = [str(item) for item in (tool_source_report.get("issues") or [])]
     contract_errors = [str(item) for item in contract_gate_errors]
     dry_run = dict(dry_run_report or {})
     dry_run_failures = int(dry_run.get("failed", 0) or 0)
@@ -123,10 +123,10 @@ def build_readiness_report(
         "providers": {},
     }
 
-    code_contract_ok = not capability_issues and not contract_errors
+    code_contract_ok = not tool_source_issues and not contract_errors
     dry_run_ok = bool(dry_run.get("executed", False)) and dry_run_failures == 0
 
-    inventory_reports = capability_report.get("official_inventory") or {}
+    inventory_reports = tool_source_report.get("official_inventory") or {}
     provider_summaries = {
         normalize_platform(str(platform)): _provider_inventory_status(report)
         for platform, report in inventory_reports.items()
@@ -142,8 +142,8 @@ def build_readiness_report(
     stage_results = {
         "code_contract": {
             "status": "passed" if code_contract_ok else "failed",
-            "evidence": "capability audit and executable Tool contract gate",
-            "errors": capability_issues + contract_errors,
+            "evidence": "tool_source audit and executable Tool contract gate",
+            "errors": tool_source_issues + contract_errors,
         },
         "dry_run": {
             "status": "passed" if dry_run_ok else "failed",
@@ -164,7 +164,7 @@ def build_readiness_report(
             "status": "passed" if live_verified_ok else "not_verified",
             "evidence": "operation-specific live verification evidence",
             "errors": [] if live_verified_ok else [
-                "当前 Capability 默认 dry_run_only，未提供 live_verified 证据"
+                "当前 Tool Source 默认 dry_run_only，未提供 live_verified 证据"
             ],
         },
     }
@@ -177,7 +177,7 @@ def build_readiness_report(
         "blocking_stages": blocking,
         "stage_results": stage_results,
         "provider_summaries": provider_summaries,
-        "capability_issue_count": len(capability_issues),
+        "tool_source_issue_count": len(tool_source_issues),
         "contract_error_count": len(contract_errors),
         "controlled_evidence": controlled_evidence,
     }

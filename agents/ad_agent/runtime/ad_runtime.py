@@ -26,7 +26,7 @@ from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from ..core.interfaces import (
-    ToolResult, CapabilityModule,
+    ToolResult, ToolSourceModule,
     ToolRegistry, WriteGuard, IntentParser, IntentRouter,
     ParsedIntent, ToolEffect, ExecutionMode, EffectReconciler,
 )
@@ -74,7 +74,7 @@ from .security import RuntimeSecurity
 from .provider_bindings import ProviderBindings
 from .ad_runtime_assembly import AdRuntimeAssembly, AdRuntimeAssemblyOptions
 from .ad_creation_services import AdCreationServicesMixin
-from .ad_capability_services import AdCapabilityLifecycleMixin
+from .ad_tool_source_services import AdToolSourceLifecycleMixin
 from .ad_runtime_facades import (
     AdConversationRuntimeFacade,
     AdSessionRuntimeFacade,
@@ -104,7 +104,7 @@ _BLUEPRINT_CONTEXT_CACHE_MAX_ENTRIES = 128
 # ─── Advertising application runtime ──────────────────────────
 
 class AgentRuntime(
-    AdCapabilityLifecycleMixin,
+    AdToolSourceLifecycleMixin,
     AdCreationServicesMixin,
     AdTaskRuntimeFacade,
     AdConversationRuntimeFacade,
@@ -115,7 +115,7 @@ class AgentRuntime(
     广告应用层的单 Agent 组合根。
 
     通用并发、会话租约和请求生命周期由 ``AgentRuntimeKernel`` 提供；本类
-    只负责把广告应用的 Skills、Tools、Capabilities、记忆、工作流和展示
+    只负责把广告应用的 Skills、Tools、Tool Sources、记忆、工作流和展示
     适配器组合起来。它不是通用 Runtime，新的非广告应用不应继承或修改它。
 
     架构层次：
@@ -129,7 +129,7 @@ class AgentRuntime(
 
     借鉴 DAP Agent internal/core/engine/runtime.go 的核心设计：
     - Core 只认接口，不 import 业务
-    - 业务通过 CapabilityModule 注入
+    - 业务通过 ToolSourceModule 注入
     - Tool 执行有统一的生命周期（权限→审批→幂等→执行→审计）
     """
 
@@ -195,7 +195,7 @@ class AgentRuntime(
             else GuardedToolRegistry(base_registry)
         )
         # GuardedToolRegistry exposes only non-executable Handler views to
-        # callers. Runtime keeps the opaque capability needed for its
+        # callers. Runtime keeps the opaque tool_source needed for its
         # post-policy execution path.
         self._registry_execution_token = getattr(
             self.registry, "_execution_token", None
@@ -209,7 +209,7 @@ class AgentRuntime(
             domain_guidance="广告业务知识只来自当前注册的 Skills、Tools、Blueprints 和受控知识源。",
             response_guidance="面向广告运营人员回答，必须区分预览、已执行、失败和状态未知。",
             structured_fields=(
-                "仅使用当前注册的 Skill、Tool、Capability 和 Blueprint 契约中声明的字段；"
+                "仅使用当前注册的 Skill、Tool、Tool Source 和 Blueprint 契约中声明的字段；"
                 "缺少必填信息时先澄清，不从业务常识猜测"
             ),
         )
@@ -323,7 +323,7 @@ class AgentRuntime(
         # therefore this index must be tenant-scoped.
         self._managed_context_skills: dict[str, dict[str, Skill]] = {}
         self._managed_skill_lock = threading.RLock()
-        self._skill_factories: dict[str, callable] = {}  # platform -> Capability factory
+        self._skill_factories: dict[str, callable] = {}  # platform -> Tool Source factory
         self._credentials: dict = {}  # API 凭证配置
         self._execution_mode_lock = threading.RLock()
         # Principal preferences are cached only as a bounded-in-process
@@ -367,7 +367,7 @@ class AgentRuntime(
             tuple[str, ...], str
         ] = OrderedDict()
         # This is a metadata index, not a second executable routing table.
-        # Each provider Capability owns and publishes its own entries.
+        # Each provider Tool Source owns and publishes its own entries.
         self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
         # Provider-owned compatibility metadata is a diagnostic/release
         # index, never a routing table.  Keeping it on Runtime lets the
@@ -714,7 +714,9 @@ class AgentRuntime(
         )
 
     def register_tool_source(self, source: Any) -> list[str]:
-        """Register a local, SDK/HTTP or MCP Tool source."""
+        """Register a standard Tool Source or provider-owned Tool Source."""
+        if callable(getattr(source, "configure", None)):
+            return self.register_provider_tool_source(source)
         return self._runtime_kernel.register_tool_source(source)
 
     def unregister_tool_source(self, source_id: str) -> list[str]:
@@ -730,7 +732,7 @@ class AgentRuntime(
         """Resolve a caller-facing platform alias from active Skill metadata.
 
         Canonicalization only normalizes separators. Alias resolution belongs
-        to the active Skill/Capability lifecycle, so structured continuation
+        to the active Skill/Tool Source lifecycle, so structured continuation
         payloads such as ``platform_params={"google": ...}`` can converge on
         the registered ``google-ads`` key without a Core provider map.
         """
@@ -876,7 +878,7 @@ class AgentRuntime(
 
         This path intentionally does not call ``register_skill`` and never
         imports ``tools.py``.  Provider Tools must continue to come from
-        built-in/verified Capabilities; a managed Skill can guide the Agent
+        built-in/verified Tool Sources; a managed Skill can guide the Agent
         but cannot create a new side-effect path.
         """
         from pathlib import Path
@@ -1173,7 +1175,7 @@ class AgentRuntime(
 
         logger.info(f"✅ 只读模式已启用，已过滤 {len(write_tools)} 个写工具")
 
-    # ─── Capability 注册 ───────────────────────────────────────
+    # ─── Tool Source 注册 ───────────────────────────────────────
 
 
     def _validate_account_for_tool(self, platform: str, account_id: str, is_write: bool) -> tuple[bool, str]:
@@ -1277,7 +1279,7 @@ class AgentRuntime(
         provider_errors = validate_tool_input(
             tool_def.input_schema,
             input_data,
-            include_capability_contract=True,
+            include_tool_requirements=True,
         ) if tool_def.input_schema else []
         data["provider_validation"] = {
             "ready": not provider_errors,

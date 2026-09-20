@@ -1,7 +1,7 @@
 """Contracts and provider payload plans for Google Ads v24 specialized formats."""
 
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
-from agents.ad_agent.capabilities.google import create_google_capability
+from agents.ad_agent.tools.providers.google import create_google_tool_source
 from agents.ad_agent.core.interfaces import ParsedIntent
 from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.runtime.runtime import AgentRuntime
@@ -10,13 +10,13 @@ from agents.ad_agent.runtime.runtime import AgentRuntime
 def _definitions():
     return {
         definition.name: definition
-        for definition, _handler in create_google_capability().register_tools()
+        for definition, _handler in create_google_tool_source().register_tools()
     }
 
 
 def test_google_specialized_creation_chains_are_metadata_driven():
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
     expected = {
         "DEMAND_GEN": [
             "google_create_campaign", "google_create_specialized_ad_group",
@@ -64,11 +64,11 @@ def test_google_specialized_campaign_settings_are_closed_and_provider_ready():
         "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "demand_gen_campaign_settings": {"upgraded_targeting": True},
     }
-    assert validate_tool_input(campaign.input_schema, valid, include_capability_contract=True) == []
+    assert validate_tool_input(campaign.input_schema, valid, include_tool_requirements=True) == []
     missing = dict(valid)
     missing.pop("demand_gen_campaign_settings")
     assert any("demand_gen_campaign_settings" in error for error in validate_tool_input(
-        campaign.input_schema, missing, include_capability_contract=True,
+        campaign.input_schema, missing, include_tool_requirements=True,
     ))
 
     for campaign_type, setting in (
@@ -86,7 +86,7 @@ def test_google_specialized_campaign_settings_are_closed_and_provider_ready():
         }[campaign_type]
         payload[field] = setting
         assert validate_tool_input(
-            campaign.input_schema, payload, include_capability_contract=True,
+            campaign.input_schema, payload, include_tool_requirements=True,
         ) == []
 
 

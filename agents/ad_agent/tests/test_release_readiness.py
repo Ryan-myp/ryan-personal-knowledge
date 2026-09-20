@@ -17,7 +17,7 @@ def _policy() -> ReadinessPolicy:
 
 def test_local_profile_does_not_promote_local_stub_to_provider_e2e():
     report = build_readiness_report(
-        capability_report={
+        tool_source_report={
             "issues": [],
             "official_inventory": {
                 "test-provider": {
@@ -41,7 +41,7 @@ def test_local_profile_does_not_promote_local_stub_to_provider_e2e():
 
 def test_release_profile_blocks_without_operation_specific_evidence():
     report = build_readiness_report(
-        capability_report={"issues": [], "official_inventory": {}},
+        tool_source_report={"issues": [], "official_inventory": {}},
         dry_run_report={"executed": True, "failed": 0},
         policy=_policy(),
         profile="release",
@@ -64,7 +64,7 @@ def test_provider_contract_harness_covers_all_builtin_provider_factories():
 
 def test_release_report_exposes_controlled_evidence_without_promoting_partial_runs():
     report = build_readiness_report(
-        capability_report={
+        tool_source_report={
             "issues": [],
             "official_inventory": {
                 "meta": {

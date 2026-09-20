@@ -68,7 +68,7 @@ knowledge_base/
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
 | “平台数据能不能代表真实增量？” | `measurement-and-attribution` + `experimentation-and-learning` |
 | “四个平台整体怎么设计和排查？” | `four-platform-ad-agent-handbook` + 对应平台 Canonical Runbook |
-| “这个操作系统支持吗？” | 先查当前 Registry/Capability，不以知识文档代替能力审计 |
+| “这个操作系统支持吗？” | 先查当前 Registry/Tool Source，不以知识文档代替能力审计 |
 
 ## 重要边界
 

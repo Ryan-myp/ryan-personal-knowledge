@@ -3,7 +3,7 @@
 The domain store keeps its SQL behind the persistence boundary.  This adapter
 reuses the existing backend methods while translating the small SQLite syntax
 surface used by the current store and overrides claims with InnoDB row locks.
-Runtime, Skills, Tools and Capabilities do not know which database is active.
+Runtime, Skills, and Tools do not know which database is active.
 """
 
 from __future__ import annotations

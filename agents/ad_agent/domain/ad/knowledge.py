@@ -427,7 +427,7 @@ class MarkdownWikiKnowledgeProvider:
             return "official"
         if any(
             marker in reference
-            for marker in ("capabilities/", "api_clients/", "skill", "_surface_data")
+            for marker in ("tools/providers/", "api_clients/", "skill", "_surface_data")
         ):
             return "code"
         if reference.startswith(("raw://", "upload://", "managed://")) or "user" in owner:

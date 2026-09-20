@@ -5,8 +5,8 @@ title: 四平台广告层级对照与账户设计
 layer: business
 knowledge_type: general
 platform: all
-source: 四平台官方文档 + 当前 ad_agent Capability/Skill
-source_ref: "agents/ad_agent/capabilities/*/_surface_data.py"
+source: 四平台官方文档 + 当前 ad_agent Tool Source/Skill
+source_ref: "agents/ad_agent/tools/providers/*/_surface_data.py"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"

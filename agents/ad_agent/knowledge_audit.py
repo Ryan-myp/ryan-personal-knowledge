@@ -166,7 +166,7 @@ def infer_source_kind(source_ref: str, source: str = "") -> str:
     owner = str(source or "").strip().lower()
     if ref.startswith(("http://", "https://")):
         return "official"
-    if any(marker in ref for marker in ("capabilities/", "api_clients/", "skill", "_surface_data")):
+    if any(marker in ref for marker in ("tools/providers/", "api_clients/", "skill", "_surface_data")):
         return "code"
     if ref.startswith(("raw://", "upload://", "managed://")) or "user" in owner:
         return "user"

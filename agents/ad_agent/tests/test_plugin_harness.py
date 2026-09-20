@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agents.ad_agent import AgentRuntime, create_meta_capability
+from agents.ad_agent import AgentRuntime, create_meta_tool_source
 from agents.ad_agent.core.plugins import (
     PluginKind,
     PluginLoader,
@@ -73,7 +73,7 @@ def test_untrusted_or_managed_executable_plugin_is_rejected():
         PluginManifest(
             plugin_id="unsafe-plugin",
             version="1.0.0",
-            kinds=("tool_capability",),
+            kinds=("tool_source",),
             executable=True,
         )
 
@@ -137,7 +137,7 @@ def test_manifest_loader_does_not_enable_untrusted_executable_code():
         loader.load_manifest({
             "plugin_id": "external-code",
             "version": "1.0.0",
-            "kinds": ["tool_capability"],
+            "kinds": ["tool_source"],
             "source": "external",
             "trusted": True,
             "executable": True,
@@ -255,17 +255,17 @@ def test_plugin_package_loader_never_imports_package_files(tmp_path):
     assert not marker.exists()
 
 
-def test_runtime_publishes_capability_and_builtin_extensions_to_one_registry():
+def test_runtime_publishes_tool_source_and_builtin_extensions_to_one_registry():
     runtime = AgentRuntime(
         require_llm=False,
         offline_mode=True,
         enforce_account_scope=False,
     )
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
 
     plugins = {item["manifest"]["plugin_id"]: item for item in runtime.list_plugins()}
-    assert plugins["capability:meta"]["state"] == "active"
-    assert "tool_capability" in plugins["capability:meta"]["manifest"]["kinds"]
+    assert plugins["provider-tools:meta"]["state"] == "active"
+    assert "tool_source" in plugins["provider-tools:meta"]["manifest"]["kinds"]
     assert plugins["renderer:ad-agent"]["state"] == "active"
     assert any(
         item["manifest"]["plugin_id"].startswith("feature:")

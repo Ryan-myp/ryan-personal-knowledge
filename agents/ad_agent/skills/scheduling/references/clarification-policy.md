@@ -9,7 +9,7 @@ ScheduleDraft
   ├── timezone           IANA 时区
   ├── providers          当前 Registry 中能匹配 Tool 的渠道
   ├── account_scope      账户/租户范围，来自可信 principal 或用户明确选择
-  ├── capability_check   matched tools、读写效果、缺口和警告
+  ├── tool_source_check   matched tools、读写效果、缺口和警告
   └── confirmation       awaiting_input / awaiting_confirmation / confirmed
 ```
 

@@ -6,7 +6,7 @@ existing ToolRegistry/Runtime gates before it can do work.
 
 There are two important classes of package:
 
-* trusted source plugins, which may contribute executable Capability/Feature
+* trusted source plugins, which may contribute executable Tool/Feature
   code after deployment review; and
 * managed Skill packages, which are advisory context and are never executable.
 
@@ -42,8 +42,7 @@ class PluginKind(str, Enum):
     """Supported extension points of the Agent Harness."""
 
     SKILL = "skill"
-    CAPABILITY = "capability"
-    TOOL_CAPABILITY = "tool_capability"
+    TOOL_SOURCE = "tool_source"
     FEATURE = "feature"
     POLICY = "policy"
     RENDERER = "renderer"

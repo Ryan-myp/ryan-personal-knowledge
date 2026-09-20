@@ -1,7 +1,7 @@
 """Application-owned execution of a planned Tool graph.
 
 This service is deliberately downstream of planning. It does not parse user
-input, discover capabilities, choose a provider, or render a response. It
+input, discover Tools, choose a provider, or render a response. It
 only applies the shared execution gates to a Tool plan and returns sanitized
 application results for the turn orchestrator.
 """
@@ -448,7 +448,7 @@ class AdToolExecutionService:
                     provider_errors = validate_tool_input(
                         tool_def.input_schema,
                         tool_input,
-                        include_capability_contract=True,
+                        include_tool_requirements=True,
                     )
                     if provider_errors:
                         results.append({

@@ -13,7 +13,7 @@ parser_platform: google
 
 > 本 Skill 提供 Google Ads 业务知识、参数依赖和操作 SOP。它不是 Tool 注册表，也不直接
 > import Google SDK、读取凭证或发起 API 请求。可执行能力只能来自当前 Registry 中已注册、
-> 通过 schema/权限/dry-run/live gate 的 Google Capability Tool。
+> 通过 schema/权限/dry-run/live gate 的 Google Tool Source Tool。
 
 ## 先做的判断：账户、资源和请求类型
 
@@ -49,7 +49,7 @@ Manager / Customer
 | Demand Gen/Hotel/Local/Travel/Smart | 由当前 Schema 决定 | 专用设置、素材和下级资源覆盖情况 | 通用 Campaign Tool 不等于完整类型支持 |
 
 `MAX`、`APP` 等历史/用户友好别名只允许在已验证 Client 的兼容边界内归一化；对外计划和
-确认摘要优先使用当前 Capability Schema 的规范枚举。未被当前广告类型 Schema 标记为
+确认摘要优先使用当前 Tool Source Schema 的规范枚举。未被当前广告类型 Schema 标记为
 `supported_dry_run` 的格式，只能说明为“已识别但当前未覆盖”，不能声称可以创建。
 
 ## 出价、预算与参数依赖

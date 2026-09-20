@@ -19,8 +19,8 @@ if str(ROOT) not in sys.path:
 from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight  # noqa: E402
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator  # noqa: E402
 from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
-from agents.ad_agent.capabilities.factory import (  # noqa: E402
-    discover_capability_factory,
+from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
+    discover_tool_source_factory,
     normalize_platform,
 )
 
@@ -57,12 +57,14 @@ def build_runtime(config_path: Path) -> AgentRuntime:
         granted_permissions=set(config.get("granted_permissions", ["ads.read", "ads.plan"]) or []),
         whitelist_validator=AccountWhitelistValidator(str(config_path)),
     )
-    for path in sorted((ROOT / "agents" / "ad_agent" / "capabilities").iterdir()):
-        if not path.is_dir() or path.name.startswith("_") or not (path / "capability.py").is_file():
+    for path in sorted(
+        (ROOT / "agents" / "ad_agent" / "tools" / "providers").iterdir()
+    ):
+        if not path.is_dir() or path.name.startswith("_") or not (path / "provider.py").is_file():
             continue
-        factory = discover_capability_factory(path.name)
+        factory = discover_tool_source_factory(path.name)
         if callable(factory):
-            runtime.register_capability(factory())
+            runtime.register_tool_source(factory())
     return runtime
 
 

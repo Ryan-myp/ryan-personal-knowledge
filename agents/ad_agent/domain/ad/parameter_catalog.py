@@ -169,7 +169,7 @@ class ParameterCatalogRegistry:
     ) -> None:
         """Derive static catalogs from a ToolSchema enum.
 
-        This makes existing provider Capabilities discoverable immediately;
+        This makes existing provider Tool Sources discoverable immediately;
         a Skill can later replace the generated catalog with richer labels or
         a versioned provider catalog.
         """

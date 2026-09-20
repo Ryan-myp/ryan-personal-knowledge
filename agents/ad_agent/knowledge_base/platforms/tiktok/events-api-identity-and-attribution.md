@@ -56,7 +56,7 @@ TikTok 归因报表适合判断平台内部的交付与优化信号，但不应�
 
 ## 隐私与 API 边界
 
-身份字段只能在合规、受控的事件链路中处理，不进入知识文档、日志和模型上下文。读取报表应固定 advertiser、level、dimensions、metrics、日期和时区。事件发送和广告变更走已注册 Capability/Tool；本篇只提供诊断原则。
+身份字段只能在合规、受控的事件链路中处理，不进入知识文档、日志和模型上下文。读取报表应固定 advertiser、level、dimensions、metrics、日期和时区。事件发送和广告变更走已注册 Tool Source/Tool；本篇只提供诊断原则。
 
 ## 事件到投放层级
 

@@ -15,11 +15,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.persistence.session_manager import SessionManager
-from agents.ad_agent.capabilities.meta import MetaCapability, MetaListCampaignsHandler
-from agents.ad_agent.capabilities.google import GoogleCapability, GoogleListCampaignsHandler
-from agents.ad_agent.capabilities.tiktok import TikTokCapability, TikTokListCampaignsHandler
-from agents.ad_agent.capabilities.dv360 import (
-    DV360Capability,
+from agents.ad_agent.tools.providers.meta import MetaToolSource, MetaListCampaignsHandler
+from agents.ad_agent.tools.providers.google import GoogleToolSource, GoogleListCampaignsHandler
+from agents.ad_agent.tools.providers.tiktok import TikTokToolSource, TikTokListCampaignsHandler
+from agents.ad_agent.tools.providers.dv360 import (
+    DV360ToolSource,
     DV360ListCampaignsHandler,
     DV360GetLineItemReportHandler,
 )
@@ -57,10 +57,10 @@ def runtime():
     """创建只读模式的 runtime"""
     store = AdAgentStore(":memory:")
     rt = AgentRuntime(require_llm=False, persistence_store=store, read_only_mode=True)
-    rt.register_capability(create_meta_capability_mock())
-    rt.register_capability(create_google_capability_mock())
-    rt.register_capability(create_tiktok_capability_mock())
-    rt.register_capability(create_dv360_capability_mock())
+    rt.register_tool_source(create_meta_tool_source_mock())
+    rt.register_tool_source(create_google_tool_source_mock())
+    rt.register_tool_source(create_tiktok_tool_source_mock())
+    rt.register_tool_source(create_dv360_tool_source_mock())
     rt.enable_read_only_mode()
     # 设置测试账户白名单
     rt.whitelist_validator.allowed_accounts = {
@@ -72,27 +72,27 @@ def runtime():
     return rt
 
 
-def create_meta_capability_mock():
-    from agents.ad_agent.capabilities.meta import create_meta_capability
-    cap = create_meta_capability()
+def create_meta_tool_source_mock():
+    from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+    cap = create_meta_tool_source()
     return cap
 
 
-def create_google_capability_mock():
-    from agents.ad_agent.capabilities.google import create_google_capability
-    cap = create_google_capability()
+def create_google_tool_source_mock():
+    from agents.ad_agent.tools.providers.google import create_google_tool_source
+    cap = create_google_tool_source()
     return cap
 
 
-def create_tiktok_capability_mock():
-    from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-    cap = create_tiktok_capability()
+def create_tiktok_tool_source_mock():
+    from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+    cap = create_tiktok_tool_source()
     return cap
 
 
-def create_dv360_capability_mock():
-    from agents.ad_agent.capabilities.dv360 import create_dv360_capability
-    cap = create_dv360_capability()
+def create_dv360_tool_source_mock():
+    from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
+    cap = create_dv360_tool_source()
     return cap
 
 
@@ -103,10 +103,10 @@ def configured_parser():
     loader.load_all()
     definitions = []
     for factory in (
-        create_meta_capability_mock,
-        create_google_capability_mock,
-        create_tiktok_capability_mock,
-        create_dv360_capability_mock,
+        create_meta_tool_source_mock,
+        create_google_tool_source_mock,
+        create_tiktok_tool_source_mock,
+        create_dv360_tool_source_mock,
     ):
         definitions.extend(
             definition for definition, _ in factory().register_tools()
@@ -331,7 +331,7 @@ class TestReadOnlyMode:
     def test_non_readonly_keeps_write_tools(self):
         """非只读模式下，写工具应保留"""
         rt = AgentRuntime(require_llm=False, read_only_mode=False)
-        rt.register_capability(create_meta_capability_mock())
+        rt.register_tool_source(create_meta_tool_source_mock())
         all_tools = rt.registry.list_all()
         write_tools = [t for t in all_tools if t.is_write_tool]
         assert len(write_tools) > 0, "非只读模式应保留写工具"
@@ -339,11 +339,11 @@ class TestReadOnlyMode:
     def test_tool_count_decreases_after_filter(self):
         """过滤前后工具数量应对比"""
         rt_full = AgentRuntime(require_llm=False, read_only_mode=False)
-        rt_full.register_capability(create_meta_capability_mock())
+        rt_full.register_tool_source(create_meta_tool_source_mock())
         count_full = len(rt_full.registry.list_all())
 
         rt_readonly = AgentRuntime(require_llm=False, read_only_mode=True)
-        rt_readonly.register_capability(create_meta_capability_mock())
+        rt_readonly.register_tool_source(create_meta_tool_source_mock())
         rt_readonly.enable_read_only_mode()
         count_readonly = len(rt_readonly.registry.list_all())
 
@@ -388,13 +388,13 @@ class TestIntentParser:
 
     def test_rich_single_platform_creation_uses_schema_parser_fallback(self):
         from agents.ad_agent.core.intent import LLMIntentParser
-        from agents.ad_agent.capabilities.tiktok.parameters import tiktok_campaign_schema
+        from agents.ad_agent.tools.providers.tiktok.parameters import tiktok_campaign_schema
 
         parser = LLMIntentParser(None)
         parser.register_tool_schemas("tiktok", [tiktok_campaign_schema()])
         definition = next(
             definition
-            for definition, _ in create_tiktok_capability_mock().register_tools()
+            for definition, _ in create_tiktok_tool_source_mock().register_tools()
             if definition.name == "tiktok_create_campaign"
         )
         parser.register_tool_definitions([definition])
@@ -493,7 +493,7 @@ class TestIntentParser:
         parser = LLMIntentParser(FakeLLM())
         definition = next(
             definition
-            for definition, _ in create_google_capability_mock().register_tools()
+            for definition, _ in create_google_tool_source_mock().register_tools()
             if definition.name == "google_list_campaigns"
         )
         parser.register_tool_definitions([definition])
@@ -519,7 +519,7 @@ class TestIntentParser:
         parser.register_namespaces(["google-ads"])
         definition = next(
             definition
-            for definition, _ in create_google_capability_mock().register_tools()
+            for definition, _ in create_google_tool_source_mock().register_tools()
             if definition.name == "google_list_campaigns"
         )
         parser.register_tool_definitions([definition])
@@ -547,7 +547,7 @@ class TestIntentParser:
         parser.register_namespaces(["google-ads"])
         definition = next(
             definition
-            for definition, _ in create_google_capability_mock().register_tools()
+            for definition, _ in create_google_tool_source_mock().register_tools()
             if definition.name == "google_list_campaigns"
         )
         parser.register_tool_definitions([definition])
@@ -664,7 +664,7 @@ class TestIntentParser:
 
     def test_rule_parser_understands_multilingual_creation_phrases_from_schema(self):
         from agents.ad_agent.core.intent import LLMIntentParser
-        from agents.ad_agent.capabilities.tiktok.parameters import (
+        from agents.ad_agent.tools.providers.tiktok.parameters import (
             tiktok_campaign_schema, tiktok_adgroup_schema, tiktok_app_ad_schema,
         )
 
@@ -696,7 +696,7 @@ class TestIntentParser:
 
     def test_llm_enum_alias_is_normalized_but_dynamic_resource_is_not_guessed(self):
         from agents.ad_agent.core.intent import LLMIntentParser
-        from agents.ad_agent.capabilities.tiktok.parameters import tiktok_adgroup_schema
+        from agents.ad_agent.tools.providers.tiktok.parameters import tiktok_adgroup_schema
 
         parser = configured_parser()
         parser.register_tool_schemas("tiktok", [tiktok_adgroup_schema()])
@@ -719,7 +719,7 @@ class TestIntentParser:
 
     def test_llm_result_is_enriched_from_user_language_without_trusting_model_resource_ids(self):
         """Explicit IDs and schema enums survive a sparse LLM extraction."""
-        from agents.ad_agent.capabilities.tiktok.parameters import (
+        from agents.ad_agent.tools.providers.tiktok.parameters import (
             tiktok_campaign_schema, tiktok_adgroup_schema, tiktok_app_ad_schema,
         )
 
@@ -754,7 +754,7 @@ class TestIntentParser:
         assert "daily_budget" not in values
 
     def test_llm_normalizes_enum_values_inside_object_array_items(self):
-        from agents.ad_agent.capabilities.tiktok.parameters import tiktok_app_ad_schema
+        from agents.ad_agent.tools.providers.tiktok.parameters import tiktok_app_ad_schema
 
         class CreativeLLM:
             def call(self, messages):
@@ -772,7 +772,7 @@ class TestIntentParser:
         assert intent.scoped_parameters["tiktok"]["media"][0]["type"] == "IMAGE"
 
     def test_single_platform_plain_language_accepts_explicit_account_and_resource_ids(self):
-        from agents.ad_agent.capabilities.tiktok.parameters import (
+        from agents.ad_agent.tools.providers.tiktok.parameters import (
             tiktok_campaign_schema, tiktok_adgroup_schema,
         )
 
@@ -847,8 +847,8 @@ class TestIntentParser:
 
     def test_cross_platform_pause_routes_update_tools(self):
         from agents.ad_agent.core.intent import LLMIntentParser
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
@@ -856,8 +856,8 @@ class TestIntentParser:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
-        rt.register_capability(create_meta_capability())
-        rt.register_capability(create_tiktok_capability())
+        rt.register_tool_source(create_meta_tool_source())
+        rt.register_tool_source(create_tiktok_tool_source())
         result = rt.run(
             "跨渠道暂停 Meta campaign_id=111 和 TikTok campaign_id=222",
             user_id="u1",
@@ -904,7 +904,7 @@ class TestIntentParser:
 class TestRuntimeQuery:
     def test_llm_route_repair_rejects_unrelated_provider_and_reaches_google_report(self):
         """A hallucinated operation/provider must not become a silent no-op."""
-        from agents.ad_agent.capabilities.google import create_google_capability
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
 
         class GoogleClient:
             platform = "google-ads"
@@ -944,7 +944,7 @@ class TestRuntimeQuery:
             whitelist_validator=validator,
             response_synthesizer=NoSynthesizer(),
         )
-        rt.register_capability(create_google_capability(GoogleClient()))
+        rt.register_tool_source(create_google_tool_source(GoogleClient()))
 
         result = rt.run("查询 Google Ads 报表", user_id="u1", account_id="g1")
 
@@ -953,7 +953,7 @@ class TestRuntimeQuery:
         assert result["results"][0]["success"] is True
 
     def test_generic_report_routes_to_campaign_report_without_child_ids(self):
-        from agents.ad_agent.capabilities.google import create_google_capability
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
 
         class GoogleClient:
             platform = "google-ads"
@@ -976,7 +976,7 @@ class TestRuntimeQuery:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
-        rt.register_capability(create_google_capability(GoogleClient()))
+        rt.register_tool_source(create_google_tool_source(GoogleClient()))
 
         result = rt.run(
             "查询 Google Ads 报表",
@@ -989,7 +989,7 @@ class TestRuntimeQuery:
         assert result["results"][0]["data"]["summary"]["total_clicks"] == 2
 
     def test_meta_generic_report_discovers_campaign_ids_before_query(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
 
         class MetaClient:
             platform = "meta"
@@ -1013,7 +1013,7 @@ class TestRuntimeQuery:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
-        rt.register_capability(create_meta_capability(client))
+        rt.register_tool_source(create_meta_tool_source(client))
 
         result = rt.run("查询 Meta 报表", user_id="u1", account_id="m1")
 
@@ -1025,7 +1025,7 @@ class TestRuntimeQuery:
         ]
 
     def test_runtime_injects_skill_context_before_llm_parsing(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
 
         class FakeLLM:
             def __init__(self):
@@ -1043,7 +1043,7 @@ class TestRuntimeQuery:
             whitelist_validator=validator,
             offline_mode=True,
         )
-        rt.register_capability(create_meta_capability())
+        rt.register_tool_source(create_meta_tool_source())
         result = rt.run(
             "查询 Meta campaign",
             user_id="u1",
@@ -1111,11 +1111,11 @@ class TestRuntimeQuery:
         assert result["session_id"] is not None
 
     def test_multiple_whitelisted_accounts_require_explicit_selection(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1", "m2"]}
         rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=True)
-        rt.register_capability(create_meta_capability())
+        rt.register_tool_source(create_meta_tool_source())
 
         result = rt.run("列出 Meta campaign", user_id="multi-account-user")
 
@@ -1124,11 +1124,11 @@ class TestRuntimeQuery:
         assert result["results"][0]["data"] == {}
 
     def test_runtime_rejects_offline_read_fixtures_by_default(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
         rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=False)
-        rt.register_capability(create_meta_capability())
+        rt.register_tool_source(create_meta_tool_source())
         result = rt.run(
             "列出 Meta campaign 列表",
             user_id="offline-boundary",
@@ -1139,11 +1139,11 @@ class TestRuntimeQuery:
         assert "offline_mode" in result["results"][0]["error"]
 
     def test_runtime_can_explicitly_enable_offline_read_fixtures(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
         rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=True)
-        rt.register_capability(create_meta_capability())
+        rt.register_tool_source(create_meta_tool_source())
         result = rt.run(
             "列出 Meta campaign 列表",
             user_id="offline-explicit",
@@ -1285,10 +1285,10 @@ class TestSafeWriteExecution:
             return call
 
     def _runtime(self, platform, client=None, mode="dry_run"):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.google import create_google_capability
-        from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-        from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
+        from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+        from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {
             "meta": ["m1"], "google-ads": ["g1"],
@@ -1303,12 +1303,12 @@ class TestSafeWriteExecution:
             if mode == ExecutionMode.LIVE.value else None,
         )
         factory = {
-            "meta": lambda: create_meta_capability(client),
-            "google": lambda: create_google_capability(client),
-            "tiktok": lambda: create_tiktok_capability(client),
-            "dv360": create_dv360_capability,
+            "meta": lambda: create_meta_tool_source(client),
+            "google": lambda: create_google_tool_source(client),
+            "tiktok": lambda: create_tiktok_tool_source(client),
+            "dv360": create_dv360_tool_source,
         }[platform]
-        rt.register_capability(factory())
+        rt.register_tool_source(factory())
         if mode == ExecutionMode.LIVE.value:
             # Explicit test fixture: production write adapters stay disabled
             # until each provider path is separately verified.
@@ -1375,8 +1375,8 @@ class TestSafeWriteExecution:
         assert all(not item.get("success") for item in result["results"])
 
     def test_cross_platform_create_does_not_share_parent_ids(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.google import create_google_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
@@ -1384,8 +1384,8 @@ class TestSafeWriteExecution:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
-        rt.register_capability(create_meta_capability())
-        rt.register_capability(create_google_capability())
+        rt.register_tool_source(create_meta_tool_source())
+        rt.register_tool_source(create_google_tool_source())
         result = rt.run(
             "创建 Meta 广告系列，并创建 Google 广告系列",
             user_id="u1",
@@ -1430,8 +1430,8 @@ class TestSafeWriteExecution:
 
     def test_live_creation_chain_uses_one_confirmation_for_all_dependencies(self):
         """A parent/child/leaf chain must not ask for a mismatched second token."""
-        from agents.ad_agent.capabilities.base import SimpleIdempotencyGuard
-        from agents.ad_agent.core.interfaces import CapabilityRuntime, ParsedIntent
+        from agents.ad_agent.tools.providers.provider_base import SimpleIdempotencyGuard
+        from agents.ad_agent.core.interfaces import ToolSourceRuntime, ParsedIntent
 
         class ChainParser:
             def parse(self, user_input, _context):
@@ -1462,7 +1462,7 @@ class TestSafeWriteExecution:
                 self.calls.append((self.resource, dict(input_data)))
                 return ToolResult.ok({self.resource + "_id": self.resource + "-1"})
 
-        class ChainCapability:
+        class ChainToolSource:
             def __init__(self, calls):
                 self.calls = calls
 
@@ -1504,7 +1504,7 @@ class TestSafeWriteExecution:
                     context.registry.register(
                         definition, ChainHandler(resource, self.calls),
                     )
-                return CapabilityRuntime(write_guard=SimpleIdempotencyGuard())
+                return ToolSourceRuntime(write_guard=SimpleIdempotencyGuard())
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
@@ -1517,7 +1517,7 @@ class TestSafeWriteExecution:
             allow_live_writes=True,
             granted_permissions={"ads.plan", "ads.write"},
         )
-        rt.register_capability(ChainCapability(calls))
+        rt.register_tool_source(ChainToolSource(calls))
         rt._live_approved_tools = {tool.name for tool in rt.registry.list_all()}
         params = {"meta": {
             "account_id": "m1", "campaign_name": "Campaign",
@@ -1629,15 +1629,15 @@ class TestSafeWriteExecution:
         assert client.calls == []
 
     def test_platform_accounts_are_resolved_independently(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.google import create_google_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
         meta = self.FakeClient("meta")
         google = self.FakeClient("google-ads")
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
         rt = AgentRuntime(require_llm=False, persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
-        rt.register_capability(create_meta_capability(meta))
-        rt.register_capability(create_google_capability(google))
+        rt.register_tool_source(create_meta_tool_source(meta))
+        rt.register_tool_source(create_google_tool_source(google))
         result = rt.run(
             "列出 Meta 广告系列，同时列出 Google Ads 广告系列",
             platform_params={"meta": {"account_id": "m1"}, "google": {"customer_id": "g1"}},
@@ -1653,7 +1653,7 @@ class TestSafeWriteExecution:
             persistence_store=store,
             whitelist_validator=validator,
         )
-        first_runtime.register_capability(create_meta_capability_mock())
+        first_runtime.register_tool_source(create_meta_tool_source_mock())
         first = first_runtime.run(
             "列出 Meta Campaign 列表",
             user_id="owner",
@@ -1664,7 +1664,7 @@ class TestSafeWriteExecution:
             persistence_store=store,
             whitelist_validator=validator,
         )
-        second_runtime.register_capability(create_meta_capability_mock())
+        second_runtime.register_tool_source(create_meta_tool_source_mock())
         with pytest.raises(PermissionError):
             second_runtime.run(
                 "列出 Meta Campaign 列表",
@@ -1683,7 +1683,7 @@ class TestSafeWriteExecution:
     def test_runtime_credentials_are_read_only_and_caller_owned_input_is_unchanged(self):
         credentials = {"meta": {"access_token": "caller-token"}}
         rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
-        rt.register_capability(create_meta_capability_mock())
+        rt.register_tool_source(create_meta_tool_source_mock())
         result = rt.run("你好", user_id="u1", credentials=credentials)
         assert credentials == {"meta": {"access_token": "caller-token"}}
         session = rt._sessions[result["session_id"]]
@@ -1727,10 +1727,10 @@ class TestSafeWriteExecution:
         assert "大于 0" in result["results"][0]["error"]
 
     def test_cross_channel_delete_is_scoped_dry_run_and_never_calls_clients(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.google import create_google_capability
-        from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-        from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
+        from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+        from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {
@@ -1743,10 +1743,10 @@ class TestSafeWriteExecution:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
-        rt.register_capability(create_meta_capability(clients[0]))
-        rt.register_capability(create_google_capability(clients[1]))
-        rt.register_capability(create_tiktok_capability(clients[2]))
-        rt.register_capability(create_dv360_capability())
+        rt.register_tool_source(create_meta_tool_source(clients[0]))
+        rt.register_tool_source(create_google_tool_source(clients[1]))
+        rt.register_tool_source(create_tiktok_tool_source(clients[2]))
+        rt.register_tool_source(create_dv360_tool_source())
 
         result = rt.run(
             "跨渠道删除 Meta campaign_id=111、Google campaign_id=222、"
@@ -1776,7 +1776,7 @@ class TestSafeWriteExecution:
 
 class TestMockHandlers:
     def test_meta_child_listing_rejects_foreign_parent_before_provider_query(self):
-        from agents.ad_agent.capabilities.meta.ad_sets import MetaListAdSetsHandler
+        from agents.ad_agent.tools.providers.meta.ad_sets import MetaListAdSetsHandler
 
         client = MetaAPIClient({"access_token": "caller-token"})
         client.resource_belongs_to_account = lambda *args, **kwargs: False
@@ -1896,8 +1896,8 @@ class TestSessionManager:
 
 class TestIterationContracts:
     def test_dv360_uses_line_item_report_contract(self):
-        capability = DV360Capability()
-        definitions = {definition.name: definition for definition, _ in capability.register_tools()}
+        tool_source = DV360ToolSource()
+        definitions = {definition.name: definition for definition, _ in tool_source.register_tools()}
         assert "dv360_get_line_item_report" in definitions
         assert "dv360_get_campaign_report" not in definitions
         assert definitions["dv360_get_line_item_report"].input_schema.required == [
@@ -1930,10 +1930,10 @@ class TestIterationContracts:
         assert client.calls[0][3].count("-") == 2
 
     def test_dv360_report_routes_with_line_item_id(self):
-        from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+        from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 
         rt = AgentRuntime(require_llm=False, enforce_account_scope=True, offline_mode=True)
-        rt.register_capability(create_dv360_capability())
+        rt.register_tool_source(create_dv360_tool_source())
         result = rt.run(
             "下载 DV360 line_item_id=li-1 最近7天报表",
             user_id="u1",
@@ -2029,23 +2029,23 @@ class TestIterationContracts:
         with pytest.raises(ValueError, match="creative"):
             client.create_ad("act_test", "adset-1", {"name": "unsafe-default"})
 
-    def test_capability_tools_publish_route_metadata(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.google import create_google_capability
-        from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-        from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+    def test_tool_source_tools_publish_route_metadata(self):
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
+        from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+        from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
         registry = SimpleToolRegistry()
-        for capability in [
-            create_meta_capability(),
-            create_google_capability(),
-            create_tiktok_capability(),
-            create_dv360_capability(),
+        for tool_source in [
+            create_meta_tool_source(),
+            create_google_tool_source(),
+            create_tiktok_tool_source(),
+            create_dv360_tool_source(),
         ]:
-            runtime = capability.configure(type("Context", (), {"registry": registry})())
+            runtime = tool_source.configure(type("Context", (), {"registry": registry})())
             assert runtime is not None
         assert all(tool.intent_types for tool in registry.list_all())
         # DV360 IO/Line Item reads and Google PMax Asset Group planning are
-        # now part of the executable capability contract.
+        # now part of the executable tool_source contract.
         assert len(registry.list_all()) >= 124
 
     def test_google_access_token_is_local_and_caller_credentials_unchanged(self):
@@ -2177,19 +2177,19 @@ class TestIterationContracts:
         assert client._get_access_token() == "caller-token"
         assert credentials == {"access_token": "caller-token", "advertiser_id": "adv-1"}
 
-    def test_extended_creative_capabilities_are_real_registry_tools(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+    def test_extended_creative_tool_sources_are_real_registry_tools(self):
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
         registry = SimpleToolRegistry()
-        for capability in (create_meta_capability(), create_tiktok_capability()):
-            capability.configure(type("Context", (), {"registry": registry})())
+        for tool_source in (create_meta_tool_source(), create_tiktok_tool_source()):
+            tool_source.configure(type("Context", (), {"registry": registry})())
         names = {tool.name for tool in registry.list_all()}
         assert "meta_create_creative" in names
         assert {"tiktok_list_creatives", "tiktok_list_videos", "tiktok_list_images"} <= names
 
     def test_tiktok_media_handler_uses_provider_client_and_preserves_filter(self):
-        from agents.ad_agent.capabilities.tiktok.creatives import TikTokListCreativesHandler
+        from agents.ad_agent.tools.providers.tiktok.creatives import TikTokListCreativesHandler
 
         class TikTokClient:
             def __init__(self):
@@ -2210,7 +2210,7 @@ class TestIterationContracts:
         assert client.calls[0][2] == 7
 
     def test_google_keyword_query_preserves_hierarchy_filters(self):
-        from agents.ad_agent.capabilities.google.keywords import GoogleListKeywordsHandler
+        from agents.ad_agent.tools.providers.google.keywords import GoogleListKeywordsHandler
 
         client = GoogleAdsAPIClient({"access_token": "caller-token", "customer_id": "g1"})
         queries = []
@@ -2496,8 +2496,8 @@ class TestIterationContracts:
         assert "未知货币" in summary["comparability"]["reason"]
 
     def test_cross_channel_compare_collects_campaign_scoped_reports(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
-        from agents.ad_agent.capabilities.google import create_google_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
 
         class MetaClient:
             platform = "meta"
@@ -2536,8 +2536,8 @@ class TestIterationContracts:
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
-        rt.register_capability(create_meta_capability(meta))
-        rt.register_capability(create_google_capability(google))
+        rt.register_tool_source(create_meta_tool_source(meta))
+        rt.register_tool_source(create_google_tool_source(google))
         result = rt.run(
             "比较 Meta 和 Google 的 campaign",
             user_id="u1",
@@ -2559,7 +2559,7 @@ class TestIterationContracts:
         assert result["cross_channel_summary"]["platforms"]["google-ads"]["records"][0]["name"] == "Google 1"
 
     def test_tiktok_report_preserves_campaign_filter(self):
-        from agents.ad_agent.capabilities.tiktok.reports import TikTokGetReportHandler
+        from agents.ad_agent.tools.providers.tiktok.reports import TikTokGetReportHandler
 
         class TikTokClient:
             def __init__(self):
@@ -2611,7 +2611,7 @@ class TestIterationContracts:
         assert normalized_object["end_date"].count("-") == 2
 
     def test_dv360_line_item_report_accepts_string_date_preset(self):
-        from agents.ad_agent.capabilities.dv360.reports import DV360GetLineItemReportHandler
+        from agents.ad_agent.tools.providers.dv360.reports import DV360GetLineItemReportHandler
         from agents.ad_agent.core.tool_registry import validate_tool_input
 
         class DV360Client:
@@ -2624,9 +2624,9 @@ class TestIterationContracts:
                 self.calls.append((advertiser_id, line_item_id, date_from, date_to))
                 return []
 
-        capability = DV360Capability()
+        tool_source = DV360ToolSource()
         definition = next(
-            definition for definition, _ in capability.register_tools()
+            definition for definition, _ in tool_source.register_tools()
             if definition.name == "dv360_get_line_item_report"
         )
         input_data = {
@@ -2645,7 +2645,7 @@ class TestIterationContracts:
         assert client.calls[0][3].count("-") == 2
 
     def test_google_child_handler_uses_runtime_customer_id(self):
-        from agents.ad_agent.capabilities.google.ad_groups import GoogleListAdGroupsHandler
+        from agents.ad_agent.tools.providers.google.ad_groups import GoogleListAdGroupsHandler
 
         class GoogleClient:
             customer_id = "credential-default"
@@ -2676,8 +2676,8 @@ class TestIterationContracts:
             allow_live_writes=True,
             granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
-        from agents.ad_agent.capabilities.google import create_google_capability
-        rt.register_capability(create_google_capability(client))
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
+        rt.register_tool_source(create_google_tool_source(client))
         params = {
             "google-ads": {
                 "google_update_ad_group": {
@@ -2723,8 +2723,8 @@ class TestIterationContracts:
             allow_live_writes=True,
             granted_permissions={"ads.read", "ads.plan", "ads.write"},
         )
-        from agents.ad_agent.capabilities.google import create_google_capability
-        rt.register_capability(create_google_capability(GoogleClient()))
+        from agents.ad_agent.tools.providers.google import create_google_tool_source
+        rt.register_tool_source(create_google_tool_source(GoogleClient()))
         rt.registry.get("google_update_campaign")[0].live_support = True
         planned = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
@@ -2789,7 +2789,7 @@ class TestCrossChannelAnalysis:
         assert "must-not-export" not in exported
 
     def test_runtime_offline_insights_are_explicitly_marked(self):
-        from agents.ad_agent.capabilities.meta import create_meta_capability
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
@@ -2798,7 +2798,7 @@ class TestCrossChannelAnalysis:
             whitelist_validator=validator,
             offline_mode=True,
         )
-        rt.register_capability(create_meta_capability())
+        rt.register_tool_source(create_meta_tool_source())
         result = rt.run(
             "跨渠道分析 Meta campaign 表现",
             user_id="analysis-user",

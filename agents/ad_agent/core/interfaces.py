@@ -59,12 +59,12 @@ class ToolSchema:
     # An execution adapter can be stricter than the fields needed to build a
     # dry-run plan. Keep these requirements separate so dry-run remains useful
     # while live execution can fail before reaching an external system.
-    capability_required: list[str] = field(default_factory=list)
-    capability_any_of: list[list[str]] = field(default_factory=list)
+    requires: list[str] = field(default_factory=list)
+    requires_any_of: list[list[str]] = field(default_factory=list)
     # Some external operations require exactly one source variant (for example
     # a local file, URL, or existing asset ID). Keep this distinct from
-    # ``capability_any_of``, which only guarantees that at least one is present.
-    capability_exactly_one_of: list[list[str]] = field(default_factory=list)
+    # ``requires_any_of``, which only guarantees that at least one is present.
+    requires_exactly_one_of: list[list[str]] = field(default_factory=list)
     # Rules that cannot be represented by a flat ``required``/``enum`` pair.
     # The shape intentionally stays JSON-serializable because it is also
     # exposed to UI/LLM callers through /tools.
@@ -81,15 +81,15 @@ class ToolSchema:
             "type": self.type,
             "required": list(self.required),
             "properties": self.properties,
-            "capability_required": list(self.capability_required),
-            "capability_any_of": [list(group) for group in self.capability_any_of],
+            "requires": list(self.requires),
+            "requires_any_of": [list(group) for group in self.requires_any_of],
             "conditional_rules": self.conditional_rules,
             "additional_properties": self.additional_properties,
             "additionalProperties": self.additional_properties,
         }
-        if self.capability_exactly_one_of:
-            contract["capability_exactly_one_of"] = [
-                list(group) for group in self.capability_exactly_one_of
+        if self.requires_exactly_one_of:
+            contract["requires_exactly_one_of"] = [
+                list(group) for group in self.requires_exactly_one_of
             ]
         return contract
 
@@ -107,7 +107,7 @@ class ToolDefinition:
     input_schema: ToolSchema               # 输入参数 Schema
     # Self-description used by the planner. A Tool declares what it acts on;
     # the Runtime can then discover the right Tool without a central
-    # intent->tool table. These are required Capability/Skill-owned contract
+    # intent->tool table. These are required Tool Source/Skill-owned contract
     # fields; Core never derives them from a tool name.
     action: str = ""
     resource_type: str = ""
@@ -129,7 +129,7 @@ class ToolDefinition:
     risk_level: RiskLevel = RiskLevel.LOW  # 风险等级
     effect_class: ToolEffect = ToolEffect.READ  # 效果分类
     # Unsafe is the default for writes.  A ToolDefinition constructed by a
-    # newly added Capability/Skill must not accidentally become replayable
+    # newly added Tool Source/Skill must not accidentally become replayable
     # just because its author omitted this field.
     replay_policy: Optional[ReplayPolicy] = None  # 重放策略
     traits: list[str] = field(default_factory=list)  # 额外特性标记
@@ -269,7 +269,7 @@ class ToolDefinition:
         """Return missing self-description fields without Core inference.
 
         Construction remains permissive for low-level registry/unit-test
-        fixtures. Capability and Skill registration boundaries call this
+        fixtures. Tool Source and Skill registration boundaries call this
         method and fail closed before exposing an incomplete executable Tool.
         """
         errors = []
@@ -674,15 +674,15 @@ class Skill(ABC):
         """返回指定工具的执行器"""
         raise NotImplementedError("Subclasses must implement 'get_tool_handler'")
 
-class CapabilityModule(ABC):
+class ToolSourceModule(ABC):
     """
-    能力模块接口 - 对应 Go 的 internal/capabilities/contract/runtime.go
+    能力模块接口 - 对应 Go 的 internal/integrations/contract/runtime.go
     
     业务模块通过此接口向运行时声明自己的能力和扩展点。
     这是 DAP 架构的核心抽象：业务不直接操作 Runtime，而是通过接口注入能力。
     """
     @abstractmethod
-    def configure(self, context: "CapabilityContext") -> "CapabilityRuntime":
+    def configure(self, context: "ToolSourceContext") -> "ToolSourceRuntime":
         """
         配置并返回能力运行时。
         
@@ -690,27 +690,27 @@ class CapabilityModule(ABC):
         1. 读取扩展依赖（如凭证、配置）
         2. 创建工具处理器
         3. 向注册表注册工具
-        4. 返回 CapabilityRuntime 生命周期声明
+        4. 返回 ToolSourceRuntime 生命周期声明
         """
         pass
 
 
 @dataclass
-class CapabilityContext:
-    """Capability 配置上下文"""
+class ToolSourceContext:
+    """Tool Source 配置上下文"""
     registry: ToolRegistry
     config: dict[str, Any] = field(default_factory=dict)
     session_store: Optional[Any] = None  # 会话存储（可选）
 
 
 @dataclass
-class CapabilityRuntime:
+class ToolSourceRuntime:
     """
-    能力运行时声明 - 对应 Go 的 CapabilityRuntime
+    能力运行时声明 - 对应 Go 的 ToolSourceRuntime
     
     业务模块向 Runtime 提交的能力生命周期声明。
 
-    流程和路由归 Skill 所有；Capability 只提供原子 Tool、输入契约
+    流程和路由归 Skill 所有；Tool Source 只提供原子 Tool、输入契约
     以及必要的运行时扩展点。
     """
     # 写入前保护钩子（可选）

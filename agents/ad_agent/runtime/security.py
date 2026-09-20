@@ -55,7 +55,7 @@ class RuntimeSecurity:
 
         Natural language is not a structured Tool payload, so a request that
         only contains a credential field would otherwise be invisible to the
-        schema-driven parser when no Capability is loaded. Inspect only the
+        schema-driven parser when no Tool Source is loaded. Inspect only the
         field name and return no value; the caller redacts the original text
         before persistence or model use.
         """

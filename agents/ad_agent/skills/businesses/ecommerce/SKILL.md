@@ -77,7 +77,7 @@ channels:
 ## 工具发现
 
 本业务 Skill 不维护固定 Tool 名称。运行时会根据当前已注册的渠道
-Capability、广告类型目录和 Tool Schema 动态选择 Shopping、PMax、Catalog、
+Tool Source、广告类型目录和 Tool Schema 动态选择 Shopping、PMax、Catalog、
 Campaign 下级资源及报表能力；未达到完整 dry-run 的类型必须在计划中标明缺口。
 
 ## 注意

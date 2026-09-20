@@ -5,7 +5,7 @@ title: Google Ads 目标、出价与优化方法
 layer: platform
 knowledge_type: best_practice
 platform: google-ads
-source: Google Ads 官方文档 + Google Ads Capability/Skill
+source: Google Ads 官方文档 + Google Ads Tool Source/Skill
 source_ref: "https://developers.google.com/google-ads/api/docs/campaigns/bidding/strategy"
 version: "1.0.0"
 confidence: 0.9

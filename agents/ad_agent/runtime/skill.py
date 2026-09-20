@@ -3,7 +3,7 @@ runtime/skill.py - Skill 加载与执行
 
 借鉴 DAP Agent internal/skill/loader.go
 每个平台 Skill 是一个独立的工具集合。SKILL.md 提供自然语言专家上下文；
-可执行 Tool 由 Capability/plugin 自注册并携带自己的结构化元数据。
+可执行 Tool 由 Tool Source/plugin 自注册并携带自己的结构化元数据。
 """
 
 from __future__ import annotations
@@ -143,32 +143,32 @@ class SkillContract:
                 raise ValueError(
                     f"Skill {field_name}.properties.{property_name} must be an object"
                 )
-        capability_required = schema.get("capability_required", []) or []
-        if not isinstance(capability_required, list) or not all(
-            isinstance(item, str) and item.strip() for item in capability_required
+        requires = schema.get("requires", []) or []
+        if not isinstance(requires, list) or not all(
+            isinstance(item, str) and item.strip() for item in requires
         ):
             raise ValueError(
-                f"Skill {field_name}.capability_required must be a list of strings"
+                f"Skill {field_name}.requires must be a list of strings"
             )
-        capability_any_of = schema.get("capability_any_of", []) or []
-        if not isinstance(capability_any_of, list) or any(
+        requires_any_of = schema.get("requires_any_of", []) or []
+        if not isinstance(requires_any_of, list) or any(
             not isinstance(group, list)
             or not group
             or not all(isinstance(item, str) and item.strip() for item in group)
-            for group in capability_any_of
+            for group in requires_any_of
         ):
             raise ValueError(
-                f"Skill {field_name}.capability_any_of must be a list of string lists"
+                f"Skill {field_name}.requires_any_of must be a list of string lists"
             )
-        capability_exactly_one_of = schema.get("capability_exactly_one_of", []) or []
-        if not isinstance(capability_exactly_one_of, list) or any(
+        requires_exactly_one_of = schema.get("requires_exactly_one_of", []) or []
+        if not isinstance(requires_exactly_one_of, list) or any(
             not isinstance(group, list)
             or not group
             or not all(isinstance(item, str) and item.strip() for item in group)
-            for group in capability_exactly_one_of
+            for group in requires_exactly_one_of
         ):
             raise ValueError(
-                f"Skill {field_name}.capability_exactly_one_of must be a list of string lists"
+                f"Skill {field_name}.requires_exactly_one_of must be a list of string lists"
             )
         conditional_rules = schema.get("conditional_rules", []) or []
         if not isinstance(conditional_rules, list) or any(
@@ -565,13 +565,13 @@ class BaseSkill(Skill):
                     declared_schema.get("properties")
                     or self._build_properties(name)
                 ),
-                capability_required=list(declared_schema.get("capability_required", []) or []),
-                capability_any_of=[
-                    list(group) for group in (declared_schema.get("capability_any_of", []) or [])
+                requires=list(declared_schema.get("requires", []) or []),
+                requires_any_of=[
+                    list(group) for group in (declared_schema.get("requires_any_of", []) or [])
                 ],
-                capability_exactly_one_of=[
+                requires_exactly_one_of=[
                     list(group) for group in (
-                        declared_schema.get("capability_exactly_one_of", []) or []
+                        declared_schema.get("requires_exactly_one_of", []) or []
                     )
                 ],
                 conditional_rules=list(declared_schema.get("conditional_rules", []) or []),

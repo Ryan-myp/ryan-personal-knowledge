@@ -52,7 +52,7 @@
     <div class="diagram-wrap">
       <svg viewBox="0 0 1600 1200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
         <title id="title">广告投放 Agent 架构图</title>
-        <desc id="desc">当前 ad_agent 的分层架构：接入与会话层进入单一 Agent Runtime，Runtime 按需加载 Skills，并通过统一 Tool Registry 调用 Provider Capabilities。Task、Workflow、Outbox、Run Event 和 Session 状态由 PersistenceBackend 持久化，治理列覆盖权限、安全、质量、审计与恢复。</desc>
+        <desc id="desc">当前 ad_agent 的分层架构：接入与会话层进入单一 Agent Runtime，Runtime 按需加载 Skills，并通过统一 Tool Registry 调用 Provider Tool Sources。Task、Workflow、Outbox、Run Event 和 Session 状态由 PersistenceBackend 持久化，治理列覆盖权限、安全、质量、审计与恢复。</desc>
         <defs>
           <marker id="arrow-blue" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#2f6fed"/></marker>
           <marker id="arrow-purple" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><polygon points="0 0, 10 4, 0 8" fill="#6756df"/></marker>
@@ -181,7 +181,7 @@
         <text x="408" y="836" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">ToolDefinition · intent · resource · schema</text>
 
         <rect x="604" y="784" width="336" height="76" rx="12" fill="#ffffff" stroke="#d7deea" stroke-width="1.5"/>
-        <text x="772" y="814" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Provider Capabilities</text>
+        <text x="772" y="814" fill="#182338" font-size="14" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Provider Tool Sources</text>
         <text x="772" y="836" fill="#73829a" font-size="10" font-family="'Geist Mono', monospace" text-anchor="middle">registered handlers · API clients · read / write</text>
 
         <rect x="968" y="784" width="312" height="76" rx="12" fill="#f9fbfd" stroke="#aab7c9" stroke-width="1.5" stroke-dasharray="5,4"/>

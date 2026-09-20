@@ -5,7 +5,7 @@ title: Google Ads 转化、报表与故障诊断
 layer: platform
 knowledge_type: workflow
 platform: google-ads
-source: Google Ads 官方文档 + 当前报表 Capability
+source: Google Ads 官方文档 + 当前报表 Tool Source
 source_ref: "https://developers.google.com/google-ads/api/docs/conversions/overview"
 version: "1.0.0"
 confidence: 0.9

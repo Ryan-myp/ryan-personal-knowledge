@@ -1,6 +1,6 @@
 # 用户 Skill 管理与评测
 
-业务 Skill 是建立在 Google Ads、Meta、TikTok、DV360 基础 Capability/Tool
+业务 Skill 是建立在 Google Ads、Meta、TikTok、DV360 基础 Tool Source/Tool
 之上的编排和专家知识层。用户可以通过管理 API 创建不可变版本、编辑新版本、
 触发评测并发布通过的版本。
 
@@ -19,7 +19,7 @@ my-campaign-skill/
 
 `SKILL.md` 负责自然语言指导；`scripts/`、`references/`、`assets/` 等文件会
 随版本保存。用户 Skill 不会通过 `tools.py` 或其他文件向广告 Runtime 注入
-可执行 Provider Tool。广告读写只能走已经注册的 Capability/Tool，并继续经过
+可执行 Provider Tool。广告读写只能走已经注册的 Tool Source/Tool，并继续经过
 权限、账户白名单、dry-run、确认、幂等和审计保护。
 
 当前版本管理 API 使用 JSON 提交完整文件快照。文本文件直接传字符串，二进制
@@ -113,6 +113,6 @@ Tool 的 dry-run 路由；用户只能提供 cases，不能提供 Engine 命令�
 `max_tokens`、`file_paths` 和上下文长度上限等非敏感参数；用户不能配置 SDK
 执行命令。
 
-仓库内已有的 `agents/ad_agent/evals/skill-up/` 是 Runtime/Capability 集成
+仓库内已有的 `agents/ad_agent/evals/skill-up/` 是 Runtime/Tool Source 集成
 回归套件，与用户 Skill 的自然语言评测分开：前者验证路由、Tool 合约、dry-run
 和红线保护，后者验证用户 Skill 对 Agent 输出的增量效果。

@@ -72,7 +72,7 @@ wikilinks: ["[[Related page title]]"]
 `source_kind`、`authority`、`evidence_level` 和 `last_verified_at` 是来源治理字段。
 历史页面如果缺少这些字段，Provider 会按 `source_ref` 做保守推断，但新页面应显式填写。
 `official` 只表示来源来自平台官方材料，不表示当前账户一定支持该能力；
-`code` 表示当前仓库或 Capability 事实；`internal` 表示内部经验；`user` 表示用户上传
+`code` 表示当前仓库或 Tool Source 事实；`internal` 表示内部经验；`user` 表示用户上传
 材料；`inferred` 表示尚未完成来源确认。`verified`、`reviewed` 和 `provisional` 不等同
 于模型置信度，发布审核不能用 `confidence` 替代证据等级。
 

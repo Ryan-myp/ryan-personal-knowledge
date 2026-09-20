@@ -12,7 +12,7 @@ aliases: [facebook, instagram, fb, meta ads]
 
 > 本 Skill 是 Meta 业务语义、参数依赖和安全 SOP 的 advisory context。它不注册 Tool、不保存
 > 认证材料、不直接调用 Graph API。所有动作必须由当前 Registry 的 Meta
-> Capability Tool 通过 schema、账户范围、权限、dry-run/live gate、确认、幂等和审计执行。
+> Tool Source Tool 通过 schema、账户范围、权限、dry-run/live gate、确认、幂等和审计执行。
 
 ## 先识别账户和资产边界
 

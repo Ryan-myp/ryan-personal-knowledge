@@ -306,7 +306,7 @@ def _init_runtime():
         runtime.auto_load_skills(
             str(skills_root), credentials,
             allow_executable_plugins=True,
-            allow_capability_discovery=True,
+            allow_provider_tool_discovery=True,
         )
 
         # Published user Skills are standard directory snapshots loaded as
@@ -675,7 +675,7 @@ async def change_execution_mode(
 ):
     """Change the authenticated principal's mode without changing deployment config.
 
-    Selecting live is an operational capability, not a UI-only preference.
+    Selecting live is an operational tool_source, not a UI-only preference.
     The endpoint keeps the existing environment, permission and Runtime
     gates in force; it never enables live writes by itself.
     """
@@ -2331,7 +2331,7 @@ async def patch_mcp_tool_metadata(
     try:
         manager = _mcp_manager_or_503()
         if runtime_mcp_servers and runtime and runtime_mcp_servers.get_server(server_id, runtime, principal):
-            raise MCPManagementError("Runtime Registry Tool 不能在管理台修改，请修改其 Capability/Skill 发布定义")
+            raise MCPManagementError("Runtime Registry Tool 不能在管理台修改，请修改其 Tool Source/Skill 发布定义")
         return await run_in_threadpool(
             manager.update_tool_metadata,
             principal.tenant_id, server_id, tool_id,
@@ -2910,7 +2910,7 @@ async def chat_stream(
             # Runtime implementations that do not persist runs (for example
             # an embedded/test runtime) may legitimately omit this optional
             # readback API. The stream already has the authoritative result;
-            # only enrich it with a run id when the capability is available.
+            # only enrich it with a run id when the tool_source is available.
             get_latest_run = getattr(runtime, "get_latest_run", None)
             if (
                 not run_id

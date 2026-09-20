@@ -192,14 +192,14 @@ class PromptRenderer:
                     lines.append(f"   动态选项查询工具: {lookup_fields}")
             if schema.required:
                 lines.append(f"   必填: {schema.required}")
-            if schema.capability_required:
-                lines.append(f"   执行契约必填: {schema.capability_required}")
-            if schema.capability_any_of:
-                lines.append(f"   执行契约至少选择一项: {schema.capability_any_of}")
-            if schema.capability_exactly_one_of:
+            if schema.requires:
+                lines.append(f"   执行契约必填: {schema.requires}")
+            if schema.requires_any_of:
+                lines.append(f"   执行契约至少选择一项: {schema.requires_any_of}")
+            if schema.requires_exactly_one_of:
                 lines.append(
                     "   执行契约必须且只能选择一项: "
-                    f"{schema.capability_exactly_one_of}"
+                    f"{schema.requires_exactly_one_of}"
                 )
             if schema.conditional_rules:
                 lines.append(f"   条件依赖: {schema.conditional_rules}")

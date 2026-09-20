@@ -1510,7 +1510,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def create_user_list(self, user_list: dict[str, Any]) -> str:
         """Create a first-party CRM-based UserList.
 
-        The provider owns the wire translation here.  The Capability only
+        The provider owns the wire translation here.  The Tool Source only
         exposes the stable business contract, while this method maps it to
         ``UserList.crmBasedUserList`` and the customer-level mutate endpoint.
         """
@@ -1885,7 +1885,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> list[str]:
         """Create keyword criteria in one customer-level mutate request.
 
-        Each item is provider-shaped only at the Capability boundary; this
+        Each item is provider-shaped only at the Tool Source boundary; this
         method owns the Google Ads ``AdGroupCriterion`` wire payload. Writes
         are currently intercepted by Runtime in dry-run mode.
         """
@@ -2013,7 +2013,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         Google Shopping product groups are not a standalone resource.  They
         are ``AdGroupCriterion`` mutations whose ``listingGroup`` contains a
         root or dimension-specific case value.  Keep this translation here so
-        the Capability/Tool contract remains provider-neutral.
+        the Tool Source/Tool contract remains provider-neutral.
         """
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         group_type = str(product_group_type or "").strip().lower()

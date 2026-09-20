@@ -12,7 +12,7 @@ skill:
 
 # 跨渠道 Campaign 管理 Skill
 
-> 实现边界：本文件只描述跨渠道业务流程、统一口径和安全 SOP，不声明接口、函数或可执行动作。LLM 根据本 Skill 的自然语言上下文理解目标并提出计划；Runtime 只从当前 Registry 发现真实存在的 Capability Tool，再依据 Tool metadata、schema 和 Harness 完成受控执行。缺失指标、多币种及离线数据必须明确标记，不得用 mock 数据冒充线上数据。
+> 实现边界：本文件只描述跨渠道业务流程、统一口径和安全 SOP，不声明接口、函数或可执行动作。LLM 根据本 Skill 的自然语言上下文理解目标并提出计划；Runtime 只从当前 Registry 发现真实存在的 Tool Source Tool，再依据 Tool metadata、schema 和 Harness 完成受控执行。缺失指标、多币种及离线数据必须明确标记，不得用 mock 数据冒充线上数据。
 
 ## 概述
 
@@ -67,7 +67,7 @@ CPC、CPA、ROAS 等派生指标。无法对齐的字段要标记不可比，并
 
 静态选项由渠道 Tool schema 声明，账户、App、地域、转化事件等动态值由渠道只读
 lookup 能力提供。上层业务只依赖“查询 Campaign”“读取报表”“更新 Campaign”等
-业务语义；具体渠道的字段、接口版本和资源层级由 Provider Capability 自己声明和
+业务语义；具体渠道的字段、接口版本和资源层级由 Provider Tool Source 自己声明和
 适配。Skill 不复制这些细节，也不因为新增渠道而增加条件分支。
 
 ## 常见场景
@@ -95,4 +95,4 @@ lookup 能力提供。上层业务只依赖“查询 Campaign”“读取报表�
   受控测试账户、权限、幂等键和显式确认。
 - 任何渠道写入失败都要保留逐项结果，不得把部分成功伪装成整体成功。
 - 凭证、账户配置和受保护字段不属于 Skill 内容、模型上下文或 Tool 输入。
-- Skill 只提供自然语言 SOP；可执行能力始终来自当前已注册的 Provider Capability。
+- Skill 只提供自然语言 SOP；可执行能力始终来自当前已注册的 Provider Tool Source。

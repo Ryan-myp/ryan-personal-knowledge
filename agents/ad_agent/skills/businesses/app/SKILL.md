@@ -67,7 +67,7 @@ channels:
 
 ## 工具发现
 
-本业务 Skill 不维护固定 Tool 名称。运行时会根据已注册 Capability 发布的
+本业务 Skill 不维护固定 Tool 名称。运行时会根据已注册 Tool Source 发布的
 App 广告类型目录和 Tool Schema 动态选择 Campaign、素材、出价与报表能力；
 Google App Campaign 当前使用文档规定的 `MULTI_CHANNEL` + App subtype 契约，
 缺失的下级能力必须在计划中明确提示。

@@ -151,7 +151,7 @@ def test_context_query_is_immutable_and_bounds_provider_inputs():
     assert query.max_excerpt_chars == 1800
 
 
-def test_ad_runtime_exposes_generic_tool_registration_without_capability():
+def test_ad_runtime_exposes_generic_tool_registration_without_tool_source():
     runtime = AgentRuntime(require_llm=False, features=[])
 
     class Executor:

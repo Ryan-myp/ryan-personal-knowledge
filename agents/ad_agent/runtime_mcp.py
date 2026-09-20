@@ -1,4 +1,4 @@
-"""FastMCP adapter for the already registered Runtime capabilities.
+"""FastMCP adapter for the already registered Runtime Tools.
 
 This is an integration adapter, not a second Agent or channel router.  Tool
 metadata and handlers always come from the Runtime Registry.  The optional
@@ -73,7 +73,7 @@ def _execution_mode_for_principal(runtime: Any, principal: Any = None) -> str:
 
 
 class RuntimeMCPServers:
-    """Publish Registry capabilities as one independently addressable MCP Server per namespace."""
+    """Publish Registry Tools as one independently addressable MCP Server per namespace."""
 
     def __init__(self, runtime_provider: Callable[[], Any], authorize: Callable[..., Any]):
         self._runtime_provider = runtime_provider

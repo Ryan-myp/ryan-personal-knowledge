@@ -2,8 +2,8 @@
 
 The Agent Core never imports a Provider client or a channel package. This
 adapter is the only runtime-side seam allowed to resolve a platform-owned
-Capability/client from a deployment registry. Replacing it is sufficient for
-an embedding that discovers capabilities from a package, service registry or
+Tool Source/client from a deployment registry. Replacing it is sufficient for
+an embedding that discovers Tool Sources from a package, service registry or
 dependency-injection container.
 """
 
@@ -17,7 +17,7 @@ class ProviderBindings:
 
     @staticmethod
     def normalize_namespace(namespace: str) -> str:
-        from ..capabilities.factory import normalize_namespace
+        from ..tools.providers.source_factory import normalize_namespace
 
         return normalize_namespace(namespace)
 
@@ -28,17 +28,17 @@ class ProviderBindings:
         return create_platform_client(platform, credentials)
 
     @staticmethod
-    def discover_capability(platform: str, api_client: Any = None) -> Any:
-        from ..capabilities.factory import discover_capability_factory
+    def discover_tool_source(platform: str, api_client: Any = None) -> Any:
+        from ..tools.providers.source_factory import discover_tool_source_factory
 
-        factory = discover_capability_factory(platform)
+        factory = discover_tool_source_factory(platform)
         return factory(api_client) if callable(factory) else None
 
     @staticmethod
-    def create_capability(platform: str, api_client: Any = None) -> Any:
-        from ..capabilities.factory import create_capability
+    def create_tool_source(platform: str, api_client: Any = None) -> Any:
+        from ..tools.providers.source_factory import create_tool_source
 
-        return create_capability(platform, api_client)
+        return create_tool_source(platform, api_client)
 
 
 __all__ = ["ProviderBindings"]

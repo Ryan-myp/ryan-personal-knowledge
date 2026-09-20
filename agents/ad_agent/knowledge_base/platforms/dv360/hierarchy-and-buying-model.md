@@ -5,7 +5,7 @@ title: DV360 Partner、Advertiser、IO 与 Line Item 层级
 layer: platform
 knowledge_type: hierarchy
 platform: dv360
-source: Display & Video 360 API 官方文档 + DV360 Capability/Skill
+source: Display & Video 360 API 官方文档 + DV360 Tool Source/Skill
 source_ref: "https://developers.google.com/display-video/api/concepts/structure"
 version: "1.0.0"
 confidence: 0.88

@@ -26,7 +26,7 @@ from agents.ad_agent.domain.ad.release_readiness import (  # noqa: E402
     ReadinessPolicy,
     build_readiness_report,
 )
-from agents.ad_agent.scripts.audit_capabilities import audit_capabilities  # noqa: E402
+from agents.ad_agent.scripts.audit_provider_tools import audit_provider_tools  # noqa: E402
 from agents.ad_agent.scripts.provider_contract_harness import run_harness  # noqa: E402
 from agents.ad_agent.scripts.validate_contracts import (  # noqa: E402
     build_runtime,
@@ -117,7 +117,7 @@ def _contract_gate_errors() -> list[str]:
 
 def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
-    capability_report = audit_capabilities()
+    tool_source_report = audit_provider_tools()
     contract_errors = _contract_gate_errors()
     provider_report = run_harness(
         ROOT / "agents" / "ad_agent" / "contracts" / "provider_contract_scenarios.json"
@@ -131,7 +131,7 @@ def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
         "skill_up": skill_report,
     }
     report = build_readiness_report(
-        capability_report=capability_report,
+        tool_source_report=tool_source_report,
         contract_gate_errors=contract_errors,
         dry_run_report=dry_run_report,
         policy=policy,
@@ -140,7 +140,7 @@ def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
     # Keep the full audit evidence nested, while the top-level decision stays
     # small enough for CI and the UI to consume.
     report["evidence"] = {
-        "capability_audit": capability_report,
+        "tool_source_audit": tool_source_report,
         "contract_snapshot_errors": contract_errors,
         "dry_run": dry_run_report,
     }

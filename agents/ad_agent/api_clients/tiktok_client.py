@@ -1769,7 +1769,7 @@ class TikTokAPIClient(BasePlatformClient):
         ``ad/create`` chain.
 
         The method intentionally accepts a provider-shaped payload rather than
-        reconstructing one from a generic Runtime object.  The Capability owns
+        reconstructing one from a generic Runtime object.  The Tool Source owns
         the closed Tool schema, while this adapter owns provider conditionals
         and the endpoint contract.
         """
@@ -2527,7 +2527,7 @@ class TikTokAPIClient(BasePlatformClient):
         TikTok v1.3 does not expose an independent Creative create resource;
         creative fields are submitted in the ``creatives`` member of an Ad
         create request.  This provider fact stays in the adapter while the
-        Capability exposes a stable logical Creative lifecycle surface.
+        Tool Source exposes a stable logical Creative lifecycle surface.
         """
         return self.create_ad(advertiser_id, campaign_id, adgroup_id, creative, live=live)
 
@@ -2550,7 +2550,7 @@ class TikTokAPIClient(BasePlatformClient):
         ``video/get/`` is not a v1.3 ad-asset endpoint.  TikTok's current
         contract exposes advertiser-owned ad videos through
         ``file/video/ad/search/``; keeping that mapping here means the
-        capability and Skill do not need to know provider endpoint details.
+        tool_source and Skill do not need to know provider endpoint details.
         """
         data = {
             'advertiser_id': str(advertiser_id),

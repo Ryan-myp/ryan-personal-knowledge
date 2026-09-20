@@ -1,0 +1,1987 @@
+"""
+tools/providers/tiktok/provider.py - TikTok Tool Source 定义
+"""
+from __future__ import annotations
+
+import logging
+import inspect
+from pathlib import Path
+from typing import Optional
+from ....core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
+from ..provider_base import BaseProviderToolSource, CampaignUpdateHandler, apply_lookup_contracts
+from ..provider_tools import account_from, bind_provider_method, method_tool
+from .campaigns import (
+    TikTokListCampaignsHandler,
+    TikTokGetCampaignHandler,
+    TikTokCreateCampaignHandler,
+)
+from .ad_groups import (
+    TikTokListAdGroupsHandler,
+    TikTokGetAdGroupHandler,
+    TikTokCreateAdGroupHandler,
+)
+from .ads import TikTokListAdsHandler, TikTokGetAdHandler, TikTokCreateAdHandler
+from .reports import TikTokGetReportHandler
+from .audiences import TikTokListAudiencesHandler
+from .spark import TikTokSparkAdsCreateHandler
+from .creatives import (
+    TikTokListCreativesHandler,
+    TikTokListVideosHandler,
+    TikTokListImagesHandler,
+)
+from .reference import (
+    TikTokListConversionsHandler,
+    TikTokListLocationsHandler,
+    TikTokListDevicesHandler,
+    TikTokListCatalogsHandler,
+    TikTokListAppsHandler,
+    TikTokListBrandSafetyHandler,
+)
+from ....api_clients.tiktok_client import TikTokAPIClient
+from ....domain.ad.blueprint import load_blueprint_file
+from .parameters import (
+    tiktok_campaign_schema,
+    tiktok_adgroup_schema,
+    tiktok_ad_schema,
+    tiktok_creative_schema,
+    tiktok_product_sales_adgroup_schema,
+    tiktok_product_sales_ad_schema,
+    tiktok_lead_ad_schema,
+    tiktok_app_ad_schema,
+    tiktok_ad_format_catalog,
+    tiktok_audience_schema,
+    tiktok_audience_update_schema,
+    tiktok_audience_file_upload_schema,
+    tiktok_image_upload_schema,
+    tiktok_video_upload_schema,
+    tiktok_pixel_schema,
+    tiktok_pixel_event_schema,
+    tiktok_pixel_batch_schema,
+    tiktok_creative_portfolio_schema,
+    tiktok_creative_portfolio_get_schema,
+    tiktok_creative_portfolio_preview_schema,
+    tiktok_identity_create_schema,
+    tiktok_identity_list_schema,
+    tiktok_identity_video_info_schema,
+    tiktok_single_video_ad_schema,
+    tiktok_single_image_ad_schema,
+    tiktok_carousel_ad_schema,
+    tiktok_all_in_one_spark_ad_schema,
+    tiktok_smart_plus_campaign_schema,
+    tiktok_smart_plus_adgroup_schema,
+    tiktok_smart_plus_ad_schema,
+    tiktok_targeting_update_schema,
+    TIKTOK_OBJECTIVE_TYPES,
+    TIKTOK_PLACEMENTS,
+    TIKTOK_KEYWORD_LANGUAGES,
+    TIKTOK_INTEREST_KEYWORD_MODES,
+    TIKTOK_INTEREST_AUDIENCE_TYPES,
+)
+from ..update_contracts import tiktok_updates, tiktok_smart_plus_updates
+
+logger = logging.getLogger(__name__)
+
+
+def _tiktok_lookup(
+    tool: str, result_key: str, values: list[str], labels: list[str], *,
+    depends_on: list[dict] | None = None,
+    account_required: bool | None = None,
+    lookup_defaults: dict | None = None,
+) -> dict:
+    metadata = {
+        "lookup_tool": tool,
+        "lookup_result_key": result_key,
+        "selection_value_fields": values,
+        "selection_label_fields": labels,
+    }
+    if depends_on:
+        metadata["lookup_dependencies"] = depends_on
+    if account_required is not None:
+        metadata["lookup_account_required"] = account_required
+    if lookup_defaults:
+        metadata["lookup_defaults"] = dict(lookup_defaults)
+    return metadata
+
+
+# Complete reusable-resource picker metadata for the TikTok Tool Source.  The
+# source endpoints are fixed here next to the provider adapter; the common
+# Runtime only validates and executes the declared read Tool.
+TIKTOK_LOOKUP_CONTRACTS = {
+    "*": {
+        "campaign_id": _tiktok_lookup(
+            "tiktok_list_campaigns", "campaigns", ["campaign_id", "id"],
+            ["campaign_name", "name", "id"],
+        ),
+        "adgroup_id": _tiktok_lookup(
+            # The list Tool's public result contract is ``adgroups``. Keep
+            # the lookup catalog aligned with the handler instead of using
+            # a guessed pluralization that would silently hide live rows
+            # from creation pickers.
+            "tiktok_list_adgroups", "adgroups", ["adgroup_id", "ad_group_id", "id"],
+            ["adgroup_name", "ad_group_name", "name", "id"], depends_on=[{
+                "input_field": "campaign_id", "value_path": "campaign_id",
+                "label": "所属 Campaign", "required": True,
+            }],
+        ),
+        "ad_id": _tiktok_lookup(
+            "tiktok_list_ads", "ads", ["ad_id", "id"],
+            ["ad_name", "name", "id"], depends_on=[{
+                "input_field": "adgroup_id", "value_path": "adgroup_id",
+                "label": "所属 Ad Group", "required": True,
+            }],
+        ),
+        "app_id": _tiktok_lookup(
+            "tiktok_list_apps", "apps", ["app_id", "id"],
+            ["app_name", "name", "display_name", "id"], account_required=False,
+        ),
+        "conversion_id": _tiktok_lookup(
+            "tiktok_list_conversions", "conversions", ["conversion_id", "id"],
+            ["conversion_name", "name", "event_name", "id"],
+        ),
+        "pixel_id": _tiktok_lookup(
+            "tiktok_list_pixels", "pixels", ["pixel_id", "id", "code"],
+            ["pixel_name", "name", "display_name", "id"],
+        ),
+        "tracking_pixel_id": _tiktok_lookup(
+            "tiktok_list_pixels", "pixels", ["pixel_id", "id", "code"],
+            ["pixel_name", "name", "display_name", "id"],
+        ),
+        "location_ids": _tiktok_lookup(
+            "tiktok_list_regions", "regions", ["location_id", "id", "country_code", "code"],
+            ["location_name", "name", "country_name", "country_code"], depends_on=[
+                {"input_field": "placements", "value_path": "placements", "label": "投放版位", "required": True},
+                {"input_field": "objective_type", "value_path": "objective_type", "label": "推广目标", "required": True},
+            ],
+            lookup_defaults={
+                "placements": ["PLACEMENT_TIKTOK"],
+                "level_range": "TO_COUNTRY",
+            },
+        ),
+        "audience_id": _tiktok_lookup(
+            "tiktok_list_audiences", "audiences", ["audience_id", "id"],
+            ["name", "audience_name", "id"],
+        ),
+        "audience_ids": _tiktok_lookup(
+            "tiktok_list_audiences", "audiences", ["audience_id", "id"],
+            ["name", "audience_name", "id"],
+        ),
+        "excluded_audience_ids": _tiktok_lookup(
+            "tiktok_list_audiences", "audiences", ["audience_id", "id"],
+            ["name", "audience_name", "id"],
+        ),
+        "interest_category_ids": _tiktok_lookup(
+            "tiktok_list_interest_categories", "interest_categories",
+            ["interest_category_id", "category_id", "id"],
+            ["interest_category_name", "category_name", "name", "id"],
+        ),
+        "device_model_ids": _tiktok_lookup(
+            "tiktok_list_device_models", "device_models", ["device_model_id", "id"],
+            ["device_model_name", "name", "id"],
+        ),
+        "device_ids": _tiktok_lookup(
+            "tiktok_list_devices", "devices", ["device_id", "id"],
+            ["device_name", "name", "id"], account_required=False,
+        ),
+        "carrier_ids": _tiktok_lookup(
+            "tiktok_list_carriers", "carriers", ["carrier_id", "id"],
+            ["carrier_name", "name", "id"], account_required=False,
+        ),
+        "browser_ids": _tiktok_lookup(
+            "tiktok_list_browsers", "browsers", ["browser_id", "id"],
+            ["browser_name", "name", "id"], account_required=False,
+        ),
+        "video_id": _tiktok_lookup(
+            "tiktok_list_videos", "videos", ["video_id", "id"],
+            ["file_name", "video_name", "name", "id"],
+        ),
+        "image_ids": _tiktok_lookup(
+            "tiktok_list_images", "images", ["image_id", "id"],
+            ["file_name", "image_name", "name", "id"],
+        ),
+        "identity_id": _tiktok_lookup(
+            "tiktok_list_identities", "identities", ["identity_id", "id"],
+            ["display_name", "name", "id"],
+        ),
+        "catalog_id": _tiktok_lookup(
+            "tiktok_list_catalogs", "catalogs", ["catalog_id", "id"],
+            ["catalog_name", "name", "id"],
+        ),
+        "product_set_id": _tiktok_lookup(
+            "tiktok_list_product_sets", "product_sets", ["product_set_id", "id"],
+            ["product_set_name", "name", "id"], depends_on=[{
+                "input_field": "catalog_id", "value_path": "catalog_id",
+                "label": "所属商品目录", "required": True,
+            }],
+        ),
+        # TikTok's current tool_source has no Page/Post/Shop listing Tool.
+        # Keep these as guided manual identifiers rather than pretending a
+        # generic app/catalog query can return them.
+        "page_id": {
+            "manual_entry": {
+                "title": "TikTok 页面或表单 ID",
+                "instructions": "当前能力未接入页面目录查询，请粘贴 TikTok Ads Manager 中的页面/表单 ID。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "spark_post_id": {
+            "manual_entry": {
+                "title": "Spark 帖子 ID",
+                "instructions": "请粘贴已授权的 Spark 帖子标识（通常为 post_id@user_id）；不会根据名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "tiktok_item_id": {
+            "manual_entry": {
+                "title": "TikTok 帖子 ID",
+                "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "store_id": {
+            "manual_entry": {
+                "title": "TikTok Shop 店铺 ID",
+                "instructions": "当前未接入店铺目录查询，请从 TikTok Shop/Ads Manager 复制店铺 ID。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "call_to_action_id": {
+            "manual_entry": {
+                "title": "TikTok 行动号召 ID",
+                "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "interest_keyword_ids": {
+            "manual_entry": {
+                "title": "TikTok 兴趣关键词 ID",
+                "instructions": "请先通过兴趣关键词推荐或 Ads Manager 获取关键词 ID，再粘贴到这里；当前推荐接口不是稳定的 ID 目录。",
+                "source": "provider_recommendation_result",
+            },
+        },
+        "purchase_intention_keyword_ids": {
+            "manual_entry": {
+                "title": "TikTok 购买意向关键词 ID",
+                "instructions": "请先通过购买意向关键词推荐或 Ads Manager 获取关键词 ID，再粘贴到这里；不会根据关键词名称猜测 ID。",
+                "source": "provider_recommendation_result",
+            },
+        },
+        "contextual_tag_ids": {
+            "manual_entry": {
+                "title": "TikTok 上下文标签 ID",
+                "instructions": "请从 TikTok Ads Manager 的上下文定向配置中复制标签 ID；当前能力没有独立标签目录接口。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "blocked_pangle_app_ids": {
+            "manual_entry": {
+                "title": "Pangle 屏蔽应用 ID",
+                "instructions": "请粘贴需要屏蔽的 Pangle 应用 ID；当前能力没有可按广告账户枚举的 Pangle 应用目录。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "sku_ids": {
+            "manual_entry": {
+                "title": "TikTok 商品 SKU",
+                "instructions": "请从已选择的商品目录/店铺导出或复制 SKU；当前能力没有商品 SKU 列表接口。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "item_group_ids": {
+            "manual_entry": {
+                "title": "TikTok 商品组 ID",
+                "instructions": "请从商品目录或 TikTok Shop 复制商品组 ID；不会根据商品名称猜测。",
+                "source": "external_provider_identifier",
+            },
+        },
+        "shopping_ads_video_package_id": {
+            "manual_entry": {
+                "title": "TikTok Shopping 视频包 ID",
+                "instructions": "请从 TikTok Shopping Ads 创意资产中复制视频包 ID；当前能力没有独立的视频包目录接口。",
+                "source": "external_provider_identifier",
+            },
+        },
+    },
+}
+
+
+def _tiktok_update_adapter(
+    client, ctx, resource_type, resource_id, parent_id, updates, *, live=False
+):
+    """Adapt TikTok's advertiser- and parent-scoped update methods."""
+    if resource_type == "campaign":
+        method = getattr(client, "update_campaign", None)
+        args = (ctx.account_id, resource_id, updates)
+    elif resource_type == "ad_group":
+        method = getattr(client, "update_adgroup", None)
+        args = (ctx.account_id, parent_id, resource_id, updates)
+    elif resource_type == "ad":
+        method = getattr(client, "update_ad", None)
+        args = (ctx.account_id, parent_id, resource_id, updates)
+    else:
+        raise AttributeError(
+            f"TikTok {resource_type} update adapter is unavailable"
+        )
+    if not callable(method):
+        raise AttributeError(
+            f"TikTok {resource_type} update adapter is unavailable"
+        )
+    if resource_type == "ad_group" and not parent_id:
+        raise ValueError("TikTok ad group update requires campaign_id")
+    if resource_type == "ad" and not parent_id:
+        raise ValueError("TikTok ad update requires adgroup_id")
+    try:
+        supports_live = "live" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        supports_live = False
+    return method(*args, **({"live": live} if supports_live else {}))
+
+
+class TikTokToolSource(BaseProviderToolSource):
+    platform_name = "tiktok"
+    provider_client_class = TikTokAPIClient
+    tool_source_version = "1.3.0"
+    integration_api_version = "v1.3"
+    provider_method_coverage = {
+        "list_accounts": ["tiktok_list_accounts"], "get_account": ["tiktok_get_account"],
+        "list_campaigns": ["tiktok_list_campaigns"],
+        "get_campaign": ["tiktok_get_campaign"], "create_campaign": ["tiktok_create_campaign"],
+        "update_campaign": ["tiktok_update_campaign"], "pause_campaign": ["tiktok_pause_campaign"],
+        "resume_campaign": ["tiktok_resume_campaign"], "delete_campaign": ["tiktok_delete_campaign"],
+        "list_adgroups": ["tiktok_list_adgroups"], "get_adgroup": ["tiktok_get_adgroup"],
+        "create_adgroup": ["tiktok_create_adgroup"], "create_product_sales_adgroup": ["tiktok_create_product_sales_adgroup"], "update_adgroup": ["tiktok_update_adgroup"],
+        "update_adgroup_targeting": ["tiktok_update_adgroup_targeting"],
+        "update_ad": ["tiktok_update_ad"], "pause_adgroup": ["tiktok_pause_adgroup"],
+        "list_ads": ["tiktok_list_ads"], "get_ad": ["tiktok_get_ad"],
+        "create_ad": ["tiktok_create_ad"], "create_product_sales_ad": ["tiktok_create_product_sales_ad"], "create_lead_ad": ["tiktok_create_lead_ad"],
+        "create_creative": ["tiktok_create_creative"], "update_creative": ["tiktok_update_creative"],
+        "delete_creative": ["tiktok_delete_creative"], "delete_ad": ["tiktok_delete_ad"],
+        "create_single_video_ad": ["tiktok_create_single_video_ad"],
+        "create_single_image_ad": ["tiktok_create_single_image_ad"],
+        "create_carousel_ad": ["tiktok_create_carousel_ad"],
+        "create_app_ad": ["tiktok_create_app_ad"],
+        "create_all_in_one_spark_ad": ["tiktok_create_all_in_one_spark_ad"],
+        "create_smart_plus_campaign": ["tiktok_smart_plus_create_campaign"],
+        "create_smart_plus_adgroup": ["tiktok_smart_plus_create_adgroup"],
+        "create_smart_plus_ad": ["tiktok_smart_plus_create_ad"],
+        "update_smart_plus_campaign": ["tiktok_smart_plus_update_campaign"],
+        "update_smart_plus_adgroup": ["tiktok_smart_plus_update_adgroup"],
+        "update_smart_plus_ad": ["tiktok_smart_plus_update_ad"],
+        "create_spark_ad": ["tiktok_spark_ads_create"],
+        "get_campaign_report": ["tiktok_get_campaign_report"], "get_adgroup_report": ["tiktok_get_adgroup_report"],
+        "list_audiences": ["tiktok_list_audiences"], "get_audience": ["tiktok_get_audience"],
+        "create_audience": ["tiktok_create_audience"],
+        "update_audience": ["tiktok_update_audience"],
+        "upload_audience_file": ["tiktok_upload_audience_file"],
+        "delete_audience": ["tiktok_delete_audience"],
+        "list_interest_categories": ["tiktok_list_interest_categories"],
+        "list_action_categories": ["tiktok_list_action_categories"],
+        "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
+        "list_languages": ["tiktok_list_languages"],
+        "list_device_models": ["tiktok_list_device_models"],
+        "recommend_interest_keywords": ["tiktok_recommend_interest_keywords"],
+        "search_locations": ["tiktok_search_locations"], "list_regions": ["tiktok_list_regions"],
+        "list_devices": ["tiktok_list_devices"],
+        "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
+        "list_browsers": ["tiktok_list_browsers"], "list_creatives": ["tiktok_list_creatives"],
+        "get_creative": ["tiktok_get_creative"],
+        "list_videos": ["tiktok_list_videos"], "get_video": ["tiktok_get_video"],
+        "list_images": ["tiktok_list_images"], "get_image": ["tiktok_get_image"],
+        "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
+        "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
+        "list_pixels": ["tiktok_list_pixels"], "get_pixel": ["tiktok_get_pixel"],
+        "create_pixel": ["tiktok_create_pixel"], "update_pixel": ["tiktok_update_pixel"],
+        "send_pixel_event": ["tiktok_send_pixel_event"],
+        "send_pixel_events": ["tiktok_send_pixel_events"],
+        "create_creative_portfolio": ["tiktok_create_creative_portfolio"],
+        "get_creative_portfolio": ["tiktok_get_creative_portfolio"],
+        "preview_creative_portfolio": ["tiktok_preview_creative_portfolio"],
+        "create_identity": ["tiktok_create_identity"],
+        "get_identity": ["tiktok_get_identity"],
+        "list_identities": ["tiktok_list_identities"],
+        "get_identity_video_info": ["tiktok_get_identity_video_info"],
+        "list_catalogs": ["tiktok_list_catalogs"], "get_catalog": ["tiktok_get_catalog"],
+        "list_product_sets": ["tiktok_list_product_sets"],
+        "get_product_set": ["tiktok_get_product_set"],
+        "validate_product_selection": ["tiktok_validate_product_selection"],
+        "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
+        "get_report": ["tiktok_get_report"],
+    }
+
+    def get_ad_format_catalog(self) -> list[dict]:
+        return tiktok_ad_format_catalog()
+
+    def get_creation_blueprints(self) -> list:
+        """Load immutable, provider-owned JSON creation metadata."""
+        blueprint_dir = Path(__file__).with_name("blueprints")
+        return [
+            load_blueprint_file(path)
+            for path in sorted(blueprint_dir.glob("*.json"))
+        ]
+
+    def _extended_provider_tools(self, client):
+        """Expose TikTok account, reference, reporting and lifecycle APIs."""
+        account = lambda ctx, data: account_from(ctx, data, "account_id", "advertiser_id")
+        targeting_schema = tiktok_targeting_update_schema()
+        image_upload = tiktok_image_upload_schema()
+        video_upload = tiktok_video_upload_schema()
+        pixel_event = tiktok_pixel_event_schema()
+        pixel_batch = tiktok_pixel_batch_schema()
+        pixel = tiktok_pixel_schema()
+        creative_portfolio = tiktok_creative_portfolio_schema()
+        creative_portfolio_get = tiktok_creative_portfolio_get_schema()
+        creative_portfolio_preview = tiktok_creative_portfolio_preview_schema()
+        identity_create = tiktok_identity_create_schema()
+        identity_list = tiktok_identity_list_schema()
+        identity_video_info = tiktok_identity_video_info_schema()
+        tools = [
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_get_account",
+                description="查询 TikTok 广告主账户详情。",
+                method_name="get_account", result_key="account",
+                properties={"account_id": {"type": "string", "minLength": 1}},
+                required=["account_id"],
+                action="get", resource_type="account",
+                resource_id_field="account_id",
+                intent_types=["get_account"], traits=["read", "account"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data),
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_image",
+                description="上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",
+                method_name="upload_image", result_key="image_id",
+                properties=image_upload["properties"], required=image_upload["required"],
+                requires=image_upload["requires"],
+                requires_exactly_one_of=image_upload["requires_exactly_one_of"],
+                action="upload", resource_type="image", resource_id_field="image_id",
+                intent_types=["upload_image"], traits=["write", "creative", "image", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data.get("file_path"), data.get("image_url"),
+                    data.get("file_id"), data.get("file_name"), data.get("upload_type"),
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_video",
+                description="上传或绑定 TikTok 广告视频素材；默认仅生成 dry-run 计划。",
+                method_name="upload_video", result_key="video_id",
+                properties=video_upload["properties"], required=video_upload["required"],
+                requires=video_upload["requires"],
+                requires_exactly_one_of=video_upload["requires_exactly_one_of"],
+                action="upload", resource_type="video", resource_id_field="video_id",
+                intent_types=["upload_video"], traits=["write", "creative", "video", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data.get("file_path"), data.get("video_url"),
+                    data.get("video_id"), data.get("file_id"), data.get("file_name"),
+                    data.get("upload_type"), data.get("flaw_detect"),
+                    data.get("auto_fix_enabled"), data.get("auto_bind_enabled"),
+                    data.get("is_third_party"),
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_accounts",
+                description="列出 TikTok 广告主账户。", method_name="list_accounts", result_key="accounts",
+                properties={"advertiser_ids": {"type": "array", "items": {"type": "string"}}},
+                required=["advertiser_ids"], action="list", resource_type="account",
+                intent_types=["list_accounts"], traits=["read", "account"],
+                argument_builder=lambda _ctx, data: ((data["advertiser_ids"],), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_audience",
+                description="获取 TikTok Audience 详情。", method_name="get_audience", result_key="audience",
+                properties={"account_id": {"type": "string"}, "audience_id": {"type": "string"}},
+                required=["account_id", "audience_id"], action="get", resource_type="audience",
+                intent_types=["get_audience"], traits=["read", "audience"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_audience",
+                description="通过已上传的加密文件创建 TikTok Custom Audience；默认仅生成 dry-run 计划。",
+                method_name="create_audience", result_key="audience_id",
+                properties=tiktok_audience_schema()["properties"],
+                required=tiktok_audience_schema()["required"],
+                requires=tiktok_audience_schema()["requires"],
+                action="create", resource_type="audience", resource_id_field="audience_id",
+                intent_types=["create_audience"], traits=["write", "audience"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: value for key, value in data.items() if key != "account_id"
+                }), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_delete_audience",
+                description="删除 TikTok Custom Audience；默认仅生成 dry-run 计划。",
+                method_name="delete_audience", result_key="audience_result",
+                properties={
+                    "account_id": {"type": "string", "description": "TikTok advertiser ID"},
+                    "audience_id": {"type": "string", "description": "TikTok audience ID"},
+                },
+                required=["account_id", "audience_id"], action="delete", resource_type="audience",
+                resource_id_field="audience_id", intent_types=["delete_audience"],
+                traits=["write", "audience"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["audience_id"]), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_update_audience",
+                description="更新 TikTok Custom Audience 名称或已上传文件；默认仅生成 dry-run 计划。",
+                method_name="update_audience", result_key="audience_result",
+                properties=tiktok_audience_update_schema()["properties"],
+                required=tiktok_audience_update_schema()["required"],
+                requires=tiktok_audience_update_schema()["requires"],
+                action="update", resource_type="audience", resource_id_field="audience_id",
+                intent_types=["update_audience"], traits=["write", "audience"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["audience_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_upload_audience_file",
+                description="上传 TikTok Custom Audience 的加密 CSV/TXT 文件；默认仅生成 dry-run 计划。",
+                method_name="upload_audience_file", result_key="audience_file",
+                properties=tiktok_audience_file_upload_schema()["properties"],
+                required=tiktok_audience_file_upload_schema()["required"],
+                requires=tiktok_audience_file_upload_schema()["requires"],
+                action="upload", resource_type="audience", resource_id_field=None,
+                intent_types=["upload_audience_file"], traits=["write", "audience", "source_upload"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["file_path"], data["calculate_type"], data.get("file_name")
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_update_adgroup_targeting",
+                description="独立更新 TikTok Ad Group 定向；动态 ID 必须来自对应 lookup Tool，默认仅生成 dry-run 计划。",
+                method_name="update_adgroup_targeting", result_key="targeting_result",
+                properties=targeting_schema["properties"],
+                required=targeting_schema["required"],
+                requires=targeting_schema["requires"],
+                action="update", resource_type="ad_group", parent_resource_type="campaign",
+                resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+                intent_types=["update_adgroup_targeting"], traits=["write", "ad_group", "targeting"],
+                write=True,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["campaign_id"], data["adgroup_id"], data["updates"]
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_interest_categories",
+                description="查询 TikTok 兴趣类别。", method_name="list_interest_categories", result_key="interest_categories",
+                properties={
+                    "account_id": {"type": "string"}, "version": {"type": "integer", "enum": [1, 2]},
+                    "placements": {"type": "array", "items": {"type": "string", "enum": TIKTOK_PLACEMENTS}},
+                    "special_industries": {"type": "array", "items": {"type": "string", "enum": ["HOUSING", "EMPLOYMENT", "CREDIT"]}},
+                    "language": {"type": "string", "enum": ["en", "zh", "ja", "de", "es", "fr", "id", "it", "ko", "ru", "th", "tr", "vi", "ar", "pt", "ms"]},
+                },
+                required=["account_id"], requires=["account_id"],
+                action="list", resource_type="interest_category", intent_types=["list_interests"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "version": data.get("version", 2), "placements": data.get("placements"),
+                    "special_industries": data.get("special_industries"),
+                    "language": data.get("language", "en"),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_action_categories",
+                description="查询 TikTok Action 类别和特殊行业类别。", method_name="list_action_categories",
+                result_key="action_categories",
+                properties={
+                    "account_id": {"type": "string"},
+                    "special_industries": {"type": "array", "items": {"type": "string", "enum": ["HOUSING", "EMPLOYMENT", "CREDIT"]}},
+                },
+                required=["account_id"], requires=["account_id"],
+                action="list", resource_type="action_category", intent_types=["list_action_categories"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "special_industries": data.get("special_industries"),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_interest_category",
+                description="获取 TikTok 兴趣类别详情。", method_name="get_interest_category", result_key="interest_category",
+                properties={"category_id": {"type": "string"}}, required=["category_id"], action="get",
+                resource_type="interest_category", intent_types=["get_interest_category"], traits=["read", "targeting"],
+                argument_builder=lambda _ctx, data: ((data["category_id"],), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_search_locations",
+                description="按关键词搜索 TikTok 投放地域。", method_name="search_locations", result_key="locations",
+                properties={"keyword": {"type": "string"}, "location_type": {"type": "string"}},
+                required=["keyword"], action="list", resource_type="location", intent_types=["search_locations"],
+                traits=["read", "targeting"], argument_builder=lambda _ctx, data: ((data["keyword"],), {
+                    "location_type": data.get("location_type")
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_regions",
+                description="按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
+                method_name="list_regions", result_key="regions",
+                properties={
+                    "account_id": {"type": "string"},
+                    "placements": {"type": "array", "items": {"type": "string", "enum": TIKTOK_PLACEMENTS}},
+                    "objective_type": {"type": "string", "enum": TIKTOK_OBJECTIVE_TYPES},
+                    "promotion_target_type": {"type": "string", "enum": ["INSTANT_PAGE", "EXTERNAL_WEBSITE"]},
+                    "operating_system": {"type": "string", "enum": ["ANDROID", "IOS"]},
+                    "brand_safety_type": {"type": "string"},
+                    "brand_safety_partner": {"type": "string", "enum": ["IAS", "OPEN_SLATE"]},
+                    "level_range": {"type": "string", "enum": ["ALL", "TO_COUNTRY", "TO_PROVINCE", "TO_CITY", "TO_DISTRICT"]},
+                    "rf_campaign_type": {"type": "string", "enum": ["STANDARD", "PULSE"]},
+                },
+                required=["account_id", "placements", "objective_type"],
+                action="list", resource_type="region", intent_types=["list_regions"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["placements"], data["objective_type"]), {
+                    "promotion_target_type": data.get("promotion_target_type"),
+                    "operating_system": data.get("operating_system"),
+                    "brand_safety_type": data.get("brand_safety_type"),
+                    "brand_safety_partner": data.get("brand_safety_partner"),
+                    "level_range": data.get("level_range"),
+                    "rf_campaign_type": data.get("rf_campaign_type"),
+                }),
+            ),
+        ]
+        for method_name, result_key, resource_type in (
+            ("list_operating_systems", "operating_systems", "operating_system"),
+            ("list_carriers", "carriers", "carrier"),
+            ("list_browsers", "browsers", "browser"),
+        ):
+            tools.append(method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name=f"tiktok_{method_name}",
+                description=f"查询 TikTok {resource_type} 定向选项。", method_name=method_name,
+                result_key=result_key, properties={}, action="list", resource_type=resource_type,
+                intent_types=[f"list_{resource_type}s"], traits=["read", "targeting"],
+                argument_builder=lambda _ctx, _data: ((), {}),
+            ))
+        tools.extend([
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_languages",
+                description="查询 TikTok 官方语言定向选项。", method_name="list_languages",
+                result_key="languages", properties={"account_id": {"type": "string"}},
+                required=["account_id"], requires=["account_id"],
+                action="list", resource_type="language", intent_types=["list_languages"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_device_models",
+                description="查询 TikTok 官方设备型号定向选项。", method_name="list_device_models",
+                result_key="device_models", properties={"account_id": {"type": "string"}},
+                required=["account_id"], requires=["account_id"],
+                action="list", resource_type="device_model", intent_types=["list_device_models"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_recommend_interest_keywords",
+                description="根据种子词查询 TikTok 兴趣定向推荐关键词。",
+                method_name="recommend_interest_keywords", result_key="interest_keywords",
+                properties={
+                    "account_id": {"type": "string"}, "keyword": {"type": "string", "minLength": 1},
+                    "language": {"type": "string", "enum": TIKTOK_KEYWORD_LANGUAGES},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                    "mode": {"type": "string", "enum": TIKTOK_INTEREST_KEYWORD_MODES},
+                    "audience_type": {"type": "string", "enum": TIKTOK_INTEREST_AUDIENCE_TYPES},
+                },
+                required=["account_id", "keyword"], requires=["account_id", "keyword"],
+                action="recommend", resource_type="interest_keyword",
+                intent_types=["recommend_interest_keywords"], traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["keyword"]), {
+                    "language": data.get("language", "en"), "limit": data.get("limit", 50),
+                    "mode": data.get("mode", "FUZZ_MATCH"),
+                    "audience_type": data.get("audience_type", "GENERAL_INTEREST"),
+                }),
+            ),
+        ])
+        tools.extend([
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_conversion",
+                description="获取 TikTok 转化事件详情。", method_name="get_conversion", result_key="conversion",
+                properties={"account_id": {"type": "string"}, "conversion_id": {"type": "string"}},
+                required=["account_id", "conversion_id"], action="get", resource_type="conversion",
+                intent_types=["get_conversion"], traits=["read", "conversion"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["conversion_id"]), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_pixels",
+                description="查询 TikTok 广告主下的 Pixel。", method_name="list_pixels",
+                result_key="pixels", properties={key: pixel["properties"][key]
+                for key in ("account_id", "pixel_ids", "limit")},
+                required=["account_id"], action="list", resource_type="pixel",
+                intent_types=["list_pixels"], traits=["read", "pixel", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data.get("pixel_ids")), {
+                    "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_pixel",
+                description="查询 TikTok Pixel 详情。", method_name="get_pixel",
+                result_key="pixel", properties={key: pixel["properties"][key]
+                for key in ("account_id", "pixel_id")},
+                required=["account_id", "pixel_id"], action="get", resource_type="pixel",
+                resource_id_field="pixel_id", intent_types=["get_pixel"],
+                traits=["read", "pixel"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"]), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_pixel",
+                description="创建 TikTok Website 或 App Pixel；默认仅生成 dry-run 计划。",
+                method_name="create_pixel", result_key="pixel_id",
+                properties={key: pixel["properties"][key]
+                for key in ("account_id", "name", "object_type", "tracking_url")},
+                required=pixel["create_required"], action="create", resource_type="pixel",
+                requires=["name", "object_type"],
+                resource_id_field="pixel_id", intent_types=["create_pixel"],
+                traits=["write", "pixel"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), {
+                    key: value for key, value in data.items() if key != "account_id"
+                }), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_update_pixel",
+                description="更新 TikTok Pixel 名称；默认仅生成 dry-run 计划。",
+                method_name="update_pixel", result_key="pixel_result",
+                properties={key: pixel["properties"][key]
+                for key in ("account_id", "pixel_id", "updates")},
+                required=pixel["update_required"], action="update", resource_type="pixel",
+                resource_id_field="pixel_id", intent_types=["update_pixel"],
+                traits=["write", "pixel"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["pixel_id"], data["updates"]), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_send_pixel_event",
+                description="通过 TikTok Pixel Track 发送单个转化事件；默认仅生成 dry-run 计划。",
+                method_name="send_pixel_event", result_key="pixel_event_result",
+                properties=pixel_event["properties"], required=pixel_event["required"],
+                requires=pixel_event["requires"],
+                action="send", resource_type="pixel_event", resource_id_field="pixel_id",
+                intent_types=["send_pixel_event", "track_tiktok_pixel"],
+                traits=["write", "pixel", "conversion", "event"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["pixel_id"], {
+                        key: value for key, value in data.items()
+                        if key not in {"account_id", "pixel_id"}
+                    },
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_send_pixel_events",
+                description="通过 TikTok Pixel Batch 发送一批转化事件；默认仅生成 dry-run 计划。",
+                method_name="send_pixel_events", result_key="pixel_events_result",
+                properties=pixel_batch["properties"], required=pixel_batch["required"],
+                requires=pixel_batch["requires"],
+                action="send", resource_type="pixel_event_batch", resource_id_field="pixel_id",
+                intent_types=["send_pixel_events", "track_tiktok_pixel_batch"],
+                traits=["write", "pixel", "conversion", "event", "batch"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["pixel_id"], data["events"],
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_creative_portfolio",
+                description="创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
+                method_name="create_creative_portfolio", result_key="creative_portfolio_result",
+                properties=creative_portfolio["properties"], required=creative_portfolio["required"],
+                requires=creative_portfolio["requires"],
+                action="create", resource_type="creative_portfolio", resource_id_field="creative_portfolio_id",
+                intent_types=["create_creative_portfolio"],
+                traits=["write", "creative", "portfolio"], write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data.get("creative_portfolio_type", "CTA"),
+                    data.get("portfolio_content"),
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_creative_portfolio",
+                description="查询 TikTok Creative Portfolio 详情。",
+                method_name="get_creative_portfolio", result_key="creative_portfolio",
+                properties=creative_portfolio_get["properties"],
+                required=creative_portfolio_get["required"],
+                requires=creative_portfolio_get["requires"],
+                action="get", resource_type="creative_portfolio",
+                resource_id_field="creative_portfolio_id",
+                intent_types=["get_creative_portfolio"],
+                traits=["read", "creative", "portfolio"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["creative_portfolio_id"],
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_preview_creative_portfolio",
+                description="生成 TikTok Creative Portfolio 预览链接。",
+                method_name="preview_creative_portfolio", result_key="creative_portfolio_preview",
+                properties=creative_portfolio_preview["properties"],
+                required=creative_portfolio_preview["required"],
+                requires=creative_portfolio_preview["requires"],
+                action="preview", resource_type="creative_portfolio",
+                resource_id_field="creative_portfolio_id",
+                intent_types=["preview_creative_portfolio"],
+                traits=["read", "creative", "portfolio", "preview"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["creative_portfolio_id"],
+                    data.get("preview_type", "CARD"),
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_identity",
+                description="创建 TikTok 自定义广告身份；默认仅生成 dry-run 计划。",
+                method_name="create_identity", result_key="identity_result",
+                properties=identity_create["properties"], required=identity_create["required"],
+                requires=identity_create["requires"],
+                action="create", resource_type="identity", resource_id_field="identity_id",
+                intent_types=["create_identity"], traits=["write", "identity", "creative"],
+                write=True, live_support=False,
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["display_name"], data["image_uri"],
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_identities",
+                description="查询 TikTok 广告账户下的可用广告身份。",
+                method_name="list_identities", result_key="identities",
+                properties=identity_list["properties"], required=identity_list["required"],
+                requires=identity_list["requires"],
+                action="list", resource_type="identity", intent_types=["list_identities"],
+                traits=["read", "identity", "creative"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "identity_type": data.get("identity_type"),
+                    "page": data.get("page", 1), "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_identity",
+                description="查询 TikTok 广告身份详情。",
+                method_name="get_identity", result_key="identity",
+                properties={
+                    "account_id": identity_list["properties"]["account_id"],
+                    "identity_id": identity_list["properties"]["identity_id"],
+                },
+                required=["account_id", "identity_id"],
+                requires=["account_id", "identity_id"],
+                action="get", resource_type="identity",
+                resource_id_field="identity_id",
+                intent_types=["get_identity"], traits=["read", "identity", "creative"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["identity_id"]
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_identity_video_info",
+                description="查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
+                method_name="get_identity_video_info", result_key="identity_video",
+                properties=identity_video_info["properties"], required=identity_video_info["required"],
+                requires=identity_video_info["requires"],
+                action="get", resource_type="identity_video", resource_id_field="item_id",
+                intent_types=["get_identity_video_info"], traits=["read", "identity", "spark"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["identity_type"], data["identity_id"], data["item_id"],
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_lead_ad",
+                description="创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
+                method_name="create_lead_ad", result_key="ad_id",
+                properties=tiktok_lead_ad_schema()["properties"],
+                required=tiktok_lead_ad_schema()["required"],
+                requires=tiktok_lead_ad_schema()["requires"],
+                requires_any_of=tiktok_lead_ad_schema()["requires_any_of"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                intent_types=["create_lead_ad", "create_campaign"],
+                activation_rules=[
+                    {"field": "objective", "aliases": ["objective_type"], "in": [
+                        "leads", "LEAD_GENERATION",
+                    ]},
+                    {"field": "promotion_type", "in": ["LEAD_FORM"]},
+                    {"field": "ad_format", "in": ["LEAD"]},
+                    {"field": "page_id", "exists": True},
+                ],
+                traits=["write", "ad", "lead", "instant_form"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: data[key] for key in tiktok_lead_ad_schema()["properties"] if key in data
+                }), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_app_ad",
+                description="创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
+                method_name="create_app_ad", result_key="ad_id",
+                properties=tiktok_app_ad_schema()["properties"],
+                required=tiktok_app_ad_schema()["required"],
+                requires=tiktok_app_ad_schema()["requires"],
+                requires_any_of=tiktok_app_ad_schema()["requires_any_of"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                # App Promotion is now composed by the Upgraded Smart+ chain
+                # for the generic create-campaign flow.  Keep this legacy
+                # endpoint available only when a caller explicitly asks for
+                # the app-ad action; otherwise it would compete with the
+                # Smart+ ad Tool during objective-based discovery.
+                intent_types=["create_app_ad"],
+                activation_rules=[
+                    {"field": "objective", "aliases": ["objective_type"], "in": [
+                        "APP_PROMOTION", "APP_INSTALL", "app",
+                    ]},
+                    {"field": "promotion_type", "in": ["APP_ANDROID", "APP_IOS"]},
+                    {"field": "app_id", "exists": True},
+                ],
+                traits=["write", "ad", "app", "app_promotion"], write=True,
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: data[key] for key in tiktok_app_ad_schema()["properties"] if key in data
+                }), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_catalogs",
+                description="查询 TikTok 商品目录；Catalog/Product Set 的创建、更新和删除当前没有经过验证的 Ads API Tool。",
+                method_name="list_catalogs", result_key="catalogs",
+                properties={
+                    "account_id": {"type": "string"},
+                    "filtering": {"type": "array"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                required=["account_id"], requires=["account_id"],
+                action="list", resource_type="catalog", intent_types=["list_catalogs"],
+                traits=["read", "catalog", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "filtering": data.get("filtering"),
+                    "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_product_sets",
+                description="查询 TikTok 商品集。", method_name="list_product_sets", result_key="product_sets",
+                properties={"account_id": {"type": "string"}, "catalog_id": {"type": "string"},
+                            "filtering": {"type": "array"},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
+                required=["account_id"], requires=["account_id"],
+                action="list", resource_type="product_set",
+                intent_types=["list_product_sets"], traits=["read", "catalog", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "catalog_id": data.get("catalog_id"), "filtering": data.get("filtering"),
+                    "page_size": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_validate_product_selection",
+                description=(
+                    "校验 TikTok Catalog 与 Product Set 的归属关系；通过 product_set/get "
+                    "完成可用的引用校验，不声称覆盖商品 Feed 健康度诊断。"
+                ),
+                method_name="validate_product_selection", result_key="validation",
+                properties={
+                    "account_id": {"type": "string"},
+                    "catalog_id": {"type": "string", "minLength": 1},
+                    "product_set_id": {"type": "string", "minLength": 1},
+                },
+                required=["account_id", "catalog_id", "product_set_id"],
+                requires=["account_id", "catalog_id", "product_set_id"],
+                action="validate", resource_type="product_selection",
+                intent_types=["validate_product_selection"],
+                traits=["read", "catalog", "product_set", "validation"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["catalog_id"], data["product_set_id"],
+                ), {}),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_adgroup_report",
+                description="查询 TikTok Ad Group 级报表。", method_name="get_adgroup_report", result_key="report",
+                properties={"account_id": {"type": "string"}, "campaign_id": {"type": "string"},
+                            "adgroup_ids": {"type": "array", "items": {"type": "string"}},
+                            "date_range": {"type": "object"}},
+                required=["account_id", "campaign_id"], action="report", resource_type="ad_group",
+                intent_types=["get_adgroup_report"], traits=["read", "report", "ad_group"],
+                argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"]), {
+                    "adgroup_ids": data.get("adgroup_ids"), "time_range": data.get("date_range"),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_report",
+                description="查询 TikTok 广告报表。", method_name="get_report", result_key="report",
+                properties={"account_id": {"type": "string"}, "report_type": {"type": "string"},
+                            "date_preset": {"type": "string"}, "date_range": {"type": "object"}},
+                required=["account_id"], action="report", resource_type="report",
+                intent_types=["download_report"], traits=["read", "report"],
+                intent_aliases=["查询 TikTok 广告报表", "查看 TikTok campaign 表现"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "report_type": data.get("report_type", "CAMPAIGN"),
+                    "date_preset": data.get("date_preset", "LAST_7_DAYS"),
+                    "time_range": data.get("date_range"),
+                }),
+            ),
+        ])
+        for method_name, resource_type, resource_id, intent in (
+            ("delete_campaign", "campaign", "campaign_id", "delete_campaign"),
+            ("pause_campaign", "campaign", "campaign_id", "pause_campaign"),
+            ("resume_campaign", "campaign", "campaign_id", "resume_campaign"),
+            ("pause_adgroup", "ad_group", "adgroup_id", "pause_adgroup"),
+        ):
+            properties = {"account_id": {"type": "string"}, resource_id: {"type": "string"}}
+            if method_name == "pause_adgroup":
+                properties["campaign_id"] = {"type": "string"}
+            tools.append(method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name=f"tiktok_{method_name}",
+                description=f"调用 TikTok {method_name} 管理接口；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key=f"{resource_type}_result", properties=properties,
+                required=["account_id", resource_id] + (["campaign_id"] if method_name == "pause_adgroup" else []),
+                action=method_name.split("_", 1)[0], resource_type=resource_type,
+                resource_id_field=resource_id, parent_resource_type="campaign" if method_name == "pause_adgroup" else None,
+                parent_resource_id_field="campaign_id" if method_name == "pause_adgroup" else None,
+                intent_types=(
+                    ["provider_delete_campaign", "cross_channel_batch_delete"]
+                    if intent == "delete_campaign" else [f"provider_{intent}"]
+                ),
+                intent_aliases=(
+                    ["删除 TikTok campaign", "删除 TikTok 广告系列"]
+                    if intent == "delete_campaign" else
+                    [f"暂停 TikTok campaign", "暂停 TikTok 广告系列"]
+                    if intent == "pause_campaign" else
+                    [f"恢复 TikTok campaign", "恢复 TikTok 广告系列"]
+                    if intent == "resume_campaign" else []
+                ),
+                traits=["write", resource_type], write=True,
+                argument_builder=(
+                    (lambda ctx, data, field=resource_id: ((account(ctx, data), data["campaign_id"], data[field]), {}))
+                    if method_name == "pause_adgroup" else
+                    (lambda ctx, data, field=resource_id: ((account(ctx, data), data[field]), {}))
+                ),
+            ))
+        return [bind_provider_method(tool, client) for tool in tools]
+
+    def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:
+        tools = []
+        api_client = getattr(self, '_api_client', None)
+        # Keep account resolution provider-owned and reusable by every
+        # registration below.  This closure was previously scoped only to
+        # ``_extended_provider_tools``; Smart+ Tools therefore failed at live
+        # invocation with ``name 'account' is not defined``.
+        account = lambda ctx, data: account_from(ctx, data, "account_id", "advertiser_id")
+        # These objectives are composed by the current Upgraded Smart+ chain.
+        # Keep the provider-owned set next to the Tool registrations so
+        # legacy ad-format Tools cannot become parallel nodes when a complete
+        # Smart+ request also contains a video/image format.
+        smart_plus_objectives = [
+            "APP_PROMOTION", "WEB_CONVERSIONS", "TRAFFIC", "SALES", "PRODUCT_SALES",
+        ]
+        all_in_one_objectives = ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"]
+
+        # List Campaigns
+        tools.append((ToolDefinition(
+            name="tiktok_list_campaigns",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Campaign 列表。",
+            input_schema=ToolSchema(
+                required=["account_id"],
+                properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            action="list", resource_type="campaign",
+            intent_types=[
+                "list_campaigns", "cross_channel_overview", "cross_channel_compare",
+                "cross_channel_performance_insights", "cross_channel_optimize_budget",
+                "cross_channel_export_report",
+            ],
+            intent_aliases=[
+                "列出 TikTok 广告系列", "列出 TikTok campaign 列表",
+                "查询 TikTok campaign 列表",
+            ],
+            result_items_key="campaigns",
+            result_id_fields=["campaign_id", "id"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), TikTokListCampaignsHandler(api_client)))
+
+        # Get Campaign
+        tools.append((ToolDefinition(
+            name="tiktok_get_campaign",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
+            input_schema=ToolSchema(
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "campaign_name": {"type": "string", "description": "Campaign 名称（可通过名称查找 ID）"},
+                },
+            ),
+            action="get", resource_type="campaign", resource_id_field="campaign_id",
+            intent_types=["get_campaign"],
+            intent_aliases=["查询 TikTok campaign 详情", "查看 TikTok campaign 详情", "查询 TikTok 广告系列详情"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "campaign"],
+        ), TikTokGetCampaignHandler(api_client)))
+
+        # Create Campaign
+        tools.append((ToolDefinition(
+            name="tiktok_create_campaign",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="创建 TikTok Ads Campaign。",
+            input_schema=ToolSchema(**tiktok_campaign_schema()),
+            action="create", resource_type="campaign", intent_types=["create_campaign", "create_campaign_only"],
+            intent_aliases=[
+                "创建 TikTok 广告系列", "创建 TikTok campaign",
+                "TikTok 销售广告系列", "TikTok 销售 campaign",
+                "TikTok 流量广告", "TikTok 流量 campaign",
+                "创建 TikTok App 广告", "创建 TikTok App 转化广告",
+                "TikTok App 广告", "TikTok App 转化广告",
+            ],
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "campaign"],
+            live_support=True,
+            resource_id_field="campaign_id",
+            readback_tool="tiktok_get_campaign",
+            activation_rules=[{
+                "if": {
+                    "objective_type": {"aliases": ["objective"], "not_in": [
+                        "APP_PROMOTION", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
+                        *all_in_one_objectives,
+                    ]},
+                },
+            }],
+        ), TikTokCreateCampaignHandler(api_client)))
+
+        # List Ad Groups
+        tools.append((ToolDefinition(
+            name="tiktok_list_adgroups",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Ad Group 列表。",
+            input_schema=ToolSchema(
+                required=["campaign_id"],
+                properties={"campaign_id": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            action="list", resource_type="ad_group", parent_resource_type="campaign",
+            parent_resource_id_field="campaign_id",
+            intent_types=["list_adgroups"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "adgroup"],
+        ), TikTokListAdGroupsHandler(api_client)))
+
+        # Get Ad Group
+        tools.append((ToolDefinition(
+            name="tiktok_get_adgroup",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Ad Group 详情。",
+            input_schema=ToolSchema(
+                required=["campaign_id", "adgroup_id"],
+                properties={
+                    "campaign_id": {"type": "string"},
+                    "adgroup_id": {"type": "string"},
+                },
+            ),
+            action="get", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+            intent_types=["get_adgroup"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "adgroup"],
+        ), TikTokGetAdGroupHandler(api_client)))
+
+        # Create Ad Group
+        tools.append((ToolDefinition(
+            name="tiktok_create_adgroup",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="创建 TikTok Ads Ad Group。",
+            input_schema=ToolSchema(**tiktok_adgroup_schema()),
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            intent_types=["create_campaign", "create_adgroup"],
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "adgroup"],
+            live_support=True,
+            resource_id_field="adgroup_id",
+            parent_resource_id_field="campaign_id",
+            readback_tool="tiktok_get_adgroup",
+            activation_rules=[{
+                "if": {
+                    "objective_type": {"aliases": ["objective"], "not_in": [
+                        "APP_PROMOTION", "app", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
+                        *all_in_one_objectives,
+                    ]},
+                    "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
+                    "catalog_id": {"exists": False},
+                    "product_set_id": {"exists": False},
+                    "store_id": {"exists": False},
+                },
+            }],
+        ), TikTokCreateAdGroupHandler(api_client)))
+
+        # Product Sales Ad Group: provider-specific product/Shop references
+        # live on the normal Ad Group endpoint, but are exposed through a
+        # dedicated contract so Skills can compose this path explicitly.
+        product_sales_adgroup = tiktok_product_sales_adgroup_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_product_sales_adgroup",
+            description=(
+                "创建 TikTok Product Sales 商品销售广告组，支持 Website、Catalog 和 Shop "
+                "商品来源；默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_product_sales_adgroup", result_key="adgroup_id",
+            properties=product_sales_adgroup["properties"],
+            required=product_sales_adgroup["required"],
+            requires=product_sales_adgroup["requires"],
+            conditional_rules=product_sales_adgroup["conditional_rules"],
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+            # Product Sales is composed by Smart+ for objective-based
+            # campaign creation. This typed legacy contract remains available
+            # for an explicit create_product_sales_adgroup request, but must
+            # not be selected as a parallel node.
+            intent_types=["create_product_sales_adgroup"],
+            activation_rules=[
+                {"field": "objective_type", "aliases": ["objective"], "in": ["PRODUCT_SALES", "sales"]},
+                {"field": "product_source", "in": ["CATALOG", "STORE", "SHOWCASE"]},
+                {"field": "catalog_id", "exists": True},
+                {"field": "product_set_id", "exists": True},
+                {"field": "store_id", "exists": True},
+            ],
+            traits=["write", "adgroup", "product_sales", "catalog", "shop"],
+            write=True, live_support=False,
+            argument_builder=lambda ctx, data: ((
+                account_from(ctx, data), data["campaign_id"], {
+                    key: value for key, value in data.items()
+                    if key not in {"account_id", "campaign_id"}
+                },
+            ), {}),
+        ))
+
+        # List Ads
+        tools.append((ToolDefinition(
+            name="tiktok_list_ads",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Ad 列表。",
+            input_schema=ToolSchema(
+                required=["adgroup_id"],
+                properties={"adgroup_id": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            action="list", resource_type="ad", parent_resource_type="ad_group",
+            parent_resource_id_field="adgroup_id",
+            intent_types=["list_ads"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad"],
+        ), TikTokListAdsHandler(api_client)))
+
+        # Get Ad
+        tools.append((ToolDefinition(
+            name="tiktok_get_ad",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Ad 详情。",
+            input_schema=ToolSchema(
+                required=["adgroup_id", "ad_id"],
+                properties={
+                    "adgroup_id": {"type": "string"},
+                    "ad_id": {"type": "string"},
+                },
+            ),
+            action="get", resource_type="ad", parent_resource_type="ad_group",
+            resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+            intent_types=["get_ad"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "ad"],
+        ), TikTokGetAdHandler(api_client)))
+
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_delete_ad",
+            description="删除 TikTok Ads Ad；默认仅生成 dry-run 计划。",
+            method_name="delete_ad", result_key="ad_result",
+            properties={
+                "account_id": {"type": "string", "minLength": 1},
+                "ad_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "ad_id"], requires=["ad_id"],
+            action="delete", resource_type="ad", resource_id_field="ad_id",
+            intent_types=["delete_ad"], traits=["write", "ad"],
+            write=True, live_support=False, integration_api_version="v1.3",
+            required_permissions=["ads.plan"],
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["ad_id"]), {}),
+        ))
+
+        # Create Ad
+        tools.append((ToolDefinition(
+            name="tiktok_create_ad",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="创建 TikTok Ads Ad。",
+            input_schema=ToolSchema(**tiktok_ad_schema()),
+            action="create", resource_type="ad", parent_resource_type="ad_group",
+            # Generic Ad creation is the fallback node of the full campaign
+            # composition. Explicit format requests are routed to their
+            # typed Tool so one user turn cannot plan two Ad writes.
+            intent_types=["create_campaign", "create_ad"],
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "ad"],
+            live_support=True,
+            resource_id_field="ad_id",
+            parent_resource_id_field="adgroup_id",
+            readback_tool="tiktok_get_ad",
+            activation_rules=[{
+                "if": {
+                    "ad_format": {"aliases": ["creative_type"], "not_in": [
+                        "SINGLE_VIDEO", "SINGLE_IMAGE", "CAROUSEL", "SPARK_AD", "SPARK",
+                    ]},
+                    "objective": {"aliases": ["objective_type"], "not_in": [
+                        "leads", "LEAD_GENERATION", "APP_PROMOTION", "APP_INSTALL", "app",
+                        "TRAFFIC", "SALES", "WEB_CONVERSIONS",
+                        "PRODUCT_SALES", "sales",
+                        *all_in_one_objectives,
+                    ]},
+                    "promotion_type": {"not_in": ["LEAD_FORM", "APP_ANDROID", "APP_IOS"]},
+                    "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": False},
+                    "catalog_id": {"exists": False},
+                    "product_set_id": {"exists": False},
+                    "store_id": {"exists": False},
+                    "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
+                },
+            }],
+        ), TikTokCreateAdHandler(api_client)))
+
+        # Product Sales Ad: typed product/Shop destination contract over the
+        # same provider ad-create endpoint. It owns catalog/product-set and
+        # Shop reference validation without adding provider logic to Core.
+        product_sales_ad = tiktok_product_sales_ad_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_product_sales_ad",
+            description=(
+                "创建 TikTok Product Sales 商品销售广告，支持 Catalog、Shop 商品引用和素材创意；"
+                "默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_product_sales_ad", result_key="ad_id",
+            properties=product_sales_ad["properties"],
+            required=product_sales_ad["required"],
+            requires=product_sales_ad["requires"],
+            requires_any_of=product_sales_ad["requires_any_of"],
+            conditional_rules=product_sales_ad["conditional_rules"],
+            action="create", resource_type="ad", parent_resource_type="ad_group",
+            resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+            # Product Sales is composed by Smart+ for objective-based campaign
+            # creation. Keep this legacy endpoint explicit-only so it cannot
+            # be selected alongside Smart+.
+            intent_types=["create_product_sales_ad"],
+            activation_rules=[
+                {"field": "objective_type", "aliases": ["objective"], "in": ["PRODUCT_SALES", "sales"]},
+                {"field": "product_source", "in": ["CATALOG", "STORE", "SHOWCASE"]},
+                {"field": "catalog_id", "exists": True},
+                {"field": "product_set_id", "exists": True},
+                {"field": "store_id", "exists": True},
+            ],
+            traits=["write", "ad", "product_sales", "catalog", "shop"],
+            write=True, live_support=False,
+            argument_builder=lambda ctx, data: ((
+                account_from(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: value for key, value in data.items()
+                    if key not in {"account_id", "campaign_id", "adgroup_id"}
+                },
+            ), {}),
+        ))
+
+        for format_name, tool_name, method_name, schema_factory, intent_name in (
+            ("SINGLE_VIDEO", "tiktok_create_single_video_ad", "create_single_video_ad", tiktok_single_video_ad_schema, "create_single_video_ad"),
+            ("SINGLE_IMAGE", "tiktok_create_single_image_ad", "create_single_image_ad", tiktok_single_image_ad_schema, "create_single_image_ad"),
+            ("CAROUSEL", "tiktok_create_carousel_ad", "create_carousel_ad", tiktok_carousel_ad_schema, "create_carousel_ad"),
+        ):
+            schema = schema_factory()
+            tools.append(method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name=tool_name,
+                description=f"创建 TikTok {format_name} 广告；默认仅生成 dry-run 计划。",
+                method_name=method_name, result_key="ad_id",
+                properties=schema["properties"], required=schema["required"],
+                requires=schema["requires"],
+                requires_any_of=schema["requires_any_of"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
+                readback_tool="tiktok_get_ad",
+                intent_types=[intent_name, "create_campaign"],
+                activation_rules=[{
+                    "if": {
+                        "ad_format": {"aliases": ["creative_type"], "in": [format_name]},
+                        "objective": {
+                            "aliases": ["objective_type"],
+                            "not_in": [*smart_plus_objectives, *all_in_one_objectives],
+                        },
+                    },
+                }],
+                traits=["write", "ad", format_name.lower()],
+                write=True,
+                # The single-video adapter is the first typed Ad path
+                # verified against the TikTok test advertiser. Other typed
+                # formats remain dry-run-only until their own provider
+                # contracts are exercised.
+                live_support=(format_name == "SINGLE_VIDEO"),
+                argument_builder=lambda ctx, data: ((
+                    account_from(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                        key: value for key, value in data.items()
+                        if key not in {"account_id", "campaign_id", "adgroup_id"}
+                    },
+                ), {}),
+            ))
+
+        # Get Report
+        tools.append((ToolDefinition(
+            name="tiktok_get_campaign_report",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Ads Campaign 报表。",
+            input_schema=ToolSchema(
+                required=["account_id"],
+                properties={
+                    "account_id": {"type": "string"},
+                    "campaign_ids": {"type": "array", "items": {"type": "string"}},
+                    "date_range": {"type": "string"},
+                },
+            ),
+            action="report", resource_type="report",
+            intent_types=["get_campaign_report", "download_report"],
+            intent_aliases=[
+                "查询 TikTok 报表", "查询 TikTok campaign 报表",
+                "查看 TikTok 广告系列表现",
+            ],
+            related_resource_type="campaign",
+            related_resource_id_fields=["campaign_ids", "campaign_id"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "report"],
+        ), TikTokGetReportHandler(api_client)))
+
+        tools.append((ToolDefinition(
+            name="tiktok_list_audiences",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询 TikTok Audience 列表。",
+            input_schema=ToolSchema(
+                properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
+            ),
+            action="list", resource_type="audience", intent_types=["list_audiences"],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "audience"],
+        ), TikTokListAudiencesHandler(api_client)))
+
+        all_in_one_schema = tiktok_all_in_one_spark_ad_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_all_in_one_spark_ad",
+            description=(
+                "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；"
+                "覆盖 Reach、Video views、Community interaction。live 仅允许暂停状态。"
+            ),
+            method_name="create_all_in_one_spark_ad", result_key="creation",
+            properties={"account_id": {"type": "string"}, **all_in_one_schema["properties"]},
+            required=["account_id"] + all_in_one_schema["required"],
+            requires=all_in_one_schema["requires"],
+            requires_any_of=all_in_one_schema["requires_any_of"],
+            conditional_rules=all_in_one_schema["conditional_rules"],
+            action="create", resource_type="campaign", resource_id_field="campaign_id",
+            intent_types=["create_all_in_one_spark_ad", "create_campaign"],
+            activation_rules=[{
+                "field": "objective_type",
+                "in": ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"],
+            }],
+            traits=["write", "campaign", "ad_group", "ad", "spark", "smart_plus", "business/spark_ad/create"],
+            write=True, live_support=True, integration_api_version="v1.3",
+            readback_tool="tiktok_get_campaign",
+            argument_builder=lambda ctx, data: ((account(ctx, data), {
+                key: data[key] for key in all_in_one_schema["properties"] if key in data
+            }), {}),
+        ))
+
+        # Upgraded Smart+ is the current TikTok creation contract.  It is a
+        # three-resource API, so each level remains an independent Tool and
+        # Blueprint can compose the dependency chain without a Runtime
+        # objective branch.  Business aliases (Traffic/Sales/Product Sales)
+        # are normalized by TikTokAPIClient at the Provider boundary.
+        smart_plus_campaign = tiktok_smart_plus_campaign_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_smart_plus_create_campaign",
+            description=(
+                "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、"
+                "Sales 和 Product Sales，live 仅允许创建暂停状态。"
+            ),
+            method_name="create_smart_plus_campaign", result_key="campaign",
+            properties={"account_id": {"type": "string"}, **smart_plus_campaign["properties"]},
+            required=["account_id"] + smart_plus_campaign["required"],
+            requires=smart_plus_campaign["requires"],
+            conditional_rules=smart_plus_campaign["conditional_rules"],
+            action="create", resource_type="campaign", resource_id_field="campaign_id",
+            intent_types=["create_smart_plus_campaign", "create_campaign", "create_campaign_only"],
+            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
+            traits=["write", "campaign", "campaign_only", "smart_plus", "smart_plus/campaign/create"],
+            write=True, live_support=True, integration_api_version="v1.3",
+            readback_tool="tiktok_get_campaign",
+            argument_builder=lambda ctx, data: ((account(ctx, data), {
+                key: data[key] for key in smart_plus_campaign["properties"] if key in data
+            }), {}),
+        ))
+
+        smart_plus_adgroup = tiktok_smart_plus_adgroup_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_smart_plus_create_adgroup",
+            description=(
+                "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、"
+                "出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。"
+            ),
+            method_name="create_smart_plus_adgroup", result_key="adgroup",
+            properties={"account_id": {"type": "string"}, **smart_plus_adgroup["properties"]},
+            required=["account_id"] + smart_plus_adgroup["required"],
+            requires=smart_plus_adgroup["requires"],
+            requires_any_of=smart_plus_adgroup["requires_any_of"],
+            conditional_rules=smart_plus_adgroup["conditional_rules"],
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
+            intent_types=["create_smart_plus_adgroup", "create_campaign", "create_adgroup"],
+            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
+            traits=["write", "ad_group", "smart_plus", "smart_plus/adgroup/create"],
+            write=True, live_support=True, integration_api_version="v1.3",
+            readback_tool="tiktok_get_adgroup",
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], {
+                key: data[key] for key in smart_plus_adgroup["properties"] if key in data
+            }), {}),
+        ))
+
+        smart_plus_ad = tiktok_smart_plus_ad_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_smart_plus_create_ad",
+            description=(
+                "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、"
+                "图片等渠道素材引用，live 仅允许创建暂停状态。"
+            ),
+            method_name="create_smart_plus_ad", result_key="ad",
+            properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
+            required=["account_id"] + smart_plus_ad["required"],
+            requires=smart_plus_ad["requires"],
+            requires_any_of=smart_plus_ad["requires_any_of"],
+            action="create", resource_type="ad", parent_resource_type="ad_group",
+            resource_id_field="smart_plus_ad_id", parent_resource_id_field="adgroup_id",
+            intent_types=["create_smart_plus_ad", "create_campaign", "create_ad"],
+            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
+            traits=["write", "ad", "smart_plus", "smart_plus/ad/create"],
+            write=True, live_support=True, integration_api_version="v1.3",
+            readback_tool="tiktok_get_ad",
+            argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                key: data[key] for key in smart_plus_ad["properties"] if key in data
+            }), {}),
+        ))
+
+        tools.append((ToolDefinition(
+            name="tiktok_spark_ads_create",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="使用达人已有帖子创建 TikTok Spark Ad。",
+            input_schema=ToolSchema(
+                required=["account_id", "campaign_id", "adgroup_id", "spark_post_id"],
+                properties={
+                    "account_id": {"type": "string"},
+                    "campaign_id": {"type": "string"},
+                    "adgroup_id": {"type": "string"},
+                    "spark_post_id": {"type": "string"},
+                },
+            ),
+            risk_level=RiskLevel.MEDIUM,
+            effect_class=ToolEffect.WRITE,
+            replay_policy=ReplayPolicy.UNSAFE,
+            traits=["write", "spark", "ad"],
+            action="create", resource_type="ad", intent_types=["create_spark_ad", "create_campaign"],
+            live_support=False,
+            resource_id_field="ad_id",
+            parent_resource_type="ad_group",
+            parent_resource_id_field="adgroup_id",
+            activation_rules=[{
+                "if": {
+                    "spark_post_id": {"aliases": ["tiktok_item_id"], "exists": True},
+                    "objective": {
+                        "aliases": ["objective_type"],
+                        "not_in": [*smart_plus_objectives, *all_in_one_objectives],
+                    },
+                },
+            }, {
+                "if": {
+                    "ad_format": {"in": ["SPARK_AD", "SPARK"]},
+                    "objective": {
+                        "aliases": ["objective_type"],
+                        "not_in": smart_plus_objectives,
+                    },
+                },
+            }],
+        ), TikTokSparkAdsCreateHandler(api_client)))
+
+        for resource_name, result_key, handler in [
+            ("creatives", "creatives", TikTokListCreativesHandler(api_client)),
+            ("videos", "videos", TikTokListVideosHandler(api_client)),
+            ("images", "images", TikTokListImagesHandler(api_client)),
+        ]:
+            tools.append((ToolDefinition(
+                name=f"tiktok_list_{resource_name}",
+                skill="tiktok-ads-api-expert",
+                namespace="tiktok",
+                description=f"查询 TikTok {resource_name} 素材库。",
+                input_schema=ToolSchema(
+                    required=["account_id"],
+                    properties={
+                        "account_id": {"type": "string"},
+                        "filtering": {"type": "array"},
+                        "limit": {"type": "integer"},
+                    },
+                ),
+                action="list", resource_type={
+                    "creatives": "creative", "videos": "video", "images": "image",
+                }[resource_name],
+                intent_types={
+                    "creatives": ["list_creatives"], "videos": ["list_videos"],
+                    "images": ["list_images"],
+                }[resource_name],
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", "creative", resource_name],
+            ), handler))
+
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_get_creative",
+            description="查询 TikTok Creative 详情。",
+            method_name="get_creative", result_key="creative",
+            properties={
+                "account_id": {"type": "string"},
+                # TikTok's Creative read endpoint is account-scoped, but a
+                # logical Creative Tool is backed by an Ad and therefore
+                # needs its owning Ad Group for an unambiguous live write
+                # read-back contract.
+                "adgroup_id": {"type": "string", "minLength": 1},
+                "creative_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "adgroup_id", "creative_id"],
+            action="get", resource_type="creative", parent_resource_type="ad_group",
+            resource_id_field="creative_id",
+            parent_resource_id_field="adgroup_id",
+            intent_types=["get_creative"], traits=["read", "creative"],
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["creative_id"]
+            ), {}),
+        ))
+
+        # TikTok v1.3 has no independent Creative write resource. Its
+        # Creative object is the payload carried by an Ad, so these logical
+        # Creative Tools deliberately call the provider's ad/* endpoints.
+        # Keeping the translation here makes the boundary discoverable to the
+        # planner without pretending that creative/create exists upstream.
+        creative_schema = tiktok_creative_schema()
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_create_creative",
+            description=(
+                "创建 TikTok 广告创意；TikTok v1.3 会将创意作为 Ad 的 creatives 载荷创建，"
+                "需要提供所属 Campaign、Ad Group 和素材/文案，默认仅生成 dry-run 计划。"
+            ),
+            method_name="create_creative", result_key="creative_id",
+            properties={"account_id": {"type": "string", "minLength": 1}, **creative_schema["properties"]},
+            required=["account_id"] + creative_schema["required"],
+            requires=creative_schema["requires"],
+            requires_any_of=creative_schema["requires_any_of"],
+            conditional_rules=creative_schema["conditional_rules"],
+            action="create", resource_type="creative", parent_resource_type="ad_group",
+            resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
+            intent_types=["create_creative"], traits=["write", "creative", "ad_backed"],
+            write=True, live_support=True, contract_version="2", integration_api_version="v1.3",
+            required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["campaign_id"], data["adgroup_id"], {
+                    key: data[key] for key in creative_schema["properties"]
+                    if key not in {"campaign_id", "adgroup_id"} and key in data
+                }
+            ), {}),
+        ))
+
+        creative_update_schema = tiktok_updates("ad")
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_update_creative",
+            description=(
+                "更新 TikTok 广告创意；实际通过所属 Ad 的 ad/update 接口修改创意字段，"
+                "需要明确提供 Ad Group ID 和 Creative（对应 Ad）ID，默认仅生成 dry-run 计划。"
+            ),
+            method_name="update_creative", result_key="creative_result",
+            properties={
+                "account_id": {"type": "string", "minLength": 1},
+                "adgroup_id": {"type": "string", "minLength": 1},
+                "creative_id": {"type": "string", "minLength": 1},
+                "updates": creative_update_schema,
+            },
+            required=["account_id", "adgroup_id", "creative_id", "updates"],
+            requires=["adgroup_id", "creative_id", "updates"],
+            action="update", resource_type="creative", parent_resource_type="ad_group",
+            resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
+            intent_types=["update_creative"], traits=["write", "creative", "ad_backed"],
+            write=True, live_support=True, contract_version="2", integration_api_version="v1.3",
+            required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["adgroup_id"], data["creative_id"], data["updates"]
+            ), {}),
+        ))
+
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_delete_creative",
+            description=(
+                "删除 TikTok 广告创意；TikTok 将其作为 Ad 删除，Creative ID 应填写对应的 Ad ID，"
+                "默认仅生成 dry-run 计划。"
+            ),
+            method_name="delete_creative", result_key="creative_result",
+            properties={
+                "account_id": {"type": "string", "minLength": 1},
+                "creative_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "creative_id"],
+            requires=["creative_id"],
+            action="delete", resource_type="creative",
+            resource_id_field="creative_id", intent_types=["delete_creative"],
+            traits=["write", "creative", "ad_backed"], write=True, live_support=False,
+            contract_version="2", integration_api_version="v1.3",
+            required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["creative_id"]
+            ), {}),
+        ))
+
+        for resource_name, method_name, id_field, result_key in (
+            ("video", "get_video", "video_id", "video"),
+            ("image", "get_image", "image_id", "image"),
+            ("catalog", "get_catalog", "catalog_id", "catalog"),
+        ):
+            tools.append(method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert",
+                name=f"tiktok_get_{resource_name}",
+                description=f"查询 TikTok {resource_name} 详情。",
+                method_name=method_name, result_key=result_key,
+                properties={
+                    "account_id": {"type": "string"},
+                    id_field: {"type": "string", "minLength": 1},
+                },
+                required=["account_id", id_field],
+                action="get", resource_type=resource_name,
+                resource_id_field=id_field,
+                intent_types=[f"get_{resource_name}"],
+                traits=["read", resource_name],
+                argument_builder=lambda ctx, data, field=id_field: ((
+                    account(ctx, data), data[field]
+                ), {}),
+            ))
+
+        tools.append(method_tool(
+            namespace="tiktok", skill="tiktok-ads-api-expert",
+            name="tiktok_get_product_set",
+            description="查询 TikTok Product Set 详情。",
+            method_name="get_product_set", result_key="product_set",
+            properties={
+                "account_id": {"type": "string"},
+                "catalog_id": {"type": "string", "minLength": 1},
+                "product_set_id": {"type": "string", "minLength": 1},
+            },
+            required=["account_id", "catalog_id", "product_set_id"],
+            action="get", resource_type="product_set",
+            parent_resource_type="catalog",
+            resource_id_field="product_set_id",
+            parent_resource_id_field="catalog_id",
+            intent_types=["get_product_set"],
+            traits=["read", "catalog", "product_set"],
+            argument_builder=lambda ctx, data: ((
+                account(ctx, data), data["catalog_id"], data["product_set_id"]
+            ), {}),
+        ))
+
+        reference_tools = [
+            ("conversions", "account", TikTokListConversionsHandler(api_client)),
+            ("locations", None, TikTokListLocationsHandler(api_client)),
+            ("devices", None, TikTokListDevicesHandler(api_client)),
+            ("apps", None, TikTokListAppsHandler(api_client)),
+            ("brand_safety", None, TikTokListBrandSafetyHandler(api_client)),
+        ]
+        for resource_name, account_scope, handler in reference_tools:
+            properties = {
+                "location_type": {"type": "string"},
+                "filtering": {"type": "array"},
+                "limit": {"type": "integer"},
+            }
+            required = []
+            if account_scope == "account":
+                properties["account_id"] = {"type": "string"}
+                required = ["account_id"]
+            elif resource_name == "apps":
+                # TikTok App discovery can be resolved from the configured
+                # advertiser context; do not make users type an account just
+                # to populate a picker.  When a caller supplies one, Runtime
+                # still validates it against the principal/whitelist.
+                properties["account_id"] = {"type": "string"}
+            tools.append((ToolDefinition(
+                name=f"tiktok_list_{resource_name}",
+                skill="tiktok-ads-api-expert",
+                namespace="tiktok",
+                description=f"查询 TikTok {resource_name} 参考数据。",
+                input_schema=ToolSchema(required=required, properties=properties),
+                action="list", resource_type={
+                    "conversions": "conversion", "locations": "location", "devices": "device",
+                    "apps": "app", "brand_safety": "brand_safety",
+                }[resource_name],
+                intent_types={
+                    "conversions": ["list_conversions"], "locations": ["list_locations"],
+                    "devices": ["list_devices"], "apps": ["list_apps"],
+                    "brand_safety": ["list_brand_safety"],
+                }[resource_name],
+                intent_aliases=(
+                    ["查询 TikTok apps", "查询 TikTok 可用应用列表", "列出 TikTok 应用"]
+                    if resource_name == "apps" else []
+                ),
+                risk_level=RiskLevel.LOW,
+                effect_class=ToolEffect.READ,
+                replay_policy=ReplayPolicy.SAFE,
+                traits=["read", resource_name],
+            ), handler))
+
+        for resource_type, resource_id, tool_suffix in [
+            ("campaign", "campaign_id", "campaign"),
+            ("ad_group", "adgroup_id", "adgroup"),
+            ("ad", "ad_id", "ad"),
+        ]:
+            properties = {resource_id: {"type": "string"}, "updates": {"type": "object"}}
+            parent_field = {
+                "ad_group": "campaign_id", "ad": "adgroup_id",
+            }.get(resource_type)
+            if parent_field:
+                properties[parent_field] = {"type": "string"}
+            properties["updates"] = tiktok_updates(tool_suffix)
+            tools.append((ToolDefinition(
+                name=f"tiktok_update_{tool_suffix}",
+                skill="tiktok-ads-api-expert",
+                namespace="tiktok",
+                description=f"更新 TikTok Ads {resource_type}，默认仅生成 dry-run 计划。",
+                input_schema=ToolSchema(
+                    required=[resource_id, "updates"], properties=properties,
+                ),
+                action="update", resource_type=resource_type,
+                parent_resource_type={"ad_group": "campaign", "ad": "ad_group"}.get(resource_type),
+                intent_types={
+                    "campaign": [
+                        "update_campaign", "pause_campaign", "resume_campaign",
+                        "cross_channel_batch_pause", "cross_channel_batch_resume",
+                        "cross_channel_batch_update_budget",
+                    ],
+                    "ad_group": ["update_adgroup"], "ad": ["update_ad"],
+                }[resource_type],
+                intent_aliases=(
+                    ["更新 TikTok campaign", "更新 TikTok 广告系列"]
+                    if resource_type == "campaign" else []
+                ),
+                risk_level=RiskLevel.MEDIUM,
+                effect_class=ToolEffect.WRITE,
+                replay_policy=ReplayPolicy.UNSAFE,
+                traits=["write", resource_type],
+                live_support=True,
+                readback_tool={
+                    "campaign": "tiktok_get_campaign",
+                    "ad_group": "tiktok_get_adgroup",
+                    "ad": "tiktok_get_ad",
+                }[resource_type],
+                required_permissions=["ads.plan"],
+                integration_api_version="v1.3",
+                resource_id_field=resource_id,
+                parent_resource_id_field=parent_field,
+            ), CampaignUpdateHandler(
+                api_client, resource_type, _tiktok_update_adapter,
+                resource_id_field=resource_id,
+                parent_resource_id_field=parent_field,
+            )))
+
+        smart_update_specs = [
+            ("campaign", "campaign_id", "update_smart_plus_campaign", "tiktok_smart_plus_update_campaign", None),
+            ("ad_group", "adgroup_id", "update_smart_plus_adgroup", "tiktok_smart_plus_update_adgroup", "campaign_id"),
+            ("ad", "ad_id", "update_smart_plus_ad", "tiktok_smart_plus_update_ad", "adgroup_id"),
+        ]
+        for resource_type, resource_id, method_name, tool_name, parent_field in smart_update_specs:
+            provider_resource = "adgroup" if resource_type == "ad_group" else resource_type
+            update_schema = tiktok_smart_plus_updates(provider_resource)
+            properties = {
+                "account_id": {"type": "string", "minLength": 1},
+                resource_id: {"type": "string", "minLength": 1},
+                "objective_type": {"type": "string", "enum": smart_plus_objectives, "ui_hidden": True},
+                "updates": update_schema,
+            }
+            required = ["account_id", resource_id, "updates"]
+            if parent_field:
+                properties[parent_field] = {"type": "string", "minLength": 1}
+                required.insert(1, parent_field)
+            if resource_type == "campaign":
+                argument_builder = lambda ctx, data: (
+                    (account(ctx, data), data["campaign_id"], data["updates"]), {}
+                )
+            elif resource_type == "ad_group":
+                argument_builder = lambda ctx, data: (
+                    (account(ctx, data), data["campaign_id"], data["adgroup_id"], data["updates"]), {}
+                )
+            else:
+                argument_builder = lambda ctx, data: (
+                    (account(ctx, data), data["adgroup_id"], data["ad_id"], data["updates"]), {}
+                )
+            tools.append(method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert",
+                name=tool_name,
+                description=f"更新 TikTok Upgraded Smart+ {resource_type}；仅允许在测试账号和确认后执行。",
+                method_name=method_name, result_key=f"{provider_resource}_result",
+                properties=properties, required=required,
+                requires=[resource_id, "updates"], action="update",
+                resource_type=resource_type,
+                parent_resource_type={"ad_group": "campaign", "ad": "ad_group"}.get(resource_type),
+                resource_id_field=resource_id, parent_resource_id_field=parent_field,
+                intent_types=[method_name],
+                traits=["write", resource_type, "smart_plus"], write=True,
+                live_support=True, integration_api_version="v1.3",
+                required_permissions=["ads.plan"],
+                readback_tool={
+                    "campaign": "tiktok_get_campaign",
+                    "ad_group": "tiktok_get_adgroup",
+                    "ad": "tiktok_get_ad",
+                }[resource_type],
+                argument_builder=argument_builder,
+            ))
+
+        tools.extend(self._extended_provider_tools(api_client))
+
+        # ``method_tool`` creates ProviderMethodHandlers without a client so
+        # the same definition can be reused with injected adapters. Bind the
+        # Tool Source-owned client to every registered Tool here, not only to
+        # the later extension list; otherwise typed Ad Tools pass planning
+        # but fail closed as provider-unavailable at live execution time.
+        tools = [bind_provider_method(tool, api_client) for tool in tools]
+        return apply_lookup_contracts(tools, TIKTOK_LOOKUP_CONTRACTS)
+
+def create_tiktok_tool_source(api_client: Optional[TikTokAPIClient] = None) -> TikTokToolSource:
+    cap = TikTokToolSource()
+    cap._api_client = api_client
+    return cap

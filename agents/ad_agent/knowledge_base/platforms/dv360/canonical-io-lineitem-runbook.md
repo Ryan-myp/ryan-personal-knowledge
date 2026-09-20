@@ -7,7 +7,7 @@ knowledge_type: workflow
 category: campaign_operations
 subcategory: canonical-io-lineitem-runbook
 platform: dv360
-source: Display & Video 360 官方文档与当前 Capability 约束
+source: Display & Video 360 官方文档与当前 Tool Source 约束
 source_ref: "https://developers.google.com/display-video/api"
 version: "1.0.0"
 confidence: 0.9

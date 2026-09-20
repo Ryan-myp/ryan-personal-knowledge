@@ -7,7 +7,7 @@ knowledge_type: workflow
 category: campaign_operations
 subcategory: canonical-campaign-and-search-runbook
 platform: google-ads
-source: Google Ads API 官方文档与当前 Capability 约束
+source: Google Ads API 官方文档与当前 Tool Source 约束
 source_ref: "https://developers.google.com/google-ads/api/docs/campaigns/overview"
 version: "1.0.0"
 confidence: 0.91

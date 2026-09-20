@@ -3,7 +3,7 @@
 demo.py - 广告投放 Agent 演示
 
 演示单 Agent + 多 Skills 架构的完整流程：
-1. 注册所有平台 Capability
+1. 注册所有平台 Tool Source
 2. 注册编排 Skill
 3. 接收用户输入 → 意图解析 → 工具路由 → 执行 → 返回结果
 """
@@ -16,10 +16,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from agents.ad_agent import (
     AgentRuntime,
-    create_meta_capability,
-    create_google_capability,
-    create_tiktok_capability,
-    create_dv360_capability,
+    create_meta_tool_source,
+    create_google_tool_source,
+    create_tiktok_tool_source,
+    create_dv360_tool_source,
     AdCampaignOrchestratorSkill,
 )
 
@@ -34,23 +34,23 @@ def demo_basic_flow():
     # Step 1: 创建 Runtime
     runtime = AgentRuntime()
     
-    # Step 2: 注册所有平台 Capability
-    print("\n📦 注册平台 Capability...")
+    # Step 2: 注册所有平台 Tool Source
+    print("\n📦 注册平台 Tool Source...")
     
-    meta_cap = create_meta_capability()
-    google_cap = create_google_capability()
-    tiktok_cap = create_tiktok_capability()
-    dv360_cap = create_dv360_capability()
+    meta_cap = create_meta_tool_source()
+    google_cap = create_google_tool_source()
+    tiktok_cap = create_tiktok_tool_source()
+    dv360_cap = create_dv360_tool_source()
     
-    runtime.register_capability(meta_cap)
-    runtime.register_capability(google_cap)
-    runtime.register_capability(tiktok_cap)
-    runtime.register_capability(dv360_cap)
+    runtime.register_tool_source(meta_cap)
+    runtime.register_tool_source(google_cap)
+    runtime.register_tool_source(tiktok_cap)
+    runtime.register_tool_source(dv360_cap)
     
-    print("  ✅ Meta Capability 已注册")
-    print("  ✅ Google Ads Capability 已注册")
-    print("  ✅ TikTok Capability 已注册")
-    print("  ✅ DV360 Capability 已注册")
+    print("  ✅ Meta Tool Source 已注册")
+    print("  ✅ Google Ads Tool Source 已注册")
+    print("  ✅ TikTok Tool Source 已注册")
+    print("  ✅ DV360 Tool Source 已注册")
     
     # Step 3: 注册编排 Skill
     print("\n🔧 注册编排 Skill...")
@@ -148,9 +148,9 @@ def demo_orchestrator_tool():
     runtime = AgentRuntime()
     
     # 注册平台
-    for cap_factory in [create_meta_capability, create_google_capability,
-                        create_tiktok_capability, create_dv360_capability]:
-        runtime.register_capability(cap_factory())
+    for cap_factory in [create_meta_tool_source, create_google_tool_source,
+                        create_tiktok_tool_source, create_dv360_tool_source]:
+        runtime.register_tool_source(cap_factory())
     
     # 直接调用编排工具
     from agents.ad_agent.user_skills.orchestrator import AdCampaignOrchestratorSkill

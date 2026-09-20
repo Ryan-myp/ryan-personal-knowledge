@@ -5,7 +5,7 @@ title: TikTok Ads 预算、定向与素材创建工作流
 layer: platform
 knowledge_type: constraint
 platform: tiktok
-source: TikTok Ads API 官方文档 + 当前 Capability schema
+source: TikTok Ads API 官方文档 + 当前 Tool Source schema
 source_ref: "https://business-api.tiktok.com/portal/docs?id=1739385842588674"
 version: "1.0.0"
 confidence: 0.88

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.13
 """Run the no-network Provider -> Tool -> Runtime contract harness.
 
-The harness uses the public Capability factories and a recording client.  It
+The harness uses the public Tool Source factories and a recording client.  It
 does not monkey-patch the Runtime, does not import user Skill code, and does
 not contact a provider.  A passing result means the selected read operation
 crossed the real registration, routing, policy and handler boundaries with a
@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.ad_agent.capabilities.factory import (  # noqa: E402
-    create_capability,
-    discover_capability_factory,
+from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
+    create_tool_source,
+    discover_tool_source_factory,
 )
 from agents.ad_agent.core.interfaces import ParsedIntent  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
@@ -117,10 +117,10 @@ def run_harness(path: str | Path) -> dict[str, Any]:
         error = ""
         result: Mapping[str, Any] = {}
         try:
-            factory = discover_capability_factory(platform)
+            factory = discover_tool_source_factory(platform)
             if not callable(factory):
-                raise ValueError(f"Capability factory not found: {platform}")
-            runtime.register_capability(create_capability(platform, client))
+                raise ValueError(f"Tool Source factory not found: {platform}")
+            runtime.register_tool_source(create_tool_source(platform, client))
             definition, _handler = runtime.registry.get_authorized(
                 tool_name, runtime._registry_execution_token
             )

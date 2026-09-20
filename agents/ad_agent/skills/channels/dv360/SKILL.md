@@ -12,7 +12,7 @@ aliases: [display video 360, display & video 360, dv 360]
 
 > 本 Skill 提供 DV360 的媒体购买知识、层级关系、参数依赖和运营 SOP。它不是 Tool 注册表，
 > 不直接调用 Google API、不读取认证材料，也不把示例能力描述成已上线。
-> 实际执行只能依赖当前 Registry 中已注册的 DV360 Capability Tool，并经过 schema、权限、
+> 实际执行只能依赖当前 Registry 中已注册的 DV360 Tool Source Tool，并经过 schema、权限、
 > advertiser scope、dry-run/live gate、确认、幂等和审计。
 
 ## 账户边界和资源层级
@@ -35,7 +35,7 @@ Partner / Organization
 
 当前项目的最小执行关系以 Tool schema 为准：创建/查询 IO 需要 advertiser/campaign/IO 关系，
 Line Item 需要 IO，定向分配需要 advertiser、line item 和 targeting type，创意需要 advertiser。
-如果当前 Capability 没有发布 Campaign 创建、完整 Flight、某种 Creative subtype、Inventory
+如果当前 Tool Source 没有发布 Campaign 创建、完整 Flight、某种 Creative subtype、Inventory
 Source 或品牌安全编辑能力，只能说明为未覆盖，不能用通用字段模拟成功。
 
 ## 媒体购买决策
@@ -144,4 +144,4 @@ dry-run；未知状态先 readback，不能重复创建 IO、Line Item 或 Creat
    当前状态和 Tool schema。
 2. Report definition 创建成功是否代表报表可下载？不代表，还要等待并读取 report result。
 3. Skill 写了某个 Creative Tool 是否代表服务支持？不代表，必须以当前 Registry 的
-   Capability Tool 和契约审计为准。
+   Tool Source Tool 和契约审计为准。

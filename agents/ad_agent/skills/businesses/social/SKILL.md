@@ -80,7 +80,7 @@ channels:
 ## 工具发现
 
 本业务 Skill 不维护固定 Tool 名称。运行时会根据当前已注册的渠道
-Capability、广告类型目录和 Tool Schema 动态选择可用的 Campaign、下级资源、
+Tool Source、广告类型目录和 Tool Schema 动态选择可用的 Campaign、下级资源、
 报表和素材能力；若某个广告类型只有 `declared_only` 或 `partial_dry_run`，
 必须在计划中明确提示缺口。
 

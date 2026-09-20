@@ -156,7 +156,7 @@ class AdRuntimeServices(RuntimeExecutionServices):
         self,
         tool: Any,
         value: dict[str, Any],
-        include_capability_contract: bool = False,
+        include_tool_requirements: bool = False,
     ) -> list[str]:
         schema = getattr(tool, "input_schema", None)
         if schema is None:
@@ -164,7 +164,7 @@ class AdRuntimeServices(RuntimeExecutionServices):
         return validate_registered_tool_input(
             schema,
             value,
-            include_capability_contract=include_capability_contract,
+            include_tool_requirements=include_tool_requirements,
         )
 
     def resource_id_field(self, tool: Any) -> str | None:

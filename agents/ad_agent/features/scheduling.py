@@ -303,8 +303,8 @@ class SchedulingFeature:
         return intent
 
     def _summary(self, draft: Mapping[str, Any]) -> str:
-        capability = draft.get("preflight") or {}
-        tools = ", ".join(capability.get("tool_names") or []) or "待能力预检"
+        tool_source = draft.get("preflight") or {}
+        tools = ", ".join(tool_source.get("tool_names") or []) or "待能力预检"
         platforms = ", ".join(draft.get("platforms") or []) or "待补充"
         account = str(draft.get("account_id") or "待补充")
         timezone_name = str(draft.get("timezone") or "Asia/Shanghai")

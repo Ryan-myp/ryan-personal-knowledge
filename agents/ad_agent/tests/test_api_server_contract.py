@@ -970,7 +970,7 @@ def test_chat_stream_exposes_runtime_error_event(fake_server):
     assert '"type": "done"' in response.text
 
 
-def test_runtime_initialization_registers_all_builtin_capabilities(monkeypatch, tmp_path):
+def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, tmp_path):
     monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "runtime.db"))
     monkeypatch.setenv("OPENAI_API_KEY", "test-llm-key")
     monkeypatch.setattr(api_server, "runtime", None)
@@ -1008,10 +1008,10 @@ def test_runtime_initialization_fails_without_llm(monkeypatch, tmp_path):
 
 def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
     from agents.ad_agent import AgentRuntime
-    from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+    from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "test-key")
     monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
@@ -1029,10 +1029,10 @@ def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
 
 def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
     from agents.ad_agent import AgentRuntime
-    from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+    from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "test-key")
     monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)

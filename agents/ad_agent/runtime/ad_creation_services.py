@@ -504,7 +504,7 @@ class AdCreationServicesMixin:
         """Return whether a provider-declared plan contains only Campaign.
 
         Campaign-only smoke tests are an explicit Tool contract, not a
-        Runtime intent-name special case.  The provider Capability marks the
+        Runtime intent-name special case.  The provider Tool Source marks the
         selected Tool with ``campaign_only``; ordinary creation routes keep
         their complete Blueprint and descendant validation.
         """
@@ -867,7 +867,7 @@ class AdCreationServicesMixin:
                     schema_errors = validate_tool_input(
                         tool_def.input_schema,
                         tool_input,
-                        include_capability_contract=True,
+                        include_tool_requirements=True,
                     )
                     for message in schema_errors:
                         field_match = re.search(r"Field '([^']+)'", str(message))
@@ -1291,7 +1291,7 @@ class AdCreationServicesMixin:
         if not plan:
             return {
                 "status": "unsupported", "missing": [],
-                "reason": "当前已注册的 Tool/Capability 没有匹配该动作和渠道的执行能力。",
+                "reason": "当前已注册的 Tool/Tool Source 没有匹配该动作和渠道的执行能力。",
                 "intent_type": candidate.intent_type,
                 "platforms": list(candidate.namespaces),
             }
@@ -1396,7 +1396,7 @@ class AdCreationServicesMixin:
                 ]
                 required.extend(
                     str(field_name)
-                    for field_name in (getattr(schema, "capability_required", []) or [])
+                    for field_name in (getattr(schema, "requires", []) or [])
                     if str(field_name) not in required
                 )
                 missing = {
@@ -1404,7 +1404,7 @@ class AdCreationServicesMixin:
                     if candidate_input.get(field_name) in (None, "", {}, [])
                 }
                 for alternatives in (
-                    (getattr(schema, "capability_any_of", []) or [])
+                    (getattr(schema, "requires_any_of", []) or [])
                     if schema else ()
                 ):
                     if not any(candidate_input.get(str(field_name)) not in (None, "", {}, []) for field_name in alternatives):
@@ -1444,5 +1444,5 @@ class AdCreationServicesMixin:
             "write_tools": [str(definition.name) for definition in write_tools],
             "account_id": account_values[0],
             "execution_mode": "dry_run",
-            "reason": "已匹配当前 Registry 的 Tool/Capability；到期执行仍会重新校验。",
+            "reason": "已匹配当前 Registry 的 Tool/Tool Source；到期执行仍会重新校验。",
         }

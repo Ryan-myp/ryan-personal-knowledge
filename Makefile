@@ -19,7 +19,7 @@ ad-agent-compile:
 	@$(AD_AGENT_PYTHON) -m compileall -q agents/ad_agent
 
 ad-agent-audit:
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/audit_capabilities.py
+	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/audit_provider_tools.py
 
 ad-agent-validate:
 	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json

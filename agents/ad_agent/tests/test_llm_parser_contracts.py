@@ -9,7 +9,7 @@ Tool plan.
 from agents.ad_agent.core.interfaces import ToolContext
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.runtime.runtime import AgentRuntime
-from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
+from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
 
 class _SequenceLLM:
@@ -28,7 +28,7 @@ def _parser_with_tiktok(llm):
         llm_client=llm,
         enforce_account_scope=False,
     )
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     return runtime, runtime.intent_parser
 
 

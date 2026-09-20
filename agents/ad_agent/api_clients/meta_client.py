@@ -58,7 +58,7 @@ class MetaAPIClient(BasePlatformClient):
 
     @classmethod
     def _resolve_api_version(cls, requested: Any = None) -> str:
-        """Resolve a version against the Capability's explicit support list."""
+        """Resolve a version against the Tool Source's explicit support list."""
         version = str(requested or cls.API_VERSION).strip()
         if version not in cls.SUPPORTED_API_VERSIONS:
             raise ValueError(
@@ -297,7 +297,7 @@ class MetaAPIClient(BasePlatformClient):
     ) -> list:
         """Consume Graph API cursor pages without leaking paging envelopes."""
         items: list = []
-        # Graph's ``limit`` is a page size, but callers of the Capability
+        # Graph's ``limit`` is a page size, but callers of the Tool Source
         # contract use it as the total discovery bound.  Do not walk an
         # entire large account merely to populate a picker or ownership
         # check; that can also make a child-create confirmation appear stuck.
@@ -1161,7 +1161,7 @@ class MetaAPIClient(BasePlatformClient):
 
         Meta expects the structured question and presentation blocks as JSON
         strings on the Graph API wire.  This method owns that translation;
-        the Capability owns the closed input contract and Runtime owns dry-run
+        the Tool Source owns the closed input contract and Runtime owns dry-run
         and account authorization gates.
         """
         page_id = self._clean_meta_id(page_id, "page_id")
@@ -1713,7 +1713,7 @@ class MetaAPIClient(BasePlatformClient):
         """Create a Lead Ads ad wired to an existing Instant Form.
 
         The form is selected by its account/page-scoped ID; form discovery and
-        publication validation remain separate read capabilities.  This method
+        publication validation remain separate read operations.  This method
         only owns the provider-specific ``object_story_spec`` translation.
         """
         if not isinstance(ad, dict):

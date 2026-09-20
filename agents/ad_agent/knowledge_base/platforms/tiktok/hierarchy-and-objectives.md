@@ -5,7 +5,7 @@ title: TikTok Ads 账户、层级与投放目标
 layer: platform
 knowledge_type: hierarchy
 platform: tiktok
-source: TikTok for Business API 官方文档 + TikTok Capability/Skill
+source: TikTok for Business API 官方文档 + TikTok Tool Source/Skill
 source_ref: "https://business-api.tiktok.com/portal/docs?id=1739373164384257"
 version: "1.0.0"
 confidence: 0.88

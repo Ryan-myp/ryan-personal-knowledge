@@ -6,7 +6,7 @@ layer: business
 wiki_type: comparison
 knowledge_type: general
 platform: all
-source: 四个平台官方文档与当前 Capability 元数据
+source: 四个平台官方文档与当前 Tool Source 元数据
 source_ref: business/four-platform-ad-agent-handbook.md
 source_kind: internal
 authority: repository

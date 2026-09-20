@@ -38,7 +38,7 @@
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        LLM 调用                                      │
-│  • 精简的工具列表（按意图筛选，当前 Capability 共 269 个）             │
+│  • 精简的工具列表（按意图筛选，当前 Tool Source 共 269 个）             │
 │  • 平台专家知识摘要                                                  │
 │  • 业务规则上下文                                                    │
 └─────────────────────────────────────────────────────────────────────┘
@@ -73,10 +73,10 @@ skills/
 
 ## 核心设计原则
 
-### 0. Skill、Capability 和参数契约的边界
+### 0. Skill、Tool Source 和参数契约的边界
 
 `SKILL.md` 是自然语言上下文：描述平台知识、SOP、适用范围和安全边界；它不是
-Tool 注册表，也不执行代码。Capability/plugin 才提供 `ToolDefinition`、Handler
+Tool 注册表，也不执行代码。Tool Source/plugin 才提供 `ToolDefinition`、Handler
 和 Provider Client。每个 Tool 自己声明 action、资源层级、输入 Schema、固定枚举
 以及可选的 `lookup_tool`。
 
@@ -150,7 +150,7 @@ ToolSelector 筛选
     │   └─ 匹配工具:
     │       ├─ google_create_campaign ✅
     │       ├─ google_create_ad_group ✅
-    │       └─ ...（按 Capability 实际注册工具决定）
+    │       └─ ...（按 Tool Source 实际注册工具决定）
     │
     ▼
 最终结果: 匹配工具 + 专家知识
@@ -160,8 +160,8 @@ ToolSelector 筛选
 
 ### 新增渠道或 Tool
 
-新增渠道只需提供约定目录下的 Capability factory（以及可选的 Provider Client）和
-渠道 Skill；新增 Tool 只需在所属 Capability/plugin 中注册自描述的 ToolDefinition。
+新增渠道只需提供约定目录下的 Tool Source factory（以及可选的 Provider Client）和
+渠道 Skill；新增 Tool 只需在所属 Tool Source/plugin 中注册自描述的 ToolDefinition。
 不需要修改中心 Router、Runtime 平台列表或跨渠道映射表。既有渠道也遵循同一注册、
 Schema、权限、账户边界和参数透传契约。
 

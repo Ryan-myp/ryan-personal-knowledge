@@ -175,7 +175,7 @@ def _session_result(
             "runtime_offline_mode": True,
             # Structured evidence is platform-generated Runtime output. It is
             # retained for the local judge and is already subject to Runtime
-            # result redaction; it is not model/tool execution capability.
+            # result redaction; it is not model/tool execution tool_source.
             "runtime_result": _structured_evidence(runtime_result),
         },
     }
@@ -218,7 +218,7 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         # teardown against the temporary in-memory store.
         start_background_workers=False,
     )
-    # Always register the trusted provider Capability base first. A managed
+    # Always register the trusted provider Tool Source base first. A managed
     # Skill package is then loaded as an additional context root; it can guide
     # the plan but cannot replace or inject provider implementations.
     base_skills_root = Path(
@@ -228,7 +228,7 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     runtime.auto_load_skills(
         str(base_skills_root),
         allow_executable_plugins=True,
-        allow_capability_discovery=True,
+        allow_provider_tool_discovery=True,
     )
     if skills_root != base_skills_root:
         # A managed package is context only.  Do not pass its root through

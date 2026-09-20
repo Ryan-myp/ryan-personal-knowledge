@@ -18,23 +18,23 @@ from agents.ad_agent.domain.ad.creation_card import CreationCardBuilder
 from agents.ad_agent.domain.ad.blueprint import BlueprintRegistry
 from agents.ad_agent.core.namespace import normalize_namespace as normalize_platform
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
-from agents.ad_agent.capabilities.meta import create_meta_capability
-from agents.ad_agent.capabilities.google import create_google_capability
-from agents.ad_agent.capabilities.tiktok import create_tiktok_capability
-from agents.ad_agent.capabilities.dv360 import create_dv360_capability
+from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+from agents.ad_agent.tools.providers.google import create_google_tool_source
+from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
+from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 from agents.ad_agent.runtime.runtime import AgentRuntime, AccountWhitelistValidator
 from agents.ad_agent.runtime.skill import SkillContract
-from agents.ad_agent.capabilities.factory import create_capability, discover_capability_factory
+from agents.ad_agent.tools.providers.source_factory import create_tool_source, discover_tool_source_factory
 from agents.ad_agent.api_clients.factory import create_platform_client
 
 
 def test_existing_channel_tools_publish_routing_metadata():
     definitions = []
-    for capability in (
-        create_meta_capability(), create_google_capability(),
-        create_tiktok_capability(), create_dv360_capability(),
+    for tool_source in (
+        create_meta_tool_source(), create_google_tool_source(),
+        create_tiktok_tool_source(), create_dv360_tool_source(),
     ):
-        definitions.extend(definition for definition, _ in capability.register_tools())
+        definitions.extend(definition for definition, _ in tool_source.register_tools())
 
     assert all(definition.action for definition in definitions)
     assert all(definition.resource_type for definition in definitions)
@@ -66,11 +66,11 @@ def test_core_does_not_infer_routing_metadata_from_tool_name():
 
 def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
     definitions = []
-    for capability in (
-        create_meta_capability(), create_google_capability(),
-        create_tiktok_capability(), create_dv360_capability(),
+    for tool_source in (
+        create_meta_tool_source(), create_google_tool_source(),
+        create_tiktok_tool_source(), create_dv360_tool_source(),
     ):
-        definitions.extend(definition for definition, _ in capability.register_tools())
+        definitions.extend(definition for definition, _ in tool_source.register_tools())
 
     by_name = {definition.name: definition for definition in definitions}
     assert by_name["meta_create_ad"].parent_resource_id_field == "adset_id"
@@ -82,11 +82,11 @@ def test_existing_channel_tools_publish_wire_id_fields_for_hierarchy():
 
 def test_cross_channel_tools_publish_result_relationship_metadata():
     definitions = []
-    for capability in (
-        create_meta_capability(), create_google_capability(),
-        create_tiktok_capability(), create_dv360_capability(),
+    for tool_source in (
+        create_meta_tool_source(), create_google_tool_source(),
+        create_tiktok_tool_source(), create_dv360_tool_source(),
     ):
-        definitions.extend(definition for definition, _ in capability.register_tools())
+        definitions.extend(definition for definition, _ in tool_source.register_tools())
 
     by_name = {definition.name: definition for definition in definitions}
     for name in ("meta_list_campaigns", "google_list_campaigns",
@@ -134,7 +134,7 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
     campaign_type, expected_tools,
 ):
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", ["google-ads"],
@@ -150,7 +150,7 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
 
 def test_google_app_campaign_route_selects_app_hierarchy_chain():
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", ["google-ads"],
@@ -178,7 +178,7 @@ def test_google_app_campaign_requires_declared_parameters_before_execution():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["123"]}
     runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
-    runtime.register_capability(create_google_capability())
+    runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
         "创建 Google App 广告 名称=app-dry-run",
@@ -291,8 +291,8 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
     platform, params, expected_tools,
 ):
     runtime = AgentRuntime(require_llm=False)
-    factory = create_meta_capability if platform == "meta" else create_tiktok_capability
-    runtime.register_capability(factory())
+    factory = create_meta_tool_source if platform == "meta" else create_tiktok_tool_source
+    runtime.register_tool_source(factory())
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign", "create", [platform], scoped_parameters={platform: params},
@@ -305,7 +305,7 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
 
 def test_tiktok_legacy_app_and_product_tools_are_explicit_only():
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
 
     app_route = runtime.intent_router.route(
         ParsedIntent("create_app_ad", "create app ad", ["tiktok"]),
@@ -335,7 +335,7 @@ def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
     intent_type, expected_tool,
 ):
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
             intent_type,
@@ -350,7 +350,7 @@ def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
 
 def test_meta_campaign_only_route_does_not_expand_hierarchy():
     runtime = AgentRuntime(require_llm=False)
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
             "create_campaign_only", "create campaign only", ["meta"],
@@ -372,13 +372,13 @@ def test_meta_campaign_only_route_does_not_expand_hierarchy():
 
 def test_campaign_only_routes_are_provider_declared_and_do_not_expand_hierarchy():
     cases = [
-        ("meta", create_meta_capability(), "meta_create_campaign"),
-        ("google-ads", create_google_capability(), "google_create_campaign"),
-        ("tiktok", create_tiktok_capability(), "tiktok_smart_plus_create_campaign"),
+        ("meta", create_meta_tool_source(), "meta_create_campaign"),
+        ("google-ads", create_google_tool_source(), "google_create_campaign"),
+        ("tiktok", create_tiktok_tool_source(), "tiktok_smart_plus_create_campaign"),
     ]
-    for platform, capability, expected_tool in cases:
+    for platform, tool_source, expected_tool in cases:
         runtime = AgentRuntime(require_llm=False)
-        runtime.register_capability(capability)
+        runtime.register_tool_source(tool_source)
         params = {
             "name": "campaign-only",
             "objective": "OUTCOME_TRAFFIC" if platform == "meta" else "TRAFFIC",
@@ -402,11 +402,11 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
         ("tiktok", "tiktok_create_campaign", "tiktok_create_adgroup", "campaign_id", "c-tiktok", "adgroup_id", "g-tiktok"),
     ]
     definitions = {}
-    for capability in (
-        create_meta_capability(), create_google_capability(),
-        create_tiktok_capability(), create_dv360_capability(),
+    for tool_source in (
+        create_meta_tool_source(), create_google_tool_source(),
+        create_tiktok_tool_source(), create_dv360_tool_source(),
     ):
-        definitions.update({definition.name: definition for definition, _ in capability.register_tools()})
+        definitions.update({definition.name: definition for definition, _ in tool_source.register_tools()})
 
     normalized = []
     for platform, parent_name, child_name, parent_id_field, parent_id, child_id_field, child_id in cases:
@@ -745,25 +745,25 @@ def test_runtime_requires_llm_by_default():
         runtime.run("查询 Meta campaign")
 
 
-def test_new_channel_capability_is_discovered_by_package_convention(monkeypatch):
+def test_new_channel_tool_source_is_discovered_by_package_convention(monkeypatch):
     """Adding a channel factory must not require editing a central map."""
     import sys
     import types
 
-    package_name = "agents.ad_agent.capabilities.new_network"
-    module_name = f"{package_name}.capability"
+    package_name = "agents.ad_agent.tools.providers.new_network"
+    module_name = f"{package_name}.provider"
     package = types.ModuleType(package_name)
     package.__path__ = []
     module = types.ModuleType(module_name)
 
     sentinel = object()
-    module.create_new_network_capability = lambda client=None: sentinel
+    module.create_new_network_tool_source = lambda client=None: sentinel
     monkeypatch.setitem(sys.modules, package_name, package)
     monkeypatch.setitem(sys.modules, module_name, module)
 
-    factory = discover_capability_factory("new-network")
+    factory = discover_tool_source_factory("new-network")
     assert callable(factory)
-    assert create_capability("new-network") is sentinel
+    assert create_tool_source("new-network") is sentinel
 
 
 def test_new_channel_client_is_discovered_by_package_convention(monkeypatch):
@@ -779,7 +779,7 @@ def test_new_channel_client_is_discovered_by_package_convention(monkeypatch):
     assert create_platform_client("new-network", {"access_token": "secret"}) is sentinel
 
 
-def test_plugin_only_channel_auto_discovers_without_capability_or_central_config(tmp_path):
+def test_plugin_only_channel_auto_discovers_without_tool_source_or_central_config(tmp_path):
     skill_root = tmp_path / "skills"
     skill_dir = skill_root / "channels" / "new-network"
     skill_dir.mkdir(parents=True)
@@ -866,7 +866,7 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
 
 
 def test_untrusted_skill_root_is_advisory_only_by_default(tmp_path):
-    """User-managed directories must not import code or discover capabilities."""
+    """User-managed directories must not import code or discover Tools."""
     skill_root = tmp_path / "managed-skills"
     skill_dir = skill_root / "meta-guidance"
     skill_dir.mkdir(parents=True)
@@ -985,7 +985,7 @@ def test_live_mode_alone_cannot_enable_provider_writes():
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
         whitelist_validator=validator,
     )
-    runtime.register_capability(create_meta_capability())
+    runtime.register_tool_source(create_meta_tool_source())
 
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -997,7 +997,7 @@ def test_live_mode_alone_cannot_enable_provider_writes():
 
 def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     definition = runtime.registry.get("tiktok_create_all_in_one_spark_ad")[0]
 
     assert definition.input_schema.required[:2] == ["account_id", "campaign_name"]
@@ -1025,7 +1025,7 @@ def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
 
 def test_tiktok_smart_plus_product_fields_publish_lookup_contracts():
     runtime = AgentRuntime(require_llm=False, offline_mode=True)
-    runtime.register_capability(create_tiktok_capability())
+    runtime.register_tool_source(create_tiktok_tool_source())
     definition = runtime.registry.get("tiktok_smart_plus_create_adgroup")[0]
     properties = definition.input_schema.properties
 

@@ -27,7 +27,7 @@ from ...core.namespace import normalize_namespace as normalize_platform
 _MAX_CARDS = 8
 # Creation forms must not silently truncate a provider contract.  The largest
 # current Blueprint is TikTok Product Sales; keep a generous hard bound for a
-# hostile/custom Capability while preserving a finite response size.
+# hostile/custom Tool Source while preserving a finite response size.
 _MAX_FIELDS = 160
 _MAX_OPTIONS = 100
 _PRESENTATIONS = {
@@ -715,8 +715,8 @@ class CreationCardBuilder:
             if schema is None:
                 continue
             for constraint_type, groups in (
-                ("any_of", getattr(schema, "capability_any_of", []) or []),
-                ("exactly_one_of", getattr(schema, "capability_exactly_one_of", []) or []),
+                ("any_of", getattr(schema, "requires_any_of", []) or []),
+                ("exactly_one_of", getattr(schema, "requires_exactly_one_of", []) or []),
             ):
                 for group in groups:
                     entries = []
@@ -733,7 +733,7 @@ class CreationCardBuilder:
                     if not entries:
                         # Do not make an unrendered provider alternative look
                         # satisfiable. It remains visible as an unresolved
-                        # contract for Capability/Blueprint authors to fix.
+                        # contract for Tool Source/Blueprint authors to fix.
                         entries = [{
                             "path": None,
                             "provider_field": str(provider_field),
@@ -899,7 +899,7 @@ class CreationCardBuilder:
             prefix = prefix_by_tool[tool_name]
             field_paths = unique_field_paths.get(tool_name, {})
             required = set(getattr(schema_object, "required", []) or [])
-            required.update(getattr(schema_object, "capability_required", []) or [])
+            required.update(getattr(schema_object, "requires", []) or [])
             parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
             resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
             conditional_rules = getattr(schema_object, "conditional_rules", []) or []
@@ -1013,7 +1013,7 @@ class CreationCardBuilder:
             field_name = schema_path.rsplit(".", 1)[-1]
             schema_object = getattr(definition, "input_schema", None)
             required = set(getattr(schema_object, "required", []) or [])
-            required.update(getattr(schema_object, "capability_required", []) or [])
+            required.update(getattr(schema_object, "requires", []) or [])
             if field_name in required:
                 field["required"] = True
             if not field.get("description"):
@@ -1113,7 +1113,7 @@ class CreationCardBuilder:
         """Determine creation from the active Tool contract.
 
         The interaction surface follows ``ToolDefinition.action`` rather
-        than an intent-name prefix. A Capability can therefore publish a
+        than an intent-name prefix. A Tool Source can therefore publish a
         custom intent such as ``launch_asset`` without a Core change.
         """
         candidates: list[Any] = []

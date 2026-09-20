@@ -55,7 +55,7 @@ Meta 事件质量要同时看浏览器采集、服务器回传、匹配、去重
 
 ## API 与隐私边界
 
-读取 Insights 时固定账户、层级、日期、fields、breakdowns 和 attribution settings。事件回传要由受控 Capability 执行，知识文档不承载访问凭证、不直接请求 API。任何写操作先输出 dry-run 的事件 schema、影响范围、幂等策略、失败分类和回退条件。
+读取 Insights 时固定账户、层级、日期、fields、breakdowns 和 attribution settings。事件回传要由受控 Tool Source 执行，知识文档不承载访问凭证、不直接请求 API。任何写操作先输出 dry-run 的事件 schema、影响范围、幂等策略、失败分类和回退条件。
 
 ## 事件到广告资源的映射
 

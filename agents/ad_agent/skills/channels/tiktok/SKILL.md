@@ -11,7 +11,7 @@ aliases: [tiktok ads, tiktok, douyin, 抖音]
 # TikTok Ads 专家 Skill
 
 > 本 Skill 只提供 TikTok 广告业务知识、对象依赖、参数判断和 SOP。它不是 Tool 注册表，
-> 不持有认证材料，不执行 API。实际能力必须由当前 Registry 中 TikTok Capability
+> 不持有认证材料，不执行 API。实际能力必须由当前 Registry 中 TikTok Tool Source
 > 发布的 Tool 按 schema、账户范围、权限、dry-run/live gate、幂等和审计执行。
 
 ## 账户、对象和身份边界
@@ -79,7 +79,7 @@ Spark 使用已授权的原生 TikTok 内容，需确认 creator/identity 授权
 
 - App：确认 app_id、操作系统、promotion type、深链/商店链接和转化事件。
 - Lead：确认 Page/表单引用、隐私政策和线索回传范围；页面/Instant Form 若不是当前 Ads
-  Capability 的可执行资源，明确列为外部依赖，不伪造 CRUD。
+  Tool Source 的可执行资源，明确列为外部依赖，不伪造 CRUD。
 - Commerce：`CATALOG` 需要先选择 catalog_id、product_set_id 和商品状态；目录/商品集的
   lookup、校验和广告创建不能混成一个未审计请求。
 - Identity/creator：identity_id、授权状态和素材拥有者必须与 advertiser scope 对齐。

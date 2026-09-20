@@ -5,7 +5,7 @@ title: TikTok App、Lead、商品销售与事件回传
 layer: platform
 knowledge_type: workflow
 platform: tiktok
-source: TikTok Ads API 官方文档 + TikTok Capability/Skill
+source: TikTok Ads API 官方文档 + TikTok Tool Source/Skill
 source_ref: "https://business-api.tiktok.com/portal/docs?id=1738865671534594"
 version: "1.0.0"
 confidence: 0.84

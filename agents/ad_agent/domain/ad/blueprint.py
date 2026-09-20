@@ -526,7 +526,7 @@ def validate_blueprint_against_tools(
 
 
 class BlueprintRegistry:
-    """Process-local registry populated by Capability plugins at startup."""
+    """Process-local registry populated by Tool Source plugins at startup."""
 
     def __init__(self) -> None:
         self._items: dict[tuple[str, str], AdCreationBlueprint] = {}

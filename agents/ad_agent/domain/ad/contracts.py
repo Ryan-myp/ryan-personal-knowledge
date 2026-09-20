@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
-from ...core.interfaces import CapabilityRuntime
+from ...core.interfaces import ToolSourceRuntime
 
 
 class AdFormatCoverage(Enum):
@@ -24,8 +24,8 @@ class AdFormatCoverage(Enum):
 
 
 @dataclass
-class AdCapabilityRuntime(CapabilityRuntime):
-    """Advertising extension data returned by an ad Capability."""
+class AdToolSourceRuntime(ToolSourceRuntime):
+    """Advertising extension data returned by an ad Tool Source."""
 
     ad_format_catalogs: list[dict[str, Any]] = None
     creation_blueprints: list[Any] = None
@@ -146,7 +146,7 @@ class ResourceResult:
 
 __all__ = [
     "AdFormatCoverage",
-    "AdCapabilityRuntime",
+    "AdToolSourceRuntime",
     "RESOURCE_RESULT_STATUSES",
     "ResourceRef",
     "ResourceResult",
