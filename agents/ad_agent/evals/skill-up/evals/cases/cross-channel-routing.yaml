@@ -20,6 +20,6 @@ judge:
 expect:
   structured:
     intent_type: cross_channel_compare
-    platforms: [meta, google]
+    platforms: [meta, google-ads]
     needs_confirmation: false
     tool_names: [meta_list_campaigns, meta_get_campaign_report, google_list_campaigns, google_get_campaign_report]

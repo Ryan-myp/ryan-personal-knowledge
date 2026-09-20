@@ -2,6 +2,11 @@
 
 > 基于 Karpathy LLM Wiki 模式的通用知识引擎，为 biz-delivery 提供持续演进的知识库能力。
 
+> 说明：广告 Agent Runtime 的唯一知识入口是
+> `agents/ad_agent/domain/ad/knowledge.py` 中的
+> `MarkdownWikiKnowledgeProvider`。本目录是通用 ingest/query/lint 兼容工具，
+> 不维护第二套运行时索引。
+
 ## 核心思想
 
 **LLM Wiki vs RAG：**
@@ -25,6 +30,10 @@ wiki/
 ├── comparisons/           # Layer 2：对比分析页面
 └── _archive/              # 过期页面归档
 ```
+
+`raw/` 只作为 ingest 输入；`entities/`、`concepts/`、`comparisons/` 和
+`queries/` 是可发布的知识对象层。页面 frontmatter 使用 YAML 子集，字段名
+与 Agent Wiki 的 `SCHEMA.md` 保持一致。
 
 ## 核心流程
 

@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: hierarchy
 platform: tiktok
 source: TikTok for Business API 官方文档 + TikTok Capability/Skill
-source_ref: https://business-api.tiktok.com/portal/docs?id=1739373164384257
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1739373164384257"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [tiktok, advertiser, campaign, ad-group, ad, smart-plus, spark]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Ads 账户、层级与投放目标

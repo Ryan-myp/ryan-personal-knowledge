@@ -6,12 +6,16 @@ layer: experience
 knowledge_type: best_practice
 platform: all
 source: 广告实验方法论 + 四渠道运营 Skill
-source_ref: agents/ad_agent/skills/channels/*/SKILL.md
+source_ref: "agents/ad_agent/skills/channels/*/SKILL.md"
 version: "1.0.0"
 confidence: 0.82
 updated_at: "2026-09-08"
 tags: [experiment, learning-phase, hypothesis, holdout, scaling, statistics]
 status: published
+source_kind: "code"
+authority: "repository"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # 广告实验设计、学习期与放量方法

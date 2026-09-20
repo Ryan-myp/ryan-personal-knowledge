@@ -8,12 +8,16 @@ category: diagnostics
 subcategory: authorization-rate-limit-and-reporting
 platform: tiktok
 source: TikTok for Business API 官方文档
-source_ref: https://business-api.tiktok.com/portal/docs
+source_ref: "https://business-api.tiktok.com/portal/docs"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [tiktok, ads-api, authorization, rate-limit, reports, async]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Ads API 授权、限流与报表排障手册

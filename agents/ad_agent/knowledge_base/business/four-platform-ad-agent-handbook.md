@@ -8,15 +8,21 @@ category: cross_platform_foundation
 subcategory: four-platform-ad-agent-handbook
 platform: all
 source: Google Ads、Meta Marketing API、TikTok Marketing API、Display & Video 360 官方文档与广告运营方法论
-source_ref: agents/ad_agent/knowledge_base/business/four-platform-ad-agent-handbook.md
+source_ref: "internal://ad-agent/playbook/four-platform-ad-agent-handbook"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [google-ads, meta, tiktok, dv360, marketing-api, hierarchy, measurement, optimization, diagnostics, agent]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 四大广告平台 Agent 专业知识总览
+
+关联对象对比：[[Google、Meta、TikTok 与 DV360 对比]]
 
 这篇总览回答五类高频问题：广告对象如何组织、不同平台如何创建和修改、数据怎样可信地进入优化、异常怎样定位、Agent 如何在不越权的前提下给出可执行建议。它是导航和决策框架，不替代各平台专题文档、当前 Tool schema、账户权限或平台实时政策。
 

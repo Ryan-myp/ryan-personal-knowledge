@@ -1,5 +1,38 @@
 # LLM Wiki 知识库升级总结
 
+## v2.2.0 · 2026-09-18
+
+- 增加租户 raw source 存储：正文、media type、来源引用和 SHA-256 持久化，按租户去重且正文不可变。
+- 增加 `POST /knowledge/raw`、raw 状态查询和 `knowledge.ingest` durable task。
+- 增加结构化 LLM ingest contract：只接受受限 JSON，生成页面前先完整校验，产物默认是 draft。
+- 派生页保留 `source_ref`、`derived_from`、`raw_sha256`、`wikilinks` 和 `wiki_type`，Runtime 只检索已发布页面。
+- SQLite schema version 提升到 19；MySQL 适配器增加对应迁移。
+
+## v2.3.0 · 2026-09-20
+
+- raw source ingest 增加 Store 原子 claim，防止同一 source 被并发 worker 重复处理。
+- 增加 `ingest_attempts`、`ingest_started_at`、`ingest_finished_at`，失败 source 可安全重试，`draft_ready` 默认幂等拒绝。
+- 增加 stale ingest recovery，worker 中断后的过期 claim 会回到 `failed`，允许下一次任务重试。
+- SQLite/MySQL schema version 提升到 20；Plugin lifecycle 增加 Runtime 级串行化和卸载失败快照回滚。
+
+## v2.1.0 · 2026-09-17
+
+本次升级把现有广告 Agent Wiki 对齐到 Karpathy 风格的知识对象模型，同时不搬动已经被 Skill、来源引用和 Runtime 使用的领域路径。
+
+### 结构与运行时
+
+- 增加 `raw/`、`entities/`、`concepts/`、`comparisons/` 和 `queries/`。
+- 增加四个平台实体页与跨平台对比页；`platforms/`、`business/`、`expertise/` 继续作为概念页的稳定存储。
+- 增加 `wiki_type` 元数据；`raw` 与 `system` 默认不进入 Runtime。
+- Runtime 继续只通过 `MarkdownWikiKnowledgeProvider` 读取已发布文档，不创建 Tool、不执行知识文件。
+- `wiki-engine/` 只保留为通用 ingest/query/lint 兼容工具，并与 YAML frontmatter 和标准对象类型对齐。
+
+### 验收
+
+- 运行时加载 69 个发布文档，元数据校验通过。
+- 知识质量：Hit@3=1.000、MRR=0.958、跨平台泄漏=0。
+- Agent 全量测试：810 passed。
+
 ## v2.0.0 · 2026-09-08
 
 本次升级把四渠道知识从零散的层级/约束示例，扩展为可用于广告规划、执行前检查、运行中优化和归因复盘的专业知识包。运行时读取 `knowledge_base/**/*.md`，旧 JSON 文件仅保留作历史兼容材料，不参与 Wiki 检索。

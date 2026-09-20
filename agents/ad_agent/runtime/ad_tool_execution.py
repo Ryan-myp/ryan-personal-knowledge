@@ -190,6 +190,11 @@ class AdToolExecutionService:
                     "account_selected": bool(per_platform_account),
                 },
             )
+            resolved_scope = runtime.account_resolver.resolve_scope(
+                intent,
+                tools,
+                per_platform_account,
+            )
 
             # A dependent Campaign creation is one operator decision.  Build
             # a stable, provider-neutral approval envelope for the complete
@@ -459,29 +464,30 @@ class AdToolExecutionService:
                         session.ctx.account_id = original_account
                         continue
 
-                if tool_def.is_write_tool and runtime.execution_mode == ExecutionMode.LIVE.value and (
-                    not runtime.allow_live_writes
-                    or not tool_def.live_support
-                    or tool_def.name not in runtime._live_approved_tools
+                if (
+                    tool_def.is_write_tool
+                    and runtime.execution_mode == ExecutionMode.LIVE.value
                 ):
-                    if not runtime.allow_live_writes:
-                        reason = "Runtime 全局 allow_live_writes 未开启"
-                    elif not tool_def.live_support:
-                        reason = "该 Tool 当前仅支持 dry-run"
-                    else:
-                        reason = "该 Tool 未加入 live 执行批准清单"
-                    results.append({
-                        "tool": tool_def.name,
-                        "platform": platform,
-                        "success": False,
-                        "error": f"{tool_def.name} 当前禁止 live 执行：{reason}",
-                        "needs_confirmation": False,
-                    })
-                    trace.node_status(node, "failed", safe_metadata={"reason": "live_write_blocked"})
-                    chain_blocked = True
-                    chain_blocker = tool_def.name
-                    session.ctx.account_id = original_account
-                    continue
+                    policy_decision = runtime._evaluate_tool_policy(
+                        tool_def,
+                        granted_permissions=effective_permissions,
+                        scope=resolved_scope,
+                        require_confirmation=False,
+                    )
+                    if not policy_decision.allowed:
+                        reason = "; ".join(policy_decision.errors)
+                        results.append({
+                            "tool": tool_def.name,
+                            "platform": platform,
+                            "success": False,
+                            "error": f"{tool_def.name} 当前禁止 live 执行：{reason}",
+                            "needs_confirmation": False,
+                        })
+                        trace.node_status(node, "failed", safe_metadata={"reason": "live_write_blocked"})
+                        chain_blocked = True
+                        chain_blocker = tool_def.name
+                        session.ctx.account_id = original_account
+                        continue
 
                 if (
                     tool_def.is_write_tool

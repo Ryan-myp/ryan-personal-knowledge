@@ -11,8 +11,61 @@ from __future__ import annotations
 from typing import Any, Optional, Protocol
 
 
-class PersistenceBackend(Protocol):
-    """Structural contract for the durable ad-agent state backend."""
+class KnowledgeStorePort(Protocol):
+    """Narrow port consumed by Wiki management and ingest services."""
+
+    def create_knowledge_document(self, record: Any) -> Any: ...
+    def update_knowledge_document(
+        self, document_id: str, *, tenant_id: str, data: dict[str, Any],
+    ) -> Optional[Any]: ...
+    def delete_knowledge_document(
+        self, document_id: str, *, tenant_id: str,
+    ) -> Optional[Any]: ...
+    def get_knowledge_document(
+        self, document_id: str, *, tenant_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def list_knowledge_documents(
+        self, tenant_id: str, status: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[Any]: ...
+    def publish_knowledge_document(
+        self, document_id: str, *, tenant_id: str,
+    ) -> Optional[Any]: ...
+    def unpublish_knowledge_document(
+        self, document_id: str, *, tenant_id: str,
+    ) -> Optional[Any]: ...
+    def create_raw_knowledge_source(self, record: Any) -> Any: ...
+    def get_raw_knowledge_source(
+        self, source_id: str, *, tenant_id: Optional[str] = None,
+    ) -> Optional[Any]: ...
+    def find_raw_knowledge_source_by_hash(
+        self, tenant_id: str, sha256: str,
+    ) -> Optional[Any]: ...
+    def update_raw_knowledge_source(
+        self, source_id: str, *, tenant_id: str, data: dict[str, Any],
+    ) -> Optional[Any]: ...
+    def claim_raw_knowledge_source(
+        self, source_id: str, *, tenant_id: str, task_id: Optional[str],
+        started_at: str,
+    ) -> Optional[Any]: ...
+    def recover_stale_raw_knowledge_sources(
+        self, *, tenant_id: str, stale_after_seconds: float = 900.0,
+        recovered_at: Optional[str] = None,
+    ) -> int: ...
+    def list_raw_knowledge_sources(
+        self, tenant_id: str, status: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[Any]: ...
+    def rebuild_knowledge_search_index(
+        self, chunks: list[dict[str, Any]], *, scope: str,
+    ) -> bool: ...
+    def search_knowledge_search_index(
+        self, query: str, *, scopes: list[str], limit: int = 100,
+    ) -> list[dict[str, Any]]: ...
+
+
+class PersistenceBackend(KnowledgeStorePort, Protocol):
+    """Aggregate backend contract retained for the application composition root."""
 
     def create_session(
         self, session_id: str, user_id: str,
@@ -55,33 +108,6 @@ class PersistenceBackend(Protocol):
     def list_conversation_messages(
         self, session_id: str, limit: int = 200,
     ) -> list[Any]: ...
-
-    def create_knowledge_document(self, record: Any) -> Any: ...
-    def update_knowledge_document(
-        self, document_id: str, *, tenant_id: str, data: dict[str, Any],
-    ) -> Optional[Any]: ...
-    def delete_knowledge_document(
-        self, document_id: str, *, tenant_id: str,
-    ) -> Optional[Any]: ...
-    def get_knowledge_document(
-        self, document_id: str, *, tenant_id: Optional[str] = None,
-    ) -> Optional[Any]: ...
-    def list_knowledge_documents(
-        self, tenant_id: str, status: Optional[str] = None,
-        limit: int = 100,
-    ) -> list[Any]: ...
-    def publish_knowledge_document(
-        self, document_id: str, *, tenant_id: str,
-    ) -> Optional[Any]: ...
-    def unpublish_knowledge_document(
-        self, document_id: str, *, tenant_id: str,
-    ) -> Optional[Any]: ...
-    def rebuild_knowledge_search_index(
-        self, chunks: list[dict[str, Any]], *, scope: str,
-    ) -> bool: ...
-    def search_knowledge_search_index(
-        self, query: str, *, scopes: list[str], limit: int = 100,
-    ) -> list[dict[str, Any]]: ...
 
     # -- Campaign creation templates ------------------------------------
     def create_creation_template(self, record: Any) -> Any: ...
@@ -424,6 +450,9 @@ class PersistenceBackend(Protocol):
     def supersede_memory(
         self, memory_id: str, superseded_by: str, *, tenant_id: str, user_id: str,
     ) -> bool: ...
+    def purge_memories(
+        self, *, before: str, expired_before: str,
+    ) -> int: ...
 
     # -- Generic Plugin package control plane ---------------------------
     # A package is an immutable declaration + file snapshot.  The release

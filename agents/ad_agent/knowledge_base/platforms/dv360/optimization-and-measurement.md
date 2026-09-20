@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: dv360
 source: Display & Video 360 官方文档 + DV360 运营 Skill
-source_ref: https://developers.google.com/display-video/api/concepts/reporting
+source_ref: "https://developers.google.com/display-video/api/concepts/reporting"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [dv360, programmatic, viewability, reach, frequency, reporting, optimization]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 采购、品牌安全与报表优化

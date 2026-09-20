@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: constraint
 platform: google-ads
 source: Google Ads 官方文档 + API 实测
-source_ref: platforms/google/constraints.md
+source_ref: "repository://ad-agent/knowledge/google-constraints"
 version: "1.0.0"
 confidence: 0.95
 updated_at: "2026-08-26"
 tags: [google, constraint, validation]
 status: published
+source_kind: "code"
+authority: "repository"
+evidence_level: "reviewed"
+last_verified_at: "2026-08-26"
 ---
 
 # Google Ads 参数约束规则

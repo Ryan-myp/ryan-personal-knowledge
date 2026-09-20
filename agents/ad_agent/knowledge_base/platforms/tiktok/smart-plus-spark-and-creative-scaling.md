@@ -8,12 +8,16 @@ category: optimization
 subcategory: smart-plus-spark-and-creative-scaling
 platform: tiktok
 source: TikTok for Business 官方文档
-source_ref: https://ads.tiktok.com/business/help
+source_ref: "https://ads.tiktok.com/business/help"
 version: "1.0.0"
 confidence: 0.87
 updated_at: "2026-09-08"
 tags: [tiktok, smart-plus, spark-ads, creative, scaling, learning]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Smart+、Spark Ads 与创意规模化方法

@@ -10,7 +10,9 @@ from __future__ import annotations
 import re
 import json
 import threading
+import time
 import uuid
+from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
@@ -20,9 +22,11 @@ from .domain.ad.knowledge import (
     WIKI_LAYERS,
     WIKI_STATUSES,
 )
+from .core.context import ContextQuery
 from .core.namespace import normalize_namespace as normalize_platform
 from .persistence.models import KnowledgeDocumentRecord
 from .persistence.errors import PersistenceConflictError
+from .persistence.interfaces import KnowledgeStorePort
 
 
 class KnowledgeDocumentError(ValueError):
@@ -41,6 +45,7 @@ _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"\s*[:=]"
 )
 _MAX_CONTENT_CHARS = 60_000
+_WIKI_TYPES = {"entity", "concept", "comparison", "query"}
 _KNOWLEDGE_TYPES = {
     "hierarchy", "constraint", "parameter", "workflow", "best_practice",
     "error_pattern", "case_study", "tip", "general", "bidding_strategy",
@@ -84,10 +89,27 @@ def _safe_tags(value: Any) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def _safe_links(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = [str(item) for item in value]
+    else:
+        raise KnowledgeDocumentError("wikilinks 必须是字符串数组")
+    values = [item.strip() for item in values if item.strip()]
+    if len(values) > 30 or any(len(item) > 200 for item in values):
+        raise KnowledgeDocumentError("wikilinks 最多 30 个，每个不超过 200 个字符")
+    if any(not item.startswith("[[") or not item.endswith("]]") for item in values):
+        raise KnowledgeDocumentError("wikilinks 必须使用 [[页面标题]] 格式")
+    return list(dict.fromkeys(values))
+
+
 class ManagedKnowledgeManager:
     """CRUD and publication facade for tenant-owned Wiki documents."""
 
-    def __init__(self, store: Any):
+    def __init__(self, store: KnowledgeStorePort):
         self.store = store
 
     @staticmethod
@@ -115,8 +137,12 @@ class ManagedKnowledgeManager:
             f"source_ref: {json.dumps(record.source_ref, ensure_ascii=False)}\n"
             f"version: {json.dumps(record.version, ensure_ascii=False)}\n"
             f"confidence: {record.confidence}\n"
+            f"wiki_type: {json.dumps(record.wiki_type, ensure_ascii=False)}\n"
+            f"derived_from: {json.dumps(record.derived_from, ensure_ascii=False)}\n"
+            f"raw_sha256: {json.dumps(record.raw_sha256, ensure_ascii=False)}\n"
             f"updated_at: {record.updated_at[:10]}\n"
             f"tags: {tags}\n"
+            f"wikilinks: {json.dumps(record.wikilinks or [], ensure_ascii=False)}\n"
             f"status: {record.status}\n"
             "---\n\n"
         )
@@ -147,6 +173,9 @@ class ManagedKnowledgeManager:
             confidence = max(0.0, min(1.0, float(payload.get("confidence", 0.8))))
         except (TypeError, ValueError) as exc:
             raise KnowledgeDocumentError("confidence 必须是 0 到 1 之间的数字") from exc
+        wiki_type = str(payload.get("wiki_type") or "concept").strip().lower()
+        if wiki_type not in _WIKI_TYPES:
+            raise KnowledgeDocumentError("wiki_type 不合法")
         return {
             "title": title,
             "content": content,
@@ -158,6 +187,10 @@ class ManagedKnowledgeManager:
             "version": version,
             "confidence": confidence,
             "tags": _safe_tags(payload.get("tags")),
+            "wiki_type": wiki_type,
+            "derived_from": str(payload.get("derived_from") or "").strip()[:200],
+            "raw_sha256": str(payload.get("raw_sha256") or "").strip()[:128],
+            "wikilinks": _safe_links(payload.get("wikilinks")),
         }
 
     def create_document(
@@ -294,22 +327,80 @@ class ManagedKnowledgeManager:
 class ManagedKnowledgeProvider:
     """Merge built-in Wiki docs with published tenant-owned documents."""
 
-    def __init__(self, base: MarkdownWikiKnowledgeProvider, store: Any):
+    def __init__(self, base: MarkdownWikiKnowledgeProvider, store: KnowledgeStorePort):
         self.base = base
         self.store = store
-        self._tenant_cache: dict[str, tuple[tuple[tuple[str, str, str], ...], list[KnowledgeDocument], list[KnowledgeDocument]]] = {}
+        self._tenant_cache: OrderedDict[
+            str,
+            tuple[
+                tuple[tuple[str, str, str], ...],
+                list[KnowledgeDocument],
+                list[KnowledgeDocument],
+            ],
+        ] = OrderedDict()
         self._tenant_cache_lock = threading.RLock()
+        self._tenant_cache_max_entries = int(
+            getattr(base, "_tenant_cache_max_entries", 256)
+        )
+        self._query_cache_ttl_seconds = getattr(
+            base, "_query_cache_ttl_seconds", 5.0
+        )
+        self._query_cache_max_entries = getattr(
+            base, "_query_cache_max_entries", 256
+        )
+        self._query_cache: OrderedDict[
+            tuple[Any, ...], tuple[float, tuple[KnowledgeDocument, ...]]
+        ] = OrderedDict()
+        self._query_cache_hits = 0
+        self._query_cache_misses = 0
+        self._query_cache_evictions = 0
         self.base.search_index = store
         self.base._fts_scope = "builtin"
         self.base._fts_available = self.base._rebuild_search_index(
             self.base.chunks, scope=self.base._fts_scope
         )
 
+    def cache_metrics(self) -> dict[str, Any]:
+        base_metrics = self.base.cache_metrics()
+        with self._tenant_cache_lock:
+            return {
+                **base_metrics,
+                "tenant_query_entries": len(self._query_cache),
+                "tenant_query_hit_total": self._query_cache_hits,
+                "tenant_query_miss_total": self._query_cache_misses,
+                "tenant_query_eviction_total": self._query_cache_evictions,
+                "tenant_context_entries": len(self._tenant_cache),
+            }
+
+    def clear_query_cache(self) -> None:
+        self.base.clear_query_cache()
+        with self._tenant_cache_lock:
+            self._query_cache.clear()
+
+    def clear_tenant_cache(self, tenant_id: Optional[str] = None) -> None:
+        """Invalidate one tenant or all managed context caches."""
+        with self._tenant_cache_lock:
+            if tenant_id is None:
+                self._tenant_cache.clear()
+                self._query_cache.clear()
+                return
+            tenant_key = str(tenant_id or "default")
+            self._tenant_cache.pop(tenant_key, None)
+            stale_keys = [
+                key for key in self._query_cache
+                if key and key[0] == tenant_key
+            ]
+            for key in stale_keys:
+                self._query_cache.pop(key, None)
+
     @property
     def documents(self):
         return self.base.documents
 
     def _managed_document(self, record: KnowledgeDocumentRecord) -> KnowledgeDocument:
+        source_kind = MarkdownWikiKnowledgeProvider._source_kind(
+            "", record.source_ref, record.source
+        )
         return KnowledgeDocument(
             document_id=f"managed:{record.document_id}",
             platform=record.platform,
@@ -331,6 +422,18 @@ class ManagedKnowledgeProvider:
             source_ref=record.source_ref,
             tags=tuple(record.tags),
             status=record.status,
+            wiki_type=record.wiki_type,
+            derived_from=record.derived_from,
+            raw_sha256=record.raw_sha256,
+            wikilinks=tuple(record.wikilinks),
+            source_kind=source_kind,
+            authority=MarkdownWikiKnowledgeProvider._authority(
+                "", source_kind
+            ),
+            evidence_level=MarkdownWikiKnowledgeProvider._evidence_level(
+                "", source_kind
+            ),
+            last_verified_at=record.updated_at,
         )
 
     def catalog(
@@ -338,6 +441,7 @@ class ManagedKnowledgeProvider:
         *,
         platforms: Optional[Iterable[str]] = None,
         knowledge_types: Optional[Iterable[str]] = None,
+        wiki_types: Optional[Iterable[str]] = None,
         limit: int = 100,
         tenant_id: Optional[str] = None,
     ) -> list[KnowledgeDocument]:
@@ -345,7 +449,10 @@ class ManagedKnowledgeProvider:
         if limit <= 0:
             return []
         documents = self.base.catalog(
-            platforms=platforms, knowledge_types=knowledge_types, limit=limit
+            platforms=platforms,
+            knowledge_types=knowledge_types,
+            wiki_types=wiki_types,
+            limit=limit,
         )
         if tenant_id:
             records = self.store.list_knowledge_documents(
@@ -362,10 +469,16 @@ class ManagedKnowledgeProvider:
                 for item in (knowledge_types or [])
                 if item
             }
+            allowed_wiki_types = {
+                str(item).strip().lower()
+                for item in (wiki_types or [])
+                if item
+            }
             managed = [
                 document for document in managed
                 if (not allowed_platforms or document.platform in allowed_platforms)
                 and (not allowed_types or document.knowledge_type in allowed_types)
+                and (not allowed_wiki_types or document.wiki_type in allowed_wiki_types)
             ]
             documents.extend(managed)
         return documents[:limit]
@@ -391,7 +504,14 @@ class ManagedKnowledgeProvider:
         with self._tenant_cache_lock:
             cached = self._tenant_cache.get(tenant_key)
             if cached and cached[0] == signature:
+                self._tenant_cache.move_to_end(tenant_key)
                 return cached[1], cached[2]
+            stale_keys = [
+                key for key in self._query_cache
+                if key and key[0] == tenant_key
+            ]
+            for key in stale_keys:
+                self._query_cache.pop(key, None)
             managed = [self._managed_document(record) for record in records]
             managed_chunks = [
                 chunk
@@ -406,6 +526,15 @@ class ManagedKnowledgeProvider:
             if fts_available:
                 self.base._fts_available = True
             self._tenant_cache[tenant_key] = (signature, managed, managed_chunks)
+            self._tenant_cache.move_to_end(tenant_key)
+            while len(self._tenant_cache) > self._tenant_cache_max_entries:
+                evicted_tenant, _ = self._tenant_cache.popitem(last=False)
+                stale_keys = [
+                    key for key in self._query_cache
+                    if key and key[0] == evicted_tenant
+                ]
+                for key in stale_keys:
+                    self._query_cache.pop(key, None)
             return managed, managed_chunks
 
     def query(
@@ -423,9 +552,51 @@ class ManagedKnowledgeProvider:
                 knowledge_types=knowledge_types, limit=limit,
                 max_excerpt_chars=max_excerpt_chars,
             )
-        managed, managed_chunks = self._published_tenant_context(str(tenant_id))
+        if limit <= 0 or max_excerpt_chars <= 0:
+            return []
+        tenant_key = str(tenant_id)
+        managed, managed_chunks = self._published_tenant_context(tenant_key)
+        effective_limit = min(int(limit), 100)
+        effective_excerpt_chars = min(
+            int(max_excerpt_chars), MarkdownWikiKnowledgeProvider._CHUNK_SIZE
+        )
+        with self._tenant_cache_lock:
+            tenant_signature = self._tenant_cache.get(tenant_key, ((), [], []))[0]
+        selected_platforms = namespaces if namespaces is not None else platforms
+        normalized_platforms = tuple(sorted({
+            MarkdownWikiKnowledgeProvider._normalize_platform(item)
+            for item in (selected_platforms or [])
+            if str(item).strip()
+        }))
+        normalized_types = tuple(sorted({
+            str(item).strip().lower()
+            for item in (knowledge_types or [])
+            if str(item).strip()
+        }))
+        cache_key = (
+            tenant_key,
+            tenant_signature,
+            MarkdownWikiKnowledgeProvider._normalise_text(query),
+            normalized_platforms,
+            str(intent_type or "").strip().lower(),
+            normalized_types,
+            effective_limit,
+            effective_excerpt_chars,
+        )
+        now = time.monotonic()
+        with self._tenant_cache_lock:
+            cached = self._query_cache.get(cache_key)
+            if cached is not None:
+                expires_at, documents = cached
+                if self._query_cache_ttl_seconds == 0 or expires_at <= now:
+                    self._query_cache.pop(cache_key, None)
+                else:
+                    self._query_cache.move_to_end(cache_key)
+                    self._query_cache_hits += 1
+                    return list(documents)
+            self._query_cache_misses += 1
         all_documents = [*self.base.documents, *managed]
-        managed_scope = f"tenant:{tenant_id}"
+        managed_scope = f"tenant:{tenant_key}"
         all_chunks = [
             *self.base.chunks,
             *managed_chunks,
@@ -434,15 +605,49 @@ class ManagedKnowledgeProvider:
         fts_hits = self.base._search_index_hits(
             query, terms, scopes=["builtin", managed_scope]
         )
-        selected_platforms = namespaces if namespaces is not None else platforms
-        return MarkdownWikiKnowledgeProvider._query_chunks(
+        result = MarkdownWikiKnowledgeProvider._query_chunks(
             all_chunks,
             all_documents,
             query,
             platforms=selected_platforms,
             intent_type=intent_type,
             knowledge_types=knowledge_types,
-            limit=limit,
-            max_excerpt_chars=max_excerpt_chars,
+            limit=effective_limit,
+            max_excerpt_chars=effective_excerpt_chars,
             fts_hits=fts_hits,
+        )
+        if self._query_cache_ttl_seconds > 0:
+            with self._tenant_cache_lock:
+                self._query_cache[cache_key] = (
+                    time.monotonic() + self._query_cache_ttl_seconds,
+                    tuple(result),
+                )
+                self._query_cache.move_to_end(cache_key)
+                while len(self._query_cache) > self._query_cache_max_entries:
+                    self._query_cache.popitem(last=False)
+                    self._query_cache_evictions += 1
+        return list(result)
+
+    def query_context(self, request: ContextQuery) -> list[KnowledgeDocument]:
+        """Implement the provider-neutral advisory context contract."""
+        filters = request.filters if isinstance(request.filters, Mapping) else {}
+        return self.query(
+            request.text,
+            namespaces=request.namespaces,
+            intent_type=request.intent_type or None,
+            knowledge_types=filters.get("knowledge_types"),
+            limit=request.limit,
+            max_excerpt_chars=request.max_excerpt_chars,
+            tenant_id=request.tenant_id,
+        )
+
+    def catalog_context(self, request: ContextQuery) -> list[KnowledgeDocument]:
+        """Return built-in and tenant navigation documents."""
+        filters = request.filters if isinstance(request.filters, Mapping) else {}
+        return self.catalog(
+            platforms=request.namespaces,
+            knowledge_types=filters.get("knowledge_types"),
+            wiki_types=filters.get("wiki_types"),
+            limit=request.limit,
+            tenant_id=request.tenant_id,
         )

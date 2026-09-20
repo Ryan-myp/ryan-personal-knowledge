@@ -21,6 +21,7 @@ from ..core.interfaces import (
     CapabilityModule, CapabilityContext,
     WriteGuard, WriteReservation, RiskLevel, ToolEffect
 )
+from ..core.tool_sources import StaticToolSource, ToolBinding
 from ..core.tool_registry import SimpleToolRegistry
 from ..domain.ad.security import protected_update_paths
 from ..domain.ad.contracts import AdCapabilityRuntime
@@ -334,6 +335,7 @@ class BaseCapability(CapabilityModule, ABC):
             if isinstance(bound_state, dict)
             else ""
         )
+        bindings: list[ToolBinding] = []
         for defn, handler in tools:
             metadata_errors = defn.routing_metadata_errors()
             if metadata_errors:
@@ -369,7 +371,14 @@ class BaseCapability(CapabilityModule, ABC):
                 defn.required_permissions = [
                     "ads.plan" if defn.is_write_tool else "ads.read"
                 ]
-            registry.register(defn, handler)
+            bindings.append(ToolBinding(defn, handler))
+        if bindings:
+            registry.register_source(
+                StaticToolSource(
+                    f"provider-module:{self.platform_name}",
+                    bindings,
+                )
+            )
     
     @abstractmethod
     def register_tools(self) -> list[tuple[ToolDefinition, ToolHandler]]:

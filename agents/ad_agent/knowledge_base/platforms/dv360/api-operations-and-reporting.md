@@ -8,12 +8,16 @@ category: platform_foundation
 subcategory: api-operations-and-reporting
 platform: dv360
 source: Display & Video 360 API 官方文档
-source_ref: https://developers.google.com/display-video/api
+source_ref: "https://developers.google.com/display-video/api"
 version: "1.0.0"
 confidence: 0.91
 updated_at: "2026-09-08"
 tags: [dv360, api, advertiser, insertion-order, line-item, reporting, targeting]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 API 采购资源、定向分配与报表生命周期

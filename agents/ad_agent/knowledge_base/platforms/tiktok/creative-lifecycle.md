@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: creative_guide
 platform: tiktok
 source: TikTok for Business 官方创意文档 + TikTok 运营 Skill
-source_ref: https://ads.tiktok.com/business/creativecenter/inspiration
+source_ref: "https://ads.tiktok.com/business/creativecenter/inspiration"
 version: "1.0.0"
 confidence: 0.84
 updated_at: "2026-09-08"
 tags: [tiktok, creative, spark, video, hook, ugc, fatigue, identity, testing]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok 创意生命周期、Spark 与素材测试

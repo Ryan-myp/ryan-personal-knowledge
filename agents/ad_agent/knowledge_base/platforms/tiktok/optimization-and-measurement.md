@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: tiktok
 source: TikTok for Business 官方文档 + TikTok Ads 运营 Skill
-source_ref: https://business-api.tiktok.com/portal/docs?id=1738865680951297
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1738865680951297"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [tiktok, creative, video, pixel, events-api, reporting, optimization]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Ads 创意、事件与报表优化

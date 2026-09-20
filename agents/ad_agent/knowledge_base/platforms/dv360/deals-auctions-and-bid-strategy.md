@@ -8,12 +8,16 @@ category: optimization
 subcategory: deals-auctions-and-bid-strategy
 platform: dv360
 source: Display & Video 360 官方文档
-source_ref: https://support.google.com/displayvideo/topic/6048435
+source_ref: "https://support.google.com/displayvideo/topic/6048435"
 version: "1.0.0"
 confidence: 0.89
 updated_at: "2026-09-08"
 tags: [dv360, deals, auction, bidding, inventory, pacing, supply-path]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 Deal、竞价与库存放量方法

@@ -6,11 +6,11 @@ port. This module owns presentation-facing query assembly, not execution.
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from typing import Any, Mapping, Optional
 
+from ..core.context import ContextQuery
 from ..core.conversation_title import ConversationTitleGenerator
 
 
@@ -107,22 +107,25 @@ class AdConversationServices:
         """Search built-in and published tenant Wiki documents."""
         if self.runtime.knowledge_provider is None:
             return []
-        kwargs: dict[str, Any] = {
-            "platforms": [platform] if platform else None,
-            "knowledge_types": [knowledge_type] if knowledge_type else None,
-            "limit": limit,
-            "max_excerpt_chars": max_excerpt_chars,
-        }
-        try:
-            parameters = inspect.signature(self.runtime.knowledge_provider.query).parameters
-            if "tenant_id" in parameters or any(
-                item.kind == inspect.Parameter.VAR_KEYWORD
-                for item in parameters.values()
-            ):
-                kwargs["tenant_id"] = tenant_id
-        except (TypeError, ValueError):
-            pass
-        documents = self.runtime.knowledge_provider.query(query, **kwargs)
+        request = ContextQuery(
+            text=query,
+            namespaces=(platform,) if platform else (),
+            filters={"knowledge_types": (knowledge_type,)} if knowledge_type else {},
+            tenant_id=tenant_id,
+            limit=limit,
+            max_excerpt_chars=max_excerpt_chars,
+        )
+        query_context = getattr(self.runtime.knowledge_provider, "query_context", None)
+        if callable(query_context):
+            documents = query_context(request)
+        else:
+            documents = self.runtime.knowledge_provider.query(
+                request.text,
+                platforms=request.namespaces or None,
+                knowledge_types=request.filters.get("knowledge_types"),
+                limit=request.limit,
+                max_excerpt_chars=request.max_excerpt_chars,
+            )
         return [document.to_dict() for document in documents]
 
     def catalog_knowledge(
@@ -132,18 +135,28 @@ class AdConversationServices:
         """List complete Wiki documents for navigation without chunk ranking."""
         if self.runtime.knowledge_provider is None:
             return []
-        kwargs: dict[str, Any] = {
-            "platforms": [platform] if platform else None,
-            "knowledge_types": [knowledge_type] if knowledge_type else None,
-            "limit": limit,
-        }
-        parameters = inspect.signature(self.runtime.knowledge_provider.catalog).parameters
-        if "tenant_id" in parameters or any(
-            item.kind == inspect.Parameter.VAR_KEYWORD
-            for item in parameters.values()
-        ):
-            kwargs["tenant_id"] = tenant_id
-        documents = self.runtime.knowledge_provider.catalog(**kwargs)
+        # Catalog remains a navigation API, but its tenant boundary is still
+        # explicit. Providers that expose only the legacy catalog method keep
+        # the built-in-only behavior rather than relying on reflection.
+        catalog_context = getattr(
+            self.runtime.knowledge_provider, "catalog_context", None
+        )
+        if callable(catalog_context):
+            documents = catalog_context(
+                ContextQuery(
+                    text="",
+                    namespaces=(platform,) if platform else (),
+                    filters={"knowledge_types": (knowledge_type,)} if knowledge_type else {},
+                    tenant_id=tenant_id,
+                    limit=limit,
+                )
+            )
+        else:
+            documents = self.runtime.knowledge_provider.catalog(
+                platforms=[platform] if platform else None,
+                knowledge_types=[knowledge_type] if knowledge_type else None,
+                limit=limit,
+            )
         return [document.to_dict() for document in documents]
 
     def summarize_knowledge(

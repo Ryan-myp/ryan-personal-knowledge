@@ -8,12 +8,16 @@ category: budget_bidding
 subcategory: budget-pacing-and-marginal-efficiency
 platform: all
 source: 广告业务方法论
-source_ref: agents/ad_agent/knowledge_base/business/budget-pacing-and-marginal-efficiency.md
+source_ref: "internal://ad-agent/playbook/budget-pacing-and-marginal-efficiency"
 version: "1.0.0"
 confidence: 0.86
 updated_at: "2026-09-08"
 tags: [budget, pacing, marginal-roas, marginal-cpa, allocation, guardrail]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 广告预算节奏、边际效率与跨渠道调度

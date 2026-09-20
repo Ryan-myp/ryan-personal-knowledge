@@ -22,6 +22,7 @@ from typing import Any, Optional, List
 
 from .models import (
     CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
+    RawKnowledgeSourceRecord,
     ExecutionRunRecord, TaskRecord, ToolCallRecord,
     OutboxEvent, ScheduledTaskRecord, ScheduledTaskRunRecord,
     CreationTemplateRecord,
@@ -86,7 +87,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 18
+    SCHEMA_VERSION = 20
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -161,8 +162,34 @@ class AdAgentStore:
         created_by TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        published_at TEXT
+        published_at TEXT,
+        wiki_type TEXT NOT NULL DEFAULT 'concept',
+        derived_from TEXT NOT NULL DEFAULT '',
+        raw_sha256 TEXT NOT NULL DEFAULT '',
+        wikilinks TEXT NOT NULL DEFAULT '[]'
     );
+
+    CREATE TABLE IF NOT EXISTS raw_knowledge_sources (
+        source_id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        media_type TEXT NOT NULL,
+        content TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'received',
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        ingest_task_id TEXT,
+        ingest_error TEXT,
+        ingest_attempts INTEGER NOT NULL DEFAULT 0,
+        ingest_started_at TEXT,
+        ingest_finished_at TEXT,
+        UNIQUE (tenant_id, sha256)
+    );
+    CREATE INDEX IF NOT EXISTS idx_raw_knowledge_sources_scope
+        ON raw_knowledge_sources(tenant_id, status, updated_at DESC);
 
     CREATE TABLE IF NOT EXISTS creation_templates (
         template_id TEXT PRIMARY KEY,
@@ -921,6 +948,45 @@ class AdAgentStore:
                 "traits": "TEXT NOT NULL DEFAULT '[\"external\", \"mcp\"]'",
             }.items():
                 cls._add_column_if_missing(conn, "mcp_tools", column, definition)
+        elif version == 19:
+            for column, definition in {
+                "wiki_type": "TEXT NOT NULL DEFAULT 'concept'",
+                "derived_from": "TEXT NOT NULL DEFAULT ''",
+                "raw_sha256": "TEXT NOT NULL DEFAULT ''",
+                "wikilinks": "TEXT NOT NULL DEFAULT '[]'",
+            }.items():
+                cls._add_column_if_missing(conn, "knowledge_documents", column, definition)
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS raw_knowledge_sources (
+                    source_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'received',
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    ingest_task_id TEXT,
+                    ingest_error TEXT,
+                    UNIQUE (tenant_id, sha256)
+                );
+                CREATE INDEX IF NOT EXISTS idx_raw_knowledge_sources_scope
+                    ON raw_knowledge_sources(tenant_id, status, updated_at DESC);
+                """
+            )
+        elif version == 20:
+            for column, definition in {
+                "ingest_attempts": "INTEGER NOT NULL DEFAULT 0",
+                "ingest_started_at": "TEXT",
+                "ingest_finished_at": "TEXT",
+            }.items():
+                cls._add_column_if_missing(
+                    conn, "raw_knowledge_sources", column, definition
+                )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -3673,10 +3739,29 @@ class AdAgentStore:
             cursor = conn.execute(
                 "UPDATE memories SET status = 'deleted', updated_at = ? "
                 "WHERE memory_id = ? AND tenant_id = ? AND user_id = ? AND status != 'deleted'",
-                (datetime.now().isoformat(), str(memory_id), str(tenant_id), str(user_id)),
+                (
+                    datetime.now(timezone.utc).isoformat(),
+                    str(memory_id),
+                    str(tenant_id),
+                    str(user_id),
+                ),
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def purge_memories(self, *, before: str, expired_before: str) -> int:
+        """Bounded lifecycle cleanup for expired records and old tombstones."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """DELETE FROM memories
+                   WHERE (status IN ('deleted', 'superseded') AND updated_at < ?)
+                      OR (status = 'active' AND expires_at IS NOT NULL
+                          AND expires_at <= ?)""",
+                (str(before), str(expired_before)),
+            )
+            conn.commit()
+            return int(cursor.rowcount or 0)
 
     def create_session(self, session_id: str, user_id: str, account_id: str = None, 
                        metadata: dict = None) -> None:
@@ -3860,8 +3945,9 @@ class AdAgentStore:
                     """INSERT INTO knowledge_documents
                        (document_id, tenant_id, title, content, platform, layer,
                         knowledge_type, source, source_ref, version, confidence,
-                        tags, status, created_by, created_at, updated_at, published_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        tags, status, created_by, created_at, updated_at, published_at,
+                        wiki_type, derived_from, raw_sha256, wikilinks)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         data["document_id"], data["tenant_id"], data["title"],
                         data["content"], data["platform"], data["layer"],
@@ -3869,7 +3955,8 @@ class AdAgentStore:
                         data["version"], data["confidence"],
                         json.dumps(data["tags"], ensure_ascii=False), data["status"],
                         data["created_by"], data["created_at"], data["updated_at"],
-                        data["published_at"],
+                        data["published_at"], data["wiki_type"], data["derived_from"],
+                        data["raw_sha256"], json.dumps(data["wikilinks"], ensure_ascii=False),
                     ),
                 )
             except sqlite3.IntegrityError as exc:
@@ -3894,13 +3981,16 @@ class AdAgentStore:
                 """UPDATE knowledge_documents
                    SET title = ?, content = ?, platform = ?, layer = ?,
                        knowledge_type = ?, source = ?, source_ref = ?,
-                       version = ?, confidence = ?, tags = ?, updated_at = ?
+                       version = ?, confidence = ?, tags = ?, updated_at = ?,
+                       wiki_type = ?, derived_from = ?, raw_sha256 = ?, wikilinks = ?
                    WHERE document_id = ? AND tenant_id = ? AND status = 'draft'""",
                 (
                     data["title"], data["content"], data["platform"], data["layer"],
                     data["knowledge_type"], data["source"], data["source_ref"],
                     data["version"], data["confidence"],
                     json.dumps(data["tags"], ensure_ascii=False), now,
+                    data["wiki_type"], data["derived_from"], data["raw_sha256"],
+                    json.dumps(data["wikilinks"], ensure_ascii=False),
                     str(document_id), str(tenant_id),
                 ),
             )
@@ -4021,6 +4111,187 @@ class AdAgentStore:
                     (str(document_id),),
                 ).fetchone()
             )
+
+    # -- Immutable raw Wiki sources -----------------------------------
+
+    @staticmethod
+    def _raw_knowledge_row(row: Any) -> Optional[RawKnowledgeSourceRecord]:
+        return RawKnowledgeSourceRecord.from_row(dict(row)) if row else None
+
+    def create_raw_knowledge_source(
+        self, record: RawKnowledgeSourceRecord,
+    ) -> RawKnowledgeSourceRecord:
+        data = record.to_dict()
+        with self._lock:
+            conn = self._get_conn()
+            try:
+                conn.execute(
+                    """INSERT INTO raw_knowledge_sources
+                       (source_id, tenant_id, filename, media_type, content, sha256,
+                       source_ref, status, created_by, created_at, updated_at,
+                        ingest_task_id, ingest_error, ingest_attempts,
+                        ingest_started_at, ingest_finished_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        data["source_id"], data["tenant_id"], data["filename"],
+                        data["media_type"], data["content"], data["sha256"],
+                        data["source_ref"], data["status"], data["created_by"],
+                        data["created_at"], data["updated_at"],
+                        data["ingest_task_id"], data["ingest_error"],
+                        data["ingest_attempts"], data["ingest_started_at"],
+                        data["ingest_finished_at"],
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceConflictError(
+                    "raw knowledge source violates a persistence constraint"
+                ) from exc
+            conn.commit()
+            return self._raw_knowledge_row(
+                conn.execute(
+                    "SELECT * FROM raw_knowledge_sources WHERE source_id = ?",
+                    (data["source_id"],),
+                ).fetchone()
+            ) or record
+
+    def get_raw_knowledge_source(
+        self, source_id: str, *, tenant_id: Optional[str] = None,
+    ) -> Optional[RawKnowledgeSourceRecord]:
+        query = "SELECT * FROM raw_knowledge_sources WHERE source_id = ?"
+        params: list[Any] = [str(source_id)]
+        if tenant_id is not None:
+            query += " AND tenant_id = ?"
+            params.append(str(tenant_id))
+        with self._lock:
+            return self._raw_knowledge_row(
+                self._get_conn().execute(query, params).fetchone()
+            )
+
+    def find_raw_knowledge_source_by_hash(
+        self, tenant_id: str, sha256: str,
+    ) -> Optional[RawKnowledgeSourceRecord]:
+        with self._lock:
+            return self._raw_knowledge_row(self._get_conn().execute(
+                """SELECT * FROM raw_knowledge_sources
+                   WHERE tenant_id = ? AND sha256 = ?""",
+                (str(tenant_id), str(sha256)),
+            ).fetchone())
+
+    def update_raw_knowledge_source(
+        self, source_id: str, *, tenant_id: str, data: dict[str, Any],
+    ) -> Optional[RawKnowledgeSourceRecord]:
+        allowed = {
+            "status", "updated_at", "ingest_task_id", "ingest_error",
+            "ingest_started_at", "ingest_finished_at",
+        }
+        if set(data) - allowed:
+            raise ValueError("raw knowledge source content is immutable")
+        assignments = ", ".join(f"{key} = ?" for key in data)
+        if not assignments:
+            return self.get_raw_knowledge_source(source_id, tenant_id=tenant_id)
+        values = [data[key] for key in data] + [str(source_id), str(tenant_id)]
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "UPDATE raw_knowledge_sources SET " + assignments +
+                " WHERE source_id = ? AND tenant_id = ?",
+                values,
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._raw_knowledge_row(conn.execute(
+                "SELECT * FROM raw_knowledge_sources WHERE source_id = ?",
+                (str(source_id),),
+            ).fetchone())
+
+    def claim_raw_knowledge_source(
+        self,
+        source_id: str,
+        *,
+        tenant_id: str,
+        task_id: Optional[str],
+        started_at: str,
+    ) -> Optional[RawKnowledgeSourceRecord]:
+        """Atomically move a retryable raw source into ``ingesting``."""
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE raw_knowledge_sources
+                   SET status = 'ingesting',
+                       updated_at = ?,
+                       ingest_task_id = ?,
+                       ingest_error = NULL,
+                       ingest_attempts = ingest_attempts + 1,
+                       ingest_started_at = ?,
+                       ingest_finished_at = NULL
+                   WHERE source_id = ? AND tenant_id = ?
+                     AND status IN ('received', 'failed')""",
+                (
+                    str(started_at), task_id, str(started_at),
+                    str(source_id), str(tenant_id),
+                ),
+            )
+            conn.commit()
+            if not cursor.rowcount:
+                return None
+            return self._raw_knowledge_row(
+                conn.execute(
+                    "SELECT * FROM raw_knowledge_sources WHERE source_id = ?",
+                    (str(source_id),),
+                ).fetchone()
+            )
+
+    def recover_stale_raw_knowledge_sources(
+        self,
+        *,
+        tenant_id: str,
+        stale_after_seconds: float = 900.0,
+        recovered_at: Optional[str] = None,
+    ) -> int:
+        """Release raw sources whose ingest worker stopped heartbeating."""
+        if recovered_at:
+            current = datetime.fromisoformat(str(recovered_at))
+            if current.tzinfo is None:
+                current = current.replace(tzinfo=timezone.utc)
+        else:
+            current = datetime.now(timezone.utc)
+        cutoff = (
+            current - timedelta(seconds=max(1.0, float(stale_after_seconds)))
+        ).isoformat()
+        finished_at = current.isoformat()
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                """UPDATE raw_knowledge_sources
+                   SET status = 'failed',
+                       updated_at = ?,
+                       ingest_finished_at = ?,
+                       ingest_error = 'worker lease expired; retry required'
+                   WHERE tenant_id = ?
+                     AND status = 'ingesting'
+                     AND ingest_started_at IS NOT NULL
+                     AND ingest_started_at < ?""",
+                (finished_at, finished_at, str(tenant_id), cutoff),
+            )
+            conn.commit()
+            return int(cursor.rowcount or 0)
+
+    def list_raw_knowledge_sources(
+        self, tenant_id: str, status: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[RawKnowledgeSourceRecord]:
+        limit = max(1, min(int(limit), 500))
+        query = "SELECT * FROM raw_knowledge_sources WHERE tenant_id = ?"
+        params: list[Any] = [str(tenant_id)]
+        if status:
+            query += " AND status = ?"
+            params.append(str(status))
+        query += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._get_conn().execute(query, params).fetchall()
+            return [self._raw_knowledge_row(row) for row in rows if row]
 
     def _ensure_knowledge_search_index(self, conn: Any) -> bool:
         if not isinstance(conn, sqlite3.Connection):

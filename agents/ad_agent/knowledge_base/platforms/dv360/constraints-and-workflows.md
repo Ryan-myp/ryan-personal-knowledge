@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: constraint
 platform: dv360
 source: Display & Video 360 API 官方文档 + 当前 Capability schema
-source_ref: https://developers.google.com/display-video/api/concepts/targeting
+source_ref: "https://developers.google.com/display-video/api/concepts/targeting"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [dv360, budget, flight, targeting, brand-safety, creative, workflow]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 预算、定向、创意与投放工作流

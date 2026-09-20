@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: workflow
 platform: google-ads
 source: Google Ads 官方文档 + 当前报表 Capability
-source_ref: https://developers.google.com/google-ads/api/docs/conversions/overview
+source_ref: "https://developers.google.com/google-ads/api/docs/conversions/overview"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [google, conversion, gaql, reporting, attribution, diagnostics]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google Ads 转化、报表与故障诊断

@@ -8,12 +8,16 @@ category: campaign_operations
 subcategory: canonical-campaign-and-adgroup-runbook
 platform: tiktok
 source: TikTok Marketing API 官方文档与当前 Capability 约束
-source_ref: https://business-api.tiktok.com/portal/docs?id=1738865457882113
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1738865457882113"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [tiktok, advertiser, campaign, ad-group, ad, creative, smart-plus, spark, reporting]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Campaign、Ad Group 与创意安全操作手册

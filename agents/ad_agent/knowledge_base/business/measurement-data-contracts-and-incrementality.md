@@ -8,12 +8,16 @@ category: measurement
 subcategory: measurement-data-contracts-and-incrementality
 platform: all
 source: 广告测量方法论
-source_ref: agents/ad_agent/knowledge_base/business/measurement-data-contracts-and-incrementality.md
+source_ref: "internal://ad-agent/playbook/measurement-data-contracts-and-incrementality"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [measurement, attribution, incrementality, reconciliation, events, data-quality]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 广告测量数据契约、对账与增量评估

@@ -6,12 +6,16 @@ layer: business
 knowledge_type: business_strategy
 platform: all
 source: 广告行业方法论 + 四平台官方能力边界
-source_ref: agents/ad_agent/knowledge_base/business/industry-playbooks.md
+source_ref: "internal://ad-agent/playbook/industry-advertising-playbooks"
 version: "1.0.0"
 confidence: 0.78
 updated_at: "2026-09-08"
 tags: [ecommerce, app, gaming, b2b, lead-generation, industry, strategy]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 电商、App 游戏与 B2B 线索行业投放打法

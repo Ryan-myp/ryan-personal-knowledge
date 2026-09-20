@@ -9,6 +9,7 @@ https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
 
 import re
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from dataclasses import dataclass, field
@@ -194,13 +195,23 @@ def synthesize_answer(query: str, search_result: Dict[str, Any], wiki: WikiConte
 
 def archive_query_result(wiki: WikiContext, question: str, answer: str) -> Optional[Path]:
     """归档有价值的问答"""
-    today = wiki.log_entries[-1][:10] if wiki.log_entries else "N/A"
+    today = (
+        wiki.log_entries[-1][4:14]
+        if wiki.log_entries
+        else datetime.now().strftime("%Y-%m-%d")
+    )
     tags = extract_tags(answer)
     fm = {
         'title': question[:50],
         'created': today,
         'updated': today,
-        'type': 'query',
+        'wiki_type': 'query',
+        'schema_version': '1',
+        'layer': 'business',
+        'platform': 'all',
+        'version': '1.0.0',
+        'confidence': '0.7',
+        'status': 'published',
         'tags': tags if tags else ['问答'],
     }
 

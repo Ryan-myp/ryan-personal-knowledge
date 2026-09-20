@@ -8,12 +8,16 @@ category: measurement
 subcategory: insights-breakdowns-attribution-and-async
 platform: meta
 source: Meta Marketing API 官方文档
-source_ref: https://developers.facebook.com/docs/marketing-api/insights
+source_ref: "https://developers.facebook.com/docs/marketing-api/insights"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [meta, insights, breakdowns, attribution, async, pagination, reporting]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Insights 分层报表、Breakdown 与异步查询

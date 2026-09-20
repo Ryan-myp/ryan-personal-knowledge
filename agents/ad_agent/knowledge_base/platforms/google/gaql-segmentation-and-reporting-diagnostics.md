@@ -8,12 +8,16 @@ category: measurement
 subcategory: gaql-segmentation-and-reporting-diagnostics
 platform: google-ads
 source: Google Ads API 官方文档
-source_ref: https://developers.google.com/google-ads/api/docs/query/overview
+source_ref: "https://developers.google.com/google-ads/api/docs/query/overview"
 version: "1.0.0"
 confidence: 0.91
 updated_at: "2026-09-08"
 tags: [google-ads, gaql, reporting, segmentation, attribution, pagination]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google GAQL 分层查询、分段与报表诊断

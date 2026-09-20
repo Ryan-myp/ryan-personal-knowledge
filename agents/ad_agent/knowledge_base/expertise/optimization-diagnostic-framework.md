@@ -6,12 +6,16 @@ layer: experience
 knowledge_type: best_practice
 platform: all
 source: 广告运营实战方法论 + 当前四渠道 Skill
-source_ref: agents/ad_agent/skills/channels/*/SKILL.md
+source_ref: "agents/ad_agent/skills/channels/*/SKILL.md"
 version: "1.0.0"
 confidence: 0.84
 updated_at: "2026-09-08"
 tags: [optimization, diagnosis, funnel, learning, pacing, decision-tree]
 status: published
+source_kind: "code"
+authority: "repository"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # 广告投放全链路诊断与优化决策树

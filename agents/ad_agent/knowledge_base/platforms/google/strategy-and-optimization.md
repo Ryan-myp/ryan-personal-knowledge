@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: google-ads
 source: Google Ads 官方文档 + Google Ads Capability/Skill
-source_ref: https://developers.google.com/google-ads/api/docs/campaigns/bidding/strategy
+source_ref: "https://developers.google.com/google-ads/api/docs/campaigns/bidding/strategy"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [google, search, pmax, shopping, video, app, bidding, optimization]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google Ads 目标、出价与优化方法

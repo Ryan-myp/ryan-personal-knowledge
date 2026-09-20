@@ -33,6 +33,10 @@ class SessionManager:
     
     def __init__(self, store: PersistenceBackend):
         self.store = store
+        # Keep one governed manager per SessionManager so its bounded recall
+        # cache can actually be reused across facade calls. Persistence
+        # remains the source of truth; the cache is process-local and TTL-bound.
+        self.memory_manager = MemoryManager(store)
     
     # ─── Session 管理 ──────────────────────────────────────────
     
@@ -177,15 +181,15 @@ class SessionManager:
 
     def remember(self, content: str, **kwargs: Any) -> MemoryRecord:
         """Write governed memory without exposing backend details."""
-        return MemoryManager(self.store).remember(content, **kwargs)
+        return self.memory_manager.remember(content, **kwargs)
 
     def recall_memories(self, query: str, **kwargs: Any) -> list[MemoryRecord]:
         """Recall only memories within the supplied tenant/user scope."""
-        return MemoryManager(self.store).recall(query, **kwargs)
+        return self.memory_manager.recall(query, **kwargs)
 
     def forget_memory(self, memory_id: str, **kwargs: Any) -> bool:
         """Tombstone one memory within the supplied tenant/user scope."""
-        return MemoryManager(self.store).forget(memory_id, **kwargs)
+        return self.memory_manager.forget(memory_id, **kwargs)
     
     # ─── Campaign 状态管理 ─────────────────────────────────────
     

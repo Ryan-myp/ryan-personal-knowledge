@@ -50,6 +50,7 @@ from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
+from ..core.policy_engine import PolicyEngine, PolicyRequest
 from ..core.memory import MemoryManager
 from ..domain.ad.knowledge import KnowledgeProvider, MarkdownWikiKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
@@ -97,6 +98,7 @@ _execution_mode_context: ContextVar[Optional[str]] = ContextVar(
 )
 _EXECUTION_MODE_CACHE_TTL_SECONDS = 5.0
 _EXECUTION_MODE_CACHE_MAX_ENTRIES = 1024
+_BLUEPRINT_CONTEXT_CACHE_MAX_ENTRIES = 128
 
 
 # ─── Advertising application runtime ──────────────────────────
@@ -184,6 +186,7 @@ class AdAgentRuntime(
         outbox_max_attempts: int = 10,
         start_background_workers: bool = True,
         conversation_title_use_llm: bool = False,
+        auto_memory_capture_enabled: bool = True,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -199,6 +202,7 @@ class AdAgentRuntime(
         )
         self.provider_bindings = ProviderBindings()
         self.require_llm = bool(require_llm)
+        self.auto_memory_capture_enabled = bool(auto_memory_capture_enabled)
         self.agent_profile = AgentProfile(
             name="ad-agent",
             role="广告投放与分析助手",
@@ -308,6 +312,10 @@ class AdAgentRuntime(
         self._skill_tool_names: dict[str, list[str]] = {}
         self._skill_namespaces: dict[str, str] = {}
         self._skill_format_ids: dict[str, set[str]] = {}
+        # Tool registry entries and the derived Skill ownership indexes must
+        # change as one lifecycle transaction. Execution remains concurrent;
+        # only register/unload paths use this lock.
+        self._skill_lifecycle_lock = threading.RLock()
         # User-managed Skills are tenant-owned context packages.  They are
         # deliberately tracked separately from executable provider Skills so
         # an uploaded directory cannot become a Tool merely by containing a
@@ -355,7 +363,9 @@ class AdAgentRuntime(
         # Blueprint context is declarative and changes only at registry
         # lifecycle boundaries. Cache the bounded LLM view per provider scope
         # so ordinary turns do not re-expand every creation schema twice.
-        self._creation_blueprint_context_cache: dict[tuple[str, ...], str] = {}
+        self._creation_blueprint_context_cache: OrderedDict[
+            tuple[str, ...], str
+        ] = OrderedDict()
         # This is a metadata index, not a second executable routing table.
         # Each provider Capability owns and publishes its own entries.
         self.ad_format_catalogs: dict[str, list[dict[str, Any]]] = {}
@@ -371,6 +381,10 @@ class AdAgentRuntime(
         self._parameter_selection_signer = ParameterSelectionSigner(
             selection_secret, parameter_selection_ttl_seconds
         )
+        # One deterministic policy evaluator is shared by the application
+        # gates. UI confirmation remains an application/security concern, but
+        # permission calculation must not be duplicated across services.
+        self.policy_engine = PolicyEngine()
         self.policies: list[RuntimePolicy] = list(policies or [])
         if self.policies:
             self.tool_selector.set_policies(self.policies)
@@ -676,6 +690,37 @@ class AdAgentRuntime(
             if callable(register_aliases):
                 register_aliases(skill.namespace, skill.namespace_aliases or [])
 
+    def _on_generic_tool_catalog_changed(self) -> None:
+        """Refresh application indexes after a generic Tool source changes."""
+        for definition in self.registry.list_all():
+            self.parameter_catalogs.register_tool_schema(
+                definition.namespace,
+                getattr(definition.input_schema, "properties", {})
+                if definition.input_schema else {},
+                tool_name=definition.name,
+            )
+        self._refresh_parser_catalog()
+
+    def register_tool(
+        self,
+        definition: ToolDefinition,
+        executor: Any,
+        *,
+        source_id: str = "local",
+    ) -> None:
+        """Register one provider-neutral Tool through the Harness seam."""
+        self._runtime_kernel.register_tool(
+            definition, executor, source_id=source_id,
+        )
+
+    def register_tool_source(self, source: Any) -> list[str]:
+        """Register a local, SDK/HTTP or MCP Tool source."""
+        return self._runtime_kernel.register_tool_source(source)
+
+    def unregister_tool_source(self, source_id: str) -> list[str]:
+        """Unload a complete Tool source and refresh parser discovery."""
+        return self._runtime_kernel.unregister_tool_source(source_id)
+
     @staticmethod
     def _canonical_platform(platform: str) -> str:
         """Normalize aliases without keeping a Runtime platform registry."""
@@ -780,6 +825,13 @@ class AdAgentRuntime(
     def memory_manager(self) -> Optional[MemoryManager]:
         """Expose the optional, provider-neutral Agent Memory service."""
         return self._memory_manager
+
+    def set_auto_memory_capture_enabled(self, enabled: bool) -> None:
+        """Toggle automatic event capture without disabling explicit memory."""
+        self.auto_memory_capture_enabled = bool(enabled)
+        manager = self._memory_manager
+        if manager is not None:
+            manager.set_auto_capture_enabled(bool(enabled))
 
     def _register_builtin_plugin(
         self,
@@ -934,15 +986,19 @@ class AdAgentRuntime(
             if item.strip()
         ]
         provider_key = tuple(sorted(set(provider_scope)))
-        if provider_key not in self._creation_blueprint_context_cache:
-            self._creation_blueprint_context_cache[provider_key] = (
+        if provider_key in self._creation_blueprint_context_cache:
+            publisher_context = self._creation_blueprint_context_cache.pop(provider_key)
+            self._creation_blueprint_context_cache[provider_key] = publisher_context
+        else:
+            publisher_context = (
                 self.creation_card_builder.llm_context(
                     providers=list(provider_key) or None
                 )
             )
-        context["publisher_context"] = self._creation_blueprint_context_cache[
-            provider_key
-        ]
+            self._creation_blueprint_context_cache[provider_key] = publisher_context
+            while len(self._creation_blueprint_context_cache) > _BLUEPRINT_CONTEXT_CACHE_MAX_ENTRIES:
+                self._creation_blueprint_context_cache.popitem(last=False)
+        context["publisher_context"] = publisher_context
         return context
 
     def _optimize_tool_selection(
@@ -1029,19 +1085,44 @@ class AdAgentRuntime(
         tool_def: Any,
         granted_permissions: Optional[set[str] | frozenset[str]] = None,
     ) -> Optional[str]:
-        required = {
-            str(permission) for permission in (getattr(tool_def, "required_permissions", []) or [])
-        }
-        # Planning and live execution are distinct grants.  A write tool may
-        # be used to produce a dry-run plan with ads.plan, but executing it
-        # against a provider additionally requires ads.write.
-        if tool_def.is_write_tool and self.execution_mode == ExecutionMode.LIVE.value:
-            required.add("ads.write")
         granted = self._granted_permissions if granted_permissions is None else frozenset(granted_permissions)
-        missing = sorted(required - granted)
-        if missing:
-            return "缺少工具所需权限：" + ", ".join(missing)
-        return None
+        errors = self.policy_engine.check_permissions(
+            tool_def,
+            execution_mode=self.execution_mode,
+            granted_permissions=granted,
+        )
+        return errors[0] if errors else None
+
+    def _evaluate_tool_policy(
+        self,
+        tool_def: Any,
+        *,
+        granted_permissions: Optional[set[str] | frozenset[str]] = None,
+        scope: Any = None,
+        principal: Any = None,
+        confirmed: bool = False,
+        require_confirmation: bool = True,
+    ) -> Any:
+        """Evaluate generic Tool gates at the application boundary."""
+        granted = (
+            self._granted_permissions
+            if granted_permissions is None
+            else frozenset(granted_permissions)
+        )
+        return self.policy_engine.evaluate(
+            PolicyRequest(
+                tool=tool_def,
+                execution_mode=self.execution_mode,
+                granted_permissions=granted,
+                scope=scope,
+                principal=principal,
+                allow_live_writes=self.allow_live_writes,
+                live_approved_tools=self._live_approved_tools,
+                write_guard_configured=self.write_guard is not None,
+                confirmed=confirmed,
+                require_confirmation=require_confirmation,
+            )
+        )
 
     def inject_llm(self, llm_client) -> None:
         """注入 LLM 客户端"""
@@ -1498,48 +1579,12 @@ class AdAgentRuntime(
         )
 
     def _execute_kernel_request(self, request: TurnRequest) -> dict:
-        """Adapt the generic kernel request to the application turn engine."""
-        request_context = request.context if isinstance(request.context, Mapping) else {}
-        principal = request.principal
-        permissions = (
-            principal.permissions
-            if principal is not None else self._granted_permissions
-        )
-        account_scope = principal.account_scope if principal is not None else None
-        result = self._run_unlocked(
-            user_input=request.user_input,
-            session_id=request.session_id,
-            user_id=request.user_id,
-            account_id=request_context.get("account_id"),
-            credentials=request_context.get("credentials"),
-            platform_params=request_context.get("platform_params"),
-            confirmed=bool(request_context.get("confirmed", False)),
-            confirmation_payload=request_context.get("confirmation_payload"),
-            creation_blueprint_id=request_context.get("creation_blueprint_id"),
-            creation_blueprint_version=request_context.get("creation_blueprint_version"),
-            granted_permissions=permissions,
-            account_scope=account_scope,
-            tenant_id=request.tenant_id,
-            cancellation_event=request.cancellation_event,
-            lease_lost_event=request.lease_lost_event,
-            event_callback=request.event_callback,
-            task_id=request.task_id,
-        )
-        if request.lease_lost_event is not None and request.lease_lost_event.is_set():
-            # The application run may already have crossed a provider side
-            # effect boundary. Persist uncertainty, never a retryable success.
-            signals = dict(result.get("runtime_signals") or {}) if isinstance(result, dict) else {}
-            signals["session_lease_lost"] = True
-            if isinstance(result, dict):
-                result["runtime_signals"] = signals
-                run_id = result.get("run_id")
-                updater = getattr(self._session_manager, "update_execution_run", None)
-                if run_id and callable(updater):
-                    updater(
-                        str(run_id), status="recovery_required",
-                        metadata={"effect_state": "unknown", "session_lease_lost": True},
-                    )
-        return result
+        """Compatibility adapter to the injected application TurnPipeline."""
+        pipeline = getattr(self._runtime_kernel, "turn_pipeline", None)
+        if pipeline is not None and hasattr(pipeline, "execute"):
+            return pipeline.execute(request)
+        from .ad_turn_pipeline import AdTurnPipeline
+        return AdTurnPipeline(self).execute(request)
 
     def _ensure_kernel_session(self, request: TurnRequest) -> "SessionContext":
         """Interpret the opaque Kernel context at the advertising boundary."""

@@ -59,6 +59,10 @@ from agents.ad_agent.knowledge_management import (
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
 )
+from agents.ad_agent.knowledge_ingest import (
+    KnowledgeIngestError,
+    RawKnowledgeManager,
+)
 from agents.ad_agent.creation_templates import (
     CreationTemplateError,
     CreationTemplateManager,
@@ -473,6 +477,7 @@ class MemoryWriteRequest(BaseModel):
 
     content: str = Field(min_length=1, max_length=4000)
     kind: str = Field(default="semantic", min_length=1, max_length=32)
+    session_id: Optional[str] = Field(default=None, max_length=200)
     tags: list[str] = Field(default_factory=list, max_length=20)
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
@@ -1350,6 +1355,19 @@ class KnowledgeDocumentRequest(BaseModel):
     version: str = Field(default="1.0.0", max_length=80)
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
     tags: list[str] = Field(default_factory=list, max_length=20)
+    wiki_type: str = Field(default="concept", max_length=32)
+    derived_from: str = Field(default="", max_length=200)
+    raw_sha256: str = Field(default="", max_length=128)
+    wikilinks: list[str] = Field(default_factory=list, max_length=30)
+
+
+class RawKnowledgeUploadRequest(BaseModel):
+    """A source file stored immutably before asynchronous Wiki ingest."""
+
+    filename: str = Field(min_length=1, max_length=240)
+    content: str = Field(min_length=1, max_length=120_000)
+    media_type: str = Field(default="text/markdown", max_length=100)
+    source_ref: str = Field(default="", max_length=500)
 
 
 class CreationTemplateRequest(BaseModel):
@@ -1396,6 +1414,12 @@ def _knowledge_manager_or_503() -> ManagedKnowledgeManager:
     if not runtime or not getattr(runtime, "persistence_store", None):
         raise HTTPException(status_code=503, detail="知识库存储未初始化")
     return ManagedKnowledgeManager(runtime.persistence_store)
+
+
+def _raw_knowledge_manager_or_503() -> RawKnowledgeManager:
+    if not runtime or not getattr(runtime, "persistence_store", None):
+        raise HTTPException(status_code=503, detail="知识库存储未初始化")
+    return RawKnowledgeManager(runtime.persistence_store)
 
 
 def _creation_template_manager_or_503() -> CreationTemplateManager:
@@ -1569,6 +1593,90 @@ async def list_knowledge_documents(
     }
 
 
+@app.get("/knowledge/raw", tags=["knowledge"])
+async def list_raw_knowledge_sources(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    status: Optional[str] = Query(None, max_length=32),
+    limit: int = Query(100, ge=1, le=200),
+):
+    """List tenant-owned immutable sources and their ingest status."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.read")
+    records = _raw_knowledge_manager_or_503().store.list_raw_knowledge_sources(
+        principal.tenant_id, status=status, limit=limit
+    )
+    return {
+        "tenant_id": principal.tenant_id,
+        "sources": [
+            {
+                key: value
+                for key, value in record.to_dict().items()
+                if key != "content"
+            }
+            for record in records
+        ],
+    }
+
+
+@app.post("/knowledge/raw", tags=["knowledge"])
+async def upload_raw_knowledge_source(
+    body: RawKnowledgeUploadRequest,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    idempotency_header: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    """Store a raw source first, then queue controlled LLM ingestion."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.write")
+    manager = _raw_knowledge_manager_or_503()
+    try:
+        source = await run_in_threadpool(
+            manager.create_source,
+            tenant_id=principal.tenant_id,
+            filename=body.filename,
+            content=body.content,
+            created_by=principal.user_id,
+            media_type=body.media_type,
+            source_ref=body.source_ref,
+        )
+        task = None
+        created = False
+        if runtime and callable(getattr(runtime, "submit_knowledge_ingest", None)):
+            task, created = await run_in_threadpool(
+                runtime.submit_knowledge_ingest,
+                source["source_id"],
+                principal=principal,
+            )
+        else:
+            raise RuntimeError("异步知识 ingest 执行器未初始化")
+    except (KnowledgeIngestError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return JSONResponse(
+        status_code=202,
+        content={"source": source, "task": task, "created": created},
+    )
+
+
+@app.get("/knowledge/raw/{source_id}", tags=["knowledge"])
+async def get_raw_knowledge_source(
+    source_id: str,
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Read raw metadata without exposing source content by default."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "knowledge.read")
+    result = _raw_knowledge_manager_or_503().get_source(
+        source_id, tenant_id=principal.tenant_id
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="raw 文档不存在或无权访问")
+    return result
+
+
 @app.post("/knowledge/documents", tags=["knowledge"])
 async def create_knowledge_document(
     body: KnowledgeDocumentRequest,
@@ -1673,6 +1781,7 @@ async def recall_memory(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     query: str = Query("", max_length=2000),
     session_id: Optional[str] = Query(None, max_length=200),
+    kinds: Optional[list[str]] = Query(None),
     limit: int = Query(10, ge=1, le=20),
 ):
     """Recall only the authenticated principal's tenant/user memories."""
@@ -1680,11 +1789,19 @@ async def recall_memory(
     _require_principal_permission(principal, "memory.read")
     if not runtime or not runtime.memory_manager:
         raise HTTPException(status_code=503, detail="Memory 未初始化")
+    selected_kinds = None
+    if kinds:
+        selected_kinds = tuple(dict.fromkeys(
+            str(kind).strip().lower() for kind in kinds if str(kind).strip()
+        ))
+        if any(kind not in MEMORY_KINDS for kind in selected_kinds):
+            raise HTTPException(status_code=422, detail="unsupported memory kind")
     records = runtime.memory_manager.recall(
         query,
         tenant_id=principal.tenant_id,
         user_id=principal.user_id,
         session_id=session_id,
+        kinds=selected_kinds,
         limit=limit,
     )
     return {"memories": [record.to_context_dict() for record in records]}
@@ -1709,6 +1826,7 @@ async def write_memory(
             tenant_id=principal.tenant_id,
             user_id=principal.user_id,
             kind=body.kind,
+            session_id=body.session_id,
             tags=body.tags,
             importance=body.importance,
             confidence=body.confidence,

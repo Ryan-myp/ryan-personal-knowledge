@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: workflow
 platform: tiktok
 source: TikTok Ads API 官方文档 + TikTok Capability/Skill
-source_ref: https://business-api.tiktok.com/portal/docs?id=1738865671534594
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1738865671534594"
 version: "1.0.0"
 confidence: 0.84
 updated_at: "2026-09-08"
 tags: [tiktok, app, gaming, product-sales, catalog, lead, pixel, events-api, mmp]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok App、Lead、商品销售与事件回传

@@ -6,12 +6,16 @@ layer: business
 knowledge_type: bidding_strategy
 platform: all
 source: 广告平台官方出价文档 + 增长投放方法论
-source_ref: agents/ad_agent/knowledge_base/business/bidding-and-budget.md
+source_ref: "internal://ad-agent/playbook/cross-platform-bidding-and-budget"
 version: "1.0.0"
 confidence: 0.84
 updated_at: "2026-09-08"
 tags: [budget, bidding, target-cpa, target-roas, cost-cap, bid-cap, marginal-roas]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 跨平台预算分配与出价策略

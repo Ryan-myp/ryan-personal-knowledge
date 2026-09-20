@@ -7,7 +7,7 @@ persistence/__init__.py - 持久化层
 - Campaign State（Campaign 资源状态，跨会话恢复）
 """
 
-from .interfaces import PersistenceBackend
+from .interfaces import KnowledgeStorePort, PersistenceBackend
 from .models import CampaignRecord, OutboxEvent, TaskRecord, ToolCallRecord
 from .store import AdAgentStore
 from .factory import create_persistence_store
@@ -15,6 +15,6 @@ from .mysql_store import MySQLStore
 from .session_manager import SessionManager
 
 __all__ = [
-    "AdAgentStore", "MySQLStore", "create_persistence_store", "CampaignRecord", "OutboxEvent", "TaskRecord", "ToolCallRecord", "PersistenceBackend",
+    "AdAgentStore", "MySQLStore", "create_persistence_store", "CampaignRecord", "OutboxEvent", "TaskRecord", "ToolCallRecord", "KnowledgeStorePort", "PersistenceBackend",
     "SessionManager",
 ]

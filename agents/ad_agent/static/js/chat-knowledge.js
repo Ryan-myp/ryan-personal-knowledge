@@ -232,25 +232,55 @@
             const supported = new Set(['md', 'markdown', 'txt', 'yaml', 'yml', 'json', 'csv']);
             try {
                 if (!supported.has(extension)) throw new Error('目前只支持 Markdown、TXT、YAML、JSON、CSV 文件。');
-                if (file.size > 60000 * 4) throw new Error('文件过大，请上传不超过 240 KB 的文本文件。');
+                if (file.size > 120000 * 4) throw new Error('文件过大，请上传不超过 480 KB 的文本文件。');
                 const content = await file.text();
                 if (!content.trim()) throw new Error('文件内容为空，请选择有正文的文件。');
-                if (content.length > 60000) throw new Error('文件正文超过 60,000 字，请精简后再上传。');
-                const titleInput = document.getElementById('knowledgeTitle');
-                if (titleInput && !titleInput.value.trim()) {
-                    titleInput.value = file.name.replace(/\.[^.]+$/, '');
-                }
-                const contentInput = document.getElementById('knowledgeContent');
-                if (contentInput) {
-                    contentInput.value = content;
-                    contentInput.dispatchEvent(new Event('input'));
-                }
-                setKnowledgeWriteStatus(`已导入 ${file.name}，请检查内容后保存。`);
+                if (content.length > 120000) throw new Error('文件正文超过 120,000 字，请精简后再上传。');
+                setKnowledgeWriteStatus(`正在保存 ${file.name} 的原始文件并启动自动 ingest…`);
+                const mediaType = extension === 'json'
+                    ? 'application/json'
+                    : extension === 'md' || extension === 'markdown'
+                        ? 'text/markdown'
+                        : 'text/plain';
+                const result = await apiFetch('/knowledge/raw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filename: file.name,
+                        content,
+                        media_type: mediaType,
+                    }),
+                });
+                const sourceId = result.source?.source_id || '';
+                setKnowledgeWriteStatus(
+                    result.created === false
+                        ? '这个原始文件已经存在，正在复用已有 ingest 任务…'
+                        : '原始文件已保存，LLM 正在生成待审核 Wiki 草稿…'
+                );
+                if (sourceId) await waitForKnowledgeIngest(sourceId);
             } catch (error) {
                 setKnowledgeWriteStatus(error.message || '文件读取失败，请检查文件格式。', true);
             } finally {
                 input.value = '';
             }
+        }
+
+        async function waitForKnowledgeIngest(sourceId) {
+            for (let attempt = 0; attempt < 20; attempt += 1) {
+                await new Promise(resolve => window.setTimeout(resolve, attempt ? 1200 : 250));
+                const source = await apiFetch(`/knowledge/raw/${encodeURIComponent(sourceId)}`);
+                if (source.status === 'draft_ready') {
+                    setKnowledgeWriteStatus('自动 ingest 完成，Wiki 草稿已生成；请在“管理文档”中审核并发布。');
+                    await loadManagedKnowledgeDocuments();
+                    return source;
+                }
+                if (source.status === 'failed') {
+                    throw new Error(source.ingest_error || '自动 ingest 失败，请检查原始文档。');
+                }
+                setKnowledgeWriteStatus(`原始文档已保存，自动 ingest 中…（${source.status || 'queued'}）`);
+            }
+            setKnowledgeWriteStatus('原始文档已保存，ingest 仍在后台进行；稍后刷新“管理文档”查看草稿。');
+            return null;
         }
 
         function formatKnowledgeMarkdown(markdown) {
@@ -673,4 +703,3 @@
                 setKnowledgeWriteStatus(error.message || '知识文档保存失败，请检查权限和内容。', true);
             }
         }
-

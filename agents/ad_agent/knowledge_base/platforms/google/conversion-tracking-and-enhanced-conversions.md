@@ -8,12 +8,16 @@ category: measurement
 subcategory: conversion-tracking-and-enhanced-conversions
 platform: google-ads
 source: Google Ads API 与 Google Ads 官方文档
-source_ref: https://developers.google.com/google-ads/api/docs/conversions/overview
+source_ref: "https://developers.google.com/google-ads/api/docs/conversions/overview"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [google-ads, conversion, enhanced-conversions, offline-conversion, consent, deduplication]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google 转化追踪、增强型转化与离线回传

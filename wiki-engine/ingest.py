@@ -9,6 +9,7 @@ https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
 
 import re
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 from dataclasses import dataclass, field
@@ -35,28 +36,46 @@ def write_file(path: Path, content: str):
     path.write_text(content, encoding='utf-8')
 
 
-def read_frontmatter(content: str) -> Dict[str, Any]:
-    """从 markdown 提取 frontmatter"""
-    m = FRONTMATTER_RE.search(content)
-    if not m:
-        return {}
-    try:
-        fm = json.loads(m.group(1))
-        fm.pop('type', None)  # type 不在 fm 里返回
-        return fm
-    except json.JSONDecodeError:
-        return {}
+def _parse_scalar(value: str) -> Any:
+    """Parse the small YAML subset used by Wiki frontmatter."""
+    value = value.strip()
+    if not value:
+        return ""
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except (TypeError, ValueError):
+            return [
+                item.strip().strip('"').strip("'")
+                for item in value[1:-1].split(",")
+                if item.strip()
+            ]
+    if value.lower() in {"true", "false"}:
+        return value.lower() == "true"
+    return value.strip('"').strip("'")
 
 
 def extract_frontmatter(content: str) -> Dict[str, Any]:
-    """提取完整 frontmatter（含 type）"""
+    """Extract flat YAML frontmatter from Markdown."""
     m = FRONTMATTER_RE.search(content)
     if not m:
         return {}
-    try:
-        return json.loads(m.group(1))
-    except json.JSONDecodeError:
-        return {}
+    frontmatter: Dict[str, Any] = {}
+    for line in m.group(1).splitlines():
+        if not line.strip() or line.lstrip().startswith("#") or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        frontmatter[key.strip()] = _parse_scalar(value)
+    return frontmatter
+
+
+def read_frontmatter(content: str) -> Dict[str, Any]:
+    """Extract frontmatter fields used by legacy callers."""
+    frontmatter = extract_frontmatter(content)
+    frontmatter.pop("type", None)
+    return frontmatter
 
 
 def build_frontmatter(data: Dict[str, Any]) -> str:
@@ -118,17 +137,41 @@ class WikiPage:
             return None
         fm = extract_frontmatter(content)
         body = extract_body(content)
+        directory_types = {
+            'entities': 'entity',
+            'concepts': 'concept',
+            'comparisons': 'comparison',
+            'queries': 'query',
+            'platforms': 'concept',
+            'business': 'concept',
+            'expertise': 'concept',
+            'dynamic': 'concept',
+        }
+        directory_type = next(
+            (
+                directory_types[part]
+                for part in path.parts
+                if part in directory_types
+            ),
+            'summary',
+        )
+        object_type = (
+            fm.get('wiki_type')
+            or fm.get('page_type')
+            or fm.get('type')
+            or directory_type
+        )
         return cls(
             path=path,
             title=fm.get('title', path.stem),
-            page_type=fm.get('type', 'summary'),
+            page_type=object_type,
             tags=fm.get('tags', extract_tags(content)),
             headings=extract_headings(content),
             wikilinks=extract_wikilinks(content),
             content=content,
             body=body,
             created=fm.get('created', ''),
-            updated=fm.get('updated', ''),
+            updated=fm.get('updated', fm.get('updated_at', '')),
         )
 
 
@@ -141,13 +184,20 @@ class WikiContext:
 
     def load_all(self):
         """加载所有 wiki 页面"""
-        for subdir in ['entities', 'concepts', 'queries', 'comparisons']:
-            dir_path = self.wiki_root / subdir
-            if dir_path.exists():
-                for md_file in dir_path.glob('*.md'):
-                    page = WikiPage.from_file(md_file)
-                    if page:
-                        self.pages[md_file] = page
+        control_names = {
+            'CLAUDE.md', 'SCHEMA.md', 'ARCHITECTURE.md', 'QUALITY_STANDARD.md',
+            'UPGRADE_SUMMARY.md', 'USAGE_GUIDE.md', 'index.md', 'log.md',
+            'README.md',
+        }
+        for md_file in self.wiki_root.rglob('*.md'):
+            relative = md_file.relative_to(self.wiki_root)
+            if relative.parts and relative.parts[0] == 'raw':
+                continue
+            if md_file.name in control_names:
+                continue
+            page = WikiPage.from_file(md_file)
+            if page:
+                self.pages[md_file] = page
 
     def get_all_titles(self) -> Set[str]:
         return {p.title.lower() for p in self.pages.values()}
@@ -175,8 +225,14 @@ class WikiContext:
 
         for path, page in sorted(self.pages.items()):
             entry = f'- [[{page.title}]] — {page.headings[0] if page.headings else page.title}'
-            if page.page_type in sections:
-                sections[page.page_type].append(entry)
+            section_name = {
+                'entity': 'Entities',
+                'concept': 'Concepts',
+                'comparison': 'Comparisons',
+                'query': 'Queries',
+            }.get(page.page_type)
+            if section_name:
+                sections[section_name].append(entry)
 
         for section_name, entries in sections.items():
             if entries:
@@ -188,7 +244,7 @@ class WikiContext:
 
     def append_log(self, action: str, subject: str, files_changed: List[str] = None):
         """追加操作日志"""
-        date = self.log_entries[-1][:10] if self.log_entries else "N/A"
+        date = self.log_entries[-1][4:14] if self.log_entries else datetime.now().strftime("%Y-%m-%d")
         entry = f'## [{date}] {action} | {subject}'
         if files_changed:
             entry += f'\n- Files: {", ".join(files_changed)}'
@@ -260,7 +316,11 @@ def find_relevant_pages(concepts: List[str], wiki: WikiContext) -> List[Path]:
 def create_page(wiki: WikiContext, page_type: str, title: str, tags: List[str],
                 headings: List[str], body: str, wikilinks: List[str], existing_path: Path = None) -> Path:
     """创建或更新页面"""
-    today = wiki.log_entries[-1][:10] if wiki.log_entries else "N/A"
+    today = (
+        wiki.log_entries[-1][4:14]
+        if wiki.log_entries
+        else datetime.now().strftime("%Y-%m-%d")
+    )
 
     if existing_path:
         # 更新现有页面 — 追加内容
@@ -289,7 +349,7 @@ def create_page(wiki: WikiContext, page_type: str, title: str, tags: List[str],
             'title': title,
             'created': today,
             'updated': today,
-            'type': page_type,
+            'wiki_type': page_type,
             'tags': tags if tags else ['默认'],
         }
 

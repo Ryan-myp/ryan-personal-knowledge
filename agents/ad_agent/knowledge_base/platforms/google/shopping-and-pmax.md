@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: google-ads
 source: Google Ads 与 Merchant Center 官方文档 + 当前 Capability
-source_ref: https://developers.google.com/google-ads/api/docs/performance-max/overview
+source_ref: "https://developers.google.com/google-ads/api/docs/performance-max/overview"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [google, shopping, pmax, merchant-center, feed, asset-group, product-group, roas]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google Shopping 与 PMax 商品源、资产组和放量方法

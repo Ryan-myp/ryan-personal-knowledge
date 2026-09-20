@@ -1128,6 +1128,8 @@ class TikTokCapability(BaseCapability):
                 "创建 TikTok 广告系列", "创建 TikTok campaign",
                 "TikTok 销售广告系列", "TikTok 销售 campaign",
                 "TikTok 流量广告", "TikTok 流量 campaign",
+                "创建 TikTok App 广告", "创建 TikTok App 转化广告",
+                "TikTok App 广告", "TikTok App 转化广告",
             ],
             risk_level=RiskLevel.MEDIUM,
             effect_class=ToolEffect.WRITE,

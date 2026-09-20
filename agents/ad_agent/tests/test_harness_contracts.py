@@ -7,6 +7,7 @@ import time
 import threading
 from datetime import datetime, timedelta
 import pytest
+import threading
 
 from agents.ad_agent.capabilities.meta import create_meta_capability
 from agents.ad_agent.capabilities.google import create_google_capability
@@ -15,7 +16,7 @@ from agents.ad_agent.capabilities.dv360 import create_dv360_capability
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolSchema, ToolDefinition, ToolEffect,
     EffectReconciler, ReconciliationObservation, CapabilityRuntime,
-    ReconciliationContext, ParsedIntent, ToolResult,
+    ReconciliationContext, ParsedIntent, ToolResult, Skill,
 )
 from agents.ad_agent.domain.ad.knowledge import KnowledgeDocument
 from agents.ad_agent.core.intent import LLMIntentParser
@@ -67,6 +68,122 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
         definition.name,
         {"account_id": "m1", "name": "direct"},
     ).success is False
+
+
+def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
+    class Handler:
+        def execute(self, _ctx, _input_data):
+            return ToolResult.ok({"value": "kept"})
+
+    class CustomSkill(Skill):
+        name = "atomic-unload"
+        namespace = "meta"
+        description = "Atomic unload test Skill"
+
+        def __init__(self):
+            self.definition = ToolDefinition(
+                name="atomic_unload_read",
+                skill=self.name,
+                namespace=self.namespace,
+                description="read a local resource",
+                input_schema=ToolSchema(),
+                action="read",
+                resource_type="insight",
+                intent_types=["atomic_unload_read"],
+            )
+
+        def get_tools(self):
+            return [self.definition]
+
+        def get_tool_handler(self, tool_name):
+            return Handler() if tool_name == self.definition.name else None
+
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    skill = CustomSkill()
+    assert runtime.register_skill(skill, "meta") is True
+    original_refresh = runtime._refresh_parser_catalog
+    failed = {"value": False}
+
+    def fail_once():
+        if not failed["value"]:
+            failed["value"] = True
+            raise RuntimeError("forced catalog refresh failure")
+        return original_refresh()
+
+    runtime._refresh_parser_catalog = fail_once
+    assert runtime.unload_skill("meta") is False
+    assert [tool.name for tool in runtime.registry.list_all()] == [
+        "atomic_unload_read"
+    ]
+    assert runtime.get_loaded_skills()["atomic-unload"] is skill
+    assert runtime.plugin_registry.get("skill:atomic-unload").state.value == "active"
+
+    runtime._refresh_parser_catalog = original_refresh
+    assert runtime.unload_skill("meta") is True
+    assert runtime.registry.list_all() == []
+
+
+def test_skill_lifecycle_serializes_register_and_unload():
+    class Handler:
+        def execute(self, _ctx, _input_data):
+            return ToolResult.ok({"value": "kept"})
+
+    class SlowSkill(Skill):
+        name = "serialized-lifecycle"
+        namespace = "meta"
+        description = "Lifecycle serialization test"
+
+        def __init__(self):
+            self.definition = ToolDefinition(
+                name="serialized_lifecycle_read",
+                skill=self.name,
+                namespace=self.namespace,
+                description="read a local resource",
+                input_schema=ToolSchema(),
+                action="read",
+                resource_type="insight",
+                intent_types=["serialized_lifecycle_read"],
+            )
+
+        def get_tools(self):
+            return [self.definition]
+
+        def get_tool_handler(self, tool_name):
+            return Handler() if tool_name == self.definition.name else None
+
+    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    entered_refresh = threading.Event()
+    release_refresh = threading.Event()
+    original_refresh = runtime._refresh_parser_catalog
+
+    def blocked_refresh():
+        entered_refresh.set()
+        assert release_refresh.wait(timeout=2)
+        return original_refresh()
+
+    runtime._refresh_parser_catalog = blocked_refresh
+    register_result = []
+    unregister_result = []
+    register_thread = threading.Thread(
+        target=lambda: register_result.append(
+            runtime.register_skill(SlowSkill(), "meta")
+        )
+    )
+    register_thread.start()
+    assert entered_refresh.wait(timeout=2)
+
+    unload_thread = threading.Thread(
+        target=lambda: unregister_result.append(runtime.unload_skill("meta"))
+    )
+    unload_thread.start()
+    assert not unregister_result
+
+    release_refresh.set()
+    register_thread.join(timeout=2)
+    unload_thread.join(timeout=2)
+    assert register_result == [True]
+    assert unregister_result == [True]
+    assert runtime.registry.list_all() == []
 
 
 def test_batch_planner_selects_campaign_updater_from_tool_metadata():

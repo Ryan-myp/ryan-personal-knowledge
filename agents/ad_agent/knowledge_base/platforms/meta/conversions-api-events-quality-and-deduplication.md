@@ -8,12 +8,16 @@ category: measurement
 subcategory: conversions-api-events-quality-and-deduplication
 platform: meta
 source: Meta Business 与 Marketing API 官方文档
-source_ref: https://developers.facebook.com/docs/marketing-api/conversions-api
+source_ref: "https://developers.facebook.com/docs/marketing-api/conversions-api"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [meta, pixel, conversions-api, event-quality, deduplication, consent]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Pixel、Conversions API 与事件质量

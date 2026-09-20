@@ -130,6 +130,12 @@ class AdRuntimeServices(RuntimeExecutionServices):
     ) -> Optional[str]:
         return self.account_resolver.resolve(intent, platform, tools, fallback_account)
 
+    def resolve_scope(
+        self, request: Any, tools: list[Any], fallback: Optional[str] = None,
+    ) -> Any:
+        """Expose the provider-neutral scope port to trusted extensions."""
+        return self.account_resolver.resolve_scope(request, tools, fallback)
+
     def available_accounts(self, platform: str, account_scope: Any) -> list[str]:
         return self._runtime._available_accounts_for_request(platform, account_scope)
 

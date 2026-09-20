@@ -9,14 +9,18 @@
 ```text
 PluginManifest
   -> PluginRegistry (register/load/activate/deactivate/unregister)
-  -> Skill / Capability+Tool / Feature / Policy / Renderer / Evaluator
+  -> Skill / Tool Source+Executor / Feature / Policy / Renderer / Evaluator
   -> Runtime 通用安全与执行门禁
 ```
 
 PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。它负责唯一 ID、版本、
-依赖、来源、可信级别和状态；Provider 请求仍只能从注册的 Capability Tool 进入。当前
+依赖、来源、可信级别和状态；Provider 请求仍只能从注册的 Tool 进入。当前
 内置目录 discovery 已通过兼容适配接入该注册表，托管 Skill 只登记为不可执行的租户级
 上下文插件。
+
+Tool Source/Skill 的注册、卸载、Parser catalog 刷新和 ownership index 更新由 Runtime
+生命周期锁串行化；卸载采用快照回滚，避免刷新失败后留下半套 Tool、参数目录或 Plugin
+状态。请求执行路径不持有该锁，因此生命周期一致性不会把普通对话串行化。
 
 插件包管理控制面与进程内注册表分离：`PluginPackageManager` 通过
 `PersistenceBackend` 保存租户级的不可变包快照和当前 release pointer，支持版本选择、
@@ -67,11 +71,11 @@ PluginRegistry 是 Harness 的扩展控制面，不是第二个 Tool Router。�
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         Capabilities 层 (渠道能力)                          │
+│                 Tool Sources / Provider Modules 层                          │
 │                                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────────┐  │
 │  │ Meta        │  │ Google Ads  │  │ TikTok      │  │ DV360            │  │
-│  │ Capability  │  │ Capability  │  │ Capability  │  │ Capability       │  │
+│  │ Local/SDK   │  │ MCP Source │  │ Provider    │  │ Feature Source   │  │
 │  │ 78 tools    │  │ 103 tools   │  │ 90 tools    │  │ 31 tools         │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -118,18 +122,18 @@ class SimpleIntentRouter:
 ```
 
 `SKILL.md` 只提供自然语言专家知识、SOP、适用边界和安全注意事项，
-不承担可执行 DSL。Capability/plugin 注册可执行 Tool，并在
+不承担可执行 DSL。Tool Source/plugin 注册可执行 Tool，并在
 `ToolDefinition` 中声明 `action`、`resource_type`、`parent_resource_type`
 及可选 `intent_types`。涉及层级创建的 Tool 还应声明
 `resource_id_field` 与 `parent_resource_id_field`，把各平台的 ID 拼写差异
-留在渠道 Capability 内。Runtime 根据父子资源层级排序创建链，并统一执行
+留在 Provider Module/Connector 内。Runtime 根据父子资源层级排序创建链，并统一执行
 权限、账户、dry-run、审批、幂等与恢复。执行顺序属于 LLM 规划和 Runtime/Harness
 的受控执行记录，不由用户 Skill 文件中的 DSL 决定。
 
 Runtime 本身不承载业务流程。业务策略通过 `RuntimePolicy` 注入，复杂业务编排通过
 按约定自动发现的 `RuntimeFeature` 注入，结果展示通过 `ResponseRenderer` 注入。
 因此大多数业务流程只需要新增标准 Skill 和已有 Tools；需要新外部动作时增加
-Capability Tool，只有复杂的二阶段、批量或聚合流程才增加 Skill-owned Feature。
+Tool，只有复杂的二阶段、批量或聚合流程才增加 Skill-owned Feature。
 
 当前已实现：业务策略、跨渠道流程、回复渲染、输入组装、动态参数选择、Provider
 兼容归一化和账户上下文解析已经迁出 Runtime，分别由 Policy、Feature、Renderer、
@@ -139,17 +143,37 @@ Capability Tool，只有复杂的二阶段、批量或聚合流程才增加 Skil
 计划状态的持久化协调对象；两者都不包含渠道枚举、业务规则或 Provider Client。
 `RuntimeServices` 是 Feature 与 Runtime 之间的正式端口，`ToolExecutor` 和
 `RuntimeSecurity` 分别承载 Tool 执行和安全边界；Runtime 主类只组合这些组件。
+Wiki 管理和 raw ingest 使用 `KnowledgeStorePort`，Memory 使用独立的 `MemoryStore`，
+Task/Outbox/Schedule 使用各自的 durable port；`PersistenceBackend` 只作为应用组合根的
+聚合兼容契约，业务服务不再必须依赖整套后端接口。
+
+Runtime 外壳进一步分为三层：`core/runtime_kernel.py` 保留最小的请求、Session
+并发、租约和 `run_id`/`turn_id` 生命周期；`core/turn_pipeline.py` 定义通用回合阶段、
+阶段元数据、终止和错误语义；
+`core/agent_runtime.py` 的 `GenericAgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
+通用门面。应用 pipeline 消费 Kernel 注入的 Run identity，并将持久化、审计和响应关联到
+同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AdAgentRuntime` 只负责组装
+领域服务，当前通过 `AdTurnPipeline` 兼容适配现有广告阶段，后续可逐步把广告阶段替换
+为通用 Stage。工具选择同样拆开：
+`core/tool_selection.py` 的 `ToolSelector` 只消费 Tool metadata 和 ParsedIntent，
+`PromptRenderer` 只生成有界模型上下文；旧的 `DynamicToolSelector` 仅作为
+Skill、Wiki、租户上下文的兼容适配器，不能执行 Tool 或授予权限。
+
+`core/policy_engine.py` 的 `PolicyEngine` 负责把 Tool、Effect、Scope、执行模式、
+权限、live 批准和 WriteGuard 状态转换成 `PolicyDecision`。dry-run 可以通过规划门槛，
+live 必须通过额外门槛；确认 token 的生成、绑定和消费仍留在应用安全层，Core 不认识
+任何 UI 确认格式。
 
 参数选择也遵循同一边界：固定 Provider 枚举由 Tool Schema 的 `enum` 自动生成
 catalog；账户相关的 App、地域、转化事件等由字段上的 `lookup_tool` 声明，
 `GET /parameter-options/resolve` 才会执行对应的只读查询。查询结果中的短期
 selection token 绑定用户、租户、会话、账户、目标 Tool、字段和来源 Tool，不能
-跨上下文复用。新增参数只改所属 Capability 的 Schema/adapter，不改 Runtime 的
+跨上下文复用。新增参数只改所属 Provider Module/Connector 的 Schema/adapter，不改 Runtime 的
 渠道分支；既有 Meta、Google、TikTok、DV360 创建适配器也必须保持 Schema 到
 Provider payload 的显式透传。
 
 更新操作同样遵循该边界：共享 `CampaignUpdateHandler` 只处理输入安全校验和
-统一调用协议，Meta/Google/TikTok 的资源级 API 签名由各自 Capability adapter
+统一调用协议，Meta/Google/TikTok 的资源级 API 签名由各自 Provider Module adapter
 负责；新增 Provider 可提供自己的 adapter，或实现统一的 `update_resource` 接口。
 
 ### 3. ToolRegistry (工具注册中心)
@@ -159,7 +183,7 @@ class SimpleToolRegistry:
     """工具注册与执行中心"""
     
     def register(self, tool_def: ToolDefinition, handler: ToolHandler):
-        """注册一个 Capability/plugin 提供的可执行 Tool"""
+        """注册一个 Tool Source/Executor 提供的可执行 Tool"""
         self._tools[tool_def.name] = (tool_def, handler)
     
     def execute(self, session_ctx: ToolContext, tool_name: str, tool_input: dict) -> ToolResult:
@@ -170,11 +194,11 @@ class SimpleToolRegistry:
         return ToolResult(success=False, error="Handler not found")
 ```
 
-### 4. Capabilities (渠道能力层)
+### 4. Tool Sources 与 Provider Modules
 ```python
 # 位置: capabilities/
-class MetaCapability(BaseCapability):
-    """Meta Marketing API 能力"""
+class MetaProviderModule(BaseCapability):
+    """广告应用中的 Meta Provider Module 兼容实现"""
     def __init__(self, api_client: MetaAPIClient):
         super().__init__(
             platform="meta",
@@ -193,16 +217,16 @@ class MetaCapability(BaseCapability):
         }
         return handlers.get(tool_name)
 
-class GoogleAdsCapability(BaseCapability):
-    """Google Ads API 能力"""
+class GoogleAdsProviderModule(BaseCapability):
+    """Google Ads Provider Module 兼容实现"""
     # 18 tools: list/get/create campaign/adgroup/ad + keywords/report/update
 
-class TikTokCapability(BaseCapability):
-    """TikTok Business API 能力"""
+class TikTokProviderModule(BaseCapability):
+    """TikTok Provider Module 兼容实现"""
     # 18 tools: list/get/create campaign/adgroup/ad + media/report/update
 
-class DV360Capability(BaseCapability):
-    """DV360 API 能力 (Mock)"""
+class DV360ProviderModule(BaseCapability):
+    """DV360 Provider Module 兼容实现"""
     # 14 tools: list/get campaign/advertiser/io/line_item + report/update
 ```
 
@@ -267,7 +291,7 @@ class TikTokAPIClient(BaseAPIClient):
         return resp.get('data', {}).get('list', [])
 ```
 
-## 三、工具清单（当前 Capability 共 302 个工具）
+## 三、工具清单（当前广告 Provider Modules 共 302 个 Tool）
 
 | 平台 | 工具数量 | 工具列表 |
 |------|---------|---------|
@@ -308,7 +332,7 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 
 ### Provider 接口与版本演进
 
-当前 302 个 Tool 是四个 Capability 对其已实现 Client 方法的覆盖基线，不等于四个
+当前 302 个 Tool 是四个广告 Provider Module 对其已实现 Client 方法的覆盖基线，不等于四个
 官方 Marketing API 的全量接口。新增接口由渠道包自己完成 Client 方法、Tool Schema、
 参数目录/lookup 和 payload adapter，再通过 `audit_capabilities.py` 与契约快照进入
 发布门禁。
@@ -325,7 +349,7 @@ ToolDefinition 的自描述元数据，Runtime 再执行 schema、权限、账�
 
 | 声明 | 含义 | 能否代表官方全量 |
 |---|---|---|
-| `API_SURFACE` | 已落到 Client/Capability/Tool 的代码实现，以及 planned 缺口 | 不能 |
+| `API_SURFACE` | 已落到 Client/Provider Module/Tool 的代码实现，以及 planned 缺口 | 不能 |
 | `OFFICIAL_INVENTORY` | 有官方文档来源的资源/动作基线、endpoint/operation 和实现状态 | 只有 `completeness` 明确完整时才可以 |
 
 审计先验证 `OFFICIAL_INVENTORY -> API_SURFACE`，再验证原有的
@@ -448,7 +472,12 @@ Tool Registry、权限、账户范围或执行计划。
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
+| `core/agent_runtime.py` | 当前源码 | 通用 Runtime 门面，注入任意应用 `TurnPipeline` |
+| `core/turn_pipeline.py` | 当前源码 | 通用回合阶段、终止和错误处理契约 |
 | `core/runtime_kernel.py` | 325 | 与业务无关的请求规范化、Session 并发、跨实例租约和执行委托 |
+| `core/tool_selection.py` | 当前源码 | 业务无关的 Tool 选择和 Prompt 渲染 |
+| `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文兼容适配层 |
+| `core/policy_engine.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
 | `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Capabilities、业务服务和 Kernel |
 | `runtime/ad_turn_engine.py` | 当前源码 | 广告应用回合执行：意图、Tool 计划、策略和结果闭环 |
@@ -573,13 +602,15 @@ runtime.auto_load_skills(
 | 概念 | 说明 | 数量 |
 |------|------|------|
 | **Skills** | SKILL.md 提供的上下文、SOP 和安全边界 | 按已加载 Skill 动态发现（当前内置 4 个） |
-| **Capabilities** | Python 实现的渠道能力模块 | 按包约定动态发现（当前内置 4 个） |
-| **Tools** | Capability/plugin 提供的具体可执行工具 | 按注册结果动态统计（当前基线 302 个） |
+| **Tool Sources** | 发布 Tool contract 与 executor 的来源，可是本地、SDK/HTTP 或 MCP | 按注册结果动态发现 |
+| **Provider Modules** | 广告应用内部的渠道适配与兼容组装 | 当前内置 4 个，非通用 Runtime 必需层 |
+| **Tools** | Registry 中的统一可执行契约 | 按注册结果动态统计（当前基线 302 个） |
 
 **关系**：
 - Skills 是自然语言上下文（SKILL.md）
-- Capabilities 是命令式实现（Python 类）
-- Tools 是实际执行的函数
+- Tool Sources 发布 contract 和 executor
+- Provider Modules 只是广告应用的适配实现
+- Tools 是经过 Runtime 门禁的统一执行入口
 
 ### 5. 扩展新 Skill
 

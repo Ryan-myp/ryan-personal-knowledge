@@ -50,10 +50,38 @@ def main() -> int:
     reciprocal_ranks: list[float] = []
     hits = 0
     leakage = 0
+    negative_cases = 0
+    negative_failures = 0
     for case in cases:
         expected = set(case["expected"])
         results = provider.query(case["query"], limit=3)
         result_ids = [result.document_id for result in results]
+        is_negative = bool(
+            case.get("expect_empty")
+            or case.get("forbidden_platforms")
+            or case.get("forbidden_wiki_types")
+            or case.get("forbidden_statuses")
+        )
+        if is_negative:
+            negative_cases += 1
+            if case.get("expect_empty") and results:
+                negative_failures += 1
+            forbidden_platforms = {
+                str(item).strip().lower() for item in case.get("forbidden_platforms", [])
+            }
+            forbidden_wiki_types = {
+                str(item).strip().lower() for item in case.get("forbidden_wiki_types", [])
+            }
+            forbidden_statuses = {
+                str(item).strip().lower() for item in case.get("forbidden_statuses", [])
+            }
+            if any(result.platform in forbidden_platforms for result in results):
+                negative_failures += 1
+            if any(result.wiki_type in forbidden_wiki_types for result in results):
+                negative_failures += 1
+            if any(result.status in forbidden_statuses for result in results):
+                negative_failures += 1
+            continue
         rank = next((index + 1 for index, item in enumerate(result_ids) if item in expected), 0)
         if rank:
             hits += 1
@@ -78,11 +106,15 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 1
-    total = len(cases) or 1
+    total = len(cases) - negative_cases or 1
     print(f"documents={len(provider.documents)} chunks={len(provider.chunks)}")
     print(f"canonical={len(CANONICAL_IDS)}")
-    print(f"hit@3={hits / total:.3f} mrr={sum(reciprocal_ranks) / total:.3f} leakage={leakage}")
-    if hits / total < 0.9 or leakage > 1:
+    print(
+        f"positive_cases={total} negative_cases={negative_cases} "
+        f"hit@3={hits / total:.3f} mrr={sum(reciprocal_ranks) / total:.3f} "
+        f"leakage={leakage} negative_failures={negative_failures}"
+    )
+    if hits / total < 0.9 or leakage > 1 or negative_failures:
         return 1
     return 0
 

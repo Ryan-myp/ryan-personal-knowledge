@@ -8,12 +8,16 @@ category: optimization
 subcategory: line-item-targeting-and-supply-quality
 platform: dv360
 source: Display & Video 360 官方文档
-source_ref: https://support.google.com/displayvideo
+source_ref: "https://support.google.com/displayvideo"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [dv360, line-item, targeting, inventory, viewability, frequency, brand-safety]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 Line Item 定向、库存质量与频次控制

@@ -8,12 +8,16 @@ category: diagnostics
 subcategory: reporting-dimensions-and-budget-diagnostics
 platform: tiktok
 source: TikTok Marketing API 官方文档
-source_ref: https://business-api.tiktok.com/portal/docs?id=1738865457882113
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1738865457882113"
 version: "1.0.0"
 confidence: 0.87
 updated_at: "2026-09-08"
 tags: [tiktok, reporting, dimensions, metrics, budget, pacing, diagnostics]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok 报表维度、数据延迟与预算诊断

@@ -17,7 +17,7 @@ ad_agent - 多渠道广告投放 Agent
     result = runtime.run(user_input="投放Meta广告", user_id="user_001")
 """
 
-from .runtime.runtime import AgentRuntime, SessionContext
+from .runtime.runtime import AgentRuntime, GenericAgentRuntime, SessionContext
 from .capabilities.meta import MetaCapability, create_meta_capability
 from .capabilities.google import GoogleCapability, create_google_capability
 from .capabilities.tiktok import TikTokCapability, create_tiktok_capability
@@ -33,6 +33,10 @@ from .core.response import ResponseSynthesizer
 from .domain.ad.auth import RequestPrincipal
 from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 from .core.plugin_package import PluginPackage, PluginPackageError, build_plugin_manifest
+from .core.tool_sources import ToolBinding, ToolExecutor, ToolSource, StaticToolSource
+from .core.turn_pipeline import (
+    SequentialTurnPipeline, TurnExecutionContext, TurnPipeline, TurnStageResult,
+)
 from .plugin_management import PluginPackageManager
 from .runtime.task_executor import (
     TaskCapacityError, TaskExecutionContext, TaskExecutor, TaskExecutorError,
@@ -42,6 +46,7 @@ from .runtime.task_executor import (
 __version__ = "1.0.0"
 __all__ = [
     "AgentRuntime",
+    "GenericAgentRuntime",
     "SessionContext",
     "MetaCapability",
     "GoogleCapability",
@@ -70,6 +75,14 @@ __all__ = [
     "PluginPackage",
     "PluginPackageError",
     "build_plugin_manifest",
+    "ToolBinding",
+    "ToolExecutor",
+    "ToolSource",
+    "StaticToolSource",
+    "SequentialTurnPipeline",
+    "TurnExecutionContext",
+    "TurnPipeline",
+    "TurnStageResult",
     "PluginPackageManager",
     "TaskExecutor",
     "TaskExecutionContext",

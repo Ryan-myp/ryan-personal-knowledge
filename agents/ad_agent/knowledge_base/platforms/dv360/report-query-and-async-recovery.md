@@ -8,12 +8,16 @@ category: diagnostics
 subcategory: report-query-and-async-recovery
 platform: dv360
 source: Display & Video 360 API 官方文档
-source_ref: https://developers.google.com/display-video/api
+source_ref: "https://developers.google.com/display-video/api"
 version: "1.0.0"
 confidence: 0.93
 updated_at: "2026-09-08"
 tags: [dv360, reporting, asynchronous, line-item, brand-safety, recovery]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 报表查询、异步任务与数据一致性手册

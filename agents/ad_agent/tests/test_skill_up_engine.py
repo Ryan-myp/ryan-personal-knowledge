@@ -2,7 +2,11 @@
 
 import json
 
-from agents.ad_agent.evals.skill_up_engine import _runtime_prompt, run
+from agents.ad_agent.evals.skill_up_engine import (
+    _runtime_prompt,
+    _structured_evidence,
+    run,
+)
 from agents.ad_agent.evals.claude_sdk_engine import (
     _anthropic_messages,
     run as run_claude_sdk,
@@ -65,6 +69,43 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
     )
     assert persisted["results"] == []
     assert persisted["ui"]["needs_input"] is True
+
+
+def test_skill_up_structured_evidence_exposes_canonical_platforms():
+    evidence = _structured_evidence({
+        "intent": {
+            "intent_type": "cross_channel_compare",
+            "namespaces": ["meta", "google-ads"],
+        },
+        "needs_input": False,
+        "needs_confirmation": False,
+        "tool_plan": {},
+        "results": [],
+    })
+
+    assert evidence["intent"]["platforms"] == ["meta", "google-ads"]
+    assert evidence["intent"]["namespaces"] == ["meta", "google-ads"]
+
+
+def test_skill_up_app_creation_keeps_dynamic_app_id_unresolved(tmp_path):
+    result = run({
+        "case_id": "app-dynamic-boundary",
+        "workspace": str(tmp_path),
+        "messages": [{
+            "role": "user",
+            "content": "创建一个 TikTok App 转化广告，使用我的 App，投放给 18 到 35 岁用户。",
+        }],
+    })
+
+    evidence = result["metadata"]["runtime_result"]
+    assert evidence["intent"]["intent_type"] == "create_campaign"
+    assert evidence["intent"]["namespaces"] == ["tiktok"]
+    assert evidence["needs_input"] is True
+    # A creation card is an input-collection state. Confirmation is emitted
+    # only after the provider-neutral form is complete and ready to submit.
+    assert evidence["needs_confirmation"] is False
+    assert evidence["results"] == []
+    assert "app_id" not in evidence["intent"]["scoped_parameters"]["tiktok"]
 
 
 def test_skill_up_adapter_does_not_accept_credentials_from_case_kwargs(tmp_path):

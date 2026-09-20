@@ -8,12 +8,16 @@ category: diagnostics
 subcategory: evidence-driven-performance-diagnosis
 platform: all
 source: 跨平台广告测量与运营方法论
-source_ref: agents/ad_agent/knowledge_base/business/evidence-driven-performance-diagnosis.md
+source_ref: "internal://ad-agent/playbook/evidence-driven-performance-diagnosis"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [diagnostics, evidence, funnel, marginal-efficiency, causal-inference, decision-card, cross-platform]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 广告效果证据驱动诊断与决策卡

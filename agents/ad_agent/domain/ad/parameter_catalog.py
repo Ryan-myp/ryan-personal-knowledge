@@ -150,6 +150,19 @@ class ParameterCatalogRegistry:
                 if catalog.tool_name not in names
             }
 
+    def snapshot(self) -> dict[tuple[str, str, Optional[str]], ParameterCatalog]:
+        """Capture catalog state for an owning Skill lifecycle transaction."""
+        with self._lock:
+            return dict(self._catalogs)
+
+    def restore(
+        self,
+        snapshot: dict[tuple[str, str, Optional[str]], ParameterCatalog],
+    ) -> None:
+        """Restore a previously captured catalog snapshot."""
+        with self._lock:
+            self._catalogs = dict(snapshot or {})
+
     def register_tool_schema(
         self, platform: str, properties: dict[str, Any],
         tool_name: Optional[str] = None,

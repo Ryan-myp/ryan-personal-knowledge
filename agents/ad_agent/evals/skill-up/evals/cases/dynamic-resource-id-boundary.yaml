@@ -22,5 +22,5 @@ expect:
     intent_type: create_campaign
     platforms: [tiktok]
     needs_input: true
-    needs_confirmation: true
+    needs_confirmation: false
     results_empty: true

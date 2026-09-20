@@ -6,12 +6,16 @@ layer: business
 knowledge_type: business_strategy
 platform: all
 source: 增长财务方法论 + 跨平台归因实践
-source_ref: agents/ad_agent/knowledge_base/business/unit-economics-and-channel-mix.md
+source_ref: "internal://ad-agent/playbook/unit-economics-and-channel-mix"
 version: "1.0.0"
 confidence: 0.84
 updated_at: "2026-09-08"
 tags: [unit-economics, channel-mix, marginal-roas, cac, ltv, incrementality, budget]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 广告渠道组合、边际效率与统一决策口径

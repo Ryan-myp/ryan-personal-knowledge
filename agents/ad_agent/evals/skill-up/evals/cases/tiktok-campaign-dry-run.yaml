@@ -1,22 +1,21 @@
 id: tiktok-campaign-dry-run
-title: TikTok campaign uses the registered Tool and dry-run boundary
+title: TikTok App campaign waits for its declared creation inputs
 tag: functional_test
 input:
   prompt: "创建 TikTok campaign; account_id=7397068114548195329; name=skill-up-app; objective_type=APP_PROMOTION; campaign_type=REGULAR_CAMPAIGN; budget_mode=BUDGET_MODE_DAY; daily_budget=100; app_promotion_type=APP_ACQUISITION"
 expect:
   exit_code: 0
   must_contain:
-    - "tiktok_create_campaign"
-    - "SIMULATED_DRAFT"
-    - '"mode": "dry_run"'
-    - '"simulated": true'
+    - "tiktok_smart_plus_create_campaign"
+    - '"needs_input": true'
+    - '"results": []'
   must_not_contain:
     - "provider_unavailable"
 judge:
   type: rule_based
   success:
     - output_contains:
-        all: ["tiktok_create_campaign", "SIMULATED_DRAFT", "dry_run"]
+        all: ["tiktok_smart_plus_create_campaign", "needs_input", "results"]
   failure:
     - output_contains:
         any: ["access_token", "client_secret", "Authorization:"]
@@ -24,6 +23,6 @@ expect:
   structured:
     intent_type: create_campaign
     platforms: [tiktok]
-    needs_input: false
-    needs_confirmation: true
-    tool_names: [tiktok_create_campaign, tiktok_create_adgroup, tiktok_create_app_ad]
+    needs_input: true
+    needs_confirmation: false
+    results_empty: true

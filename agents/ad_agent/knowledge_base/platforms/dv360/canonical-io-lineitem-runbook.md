@@ -8,12 +8,16 @@ category: campaign_operations
 subcategory: canonical-io-lineitem-runbook
 platform: dv360
 source: Display & Video 360 官方文档与当前 Capability 约束
-source_ref: https://developers.google.com/display-video/api
+source_ref: "https://developers.google.com/display-video/api"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [dv360, advertiser, campaign, insertion-order, line-item, deal, targeting, floodlight, report]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 IO、Line Item、Deal 与定向安全操作手册

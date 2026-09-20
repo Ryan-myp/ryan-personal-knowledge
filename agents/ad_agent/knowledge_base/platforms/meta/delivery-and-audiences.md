@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: meta
 source: Meta Ads 官方文档 + Meta 运营 Skill
-source_ref: https://www.facebook.com/business/help/430291176997542
+source_ref: "https://www.facebook.com/business/help/430291176997542"
 version: "1.0.0"
 confidence: 0.86
 updated_at: "2026-09-08"
 tags: [meta, ad-set, delivery, audience, overlap, advantage-plus, budget, learning]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Ad Set 交付、受众重叠与预算控制

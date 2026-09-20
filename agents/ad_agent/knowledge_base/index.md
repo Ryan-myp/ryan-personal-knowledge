@@ -1,7 +1,7 @@
 # LLM Wiki 索引
 
-> **版本**: v2.0.0
-> **更新时间**: 2026-09-08
+> **版本**: v2.3.0
+> **更新时间**: 2026-09-18
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
@@ -9,9 +9,11 @@
 本知识库围绕 Google Ads、Meta Ads、TikTok Ads、DV360 四个平台，覆盖“理解对象 → 设计投放 → 执行前校验 → 运行中优化 → 归因复盘”的完整链路。
 
 ```text
-平台层：层级 / 目标 / 参数约束 / 创建工作流 / 平台优化 / 报表诊断
-业务层：行业打法 / 预算出价 / 受众定向 / 创意测试 / 归因增量
-经验层：诊断决策树 / 实验设计 / 错误模式 / 最佳实践 / 案例与数据
+raw：原始来源、论文、代码片段和未经审核的材料
+entities：Google Ads / Meta Ads / TikTok Ads / DV360 等稳定实体
+concepts：平台规则、业务方法、经验与诊断知识
+comparisons：跨平台对象模型、测量和策略对比
+queries：经过筛选、可复用的问答归档
 ```
 
 ## 目录
@@ -43,6 +45,11 @@ knowledge_base/
 │   ├── experimentation-and-learning.md
 │   ├── best-practices.md
 │   └── error-patterns.md
+├── raw/                         # 来源层，不进入 Runtime
+├── entities/                    # Karpathy entity pages
+├── concepts/                    # Karpathy concept map
+├── comparisons/                 # Karpathy comparison pages
+├── queries/                     # 可复用问答归档
 ├── ARCHITECTURE.md
 ├── SCHEMA.md
 ├── QUALITY_STANDARD.md
@@ -73,18 +80,19 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-09-08，Runtime 实际加载 **64 个业务 Markdown 文档**：
+截至 2026-09-17，Runtime 实际加载 **69 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
-| Google | 13 | 层级、约束、Search/PMax、Campaign/Search Runbook、价值出价、转化、GAQL、报表、策略优化、配额与版本 |
-| Meta | 11 | 层级目标、预算定向、Campaign/Ad Set Runbook、ODAX、Catalog/Lead、Pixel/CAPI、事件质量、Insights、权限与版本 |
-| TikTok | 11 | 层级目标、Campaign/Ad Group Runbook、Smart+/Spark、素材、App/Commerce、Events API、事件归因、报表、限流与排障 |
-| DV360 | 11 | 购买层级、IO/Line Item Runbook、Deal/竞价、Floodlight、采购质量、报告诊断、创意审批、异步恢复 |
+| Google | 14 | 1 个实体页 + 13 篇平台规则、Search/PMax、Campaign/Search Runbook、转化、GAQL、报表与优化 |
+| Meta | 12 | 1 个实体页 + 11 篇平台规则、ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
+| TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
+| DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |
 | 跨平台业务 | 14 | 四平台总览、层级、行业、预算节奏、边际效率、受众、创意、数据契约、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
 | 经验方法 | 4 | 诊断、实验、最佳实践、错误模式 |
+| 对比页 | 1 | 四个平台的对象、强项和优先核对项 |
 
-平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
+平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
 
 `ARCHITECTURE.md`、`SCHEMA.md`、`QUALITY_STANDARD.md`、`UPGRADE_SUMMARY.md`、`USAGE_GUIDE.md`、`index.md` 和 `log.md` 是维护文档，不进入 Agent 业务检索和前端知识目录；它们只用于解释知识库自身如何维护。
 
@@ -93,4 +101,6 @@ knowledge_base/
 - 文档使用标准 frontmatter，只有 `status: published` 的文档进入 Runtime 检索。
 - 平台 API、政策、字段和能力变化时，新增语义化版本文档或更新版本号，并在 `log.md` 记录来源和影响范围。
 - 运营经验不能伪装成官方事实；经验文档需要标记适用条件、置信度、样本范围和失效条件。
-- 文档更新后应运行 Markdown 元数据校验、知识库检索 smoke test、相关测试、能力审计和 `git diff --check`。
+- 文档更新后应运行 Markdown 元数据校验、全库审计、知识库检索 smoke test、相关测试、能力审计和 `git diff --check`。
+- 全库审计会检查目录对象类型、来源证据、断链、孤立页、案例 ID 漂移和平台覆盖；
+  结果中的 warning 是历史治理待办，error 才阻断质量门。

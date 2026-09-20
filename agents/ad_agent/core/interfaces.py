@@ -14,6 +14,7 @@ import re
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime_checkable
 
 from .security import sha256_json
+from .context import ContextQuery
 
 
 # ─── 核心数据类型 ───────────────────────────────────────────────
@@ -143,6 +144,15 @@ class ToolDefinition:
     timeout_seconds: float = 30.0
     max_output_bytes: int = 1_000_000
     required_permissions: list[str] = field(default_factory=list)
+    # Publisher-owned scope metadata. The Core treats scope as opaque; an
+    # application adapter decides how to resolve and authorize it.
+    scope_type: Optional[str] = None
+    scope_fields: list[str] = field(default_factory=list)
+    scope_required: bool = False
+    # A live effect may require an application-specific permission. Keeping it
+    # on the Tool contract prevents the generic Runtime from inventing a
+    # domain permission such as ``ads.write``.
+    live_permission: Optional[str] = None
     # External systems do not agree on identifier spelling. Keep wire names on the Tool
     # contract so Runtime can persist and connect resources without knowing a
     # integration hierarchy. Mutating Tools must declare the identity they
@@ -187,6 +197,17 @@ class ToolDefinition:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes <= 0:
             raise ValueError("max_output_bytes must be positive")
+        self.scope_type = str(self.scope_type or "").strip() or None
+        self.scope_fields = list(dict.fromkeys(
+            str(item).strip() for item in (self.scope_fields or [])
+            if str(item).strip()
+        ))
+        self.scope_required = bool(self.scope_required)
+        self.live_permission = (
+            str(self.live_permission).strip()
+            if self.live_permission is not None and str(self.live_permission).strip()
+            else None
+        )
         self.contract_version = str(self.contract_version or "1")
         if self.integration_api_version is not None:
             self.integration_api_version = str(self.integration_api_version)
@@ -295,6 +316,10 @@ class ToolDefinition:
             "timeout_seconds": self.timeout_seconds,
             "max_output_bytes": self.max_output_bytes,
             "required_permissions": list(self.required_permissions),
+            "scope_type": self.scope_type,
+            "scope_fields": list(self.scope_fields),
+            "scope_required": self.scope_required,
+            "live_permission": self.live_permission,
             "resource_id_field": self.resource_id_field,
             "parent_resource_id_field": self.parent_resource_id_field,
             "readback_tool": self.readback_tool,
@@ -556,6 +581,14 @@ class ToolRegistry(ABC):
         """注册一个工具"""
         pass
 
+    def register_binding(self, binding: "ToolBinding") -> None:
+        """Register a Tool contract and its application-neutral executor."""
+        self.register(binding.definition, binding.executor)
+
+    def register_source(self, source: "ToolSource") -> list[str]:
+        """Register a complete source snapshot as one lifecycle operation."""
+        raise NotImplementedError
+
     @abstractmethod
     def get(self, name: str) -> tuple[ToolDefinition, ToolHandler]:
         """获取工具定义和处理器"""
@@ -576,6 +609,10 @@ class ToolRegistry(ABC):
         """从注册表中移除工具"""
         pass
 
+    def unregister_source(self, source_id: str) -> list[str]:
+        """Remove all Tools owned by one source."""
+        raise NotImplementedError
+
     @abstractmethod
     def execute(self, ctx: ToolContext, tool_name: str, input_data: dict[str, Any]) -> ToolResult:
         """执行工具"""
@@ -584,6 +621,10 @@ class ToolRegistry(ABC):
 
 class KnowledgeSource(Protocol):
     """Read-only advisory context source used by the generic selector."""
+
+    def query_context(self, query: ContextQuery) -> Sequence[Any]:
+        """Return records for the application-neutral query contract."""
+        ...
 
     def query(
         self,

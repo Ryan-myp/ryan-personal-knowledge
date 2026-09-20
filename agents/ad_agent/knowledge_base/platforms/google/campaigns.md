@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: hierarchy
 platform: google-ads
 source: Google Ads 官方文档 + API 实测
-source_ref: platforms/google/campaigns.md
+source_ref: "repository://ad-agent/knowledge/google-campaign-hierarchy"
 version: "1.0.0"
 confidence: 0.95
 updated_at: "2026-08-26"
 tags: [google, campaign, hierarchy]
 status: published
+source_kind: "code"
+authority: "repository"
+evidence_level: "reviewed"
+last_verified_at: "2026-08-26"
 ---
 
 # Google Ads Campaign 层级结构

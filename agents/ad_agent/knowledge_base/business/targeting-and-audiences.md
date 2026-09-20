@@ -6,12 +6,16 @@ layer: business
 knowledge_type: targeting_strategy
 platform: all
 source: 四平台定向官方文档 + 隐私安全投放方法论
-source_ref: agents/ad_agent/knowledge_base/business/targeting-and-audiences.md
+source_ref: "internal://ad-agent/playbook/cross-platform-targeting-and-audiences"
 version: "1.0.0"
 confidence: 0.82
 updated_at: "2026-09-08"
 tags: [targeting, audience, broad, lookalike, remarketing, exclusion, incrementality]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 跨平台受众、定向与增量策略

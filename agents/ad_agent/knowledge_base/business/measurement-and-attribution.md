@@ -6,12 +6,16 @@ layer: business
 knowledge_type: general
 platform: all
 source: 四平台测量文档 + 广告归因方法论
-source_ref: agents/ad_agent/knowledge_base/business/measurement-and-attribution.md
+source_ref: "internal://ad-agent/playbook/cross-platform-measurement-attribution"
 version: "1.0.0"
 confidence: 0.86
 updated_at: "2026-09-08"
 tags: [measurement, attribution, conversion, incrementality, mmp, crm, privacy]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 跨平台事件、归因与增量评估

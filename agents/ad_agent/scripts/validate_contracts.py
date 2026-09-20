@@ -52,7 +52,14 @@ def _walk_keys(value, path=""):
 def build_runtime() -> AgentRuntime:
     """Build the same no-I/O runtime used by the release contract gate."""
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(persistence_store=store, offline_mode=True)
+    runtime = AgentRuntime(
+        persistence_store=store,
+        offline_mode=True,
+        # Contract discovery is synchronous and uses a temporary in-memory
+        # store. Durable workers add no contract evidence and must not outlive
+        # the short-lived validation runtime.
+        start_background_workers=False,
+    )
     for slug in discover_platform_slugs():
         factory = discover_capability_factory(slug)
         if callable(factory):

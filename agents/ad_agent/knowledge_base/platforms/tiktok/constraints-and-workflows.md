@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: constraint
 platform: tiktok
 source: TikTok Ads API 官方文档 + 当前 Capability schema
-source_ref: https://business-api.tiktok.com/portal/docs?id=1739385842588674
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1739385842588674"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [tiktok, budget, targeting, placement, spark-ads, catalog, workflow]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Ads 预算、定向与素材创建工作流

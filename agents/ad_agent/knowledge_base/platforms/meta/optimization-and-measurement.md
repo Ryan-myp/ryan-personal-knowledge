@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: meta
 source: Meta Marketing API 官方文档 + Meta Ads 运营 Skill
-source_ref: https://developers.facebook.com/docs/marketing-api/insights
+source_ref: "https://developers.facebook.com/docs/marketing-api/insights"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [meta, insights, pixel, capi, creative, optimization, attribution]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Ads 素材、事件与 Insights 优化

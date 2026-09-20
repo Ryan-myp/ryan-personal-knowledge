@@ -1,9 +1,9 @@
 {
-  "digest": "da8df03b551388f0c643525d78767801352215e28548e006de1b34e425ead3c3",
+  "digest": "642a6124b8f7889d9b1792ecca5bbbc360c01d084d645e17d6adab7a64a3e26d",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "124a34b78e221dfc11f71a5d03dc5872c9de280df1529e8bbdf7418773f15071",
+      "digest": "067a453f14208b3e4bfa04aea39a727762888a143ab13b5abe7832b6053b8c2e",
       "tool_count": 31,
       "tools": [
         {
@@ -39,6 +39,7 @@
           "intent_types": [
             "activate_io"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_activate_io",
@@ -57,6 +58,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -102,6 +106,7 @@
           "intent_types": [
             "activate_line_item"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_activate_line_item",
@@ -120,6 +125,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -171,6 +179,7 @@
           "intent_types": [
             "create_creative"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_create_creative",
@@ -189,6 +198,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -303,6 +315,7 @@
             "create_io",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_create_io",
@@ -321,6 +334,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -480,6 +496,7 @@
             "create_line_item",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_create_line_item",
@@ -498,6 +515,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -558,6 +578,7 @@
           "intent_types": [
             "create_targeting_assignment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_create_line_item_assigned_targeting_option",
@@ -576,6 +597,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -627,6 +651,7 @@
           "intent_types": [
             "create_report"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_create_report",
@@ -645,6 +670,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -687,6 +715,7 @@
             "delete_campaign",
             "cross_channel_batch_delete"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_delete_campaign",
@@ -705,6 +734,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -746,6 +778,7 @@
           "intent_types": [
             "delete_creative"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_delete_creative",
@@ -764,6 +797,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -805,6 +841,7 @@
           "intent_types": [
             "delete_io"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_delete_io",
@@ -823,6 +860,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -868,6 +908,7 @@
           "intent_types": [
             "delete_line_item"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_delete_line_item",
@@ -886,6 +927,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -935,6 +979,7 @@
           "intent_types": [
             "delete_targeting_assignment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_delete_line_item_assigned_targeting_option",
@@ -953,6 +998,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -990,6 +1038,7 @@
           "intent_types": [
             "get_advertiser"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_advertiser",
@@ -1008,6 +1057,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1051,6 +1103,7 @@
           "intent_types": [
             "get_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_campaign",
@@ -1069,6 +1122,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1110,6 +1166,7 @@
           "intent_types": [
             "get_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_creative",
@@ -1128,6 +1185,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1165,6 +1225,7 @@
           "intent_types": [
             "get_io"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_io",
@@ -1183,6 +1244,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1227,6 +1291,7 @@
           "intent_types": [
             "get_line_item"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_line_item",
@@ -1245,6 +1310,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1304,6 +1372,7 @@
           "intent_types": [
             "download_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_line_item_report",
@@ -1322,6 +1391,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1366,6 +1438,7 @@
           "intent_types": [
             "get_report_result"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_get_report_result",
@@ -1384,6 +1457,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1415,6 +1491,7 @@
           "intent_types": [
             "list_advertisers"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_advertisers",
@@ -1433,6 +1510,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1481,6 +1561,7 @@
             "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_campaigns",
@@ -1502,6 +1583,9 @@
           ],
           "result_items_key": "campaigns",
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1545,6 +1629,7 @@
           "intent_types": [
             "list_creatives"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_creatives",
@@ -1563,6 +1648,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1603,6 +1691,7 @@
           "intent_types": [
             "list_ios"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_ios",
@@ -1621,6 +1710,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1669,6 +1761,7 @@
           "intent_types": [
             "list_targeting_assignments"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_line_item_assigned_targeting_options",
@@ -1687,6 +1780,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1730,6 +1826,7 @@
           "intent_types": [
             "list_line_items"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_line_items",
@@ -1748,6 +1845,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1791,6 +1891,7 @@
           "intent_types": [
             "list_targeting_options"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "dv360_list_targeting_options",
@@ -1809,6 +1910,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1850,6 +1954,7 @@
           "intent_types": [
             "pause_io"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_pause_io",
@@ -1868,6 +1973,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -1959,6 +2067,7 @@
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_update_campaign",
@@ -1977,6 +2086,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -2022,6 +2134,7 @@
           "intent_types": [
             "update_creative"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_update_creative",
@@ -2040,6 +2153,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -2136,6 +2252,7 @@
           "intent_types": [
             "update_io"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_update_io",
@@ -2154,6 +2271,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -2260,6 +2380,7 @@
           "intent_types": [
             "update_line_item"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "dv360_update_line_item",
@@ -2278,6 +2399,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "dv360-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -2289,7 +2413,7 @@
       ]
     },
     "google-ads": {
-      "digest": "59848268ecb35a926a0dc7ca5eb80beed0a369b4d55d981022c0cac656a238d5",
+      "digest": "815c35c485581720b2219f24891c811d4199fee8e5d0670162539e7d347dc1c5",
       "tool_count": 103,
       "tools": [
         {
@@ -2578,6 +2702,7 @@
             "create_campaign",
             "create_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_ad",
@@ -2596,6 +2721,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -2874,6 +3002,7 @@
             "create_campaign",
             "create_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_ad_group",
@@ -2892,6 +3021,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -3149,6 +3281,7 @@
             "create_app_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_app_ad",
@@ -3167,6 +3300,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -3255,6 +3391,7 @@
             "create_app_ad_group",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_app_ad_group",
@@ -3273,6 +3410,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -3433,6 +3573,7 @@
           "intent_types": [
             "create_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_asset",
@@ -3451,6 +3592,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -3789,6 +3933,7 @@
           "intent_types": [
             "create_asset_group"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_asset_group",
@@ -3807,6 +3952,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -3919,6 +4067,7 @@
           "intent_types": [
             "create_asset_group_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_asset_group_asset",
@@ -3937,6 +4086,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -4280,6 +4432,7 @@
             "create_asset_group_listing_group_filter",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_asset_group_listing_group_filter",
@@ -4298,6 +4451,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -4433,6 +4589,7 @@
           "intent_types": [
             "create_bidding_strategy"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_bidding_strategy",
@@ -4451,6 +4608,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -5460,6 +5620,7 @@
             "create_campaign",
             "create_campaign_only"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_campaign",
@@ -5478,6 +5639,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -5590,6 +5754,7 @@
           "intent_types": [
             "create_campaign_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_campaign_asset",
@@ -5608,6 +5773,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -5696,6 +5864,7 @@
           "intent_types": [
             "create_campaign_budget"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_campaign_budget",
@@ -5714,6 +5883,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -5953,6 +6125,7 @@
           "intent_types": [
             "create_campaign_criteria"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_campaign_criteria",
@@ -5971,6 +6144,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -6153,6 +6329,7 @@
           "intent_types": [
             "create_conversion_action"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_conversion_action",
@@ -6171,6 +6348,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -6421,6 +6601,7 @@
             "create_demand_gen_carousel_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_demand_gen_carousel_ad",
@@ -6439,6 +6620,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -6835,6 +7019,7 @@
             "create_demand_gen_multi_asset_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_demand_gen_multi_asset_ad",
@@ -6853,6 +7038,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -7029,6 +7217,7 @@
             "create_demand_gen_product_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_demand_gen_product_ad",
@@ -7047,6 +7236,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -7376,6 +7568,7 @@
             "create_demand_gen_video_responsive_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_demand_gen_video_responsive_ad",
@@ -7394,6 +7587,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -7613,6 +7809,7 @@
           "intent_types": [
             "create_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_experiment",
@@ -7631,6 +7828,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -7717,6 +7917,7 @@
             "create_hotel_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_hotel_ad",
@@ -7735,6 +7936,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -7844,6 +8048,7 @@
           "intent_types": [
             "create_keywords"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_keywords",
@@ -7862,6 +8067,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -8169,6 +8377,7 @@
             "create_local_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_local_ad",
@@ -8187,6 +8396,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -8538,6 +8750,7 @@
             "create_pmax_asset_group",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_pmax_asset_group",
@@ -8556,6 +8769,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -8909,6 +9125,7 @@
             "create_product_group",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_product_group",
@@ -8927,6 +9144,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -9309,6 +9529,7 @@
             "create_responsive_display_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_responsive_display_ad",
@@ -9327,6 +9548,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -9579,6 +9803,7 @@
           "intent_types": [
             "create_search_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_search_ad",
@@ -9597,6 +9822,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -9722,6 +9950,7 @@
             "create_smart_campaign_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_smart_campaign_ad",
@@ -9740,6 +9969,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10004,6 +10236,7 @@
             "create_ad_group",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_specialized_ad_group",
@@ -10022,6 +10255,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10109,6 +10345,7 @@
             "create_travel_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_travel_ad",
@@ -10127,6 +10364,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10237,6 +10477,7 @@
           "intent_types": [
             "create_user_list"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_create_user_list",
@@ -10255,6 +10496,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10406,6 +10650,7 @@
             "create_video_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_create_video_ad",
@@ -10424,6 +10669,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10509,6 +10757,7 @@
           "intent_types": [
             "delete_ad"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_ad",
@@ -10527,6 +10776,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10586,6 +10838,7 @@
           "intent_types": [
             "delete_ad_group"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_ad_group",
@@ -10604,6 +10857,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10666,6 +10922,7 @@
           "intent_types": [
             "delete_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_asset",
@@ -10684,6 +10941,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10795,6 +11055,7 @@
           "intent_types": [
             "delete_asset_group_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_asset_group_asset",
@@ -10813,6 +11074,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10905,6 +11169,7 @@
           "intent_types": [
             "delete_asset_group_listing_group_filter"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_delete_asset_group_listing_group_filter",
@@ -10923,6 +11188,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -10980,6 +11248,7 @@
           "intent_types": [
             "delete_bidding_strategy"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_bidding_strategy",
@@ -10998,6 +11267,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11053,6 +11325,7 @@
             "delete_campaign",
             "cross_channel_batch_delete"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_campaign",
@@ -11071,6 +11344,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11182,6 +11458,7 @@
           "intent_types": [
             "delete_campaign_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_campaign_asset",
@@ -11200,6 +11477,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11283,6 +11563,7 @@
           "intent_types": [
             "delete_campaign_budget"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_campaign_budget",
@@ -11301,6 +11582,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11382,6 +11666,7 @@
           "intent_types": [
             "delete_campaign_criterion"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_campaign_criterion",
@@ -11400,6 +11685,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11456,6 +11744,7 @@
           "intent_types": [
             "delete_conversion_action"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_conversion_action",
@@ -11474,6 +11763,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11525,6 +11817,7 @@
           "intent_types": [
             "delete_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_experiment",
@@ -11543,6 +11836,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11624,6 +11920,7 @@
           "intent_types": [
             "delete_keyword"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_keyword",
@@ -11642,6 +11939,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11737,6 +12037,7 @@
           "intent_types": [
             "delete_product_group"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_product_group",
@@ -11755,6 +12056,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11812,6 +12116,7 @@
           "intent_types": [
             "delete_user_list"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_delete_user_list",
@@ -11830,6 +12135,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11881,6 +12189,7 @@
           "intent_types": [
             "end_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_end_experiment",
@@ -11899,6 +12208,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -11980,6 +12292,7 @@
           "intent_types": [
             "get_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_ad",
@@ -11998,6 +12311,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12070,6 +12386,7 @@
           "intent_types": [
             "get_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_ad_group",
@@ -12088,6 +12405,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12149,6 +12469,7 @@
           "intent_types": [
             "get_adgroup_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_adgroup_report",
@@ -12167,6 +12488,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12230,6 +12554,7 @@
           "intent_types": [
             "get_asset"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_asset",
@@ -12248,6 +12573,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12320,6 +12648,7 @@
           "intent_types": [
             "get_asset_group"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_asset_group",
@@ -12338,6 +12667,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12428,6 +12760,7 @@
           "intent_types": [
             "get_asset_group_listing_group_filter"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_asset_group_listing_group_filter",
@@ -12446,6 +12779,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12500,6 +12836,7 @@
           "intent_types": [
             "get_bidding_strategy"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_bidding_strategy",
@@ -12518,6 +12855,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12574,6 +12914,7 @@
           "intent_types": [
             "get_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_campaign",
@@ -12592,6 +12933,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12674,6 +13018,7 @@
           "intent_types": [
             "get_campaign_budget"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_campaign_budget",
@@ -12692,6 +13037,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12773,6 +13121,7 @@
           "intent_types": [
             "get_campaign_criterion"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_campaign_criterion",
@@ -12791,6 +13140,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12844,6 +13196,7 @@
             "get_campaign_report",
             "download_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_campaign_report",
@@ -12865,6 +13218,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -12918,6 +13274,7 @@
           "intent_types": [
             "get_conversion_action"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_conversion_action",
@@ -12936,6 +13293,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13129,6 +13489,7 @@
           "intent_types": [
             "get_experiment"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_experiment",
@@ -13147,6 +13508,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13242,6 +13606,7 @@
           "intent_types": [
             "get_product_group"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_product_group",
@@ -13260,6 +13625,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13314,6 +13682,7 @@
           "intent_types": [
             "get_user_list"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_get_user_list",
@@ -13332,6 +13701,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13383,6 +13755,7 @@
           "intent_types": [
             "graduate_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_graduate_experiment",
@@ -13401,6 +13774,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13454,6 +13830,7 @@
           "intent_types": [
             "list_adgroups"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_ad_groups",
@@ -13472,6 +13849,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13532,6 +13912,7 @@
           "intent_types": [
             "list_ads"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_ads",
@@ -13550,6 +13931,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13655,6 +14039,7 @@
           "intent_types": [
             "list_asset_group_assets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_asset_group_assets",
@@ -13673,6 +14058,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13764,6 +14152,7 @@
           "intent_types": [
             "list_asset_group_listing_group_filters"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_asset_group_listing_group_filters",
@@ -13782,6 +14171,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13835,6 +14227,7 @@
           "intent_types": [
             "list_asset_groups"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_asset_groups",
@@ -13853,6 +14246,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13914,6 +14310,7 @@
           "intent_types": [
             "list_assets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_assets",
@@ -13932,6 +14329,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -13972,6 +14372,7 @@
           "intent_types": [
             "list_bidding_strategies"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_bidding_strategies",
@@ -13990,6 +14391,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14095,6 +14499,7 @@
           "intent_types": [
             "list_campaign_assets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_campaign_assets",
@@ -14113,6 +14518,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14196,6 +14604,7 @@
           "intent_types": [
             "list_campaign_budgets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_campaign_budgets",
@@ -14214,6 +14623,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14302,6 +14714,7 @@
           "intent_types": [
             "list_campaign_conversion_goals"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_campaign_conversion_goals",
@@ -14320,6 +14733,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14379,6 +14795,7 @@
           "intent_types": [
             "list_campaign_criteria"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_campaign_criteria",
@@ -14397,6 +14814,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14465,6 +14885,7 @@
             "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_campaigns",
@@ -14487,6 +14908,9 @@
           ],
           "result_items_key": "campaigns",
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14527,6 +14951,7 @@
           "intent_types": [
             "list_conversion_actions"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_conversion_actions",
@@ -14545,6 +14970,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14585,6 +15013,7 @@
           "intent_types": [
             "list_customer_clients"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_customer_clients",
@@ -14603,6 +15032,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14690,6 +15122,7 @@
           "intent_types": [
             "list_customer_conversion_goals"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_customer_conversion_goals",
@@ -14708,6 +15141,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14752,6 +15188,7 @@
           "intent_types": [
             "list_experiment_arms"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_experiment_arms",
@@ -14770,6 +15207,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14814,6 +15254,7 @@
           "intent_types": [
             "list_experiments"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_experiments",
@@ -14832,6 +15273,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -14908,6 +15352,7 @@
           "intent_types": [
             "list_keywords"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_keywords",
@@ -14926,6 +15371,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15020,6 +15468,7 @@
           "intent_types": [
             "list_product_groups"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_product_groups",
@@ -15038,6 +15487,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15079,6 +15531,7 @@
           "intent_types": [
             "list_user_lists"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_list_user_lists",
@@ -15097,6 +15550,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15146,6 +15602,7 @@
           "intent_types": [
             "provider_pause_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_pause_campaign",
@@ -15164,6 +15621,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15215,6 +15675,7 @@
           "intent_types": [
             "promote_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_promote_experiment",
@@ -15233,6 +15694,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15283,6 +15747,7 @@
           "intent_types": [
             "provider_resume_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_resume_campaign",
@@ -15301,6 +15766,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15352,6 +15820,7 @@
           "intent_types": [
             "schedule_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_schedule_experiment",
@@ -15370,6 +15839,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15518,6 +15990,7 @@
           "intent_types": [
             "update_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_ad",
@@ -15536,6 +16009,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15666,6 +16142,7 @@
           "intent_types": [
             "update_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_ad_group",
@@ -15684,6 +16161,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -15819,6 +16299,7 @@
           "intent_types": [
             "update_asset_group"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_asset_group",
@@ -15837,6 +16318,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16066,6 +16550,7 @@
           "intent_types": [
             "update_asset_group_listing_group_filter"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_asset_group_listing_group_filter",
@@ -16084,6 +16569,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16207,6 +16695,7 @@
           "intent_types": [
             "update_bidding_strategy"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_bidding_strategy",
@@ -16225,6 +16714,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16333,6 +16825,7 @@
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_campaign",
@@ -16351,6 +16844,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16468,6 +16964,7 @@
           "intent_types": [
             "update_campaign_budget"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_campaign_budget",
@@ -16486,6 +16983,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16582,6 +17082,7 @@
           "intent_types": [
             "update_campaign_conversion_goal"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_campaign_conversion_goal",
@@ -16600,6 +17101,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16707,6 +17211,7 @@
           "intent_types": [
             "update_campaign_criterion"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_campaign_criterion",
@@ -16725,6 +17230,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16878,6 +17386,7 @@
           "intent_types": [
             "update_conversion_action"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_conversion_action",
@@ -16896,6 +17405,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -16990,6 +17502,7 @@
           "intent_types": [
             "update_customer_conversion_goal"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_customer_conversion_goal",
@@ -17008,6 +17521,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -17155,6 +17671,7 @@
           "intent_types": [
             "update_experiment"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_experiment",
@@ -17173,6 +17690,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -17277,6 +17797,7 @@
           "intent_types": [
             "update_keyword"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_keyword",
@@ -17295,6 +17816,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -17419,6 +17943,7 @@
           "intent_types": [
             "update_product_group"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "google_update_product_group",
@@ -17437,6 +17962,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -17527,6 +18055,7 @@
           "intent_types": [
             "update_user_list"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_update_user_list",
@@ -17545,6 +18074,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -17607,6 +18139,7 @@
           "intent_types": [
             "upload_user_list_data"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "google_upload_user_list_data",
@@ -17625,6 +18158,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "google-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -17637,7 +18173,7 @@
       ]
     },
     "meta": {
-      "digest": "4d0feefc6386ec56ddb2ab88c1408b31316cc72ca8de1a9216e30a06002396d4",
+      "digest": "20c621279abbd45acbbeaa0a3bb5c0424003b325dc214ca962621eb6f7e821ad",
       "tool_count": 78,
       "tools": [
         {
@@ -17704,6 +18240,7 @@
           "intent_types": [
             "boost_post"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_boost_post",
@@ -17722,6 +18259,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -18364,6 +18904,7 @@
             "create_campaign",
             "create_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_ad",
@@ -18382,6 +18923,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -19839,6 +20383,7 @@
             "create_campaign",
             "create_adset"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_adset",
@@ -19857,6 +20402,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -20032,6 +20580,7 @@
           "intent_types": [
             "create_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_create_audience",
@@ -20050,6 +20599,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -20371,6 +20923,7 @@
             "create_campaign",
             "create_campaign_only"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_campaign",
@@ -20389,6 +20942,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -20475,6 +21031,7 @@
           "intent_types": [
             "create_catalog"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_create_catalog",
@@ -20493,6 +21050,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -20683,6 +21243,7 @@
             "create_catalog_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_catalog_ad",
@@ -20701,6 +21262,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -20933,6 +21497,7 @@
             "create_conversion_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_conversion_ad",
@@ -20951,6 +21516,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -21063,6 +21631,7 @@
           "intent_types": [
             "create_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_creative",
@@ -21081,6 +21650,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -21212,6 +21784,7 @@
           "intent_types": [
             "create_custom_conversion"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_create_custom_conversion",
@@ -21230,6 +21803,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -21447,6 +22023,7 @@
             "create_engagement_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_engagement_ad",
@@ -21465,6 +22042,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -21648,6 +22228,7 @@
             "create_lead_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_lead_ad",
@@ -21666,6 +22247,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -21894,6 +22478,7 @@
           "intent_types": [
             "create_lead_form"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_create_lead_form",
@@ -21912,6 +22497,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22009,6 +22597,7 @@
           "intent_types": [
             "create_lookalike_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_create_lookalike_audience",
@@ -22027,6 +22616,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22222,6 +22814,7 @@
             "create_messaging_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_messaging_ad",
@@ -22240,6 +22833,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22320,6 +22916,7 @@
           "intent_types": [
             "create_product_set"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_create_product_set",
@@ -22338,6 +22935,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22567,6 +23167,7 @@
             "create_traffic_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_create_traffic_ad",
@@ -22585,6 +23186,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22652,6 +23256,7 @@
           "intent_types": [
             "delete_ad"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_ad",
@@ -22670,6 +23275,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22736,6 +23344,7 @@
           "intent_types": [
             "delete_adset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_adset",
@@ -22754,6 +23363,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22812,6 +23424,7 @@
           "intent_types": [
             "delete_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_audience",
@@ -22830,6 +23443,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22891,6 +23507,7 @@
             "delete_campaign",
             "cross_channel_batch_delete"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_campaign",
@@ -22909,6 +23526,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -22967,6 +23587,7 @@
           "intent_types": [
             "delete_catalog"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_catalog",
@@ -22985,6 +23606,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23043,6 +23667,7 @@
           "intent_types": [
             "delete_creative"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_creative",
@@ -23061,6 +23686,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23121,6 +23749,7 @@
           "intent_types": [
             "delete_custom_conversion"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_custom_conversion",
@@ -23139,6 +23768,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23225,6 +23857,7 @@
           "intent_types": [
             "delete_product_set"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_delete_product_set",
@@ -23243,6 +23876,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23287,6 +23923,7 @@
           "intent_types": [
             "get_account"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_account",
@@ -23305,6 +23942,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23389,6 +24029,7 @@
           "intent_types": [
             "get_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_ad",
@@ -23407,6 +24048,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23460,6 +24104,7 @@
           "intent_types": [
             "get_ad_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_ad_report",
@@ -23478,6 +24123,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23563,6 +24211,7 @@
           "intent_types": [
             "get_adset"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_adset",
@@ -23581,6 +24230,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23634,6 +24286,7 @@
           "intent_types": [
             "get_adset_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_adset_report",
@@ -23652,6 +24305,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23711,6 +24367,7 @@
           "intent_types": [
             "get_audience"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_audience",
@@ -23729,6 +24386,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23795,6 +24455,7 @@
           "intent_types": [
             "get_business"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_business",
@@ -23813,6 +24474,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23878,6 +24542,7 @@
           "intent_types": [
             "get_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_campaign",
@@ -23896,6 +24561,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -23969,6 +24637,7 @@
             "get_campaign_report",
             "download_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_campaign_report",
@@ -23990,6 +24659,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24055,6 +24727,7 @@
           "intent_types": [
             "get_catalog"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_catalog",
@@ -24073,6 +24746,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24138,6 +24814,7 @@
           "intent_types": [
             "get_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_creative",
@@ -24156,6 +24833,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24222,6 +24902,7 @@
           "intent_types": [
             "get_custom_conversion"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_custom_conversion",
@@ -24240,6 +24921,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24350,6 +25034,7 @@
           "intent_types": [
             "get_lead"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_lead",
@@ -24368,6 +25053,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24451,6 +25139,7 @@
           "intent_types": [
             "get_lead_form"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_lead_form",
@@ -24469,6 +25158,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24530,6 +25222,7 @@
           "intent_types": [
             "get_pixel"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_pixel",
@@ -24548,6 +25241,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24640,6 +25336,7 @@
           "intent_types": [
             "get_product_set"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_get_product_set",
@@ -24658,6 +25355,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24708,6 +25408,7 @@
           "intent_types": [
             "list_accounts"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_accounts",
@@ -24726,6 +25427,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24780,6 +25484,7 @@
           "intent_types": [
             "list_adsets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_ad_sets",
@@ -24798,6 +25503,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24860,6 +25568,7 @@
           "intent_types": [
             "list_ads"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_ads",
@@ -24878,6 +25587,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -24918,6 +25630,7 @@
           "intent_types": [
             "list_audiences"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_audiences",
@@ -24936,6 +25649,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25000,6 +25716,7 @@
           "intent_types": [
             "list_businesses"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_businesses",
@@ -25018,6 +25735,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25068,6 +25788,7 @@
             "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_campaigns",
@@ -25089,6 +25810,9 @@
           ],
           "result_items_key": "campaigns",
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25129,6 +25853,7 @@
           "intent_types": [
             "list_catalogs"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_catalogs",
@@ -25147,6 +25872,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25191,6 +25919,7 @@
           "intent_types": [
             "list_creatives"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_creatives",
@@ -25209,6 +25938,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25261,6 +25993,7 @@
           "intent_types": [
             "list_custom_conversions"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_custom_conversions",
@@ -25279,6 +26012,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25325,6 +26061,7 @@
             "list_image_assets",
             "list_assets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_image_assets",
@@ -25343,6 +26080,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25398,6 +26138,7 @@
           "intent_types": [
             "list_lead_forms"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_lead_forms",
@@ -25416,6 +26157,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25523,6 +26267,7 @@
           "intent_types": [
             "list_leads"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_leads",
@@ -25541,6 +26286,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25581,6 +26329,7 @@
           "intent_types": [
             "list_pages"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_pages",
@@ -25599,6 +26348,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25639,6 +26391,7 @@
           "intent_types": [
             "list_pixels"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_pixels",
@@ -25657,6 +26410,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25715,6 +26471,7 @@
           "intent_types": [
             "list_product_sets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_product_sets",
@@ -25733,6 +26490,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25779,6 +26539,7 @@
             "list_video_assets",
             "list_assets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_list_video_assets",
@@ -25797,6 +26558,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25869,6 +26633,7 @@
           "intent_types": [
             "lookup_adset"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_lookup_adset",
@@ -25887,6 +26652,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -25953,6 +26721,7 @@
           "intent_types": [
             "lookup_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_lookup_creative",
@@ -25971,6 +26740,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26031,6 +26803,7 @@
           "intent_types": [
             "provider_pause_ad"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_pause_ad",
@@ -26049,6 +26822,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26108,6 +26884,7 @@
           "intent_types": [
             "provider_pause_adset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_pause_adset",
@@ -26126,6 +26903,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26177,6 +26957,7 @@
           "intent_types": [
             "provider_pause_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_pause_campaign",
@@ -26195,6 +26976,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26246,6 +27030,7 @@
           "intent_types": [
             "provider_resume_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_resume_campaign",
@@ -26264,6 +27049,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26333,6 +27121,7 @@
             "search_targeting_options",
             "lookup_targeting_options"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_search_targeting_options",
@@ -26351,6 +27140,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26526,6 +27318,7 @@
             "send_conversion_events",
             "send_capi_events"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_send_conversion_events",
@@ -26544,6 +27337,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26724,6 +27520,7 @@
             "test_conversion_events",
             "test_capi_events"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_test_conversion_events",
@@ -26742,6 +27539,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -26895,6 +27695,7 @@
           "intent_types": [
             "update_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_ad",
@@ -26913,6 +27714,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27077,6 +27881,7 @@
           "intent_types": [
             "update_adset"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_adset",
@@ -27095,6 +27900,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27183,6 +27991,7 @@
           "intent_types": [
             "update_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_update_audience",
@@ -27201,6 +28010,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27309,6 +28121,7 @@
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_campaign",
@@ -27327,6 +28140,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27399,6 +28215,7 @@
           "intent_types": [
             "update_catalog"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_update_catalog",
@@ -27417,6 +28234,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27489,6 +28309,7 @@
           "intent_types": [
             "update_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_update_creative",
@@ -27507,6 +28328,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27592,6 +28416,7 @@
           "intent_types": [
             "update_custom_conversion"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_update_custom_conversion",
@@ -27610,6 +28435,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27832,6 +28660,7 @@
           "intent_types": [
             "update_lead_form"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_update_lead_form",
@@ -27850,6 +28679,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -27960,6 +28792,7 @@
           "intent_types": [
             "update_product_set"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_update_product_set",
@@ -27978,6 +28811,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -28240,6 +29076,7 @@
           "intent_types": [
             "upload_audience_users"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_upload_audience_users",
@@ -28258,6 +29095,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -28318,6 +29158,7 @@
             "upload_image_asset",
             "upload_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_upload_image_asset",
@@ -28336,6 +29177,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -28401,6 +29245,7 @@
             "upload_video_asset",
             "upload_asset"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "meta_upload_video_asset",
@@ -28419,6 +29264,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -28431,7 +29279,7 @@
       ]
     },
     "tiktok": {
-      "digest": "e5c91b3cb126ecdc881565c8e2830a922b15d775ff431712960199c6276530fc",
+      "digest": "ce11ffb60c5d791911a9b4816a8cb6a9a520905b06efed0ef69cd3bd85f04c72",
       "tool_count": 90,
       "tools": [
         {
@@ -29107,6 +29955,7 @@
             "create_campaign",
             "create_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_ad",
@@ -29125,6 +29974,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -30510,6 +31362,7 @@
             "create_campaign",
             "create_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_adgroup",
@@ -30528,6 +31381,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -30964,6 +31820,7 @@
             "create_all_in_one_spark_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_all_in_one_spark_ad",
@@ -30982,6 +31839,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -31353,6 +32213,7 @@
           "intent_types": [
             "create_app_ad"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_app_ad",
@@ -31371,6 +32232,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -31469,6 +32333,7 @@
           "intent_types": [
             "create_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_audience",
@@ -31487,6 +32352,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -31798,12 +32666,17 @@
             "TikTok 销售广告系列",
             "TikTok 销售 campaign",
             "TikTok 流量广告",
-            "TikTok 流量 campaign"
+            "TikTok 流量 campaign",
+            "创建 TikTok App 广告",
+            "创建 TikTok App 转化广告",
+            "TikTok App 广告",
+            "TikTok App 转化广告"
           ],
           "intent_types": [
             "create_campaign",
             "create_campaign_only"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_campaign",
@@ -31822,6 +32695,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -32462,6 +33338,7 @@
             "create_carousel_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_carousel_ad",
@@ -32480,6 +33357,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -33102,6 +33982,7 @@
           "intent_types": [
             "create_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_creative",
@@ -33120,6 +34001,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -33189,6 +34073,7 @@
           "intent_types": [
             "create_creative_portfolio"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_creative_portfolio",
@@ -33207,6 +34092,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -33264,6 +34152,7 @@
           "intent_types": [
             "create_identity"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_identity",
@@ -33282,6 +34171,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -33622,6 +34514,7 @@
             "create_lead_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_lead_ad",
@@ -33640,6 +34533,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -33704,6 +34600,7 @@
           "intent_types": [
             "create_pixel"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_pixel",
@@ -33722,6 +34619,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -34424,6 +35324,7 @@
           "intent_types": [
             "create_product_sales_ad"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_product_sales_ad",
@@ -34442,6 +35343,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -35835,6 +36739,7 @@
           "intent_types": [
             "create_product_sales_adgroup"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_product_sales_adgroup",
@@ -35853,6 +36758,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -36496,6 +37404,7 @@
             "create_single_image_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_single_image_ad",
@@ -36514,6 +37423,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37157,6 +38069,7 @@
             "create_single_video_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_single_video_ad",
@@ -37175,6 +38088,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37240,6 +38156,7 @@
           "intent_types": [
             "delete_ad"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_delete_ad",
@@ -37258,6 +38175,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37312,6 +38232,7 @@
           "intent_types": [
             "delete_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_delete_audience",
@@ -37330,6 +38251,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37386,6 +38310,7 @@
             "provider_delete_campaign",
             "cross_channel_batch_delete"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_delete_campaign",
@@ -37404,6 +38329,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37449,6 +38377,7 @@
           "intent_types": [
             "delete_creative"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_delete_creative",
@@ -37467,6 +38396,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37506,6 +38438,7 @@
           "intent_types": [
             "get_account"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_account",
@@ -37524,6 +38457,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37605,6 +38541,7 @@
           "intent_types": [
             "get_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_ad",
@@ -37623,6 +38560,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37696,6 +38636,7 @@
           "intent_types": [
             "get_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_adgroup",
@@ -37714,6 +38655,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37775,6 +38719,7 @@
           "intent_types": [
             "get_adgroup_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_adgroup_report",
@@ -37793,6 +38738,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37846,6 +38794,7 @@
           "intent_types": [
             "get_audience"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_audience",
@@ -37864,6 +38813,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37918,6 +38870,7 @@
           "intent_types": [
             "get_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_campaign",
@@ -37936,6 +38889,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -37987,6 +38943,7 @@
             "get_campaign_report",
             "download_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_campaign_report",
@@ -38008,6 +38965,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38061,6 +39021,7 @@
           "intent_types": [
             "get_catalog"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_catalog",
@@ -38079,6 +39040,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38132,6 +39096,7 @@
           "intent_types": [
             "get_conversion"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_conversion",
@@ -38150,6 +39115,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38218,6 +39186,7 @@
           "intent_types": [
             "get_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_creative",
@@ -38236,6 +39205,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38283,6 +39255,7 @@
           "intent_types": [
             "get_creative_portfolio"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_creative_portfolio",
@@ -38301,6 +39274,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38361,6 +39337,7 @@
           "intent_types": [
             "get_identity"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_identity",
@@ -38379,6 +39356,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38457,6 +39437,7 @@
           "intent_types": [
             "get_identity_video_info"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_identity_video_info",
@@ -38475,6 +39456,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38518,6 +39502,7 @@
           "intent_types": [
             "get_image"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_image",
@@ -38536,6 +39521,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38573,6 +39561,7 @@
           "intent_types": [
             "get_interest_category"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_interest_category",
@@ -38591,6 +39580,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38649,6 +39641,7 @@
           "intent_types": [
             "get_pixel"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_pixel",
@@ -38667,6 +39660,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38744,6 +39740,7 @@
           "intent_types": [
             "get_product_set"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_product_set",
@@ -38762,6 +39759,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38812,6 +39812,7 @@
           "intent_types": [
             "download_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_report",
@@ -38830,6 +39831,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38884,6 +39888,7 @@
           "intent_types": [
             "get_video"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_get_video",
@@ -38902,6 +39907,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -38942,6 +39950,7 @@
           "intent_types": [
             "list_accounts"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_accounts",
@@ -38960,6 +39969,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39010,6 +40022,7 @@
           "intent_types": [
             "list_action_categories"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_action_categories",
@@ -39028,6 +40041,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39080,6 +40096,7 @@
           "intent_types": [
             "list_adgroups"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_adgroups",
@@ -39098,6 +40115,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39159,6 +40179,7 @@
           "intent_types": [
             "list_ads"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_ads",
@@ -39177,6 +40198,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39225,6 +40249,7 @@
           "intent_types": [
             "list_apps"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_apps",
@@ -39243,6 +40268,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39281,6 +40309,7 @@
           "intent_types": [
             "list_audiences"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_audiences",
@@ -39299,6 +40328,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39340,6 +40372,7 @@
           "intent_types": [
             "list_brand_safety"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_brand_safety",
@@ -39358,6 +40391,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39389,6 +40425,7 @@
           "intent_types": [
             "list_browsers"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_browsers",
@@ -39407,6 +40444,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39456,6 +40496,7 @@
             "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_campaigns",
@@ -39477,6 +40518,9 @@
           ],
           "result_items_key": "campaigns",
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39508,6 +40552,7 @@
           "intent_types": [
             "list_carriers"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_carriers",
@@ -39526,6 +40571,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39573,6 +40621,7 @@
           "intent_types": [
             "list_catalogs"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_catalogs",
@@ -39591,6 +40640,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39638,6 +40690,7 @@
           "intent_types": [
             "list_conversions"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_conversions",
@@ -39656,6 +40709,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39699,6 +40755,7 @@
           "intent_types": [
             "list_creatives"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_creatives",
@@ -39717,6 +40774,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39757,6 +40817,7 @@
           "intent_types": [
             "list_device_models"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_device_models",
@@ -39775,6 +40836,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39817,6 +40881,7 @@
           "intent_types": [
             "list_devices"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_devices",
@@ -39835,6 +40900,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39912,6 +40980,7 @@
           "intent_types": [
             "list_identities"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_identities",
@@ -39930,6 +40999,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -39974,6 +41046,7 @@
           "intent_types": [
             "list_images"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_images",
@@ -39992,6 +41065,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40082,6 +41158,7 @@
           "intent_types": [
             "list_interests"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_interest_categories",
@@ -40100,6 +41177,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40140,6 +41220,7 @@
           "intent_types": [
             "list_languages"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_languages",
@@ -40158,6 +41239,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40200,6 +41284,7 @@
           "intent_types": [
             "list_locations"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_locations",
@@ -40218,6 +41303,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40249,6 +41337,7 @@
           "intent_types": [
             "list_operating_systems"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_operating_systems",
@@ -40267,6 +41356,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40322,6 +41414,7 @@
           "intent_types": [
             "list_pixels"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_pixels",
@@ -40340,6 +41433,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40402,6 +41498,7 @@
           "intent_types": [
             "list_product_sets"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_product_sets",
@@ -40420,6 +41517,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40529,6 +41629,7 @@
           "intent_types": [
             "list_regions"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_regions",
@@ -40547,6 +41648,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40591,6 +41695,7 @@
           "intent_types": [
             "list_videos"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_list_videos",
@@ -40609,6 +41714,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40687,6 +41795,7 @@
           "intent_types": [
             "provider_pause_adgroup"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_pause_adgroup",
@@ -40705,6 +41814,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40760,6 +41872,7 @@
           "intent_types": [
             "provider_pause_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_pause_campaign",
@@ -40778,6 +41891,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40832,6 +41948,7 @@
           "intent_types": [
             "preview_creative_portfolio"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_preview_creative_portfolio",
@@ -40850,6 +41967,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -40937,6 +42057,7 @@
           "intent_types": [
             "recommend_interest_keywords"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_recommend_interest_keywords",
@@ -40955,6 +42076,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -41011,6 +42135,7 @@
           "intent_types": [
             "provider_resume_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_resume_campaign",
@@ -41029,6 +42154,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -41069,6 +42197,7 @@
           "intent_types": [
             "search_locations"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_search_locations",
@@ -41087,6 +42216,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -41265,6 +42397,7 @@
             "send_pixel_event",
             "track_tiktok_pixel"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_send_pixel_event",
@@ -41283,6 +42416,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -41478,6 +42614,7 @@
             "send_pixel_events",
             "track_tiktok_pixel_batch"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_send_pixel_events",
@@ -41496,6 +42633,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -42322,6 +43462,7 @@
             "create_campaign",
             "create_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_smart_plus_create_ad",
@@ -42340,6 +43481,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -43119,6 +44263,7 @@
             "create_campaign",
             "create_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_smart_plus_create_adgroup",
@@ -43137,6 +44282,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -43449,6 +44597,7 @@
             "create_campaign",
             "create_campaign_only"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_smart_plus_create_campaign",
@@ -43467,6 +44616,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -43624,6 +44776,7 @@
           "intent_types": [
             "update_smart_plus_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_smart_plus_update_ad",
@@ -43642,6 +44795,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -43856,6 +45012,7 @@
           "intent_types": [
             "update_smart_plus_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_smart_plus_update_adgroup",
@@ -43874,6 +45031,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -43987,6 +45147,7 @@
           "intent_types": [
             "update_smart_plus_campaign"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_smart_plus_update_campaign",
@@ -44005,6 +45166,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -44141,6 +45305,7 @@
             "create_spark_ad",
             "create_campaign"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_spark_ads_create",
@@ -44159,6 +45324,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -44282,6 +45450,7 @@
           "intent_types": [
             "update_ad"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_ad",
@@ -44300,6 +45469,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -44587,6 +45759,7 @@
           "intent_types": [
             "update_adgroup"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_adgroup",
@@ -44605,6 +45778,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -44889,6 +46065,7 @@
           "intent_types": [
             "update_adgroup_targeting"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_adgroup_targeting",
@@ -44907,6 +46084,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45014,6 +46194,7 @@
           "intent_types": [
             "update_audience"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_audience",
@@ -45032,6 +46213,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45174,6 +46358,7 @@
             "cross_channel_batch_resume",
             "cross_channel_batch_update_budget"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_campaign",
@@ -45192,6 +46377,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45307,6 +46495,7 @@
           "intent_types": [
             "update_creative"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_creative",
@@ -45325,6 +46514,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45398,6 +46590,7 @@
           "intent_types": [
             "update_pixel"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_update_pixel",
@@ -45416,6 +46609,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45486,6 +46682,7 @@
           "intent_types": [
             "upload_audience_file"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_upload_audience_file",
@@ -45504,6 +46701,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45577,6 +46777,7 @@
           "intent_types": [
             "upload_image"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_upload_image",
@@ -45595,6 +46796,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45702,6 +46906,7 @@
           "intent_types": [
             "upload_video"
           ],
+          "live_permission": null,
           "live_support": false,
           "max_output_bytes": 1000000,
           "name": "tiktok_upload_video",
@@ -45720,6 +46925,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,
@@ -45803,6 +47011,7 @@
           "intent_types": [
             "validate_product_selection"
           ],
+          "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_validate_product_selection",
@@ -45821,6 +47030,9 @@
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
           "timeout_seconds": 30.0,

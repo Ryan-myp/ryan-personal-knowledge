@@ -1,5 +1,32 @@
 # LLM Wiki 更新日志
 
+## 2026-09-20
+
+- 为历史页面补齐 `source_kind`、`authority`、`evidence_level`、`last_verified_at`，
+  并将自引用 `source_ref` 改为可追溯的 repository/internal provenance；正文和发布状态未改动。
+- raw ingest 增加原子 claim、attempt 记录和 stale recovery；Runtime Skill lifecycle 增加
+  串行化与失败回滚。
+
+## 2026-09-18
+
+### 全库治理与来源证据升级
+
+- ✅ 增加全库审计：frontmatter、重复 ID、目录对象类型、来源自引用、断链、孤立页、检索案例 ID 和平台覆盖。
+- ✅ 增加 `source_kind`、`authority`、`evidence_level`、`last_verified_at` 的兼容读取和 citation 输出。
+- ✅ 修正检索评测中漂移的文档 ID，避免用不存在的旧 ID 误判召回质量。
+- ✅ `ad-agent-knowledge-check` 现在同时执行检索质量门和全库审计。
+
+## 2026-09-17
+
+### Karpathy 对象层兼容升级
+
+- ✅ 增加 `raw/`、`entities/`、`concepts/`、`comparisons/` 和 `queries/` 对象目录。
+- ✅ 增加四个平台实体页和一个跨平台对比页；原有 `platforms/`、`business/`、`expertise/` 路径保持兼容。
+- ✅ `MarkdownWikiKnowledgeProvider` 增加 `wiki_type`、对象类型过滤、重复 ID/状态/置信度/来源校验。
+- ✅ Runtime 默认跳过 `raw/`、`system` 和导航 README，避免原始资料或维护说明进入模型上下文。
+- ✅ 统一 `wiki-engine` 的 YAML frontmatter、递归目录加载、日期写入和标准对象类型识别。
+- ✅ 知识库运行时文档增至 69 篇；知识质量门禁 Hit@3=1.000、MRR=0.958、跨平台泄漏为 0。
+
 ## 2026-09-08
 
 ### 四渠道专业知识扩充

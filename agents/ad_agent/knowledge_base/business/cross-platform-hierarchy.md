@@ -6,12 +6,16 @@ layer: business
 knowledge_type: general
 platform: all
 source: 四平台官方文档 + 当前 ad_agent Capability/Skill
-source_ref: agents/ad_agent/capabilities/*/_surface_data.py
+source_ref: "agents/ad_agent/capabilities/*/_surface_data.py"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [cross-platform, hierarchy, account-structure, campaign, ad-group, ad-set, line-item]
 status: published
+source_kind: "code"
+authority: "repository"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # 四平台广告层级对照与账户设计

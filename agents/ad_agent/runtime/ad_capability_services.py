@@ -7,6 +7,7 @@ receives an already assembled turn executor and never discovers Providers.
 from __future__ import annotations
 
 import copy
+from functools import wraps
 import hashlib
 import hmac
 import importlib.util
@@ -29,7 +30,21 @@ from .skill import Skill
 logger = logging.getLogger(__name__)
 
 
+def _serialize_skill_lifecycle(method):
+    """Serialize registry and ownership-index mutations in one Runtime."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        lock = getattr(self, "_skill_lifecycle_lock", None)
+        if lock is None:
+            return method(self, *args, **kwargs)
+        with lock:
+            return method(self, *args, **kwargs)
+
+    return wrapped
+
+
 class AdCapabilityLifecycleMixin:
+    @_serialize_skill_lifecycle
     def register_capability(self, module: CapabilityModule) -> CapabilityRuntime:
         """Register a Capability atomically from the Runtime's perspective.
 
@@ -335,6 +350,7 @@ class AdCapabilityLifecycleMixin:
 
     # ─── Skill 动态注册 ────────────────────────────────────────
 
+    @_serialize_skill_lifecycle
     def register_skill(self, skill: Skill, platform: str, api_client=None) -> bool:
         """
         动态注册一个 Skill。
@@ -446,6 +462,17 @@ class AdCapabilityLifecycleMixin:
                 )
             if self._read_only_mode and tool_def.is_write_tool:
                 continue
+            # These defaults belong to the advertising adapter. Core Runtime
+            # consumes the published metadata but never infers ad permissions
+            # or account fields for arbitrary applications.
+            if not tool_def.scope_fields:
+                tool_def.scope_type = tool_def.scope_type or "account"
+                tool_def.scope_fields = [
+                    "account_id", "ad_account_id", "advertiser_id", "customer_id",
+                ]
+                tool_def.scope_required = True
+            if tool_def.is_write_tool and not tool_def.live_permission:
+                tool_def.live_permission = "ads.write"
             if not tool_def.required_permissions:
                 tool_def.required_permissions = [
                     "ads.plan" if tool_def.is_write_tool else "ads.read"
@@ -603,6 +630,7 @@ class AdCapabilityLifecycleMixin:
             logger.warning("加载 Skill plugin %s 失败: %s", plugin_path, exc)
             return None
 
+    @_serialize_skill_lifecycle
     def load_skill(self, platform: str, skill: Skill, api_client=None) -> bool:
         """
         根据平台名称加载对应的 Skill。
@@ -626,6 +654,7 @@ class AdCapabilityLifecycleMixin:
             logger.error(f"❌ 加载 Skill '{platform}' 失败: {e}")
             return False
 
+    @_serialize_skill_lifecycle
     def unload_skill(self, platform: str, skill_name: Optional[str] = None) -> bool:
         """
         卸载指定平台的 Skill 工具。
@@ -641,6 +670,8 @@ class AdCapabilityLifecycleMixin:
         if not candidates:
             return True
 
+        target_key = ""
+        tool_names: list[str] = []
         try:
             if skill_name:
                 if skill_name not in candidates:
@@ -650,6 +681,28 @@ class AdCapabilityLifecycleMixin:
                 target_key = candidates[0]
             tool_names = list(self._skill_tool_names.get(target_key, []))
             target_skill = self._skill_objects.get(target_key)
+            registry_snapshot = self.registry._snapshot_tools(
+                tool_names,
+                _execution_token=self._registry_execution_token,
+            )
+            parameter_snapshot = self.parameter_catalogs.snapshot()
+            blueprint_snapshot = self.creation_blueprints.snapshot()
+            loaded_skill_snapshot = self.skill_loader.snapshot()
+            skill_tool_snapshot = {
+                key: list(value) for key, value in self._skill_tool_names.items()
+            }
+            skill_namespace_snapshot = dict(self._skill_namespaces)
+            skill_object_snapshot = dict(self._skill_objects)
+            skill_keys_snapshot = {
+                key: list(value) for key, value in self._skill_keys_by_platform.items()
+            }
+            skill_format_snapshot = {
+                key: set(value) for key, value in self._skill_format_ids.items()
+            }
+            format_catalog_snapshot = copy.deepcopy(self.ad_format_catalogs)
+            blueprint_context_snapshot = copy.deepcopy(
+                self._creation_blueprint_context_cache
+            )
 
             # Use the registry's locking/unregister seam instead of mutating
             # private indexes directly.
@@ -667,7 +720,6 @@ class AdCapabilityLifecycleMixin:
             self._skill_tool_names.pop(target_key, None)
             self._skill_namespaces.pop(target_key, None)
             self._skill_objects.pop(target_key, None)
-            self.plugin_registry.unregister(f"skill:{target_key}")
             if target_skill is not None:
                 self.skill_loader.unload(getattr(target_skill, "name", ""))
 
@@ -681,6 +733,10 @@ class AdCapabilityLifecycleMixin:
                 self.creation_blueprints.remove_owner(canonical_namespace)
 
             self._refresh_parser_catalog()
+            # Keep the lifecycle record until every derived index has been
+            # refreshed. If this final operation fails, the rollback below
+            # can leave the PluginRegistry untouched.
+            self.plugin_registry.unregister(f"skill:{target_key}")
             logger.info(
                 "✅ 已卸载 Skill '%s' (platform=%s)，移除 %s 个工具",
                 target_key, canonical_namespace, len(set(tool_names)),
@@ -688,6 +744,30 @@ class AdCapabilityLifecycleMixin:
             return True
         except Exception as e:
             logger.error(f"❌ 卸载 Skill '{platform}' 失败: {e}")
+            try:
+                if target_key:
+                    self.registry._restore_tools(
+                        registry_snapshot,
+                        _execution_token=self._registry_execution_token,
+                    )
+                    self.parameter_catalogs.restore(parameter_snapshot)
+                    self.creation_blueprints.restore(blueprint_snapshot)
+                    self.skill_loader.restore(loaded_skill_snapshot)
+                    self._skill_tool_names = skill_tool_snapshot
+                    self._skill_namespaces = skill_namespace_snapshot
+                    self._skill_objects = skill_object_snapshot
+                    self._skill_keys_by_platform = skill_keys_snapshot
+                    self._skill_format_ids = skill_format_snapshot
+                    self.ad_format_catalogs = format_catalog_snapshot
+                    self._creation_blueprint_context_cache = (
+                        blueprint_context_snapshot
+                    )
+                    self._refresh_parser_catalog()
+            except Exception:
+                logger.exception(
+                    "❌ Skill '%s' 卸载回滚失败，Runtime 需要重新加载",
+                    target_key or platform,
+                )
             return False
 
     def get_loaded_skills(self) -> dict[str, Skill]:

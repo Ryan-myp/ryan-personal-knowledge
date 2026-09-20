@@ -6,15 +6,18 @@
 
 ```text
 单 Agent Runtime
+  ├── Run Kernel：身份、Session 并发、租约、模式和 Run 生命周期
   ├── Skills：自然语言规则、业务 SOP、上下文与流程指导
   ├── Tools：结构化、可校验、可审计的能力入口
-  └── Capabilities：渠道 API 的可信实现与 Tool 注册
+  ├── Turn Pipeline：解析、规划、策略、执行、回复等应用阶段
+  └── Tool Executors：Local Handler、SDK/HTTP Connector、MCP Client
 ```
 
 - `SKILL.md` 是 Skill 的自然语言入口，不是 Tool 注册表，也不承担凭证或执行权限。
-- 广告 API 的唯一执行底座是已注册的 Capability/Tool。任何 Skill、LLM 或管理上传包都不能直接调用 Provider client。
-- 新功能优先通过新增或扩展 Skill、Tool、Capability 完成；不要在中心 Router 中增加渠道名、业务流程或参数大分支。
-- 渠道差异放在 Provider Capability、Tool schema 和 API client 边界；上层业务依赖 Tool 的 intent、resource、schema 和 traits，不硬编码渠道实现。
+- 外部 API 的唯一执行底座是已注册的 Tool contract/executor。任何 Skill、LLM 或管理上传包都不能直接调用 Provider client。
+- 通用 Run Kernel 为每次 `run()` 生成并贯穿唯一的 `run_id`、`turn_id`；应用 pipeline 可以记录和返回它们，但不能另起一套生命周期。
+- 新功能优先通过新增或扩展 Skill、Tool Source/Executor 完成；不要在中心 Router 中增加渠道名、业务流程或参数大分支。
+- 渠道差异放在 Connector/Provider Module、Tool schema 和 API client 边界；上层业务依赖 Tool 的 intent、resource、schema 和 traits，不硬编码渠道实现。
 - LLM 意图候选由当前 Registry 的 `ToolDefinition.intent_types`、description 和资源元数据自动生成；新增自定义意图只需在 Tool 上声明，不得修改中心 Parser/Router。
 - 观察性当前只保留接口和结构化字段，不在本阶段阻塞功能交付。
 
@@ -38,7 +41,7 @@
 ## 存储与性能
 
 - 当前 SQLite 只支持单进程部署；所有持久化必须通过 store/interface 抽象，不能在业务代码中散落 SQL 或绑定 SQLite 特性，便于未来切换 MySQL 等后端。
-- Runtime、Capability 和 Tool registry 应在进程启动时初始化并复用；请求路径不得重复扫描、注册全部渠道或创建不必要的客户端。
+- Runtime、Tool Source 和 Tool registry 应在进程启动时初始化并复用；请求路径不得重复扫描、注册全部集成或创建不必要的客户端。
 - 扩展时保持 Provider client 连接复用、schema 元数据缓存、有限上下文和有界并发；不要用无上限的全量 Skill/Tool 文档注入 Prompt。
 
 ## 评测与交付

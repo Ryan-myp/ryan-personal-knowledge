@@ -126,6 +126,36 @@ def test_runtime_kernel_treats_domain_context_as_opaque():
     assert not hasattr(TurnRequest, "credentials")
 
 
+def test_runtime_kernel_assigns_stable_run_and_turn_ids():
+    store = _LeaseStore()
+    mode = ContextVar("test_mode_run_identity", default=None)
+    observed = []
+    kernel = AgentRuntimeKernel(
+        session_manager=store,
+        session_locks={},
+        session_locks_guard=threading.RLock(),
+        lease_owner="worker-a",
+        lease_seconds=30,
+        mode_context=mode,
+        validate_mode=lambda value: value,
+        resolve_mode=lambda _tenant, _user, _requested: "dry_run",
+        assert_ready=lambda: None,
+        ensure_session=lambda _request: None,
+        execute_unlocked=lambda request: observed.append(request) or {
+            "run_id": request.run_id,
+            "turn_id": request.turn_id,
+        },
+    )
+
+    first = kernel.run(TurnRequest(user_input="one"))
+    second = kernel.run(TurnRequest(user_input="two"))
+
+    assert first["run_id"] == observed[0].run_id
+    assert first["turn_id"] == observed[0].turn_id
+    assert first["run_id"] != second["run_id"]
+    assert first["turn_id"] != second["turn_id"]
+
+
 def test_task_outcome_is_not_inferred_from_handler_returning_normally():
     assert task_outcome_status({"needs_input": True}) == "awaiting_input"
     assert task_outcome_status({"results": [{"success": False}]}) == "failed"

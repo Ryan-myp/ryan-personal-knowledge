@@ -729,6 +729,14 @@ class SkillLoader:
         """Unload a Skill by name and report whether it was present."""
         return self._skills.pop(str(name), None) is not None
 
+    def snapshot(self) -> dict[str, Skill]:
+        """Capture loaded Skill objects for an owning lifecycle transaction."""
+        return dict(self._skills)
+
+    def restore(self, snapshot: dict[str, Skill]) -> None:
+        """Restore a previously captured loaded Skill snapshot."""
+        self._skills = dict(snapshot or {})
+
     def iter_skill_dirs(self, roots: Optional[list[Union[str, Path]]] = None) -> list[Path]:
         """Return every standard Skill directory discovered under the roots.
 

@@ -109,6 +109,10 @@ def run_harness(path: str | Path) -> dict[str, Any]:
             offline_mode=False,
             enforce_account_scope=False,
             max_tool_calls=4,
+            # The harness uses a temporary in-memory store and executes each
+            # scenario synchronously. Background durable workers add no
+            # contract evidence and can race store teardown.
+            start_background_workers=False,
         )
         error = ""
         result: Mapping[str, Any] = {}

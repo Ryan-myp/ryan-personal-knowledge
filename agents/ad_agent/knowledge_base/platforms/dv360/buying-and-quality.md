@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: best_practice
 platform: dv360
 source: Display & Video 360 官方文档 + 程序化投放方法论
-source_ref: https://support.google.com/displayvideo/topic/6042460
+source_ref: "https://support.google.com/displayvideo/topic/6042460"
 version: "1.0.0"
 confidence: 0.84
 updated_at: "2026-09-08"
 tags: [dv360, programmatic, open-auction, deal, inventory, brand-safety, viewability, frequency]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 程序化采购、库存质量与品牌安全

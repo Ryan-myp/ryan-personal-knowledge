@@ -110,8 +110,10 @@ def test_task_scope_isolated_and_queue_capacity_is_bounded():
     with pytest.raises(TaskCapacityError):
         executor.submit("wait", {}, tenant_id="t", user_id="u2")
     assert executor.get(first.task_id, tenant_id="other", user_id="u") is None
+    assert executor.metrics()["capacity_remaining"] == 0
     release.set()
     assert _wait_for(executor, first.task_id, {"succeeded"})
+    assert executor.metrics()["capacity_remaining"] == 1
     executor.shutdown()
 
 
@@ -139,6 +141,62 @@ def test_durable_queue_refills_after_startup_batch_completes():
     assert executor.metrics()["in_process_tasks"] == 0
     executor.shutdown(wait=True)
     store.close()
+
+
+def test_task_executor_metrics_are_consistent_after_fast_and_rejected_tasks():
+    store = AdAgentStore(":memory:")
+    executor = TaskExecutor(store, max_workers=1, max_queue=0)
+    release = threading.Event()
+
+    executor.register_handler("fast", lambda _context: {"ok": True})
+    executor.register_handler("wait", lambda _context: release.wait(1) or {"ok": True})
+    first, _ = executor.submit("wait", {}, tenant_id="t", user_id="u")
+    assert _wait_for(executor, first.task_id, {"running"})
+
+    with pytest.raises(TaskCapacityError):
+        executor.submit("fast", {}, tenant_id="t", user_id="u")
+    assert executor.metrics()["queue_rejection_total"] == 1
+    assert executor.metrics()["capacity_remaining"] == 0
+
+    release.set()
+    assert _wait_for(executor, first.task_id, {"succeeded"})
+    fast, _ = executor.submit("fast", {}, tenant_id="t", user_id="u")
+    assert _wait_for(executor, fast.task_id, {"succeeded"})
+
+    metrics = executor.metrics()
+    assert metrics["in_process_tasks"] == 0
+    assert metrics["admitted_slots"] == 0
+    assert metrics["capacity_remaining"] == 1
+    executor.shutdown(wait=True)
+
+
+def test_shutdown_releases_slots_for_futures_cancelled_before_start():
+    store = AdAgentStore(":memory:")
+    executor = TaskExecutor(store, max_workers=1, max_queue=2)
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking(_context):
+        started.set()
+        release.wait(1)
+        return {"ok": True}
+
+    executor.register_handler("blocking", blocking)
+    first, _ = executor.submit("blocking", {}, tenant_id="t", user_id="u")
+    assert started.wait(1)
+    queued = [
+        executor.submit("blocking", {}, tenant_id="t", user_id="u")[0]
+        for _ in range(2)
+    ]
+
+    release.set()
+    executor.shutdown(wait=True)
+
+    metrics = executor.metrics()
+    assert _wait_for(executor, first.task_id, {"succeeded", "cancelled"})
+    assert all(executor.get(item.task_id).status == "queued" for item in queued)
+    assert metrics["admitted_slots"] == 0
+    assert metrics["capacity_remaining"] == 3
 
 
 def test_start_failure_is_retryable_and_rolls_back_worker_lease(monkeypatch):

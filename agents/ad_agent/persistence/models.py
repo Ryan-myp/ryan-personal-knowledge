@@ -220,10 +220,15 @@ class KnowledgeDocumentRecord:
     created_at: str = ""
     updated_at: str = ""
     published_at: str | None = None
+    wiki_type: str = "concept"
+    derived_from: str = ""
+    raw_sha256: str = ""
+    wikilinks: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["tags"] = list(self.tags or [])
+        value["wikilinks"] = list(self.wikilinks or [])
         return value
 
     @classmethod
@@ -236,6 +241,43 @@ class KnowledgeDocumentRecord:
             except (TypeError, ValueError):
                 tags = []
         data["tags"] = tags if isinstance(tags, list) else []
+        wikilinks = data.get("wikilinks")
+        if isinstance(wikilinks, str):
+            try:
+                wikilinks = json.loads(wikilinks or "[]")
+            except (TypeError, ValueError):
+                wikilinks = []
+        data["wikilinks"] = wikilinks if isinstance(wikilinks, list) else []
+        return cls(**data)
+
+
+@dataclass
+class RawKnowledgeSourceRecord:
+    """Immutable tenant-scoped source document awaiting Wiki ingestion."""
+
+    source_id: str
+    tenant_id: str
+    filename: str
+    media_type: str
+    content: str
+    sha256: str
+    source_ref: str
+    status: str = "received"
+    created_by: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+    ingest_task_id: str | None = None
+    ingest_error: str | None = None
+    ingest_attempts: int = 0
+    ingest_started_at: str | None = None
+    ingest_finished_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_row(cls, row: Any) -> "RawKnowledgeSourceRecord":
+        data = dict(row) if isinstance(row, dict) else dict(row)
         return cls(**data)
 
 

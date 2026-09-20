@@ -8,12 +8,16 @@ category: measurement
 subcategory: floodlight-conversions-and-attribution
 platform: dv360
 source: Display & Video 360 与 Campaign Manager 360 官方文档
-source_ref: https://developers.google.com/display-video/api/guides/how-tos/floodlight
+source_ref: "https://developers.google.com/display-video/api/guides/how-tos/floodlight"
 version: "1.0.0"
 confidence: 0.89
 updated_at: "2026-09-08"
 tags: [dv360, floodlight, conversion, attribution, campaign-manager, audience]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 Floodlight 转化、受众与归因口径

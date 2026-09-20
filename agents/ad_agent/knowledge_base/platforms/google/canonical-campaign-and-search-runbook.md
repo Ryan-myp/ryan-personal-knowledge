@@ -8,12 +8,16 @@ category: campaign_operations
 subcategory: canonical-campaign-and-search-runbook
 platform: google-ads
 source: Google Ads API 官方文档与当前 Capability 约束
-source_ref: https://developers.google.com/google-ads/api/docs/campaigns/overview
+source_ref: "https://developers.google.com/google-ads/api/docs/campaigns/overview"
 version: "1.0.0"
 confidence: 0.91
 updated_at: "2026-09-08"
 tags: [google-ads, campaign, ad-group, search, keyword, responsive-search-ad, mutate, dry-run]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google Ads Campaign 与 Search 实战操作手册

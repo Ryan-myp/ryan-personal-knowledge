@@ -8,12 +8,16 @@ category: platform_foundation
 subcategory: marketing-api-operations-and-insights
 platform: meta
 source: Meta Marketing API 官方文档
-source_ref: https://developers.facebook.com/docs/marketing-api
+source_ref: "https://developers.facebook.com/docs/marketing-api"
 version: "1.0.0"
 confidence: 0.92
 updated_at: "2026-09-08"
 tags: [meta, marketing-api, graph-api, insights, capi, pagination]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Marketing API 资源操作、Insights 与数据回传

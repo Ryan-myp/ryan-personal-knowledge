@@ -11,11 +11,16 @@ import re
 import logging
 import threading
 from typing import Any, List, Dict, Optional, Set
-from dataclasses import dataclass, field
 
+from .context import ContextQuery
 from .interfaces import ToolDefinition, ParsedIntent, ToolContext, KnowledgeSource
 from .policy import RuntimePolicy, apply_policies, policy_metadata
 from .namespace import normalize_namespace
+from .tool_selection import (
+    PromptRenderer,
+    ToolSelection,
+    ToolSelector,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,24 +32,6 @@ def _safe_search(pattern: str, text: str) -> bool:
     except re.error:
         logger.warning("Ignoring invalid Skill trigger pattern")
         return False
-
-
-@dataclass
-class ToolSelection:
-    """工具选择结果"""
-    selected_tools: List[ToolDefinition] = field(default_factory=list)
-    namespaces: List[str] = field(default_factory=list)
-    context: Dict = field(default_factory=dict)
-    expert_knowledge: str = ""
-    
-    def to_dict(self) -> dict:
-        return {
-            "namespaces": list(self.namespaces),
-            "tool_count": len(self.selected_tools),
-            "tools": [t.name for t in self.selected_tools],
-            "context_keys": list(self.context.keys()),
-            "expert_knowledge_available": bool(self.expert_knowledge),
-        }
 
 
 class DynamicToolSelector:
@@ -68,6 +55,8 @@ class DynamicToolSelector:
         self.skill_loader = skill_loader
         self.knowledge_source = knowledge_source
         self.policies: list[RuntimePolicy] = list(policies or [])
+        self._selector = ToolSelector(policies=self.policies)
+        self._prompt_renderer = PromptRenderer()
         # Managed Skills are tenant-owned advisory context.  Keep them out of
         # the executable SkillLoader and select them per request so the
         # process-global Runtime can safely serve multiple tenants.
@@ -97,6 +86,7 @@ class DynamicToolSelector:
     def set_policies(self, policies: list[RuntimePolicy]) -> None:
         """Replace the policy set used for namespace filtering and context."""
         self.policies = list(policies or [])
+        self._selector.set_policies(self.policies)
 
     def select_tools(
         self,
@@ -115,55 +105,15 @@ class DynamicToolSelector:
         Returns:
             ToolSelection: 选中的工具 + 上下文
         """
-        # 1. 确定目标 namespace
-        namespaces = intent.namespaces or self._detect_namespaces(user_input, available_tools)
-        
-        # 2. 根据策略上下文过滤 namespace
-        if self.policies:
-            namespaces = apply_policies(self.policies, namespaces)
-            if not namespaces:
-                namespaces = apply_policies(
-                    self.policies,
-                    self._registered_namespaces(available_tools),
-                )
-        
-        # 3. 根据意图类型筛选工具
-        intent_type = intent.intent_type
-        selected_tools = []
-        
-        for namespace in namespaces:
-            # 从 Skill Registry 获取该 namespace 工具
-            namespace_tools = self._get_namespace_tools(namespace, available_tools)
-            
-            # 根据意图类型筛选
-            filtered_tools = self._filter_by_intent(namespace_tools, intent_type)
-            
-            # 4. 获取专家知识
-            expert_knowledge = self._get_expert_knowledge(namespace, intent_type)
-            
-            if filtered_tools:
-                selection = ToolSelection(
-                    selected_tools=filtered_tools,
-                    namespaces=[namespace],
-                    context={
-                        "intent_type": intent_type,
-                        "intent_attributes": dict(
-                            getattr(intent, "attributes", {}) or {}
-                        ),
-                        **policy_metadata(self.policies),
-                    },
-                    expert_knowledge=expert_knowledge,
-                )
-                selected_tools.extend(filtered_tools)
-        
-        return ToolSelection(
-            selected_tools=selected_tools,
-            namespaces=list(namespaces),
-            expert_knowledge=self._merge_expert_knowledge(selected_tools),
-            context={
-                **policy_metadata(self.policies),
-            },
+        selection = self._selector.select(
+            user_input=user_input,
+            intent=intent,
+            available_tools=available_tools,
         )
+        selection.expert_knowledge = self._merge_expert_knowledge(
+            selection.selected_tools
+        )
+        return selection
 
     def build_context_for_input(
         self,
@@ -324,14 +274,27 @@ class DynamicToolSelector:
         if self.knowledge_source is None:
             return []
         try:
-            documents = self.knowledge_source.query(
-                user_input,
+            request = ContextQuery(
+                text=user_input,
                 namespaces=namespaces,
-                intent_type=intent_type,
-                tenant_id=tenant_id,
+                intent_type=intent_type or "",
+                tenant_id=str(tenant_id or "default"),
                 limit=4,
                 max_excerpt_chars=1000,
             )
+            query_context = getattr(self.knowledge_source, "query_context", None)
+            if callable(query_context):
+                documents = query_context(request)
+            else:
+                # Compatibility for older third-party context sources. This is an
+                # explicit legacy method fallback, not signature inspection.
+                documents = self.knowledge_source.query(
+                    request.text,
+                    namespaces=request.namespaces,
+                    intent_type=request.intent_type or None,
+                    limit=request.limit,
+                    max_excerpt_chars=request.max_excerpt_chars,
+                )
             result = []
             for document in documents:
                 serializer = getattr(document, "to_context_dict", None)
@@ -357,11 +320,7 @@ class DynamicToolSelector:
     
     def _registered_namespaces(self, available_tools: List[ToolDefinition]) -> List[str]:
         """Return namespaces published by the current Tool/Skill registry."""
-        namespaces = {
-            self._normalize_namespace(tool.namespace)
-            for tool in (available_tools or [])
-            if getattr(tool, "namespace", None)
-        }
+        namespaces = set(self._selector.registered_namespaces(available_tools))
         loaded_skills = getattr(self.skill_loader, "list_all", lambda: {})()
         for skill in loaded_skills.values():
             namespace = getattr(skill, "namespace", "")
@@ -428,23 +387,7 @@ class DynamicToolSelector:
         intent_type: str,
     ) -> List[ToolDefinition]:
         """根据意图类型筛选工具"""
-        if not intent_type:
-            return tools[:5]  # 限制返回数量，避免过长
-        
-        # Tool metadata is the routing contract.  In particular, do not add a
-        # new intent to a core ``intent -> keyword`` table: an extension Skill or
-        # Capability must be able to publish a new intent without changing the
-        # shared selector.
-        exact = [
-            tool for tool in tools
-            if intent_type in (getattr(tool, "intent_types", None) or [])
-        ]
-        if exact:
-            return exact[:8]
-
-        # An intent without an owning Tool is not executable. Do not expose
-        # an arbitrary subset of Tools and invite the model to guess.
-        return []
+        return self._selector.filter_by_intent(tools, intent_type)
     
     def _get_expert_knowledge(
         self,
@@ -536,62 +479,7 @@ class DynamicToolSelector:
     
     def build_tool_prompt(self, selection: ToolSelection) -> str:
         """构建工具列表 prompt（给 LLM 使用）"""
-        if not selection.selected_tools:
-            return "暂无可用工具"
-        
-        scope = ", ".join(selection.namespaces) or "未指定"
-        lines = [f"## 可用工具（namespace: {scope}）"]
-        
-        for i, tool in enumerate(selection.selected_tools, 1):
-            lines.append(f"{i}. **{tool.name}** ({tool.risk_level.value})")
-            lines.append(f"   描述: {tool.description[:100]}...")
-            if tool.input_schema.properties:
-                lines.append(f"   参数: {list(tool.input_schema.properties.keys())}")
-                enum_fields = {
-                    name: spec.get("enum")
-                    for name, spec in tool.input_schema.properties.items()
-                    if isinstance(spec, dict) and spec.get("enum") is not None
-                }
-                if enum_fields:
-                    lines.append(f"   固定选项: {enum_fields}")
-                lookup_fields = {
-                    name: (
-                        spec.get("lookup_tool")
-                        or (
-                            spec.get("lookup", {}).get("tool")
-                            if isinstance(spec.get("lookup"), dict)
-                            else None
-                        )
-                    )
-                    for name, spec in tool.input_schema.properties.items()
-                    if isinstance(spec, dict)
-                    and (spec.get("lookup_tool") or isinstance(spec.get("lookup"), dict))
-                }
-                lookup_fields = {
-                    name: tool_name for name, tool_name in lookup_fields.items() if tool_name
-                }
-                if lookup_fields:
-                    lines.append(f"   动态选项查询工具: {lookup_fields}")
-            if tool.input_schema.required:
-                lines.append(f"   必填: {tool.input_schema.required}")
-            if tool.input_schema.capability_required:
-                lines.append(f"   执行契约必填: {tool.input_schema.capability_required}")
-            if tool.input_schema.capability_any_of:
-                lines.append(f"   执行契约至少选择一项: {tool.input_schema.capability_any_of}")
-            if tool.input_schema.capability_exactly_one_of:
-                lines.append(
-                    f"   执行契约必须且只能选择一项: "
-                    f"{tool.input_schema.capability_exactly_one_of}"
-                )
-            if tool.input_schema.conditional_rules:
-                lines.append(f"   条件依赖: {tool.input_schema.conditional_rules}")
-            lines.append("")
-        
-        if selection.expert_knowledge:
-            lines.append("## 专家知识")
-            lines.append(selection.expert_knowledge[:1000] + "..." if len(selection.expert_knowledge) > 1000 else selection.expert_knowledge)
-        
-        return "\n".join(lines)
+        return self._prompt_renderer.render(selection)
     
     def optimize_for_llm(
         self,

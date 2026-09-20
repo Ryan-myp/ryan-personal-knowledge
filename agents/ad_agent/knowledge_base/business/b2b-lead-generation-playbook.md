@@ -6,12 +6,16 @@ layer: business
 knowledge_type: business_strategy
 platform: all
 source: B2B 增长方法论 + 四平台 Lead/Conversion 能力
-source_ref: agents/ad_agent/knowledge_base/business/b2b-lead-generation-playbook.md
+source_ref: "internal://ad-agent/playbook/b2b-lead-generation-playbook"
 version: "1.0.0"
 confidence: 0.82
 updated_at: "2026-09-08"
 tags: [b2b, lead-generation, crm, mql, sql, pipeline, offline-conversion, cpl]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # B2B Lead Gen 深度打法：线索质量、CRM 与销售闭环

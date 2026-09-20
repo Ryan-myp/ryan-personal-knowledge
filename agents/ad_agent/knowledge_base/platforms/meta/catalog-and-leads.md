@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: workflow
 platform: meta
 source: Meta Marketing API 官方文档 + 当前 Capability/Skill
-source_ref: https://developers.facebook.com/docs/marketing-api/catalog/
+source_ref: "https://developers.facebook.com/docs/marketing-api/catalog/"
 version: "1.0.0"
 confidence: 0.86
 updated_at: "2026-09-08"
 tags: [meta, catalog, product-set, dynamic-product, lead, crm, qualified-lead, pixel, capi]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Catalog、Lead 与转化质量运营

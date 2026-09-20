@@ -98,6 +98,14 @@ def _safe_json(value: Any) -> str:
 
 def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only non-sensitive facts needed by the platform-owned judge."""
+    raw_intent = runtime_result.get("intent")
+    intent = dict(raw_intent) if isinstance(raw_intent, Mapping) else {}
+    # The Runtime contract uses the provider-neutral term ``namespaces``.
+    # Skill-up's older structured assertion vocabulary calls the same
+    # canonical values ``platforms``. Preserve both so the adapter can evolve
+    # without making cases depend on an application-specific rename.
+    if "platforms" not in intent:
+        intent["platforms"] = list(intent.get("namespaces") or [])
     rows = runtime_result.get("results")
     safe_rows = []
     if isinstance(rows, list):
@@ -115,7 +123,7 @@ def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
                 },
             })
     return {
-        "intent": runtime_result.get("intent"),
+        "intent": intent,
         "needs_input": bool(runtime_result.get("needs_input", False)),
         "needs_confirmation": bool(runtime_result.get("needs_confirmation", False)),
         "tool_plan": runtime_result.get("tool_plan") or {},
@@ -205,6 +213,10 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         execution_mode="dry_run",
         enforce_account_scope=True,
         max_tool_calls=32,
+        # Skill-up invokes one isolated request at a time. Durable queue,
+        # scheduler and repair workers add no evidence here and would race
+        # teardown against the temporary in-memory store.
+        start_background_workers=False,
     )
     # Always register the trusted provider Capability base first. A managed
     # Skill package is then loaded as an additional context root; it can guide

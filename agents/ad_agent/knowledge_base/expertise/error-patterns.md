@@ -6,12 +6,16 @@ layer: experience
 knowledge_type: error_pattern
 platform: all
 source: 错误日志 + 社区经验
-source_ref: expertise/error-patterns.md
+source_ref: "internal://ad-agent/playbook/ad-error-patterns"
 version: "1.0.0"
 confidence: 0.8
 updated_at: "2026-08-26"
 tags: [error, troubleshooting, api]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-08-26"
 ---
 
 # 常见错误模式与解决方案

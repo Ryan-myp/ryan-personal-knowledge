@@ -6,12 +6,16 @@ layer: business
 knowledge_type: creative_guide
 platform: all
 source: 四平台创意规范 + 广告创意测试方法论
-source_ref: agents/ad_agent/knowledge_base/business/creative-testing.md
+source_ref: "internal://ad-agent/playbook/cross-platform-creative-testing"
 version: "1.0.0"
 confidence: 0.82
 updated_at: "2026-09-08"
 tags: [creative, video, image, copy, hook, fatigue, testing, policy]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 跨平台创意策略与测试体系

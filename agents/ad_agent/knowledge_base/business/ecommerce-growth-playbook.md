@@ -6,12 +6,16 @@ layer: business
 knowledge_type: business_strategy
 platform: all
 source: 电商增长方法论 + 四平台商品广告能力
-source_ref: agents/ad_agent/knowledge_base/business/ecommerce-growth-playbook.md
+source_ref: "internal://ad-agent/playbook/ecommerce-growth-playbook"
 version: "1.0.0"
 confidence: 0.82
 updated_at: "2026-09-08"
 tags: [ecommerce, catalog, product-feed, funnel, margin, ltv, roas, retention]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # 电商广告增长深度打法：商品、漏斗与利润

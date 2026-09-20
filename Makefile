@@ -26,6 +26,7 @@ ad-agent-validate:
 
 ad-agent-knowledge-check:
 	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/validate_knowledge_quality.py
+	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/audit_knowledge_base.py
 
 ad-agent-check: ad-agent-python-version ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-test
 	@git diff --check

@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: workflow
 platform: google-ads
 source: Google Ads Search 官方文档 + Google Ads 运营 Skill
-source_ref: https://developers.google.com/google-ads/api/docs/campaigns/organize
+source_ref: "https://developers.google.com/google-ads/api/docs/campaigns/organize"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [google, search, keyword, match-type, search-terms, negative-keyword, ad-rank, quality]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google Search 关键词、广告相关性与查询优化

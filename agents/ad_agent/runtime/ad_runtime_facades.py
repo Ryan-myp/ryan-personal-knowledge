@@ -25,6 +25,9 @@ class AdTaskRuntimeFacade:
     def submit_task(self, *args: Any, **kwargs: Any) -> tuple[dict[str, Any], bool]:
         return self.task_services.submit_task(*args, **kwargs)
 
+    def submit_knowledge_ingest(self, *args: Any, **kwargs: Any) -> tuple[dict[str, Any], bool]:
+        return self.task_services.submit_knowledge_ingest(*args, **kwargs)
+
     def create_schedule(self, **kwargs: Any) -> dict[str, Any]:
         return self.task_services.create_schedule(**kwargs)
 
@@ -79,6 +82,9 @@ class AdTaskRuntimeFacade:
 
     def _execute_agent_task(self, context: TaskExecutionContext) -> dict[str, Any]:
         return self.task_services.execute_agent_task(context)
+
+    def _execute_knowledge_ingest_task(self, context: TaskExecutionContext) -> dict[str, Any]:
+        return self.task_services.execute_knowledge_ingest_task(context)
 
     def get_task(self, *args: Any, **kwargs: Any) -> Optional[dict[str, Any]]:
         return self.task_services.get_task(*args, **kwargs)

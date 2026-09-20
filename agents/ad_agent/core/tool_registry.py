@@ -16,6 +16,7 @@ from .interfaces import (
     ToolDefinition, ToolHandler, ToolRegistry, ToolResult,
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema
 )
+from .tool_sources import ToolBinding, ToolSource
 from .namespace import normalize_namespace
 
 
@@ -39,6 +40,7 @@ class SimpleToolRegistry(ToolRegistry):
         self._by_skill: dict[str, list[str]] = {}  # skill_name -> [tool_names]
         self._by_namespace: dict[str, list[str]] = {}  # namespace -> [tool_names]
         self._skill_tool_defs: dict[str, list[ToolDefinition]] = {}  # skill_name -> [tool_defs]
+        self._by_source: dict[str, list[str]] = {}
     
     def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
         """注册一个工具"""
@@ -65,6 +67,34 @@ class SimpleToolRegistry(ToolRegistry):
                 self._skill_tool_defs[skill] = []
             if definition not in self._skill_tool_defs[skill]:
                 self._skill_tool_defs[skill].append(definition)
+
+    def register_binding(self, binding: ToolBinding) -> None:
+        """Register an application-neutral contract/executor pair."""
+        if not isinstance(binding, ToolBinding):
+            raise TypeError("register_binding expects a ToolBinding")
+        self.register(binding.definition, binding.executor)
+
+    def register_source(self, source: ToolSource) -> list[str]:
+        """Atomically register every binding published by one source."""
+        source_id = str(getattr(source, "source_id", "") or "").strip()
+        list_bindings = getattr(source, "list_bindings", None)
+        if not source_id or not callable(list_bindings):
+            raise TypeError("Tool source must expose source_id and list_bindings()")
+        bindings = list(list_bindings())
+        if source_id in self._by_source:
+            raise ValueError(f"Tool source '{source_id}' already registered")
+        registered: list[str] = []
+        with self._lock:
+            try:
+                for binding in bindings:
+                    self.register_binding(binding)
+                    registered.append(binding.definition.name)
+                self._by_source[source_id] = registered
+            except Exception:
+                for name in reversed(registered):
+                    self.unregister(name)
+                raise
+        return list(registered)
     
     def get(self, name: str) -> tuple[ToolDefinition, ToolHandler]:
         """获取工具定义和处理器"""
@@ -180,6 +210,46 @@ class SimpleToolRegistry(ToolRegistry):
             ]
             if not self._skill_tool_defs[skill]:
                 del self._skill_tool_defs[skill]
+            for source_id, names in list(self._by_source.items()):
+                if tool_name not in names:
+                    continue
+                remaining = [name for name in names if name != tool_name]
+                if remaining:
+                    self._by_source[source_id] = remaining
+                else:
+                    self._by_source.pop(source_id, None)
+
+    def unregister_source(self, source_id: str) -> list[str]:
+        """Remove all Tools owned by a source and return removed names."""
+        source_key = str(source_id or "").strip()
+        with self._lock:
+            names = list(self._by_source.get(source_key, []))
+            for name in names:
+                self.unregister(name)
+            self._by_source.pop(source_key, None)
+            return names
+
+    def _snapshot_tools(self, tool_names: list[str] | tuple[str, ...]) -> list[tuple[ToolDefinition, ToolHandler]]:
+        """Capture opaque Tool handlers for an owning lifecycle transaction."""
+        with self._lock:
+            return [
+                self._tools[name]
+                for name in dict.fromkeys(str(item) for item in (tool_names or ()))
+                if name in self._tools
+            ]
+
+    def _restore_tools(
+        self,
+        entries: list[tuple[ToolDefinition, ToolHandler]],
+    ) -> None:
+        """Restore Tool definitions and handlers as one registry operation."""
+        with self._lock:
+            names = {definition.name for definition, _handler in entries}
+            for name in names:
+                if name in self._tools:
+                    self.unregister(name)
+            for definition, handler in entries:
+                self.register(definition, handler)
     
     def execute(
         self,
@@ -253,6 +323,29 @@ class GuardedToolRegistry(ToolRegistry):
     def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
         self._inner.register(definition, handler)
 
+    def register_binding(self, binding: ToolBinding) -> None:
+        register_binding = getattr(self._inner, "register_binding", None)
+        if callable(register_binding):
+            register_binding(binding)
+            return
+        self._inner.register(binding.definition, binding.executor)
+
+    def register_source(self, source: ToolSource) -> list[str]:
+        register_source = getattr(self._inner, "register_source", None)
+        if callable(register_source):
+            return register_source(source)
+        bindings = list(source.list_bindings())
+        registered: list[str] = []
+        try:
+            for binding in bindings:
+                self.register_binding(binding)
+                registered.append(binding.definition.name)
+        except Exception:
+            for name in reversed(registered):
+                self._inner.unregister(name)
+            raise
+        return registered
+
     def get(self, name: str) -> tuple[ToolDefinition, ToolHandler]:
         definition, _handler = self._inner.get(name)
         return definition, _BlockedToolHandler()
@@ -273,6 +366,44 @@ class GuardedToolRegistry(ToolRegistry):
 
     def unregister(self, tool_name: str) -> None:
         self._inner.unregister(tool_name)
+
+    def unregister_source(self, source_id: str) -> list[str]:
+        unregister_source = getattr(self._inner, "unregister_source", None)
+        if callable(unregister_source):
+            return unregister_source(source_id)
+        return []
+
+    def _snapshot_tools(
+        self,
+        tool_names: list[str] | tuple[str, ...],
+        _execution_token: object = None,
+    ) -> list[tuple[ToolDefinition, ToolHandler]]:
+        if _execution_token is not self._execution_token:
+            raise PermissionError("Tool lifecycle snapshots are only available to AgentRuntime")
+        snapshot = getattr(self._inner, "_snapshot_tools", None)
+        if not callable(snapshot):
+            return [
+                self._inner.get(name)
+                for name in dict.fromkeys(str(item) for item in (tool_names or ()))
+            ]
+        return snapshot(tool_names)
+
+    def _restore_tools(
+        self,
+        entries: list[tuple[ToolDefinition, ToolHandler]],
+        _execution_token: object = None,
+    ) -> None:
+        if _execution_token is not self._execution_token:
+            raise PermissionError("Tool lifecycle restore is only available to AgentRuntime")
+        restore = getattr(self._inner, "_restore_tools", None)
+        if callable(restore):
+            restore(entries)
+            return
+        names = [definition.name for definition, _handler in entries]
+        for name in names:
+            self._inner.unregister(name)
+        for definition, handler in entries:
+            self._inner.register(definition, handler)
 
     def execute(self, ctx: ToolContext, tool_name: str, input_data: dict[str, Any]) -> ToolResult:
         return ToolResult.error(

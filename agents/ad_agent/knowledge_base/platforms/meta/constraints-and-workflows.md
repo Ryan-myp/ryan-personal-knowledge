@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: constraint
 platform: meta
 source: Meta Marketing API 官方文档 + 当前 Capability schema
-source_ref: https://developers.facebook.com/docs/marketing-api/campaign-structure/creation
+source_ref: "https://developers.facebook.com/docs/marketing-api/campaign-structure/creation"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [meta, budget, targeting, optimization, special-ad-category, workflow]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Ads 预算、定向与创建工作流

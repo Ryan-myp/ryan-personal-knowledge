@@ -38,6 +38,7 @@ from .core.interfaces import (
 )
 from .core.security import is_sensitive_field, redact_sensitive_text
 from .core.tool_registry import validate_tool_input
+from .core.tool_sources import StaticToolSource, ToolBinding
 from .persistence.errors import PersistenceConflictError
 
 
@@ -436,6 +437,7 @@ class MCPServerManager:
         self._lock = threading.RLock()
         self._clients: dict[str, MCPHTTPClient] = {}
         self._registered: dict[str, list[str]] = {}
+        self._registered_sources: dict[str, str] = {}
         self._registered_tenants: dict[str, str] = {}
         self._server_fingerprints: dict[str, str] = {}
         self._tenant_fingerprints: dict[str, str] = {}
@@ -976,7 +978,7 @@ class MCPServerManager:
                 logger.warning("MCP Server %s registration failed: %s", server_id, safe_error)
                 return 0
             self._clients[server_id] = client
-        names: list[str] = []
+        bindings: list[ToolBinding] = []
         for tool in self.store.list_mcp_tools(server_id, tenant_id):
             if not tool.get("enabled") or tool.get("validation_status") != "passed":
                 continue
@@ -1011,17 +1013,33 @@ class MCPServerManager:
                 definition.traits = list(dict.fromkeys(
                     list(tool.get("traits") or []) + ["external", "mcp"]
                 ))
-                runtime.registry.register(
-                    definition,
-                    MCPToolHandler(
-                        client, server_id, tenant_id, str(tool["remote_name"]),
-                        write_effect=not read_only,
-                    ),
+                bindings.append(
+                    ToolBinding(
+                        definition,
+                        MCPToolHandler(
+                            client, server_id, tenant_id, str(tool["remote_name"]),
+                            write_effect=not read_only,
+                        ),
+                    )
                 )
-                names.append(public_name)
             except Exception as exc:
                 logger.warning("MCP Tool %s registration failed: %s", tool.get("remote_name"), _safe_error(exc))
+        names: list[str] = []
+        source_id = f"mcp:{tenant_id}:{server_id}"
+        source_registered = False
+        if bindings:
+            source = StaticToolSource(source_id, bindings)
+            register_source = getattr(runtime, "register_tool_source", None)
+            if callable(register_source):
+                names = register_source(source)
+                source_registered = True
+            else:
+                for binding in bindings:
+                    runtime.registry.register(binding.definition, binding.executor)
+                    names.append(binding.definition.name)
         self._registered[server_id] = names
+        if names and source_registered:
+            self._registered_sources[server_id] = source_id
         self._registered_tenants[server_id] = str(tenant_id)
         self._server_fingerprints[server_id] = self._fingerprint(record, self.store.list_mcp_tools(server_id, tenant_id))
         refresh = getattr(runtime, "_refresh_parser_catalog", None)
@@ -1030,9 +1048,19 @@ class MCPServerManager:
         return len(names)
 
     def _unregister(self, server_id: str, runtime: Any) -> None:
+        source_id = self._registered_sources.pop(str(server_id), None)
+        unregister_source = getattr(runtime, "unregister_tool_source", None)
+        if source_id and callable(unregister_source):
+            try:
+                unregister_source(source_id)
+            except Exception:
+                logger.warning("failed to unregister MCP Tool source %s", source_id, exc_info=True)
         for name in self._registered.pop(str(server_id), []):
             try:
-                runtime.registry.unregister(name)
+                # Older embedding facades may not expose source lifecycle yet.
+                # The generic path above already removed these names.
+                if not source_id:
+                    runtime.registry.unregister(name)
             except Exception:
                 logger.warning("failed to unregister MCP Tool %s", name, exc_info=True)
         self._clients.pop(str(server_id), None)

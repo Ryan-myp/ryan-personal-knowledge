@@ -6,11 +6,11 @@ The kernel owns only transport and concurrency concerns:
 * serialize turns for one session inside a process;
 * acquire and heartbeat a durable session lease across instances;
 * install a request-scoped execution mode;
-* delegate the actual turn to an application-provided executor.
+* delegate the actual turn to an application-provided TurnPipeline.
 
 It deliberately knows nothing about application domains, external systems, Skills,
 Tools, workflows, or UI.  An application Runtime composes this kernel
-with its own turn executor and policy services.
+with its own TurnPipeline and policy services.
 """
 
 from __future__ import annotations
@@ -65,6 +65,11 @@ class TurnRequest:
     event_callback: Optional[Callable[[dict[str, Any]], None]] = None
     execution_mode: Optional[str] = None
     task_id: Optional[str] = None
+    # The Kernel fills these fields when the caller does not provide an
+    # internal continuation identity. Applications must propagate them to
+    # audit/persistence instead of creating a second run lifecycle.
+    run_id: Optional[str] = None
+    turn_id: Optional[str] = None
 
     def with_effective_identity(
         self, *, session_id: str, user_id: str, tenant_id: str,
@@ -173,7 +178,7 @@ class SessionLease:
 
 
 class AgentRuntimeKernel:
-    """Reusable, application-neutral shell around a turn executor."""
+    """Reusable, application-neutral shell around a TurnPipeline."""
 
     def __init__(
         self,
@@ -248,6 +253,11 @@ class AgentRuntimeKernel:
     def run(self, request: TurnRequest) -> Any:
         """Run one request while enforcing generic session concurrency rules."""
         self.assert_ready()
+        request = replace(
+            request,
+            run_id=str(request.run_id or self._new_run_id()),
+            turn_id=str(request.turn_id or self._new_turn_id()),
+        )
         user_id, tenant_id = self._identity(request)
         requested_mode = (
             self.validate_mode(request.execution_mode)
@@ -310,6 +320,18 @@ class AgentRuntimeKernel:
     def _new_session_id() -> str:
         # Kept behind a tiny method so an embedding can replace ID generation
         # in a subclass without changing the execution contract.
+        import uuid
+
+        return str(uuid.uuid4())
+
+    @staticmethod
+    def _new_run_id() -> str:
+        import uuid
+
+        return str(uuid.uuid4())
+
+    @staticmethod
+    def _new_turn_id() -> str:
         import uuid
 
         return str(uuid.uuid4())

@@ -13,18 +13,24 @@ Agent 运行时、测试、评测、审计和知识库维护脚本统一使用 P
 
 ```text
 用户请求
-  -> AgentRuntime / IntentParser
+  -> AgentRuntime / Run Kernel
+  -> TurnPipeline
+  -> IntentParser
   -> Skill 上下文与 Tool metadata
   -> ToolSelector / policy gates
-  -> 注册的 Provider Capability Tool
-  -> API client
+  -> Tool Registry
+  -> Local Handler / SDK-HTTP Connector / MCP Client
 ```
 
-Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权、可审计的动作；Capability 负责渠道 API 实现。三者不能互相越权。
+Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权、可审计的动作；Executor 负责具体实现。广告项目中的 Capability 只是 Provider Module 兼容实现，不是通用 Runtime 必需层。
+
+通用 Run Kernel 统一负责 `run_id`、`turn_id`、身份规范化、Session 并发、租约、
+执行模式和取消/租约丢失信号。应用只通过 `TurnPipeline` 提供解析、规划、执行和回复
+阶段；广告的 `AdTurnPipeline` 是应用适配器，不是通用 Runtime 的第二套入口。
 
 - 业务 Skill 不得直接 import `api_clients/`、持有渠道凭证或自己发 HTTP 请求。
 - `runtime/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。
-- `core/` 只依赖统一的 Tool/Capability 契约；渠道特有字段、枚举和条件规则放在对应 Provider Tool schema。
+- `core/` 只依赖统一的 Tool/Executor 契约；渠道特有字段、枚举和条件规则放在对应 Tool schema。
 - 所有可部署扩展必须通过 `core.plugins.PluginManifest` 和 `PluginRegistry` 声明唯一 ID、版本、贡献类型、依赖、来源和可信级别；Capability、Feature、Renderer、受信任 Skill 扩展与托管 Skill 不得各自定义一套生命周期。
 - 可部署插件包使用根目录 `plugin.manifest.json`；Loader 必须校验文件清单、摘要和可选签名，禁止仅凭 `entrypoint` 自动导入。托管 Skill 不要求该文件，也不能借此获得代码执行权限。
 - `user_skills/` 和管理上传的 Skill 只能提供上下文；不能借助 `tools.py`、`scripts/` 或 `workflow.yaml` 绕过 registry。
@@ -34,10 +40,10 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 
 新增渠道接口时，按以下顺序落点：
 
-1. 在对应 `capabilities/<provider>/` 增加 Provider-owned Tool 定义和固定 handler；方法名不能由用户输入决定。
+1. 在对应 Provider Module/Connector 包中增加 Tool 定义和固定 Executor；方法名不能由用户输入决定。
 2. 补齐输入 schema、枚举/条件依赖、权限、effect、风险、重放策略、超时、输出上限、契约版本和 Provider API 版本。
 3. 在必要时扩展 `api_clients/<provider>/` 的版本化适配器；升级 API 时保留兼容 contract 或明确升级 contract version。
-4. 通过 Capability factory/discovery 注册，不在上层 Skill 或 Router 新增渠道硬编码引用。
+4. 通过 Tool Source/Registry 注册；广告内置渠道可以继续由 Capability factory 兼容发现，不在上层 Skill 或 Router 新增渠道硬编码引用。
 5. 补充 provider payload、权限/账户范围、dry-run、幂等、失败恢复和审计测试，并运行 `scripts/audit_capabilities.py`。
 
 新增业务流程时，优先写标准 Skill 目录：根 `SKILL.md` 使用自然语言描述 SOP，复杂知识放 `references/`，资源放 `assets/`，辅助脚本仅作为包内容保存。只有确实需要新的可执行动作时才新增 Tool/Capability。

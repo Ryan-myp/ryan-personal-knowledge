@@ -6,6 +6,7 @@
 ## 约定
 - 文件名：小写 + 连字符，无空格
 - 每个 wiki 页面以 YAML frontmatter 开头
+- `wiki_type` 使用 `raw | entity | concept | comparison | query`
 - 用 `[[wikilinks]]` 链接页面（至少 2 个出站链接）
 - 更新页面时更新 `updated` 日期
 - 每个新页面必须加入 `index.md`

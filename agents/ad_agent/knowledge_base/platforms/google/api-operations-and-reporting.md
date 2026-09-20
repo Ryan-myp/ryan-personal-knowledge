@@ -8,12 +8,16 @@ category: platform_foundation
 subcategory: api-operations-and-reporting
 platform: google-ads
 source: Google Ads API 官方文档
-source_ref: https://developers.google.com/google-ads/api/docs/start
+source_ref: "https://developers.google.com/google-ads/api/docs/start"
 version: "1.0.0"
 confidence: 0.94
 updated_at: "2026-09-08"
 tags: [google-ads, api, gaql, mutate, reporting, quota]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Google Ads API 资源操作、GAQL 与报表方法

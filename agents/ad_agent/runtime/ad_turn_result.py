@@ -33,6 +33,7 @@ class AdTurnResultService:
         safe_user_input: str,
         needs_confirmation: bool,
         confirmation_payload: Optional[dict[str, Any]],
+        confirmed: bool,
         creation_preflight: Any,
         recalled_memories: list[dict[str, Any]],
         memory_updates: list[dict[str, Any]],
@@ -139,6 +140,68 @@ class AdTurnResultService:
             "awaiting_confirmation" if needs_confirmation else "failed" if has_failure else "succeeded",
             safe_metadata={"tool_count": len(results)},
         )
+
+        # Only promote high-value live write outcomes to episodic memory.
+        # Ordinary reads and dry-run previews must not pollute long-term
+        # memory. The MemoryManager owns the allowlist, sanitization, TTL and
+        # idempotency policy; this service only supplies a bounded summary.
+        memory_manager = getattr(runtime, "_memory_manager", None)
+        if memory_manager and runtime.execution_mode == "live":
+            tool_by_name = {
+                tool.name: tool
+                for tools in tool_plan.values()
+                for tool in tools
+            }
+            write_results = [
+                item for item in results
+                if bool(getattr(tool_by_name.get(item.get("tool")), "is_write_tool", False))
+            ]
+            successful_writes = [
+                item for item in write_results if bool(item.get("success"))
+            ]
+            failed_writes = [
+                item for item in write_results
+                if not item.get("success") and not item.get("skipped")
+            ]
+            unknown_writes = [
+                item for item in write_results
+                if str((item.get("data") or {}).get("execution_status") or "").lower()
+                in {"unknown", "timed_out", "transport_unknown"}
+            ]
+            event_type = None
+            outcome = None
+            if unknown_writes:
+                event_type, outcome = "recovery_required", "unknown"
+            elif confirmed and successful_writes:
+                event_type, outcome = "confirmation_completed", "succeeded"
+            elif successful_writes:
+                event_type, outcome = "operation_succeeded", "succeeded"
+            elif failed_writes:
+                event_type, outcome = "operation_failed", "failed"
+            if event_type:
+                platforms = sorted({
+                    str(item.get("platform") or "").strip().lower()
+                    for item in write_results
+                    if str(item.get("platform") or "").strip()
+                })
+                try:
+                    episode = memory_manager.remember_runtime_event(
+                        f"本次操作包含 {len(write_results)} 个写入步骤，"
+                        f"成功 {len(successful_writes)} 个，失败 {len(failed_writes)} 个。",
+                        tenant_id=str(session.ctx.metadata.get("tenant_id") or "default"),
+                        user_id=str(session.ctx.user_id or "anonymous"),
+                        session_id=str(session.session_id),
+                        event_type=event_type,
+                        dedupe_key=f"{session.session_id}:{turn_id}:{event_type}",
+                        outcome=outcome,
+                        tags=[f"channel:{platform}" for platform in platforms],
+                    )
+                    if episode is not None:
+                        memory_updates.append(episode.to_context_dict())
+                except Exception:
+                    # Memory is advisory; never turn a completed provider
+                    # operation into a user-visible failure.
+                    pass
 
         # Step 6: 记录消息历史
         runtime.persist_conversation_turn(

@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from typing import Any, Iterable, Optional
 
 from ..domain.ad.auth import RequestPrincipal
+from ..knowledge_ingest import KnowledgeIngestService
+from ..knowledge_management import ManagedKnowledgeManager
 from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 from .task_executor import TaskExecutionContext
 
@@ -108,6 +111,59 @@ class AdTaskServices:
         )
         return record.to_dict(), created
 
+    def submit_knowledge_ingest(
+        self, source_id: str, *, principal: RequestPrincipal,
+    ) -> tuple[dict[str, Any], bool]:
+        """Queue raw Wiki ingestion without exposing arbitrary task payloads."""
+        if self.runtime.task_executor is None:
+            raise RuntimeError("durable task executor is not configured")
+        source = self.runtime.persistence_store.get_raw_knowledge_source(
+            str(source_id), tenant_id=principal.tenant_id
+        )
+        if not source:
+            raise ValueError("raw 文档不存在或无权访问")
+        if source.status == "draft_ready":
+            if source.ingest_task_id:
+                existing_task = self.runtime.persistence_store.get_task(
+                    source.ingest_task_id, tenant_id=principal.tenant_id
+                )
+                if existing_task is not None:
+                    return existing_task.to_dict(), False
+            raise ValueError("raw 文档已完成 ingest，不能重复排队")
+        if source.ingest_task_id and source.status != "failed":
+            existing_task = self.runtime.persistence_store.get_task(
+                source.ingest_task_id, tenant_id=principal.tenant_id
+            )
+            if existing_task is not None and existing_task.status not in {
+                "failed", "recovery_required", "cancelled",
+            }:
+                return existing_task.to_dict(), False
+            if source.status == "ingesting" and existing_task is None:
+                raise ValueError("raw 文档正在 ingest，任务状态暂不可用")
+        payload = {"source_id": str(source.source_id)}
+        claims = principal.to_safe_dict()
+        attempt = max(int(source.ingest_attempts or 0) + 1, 1)
+        record, created = self.runtime.task_executor.submit(
+            "knowledge.ingest",
+            payload,
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            idempotency_key=(
+                f"knowledge-ingest:{principal.tenant_id}:{source.source_id}:"
+                f"attempt-{attempt}"
+            ),
+            metadata={"principal": claims, "submission_source": "knowledge"},
+        )
+        self.runtime.persistence_store.update_raw_knowledge_source(
+            source.source_id,
+            tenant_id=principal.tenant_id,
+            data={
+                "ingest_task_id": record.task_id,
+                "updated_at": datetime.now().isoformat(),
+            },
+        )
+        return record.to_dict(), created
+
     # -- Recurring schedule control plane ------------------------------
 
     def create_schedule(self, **kwargs: Any) -> dict[str, Any]:
@@ -201,6 +257,28 @@ class AdTaskServices:
             task_id=context.task_id,
         )
 
+    def execute_knowledge_ingest_task(self, context: TaskExecutionContext) -> dict[str, Any]:
+        """Run only the trusted, structured Wiki ingest service."""
+        claims = context.metadata.get("principal")
+        principal = RequestPrincipal.from_claims(claims) if isinstance(claims, dict) else None
+        source_id = str(context.payload.get("source_id") or "")
+        if not source_id:
+            raise ValueError("knowledge.ingest requires source_id")
+        if principal is None:
+            raise PermissionError("knowledge ingest requires authenticated principal")
+        service = KnowledgeIngestService(
+            store=self.runtime.persistence_store,
+            llm=self.runtime._llm,
+            knowledge_manager=ManagedKnowledgeManager(self.runtime.persistence_store),
+            knowledge_provider=self.runtime.knowledge_provider,
+        )
+        return service.ingest(
+            source_id,
+            tenant_id=principal.tenant_id,
+            created_by=principal.user_id,
+            task_id=context.task_id,
+        )
+
     def get_task(
         self, task_id: str, *, user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
@@ -251,6 +329,22 @@ class AdTaskServices:
             "event_repair": self.runtime.event_repair_consumer.metrics()
             if self.runtime.event_repair_consumer else {"state": "disabled"},
             "scheduler": self.runtime.scheduler.metrics() if self.runtime.scheduler else {"state": "disabled"},
+        }
+        memory_manager = self.runtime.memory_manager
+        knowledge_provider = self.runtime.knowledge_provider
+        memory_metrics = (
+            memory_manager.cache_metrics()
+            if memory_manager and callable(getattr(memory_manager, "cache_metrics", None))
+            else {"state": "disabled"}
+        )
+        knowledge_metrics = (
+            knowledge_provider.cache_metrics()
+            if callable(getattr(knowledge_provider, "cache_metrics", None))
+            else {"state": "unavailable"}
+        )
+        snapshot["instance"]["cache"] = {
+            "memory": memory_metrics,
+            "knowledge": knowledge_metrics,
         }
         return snapshot
 

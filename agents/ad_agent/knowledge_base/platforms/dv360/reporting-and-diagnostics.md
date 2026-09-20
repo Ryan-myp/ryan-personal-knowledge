@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: workflow
 platform: dv360
 source: Display & Video 360 API Reporting 官方文档 + 当前 Capability
-source_ref: https://developers.google.com/display-video/api/concepts/reporting
+source_ref: "https://developers.google.com/display-video/api/concepts/reporting"
 version: "1.0.0"
 confidence: 0.86
 updated_at: "2026-09-08"
 tags: [dv360, report, async, dimensions, metrics, cost, attribution, diagnostics]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 报表生命周期、费用口径与诊断

@@ -163,6 +163,8 @@ class TaskExecutor:
         self._queue_poll_total = 0
         self._queue_poll_errors = 0
         self._last_queue_poll_at: Optional[str] = None
+        self._queue_rejection_total = 0
+        self._admitted_slots = 0
 
     def register_handler(
         self, kind: str, handler: Callable[[TaskExecutionContext], Any]
@@ -199,6 +201,8 @@ class TaskExecutor:
             started = self._started
             worker_id = self._worker_id
             kinds = tuple(sorted(self._handlers))
+            admitted_slots = self._admitted_slots
+            queue_rejections = self._queue_rejection_total
         try:
             internal_queue = max(0, int(self._pool._work_queue.qsize()))
         except (AttributeError, TypeError, ValueError):  # pragma: no cover - implementation detail
@@ -211,6 +215,11 @@ class TaskExecutor:
             "in_process_tasks": handles,
             "in_process_queued": internal_queue,
             "admission_capacity": self.max_workers + self.max_queue,
+            "admitted_slots": admitted_slots,
+            "capacity_remaining": max(
+                0, self.max_workers + self.max_queue - admitted_slots
+            ),
+            "queue_rejection_total": queue_rejections,
             "queue_poll_interval_seconds": self.queue_poll_interval,
             "queue_poller": {
                 "state": (
@@ -255,7 +264,11 @@ class TaskExecutor:
             if existing is not None:
                 return existing, False
         if not self._capacity.acquire(blocking=False):
+            with self._lock:
+                self._queue_rejection_total += 1
             raise TaskCapacityError("task queue is full")
+        with self._lock:
+            self._admitted_slots += 1
         now = self._now()
         record = self._task_record_factory(
             task_id=str(uuid.uuid4()), tenant_id=str(tenant_id), user_id=str(user_id),
@@ -268,6 +281,8 @@ class TaskExecutor:
             self.store.create_task(record)
         except Exception:
             self._capacity.release()
+            with self._lock:
+                self._admitted_slots = max(0, self._admitted_slots - 1)
             if idempotency_key:
                 existing = self.store.find_task_by_idempotency(
                     str(tenant_id), str(user_id), str(idempotency_key)
@@ -290,6 +305,8 @@ class TaskExecutor:
                     expected_statuses=["queued"],
                 )
             self._capacity.release()
+            with self._lock:
+                self._admitted_slots = max(0, self._admitted_slots - 1)
             raise
         return self.store.get_task(record.task_id) or record, True
 
@@ -433,7 +450,11 @@ class TaskExecutor:
             # ``submit`` acquires the admission slot before persisting. Startup
             # recovery and resume acquire it at scheduling time.
             if not slot_reserved and not self._capacity.acquire(blocking=False):
+                with self._lock:
+                    self._queue_rejection_total += 1
                 return False
+            if not slot_reserved:
+                self._admitted_slots += 1
             cancel_event = threading.Event()
             # A very fast handler can finish before ``submit`` returns. Hold
             # it behind a one-shot gate until the handle is visible; otherwise
@@ -447,10 +468,28 @@ class TaskExecutor:
             except Exception:
                 if not slot_reserved:
                     self._capacity.release()
+                    self._admitted_slots = max(0, self._admitted_slots - 1)
                 raise
             self._handles[str(task_id)] = _TaskHandle(cancel_event, future)
+            future.add_done_callback(
+                lambda completed, scheduled_task_id=str(task_id): (
+                    self._release_cancelled_slot(scheduled_task_id, completed)
+                )
+            )
             start_gate.set()
             return True
+
+    def _release_cancelled_slot(self, task_id: str, future: Any) -> None:
+        """Release admission held by a Future cancelled before ``_run`` starts."""
+        if not future.cancelled():
+            return
+        with self._lock:
+            handle = self._handles.pop(task_id, None)
+            if handle is None:
+                return
+            self._admitted_slots = max(0, self._admitted_slots - 1)
+        self._capacity.release()
+        self._queue_poller_wakeup.set()
 
     def _run(
         self, task_id: str, cancel_event: threading.Event,
@@ -630,6 +669,8 @@ class TaskExecutor:
             with self._lock:
                 self._handles.pop(task_id, None)
             self._capacity.release()
+            with self._lock:
+                self._admitted_slots = max(0, self._admitted_slots - 1)
             self._queue_poller_wakeup.set()
 
     def get(

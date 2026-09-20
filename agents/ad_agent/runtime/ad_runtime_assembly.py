@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from ..core.memory import MemoryManager
-from ..core.runtime_kernel import AgentRuntimeKernel
+from ..core.agent_runtime import GenericAgentRuntime
 from ..domain.ad.auth import RequestPrincipal
 from ..domain.ad.security import ACCOUNT_SCOPE_FIELDS
 from ..persistence.interfaces import PersistenceBackend
@@ -30,6 +30,7 @@ from .ad_conversation_services import AdConversationServices
 from .ad_persistence_services import AdPersistenceServices
 from .ad_session_services import AdSessionServices
 from .ad_task_services import AdTaskServices
+from .ad_turn_pipeline import AdTurnPipeline
 from .ad_workflow_services import AdWorkflowServices
 from .input_builder import ToolInputBuilder
 from .outbox import OutboxPublisher
@@ -91,7 +92,7 @@ class AdRuntimeComponents:
     session_services: AdSessionServices
     workflow_services: AdWorkflowServices
     task_services: AdTaskServices
-    runtime_kernel: AgentRuntimeKernel
+    runtime_kernel: GenericAgentRuntime
     tool_executor: ToolExecutor
     supervisor: RuntimeSupervisor
     start_background_workers: bool
@@ -159,7 +160,13 @@ class AdRuntimeAssembly:
                 callable(getattr(store, method, None))
                 for method in ("save_memory", "search_memories", "delete_memory")
             ):
-                memory_manager = MemoryManager(store)
+                # Reuse the SessionManager-owned policy/cache instance so
+                # Runtime recall and management/API recall share one bounded
+                # cache and one automatic-capture switch per process.
+                memory_manager = session_manager.memory_manager
+                memory_manager.set_auto_capture_enabled(
+                    bool(getattr(runtime, "auto_memory_capture_enabled", True))
+                )
             if runtime.write_guard and hasattr(runtime.write_guard, "bind_store"):
                 runtime.write_guard.bind_store(store)
 
@@ -202,7 +209,8 @@ class AdRuntimeAssembly:
         session_services = AdSessionServices(runtime)
         workflow_services = AdWorkflowServices(runtime)
         task_services = AdTaskServices(runtime)
-        runtime_kernel = AgentRuntimeKernel(
+        turn_pipeline = AdTurnPipeline(runtime)
+        runtime_kernel = GenericAgentRuntime(
             session_manager=session_manager,
             session_locks=runtime._session_locks,
             session_locks_guard=runtime._session_locks_guard,
@@ -216,7 +224,9 @@ class AdRuntimeAssembly:
             assert_ready=runtime.assert_llm_ready,
             ensure_session=runtime._ensure_kernel_session,
             refresh_session=runtime._refresh_kernel_session,
-            execute_unlocked=runtime._execute_kernel_request,
+            turn_pipeline=turn_pipeline,
+            tool_registry=runtime.registry,
+            on_tool_catalog_changed=runtime._on_generic_tool_catalog_changed,
             busy_error=busy_error,
         )
         tool_executor = ToolExecutor(services)
@@ -224,7 +234,10 @@ class AdRuntimeAssembly:
             store=store,
             outbox_delivery=options.outbox_delivery or runtime._default_outbox_delivery,
             scheduled_submitter=runtime._submit_scheduled_task,
-            task_handlers={"agent.turn": runtime._execute_agent_task},
+            task_handlers={
+                "agent.turn": runtime._execute_agent_task,
+                "knowledge.ingest": runtime._execute_knowledge_ingest_task,
+            },
             redact=runtime._redact_for_persistence,
             max_task_workers=options.max_task_workers,
             max_task_queue=options.max_task_queue,

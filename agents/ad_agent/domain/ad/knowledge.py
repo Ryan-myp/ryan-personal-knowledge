@@ -12,18 +12,26 @@ from __future__ import annotations
 import json
 import math
 import re
+import threading
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Protocol
 
 from ...core.namespace import normalize_namespace as normalize_platform
+from ...core.context import ContextQuery
 
 
 WIKI_SCHEMA_VERSION = "1"
 WIKI_LAYERS = {"platform", "business", "experience", "dynamic", "index"}
 WIKI_STATUSES = {"draft", "published", "deprecated"}
+WIKI_OBJECT_TYPES = {"raw", "entity", "concept", "comparison", "query", "system"}
+SOURCE_KINDS = {"official", "code", "internal", "user", "inferred"}
+AUTHORITIES = {"official", "repository", "operator", "llm"}
+EVIDENCE_LEVELS = {"verified", "reviewed", "provisional"}
 
 
 @dataclass(frozen=True)
@@ -50,6 +58,7 @@ class KnowledgeDocument:
     source_ref: str = ""
     tags: tuple[str, ...] = field(default_factory=tuple)
     status: str = "published"
+    wiki_type: str = "concept"
     schema_version: str = WIKI_SCHEMA_VERSION
     score: float = 0.0
     section: str = ""
@@ -60,6 +69,13 @@ class KnowledgeDocument:
     chunk_id: str = ""
     matched_terms: tuple[str, ...] = field(default_factory=tuple)
     match_coverage: float = 0.0
+    derived_from: str = ""
+    raw_sha256: str = ""
+    wikilinks: tuple[str, ...] = field(default_factory=tuple)
+    source_kind: str = "inferred"
+    authority: str = "operator"
+    evidence_level: str = "provisional"
+    last_verified_at: str = ""
 
     @property
     def citation(self) -> dict[str, Any]:
@@ -69,8 +85,12 @@ class KnowledgeDocument:
             "title": self.title or self.topic,
             "source": self.source,
             "source_ref": self.source_ref or self.source,
+            "source_kind": self.source_kind,
+            "authority": self.authority,
+            "evidence_level": self.evidence_level,
             "version": self.version,
             "updated_at": self.updated_at,
+            "last_verified_at": self.last_verified_at or self.updated_at,
         }
         if self.section:
             citation["section"] = self.section
@@ -86,6 +106,7 @@ class KnowledgeDocument:
             "title": self.title or self.topic,
             "layer": self.layer,
             "knowledge_type": self.knowledge_type,
+            "wiki_type": self.wiki_type,
             "category": self.category,
             "subcategory": self.subcategory,
             "excerpt": self.excerpt,
@@ -105,6 +126,13 @@ class KnowledgeDocument:
             "retrieval_method": self.retrieval_method,
             "matched_terms": list(self.matched_terms),
             "match_coverage": self.match_coverage,
+            "derived_from": self.derived_from,
+            "raw_sha256": self.raw_sha256,
+            "wikilinks": list(self.wikilinks),
+            "source_kind": self.source_kind,
+            "authority": self.authority,
+            "evidence_level": self.evidence_level,
+            "last_verified_at": self.last_verified_at,
             "citation": self.citation,
         }
 
@@ -136,6 +164,7 @@ class KnowledgeProvider(Protocol):
         *,
         platforms: Optional[Iterable[str]] = None,
         knowledge_types: Optional[Iterable[str]] = None,
+        wiki_types: Optional[Iterable[str]] = None,
         limit: int = 100,
     ) -> list[KnowledgeDocument]:
         ...
@@ -209,15 +238,51 @@ class MarkdownWikiKnowledgeProvider:
         "ARCHITECTURE.md", "SCHEMA.md", "UPGRADE_SUMMARY.md",
         "USAGE_GUIDE.md", "QUALITY_STANDARD.md", "index.md", "log.md",
     })
+    _CONTROL_BASENAMES = _CONTROL_DOCUMENTS | {"README.md"}
+    _OBJECT_TYPE_DIRS = {
+        "raw": "raw",
+        "entities": "entity",
+        "concepts": "concept",
+        "comparisons": "comparison",
+        "queries": "query",
+        "platforms": "concept",
+        "business": "concept",
+        "expertise": "concept",
+        "dynamic": "concept",
+    }
     _STOPWORDS = {
         "and", "are", "for", "from", "how", "into", "that", "the", "this",
         "what", "when", "where", "with", "广告", "一个", "什么", "怎么", "如何",
         "哪些", "是否", "以及", "可以", "需要", "请问",
     }
 
-    def __init__(self, base_path: str | Path, search_index: Any = None):
+    def __init__(
+        self,
+        base_path: str | Path,
+        search_index: Any = None,
+        *,
+        include_raw: bool = False,
+        query_cache_ttl_seconds: float = 5.0,
+        query_cache_max_entries: int = 256,
+    ):
         self.base_path = Path(base_path).resolve()
         self.search_index = search_index
+        self.include_raw = include_raw
+        if query_cache_ttl_seconds < 0:
+            raise ValueError("query_cache_ttl_seconds cannot be negative")
+        if query_cache_max_entries <= 0:
+            raise ValueError("query_cache_max_entries must be positive")
+        self._query_cache_ttl_seconds = float(query_cache_ttl_seconds)
+        self._query_cache_max_entries = int(query_cache_max_entries)
+        self._tenant_cache_max_entries = 256
+        self._query_cache: OrderedDict[
+            tuple[Any, ...], tuple[float, tuple[KnowledgeDocument, ...]]
+        ] = OrderedDict()
+        self._query_cache_lock = threading.RLock()
+        self._query_cache_hits = 0
+        self._query_cache_misses = 0
+        self._query_cache_evictions = 0
+        self._knowledge_revision = 0
         self._fts_scope = "builtin"
         self._fts_available = False
         self._documents: list[KnowledgeDocument] = []
@@ -232,7 +297,26 @@ class MarkdownWikiKnowledgeProvider:
     def chunks(self) -> tuple[KnowledgeDocument, ...]:
         return tuple(self._chunks)
 
+    def cache_metrics(self) -> dict[str, Any]:
+        """Return bounded retrieval-cache metrics without document contents."""
+        with self._query_cache_lock:
+            return {
+                "entries": len(self._query_cache),
+                "max_entries": self._query_cache_max_entries,
+                "ttl_seconds": self._query_cache_ttl_seconds,
+                "hit_total": self._query_cache_hits,
+                "miss_total": self._query_cache_misses,
+                "eviction_total": self._query_cache_evictions,
+            }
+
+    def clear_query_cache(self) -> None:
+        with self._query_cache_lock:
+            self._query_cache.clear()
+
     def _load(self) -> None:
+        with self._query_cache_lock:
+            self._knowledge_revision += 1
+            self._query_cache.clear()
         self._documents = []
         self._chunks = []
         if not self.base_path.is_dir():
@@ -246,10 +330,13 @@ class MarkdownWikiKnowledgeProvider:
             except OSError:
                 continue
             relative = path.relative_to(self.base_path)
-            if relative.as_posix() in self._CONTROL_DOCUMENTS:
+            if relative.name in self._CONTROL_BASENAMES:
                 continue
             metadata, body = parse_frontmatter(content)
             parts = relative.parts
+            wiki_type = self._derive_wiki_type(parts, metadata)
+            if wiki_type == "system" or (wiki_type == "raw" and not self.include_raw):
+                continue
             platform = str(metadata.get("platform") or "")
             if not platform and len(parts) > 2 and parts[0] == "platforms":
                 platform = parts[1]
@@ -268,14 +355,27 @@ class MarkdownWikiKnowledgeProvider:
                 metadata.get("subcategory") or self._derive_subcategory(path.name, knowledge_type)
             ).strip().lower()
             title = str(metadata.get("title") or self._title_from_body(body) or path.stem)
-            source_ref = str(metadata.get("source_ref") or relative.as_posix())
+            source_ref_value = metadata.get("source_ref")
+            source_ref = str(
+                source_ref_value if source_ref_value is not None else relative.as_posix()
+            )
             source = str(metadata.get("source") or metadata.get("来源") or source_ref)
             version = str(metadata.get("version") or "local")
             updated_at = str(metadata.get("updated_at") or metadata.get("updated") or stat.st_mtime)
             status = str(metadata.get("status") or "published").lower()
-            if status not in WIKI_STATUSES:
-                status = "published"
             confidence = self._confidence(metadata.get("confidence"), 1.0)
+            source_kind = self._source_kind(
+                metadata.get("source_kind"), source_ref, source
+            )
+            authority = self._authority(
+                metadata.get("authority"), source_kind
+            )
+            evidence_level = self._evidence_level(
+                metadata.get("evidence_level"), source_kind
+            )
+            last_verified_at = str(
+                metadata.get("last_verified_at") or updated_at
+            ).strip()
             document_id = str(metadata.get("id") or f"{platform}:{relative.as_posix()}")
             document = KnowledgeDocument(
                 document_id=document_id,
@@ -294,7 +394,12 @@ class MarkdownWikiKnowledgeProvider:
                 source_ref=source_ref,
                 tags=tuple(_as_list(metadata.get("tags"))),
                 status=status,
+                wiki_type=wiki_type,
                 schema_version=str(metadata.get("schema_version") or WIKI_SCHEMA_VERSION),
+                source_kind=source_kind,
+                authority=authority,
+                evidence_level=evidence_level,
+                last_verified_at=last_verified_at,
             )
             self._documents.append(document)
             self._chunks.extend(self._chunk_document(document, scope=self._fts_scope))
@@ -304,10 +409,58 @@ class MarkdownWikiKnowledgeProvider:
 
     @staticmethod
     def _confidence(value: Any, default: float) -> float:
+        if value is None or value == "":
+            return default
         try:
-            return max(0.0, min(1.0, float(value)))
+            return float(value)
         except (TypeError, ValueError):
             return default
+
+    @staticmethod
+    def _source_kind(value: Any, source_ref: str, source: str) -> str:
+        candidate = str(value or "").strip().lower()
+        if candidate in SOURCE_KINDS:
+            return candidate
+        reference = str(source_ref or "").strip().lower()
+        owner = str(source or "").strip().lower()
+        if reference.startswith(("http://", "https://")):
+            return "official"
+        if any(
+            marker in reference
+            for marker in ("capabilities/", "api_clients/", "skill", "_surface_data")
+        ):
+            return "code"
+        if reference.startswith(("raw://", "upload://", "managed://")) or "user" in owner:
+            return "user"
+        if reference:
+            return "internal"
+        return "inferred"
+
+    @staticmethod
+    def _authority(value: Any, source_kind: str) -> str:
+        candidate = str(value or "").strip().lower()
+        if candidate in AUTHORITIES:
+            return candidate
+        return {
+            "official": "official",
+            "code": "repository",
+            "internal": "operator",
+            "user": "operator",
+            "inferred": "llm",
+        }.get(source_kind, "operator")
+
+    @staticmethod
+    def _evidence_level(value: Any, source_kind: str) -> str:
+        candidate = str(value or "").strip().lower()
+        if candidate in EVIDENCE_LEVELS:
+            return candidate
+        return {
+            "official": "reviewed",
+            "code": "verified",
+            "internal": "provisional",
+            "user": "provisional",
+            "inferred": "provisional",
+        }.get(source_kind, "provisional")
 
     @staticmethod
     def _title_from_body(body: str) -> str:
@@ -319,8 +472,31 @@ class MarkdownWikiKnowledgeProvider:
 
     @staticmethod
     def _derive_layer(parts: tuple[str, ...]) -> str:
-        mapping = {"platforms": "platform", "business": "business", "expertise": "experience", "dynamic": "dynamic"}
+        mapping = {
+            "platforms": "platform",
+            "entities": "platform",
+            "business": "business",
+            "comparisons": "business",
+            "queries": "business",
+            "expertise": "experience",
+            "concepts": "experience",
+            "dynamic": "dynamic",
+            "raw": "dynamic",
+        }
         return mapping.get(parts[0], "index" if len(parts) == 1 else "experience")
+
+    @classmethod
+    def _derive_wiki_type(
+        cls, parts: tuple[str, ...], metadata: Mapping[str, Any],
+    ) -> str:
+        explicit = str(
+            metadata.get("wiki_type")
+            or metadata.get("page_type")
+            or ""
+        ).strip().lower()
+        if explicit:
+            return explicit
+        return cls._OBJECT_TYPE_DIRS.get(parts[0], "concept")
 
     @staticmethod
     def _derive_type(filename: str) -> str:
@@ -655,21 +831,87 @@ class MarkdownWikiKnowledgeProvider:
     ) -> list[KnowledgeDocument]:
         if limit <= 0 or max_excerpt_chars <= 0:
             return []
+        effective_limit = min(int(limit), 100)
+        effective_excerpt_chars = min(int(max_excerpt_chars), self._CHUNK_SIZE)
+        selected_platforms = namespaces if namespaces is not None else platforms
+        normalized_platforms = tuple(sorted({
+            self._normalize_platform(item)
+            for item in (selected_platforms or [])
+            if str(item).strip()
+        }))
+        normalized_types = tuple(sorted({
+            str(item).strip().lower()
+            for item in (knowledge_types or [])
+            if str(item).strip()
+        }))
+        cache_key = (
+            self._knowledge_revision,
+            self._normalise_text(query),
+            normalized_platforms,
+            str(intent_type or "").strip().lower(),
+            normalized_types,
+            effective_limit,
+            effective_excerpt_chars,
+        )
+        now = time.monotonic()
+        with self._query_cache_lock:
+            cached = self._query_cache.get(cache_key)
+            if cached is not None:
+                expires_at, documents = cached
+                if self._query_cache_ttl_seconds == 0 or expires_at <= now:
+                    self._query_cache.pop(cache_key, None)
+                else:
+                    self._query_cache.move_to_end(cache_key)
+                    self._query_cache_hits += 1
+                    return list(documents)
+            self._query_cache_misses += 1
         terms = self._terms(query, intent_type)
         fts_hits = self._search_index_hits(
             query, terms, scopes=[self._fts_scope]
         )
-        selected_platforms = namespaces if namespaces is not None else platforms
-        return self._query_chunks(
+        result = self._query_chunks(
             self._chunks,
             self._documents,
             query,
             platforms=selected_platforms,
             intent_type=intent_type,
             knowledge_types=knowledge_types,
-            limit=limit,
-            max_excerpt_chars=max_excerpt_chars,
+            limit=effective_limit,
+            max_excerpt_chars=effective_excerpt_chars,
             fts_hits=fts_hits,
+        )
+        if self._query_cache_ttl_seconds > 0:
+            with self._query_cache_lock:
+                self._query_cache[cache_key] = (
+                    time.monotonic() + self._query_cache_ttl_seconds,
+                    tuple(result),
+                )
+                self._query_cache.move_to_end(cache_key)
+                while len(self._query_cache) > self._query_cache_max_entries:
+                    self._query_cache.popitem(last=False)
+                    self._query_cache_evictions += 1
+        return list(result)
+
+    def query_context(self, request: ContextQuery) -> list[KnowledgeDocument]:
+        """Implement the provider-neutral advisory context contract."""
+        filters = request.filters if isinstance(request.filters, Mapping) else {}
+        return self.query(
+            request.text,
+            namespaces=request.namespaces,
+            intent_type=request.intent_type or None,
+            knowledge_types=filters.get("knowledge_types"),
+            limit=request.limit,
+            max_excerpt_chars=request.max_excerpt_chars,
+        )
+
+    def catalog_context(self, request: ContextQuery) -> list[KnowledgeDocument]:
+        """Return navigation documents for the provider-neutral query."""
+        filters = request.filters if isinstance(request.filters, Mapping) else {}
+        return self.catalog(
+            platforms=request.namespaces,
+            knowledge_types=filters.get("knowledge_types"),
+            wiki_types=filters.get("wiki_types"),
+            limit=request.limit,
         )
 
     def catalog(
@@ -677,6 +919,7 @@ class MarkdownWikiKnowledgeProvider:
         *,
         platforms: Optional[Iterable[str]] = None,
         knowledge_types: Optional[Iterable[str]] = None,
+        wiki_types: Optional[Iterable[str]] = None,
         limit: int = 100,
     ) -> list[KnowledgeDocument]:
         """Return complete published documents for navigation, not chunks."""
@@ -692,6 +935,11 @@ class MarkdownWikiKnowledgeProvider:
             for item in (knowledge_types or [])
             if item
         }
+        allowed_wiki_types = {
+            str(item).strip().lower()
+            for item in (wiki_types or [])
+            if item
+        }
         documents: list[KnowledgeDocument] = []
         for document in self._documents:
             if document.status != "published":
@@ -699,6 +947,8 @@ class MarkdownWikiKnowledgeProvider:
             if allowed_platforms and self._normalize_platform(document.platform) not in allowed_platforms:
                 continue
             if allowed_types and document.knowledge_type not in allowed_types:
+                continue
+            if allowed_wiki_types and document.wiki_type not in allowed_wiki_types:
                 continue
             documents.append(document)
             if len(documents) >= limit:
@@ -878,13 +1128,26 @@ class MarkdownWikiKnowledgeProvider:
     def validate(self) -> list[dict[str, Any]]:
         """Validate Wiki metadata without requiring an external parser."""
         issues: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
         for document in self._documents:
+            if document.document_id in seen_ids:
+                issues.append({
+                    "document_id": document.document_id,
+                    "error": "duplicate document id",
+                })
+            seen_ids.add(document.document_id)
             if not document.document_id or not document.title:
                 issues.append({"document_id": document.document_id, "error": "id/title required"})
             if document.layer not in WIKI_LAYERS:
                 issues.append({"document_id": document.document_id, "error": "invalid layer"})
+            if document.wiki_type not in WIKI_OBJECT_TYPES:
+                issues.append({"document_id": document.document_id, "error": "invalid wiki_type"})
             if not document.source_ref:
                 issues.append({"document_id": document.document_id, "error": "source_ref required"})
+            if document.status not in WIKI_STATUSES:
+                issues.append({"document_id": document.document_id, "error": "invalid status"})
+            if not 0.0 <= document.confidence <= 1.0:
+                issues.append({"document_id": document.document_id, "error": "confidence out of range"})
         return issues
 
 

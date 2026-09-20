@@ -4,7 +4,7 @@
 
 ## 架构特点
 
-- **单 Agent + 多 Skills**：通过意图路由自动分发到对应平台的 Capability
+- **标准 Agent Harness**：单 Agent 通过 Skills、Tool Contract、Policy 和 Tool Executor 工作
 - **API 客户端**：封装真实 API 请求、重试、限流和错误分类；live 能力须逐平台验证
 - **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态、Agent Memory、Task、Outbox 和 Run Event；默认 SQLite 适合单进程，MySQL/InnoDB 可通过连接配置启用多实例共享状态
 - **结构化日志**：JSON 格式，便于 log aggregation
@@ -12,11 +12,11 @@
 - **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
 - **LLM 结果闭环**：执行完成后，LLM 可基于脱敏的工具结果、知识引用和分析结果生成最终回答；输出协议、dry-run 事实和失败事实经过校验，异常时回退到确定性 Renderer
 - **安全边界**：写操作必须由当前请求明确提供目标账户、命中配置的测试账户白名单；live 还必须显式确认
-- **可扩展**：渠道包按约定自动发现；新增平台不需要修改 Runtime、Router 或中心渠道表
-- **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时新增 Capability Tool，复杂编排可新增自动发现的 Feature，均不修改 Runtime 主循环
-- **广告创建蓝图**：渠道 Capability 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
+- **可扩展**：Tool 可以来自本地 Handler、SDK/HTTP Connector 或 MCP；新增集成不需要修改 Runtime、Router 或中心渠道表
+- **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时发布 Tool Source/Executor，广告渠道的 Capability 只是 Provider Module 兼容实现
+- **广告创建蓝图**：广告 Provider Module 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
 - **统一插件内核**：Capability、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
-- **动态平台识别**：解析器从已注册 Capability/Skill 发布平台标识；内置渠道只保留自然语言别名，不维护固定四渠道路由表
+- **动态平台识别**：解析器从已注册 Tool/Skill 发布 namespace 和自然语言别名，不维护固定四渠道路由表
 - **版本兼容**：Tool 声明 Provider API 版本；版本差异由渠道 Client 自己的 adapter 处理，Runtime 不增加渠道分支
 - **开发契约**：后续模块遵循 [`AGENT.md`](./AGENT.md)；仓库安全与操作约束见 [`AGENTS.md`](./AGENTS.md)
 
@@ -103,9 +103,13 @@ runtime = AgentRuntime(
     ),
 )
 
-# 注册 Capability（写操作仍只生成 dry-run 计划）
+# 广告应用的 Provider Module 兼容入口（写操作仍只生成 dry-run 计划）
 runtime.register_capability(create_meta_capability())
 runtime.register_capability(create_google_capability())
+
+# 通用 Harness 入口也可以直接注册 Tool 或 MCP/HTTP Tool Source：
+# runtime.register_tool(tool_definition, executor)
+# runtime.register_tool_source(source)
 
 # 运行对话
 result = runtime.run(
@@ -122,7 +126,8 @@ print(result["reply"])
 ### Markdown LLM Wiki 与 Agent Memory
 
 知识库采用 Karpathy 风格的 Markdown-first LLM Wiki：`index.md` 做导航，`log.md`
-记录变更，`platforms/`、`business/`、`expertise/` 和 `dynamic/` 按主题组织知识。
+记录变更，`raw/` 保存来源，`entities/`、`concepts/`、`comparisons/` 和 `queries/`
+表达知识对象；现有 `platforms/`、`business/`、`expertise/` 作为概念页的稳定领域存储继续兼容。
 知识文件使用 [`knowledge_base/SCHEMA.md`](./knowledge_base/SCHEMA.md) 的 frontmatter
 描述来源、版本、置信度和状态。除了仓库内置文档外，用户还可以通过
 `POST /knowledge/documents` 保存租户隔离的 Markdown 文档，使用
@@ -131,10 +136,26 @@ print(result["reply"])
 与 Skills 管理采用相同的“不可变版本 + 显式发布”思路。知识写入需要 `knowledge.write`
 权限，检索仍需要 `ads.read`；草稿和废弃文档不会进入召回。
 
+推荐的新文档流程是 `POST /knowledge/raw`：服务先按
+`tenant_id + sha256` 去重，写入不可变 raw source，再排入受控的
+`knowledge.ingest` durable task。worker 只允许调用结构化 `LLM.call_json`，根据当前已发布
+Wiki 目录生成 entity/concept/comparison/query draft，并记录
+`source_ref=raw://...`、`derived_from`、`raw_sha256` 和 `wikilinks`。LLM 不能指定文件路径、
+执行代码或直接发布页面；人工审核后仍需调用原有的
+`POST /knowledge/documents/{document_id}/publish`。Runtime 检索只读取已发布派生页，不会直接读取 raw source。
+同一个 source 由 Store 原子地从 `received/failed` 领取到 `ingesting`，并记录
+`ingest_attempts`、任务 ID、开始和完成时间；并发重复任务只有一个能领取。失败会保留
+安全错误摘要并允许重试，`draft_ready` source 默认不可再次 ingest，避免重复生成派生页面。
+如果 worker 在 `ingesting` 阶段中断，过期 claim 会被 recovery 标记为 `failed`，
+下一次任务可以安全重试。
+
 `core.knowledge.KnowledgeProvider` 统一提供确定性的标题/标签/正文词法检索，不接入
 向量库。知识库搜索会先展示 LLM 生成的业务摘要，再展示带 Markdown 格式的内容摘录
 和来源；LLM 暂不可用时使用确定性摘要，不影响文档检索。用户提交的文档不能包含凭证
 字段，也不能创建 Tool 或改变权限。
+知识服务依赖窄化的 `KnowledgeStorePort`，不会把完整广告持久化后端暴露给 Wiki；
+历史 Markdown 页可用 `scripts/normalize_knowledge_metadata.py --write` 补齐 provenance
+字段，该工具只改 frontmatter，不改正文、版本或发布状态。
 
 Memory 与 Wiki、Session、Tool Audit 分离。只有显式的“记住/保存”请求才会创建长期
 Memory；Runtime 仅在同一 `tenant_id + user_id` 范围内做有界召回，Memory 不能创建
@@ -311,6 +332,9 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 门禁规则位于 [`contracts/readiness_policy.json`](./contracts/readiness_policy.json)，Provider 本地场景位于 [`contracts/provider_contract_scenarios.json`](./contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Capability、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
 
 当前已增加统一 `PluginRegistry`：所有内置 Capability、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和兼容适配，不代表已经支持任意第三方代码热加载。
+Runtime 对 Capability/Skill 的注册、卸载和派生索引刷新使用同一把生命周期锁；
+执行请求仍可并发，但不会在注册中途观察到半套 Tool 或 Skill ownership 状态。卸载失败时
+会回滚 Registry、参数目录、Blueprint、SkillLoader、格式目录和 Parser catalog。
 
 插件包可以使用根目录 `plugin.manifest.json` 描述 `PluginManifest`、文件 SHA-256、整体
 `package_digest` 和可选 HMAC 签名。`PluginLoader.load_package()` 只验证声明和文件完整性，
@@ -344,18 +368,18 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 ### Runtime 边界结论
 
-`AdAgentRuntime` 保留为广告应用组合根是有必要的：它把广告 Skill、Capability、Feature、
+`AdAgentRuntime` 保留为广告应用组合根是有必要的：它把广告 Skill、Provider Module、Feature、
 Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
 通用队列、租约或 Provider 分支。通用执行壳是 `core/runtime_kernel.py`，队列/Outbox/
 Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
-Capability 或独立 Feature。后续若继续拆分，优先拆它的装配配置和应用门面，而不是删除这个
+Tool Source/Executor 或独立 Feature。后续若继续拆分，优先拆它的装配配置和应用门面，而不是删除这个
 组合根或在 HTTP 层复制另一套 Agent。
 
 当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AdAgentRuntime` 负责广告应用
 配置、能力注册入口和稳定门面，`AdRuntimeAssembly` 负责把 `PersistenceBackend`、通用
 `AgentRuntimeKernel`、Tool 执行器、Schedule/Task/Outbox worker 与广告应用服务接起来。
 Assembly 只做依赖连接，不根据渠道或业务流程分支；新的简单能力仍应通过 Skill + Tool/MCP
-Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制面的能力才新增 Capability/Feature。
+Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制面的能力才新增 Provider Module/Feature。
 
 暂留的工程缺口：
 
@@ -427,13 +451,27 @@ Google Ads 当前使用 REST Client 而不是可选的 `google-ads` SDK。Client
 ## 架构设计
 
 可直接打开交互式架构图：[`docs/ad_agent_architecture.html`](../../docs/ad_agent_architecture.html)。
-图中标注了单 Agent、多 Skills、Tool Registry、Provider Capabilities，以及异步 Task、Outbox、Run Event、恢复和后续 MySQL 演进关系。
+图中标注了单 Agent、多 Skills、Tool Registry、Tool Sources/Executors，以及异步 Task、Outbox、Run Event、恢复和后续 MySQL 演进关系。
 
-Runtime 分为两层：`core/runtime_kernel.py` 是业务无关的执行外壳，只负责请求身份规范化、
-Session 并发/租约、执行模式和回合委托；`runtime/ad_runtime.py` 是广告应用组合根，负责
-组装广告 Skills、Tools、Capabilities、业务服务和回合引擎。`runtime/runtime.py` 仅作为
-稳定导出入口。Kernel 通过 opaque `TurnRequest.context` 与应用交换领域数据，因此新增
-业务 Skill/Tool 不需要把账户、渠道或业务流程分支写回 Kernel。
+Runtime 分为三层：`core/runtime_kernel.py` 负责最底层的请求身份规范化、Session 并发/租约、
+执行模式和回合委托；`core/turn_pipeline.py` 定义通用回合阶段、终止和错误语义；
+`core/agent_runtime.py` 提供可嵌入的 `GenericAgentRuntime` 门面，
+让任意应用只需注入自己的 `TurnPipeline`；`runtime/ad_runtime.py` 是广告应用组合根，负责
+组装广告 Skills、Tools、Provider Modules、业务服务和 `AdTurnPipeline` 适配器。
+`runtime/runtime.py` 仅作为
+稳定导出入口。Generic Runtime 通过 opaque `TurnRequest.context` 与应用交换领域数据，
+因此新增业务 Skill/Tool 不需要把账户、渠道或业务流程分支写回 Core。
+
+工具选择也分成两个层次：`core/tool_selection.py` 的 `ToolSelector` 只读取 Tool
+publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有界的模型上下文；
+`core/tool_selector.py` 的 `DynamicToolSelector` 仅保留知识库、Skill 和租户上下文的
+兼容适配，不承担 Tool 执行、权限授予或业务路由。
+
+执行策略由 `core/policy_engine.py` 的 `PolicyEngine` 统一计算。它把 Tool 声明的
+权限、Scope、Effect、live 能力、批准清单和 WriteGuard 状态转换成不可变的
+`PolicyDecision`；dry-run 规划和 live 执行因此使用同一份契约但拥有不同门槛。
+确认卡片和确认 token 仍由应用安全服务生成/消费，PolicyEngine 不解析 UI payload，
+避免把展示协议带回 Core。
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -476,9 +514,15 @@ Session 并发/租约、执行模式和回合委托；`runtime/ad_runtime.py` �
 ad_agent/
 ├── __init__.py              # 包入口
 ├── core/
-│   ├── runtime_kernel.py    # 业务无关 Runtime Kernel
+│   ├── agent_runtime.py     # 可嵌入的通用 Runtime 门面
+│   ├── runtime_kernel.py    # 请求/会话/租约生命周期内核
 │   ├── interfaces.py        # 核心接口定义
-│   ├── tool_registry.py     # 工具注册表
+│   ├── tool_selection.py    # 通用 Tool 选择与 Prompt 渲染
+│   ├── tool_selector.py     # Skill/知识上下文兼容适配层
+│   ├── policy_engine.py     # Tool/Scope/Effect 执行策略决策
+│   ├── tool_registry.py     # 工具注册表与来源生命周期
+│   ├── tool_sources.py      # ToolBinding/ToolSource/Executor 契约
+│   ├── turn_pipeline.py     # 通用回合阶段与终止/错误语义
 │   └── intent.py            # 意图解析与路由
 ├── runtime/
 │   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
@@ -540,11 +584,12 @@ class NewPlatformCapability(BaseCapability):
 # 工厂名按约定自动发现：create_new_network_capability(api_client)
 ```
 
-如果渠道通过 `skills/channels/<name>/SKILL.md` 自动加载，Runtime 会发现同名
-Capability 并注入按渠道创建的 Client；没有 Client 时仍可安全生成 dry-run 计划。
+如果渠道通过 `skills/channels/<name>/SKILL.md` 自动加载，广告应用可以发现同名
+Provider Module 并注入按渠道创建的 Client；没有 Client 时仍可安全生成 dry-run 计划。
 只有需要补充专家知识、SOP 或安全边界时才修改 `SKILL.md`。可执行能力必须通过
-受注册和审计的 Capability/Tool 扩展，用户上传 Skill 中的 `tools.py`、`scripts/`、
-MCP 或其他代码文件不会被 Runtime 导入或执行。
+受注册和审计的 Tool Source/Executor 扩展，用户上传 Skill 中的 `tools.py`、`scripts/`
+或其他代码文件不会被 Runtime 导入或执行。受控外部 MCP 只通过 MCP Client
+归一化为普通 Tool，并继续经过 Runtime 的权限、scope、dry-run/live、确认、幂等和审计门禁。
 
 LLM 结果规范化会读取当前已注册的平台集合。新增渠道的自然语言别名可以由其
 平台标识自动获得（例如 `snapchat-ads` / `snapchat ads`）；若需要中文或品牌别名，
@@ -600,7 +645,7 @@ agents/ad_agent/evals/skill-up/run.sh
 `SKILL.md`，也可以包含 `scripts/`、`references/`、`assets/` 和 `evals/`。
 管理、发布和评测接口及安全边界见
 [`SKILLS_MANAGEMENT.md`](SKILLS_MANAGEMENT.md)。用户 Skill 只提供自然语言
-上下文；广告执行仍只能通过已注册的 Capability/Tool。
+上下文；广告执行仍只能通过已注册的 Tool，并经过 Runtime 统一门禁。
 
 ## 许可证
 

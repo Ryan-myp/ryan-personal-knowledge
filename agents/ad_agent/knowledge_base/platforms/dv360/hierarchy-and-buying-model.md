@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: hierarchy
 platform: dv360
 source: Display & Video 360 API 官方文档 + DV360 Capability/Skill
-source_ref: https://developers.google.com/display-video/api/concepts/structure
+source_ref: "https://developers.google.com/display-video/api/concepts/structure"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [dv360, partner, advertiser, campaign, insertion-order, line-item, hierarchy]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # DV360 Partner、Advertiser、IO 与 Line Item 层级

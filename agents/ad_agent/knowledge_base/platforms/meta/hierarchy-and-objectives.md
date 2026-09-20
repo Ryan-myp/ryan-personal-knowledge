@@ -6,12 +6,16 @@ layer: platform
 knowledge_type: hierarchy
 platform: meta
 source: Meta Marketing API 官方文档 + Meta Capability/Skill
-source_ref: https://developers.facebook.com/docs/marketing-api/campaign-structure
+source_ref: "https://developers.facebook.com/docs/marketing-api/campaign-structure"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [meta, facebook, instagram, campaign, ad-set, ad, odax, hierarchy]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Ads 账户、层级与目标体系

@@ -8,12 +8,16 @@ category: optimization
 subcategory: odax-advantage-creative-and-learning
 platform: meta
 source: Meta Business 与 Marketing API 官方文档
-source_ref: https://www.facebook.com/business/help/159146148136268
+source_ref: "https://www.facebook.com/business/help/159146148136268"
 version: "1.0.0"
 confidence: 0.88
 updated_at: "2026-09-08"
 tags: [meta, odax, advantage, creative, learning, optimization-event]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta ODAX、Advantage 自动化与创意学习方法

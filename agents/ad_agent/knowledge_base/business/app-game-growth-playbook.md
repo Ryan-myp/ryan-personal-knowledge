@@ -6,12 +6,16 @@ layer: business
 knowledge_type: business_strategy
 platform: all
 source: App/游戏增长方法论 + 四平台 App 投放能力
-source_ref: agents/ad_agent/knowledge_base/business/app-game-growth-playbook.md
+source_ref: "internal://ad-agent/playbook/app-game-growth-playbook"
 version: "1.0.0"
 confidence: 0.82
 updated_at: "2026-09-08"
 tags: [app, gaming, install, retention, cohort, ltv, mmp, monetization]
 status: published
+source_kind: "internal"
+authority: "operator"
+evidence_level: "provisional"
+last_verified_at: "2026-09-08"
 ---
 
 # App 与游戏广告增长深度打法：从安装到 LTV

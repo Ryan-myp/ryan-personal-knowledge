@@ -8,12 +8,16 @@ category: measurement
 subcategory: events-api-identity-and-attribution
 platform: tiktok
 source: TikTok for Business 官方文档
-source_ref: https://business-api.tiktok.com/portal/docs?id=1739584860888017
+source_ref: "https://business-api.tiktok.com/portal/docs?id=1739584860888017"
 version: "1.0.0"
 confidence: 0.87
 updated_at: "2026-09-08"
 tags: [tiktok, pixel, events-api, event-id, attribution, consent, measurement]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Pixel、Events API 与归因信号

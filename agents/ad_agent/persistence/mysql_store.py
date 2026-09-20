@@ -287,6 +287,7 @@ def _mysql_schema(sql: str) -> str:
         # control-plane contract, not by the 191-char index-safe fallback.
         "input_schema", "annotations", "validation_report", "description", "last_error",
         "intent_types", "intent_aliases", "skill_refs", "required_permissions", "traits",
+        "wikilinks",
     }
     for column in large_columns:
         sql = re.sub(
@@ -724,6 +725,47 @@ class MySQLStore(AdAgentStore):
                 "traits": "LONGTEXT NOT NULL",
             }.items():
                 self._add_mysql_column_if_missing(conn, "mcp_tools", column, definition)
+        elif version == 19:
+            for column, definition in {
+                "wiki_type": "VARCHAR(32) NOT NULL DEFAULT 'concept'",
+                "derived_from": "VARCHAR(255) NOT NULL DEFAULT ''",
+                "raw_sha256": "VARCHAR(128) NOT NULL DEFAULT ''",
+                "wikilinks": "LONGTEXT NOT NULL",
+            }.items():
+                self._add_mysql_column_if_missing(
+                    conn, "knowledge_documents", column, definition
+                )
+            conn.executescript(_mysql_schema(
+                """
+                CREATE TABLE IF NOT EXISTS raw_knowledge_sources (
+                    source_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    content LONGTEXT NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'received',
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    ingest_task_id TEXT,
+                    ingest_error TEXT,
+                    UNIQUE (tenant_id, sha256)
+                );
+                CREATE INDEX IF NOT EXISTS idx_raw_knowledge_sources_scope
+                    ON raw_knowledge_sources(tenant_id, status, updated_at);
+                """
+            ))
+        elif version == 20:
+            for column, definition in {
+                "ingest_attempts": "INT NOT NULL DEFAULT 0",
+                "ingest_started_at": "VARCHAR(64)",
+                "ingest_finished_at": "VARCHAR(64)",
+            }.items():
+                self._add_mysql_column_if_missing(
+                    conn, "raw_knowledge_sources", column, definition
+                )
 
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,

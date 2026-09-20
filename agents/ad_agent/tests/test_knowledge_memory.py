@@ -12,6 +12,7 @@ from agents.ad_agent.domain.ad.response import LLMResponseSynthesizer
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.ad_turn_context import AdTurnContext, AdTurnContextService
 
 
 def test_markdown_wiki_is_canonical_and_metadata_is_source_addressable(tmp_path):
@@ -47,6 +48,50 @@ def test_markdown_wiki_is_canonical_and_metadata_is_source_addressable(tmp_path)
     assert result[0].subcategory == "campaign-hierarchy"
     assert result[0].to_dict()["category"] == "platform_foundation"
     assert provider.validate() == []
+
+
+def test_markdown_wiki_carries_provenance_metadata_with_legacy_defaults(tmp_path):
+    (tmp_path / "official.md").write_text(
+        "---\n"
+        "id: official-guide\n"
+        "title: Official guide\n"
+        "platform: google\n"
+        "source_ref: https://developers.google.com/google-ads/api\n"
+        "status: published\n"
+        "updated_at: \"2026-09-18\"\n"
+        "---\n\n"
+        "官方说明。",
+        encoding="utf-8",
+    )
+    (tmp_path / "internal.md").write_text(
+        "---\n"
+        "id: internal-guide\n"
+        "title: Internal guide\n"
+        "platform: all\n"
+        "source_ref: internal://playbook\n"
+        "source_kind: internal\n"
+        "authority: operator\n"
+        "evidence_level: provisional\n"
+        "last_verified_at: \"2026-09-17\"\n"
+        "status: published\n"
+        "---\n\n"
+        "内部经验。",
+        encoding="utf-8",
+    )
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+
+    documents = {
+        document.document_id: document for document in provider.catalog(limit=10)
+    }
+    official = documents["official-guide"]
+    internal = documents["internal-guide"]
+    assert official.source_kind == "official"
+    assert official.authority == "official"
+    assert official.evidence_level == "reviewed"
+    assert official.citation["last_verified_at"] == "2026-09-18"
+    assert internal.source_kind == "internal"
+    assert internal.evidence_level == "provisional"
+    assert internal.to_dict()["source_kind"] == "internal"
 
 
 def test_builtin_wiki_exposes_navigation_categories_for_each_platform():
@@ -112,6 +157,118 @@ def test_markdown_wiki_catalog_returns_the_complete_document(tmp_path):
     assert "目录不应丢失的正文" in result[0].excerpt
 
 
+def test_markdown_wiki_supports_karpathy_object_directories_without_loading_raw_sources(tmp_path):
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "entities").mkdir()
+    (tmp_path / "comparisons").mkdir()
+    (tmp_path / "queries").mkdir()
+    (tmp_path / "raw" / "source.md").write_text(
+        "---\n"
+        "id: raw-source\n"
+        "title: 原始来源\n"
+        "layer: dynamic\n"
+        "wiki_type: raw\n"
+        "platform: all\n"
+        "source_ref: https://example.invalid/source\n"
+        "status: published\n"
+        "---\n\n"
+        "只有 ingest 阶段应该读取的原始内容。",
+        encoding="utf-8",
+    )
+    (tmp_path / "entities" / "meta.md").write_text(
+        "---\n"
+        "id: meta-entity\n"
+        "title: Meta Ads\n"
+        "layer: platform\n"
+        "wiki_type: entity\n"
+        "platform: meta\n"
+        "source_ref: https://example.invalid/meta\n"
+        "status: published\n"
+        "---\n\n"
+        "Meta 是一个广告平台实体页面。",
+        encoding="utf-8",
+    )
+    (tmp_path / "comparisons" / "platforms.md").write_text(
+        "---\n"
+        "id: platform-comparison\n"
+        "title: 平台对比\n"
+        "layer: business\n"
+        "wiki_type: comparison\n"
+        "platform: all\n"
+        "source_ref: https://example.invalid/comparison\n"
+        "status: published\n"
+        "---\n\n"
+        "比较 Google、Meta、TikTok 和 DV360 的对象模型。",
+        encoding="utf-8",
+    )
+    (tmp_path / "queries" / "answer.md").write_text(
+        "---\n"
+        "id: archived-answer\n"
+        "title: 如何选择平台\n"
+        "layer: business\n"
+        "wiki_type: query\n"
+        "platform: all\n"
+        "source_ref: https://example.invalid/query\n"
+        "status: published\n"
+        "---\n\n"
+        "先看业务目标、测量成熟度和库存约束。",
+        encoding="utf-8",
+    )
+    (tmp_path / "entities" / "README.md").write_text(
+        "# Entities\n\n导航说明不应进入业务检索。",
+        encoding="utf-8",
+    )
+
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+
+    assert {document.document_id for document in provider.documents} == {
+        "meta-entity",
+        "platform-comparison",
+        "archived-answer",
+    }
+    assert {document.wiki_type for document in provider.documents} == {
+        "entity",
+        "comparison",
+        "query",
+    }
+    assert [document.document_id for document in provider.catalog(
+        wiki_types=["entity"], limit=10
+    )] == ["meta-entity"]
+    assert provider.query("原始来源", limit=10) == []
+    assert provider.validate() == []
+
+
+def test_markdown_wiki_validation_catches_duplicate_ids_and_invalid_contracts(tmp_path):
+    for filename, title in (("a.md", "重复 ID A"), ("b.md", "重复 ID B")):
+        (tmp_path / filename).write_text(
+            "---\n"
+            "schema_version: \"1\"\n"
+            "id: duplicate\n"
+            f"title: {title}\n"
+            "layer: unknown\n"
+            "wiki_type: unknown\n"
+            "platform: all\n"
+            "source_ref: \"\"\n"
+            "version: \"not-semver\"\n"
+            "confidence: 2\n"
+            "status: invalid\n"
+            "---\n\n"
+            "正文。",
+            encoding="utf-8",
+        )
+
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+    errors = provider.validate()
+
+    error_text = "\n".join(item["error"] for item in errors)
+    assert "duplicate document id" in error_text
+    assert "invalid layer" in error_text
+    assert "invalid wiki_type" in error_text
+    assert "source_ref required" in error_text
+    assert "confidence out of range" in error_text
+    assert "invalid status" in error_text
+
+
 def test_markdown_wiki_weights_title_and_heading_matches_without_vectors(tmp_path):
     (tmp_path / "a.md").write_text(
         "---\nid: title-hit\ntitle: Meta 广告类型选择\nplatform: meta\nstatus: published\n---\n\n选择规则。",
@@ -164,6 +321,35 @@ def test_markdown_wiki_uses_sqlite_fts5_when_a_store_is_available(tmp_path):
     assert result[0].citation["chunk_count"] == 1
     category_result = provider.query("measurement", limit=1)
     assert category_result[0].document_id == "google-search"
+
+
+def test_knowledge_query_cache_includes_platform_and_filters(tmp_path):
+    (tmp_path / "meta.md").write_text(
+        "---\nid: meta-guide\ntitle: Meta Traffic\nplatform: meta\n"
+        "knowledge_type: workflow\nstatus: published\n---\n\nMeta Traffic 创建流程。",
+        encoding="utf-8",
+    )
+    (tmp_path / "google.md").write_text(
+        "---\nid: google-guide\ntitle: Google Traffic\nplatform: google-ads\n"
+        "knowledge_type: workflow\nstatus: published\n---\n\nGoogle Traffic 创建流程。",
+        encoding="utf-8",
+    )
+    provider = MarkdownWikiKnowledgeProvider(
+        tmp_path, query_cache_ttl_seconds=60, query_cache_max_entries=8
+    )
+
+    first = provider.query("Traffic 创建流程", platforms=["meta"], limit=1)
+    second = provider.query("Traffic 创建流程", platforms=["meta"], limit=1)
+    google = provider.query("Traffic 创建流程", platforms=["google-ads"], limit=1)
+    wider = provider.query("Traffic 创建流程", platforms=["meta"], limit=2)
+
+    assert [item.document_id for item in first] == ["meta-guide"]
+    assert [item.document_id for item in second] == ["meta-guide"]
+    assert [item.document_id for item in google] == ["google-guide"]
+    assert [item.document_id for item in wider] == ["meta-guide"]
+    metrics = provider.cache_metrics()
+    assert metrics["hit_total"] == 1
+    assert metrics["miss_total"] == 3
 
 
 def test_wiki_draft_is_not_retrieved_and_compatibility_facade_uses_same_documents(tmp_path):
@@ -220,6 +406,8 @@ def test_managed_wiki_documents_are_versioned_published_and_tenant_scoped():
     assert published["status"] == "published"
     results = provider.query("Meta 广告类型", tenant_id="tenant-a", limit=5)
     assert results[0].title == "Meta 广告类型选择规则"
+    assert results[0].source_kind == "user"
+    assert results[0].evidence_level == "provisional"
     assert provider.query("Meta 广告类型", tenant_id="tenant-b") == []
     assert "schema_version: \"1\"" in published["markdown"]
 
@@ -345,6 +533,61 @@ def test_memory_is_scoped_and_deleted_without_becoming_tool_state():
     assert manager.recall("Google 搜索广告", tenant_id="tenant-a", user_id="user-a") == []
 
 
+def test_memory_recall_cache_is_scoped_and_invalidated():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store, cache_ttl_seconds=60, max_cache_entries=8)
+    record = manager.remember(
+        "团队偏好使用 Meta Traffic",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+    )
+    calls = {"count": 0}
+    original_search = store.search_memories
+
+    def counted_search(*args, **kwargs):
+        calls["count"] += 1
+        return original_search(*args, **kwargs)
+
+    store.search_memories = counted_search
+
+    first = manager.recall(
+        "Meta Traffic", tenant_id="tenant-a", user_id="user-a", session_id="session-a"
+    )
+    second = manager.recall(
+        "Meta Traffic", tenant_id="tenant-a", user_id="user-a", session_id="session-a"
+    )
+    assert [item.memory_id for item in first] == [record.memory_id]
+    assert [item.memory_id for item in second] == [record.memory_id]
+    assert calls["count"] == 1
+    assert manager.cache_metrics()["hit_total"] == 1
+
+    assert manager.recall(
+        "Meta Traffic", tenant_id="tenant-b", user_id="user-a", session_id="session-a"
+    ) == []
+    assert calls["count"] == 2
+
+    manager.remember(
+        "团队偏好使用 Google Search",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+    )
+    manager.recall(
+        "Meta Traffic", tenant_id="tenant-a", user_id="user-a", session_id="session-a"
+    )
+    assert calls["count"] == 3
+
+    assert manager.forget(
+        record.memory_id, tenant_id="tenant-a", user_id="user-a"
+    ) is True
+    manager.recall(
+        "Meta Traffic", tenant_id="tenant-a", user_id="user-a", session_id="session-a"
+    )
+    assert calls["count"] == 4
+    assert manager.cache_metrics()["invalidation_total"] >= 2
+
+
 def test_memory_expiry_is_enforced_by_the_backend():
     store = AdAgentStore(":memory:")
     manager = MemoryManager(store)
@@ -385,11 +628,214 @@ def test_memory_versions_are_deduplicated_and_superseded_by_logical_key():
     )] == [second.memory_id]
 
 
+def test_explicit_memory_wins_conflict_against_automatic_memory():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store)
+    explicit = manager.remember(
+        "默认使用中文回答",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="user_explicit",
+        memory_key="response.language",
+    )
+    automatic = manager.remember(
+        "默认使用英文回答",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="runtime_automatic",
+        memory_key="response.language",
+    )
+    assert automatic.memory_id == explicit.memory_id
+    assert automatic.content == "默认使用中文回答"
+
+    corrected = manager.remember(
+        "默认使用英文回答",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="user_explicit",
+        memory_key="response.language",
+    )
+    assert corrected.memory_id != explicit.memory_id
+    assert manager.recall(
+        "英文回答", tenant_id="tenant-a", user_id="user-a"
+    )[0].content == "默认使用英文回答"
+
+
+def test_long_term_memory_has_typed_procedure_and_episode_boundaries():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store)
+    procedure = manager.remember_procedure(
+        "创建广告前先查询账户，再让用户确认",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        procedure_key="campaign.create.confirmation",
+        tags=["campaign", "safety"],
+    )
+    episode = manager.remember_episode(
+        "本次 Meta Traffic 创建停在二次确认前",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        event_type="campaign_creation_confirmation",
+        outcome="awaiting_confirmation",
+        tags=["channel:meta"],
+    )
+    working = manager.remember(
+        "当前正在填写账户 ID",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        kind="working",
+    )
+
+    assert procedure.kind == "procedural"
+    assert procedure.memory_key == "procedure:campaign.create.confirmation"
+    assert "procedure" in procedure.tags
+    assert episode.kind == "episodic"
+    assert episode.session_id == "session-a"
+    assert "event:campaign_creation_confirmation" in episode.tags
+    assert "channel:meta" in episode.tags
+    assert "outcome:awaiting_confirmation" in episode.tags
+
+    long_term = manager.recall_long_term(
+        "广告确认", tenant_id="tenant-a", user_id="user-a", limit=10
+    )
+    assert {item.kind for item in long_term} == {"procedural", "episodic"}
+    assert working.memory_id not in {item.memory_id for item in long_term}
+
+    context_records, context_text = manager.build_context(
+        "广告确认", tenant_id="tenant-a", user_id="user-a", session_id="session-a"
+    )
+    assert all(item["kind"] != "working" for item in context_records)
+    assert "[memory:procedural]" in context_text or "[memory:episodic]" in context_text
+
+
+def test_explicit_memory_language_classifies_procedures_and_episodes():
+    procedure = MemoryManager.extract_candidates(
+        "请记住这个流程：创建广告前先查询可选账户，再让用户确认"
+    )
+    episode = MemoryManager.extract_candidates(
+        "请记住这次操作：Meta Traffic 创建停在二次确认前"
+    )
+
+    assert procedure[0]["kind"] == "procedural"
+    assert procedure[0]["memory_key"].startswith("procedure:")
+    assert episode[0]["kind"] == "episodic"
+    assert episode[0]["session_bound"] is True
+
+
 def test_auto_memory_candidates_are_conservative():
     assert MemoryManager.extract_candidates("我的偏好是优先使用 Google Ads")
     assert MemoryManager.extract_candidates("以后请优先使用 dry-run")
     assert MemoryManager.extract_candidates("帮我查询今天的 Campaign") == []
     assert MemoryManager.extract_candidates("工具返回了一个 Campaign") == []
+
+
+def test_runtime_episode_capture_is_allowlisted_idempotent_and_ttl_bound():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store, auto_episode_ttl_days=7)
+
+    captured = manager.remember_runtime_event(
+        "已完成 4 个写入步骤",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        event_type="operation_succeeded",
+        dedupe_key="turn-1",
+        tags=["channel:meta"],
+    )
+    duplicate = manager.remember_runtime_event(
+        "已完成 4 个写入步骤",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        event_type="operation_succeeded",
+        dedupe_key="turn-1",
+        tags=["channel:meta"],
+    )
+
+    assert captured is not None
+    assert duplicate is not None
+    assert duplicate.memory_id == captured.memory_id
+    assert captured.kind == "episodic"
+    assert "auto" in captured.tags
+    assert "event:operation_succeeded" in captured.tags
+    assert captured.expires_at
+
+    assert manager.remember_runtime_event(
+        "普通查询结果",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        event_type="query_succeeded",
+        dedupe_key="turn-query",
+    ) is None
+    assert manager.recall_long_term(
+        "普通查询结果", tenant_id="tenant-a", user_id="user-a"
+    ) == []
+
+    redacted = manager.remember_runtime_event(
+        "操作失败 access_token=should-not-stay",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        event_type="operation_failed",
+        dedupe_key="turn-2",
+    )
+    assert redacted is not None
+    assert "should-not-stay" not in redacted.content
+
+
+def test_runtime_episode_capture_can_be_disabled_without_affecting_explicit_memory():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store, auto_capture_enabled=False)
+    assert manager.remember_runtime_event(
+        "已完成一次写入",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        session_id="session-a",
+        event_type="operation_succeeded",
+        dedupe_key="turn-1",
+    ) is None
+    explicit = manager.remember(
+        "用户明确要求保留的事实",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+    assert explicit.kind == "semantic"
+
+
+def test_memory_purge_removes_expired_and_old_tombstones_but_keeps_active_records():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store)
+    expired = manager.remember(
+        "过期的自动事件",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        kind="episodic",
+        session_id="session-a",
+        expires_at="2000-01-01T00:00:00+00:00",
+    )
+    active = manager.remember(
+        "仍然有效的偏好",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+    deleted = manager.remember(
+        "用户删除的记忆",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+    assert manager.forget(deleted.memory_id, tenant_id="tenant-a", user_id="user-a")
+
+    removed = manager.purge_memories(retention_days=0)
+    assert removed == 2
+    assert manager.recall(
+        "过期的自动事件", tenant_id="tenant-a", user_id="user-a"
+    ) == []
+    assert manager.recall(
+        "仍然有效的偏好", tenant_id="tenant-a", user_id="user-a"
+    )[0].memory_id == active.memory_id
 
 
 def test_session_window_and_digest_restore_after_restart():
@@ -495,6 +941,68 @@ def test_intent_prompt_keeps_stable_prefix_when_context_changes():
     assert llm.calls[0][-1]["role"] == "user"
     assert "你好" in llm.calls[0][-1]["content"]
     assert "谢谢" in llm.calls[1][-1]["content"]
+
+
+def test_context_budget_is_uniform_and_reported():
+    class FakeRuntime:
+        registry = type("Registry", (), {"list_all": lambda self: []})()
+
+        @staticmethod
+        def _build_skill_context(*_args):
+            return {
+                "tool_prompt": "t" * 9000,
+                "expert_knowledge": "k" * 9000,
+                "publisher_context": "p" * 5000,
+                "knowledge": [{"excerpt": "x" * 3000}] * 20,
+            }
+
+        @staticmethod
+        def _build_prior_tool_results_context(_session):
+            return "r" * 9000
+
+    session = type(
+        "Session",
+        (),
+        {"ctx": type("Context", (), {"metadata": {"conversation_digest": "d" * 5000}})()},
+    )()
+    context = AdTurnContext(
+        recalled_memories=[
+            {"content": "m" * 1000, "memory_id": str(index)}
+            for index in range(20)
+        ],
+        memory_context="m" * 5000,
+    )
+
+    AdTurnContextService._store_skill_context(
+        runtime=FakeRuntime(),
+        session=session,
+        safe_user_input="查询",
+        intent_type=None,
+        tenant_id="tenant-a",
+        context=context,
+    )
+
+    skill_context = session.ctx.metadata["skill_context"]
+    limits = skill_context["context_budget"]["limits"]
+    for key, limit in limits.items():
+        value = skill_context.get(key, "")
+        if isinstance(value, str):
+            assert len(value) <= limit
+    assert len(skill_context["memory"]) <= 5
+    assert len(skill_context["knowledge"]) <= 8
+    assert skill_context["context_budget"]["truncated"]
+    assert skill_context["context_budget"]["used"]["tool_prompt"] == limits["tool_prompt"]
+    model_context_fields = (
+        "tool_prompt",
+        "expert_knowledge",
+        "publisher_context",
+        "memory_context",
+        "prior_tool_results",
+        "conversation_digest",
+    )
+    assert sum(len(skill_context[key]) for key in model_context_fields) <= (
+        skill_context["context_budget"]["aggregate_limit"]
+    )
 
 
 def test_session_working_memory_has_character_budget_and_preserves_digest():

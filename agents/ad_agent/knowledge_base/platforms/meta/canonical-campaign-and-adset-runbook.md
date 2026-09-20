@@ -8,12 +8,16 @@ category: campaign_operations
 subcategory: canonical-campaign-and-adset-runbook
 platform: meta
 source: Meta Marketing API 官方文档与当前 Capability 约束
-source_ref: https://developers.facebook.com/docs/marketing-api/campaigns
+source_ref: "https://developers.facebook.com/docs/marketing-api/campaigns"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [meta, campaign, ad-set, ad, creative, objective, optimization-goal, graph-api, dry-run]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Campaign、Ad Set 与广告安全操作手册

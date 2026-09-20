@@ -8,12 +8,16 @@ category: platform_foundation
 subcategory: api-reporting-and-creative-operations
 platform: tiktok
 source: TikTok for Business API 官方文档
-source_ref: https://business-api.tiktok.com/portal/docs
+source_ref: "https://business-api.tiktok.com/portal/docs"
 version: "1.0.0"
 confidence: 0.9
 updated_at: "2026-09-08"
 tags: [tiktok, marketing-api, reporting, creative, spark-ads, events]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # TikTok Marketing API 报表、素材与投放操作方法

@@ -8,12 +8,16 @@ category: diagnostics
 subcategory: permissions-versioning-and-errors
 platform: meta
 source: Meta Marketing API 官方文档
-source_ref: https://developers.facebook.com/docs/graph-api/overview
+source_ref: "https://developers.facebook.com/docs/graph-api/overview"
 version: "1.0.0"
 confidence: 0.92
 updated_at: "2026-09-08"
 tags: [meta, marketing-api, permissions, versioning, rate-limit, recovery]
 status: published
+source_kind: "official"
+authority: "official"
+evidence_level: "reviewed"
+last_verified_at: "2026-09-08"
 ---
 
 # Meta Marketing API 权限、版本与失败恢复手册

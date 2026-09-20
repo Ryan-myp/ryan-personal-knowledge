@@ -37,6 +37,8 @@ def execute(
     runtime,
     user_input: str,
     session_id: str = None,
+    run_id: Optional[str] = None,
+    turn_id: Optional[str] = None,
     user_id: str = "anonymous",
     account_id: str = None,
     credentials: dict = None,
@@ -71,8 +73,8 @@ def execute(
         }
     """
     session_id = session_id or str(uuid.uuid4())
-    turn_id = str(uuid.uuid4())[:8]
-    run_id = str(uuid.uuid4())
+    turn_id = str(turn_id or uuid.uuid4())[:8]
+    run_id = str(run_id or uuid.uuid4())
     durable_run = bool(
         runtime._session_manager
         and callable(getattr(runtime._session_manager, "create_execution_run", None))
@@ -1348,6 +1350,7 @@ def execute(
         safe_user_input=safe_user_input,
         needs_confirmation=needs_confirmation,
         confirmation_payload=confirmation_payload,
+        confirmed=confirmed,
         creation_preflight=creation_preflight,
         recalled_memories=recalled_memories,
         memory_updates=memory_updates,
