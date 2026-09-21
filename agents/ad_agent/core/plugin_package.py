@@ -183,6 +183,56 @@ def build_plugin_manifest(
     return document
 
 
+def _verify_declared_integrity(
+    document: Mapping[str, Any],
+    manifest: PluginManifest,
+    files: Mapping[str, bytes],
+    *,
+    signing_key: Optional[str],
+    require_signature: bool,
+) -> bool:
+    """Verify a supplied package declaration against received file bytes."""
+    expected_files = document.get("files")
+    if not isinstance(expected_files, Mapping):
+        raise PluginPackageError("Plugin manifest.files must be an object")
+    normalized_expected = {
+        _safe_path(path): str(value).lower()
+        for path, value in expected_files.items()
+    }
+    if set(normalized_expected) != set(files):
+        raise PluginPackageError("Plugin manifest file list does not match package contents")
+    actual_hashes = _file_hashes(files)
+    if any(
+        not isinstance(value, str) or not re.fullmatch(_SHA256_RE, value)
+        for value in normalized_expected.values()
+    ):
+        raise PluginPackageError("Plugin manifest contains an invalid file digest")
+    if normalized_expected != actual_hashes:
+        raise PluginPackageError("Plugin manifest file digest mismatch")
+    actual_digest = package_digest(files)
+    if str(document.get("package_digest") or "").lower() != actual_digest:
+        raise PluginPackageError("Plugin package digest mismatch")
+
+    signature = document.get("signature")
+    algorithm = document.get("signature_algorithm")
+    if require_signature and not signing_key:
+        raise PluginPackageError("signing key is required for Plugin package verification")
+    if signature is None and algorithm is None:
+        if require_signature:
+            raise PluginPackageError("signed Plugin package is required")
+        return False
+    if algorithm != "hmac-sha256" or not isinstance(signature, str) or not signing_key:
+        raise PluginPackageError("Plugin package signature cannot be verified")
+    expected_signature = hmac.new(
+        str(signing_key).encode("utf-8"),
+        _signed_payload(manifest, actual_hashes, actual_digest),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature.lower(), expected_signature):
+        raise PluginPackageError("Plugin package signature mismatch")
+    return True
+
+
 def validate_plugin_payload(
     manifest_payload: Mapping[str, Any],
     raw_files: Mapping[str, Any],
@@ -199,28 +249,34 @@ def validate_plugin_payload(
     """
     if not isinstance(manifest_payload, Mapping):
         raise PluginPackageError("Plugin manifest must be an object")
+    document = dict(manifest_payload)
+    raw_manifest = document.get("manifest")
+    if raw_manifest is None:
+        raw_manifest = document
+        document = {}
+    if not isinstance(raw_manifest, Mapping):
+        raise PluginPackageError("Plugin manifest.manifest must be an object")
     try:
-        manifest = PluginManifest(**dict(manifest_payload))
+        manifest = PluginManifest(**dict(raw_manifest))
     except (TypeError, ValueError) as exc:
         raise PluginPackageError(f"invalid Plugin declaration: {exc}") from exc
     files = normalize_plugin_files(raw_files)
-    document = build_plugin_manifest(manifest, files, signing_key=signing_key)
-    # Validate the generated declaration through the same signature/hash
-    # rules as a directory package.  This keeps the two ingestion paths on one
-    # contract and avoids a second subtly different integrity implementation.
-    expected_files = document["files"]
-    actual_digest = package_digest(files)
-    signature = document.get("signature")
-    signature_verified = False
-    if require_signature and not signing_key:
-        raise PluginPackageError("signing key is required for Plugin package verification")
-    if signature is not None:
-        signature_verified = True
-    elif require_signature:
-        raise PluginPackageError("signed Plugin package is required")
-    if set(expected_files) != set(files):
-        raise PluginPackageError("Plugin manifest file list does not match package contents")
-    return PluginPackage(manifest, files, actual_digest, signature_verified)
+    # Raw management uploads have no caller-supplied integrity envelope and
+    # are normalized locally. A standard package document must be verified
+    # against the received bytes instead of being regenerated.
+    if document:
+        signature_verified = _verify_declared_integrity(
+            document,
+            manifest,
+            files,
+            signing_key=signing_key,
+            require_signature=require_signature,
+        )
+    else:
+        if require_signature:
+            raise PluginPackageError("signed Plugin package is required")
+        signature_verified = False
+    return PluginPackage(manifest, files, package_digest(files), signature_verified)
 
 
 def validate_plugin_directory(
@@ -277,41 +333,12 @@ def validate_plugin_directory(
     if len(files) > _MAX_FILES:
         raise PluginPackageError(f"Plugin package contains more than {_MAX_FILES} files")
 
-    expected_files = document.get("files")
-    if not isinstance(expected_files, Mapping):
-        raise PluginPackageError("Plugin manifest.files must be an object")
-    normalized_expected = {_safe_path(path): str(value).lower() for path, value in expected_files.items()}
-    if set(normalized_expected) != set(files):
-        raise PluginPackageError("Plugin manifest file list does not match package contents")
-    actual_hashes = _file_hashes(files)
-    if any(
-        not isinstance(value, str) or not re.fullmatch(_SHA256_RE, value)
-        for value in normalized_expected.values()
-    ):
-        raise PluginPackageError("Plugin manifest contains an invalid file digest")
-    if normalized_expected != actual_hashes:
-        raise PluginPackageError("Plugin manifest file digest mismatch")
-    actual_digest = package_digest(files)
-    if str(document.get("package_digest") or "").lower() != actual_digest:
-        raise PluginPackageError("Plugin package digest mismatch")
+    signature_verified = _verify_declared_integrity(
+        document,
+        manifest,
+        files,
+        signing_key=signing_key,
+        require_signature=require_signature,
+    )
 
-    signature = document.get("signature")
-    algorithm = document.get("signature_algorithm")
-    signature_verified = False
-    if require_signature and not signing_key:
-        raise PluginPackageError("signing key is required for Plugin package verification")
-    if signature is not None or algorithm is not None:
-        if algorithm != "hmac-sha256" or not isinstance(signature, str) or not signing_key:
-            raise PluginPackageError("Plugin package signature cannot be verified")
-        expected_signature = hmac.new(
-            str(signing_key).encode("utf-8"),
-            _signed_payload(manifest, actual_hashes, actual_digest),
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(signature.lower(), expected_signature):
-            raise PluginPackageError("Plugin package signature mismatch")
-        signature_verified = True
-    elif require_signature:
-        raise PluginPackageError("signed Plugin package is required")
-
-    return PluginPackage(manifest, files, actual_digest, signature_verified)
+    return PluginPackage(manifest, files, package_digest(files), signature_verified)

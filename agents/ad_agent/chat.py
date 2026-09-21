@@ -31,7 +31,7 @@ from agents.ad_agent.core.local_config import load_default_local_env
 load_default_local_env()
 
 from agents.ad_agent import (
-    AgentRuntime,
+    create_advertising_application,
     AdAgentStore,
 )
 from agents.ad_agent.persistence.factory import create_persistence_store
@@ -133,7 +133,7 @@ def main():
         os.environ.get("AD_AGENT_DB_PATH", Path(__file__).parent / "ad_agent.db")
     ).expanduser().resolve()
     store = create_persistence_store(sqlite_path=database_path)
-    runtime = AgentRuntime(
+    runtime = create_advertising_application(
         persistence_store=store,
         read_only_mode=False,
         execution_mode="dry_run",

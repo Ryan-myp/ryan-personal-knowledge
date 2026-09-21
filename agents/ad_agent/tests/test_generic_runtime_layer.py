@@ -9,11 +9,11 @@ from agents.ad_agent.core.interfaces import (
     ToolSchema,
 )
 from agents.ad_agent.core.policy_engine import PolicyEngine, PolicyRequest
-from agents.ad_agent.core.runtime_kernel import TurnRequest
+from agents.agent_harness import TurnRequest
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.core.tool_selection import PromptRenderer, ToolSelector
-from agents.ad_agent.core.tool_sources import StaticToolSource, ToolBinding
-from agents.ad_agent.core.turn_pipeline import (
+from agents.agent_harness import StaticToolSource, ToolBinding
+from agents.agent_harness import (
     SequentialTurnPipeline,
     TurnStageResult,
 )

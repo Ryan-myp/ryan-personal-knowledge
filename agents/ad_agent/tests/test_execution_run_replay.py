@@ -84,8 +84,7 @@ def test_parser_failure_closes_durable_run_instead_of_leaving_it_running():
         assert latest["status"] == "failed"
         assert latest["metadata"]["reason"] == "intent_parse_failed"
         assert any(
-            event.get("type") == "stage_status"
-            and event.get("stage_id") == "intent"
+            event.get("type") == "agent_end"
             and event.get("status") == "failed"
             for event in latest["events"]
         )

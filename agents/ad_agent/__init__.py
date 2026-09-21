@@ -18,6 +18,7 @@ ad_agent - 多渠道广告投放 Agent
 """
 
 from .runtime.runtime import AgentRuntime, SessionContext
+from .application import AdvertisingApplication, create_advertising_application
 from .tools.providers.meta import MetaToolSource, create_meta_tool_source
 from .tools.providers.google import GoogleToolSource, create_google_tool_source
 from .tools.providers.tiktok import TikTokToolSource, create_tiktok_tool_source
@@ -33,11 +34,14 @@ from .core.response import ResponseSynthesizer
 from .domain.ad.auth import RequestPrincipal
 from .core.plugins import PluginKind, PluginLoader, PluginManifest, PluginRegistry, PluginState
 from .core.plugin_package import PluginPackage, PluginPackageError, build_plugin_manifest
-from .core.tool_sources import ToolBinding, ToolExecutor, ToolSource, StaticToolSource
-from .core.turn_pipeline import (
-    SequentialTurnPipeline, TurnExecutionContext, TurnPipeline, TurnStageResult,
+from agents.agent_harness import (
+    StaticToolSource,
+    ToolBinding,
+    ToolExecutor,
+    ToolSource,
 )
 from .integration import advertising_skill_source, advertising_tool_source
+from .agent_definition import advertising_agent_definition
 from .plugin_management import PluginPackageManager
 from .runtime.task_executor import (
     TaskCapacityError, TaskExecutionContext, TaskExecutor, TaskExecutorError,
@@ -47,6 +51,8 @@ from .runtime.task_executor import (
 __version__ = "1.0.0"
 __all__ = [
     "AgentRuntime",
+    "AdvertisingApplication",
+    "create_advertising_application",
     "SessionContext",
     "MetaToolSource",
     "GoogleToolSource",
@@ -79,12 +85,9 @@ __all__ = [
     "ToolExecutor",
     "ToolSource",
     "StaticToolSource",
-    "SequentialTurnPipeline",
-    "TurnExecutionContext",
-    "TurnPipeline",
-    "TurnStageResult",
     "advertising_skill_source",
     "advertising_tool_source",
+    "advertising_agent_definition",
     "PluginPackageManager",
     "TaskExecutor",
     "TaskExecutionContext",

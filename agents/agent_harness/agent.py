@@ -10,8 +10,10 @@ from __future__ import annotations
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from dataclasses import replace
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
+from .context import ContextProvider, context_prompt
 from .messages import AgentMessage, ModelTurn, ToolCall
 from .results import RunResult, RunStatus
 from .runtime_kernel import TurnRequest
@@ -35,6 +37,7 @@ class ToolCallContext:
     assistant_message: AgentMessage
     tool_call: ToolCall
     state: "AgentState"
+    tool_definition: Any = None
 
 
 @dataclass
@@ -64,6 +67,8 @@ class Agent:
         after_tool_call: Optional[Callable[[ToolCallContext, Any], Any]] = None,
         should_stop_after_turn: Optional[Callable[[AgentState], bool]] = None,
         event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
+        context_provider: Optional[ContextProvider] = None,
+        input_sanitizer: Optional[Callable[[Any], Any]] = None,
     ) -> None:
         if max_turns <= 0:
             raise ValueError("max_turns must be positive")
@@ -74,6 +79,7 @@ class Agent:
         self.model = model
         self.tool_catalog = tool_catalog
         self.skill_catalog = skill_catalog
+        self._system_prompt = str(system_prompt or "")
         self.max_turns = int(max_turns)
         self.tool_execution = tool_execution
         self.max_parallel_tools = int(max_parallel_tools)
@@ -81,6 +87,8 @@ class Agent:
         self.after_tool_call = after_tool_call
         self.should_stop_after_turn = should_stop_after_turn
         self.event_callback = event_callback
+        self.context_provider = context_provider
+        self.input_sanitizer = input_sanitizer
         self.state = AgentState(
             messages=[AgentMessage.system(system_prompt)] if system_prompt else []
         )
@@ -88,6 +96,11 @@ class Agent:
         self._abort_event = threading.Event()
         self._subscribers: list[Callable[[dict[str, Any]], None]] = []
         self._sequence = 0
+
+    @property
+    def system_prompt(self) -> str:
+        """Return the immutable prompt used to seed a fresh transcript."""
+        return self._system_prompt
 
     def reset(self) -> None:
         with self._lock:
@@ -181,12 +194,55 @@ class Agent:
                 tool_calls=tuple(calls),
                 stop_reason=str(value.get("stop_reason") or "stop"),
                 usage=dict(value.get("usage") or {}),
+                context_updates=dict(value.get("context_updates") or {}),
             )
         raise TypeError("model must return ModelTurn, mapping, or string")
+
+    def _notify_model_run_end(
+        self,
+        request: TurnRequest,
+        model_turn: ModelTurn,
+        tool_results: Sequence[Mapping[str, Any]],
+    ) -> None:
+        """Allow a model adapter to shape application results at Run end."""
+        callback = getattr(self.model, "on_run_end", None)
+        if not callable(callback):
+            return
+        try:
+            callback(
+                request,
+                model_turn,
+                tuple(dict(item) for item in tool_results),
+                self.state,
+            )
+        except Exception:
+            # Application result shaping cannot break the generic lifecycle.
+            return
 
     def _call_model(self, request: TurnRequest) -> ModelTurn:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
         messages = self.state.snapshot()
+        model_request = request
+        if self.context_provider is not None:
+            build_context = getattr(self.context_provider, "build_context", None)
+            if not callable(build_context):
+                raise TypeError("context_provider must expose build_context()")
+            value = build_context(request, messages)
+            if isinstance(value, Mapping):
+                context = dict(request.context or {})
+                context["agent_context"] = dict(value)
+                model_request = replace(request, context=context)
+                prompt = context_prompt(value)
+                if prompt:
+                    messages = [
+                        AgentMessage.system(
+                            prompt,
+                            run_id=str(request.run_id or ""),
+                            turn_id=str(request.turn_id or ""),
+                            metadata={"context_type": "provider"},
+                        ),
+                        *messages,
+                    ]
         if self.skill_catalog is not None:
             skill_context = self.skill_catalog.build_context(request.user_input)
             if skill_context:
@@ -201,9 +257,9 @@ class Agent:
                 ]
         complete = getattr(self.model, "complete", None)
         if callable(complete):
-            value = complete(messages, tools, request)
+            value = complete(messages, tools, model_request)
         elif callable(self.model):
-            value = self.model(messages, tools, request)
+            value = self.model(messages, tools, model_request)
         else:
             raise TypeError("model must be callable or expose complete()")
         return self._normalize_turn(value)
@@ -214,11 +270,18 @@ class Agent:
         assistant: AgentMessage,
         call: ToolCall,
     ) -> dict[str, Any]:
+        binding = None
+        if self.tool_catalog is not None:
+            try:
+                binding = self.tool_catalog.get_binding(call.name)
+            except Exception:
+                binding = None
         context = ToolCallContext(
             request=request,
             assistant_message=assistant,
             tool_call=call,
             state=self.state,
+            tool_definition=getattr(binding, "definition", None),
         )
         if callable(self.before_tool_call):
             decision = self.before_tool_call(context)
@@ -230,11 +293,19 @@ class Agent:
                     "is_error": True,
                     "terminate": bool(decision.get("terminate")),
                 }
+                for key in (
+                    "needs_input", "needs_confirmation", "confirmation_payload",
+                ):
+                    if key in decision:
+                        result[key] = decision[key]
                 return result
         try:
             if self.tool_catalog is None:
                 raise KeyError(f"Tool '{call.name}' not found")
-            binding = self.tool_catalog.get_binding(call.name)
+            if binding is None:
+                if self.tool_catalog is None:
+                    raise KeyError(f"Tool '{call.name}' not found")
+                binding = self.tool_catalog.get_binding(call.name)
             execute = getattr(binding.executor, "execute", None)
             if callable(execute):
                 output = execute(context, dict(call.arguments))
@@ -249,6 +320,12 @@ class Agent:
                 "is_error": False,
                 "terminate": False,
             }
+            if isinstance(output, Mapping):
+                for key in (
+                    "needs_input", "needs_confirmation", "confirmation_payload",
+                ):
+                    if key in output:
+                        result[key] = output[key]
         except Exception as error:
             result = {
                 "tool_call_id": call.id,
@@ -334,7 +411,9 @@ class Agent:
             self._emit("agent_start", request)
             self._emit("turn_start", request, turn_index=0)
             user_message = AgentMessage.user(
-                request.user_input,
+                self.input_sanitizer(request.user_input)
+                if callable(self.input_sanitizer)
+                else request.user_input,
                 run_id=str(request.run_id or ""),
                 turn_id=str(request.turn_id or ""),
             )
@@ -360,6 +439,8 @@ class Agent:
                     self._emit("turn_start", request, turn_index=turn_index)
                 tool_results = []
                 model_turn = self._call_model(request)
+                if model_turn.context_updates and isinstance(request.context, dict):
+                    request.context.update(dict(model_turn.context_updates))
                 assistant = AgentMessage.assistant(
                     model_turn.content,
                     run_id=str(request.run_id or ""),
@@ -382,6 +463,15 @@ class Agent:
                             turn_id=str(request.turn_id or ""),
                             metadata={
                                 "is_error": bool(result.get("is_error")),
+                                **{
+                                    key: result[key]
+                                    for key in (
+                                        "needs_input",
+                                        "needs_confirmation",
+                                        "confirmation_payload",
+                                    )
+                                    if key in result
+                                },
                             },
                         )
                         self.state.messages.append(tool_message)
@@ -404,16 +494,37 @@ class Agent:
                         and self.should_stop_after_turn(self.state)
                     )
                 ):
+                    self._notify_model_run_end(
+                        request, model_turn, tool_results,
+                    )
+                    awaiting_input = (
+                        model_turn.stop_reason in {
+                            "awaiting_input", "awaiting_confirmation", "needs_input",
+                        }
+                        or any(
+                            bool(item.get("needs_input") or item.get("needs_confirmation"))
+                            for item in tool_results
+                        )
+                    )
+                    terminal_status = (
+                        RunStatus.FAILED
+                        if model_turn.stop_reason in {"error", "policy_blocked"}
+                        else RunStatus.AWAITING_INPUT
+                        if awaiting_input
+                        else RunStatus.SUCCEEDED
+                    )
                     result = RunResult(
                         run_id=str(request.run_id or ""),
                         turn_id=str(request.turn_id or ""),
-                        status=RunStatus.SUCCEEDED,
+                        status=terminal_status,
                         reply=last_reply,
+                        needs_input=awaiting_input,
                         data={
                             "messages": [
                                 item.to_dict() for item in self.state.messages
                             ],
                             "tool_results": tool_results,
+                            "needs_input": awaiting_input,
                         },
                     )
                     self._emit("agent_end", request, status=result.status.value)

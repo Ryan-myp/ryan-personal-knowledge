@@ -21,7 +21,7 @@ from ...core.interfaces import (
     ToolSourceModule, ToolSourceContext,
     WriteGuard, WriteReservation, RiskLevel, ToolEffect
 )
-from ...core.tool_sources import StaticToolSource, ToolBinding
+from agents.agent_harness import StaticToolSource, ToolBinding
 from ...core.tool_registry import SimpleToolRegistry
 from ...domain.ad.security import protected_update_paths
 from ...domain.ad.contracts import AdToolSourceRuntime

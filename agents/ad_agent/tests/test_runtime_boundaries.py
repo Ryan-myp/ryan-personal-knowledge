@@ -5,7 +5,7 @@ import threading
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 
-from agents.ad_agent.core.runtime_kernel import AgentRuntimeKernel, TurnRequest
+from agents.agent_harness import AgentRuntimeKernel, TurnRequest
 from agents.ad_agent.runtime.task_executor import task_outcome_status
 from agents.ad_agent.persistence.models import ToolCallRecord
 from agents.ad_agent.persistence.store import AdAgentStore
@@ -203,57 +203,25 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     assert "dv360" not in assembly.lower()
 
 
-def test_ad_turn_has_one_pipeline_entrypoint_without_compatibility_modules():
-    """New code enters directly through the application stage pipeline."""
+def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback():
+    """New code enters directly through the platform application."""
     from pathlib import Path
 
     root = Path("agents/ad_agent/runtime")
     assert not (root / "ad_turn_engine.py").exists()
     assert not (root / "ad_turn_orchestrator.py").exists()
     runtime_source = (root / "ad_runtime.py").read_text(encoding="utf-8")
-    stages_source = (root / "ad_turn_stages.py").read_text(encoding="utf-8")
     assert "def _run_unlocked" not in runtime_source
-    assert "_run_unlocked" not in stages_source
+    assert "getattr(self, \"_platform_application\"" not in runtime_source
 
 
-def test_ad_turn_pipeline_is_the_application_stage_composition_root():
+def test_ad_runtime_has_no_ad_turn_pipeline_or_stage_modules():
     from pathlib import Path
 
-    source = Path("agents/ad_agent/runtime/ad_turn_pipeline.py").read_text(
-        encoding="utf-8"
-    )
-    assert "SequentialTurnPipeline" in source
-    for stage_name in (
-        "RequestValidationStage",
-        "SessionContextStage",
-        "IntentStage",
-        "PlanningStage",
-        "ExecutionStage",
-        "ResponseStage",
-    ):
-        assert stage_name in source
-
-
-def test_ad_turn_state_is_explicit_and_keeps_domain_data_out_of_harness():
-    from pathlib import Path
-
-    state_source = Path("agents/ad_agent/runtime/ad_turn_state.py").read_text(
-        encoding="utf-8"
-    )
-    harness_source = Path("agents/agent_harness/turn_pipeline.py").read_text(
-        encoding="utf-8"
-    )
-    assert "class AdTurnState" in state_source
-    for field in (
-        "safe_user_input",
-        "intent",
-        "tool_plan",
-        "execution_plan",
-        "results",
-        "response",
-    ):
-        assert field in state_source
-    assert "ad_agent" not in harness_source
+    root = Path("agents/ad_agent/runtime")
+    assert not (root / "ad_turn_pipeline.py").exists()
+    assert not (root / "ad_turn_stages.py").exists()
+    assert not (root / "ad_turn_state.py").exists()
 
 
 def test_turn_application_services_do_not_import_provider_implementations():
@@ -262,8 +230,6 @@ def test_turn_application_services_do_not_import_provider_implementations():
 
     root = Path("agents/ad_agent/runtime")
     for name in (
-        "ad_turn_flow.py",
-        "ad_turn_stages.py",
         "ad_turn_context.py",
         "ad_turn_planning.py",
         "ad_tool_execution.py",

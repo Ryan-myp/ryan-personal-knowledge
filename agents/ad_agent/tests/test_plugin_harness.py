@@ -16,6 +16,7 @@ from agents.ad_agent.core.plugins import (
 from agents.ad_agent.core.plugin_package import (
     PluginPackageError,
     build_plugin_manifest,
+    validate_plugin_payload,
     validate_plugin_directory,
 )
 
@@ -229,6 +230,43 @@ def test_plugin_package_manifest_validates_files_and_signature(tmp_path):
     (tmp_path / "references/metrics.md").write_bytes(b"tampered")
     with pytest.raises(PluginPackageError, match="digest mismatch"):
         validate_plugin_directory(tmp_path, signing_key="package-key", require_signature=True)
+
+
+def test_plugin_payload_validates_declared_digest_and_signature():
+    manifest = PluginManifest(
+        plugin_id="managed:payload",
+        version="1.0.0",
+        kinds=("skill",),
+        source="managed",
+    )
+    files = {"SKILL.md": b"# payload\n"}
+    document = build_plugin_manifest(manifest, files, signing_key="payload-key")
+
+    package = validate_plugin_payload(
+        document,
+        files,
+        signing_key="payload-key",
+        require_signature=True,
+    )
+    assert package.signature_verified is True
+
+    tampered_digest = dict(document, package_digest="0" * 64)
+    with pytest.raises(PluginPackageError, match="digest mismatch"):
+        validate_plugin_payload(
+            tampered_digest,
+            files,
+            signing_key="payload-key",
+            require_signature=True,
+        )
+
+    tampered_signature = dict(document, signature="0" * 64)
+    with pytest.raises(PluginPackageError, match="signature mismatch"):
+        validate_plugin_payload(
+            tampered_signature,
+            files,
+            signing_key="payload-key",
+            require_signature=True,
+        )
 
 
 def test_plugin_package_loader_never_imports_package_files(tmp_path):

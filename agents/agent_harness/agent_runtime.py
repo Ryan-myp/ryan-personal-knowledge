@@ -11,6 +11,7 @@ from typing import Any, Optional
 from .ports import RuntimePorts
 from .results import RunResult
 from .run_store import RunStore, run_start_payload
+from .observability import MetricsSink
 from .skills import SkillSource
 from .runtime_kernel import (
     AgentRuntimeKernel,
@@ -34,6 +35,7 @@ class AgentRuntime:
         skill_catalog: Any = None,
         on_tool_catalog_changed: Optional[callable] = None,
         run_store: Optional[RunStore] = None,
+        metrics: Optional[MetricsSink] = None,
         session_manager: Any = None,
         session_locks: Optional[dict[str, threading.RLock]] = None,
         session_locks_guard: Optional[threading.RLock] = None,
@@ -81,6 +83,7 @@ class AgentRuntime:
         self.skill_catalog = skill_catalog
         self._on_tool_catalog_changed = on_tool_catalog_changed
         self.run_store = run_store
+        self.metrics = metrics
         self._kernel = AgentRuntimeKernel(
             session_manager=ports.session_manager,
             session_locks=ports.session_locks,
@@ -118,20 +121,19 @@ class AgentRuntime:
 
     def _execute_pipeline(self, request: TurnRequest) -> Any:
         store = self.run_store
-        if store is None:
-            return self.pipeline.execute(request)
-
-        store.start_run(**run_start_payload(request))
         original_callback = request.event_callback
 
         def observe(event: dict[str, Any]) -> None:
-            try:
-                store.append_event(str(request.run_id), dict(event))
-            except Exception:
-                # Durable event repair is an implementation concern of the
-                # bound RunStore. A transient observer failure must not turn
-                # an already-running model/provider operation into a failure.
-                pass
+            if self.metrics is not None:
+                try:
+                    self.metrics.observe(event)
+                except Exception:
+                    pass
+            if store is not None:
+                try:
+                    store.append_event(str(request.run_id), dict(event))
+                except Exception:
+                    pass
             if callable(original_callback):
                 try:
                     original_callback(event)
@@ -139,6 +141,10 @@ class AgentRuntime:
                     pass
 
         request = replace(request, event_callback=observe)
+        if store is None:
+            return self.pipeline.execute(request)
+
+        store.start_run(**run_start_payload(request))
         try:
             result = self.pipeline.execute(request)
         except Exception as error:

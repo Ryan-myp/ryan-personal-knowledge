@@ -17,6 +17,7 @@
 - **跨 Agent 复用**：广告 Skills 可作为标准 Markdown Skill Source 导出，广告 Tools 可转换为通用 Tool Source，能够接入其他 Agent；其他业务也按同一方式接入本 Harness
 - **广告创建蓝图**：广告 Provider Module 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
 - **统一插件内核**：Tool Source、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
+- **通用可观测性**：广告 Runtime 将安全 Run Trace 接入 Harness `MetricsSink`；默认指标只记录生命周期、Tool 调用计数和耗时，不保存 Prompt、参数、结果或凭证
 - **动态平台识别**：解析器从已注册 Tool/Skill 发布 namespace 和自然语言别名，不维护固定四渠道路由表
 - **版本兼容**：Tool 声明 Provider API 版本；版本差异由渠道 Client 自己的 adapter 处理，Runtime 不增加渠道分支
 - **开发契约**：后续模块遵循 [`AGENT.md`](./AGENT.md)；仓库安全与操作约束见 [`AGENTS.md`](./AGENTS.md)
@@ -455,34 +456,40 @@ Google Ads 当前使用 REST Client 而不是可选的 `google-ads` SDK。Client
 
 ## 架构设计
 
+仓库整体六层 Agent 中台架构见
+[`docs/agent-platform-architecture.md`](../../docs/agent-platform-architecture.md)。
+广告在其中属于应用场景层，复用单一通用 Agent；通用 Run/Session/Tool/Skill 执行能力由
+[`agents/agent_harness`](../agent_harness/) 与
+[`agents/agent_platform`](../agent_platform/) 提供。
+
 可直接打开交互式架构图：[`docs/ad_agent_architecture.html`](../../docs/ad_agent_architecture.html)。
 图中标注了单 Agent、多 Skills、Tool Registry、Tool Sources/Executors，以及异步 Task、Outbox、Run Event、恢复和后续 MySQL 演进关系。
 
 Runtime Harness 分为四个可组合部分：`agents/agent_harness/runtime_kernel.py` 负责最底层的请求身份规范化、
 Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/agent.py`
 提供维护 transcript 的通用 model→Tool→model loop；`agents/agent_harness/turn_pipeline.py`
-定义应用阶段、终止和错误语义；`agents/agent_harness/agent_runtime.py`
+提供通用 Turn Handler 适配契约；`agents/agent_harness/agent_runtime.py`
 提供可嵌入的 `AgentRuntime` 门面；`agents/agent_harness/tool_catalog.py`
-提供不依赖广告域的 Tool catalog。任意应用可以选择直接使用 Stateful `Agent`，
-也可以注入自己的 `TurnPipeline`。
+提供不依赖广告域的 Tool catalog。任意应用都通过同一个 Harness Agent 或
+Turn Handler 执行，不再创建业务 Pipeline。
 
-广告的 `runtime/ad_runtime.py` 是应用组合根，负责组装广告 Skills、Tools、Provider
-Modules 和业务服务。`runtime/ad_turn_pipeline.py` 是广告应用阶段组合根，按
-`AdTurnState -> AdTurnStages -> AdTurnFlow` 组织一轮请求；旧的
-`runtime/ad_turn_pipeline.py` 负责阶段组合，`runtime/ad_turn_flow.py` 负责广告业务流程。
-`runtime/runtime.py` 仅作为
-稳定导出入口。Generic Runtime 通过 opaque `TurnRequest.context` 与应用交换领域数据，
-因此新增业务 Skill/Tool 不需要把账户、渠道或业务流程分支写回 Core。
+广告的 `runtime/ad_runtime.py` 是场景组合根，负责把广告 Skills、Tools、Provider
+Modules、数据适配和基础设施资源注入唯一的平台应用。广告不再拥有自己的 Pipeline、
+Stages 或回合状态机；`runtime/ad_runtime_assembly.py` 只提供一个符合 Harness
+契约的 Turn Handler。`runtime/runtime.py` 仅作为稳定导出入口。Generic Runtime
+通过 opaque `TurnRequest.context` 与场景交换领域数据，因此新增业务 Skill/Tool
+不需要把账户、渠道或业务流程分支写回 Core。
 
 工具选择也分成两个层次：`core/tool_selection.py` 的 `ToolSelector` 只读取 Tool
 publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有界的模型上下文；
 `core/tool_selector.py` 的 `DynamicToolSelector` 负责知识库、Skill 和租户上下文的
 组合与筛选，不承担 Tool 执行、权限授予或业务路由。
 
-执行策略由 `core/policy_engine.py` 的 `PolicyEngine` 统一计算。它把 Tool 声明的
+执行策略由 `agents/agent_platform/tools/policy.py` 的
+`ToolExecutionPolicy` 统一计算。它把 Tool 声明的
 权限、Scope、Effect、live 能力、批准清单和 WriteGuard 状态转换成不可变的
 `PolicyDecision`；dry-run 规划和 live 执行因此使用同一份契约但拥有不同门槛。
-确认卡片和确认 token 仍由应用安全服务生成/消费，PolicyEngine 不解析 UI payload，
+确认卡片和确认 token 仍由应用安全服务生成/消费，ToolExecutionPolicy 不解析 UI payload，
 避免把展示协议带回 Core。
 
 ```
@@ -531,7 +538,7 @@ ad_agent/
 │   ├── interfaces.py        # 核心接口定义
 │   ├── tool_selection.py    # 通用 Tool 选择与 Prompt 渲染
 │   ├── tool_selector.py     # Skill/知识上下文兼容适配层
-│   ├── policy_engine.py     # Tool/Scope/Effect 执行策略决策
+│   ├── policy_engine.py     # 平台 ToolExecutionPolicy 的广告导出
 │   ├── tool_registry.py     # 工具注册表与来源生命周期
 │   ├── tool_sources.py      # ToolBinding/ToolSource/Executor 契约
 │   ├── turn_pipeline.py     # 通用回合阶段与终止/错误语义
@@ -539,10 +546,7 @@ ad_agent/
 ├── runtime/
 │   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
 │   ├── ad_runtime.py        # 广告应用组合根
-│   ├── ad_turn_pipeline.py  # 广告阶段组合
-│   ├── ad_turn_stages.py    # 广告阶段实现
-│   ├── ad_turn_state.py     # 广告回合状态
-│   ├── ad_turn_flow.py      # 广告业务流程
+│   ├── ad_runtime_assembly.py # AgentPlatform 场景装配
 │   ├── task_executor.py     # 通用异步 Task 队列与租约
 │   ├── scheduler.py         # 通用定时任务调度
 │   ├── supervisor.py        # 后台 worker 生命周期

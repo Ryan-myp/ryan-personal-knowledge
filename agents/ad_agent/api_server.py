@@ -43,7 +43,8 @@ from agents.ad_agent.core.local_config import load_default_local_env, load_local
 load_default_local_env()
 
 # 导入 Agent 核心模块
-from agents.ad_agent import AgentRuntime
+from agents.ad_agent import AdvertisingApplication, create_advertising_application
+from agents.agent_harness.redaction import redact_for_persistence
 from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.core.plugin_package import PluginPackageError
 from agents.ad_agent.core.memory import MEMORY_KINDS
@@ -79,7 +80,7 @@ BUILTIN_SKILLS_ROOT = Path(__file__).parent / "skills"
 builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 
 # 全局 runtime
-runtime: Optional[AgentRuntime] = None
+runtime: Optional[AdvertisingApplication] = None
 mcp_manager: Optional[MCPServerManager] = None
 runtime_mcp_servers: Optional[RuntimeMCPServers] = None
 runtime_mcp_servers_app = None
@@ -158,7 +159,7 @@ def _api_key_principals() -> dict[str, dict]:
 
 def _safe_exception_text(error: Exception) -> str:
     """Keep provider/client exception text from becoming a secret sink."""
-    return AgentRuntime._redact_for_persistence(str(error))
+    return redact_for_persistence(str(error))
 
 
 def _authorize_request(
@@ -233,7 +234,7 @@ def _init_runtime():
             backend=database_config.get("backend"),
             database_url=database_config.get("url"),
         )
-        runtime = AgentRuntime(
+        runtime = create_advertising_application(
             persistence_store=store,
             read_only_mode=read_only_mode,
             execution_mode=execution_mode,
@@ -2902,7 +2903,7 @@ async def chat_stream(
                 if not isinstance(item, dict):
                     continue
                 safe_results.append({
-                    key: AgentRuntime._redact_for_persistence(item.get(key))
+                    key: redact_for_persistence(item.get(key))
                     for key in ("tool", "platform", "resource_type", "success", "error", "needs_confirmation", "skipped", "data")
                     if key in item
                 })
@@ -2931,14 +2932,14 @@ async def chat_stream(
                 "trace_id": (reply_marker or {}).get("trace_id"),
                 "seq": (reply_marker or {}).get("seq"),
                 "status": "awaiting_confirmation" if result.get("needs_confirmation") else "succeeded",
-                "content": AgentRuntime._redact_for_persistence(result.get("reply", "")),
+                "content": redact_for_persistence(result.get("reply", "")),
                 "session_id": result.get("session_id"),
                 "turn_id": result.get("turn_id"),
                 "run_id": run_id,
                 "needs_confirmation": bool(result.get("needs_confirmation")),
-                "confirmation_payload": AgentRuntime._redact_for_persistence(result.get("confirmation_payload")),
+                "confirmation_payload": redact_for_persistence(result.get("confirmation_payload")),
                 "results": safe_results,
-                "ui": AgentRuntime._redact_for_persistence(result.get("ui") or {}),
+                "ui": redact_for_persistence(result.get("ui") or {}),
             })
             yield event(final_event or {
                 "type": "done",

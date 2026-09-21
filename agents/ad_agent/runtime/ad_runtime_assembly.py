@@ -4,11 +4,9 @@
 every infrastructure object should be constructed.  This module owns the
 application composition graph and returns explicit components to the facade.
 
-The assembly is intentionally not a generic Runtime.  It is the advertising
-application's composition root: it may connect advertising services to the
-generic Kernel, durable ports and worker supervisor, but it must not add
-provider branches or business workflow decisions.  A different application
-can reuse the Core Kernel and worker services with its own assembly.
+The assembly is the advertising scenario's composition root. It contributes
+Skills, Tools, data adapters and lifecycle resources to the generic Runtime;
+the Harness owns the only Run/Session/Turn entry point.
 """
 
 from __future__ import annotations
@@ -17,10 +15,27 @@ import logging
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from agents.agent_harness import AgentRuntime, RuntimePorts
+from agents.agent_harness import (
+    AgentRuntime,
+    InMemorySkillCatalog,
+    RuntimePorts,
+    ToolCall,
+    ToolCallContext,
+    TurnRequest,
+)
+from agents.agent_platform import (
+    AgentDefinition,
+    AgentPlatform,
+    PlatformApplication,
+    PlatformDependencies,
+    ScenarioDefinition,
+)
+from agents.agent_platform.tools.policy import ToolExecutionPolicy
+from agents.agent_platform.runtime import DataLayer, InfrastructureLayer, IntegrationLayer
 from ..core.memory import MemoryManager
+from ..agent_definition import advertising_agent_definition
 from ..domain.ad.auth import RequestPrincipal
 from ..domain.ad.security import ACCOUNT_SCOPE_FIELDS
 from ..persistence.interfaces import PersistenceBackend
@@ -31,7 +46,11 @@ from .ad_conversation_services import AdConversationServices
 from .ad_persistence_services import AdPersistenceServices
 from .ad_session_services import AdSessionServices
 from .ad_task_services import AdTaskServices
-from .ad_turn_pipeline import AdTurnPipeline
+from ..integration import (
+    AdvertisingContextProvider,
+    AdvertisingModelAdapter,
+    AdvertisingToolCatalog,
+)
 from .ad_workflow_services import AdWorkflowServices
 from .input_builder import ToolInputBuilder
 from .outbox import OutboxPublisher
@@ -163,6 +182,7 @@ class AdRuntimeComponents:
     workflow_services: AdWorkflowServices
     task_services: AdTaskServices
     runtime_kernel: AgentRuntime
+    platform_application: PlatformApplication
     tool_executor: ToolExecutor
     supervisor: RuntimeSupervisor
     start_background_workers: bool
@@ -186,6 +206,7 @@ class AdRuntimeComponents:
             "workflow_services": self.workflow_services,
             "task_services": self.task_services,
             "_runtime_kernel": self.runtime_kernel,
+            "_platform_application": self.platform_application,
             "tool_executor": self.tool_executor,
             "supervisor": self.supervisor,
         }
@@ -279,32 +300,246 @@ class AdRuntimeAssembly:
         session_services = AdSessionServices(runtime)
         workflow_services = AdWorkflowServices(runtime)
         task_services = AdTaskServices(runtime)
-        turn_pipeline = AdTurnPipeline(runtime)
         run_store = (
             AdRunStoreAdapter(session_manager, runtime)
             if session_manager is not None else None
         )
-        runtime_kernel = AgentRuntime(
-            ports=RuntimePorts(
-                session_manager=session_manager,
-                session_locks=runtime._session_locks,
-                session_locks_guard=runtime._session_locks_guard,
-                lease_owner=runtime._session_lease_owner,
-                lease_seconds=runtime.session_lease_seconds,
-                mode_context=mode_context,
-                validate_mode=runtime._validate_execution_mode,
-                resolve_mode=lambda tenant, user, _requested: runtime.get_execution_mode(
-                    tenant, user
-                ),
-                assert_ready=runtime.assert_llm_ready,
-                ensure_session=runtime._ensure_kernel_session,
-                refresh_session=runtime._refresh_kernel_session,
-                busy_error=busy_error,
+        def policy_scope_check(
+            tool: Any, request: TurnRequest, arguments: Mapping[str, Any],
+        ) -> Optional[tuple[str, str]]:
+            """Inject the advertising account boundary into generic policy."""
+            protected = runtime.security.validate_input_redline(arguments)
+            if protected:
+                return (
+                    "protected_input",
+                    "请求包含禁止传入的凭证/账户配置字段："
+                    + ", ".join(protected),
+                )
+            platform = runtime._canonical_platform(
+                str(getattr(tool, "namespace", "") or "")
+            )
+            if (
+                str(getattr(request, "execution_mode", "") or "").lower() == "live"
+                and bool(getattr(tool, "is_write_tool", False))
+                and runtime.write_guard is None
+            ):
+                return (
+                    "write_guard_missing",
+                    "live 写操作必须配置 WriteGuard；已拒绝执行",
+                )
+            scoped_account = None
+            if isinstance(request.context, Mapping):
+                platform_params = request.context.get("platform_params")
+                if isinstance(platform_params, Mapping):
+                    for key, values in platform_params.items():
+                        if (
+                            runtime._resolve_platform_identifier(str(key))
+                            == runtime._resolve_platform_identifier(platform)
+                            and isinstance(values, Mapping)
+                        ):
+                            for field in (
+                                getattr(tool, "scope_fields", ()) or (
+                                    "account_id", "ad_account_id",
+                                    "advertiser_id", "customer_id",
+                                )
+                            ):
+                                if values.get(field) not in (None, ""):
+                                    scoped_account = values[field]
+                                    break
+                        if scoped_account not in (None, ""):
+                            break
+            account = (
+                scoped_account
+                or (request.context.get("account_id")
+                    if isinstance(request.context, Mapping) else None)
+                or next(
+                    (
+                        arguments.get(field)
+                        for field in getattr(tool, "scope_fields", ()) or ()
+                        if arguments.get(field) not in (None, "")
+                    ),
+                    None,
+                )
+            )
+            if not account and (
+                bool(getattr(tool, "is_write_tool", False))
+                or runtime.enforce_account_scope
+            ):
+                if bool(getattr(tool, "is_write_tool", False)):
+                    return "confirmation_required", "请求缺少受控账户范围，请先提供账户并确认"
+                return "scope_required", "请求缺少受控账户范围"
+            principal = getattr(request, "principal", None)
+            account_scope = getattr(principal, "account_scope", None)
+            if account_scope is not None and account:
+                allowed, message = runtime._validate_account_with_principal(
+                    platform,
+                    str(account),
+                    bool(getattr(tool, "is_write_tool", False)),
+                    account_scope,
+                )
+                if not allowed:
+                    return "scope_denied", str(message)
+            elif account and (
+                bool(getattr(tool, "is_write_tool", False))
+                or runtime.enforce_account_scope
+            ):
+                allowed, message = runtime._validate_account_for_tool(
+                    platform,
+                    str(account),
+                    bool(getattr(tool, "is_write_tool", False)),
+                )
+                if not allowed:
+                    return "scope_denied", str(message)
+            if (
+                str(getattr(request, "execution_mode", "") or "").lower() == "live"
+                and bool(getattr(tool, "is_write_tool", False))
+                and isinstance(request.context, Mapping)
+                and request.context.get("confirmed")
+            ):
+                provided = request.context.get("confirmation_payload")
+                if not isinstance(provided, Mapping):
+                    return (
+                        "confirmation_required",
+                        "confirmed=true 必须携带当前计划的 confirmation_payload",
+                    )
+                context = ToolCallContext(
+                    request=request,
+                    assistant_message=None,
+                    tool_call=ToolCall(
+                        id="policy-confirmation",
+                        name=str(getattr(tool, "name", "") or ""),
+                        arguments=dict(arguments),
+                    ),
+                    state=None,
+                    tool_definition=tool,
+                )
+                expected = confirmation_builder(context, tool, arguments)
+                if not runtime.security.confirmation_matches(provided, expected or {}):
+                    return (
+                        "confirmation_mismatch",
+                        "确认信息与当前写入计划不匹配，已拒绝执行",
+                    )
+                approval_ok, approval_error = (
+                    runtime.security.validate_confirmation_record(expected, provided)
+                )
+                if not approval_ok:
+                    return (
+                        "confirmation_invalid",
+                        f"确认记录无效：{approval_error}",
+                    )
+            return None
+
+        def confirmation_builder(
+            context: Any,
+            tool: Any,
+            arguments: Mapping[str, Any],
+        ) -> Mapping[str, Any] | None:
+            """Create the application approval binding without owning Run state."""
+            request = context.request
+            request_context = (
+                request.context if isinstance(request.context, Mapping) else {}
+            )
+            account = (
+                request_context.get("account_id")
+                or next(
+                    (
+                        arguments.get(field)
+                        for field in getattr(tool, "scope_fields", ()) or ()
+                        if arguments.get(field) not in (None, "")
+                    ),
+                    None,
+                )
+            )
+            if account in (None, ""):
+                return {
+                    "type": "ask_account",
+                    "platform": str(getattr(tool, "namespace", "") or ""),
+                    "question": "请提供要操作的广告账户 ID。",
+                }
+            related_tools = [
+                candidate for candidate in runtime.registry.list_all()
+                if (
+                    getattr(candidate, "is_write_tool", False)
+                    and runtime._canonical_platform(
+                        str(getattr(candidate, "namespace", "") or "")
+                    ) == runtime._canonical_platform(
+                        str(getattr(tool, "namespace", "") or "")
+                    )
+                    and set(getattr(candidate, "intent_types", ()) or ())
+                    & set(getattr(tool, "intent_types", ()) or ())
+                )
+            ]
+            is_chain = (
+                bool(getattr(tool, "action", "") == "create")
+                and any(
+                    getattr(candidate, "parent_resource_type", None)
+                    for candidate in related_tools
+                )
+            )
+            if is_chain:
+                incoming = request_context.get("confirmation_payload")
+                if (
+                    bool(request_context.get("confirmed"))
+                    and isinstance(incoming, Mapping)
+                    and incoming.get("type") == "confirm_write_plan"
+                ):
+                    return dict(incoming)
+                expected = security.confirmation_chain_plan(
+                    str(request.session_id or ""),
+                    str(request.user_id or "anonymous"),
+                    str(account),
+                    str(getattr(tool, "namespace", "") or ""),
+                    related_tools,
+                    dict(arguments),
+                    preview={"tools": [candidate.name for candidate in related_tools]},
+                )
+                confirmed = bool(request_context.get("confirmed"))
+                return security.prepare_confirmation(
+                    expected,
+                    create=not confirmed,
+                )
+            expected = security.confirmation_plan(
+                str(request.session_id or ""),
+                str(request.user_id or "anonymous"),
+                str(account),
+                tool,
+                dict(arguments),
+                preview={"tool": str(getattr(tool, "name", "") or ""), "input": dict(arguments)},
+            )
+            expected["type"] = "confirm_write"
+            confirmed = bool(request_context.get("confirmed"))
+            return security.prepare_confirmation(
+                expected,
+                create=not confirmed,
+            )
+
+        tool_policy = ToolExecutionPolicy(
+            permissions=frozenset(runtime._granted_permissions),
+            allow_live_writes=bool(runtime.allow_live_writes),
+            live_approved_tools=frozenset(runtime._live_approved_tools),
+            # The concrete WriteGuard is supplied by the selected Tool Source
+            # before a live call. The dynamic scope check below remains the
+            # source of truth for this application-owned resource.
+            write_guard_configured=True,
+            require_confirmation_for_writes=True,
+            before_check=policy_scope_check,
+            confirmation_builder=confirmation_builder,
+        )
+        ports = RuntimePorts(
+            session_manager=session_manager,
+            session_locks=runtime._session_locks,
+            session_locks_guard=runtime._session_locks_guard,
+            lease_owner=runtime._session_lease_owner,
+            lease_seconds=runtime.session_lease_seconds,
+            mode_context=mode_context,
+            validate_mode=runtime._validate_execution_mode,
+            resolve_mode=lambda tenant, user, _requested: runtime.get_execution_mode(
+                tenant, user
             ),
-            pipeline=turn_pipeline,
-            run_store=run_store,
-            tool_registry=runtime.registry,
-            on_tool_catalog_changed=runtime._on_generic_tool_catalog_changed,
+            assert_ready=runtime.assert_llm_ready,
+            ensure_session=runtime._ensure_kernel_session,
+            refresh_session=runtime._refresh_kernel_session,
+            busy_error=busy_error,
         )
         tool_executor = ToolExecutor(services)
         supervisor = RuntimeSupervisor(
@@ -329,6 +564,37 @@ class AdRuntimeAssembly:
             start_background_workers=False,
             create_background_workers=options.start_background_workers,
         )
+        platform = AgentPlatform()
+        platform.register_agent(advertising_agent_definition())
+        platform.register_scenario(ScenarioDefinition(
+            scenario_id="advertising",
+            agent_id=platform.agent_id,
+            display_name="Advertising",
+        ))
+        platform_application = platform.create_application(
+            "advertising",
+            model=AdvertisingModelAdapter(runtime),
+            dependencies=PlatformDependencies(
+                data=DataLayer(run_store=run_store),
+                integrations=IntegrationLayer(registry=runtime.registry),
+                infrastructure=InfrastructureLayer(
+                    resources=(supervisor,) if options.start_background_workers else (),
+                ),
+            ),
+            options={
+                "ports": ports,
+                "tool_catalog": AdvertisingToolCatalog(runtime),
+                "skill_catalog": InMemorySkillCatalog(),
+                "tool_policy": tool_policy,
+                "context_provider": AdvertisingContextProvider(runtime),
+                "input_sanitizer": runtime._redact_for_persistence,
+                "run_store": run_store,
+                "metrics": getattr(runtime, "metrics", None),
+                "max_turns": max(4, int(runtime.max_tool_calls) + 2),
+                "tool_execution": "sequential",
+            },
+        )
+        runtime_kernel = platform_application.runtime
         return AdRuntimeComponents(
             persistence_store=store,
             session_manager=session_manager,
@@ -346,6 +612,7 @@ class AdRuntimeAssembly:
             workflow_services=workflow_services,
             task_services=task_services,
             runtime_kernel=runtime_kernel,
+            platform_application=platform_application,
             tool_executor=tool_executor,
             supervisor=supervisor,
             start_background_workers=options.start_background_workers,

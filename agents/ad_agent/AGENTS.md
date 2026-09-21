@@ -25,8 +25,8 @@ Agent 运行时、测试、评测、审计和知识库维护脚本统一使用 P
 Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权、可审计的动作；Executor 负责具体实现。广告项目中的 Tool Source 只是 Provider Module 兼容实现，不是通用 Runtime 必需层。
 
 通用 Run Kernel 统一负责 `run_id`、`turn_id`、身份规范化、Session 并发、租约、
-执行模式和取消/租约丢失信号。应用只通过 `TurnPipeline` 提供解析、规划、执行和回复
-阶段；广告的 `AdTurnPipeline` 是应用适配器，不是通用 Runtime 的第二套入口。
+执行模式和取消/租约丢失信号。应用只向 Harness 注入通用 Turn Handler；广告不再
+拥有自己的 Pipeline、Stages 或第二套回合状态机。
 
 - 业务 Skill 不得直接 import `api_clients/`、持有渠道凭证或自己发 HTTP 请求。
 - `runtime/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。

@@ -29,6 +29,7 @@ from ..core.interfaces import (
     ToolResult, ToolSourceModule,
     ToolRegistry, WriteGuard, IntentParser, IntentRouter,
     ParsedIntent, ToolEffect, ExecutionMode, EffectReconciler,
+    ToolDefinition,
 )
 from ..core.tool_registry import GuardedToolRegistry, SimpleToolRegistry, validate_tool_input
 from ..core.intent import LLMIntentParser, SimpleIntentRouter
@@ -50,7 +51,10 @@ from ..features.factory import discover_features, feature_for_intent
 from ..features.factory import discover_response_renderer
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
-from ..core.policy_engine import PolicyEngine, PolicyRequest
+from agents.agent_platform.tools.policy import (
+    PolicyRequest,
+    ToolExecutionPolicy,
+)
 from ..core.memory import MemoryManager
 from ..domain.ad.knowledge import KnowledgeProvider, MarkdownWikiKnowledgeProvider
 from ..knowledge_management import ManagedKnowledgeProvider
@@ -81,7 +85,7 @@ from .ad_runtime_facades import (
     AdTaskRuntimeFacade,
     AdWorkflowRuntimeFacade,
 )
-from ..core.runtime_kernel import AgentRuntimeKernel, TurnRequest
+from agents.agent_harness import AgentRuntimeKernel, MetricsSink, TurnRequest
 from ..persistence.interfaces import PersistenceBackend
 
 logger = logging.getLogger(__name__)
@@ -187,6 +191,7 @@ class AgentRuntime(
         start_background_workers: bool = True,
         conversation_title_use_llm: bool = False,
         auto_memory_capture_enabled: bool = True,
+        metrics: Optional[MetricsSink] = None,
     ):
         base_registry = registry or SimpleToolRegistry()
         self.registry = (
@@ -203,6 +208,7 @@ class AgentRuntime(
         self.provider_bindings = ProviderBindings()
         self.require_llm = bool(require_llm)
         self.auto_memory_capture_enabled = bool(auto_memory_capture_enabled)
+        self.metrics = metrics
         self.agent_profile = AgentProfile(
             name="ad-agent",
             role="广告投放与分析助手",
@@ -384,7 +390,7 @@ class AgentRuntime(
         # One deterministic policy evaluator is shared by the application
         # gates. UI confirmation remains an application/security concern, but
         # permission calculation must not be duplicated across services.
-        self.policy_engine = PolicyEngine()
+        self.policy_engine = ToolExecutionPolicy()
         self.policies: list[RuntimePolicy] = list(policies or [])
         if self.policies:
             self.tool_selector.set_policies(self.policies)
@@ -708,8 +714,12 @@ class AgentRuntime(
         *,
         source_id: str = "local",
     ) -> None:
-        """Register one provider-neutral Tool through the Harness seam."""
-        self._runtime_kernel.register_tool(
+        """Register one Tool in the live catalog used by the generic Agent."""
+        if isinstance(definition, ToolDefinition):
+            self.registry.register(definition, executor)
+            self._on_generic_tool_catalog_changed()
+            return
+        self._platform_application.register_tool(
             definition, executor, source_id=source_id,
         )
 
@@ -717,11 +727,22 @@ class AgentRuntime(
         """Register a standard Tool Source or provider-owned Tool Source."""
         if callable(getattr(source, "configure", None)):
             return self.register_provider_tool_source(source)
-        return self._runtime_kernel.register_tool_source(source)
+        bindings = getattr(source, "list_bindings", None)
+        if callable(bindings):
+            values = list(bindings())
+            if all(isinstance(item.definition, ToolDefinition) for item in values):
+                names = self.registry.register_source(source)
+                self._on_generic_tool_catalog_changed()
+                return names
+        return self._platform_application.register_tool_source(source)
 
     def unregister_tool_source(self, source_id: str) -> list[str]:
         """Unload a complete Tool source and refresh parser discovery."""
-        return self._runtime_kernel.unregister_tool_source(source_id)
+        names = self.registry.unregister_source(source_id)
+        if names:
+            self._on_generic_tool_catalog_changed()
+            return names
+        return self._platform_application.unregister_tool_source(source_id)
 
     @staticmethod
     def _canonical_platform(platform: str) -> str:
@@ -1555,10 +1576,12 @@ class AgentRuntime(
         task_id: Optional[str] = None,
     ) -> dict:
         """Execute one turn through the business-neutral Runtime Kernel."""
-        return self._runtime_kernel.run(
+        platform_runtime = self._platform_application
+        effective_session_id = str(session_id or uuid.uuid4())
+        result = platform_runtime.run(
             TurnRequest(
                 user_input=user_input,
-                session_id=session_id,
+                session_id=effective_session_id,
                 user_id=user_id,
                 tenant_id=tenant_id or "default",
                 # The generic Kernel treats this envelope as opaque. Only
@@ -1579,6 +1602,127 @@ class AgentRuntime(
                 task_id=task_id,
             )
         )
+        to_dict = getattr(result, "to_dict", None)
+        payload = to_dict() if callable(to_dict) else result
+        if not isinstance(payload, dict):
+            return payload
+        adapter = getattr(
+            getattr(platform_runtime, "agent", None), "model", None
+        )
+        completed = (
+            adapter.take_completed(str(payload.get("run_id") or ""))
+            if callable(getattr(adapter, "take_completed", None))
+            else {}
+        )
+        payload.setdefault("session_id", effective_session_id)
+        if not payload.get("reply") and completed.get("last_reply"):
+            payload["reply"] = str(completed["last_reply"])
+        payload.setdefault("intent", (
+            completed.get("intent").to_dict()
+            if callable(getattr(completed.get("intent"), "to_dict", None))
+            else None
+        ))
+        payload.setdefault("results", list(completed.get("last_results") or []))
+        payload.setdefault("policy_errors", list(completed.get("policy_errors") or []))
+        for key, default in (
+            ("tool_selection", None),
+            ("memory", []),
+            ("memory_updates", []),
+            ("execution_plan", {}),
+            ("workflow_id", None),
+            ("ui", {}),
+            ("response_source", "renderer"),
+        ):
+            payload.setdefault(key, completed.get(key, default))
+        for key in (
+            "resource_results",
+            "cross_channel_summary",
+            "cross_channel_insights",
+            "cross_channel_budget_plan",
+            "cross_channel_export",
+            "clarification",
+            "creation_validation",
+        ):
+            if key in completed:
+                payload.setdefault(key, completed[key])
+        if completed.get("error_type"):
+            payload.setdefault(
+                "run_metadata",
+                {"error_type": str(completed["error_type"])},
+            )
+        if completed.get("reason") and self._session_manager is not None:
+            self._session_manager.append_execution_run_event(
+                str(payload.get("run_id") or ""),
+                {
+                    "type": "stage_status",
+                    "stage_id": "intent",
+                    "status": "failed",
+                    "run_id": str(payload.get("run_id") or ""),
+                    "turn_id": str(payload.get("turn_id") or ""),
+                },
+            )
+            self._session_manager.update_execution_run(
+                str(payload.get("run_id") or ""),
+                status="failed",
+                metadata={"reason": str(completed["reason"])},
+            )
+        tool_plan: dict[str, list[str]] = {}
+        for call in completed.get("calls") or ():
+            name = str(getattr(call, "name", "") or "")
+            if not name:
+                continue
+            try:
+                definition, _handler = self.registry.get(name)
+            except KeyError:
+                continue
+            tool_plan.setdefault(str(definition.namespace), []).append(name)
+        payload.setdefault(
+            "tool_plan",
+            completed.get("tool_plan") or tool_plan,
+        )
+        payload.setdefault(
+            "needs_confirmation",
+            any(item.get("needs_confirmation") for item in payload["results"]),
+        )
+        payload.setdefault("confirmation_payload", next(
+            (
+                item.get("confirmation_payload")
+                for item in payload["results"]
+                if isinstance(item, dict) and item.get("confirmation_payload")
+            ),
+            None,
+        ))
+        payload.setdefault(
+            "needs_input",
+            bool(
+                completed.get("needs_input")
+                or completed.get("needs_confirmation")
+                or any(
+                    item.get("needs_input") or item.get("needs_confirmation")
+                    for item in payload["results"]
+                    if isinstance(item, dict)
+                )
+            ),
+        )
+        session = self._sessions.get(effective_session_id)
+        if session is not None:
+            trace = ExecutionTrace(
+                turn_id=str(payload.get("turn_id") or ""),
+                redactor=self._redact_for_persistence,
+            )
+            trace.start()
+            trace.reply()
+            trace.done(
+                "failed" if payload.get("status") == "failed" else "succeeded"
+            )
+            self.persist_conversation_turn(
+                session,
+                str(payload.get("turn_id") or ""),
+                self._redact_for_persistence(user_input),
+                str(payload.get("reply") or ""),
+                execution_trace=trace,
+            )
+        return payload
 
     def _ensure_kernel_session(self, request: TurnRequest) -> "SessionContext":
         """Interpret the opaque Kernel context at the advertising boundary."""

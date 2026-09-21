@@ -16,7 +16,7 @@ from .interfaces import (
     ToolDefinition, ToolHandler, ToolRegistry, ToolResult,
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema
 )
-from .tool_sources import ToolBinding, ToolSource
+from agents.agent_harness import ToolBinding, ToolSource
 from .namespace import normalize_namespace
 
 

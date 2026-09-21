@@ -38,7 +38,7 @@ from .core.interfaces import (
 )
 from .core.security import is_sensitive_field, redact_sensitive_text
 from .core.tool_registry import validate_tool_input
-from .core.tool_sources import StaticToolSource, ToolBinding
+from agents.agent_harness import StaticToolSource, ToolBinding
 from .persistence.errors import PersistenceConflictError
 
 

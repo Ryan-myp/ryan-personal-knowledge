@@ -44,6 +44,18 @@ class TurnPipeline(Protocol):
         ...
 
 
+class CallableTurnPipeline:
+    """Adapt one application turn handler to the generic Runtime contract."""
+
+    def __init__(self, handler: Callable[[TurnRequest], Any]) -> None:
+        if not callable(handler):
+            raise TypeError("turn handler must be callable")
+        self.handler = handler
+
+    def execute(self, request: TurnRequest) -> Any:
+        return self.handler(request)
+
+
 class SequentialTurnPipeline:
     """Deterministic pipeline with explicit terminal and error semantics."""
 
@@ -116,6 +128,7 @@ class SequentialTurnPipeline:
 
 
 __all__ = [
+    "CallableTurnPipeline",
     "SequentialTurnPipeline",
     "TurnExecutionContext",
     "TurnPipeline",

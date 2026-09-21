@@ -1,5 +1,6 @@
 import threading
 from contextvars import ContextVar
+from pathlib import Path
 
 from agents.agent_harness import (
     AgentRuntime,
@@ -27,6 +28,11 @@ def _ports(calls):
 
 
 def test_agent_harness_is_importable_without_ad_agent_runtime():
+    import agents.agent_harness as harness
+
+    assert harness.__version__ == "0.1.0"
+    assert (Path(__file__).resolve().parents[2] / "agent_harness" / "pyproject.toml").is_file()
+
     calls = []
     pipeline = SequentialTurnPipeline(
         [
@@ -43,6 +49,22 @@ def test_agent_harness_is_importable_without_ad_agent_runtime():
     assert result["run_id"]
     assert result["turn_id"]
     assert calls[0][0] == "ensure"
+
+
+def test_ad_application_does_not_publish_a_second_harness_import_surface():
+    """The application must use the standalone Harness package directly."""
+    from pathlib import Path
+
+    core = Path(__file__).resolve().parents[1] / "core"
+    forbidden = {
+        "agent_runtime.py",
+        "runtime_kernel.py",
+        "tool_sources.py",
+        "turn_pipeline.py",
+    }
+    assert forbidden.isdisjoint(
+        path.name for path in core.iterdir() if path.is_file()
+    )
 
 
 def test_run_result_normalizes_application_payload_without_losing_data():

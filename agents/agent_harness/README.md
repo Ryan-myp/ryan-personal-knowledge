@@ -1,13 +1,23 @@
 # Agent Harness
 
+`agents/agent_platform/` 在 Harness 之上提供企业级六层平台目录：
+应用场景、Agent、核心能力、数据、集成和基础设施。Harness 本身只负责中台执行内核，
+不包含广告或其他业务；产品通过 `AgentDefinition`、`ScenarioDefinition`、Skill Source
+和 Tool Source 接入。
+
 `agents.agent_harness` is the application-neutral Agent core. It does not know
 advertising channels, provider details, MCP servers, credentials or
 business workflows.
 
+The public package boundary is `agents.agent_harness`. Applications should
+import Runtime, Pipeline, Skill and Tool contracts from this package directly.
+An application-specific package may adapt these contracts, but it must not
+publish a second Runtime or compatibility import surface.
+
 ```text
 AgentRuntime
   -> Runtime Kernel       identity, session lease, mode, Run lifecycle
-  -> Agent / TurnPipeline model turns and application stages
+  -> Agent / Turn Handler model turns and application execution
   -> SkillCatalog          bounded advisory context
   -> ToolCatalog            Tool definitions and trusted executors
   -> RunStore              durable Run/events port
@@ -32,6 +42,8 @@ Applications inject:
   `MarkdownSkillDirectorySource`;
 - a `ToolCatalog` and `ToolSource` backed by local, SDK/HTTP or MCP Tool
   bindings;
+- one request-level Turn Handler when the application needs a deterministic
+  orchestration adapter;
 - policy hooks such as `before_tool_call` and `after_tool_call`;
 - an optional `RunStore` and session implementation.
 
@@ -54,10 +66,35 @@ app.register_tool_source(my_tool_source)
 result = app.prompt("Help me with a ticket")
 ```
 
+The Harness can also be built as a standalone wheel:
+
+```bash
+python -m pip wheel --no-deps agents/agent_harness
+```
+
+The wheel exposes only `agents.agent_harness` and has no advertising or
+provider dependency.
+
+Run metrics are opt-in and lifecycle-only:
+
+```python
+from agents.agent_harness import AgentApplication, InMemoryMetrics
+
+metrics = InMemoryMetrics()
+app = AgentApplication.create(model=my_model, metrics=metrics)
+app.prompt("Help me with a ticket")
+print(metrics.snapshot())
+```
+
+Applications can replace `InMemoryMetrics` with an adapter implementing
+`MetricsSink`. The built-in collector does not retain prompts, arguments,
+results, exceptions, or credentials.
+
 Skill directories are advisory context only. They never register an
 executable Tool, receive credentials or bypass the Tool policy hook.
 
 The Harness is imported from the repository source tree through the existing
 Python 3.13 project environment. The repository currently runs the agent
-service with `PYTHONPATH=.`; packaging it as a separate distribution is a
-follow-up deployment concern, not a runtime dependency on `ad_agent`.
+service with `PYTHONPATH=.`; the same public package can now be built and
+installed independently through `agents/agent_harness/pyproject.toml`. The
+package publishes `py.typed` and an explicit `__version__`.

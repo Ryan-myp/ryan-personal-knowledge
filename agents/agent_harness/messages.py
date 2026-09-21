@@ -96,9 +96,13 @@ class ModelTurn:
     tool_calls: Sequence[ToolCall] = field(default_factory=tuple)
     stop_reason: str = "stop"
     usage: Mapping[str, Any] = field(default_factory=dict)
+    context_updates: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "tool_calls", tuple(self.tool_calls or ()))
+        object.__setattr__(
+            self, "context_updates", dict(self.context_updates or {})
+        )
 
 
 __all__ = ["AgentMessage", "MessageRole", "ModelTurn", "ToolCall"]

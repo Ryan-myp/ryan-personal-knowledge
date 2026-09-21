@@ -10,9 +10,8 @@ from agents.ad_agent.core.interfaces import (
     ToolSchema,
 )
 from agents.ad_agent.core.scope import ResourceScope
-from agents.ad_agent.core.runtime_kernel import TurnRequest
+from agents.agent_harness import TurnRequest
 from agents.ad_agent.runtime.account_context import AccountResolver
-from agents.ad_agent.runtime.ad_turn_pipeline import AdTurnPipeline
 from agents.ad_agent.runtime.runtime import AgentRuntime
 
 
@@ -170,26 +169,25 @@ def test_ad_runtime_exposes_generic_tool_registration_without_tool_source():
         runtime.close(wait=True)
 
 
-def test_ad_runtime_is_composed_with_the_generic_turn_pipeline():
+def test_ad_runtime_uses_the_standard_agent_loop():
     runtime = AgentRuntime(require_llm=False, features=[])
     try:
-        assert isinstance(runtime._runtime_kernel.turn_pipeline, AdTurnPipeline)
-        assert runtime._runtime_kernel.turn_pipeline.stage_names == (
-            "request_validation",
-            "session_context",
-            "intent",
-            "planning",
-            "execution",
-            "response",
-        )
+        from agents.agent_harness import Agent, AgentRuntime as HarnessRuntime
+
+        assert isinstance(runtime._platform_application.runtime, HarnessRuntime)
+        assert isinstance(runtime._platform_application.agent, Agent)
     finally:
         runtime.close(wait=True)
 
 
-def test_ad_pipeline_has_no_legacy_unlocked_executor_boundary():
+def test_ad_runtime_has_no_ad_pipeline_modules_or_legacy_executor_boundary():
     from pathlib import Path
 
-    source = Path("agents/ad_agent/runtime/ad_turn_stages.py").read_text(
-        encoding="utf-8"
-    )
-    assert "_run_unlocked" not in source
+    root = Path("agents/ad_agent/runtime")
+    assert not (root / "ad_turn_pipeline.py").exists()
+    assert not (root / "ad_turn_stages.py").exists()
+    assert not (root / "ad_turn_state.py").exists()
+    assembly = (root / "ad_runtime_assembly.py").read_text(encoding="utf-8")
+    assert "AdvertisingTurnHandler" not in assembly
+    assert "AdTurnPipeline" not in assembly
+    assert "AdvertisingModelAdapter" in assembly

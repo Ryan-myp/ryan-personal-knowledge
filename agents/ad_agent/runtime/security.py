@@ -19,6 +19,7 @@ from ..domain.ad.security import (
     request_hash,
     sha256_json,
 )
+from agents.agent_harness.redaction import redact_for_persistence
 
 
 class RuntimeSecurity:
@@ -87,54 +88,8 @@ class RuntimeSecurity:
 
     @staticmethod
     def redact_for_persistence(value: Any) -> Any:
-        """移除可能包含凭证的字段后再写入 SQLite。"""
-        sensitive = (
-            "token", "secret", "api_key", "private_key", "private_key_id",
-            "service_account", "sa_email", "developer_key", "credential", "authorization",
-            "bc_id", "bcid", "partner_id", "partnerid", "perter_id", "perterid", "developer_token",
-            "mcc", "login_customer_id", "logincustomerid",
-            "manager_customer_id", "managercustomerid", "client_id", "clientid",
-        )
-        if isinstance(value, dict):
-            return {
-                k: (
-                    RuntimeSecurity.redact_for_persistence(v)
-                    if str(k).lower() in {"selection_token", "selection_tokens"}
-                    else "<redacted>"
-                    if any(part in str(k).lower() for part in sensitive)
-                    else RuntimeSecurity.redact_for_persistence(v)
-                )
-                for k, v in value.items()
-            }
-        if isinstance(value, list):
-            return [RuntimeSecurity.redact_for_persistence(v) for v in value]
-        if isinstance(value, str):
-            # User messages are persisted as strings, so key-based redaction
-            # alone is insufficient when a secret is pasted into chat.
-            patterns = (
-                # Quoted JSON/Python values, e.g. {'access_token': '...'}.
-                r"(?is)(?P<prefix>['\"]?(?:access|refresh|developer)[_-]?token['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
-                r"(?is)(?P<prefix>['\"]?private[_-]?key['\"]?\s*[:=]\s*)['\"]-----BEGIN.*?-----END[^\r\n]*-----['\"]",
-                r"(?is)(?P<prefix>['\"]?private[_-]?key['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
-                r"(?is)(?P<prefix>['\"]?client[_-]?secret['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
-                r"(?is)(?P<prefix>['\"]?(?:bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|manager[_-]?customer[_-]?id|client[_-]?id)['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
-                r"(?is)(?P<prefix>['\"]?authorization['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
-                # Unquoted key/value forms used by logs and CLI snippets.
-                r"(?i)(?P<prefix>\b(?:access|refresh|developer)[_-]?token\s*[:=]\s*)[^\s,;}]+",
-                r"(?is)(?P<prefix>\bprivate[_-]?key\s*[:=]\s*)-----BEGIN.*?-----END[^\r\n]*-----",
-                r"(?i)(?P<prefix>\bprivate[_-]?key\s*[:=]\s*)[^\s,;}]+",
-                r"(?i)(?P<prefix>\bclient[_-]?secret\s*[:=]\s*)[^\s,;}]+",
-                r"(?i)(?P<prefix>\b(?:bc[_-]?id|partner[_-]?id|perter[_-]?id|mcc|login[_-]?customer[_-]?id|manager[_-]?customer[_-]?id|client[_-]?id|authorization)\s*[:=]\s*)[^\s,;}]+",
-            )
-            redacted = value
-            for pattern in patterns:
-                redacted = re.sub(
-                    pattern,
-                    lambda match: f"{match.group('prefix')}<redacted>",
-                    redacted,
-                )
-            return redacted
-        return value
+        """Remove credential-shaped fields before persistence or transport."""
+        return redact_for_persistence(value)
 
     def sanitize_result(self, result: ToolResult) -> ToolResult:
         """Redact a Tool result before it leaves the Runtime boundary.

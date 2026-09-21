@@ -44,11 +44,8 @@ agents/agent_harness/
 
 agents/ad_agent/
   Skills / domain policy / Tool Sources / persistence
-  AdTurnPipeline          advertising stage composition root
-    ├── AdTurnState       advertising turn state
-    ├── AdTurnStages      request/context/intent/plan/execute/response stages
-    └── AdTurnFlow        advertising policy and workflow implementation
-  AgentRuntime            advertising composition root
+  AdvertisingModelAdapter  model-to-ToolCall adapter
+  AdvertisingToolExecutor provider Tool executor adapter
 ```
 
 `Agent` 是默认的通用执行循环：一个 user message 可以产生多个 model turn，
@@ -203,14 +200,16 @@ Session 并发、租约和 `run_id`/`turn_id` 生命周期；
 `agents/agent_harness/agent_runtime.py` 的 `AgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
 通用门面。应用 pipeline 消费 Kernel 注入的 Run identity，并将持久化、审计和响应关联到
 同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AgentRuntime` 只负责组装
-领域服务。`AdTurnPipeline` 是广告应用的阶段组合根，使用通用
-`SequentialTurnPipeline` 承载 `AdTurnState`；`AdTurnFlow` 保留广告的安全、账户、
-Blueprint、Workflow 和 Provider 业务分支。工具选择同样拆开：
+领域服务。广告通过 `AgentPlatform.create_application()` 装配标准 Harness Agent；
+`AdvertisingModelAdapter` 只负责把广告场景的模型输入转换为通用 `ModelTurn`，
+不创建自己的 Pipeline、Stages 或回合状态机。广告安全、账户、Blueprint、
+Workflow 和 Provider 细节属于场景的 Tool/数据适配，不得形成第二套 Runtime 或
+Tool 门禁。工具选择同样拆开：
 `core/tool_selection.py` 的 `ToolSelector` 只消费 Tool metadata 和 ParsedIntent，
 `PromptRenderer` 只生成有界模型上下文；`DynamicToolSelector` 负责组合
 Skill、Wiki 和租户上下文，但不能执行 Tool 或授予权限。
 
-`core/policy_engine.py` 的 `PolicyEngine` 负责把 Tool、Effect、Scope、执行模式、
+`agents/agent_platform/tools/policy.py` 的 `ToolExecutionPolicy` 负责把 Tool、Effect、Scope、执行模式、
 权限、live 批准和 WriteGuard 状态转换成 `PolicyDecision`。dry-run 可以通过规划门槛，
 live 必须通过额外门槛；确认 token 的生成、绑定和消费仍留在应用安全层，Core 不认识
 任何 UI 确认格式。
@@ -532,14 +531,12 @@ Tool Registry、权限、账户范围或执行计划。
 | `agents/agent_harness/run_store.py` | 当前源码 | 通用 Run 启动、事件和终态持久化端口 |
 | `core/tool_selection.py` | 当前源码 | 业务无关的 Tool 选择和 Prompt 渲染 |
 | `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文组合与筛选 |
-| `core/policy_engine.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
+| `agents/agent_platform/tools/policy.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
 | `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Tool Sources、业务服务和 Kernel |
 | `runtime/ad_runtime_assembly.py` | 当前源码 | 广告组合图与 `AdRunStoreAdapter` |
-| `runtime/ad_turn_pipeline.py` | 当前源码 | 广告应用阶段组合根 |
-| `runtime/ad_turn_stages.py` | 当前源码 | 广告阶段适配与状态传递 |
-| `runtime/ad_turn_state.py` | 当前源码 | 广告回合显式状态 |
-| `runtime/ad_turn_flow.py` | 当前源码 | 广告安全、规划、Workflow、Tool 执行和结果闭环 |
+| `runtime/ad_runtime_assembly.py` | 当前源码 | 场景通过 `AgentPlatform` 装配标准 Harness |
+| `integration.py` | 当前源码 | 广告 Tool Catalog、Model Adapter 和 Executor 适配 |
 | `runtime/supervisor.py` | 当前源码 | 通用 Task、Scheduler、Outbox、Event Repair worker 生命周期；任务类型由应用组合根注入 |
 | `runtime/services.py` | 当前源码 | RuntimeServices Feature 端口适配器 |
 | `runtime/tool_executor.py` | 当前源码 | Tool 执行、超时与 Provider Client 隔离 |

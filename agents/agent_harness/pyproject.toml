@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-harness"
+version = "0.1.0"
+description = "Application-neutral Agent Runtime, Run Kernel, Skills and Tools"
+requires-python = ">=3.13,<3.14"
+readme = "README.md"
+license = { text = "MIT" }
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+]
+
+[tool.setuptools]
+package-dir = { "" = "../.." }
+
+[tool.setuptools.packages.find]
+where = ["../.."]
+include = ["agents", "agents.agent_harness", "agents.agent_harness.*"]
+
+[tool.setuptools.package-data]
+agents = ["agent_harness/py.typed"]
