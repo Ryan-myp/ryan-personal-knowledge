@@ -187,7 +187,7 @@ def test_ad_runtime_has_no_ad_pipeline_modules_or_legacy_executor_boundary():
     assert not (root / "ad_turn_pipeline.py").exists()
     assert not (root / "ad_turn_stages.py").exists()
     assert not (root / "ad_turn_state.py").exists()
-    assembly = (root / "ad_runtime_assembly.py").read_text(encoding="utf-8")
+    assembly = (root / "ad_application_assembly.py").read_text(encoding="utf-8")
     assert "AdvertisingTurnHandler" not in assembly
     assert "AdTurnPipeline" not in assembly
     assert "AdvertisingModelAdapter" in assembly

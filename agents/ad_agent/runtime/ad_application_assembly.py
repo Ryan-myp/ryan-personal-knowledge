@@ -138,7 +138,7 @@ class AdRunStoreAdapter:
 
 
 @dataclass(frozen=True)
-class AdRuntimeAssemblyOptions:
+class AdApplicationAssemblyOptions:
     """Infrastructure options supplied by the application boundary.
 
     Domain settings such as Skill roots, Tool definitions and provider
@@ -161,7 +161,7 @@ class AdRuntimeAssemblyOptions:
 
 
 @dataclass(frozen=True)
-class AdRuntimeComponents:
+class AdApplicationComponents:
     """Fully wired application services returned by the assembly.
 
     Keeping these as one typed value prevents the facade constructor from
@@ -224,18 +224,18 @@ class AdRuntimeComponents:
             self.supervisor.start()
 
 
-class AdRuntimeAssembly:
+class AdApplicationAssembly:
     """Build the advertising application graph over generic runtime ports."""
 
     @classmethod
     def compose(
         cls,
         runtime: Any,
-        options: AdRuntimeAssemblyOptions,
+        options: AdApplicationAssemblyOptions,
         *,
         mode_context: ContextVar[Optional[str]],
         busy_error: type[Exception],
-    ) -> AdRuntimeComponents:
+    ) -> AdApplicationComponents:
         store = options.persistence_store
         session_manager: Optional[SessionManager] = None
         memory_manager: Optional[MemoryManager] = None
@@ -571,7 +571,7 @@ class AdRuntimeAssembly:
             task_queue_poll_interval=options.task_queue_poll_interval,
             outbox_poll_interval=options.outbox_poll_interval,
             outbox_max_attempts=options.outbox_max_attempts,
-            # Start only after ``AdRuntimeComponents.install`` has published
+            # Start only after ``AdApplicationComponents.install`` has published
             # every callback target on the facade. This prevents a recovered
             # task/schedule from racing a partially initialized application.
             start_background_workers=False,
@@ -611,7 +611,7 @@ class AdRuntimeAssembly:
             },
         )
         runtime_kernel = platform_application.runtime
-        return AdRuntimeComponents(
+        return AdApplicationComponents(
             persistence_store=store,
             session_manager=session_manager,
             memory_manager=memory_manager,
@@ -636,8 +636,8 @@ class AdRuntimeAssembly:
 
 
 __all__ = [
-    "AdRuntimeAssembly",
-    "AdRuntimeAssemblyOptions",
-    "AdRuntimeComponents",
+    "AdApplicationAssembly",
+    "AdApplicationAssemblyOptions",
+    "AdApplicationComponents",
     "AdRunStoreAdapter",
 ]

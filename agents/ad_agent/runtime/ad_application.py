@@ -160,9 +160,9 @@ class AdvertisingComposition(
         auto_memory_capture_enabled: bool = True,
         metrics: Optional[MetricsSink] = None,
     ):
-        from .ad_runtime_bootstrap import AdRuntimeBootstrap
+        from .ad_application_bootstrap import AdApplicationBootstrap
 
-        AdRuntimeBootstrap.initialize(
+        AdApplicationBootstrap.initialize(
             self,
             locals(),
             mode_context=_execution_mode_context,

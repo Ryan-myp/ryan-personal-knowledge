@@ -39,7 +39,10 @@ from ..domain.ad.response import LLMResponseSynthesizer
 from ..knowledge_management import ManagedKnowledgeProvider
 from ..persistence.interfaces import PersistenceBackend
 from .account_policy import AccountWhitelistValidator
-from .ad_runtime_assembly import AdRuntimeAssembly, AdRuntimeAssemblyOptions
+from .ad_application_assembly import (
+    AdApplicationAssembly,
+    AdApplicationAssemblyOptions,
+)
 from .ad_runtime_context import AdvertisingRuntimeContext
 from .ad_runtime_catalog import AdvertisingCatalogService
 from .ad_runtime_controls import AdvertisingRuntimeControls
@@ -57,7 +60,7 @@ from agents.agent_platform.tools.policy import ToolExecutionPolicy
 logger = logging.getLogger(__name__)
 
 
-class AdRuntimeBootstrap:
+class AdApplicationBootstrap:
     """Build the advertising composition graph in explicit startup phases."""
 
     @classmethod
@@ -483,9 +486,9 @@ class AdRuntimeBootstrap:
         task_queue_poll_interval: float,
         start_background_workers: bool,
     ) -> None:
-        components = AdRuntimeAssembly.compose(
+        components = AdApplicationAssembly.compose(
             runtime,
-            AdRuntimeAssemblyOptions(
+            AdApplicationAssemblyOptions(
                 persistence_store=persistence_store,
                 outbox_delivery=outbox_delivery,
                 outbox_poll_interval=outbox_poll_interval,
@@ -503,4 +506,4 @@ class AdRuntimeBootstrap:
         components.install(runtime)
 
 
-__all__ = ["AdRuntimeBootstrap"]
+__all__ = ["AdApplicationBootstrap"]

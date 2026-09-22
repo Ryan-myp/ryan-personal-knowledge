@@ -381,8 +381,8 @@ Policy、Renderer 和持久化端口装配成一个可运行应用。它不是�
 Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
 Tool Source/Executor 或独立 Feature。
 
-当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AdvertisingComposition` 负责广告应用
-配置、能力注册入口和稳定门面，`AdRuntimeAssembly` 负责把 `PersistenceBackend`、通用
+当前装配图已经收敛到 `runtime/ad_application_assembly.py`：`AdvertisingComposition` 负责广告应用
+配置、能力注册入口和稳定门面，`AdApplicationAssembly` 负责把 `PersistenceBackend`、通用
 `AgentRuntimeKernel`、Tool 执行器、Schedule/Task/Outbox worker 与广告应用服务接起来。
 Assembly 只做依赖连接，不根据渠道或业务流程分支；新的简单能力仍应通过 Skill + Tool/MCP
 Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制面的能力才新增 Provider Module/Feature。
@@ -476,7 +476,7 @@ Turn Handler 执行，不再创建业务 Pipeline。
 
 广告的 `runtime/ad_application.py` 是场景组合根，负责把广告 Skills、Tools、Provider
 Modules、数据适配和基础设施资源注入唯一的平台应用。广告不再拥有自己的 Pipeline、
-Stages 或回合状态机；`runtime/ad_runtime_assembly.py` 只提供一个符合 Harness
+Stages 或回合状态机；`runtime/ad_application_assembly.py` 只提供一个符合 Harness
 契约的 Turn Handler。`runtime/runtime.py` 仅作为稳定导出入口。Generic Runtime
 通过 opaque `TurnRequest.context` 与场景交换领域数据，因此新增业务 Skill/Tool
 不需要把账户、渠道或业务流程分支写回 Core。
@@ -547,7 +547,7 @@ ad_agent/
 ├── runtime/
 │   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
 │   ├── ad_application.py    # 广告应用组合根
-│   ├── ad_runtime_assembly.py # AgentPlatform 场景装配
+│   ├── ad_application_assembly.py # AgentPlatform 场景装配
 │   ├── task_executor.py     # 通用异步 Task 队列与租约
 │   ├── scheduler.py         # 通用定时任务调度
 │   ├── supervisor.py        # 后台 worker 生命周期

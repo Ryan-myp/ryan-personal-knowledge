@@ -183,13 +183,15 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
 
     root = Path("agents/ad_agent/runtime")
     facade = (root / "ad_application.py").read_text(encoding="utf-8")
-    bootstrap = (root / "ad_runtime_bootstrap.py").read_text(encoding="utf-8")
-    assembly = (root / "ad_runtime_assembly.py").read_text(encoding="utf-8")
+    bootstrap = (root / "ad_application_bootstrap.py").read_text(encoding="utf-8")
+    assembly = (root / "ad_application_assembly.py").read_text(encoding="utf-8")
 
     # The facade delegates startup to Bootstrap, which owns the application
     # assembly. Neither public entrypoint may recreate the worker graph.
-    assert "AdRuntimeBootstrap.initialize" in facade
-    assert "AdRuntimeAssembly.compose" in bootstrap
+    assert "AdApplicationBootstrap.initialize" in facade
+    assert "AdApplicationAssembly.compose" in bootstrap
+    assert not (root / "ad_runtime_bootstrap.py").exists()
+    assert not (root / "ad_runtime_assembly.py").exists()
     assert "RuntimeSupervisor(" not in facade
     assert "TaskExecutor(" not in facade
     assert "OutboxConsumer(" not in facade
