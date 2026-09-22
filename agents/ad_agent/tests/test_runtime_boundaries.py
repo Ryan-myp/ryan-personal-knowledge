@@ -183,11 +183,13 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
 
     root = Path("agents/ad_agent/runtime")
     facade = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    bootstrap = (root / "ad_runtime_bootstrap.py").read_text(encoding="utf-8")
     assembly = (root / "ad_runtime_assembly.py").read_text(encoding="utf-8")
 
-    # The facade may expose the assembly, but it must not recreate the worker
-    # graph in its constructor as more application services are added.
-    assert "AdRuntimeAssembly.compose" in facade
+    # The facade delegates startup to Bootstrap, which owns the application
+    # assembly. Neither public entrypoint may recreate the worker graph.
+    assert "AdRuntimeBootstrap.initialize" in facade
+    assert "AdRuntimeAssembly.compose" in bootstrap
     assert "RuntimeSupervisor(" not in facade
     assert "TaskExecutor(" not in facade
     assert "OutboxConsumer(" not in facade
@@ -201,6 +203,29 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     assert '"meta"' not in assembly.lower()
     assert "tiktok" not in assembly.lower()
     assert "dv360" not in assembly.lower()
+
+
+def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
+    from pathlib import Path
+
+    root = Path("agents/ad_agent/runtime")
+    facade = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    policy = (root / "ad_runtime_policy.py").read_text(encoding="utf-8")
+    context = (root / "ad_runtime_context.py").read_text(encoding="utf-8")
+    run_service = (root / "ad_run_service.py").read_text(encoding="utf-8")
+
+    assert "class AdvertisingRuntimePolicy" in policy
+    assert "class AdvertisingRuntimeContext" in context
+    assert "class AdvertisingRunService" in run_service
+    assert "class AdvertisingRuntimePolicy" not in facade
+    assert "class AdvertisingRuntimeContext" not in facade
+    assert "class AdvertisingRunService" not in facade
+    assert "self.runtime_policy" in facade
+    assert "self.runtime_context" in facade
+    assert "self._run_service()" in facade
+    assert "api_clients" not in policy
+    assert "api_clients" not in context
+    assert "api_clients" not in run_service
 
 
 def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback():

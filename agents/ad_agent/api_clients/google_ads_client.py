@@ -3725,14 +3725,19 @@ class GoogleAdsAPIClient(BasePlatformClient):
             'status': requested_status,
             'campaignBudget': budget_resource_name,
         }
-        if contains_eu_political_advertising is not None:
-            political_status = str(contains_eu_political_advertising).upper()
-            if political_status not in self.EU_POLITICAL_ADVERTISING_STATUSES:
-                raise ValueError(
-                    "contains_eu_political_advertising must be one of: "
-                    + ", ".join(sorted(self.EU_POLITICAL_ADVERTISING_STATUSES))
-                )
-            campaign_data['containsEuPoliticalAdvertising'] = political_status
+        political_status = str(
+            contains_eu_political_advertising
+            or "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+        ).upper()
+        if political_status not in self.EU_POLITICAL_ADVERTISING_STATUSES:
+            raise ValueError(
+                "contains_eu_political_advertising must be one of: "
+                + ", ".join(sorted(self.EU_POLITICAL_ADVERTISING_STATUSES))
+            )
+        # Google Ads currently requires this declaration on Campaign create.
+        # Keep the product input optional while emitting a complete provider
+        # payload with the conservative non-political default.
+        campaign_data['containsEuPoliticalAdvertising'] = political_status
 
         if advertising_channel_sub_type:
             campaign_data['advertisingChannelSubType'] = advertising_channel_sub_type

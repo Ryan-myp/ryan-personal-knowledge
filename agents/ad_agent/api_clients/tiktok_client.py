@@ -387,17 +387,23 @@ class TikTokAPIClient(BasePlatformClient):
         # Scope the read to the requested ID.  The advertiser can contain
         # thousands of campaigns; an account-wide scan is both slow and can
         # exhaust the provider quota during Runtime read-back.
-        result = self.list_campaigns(
-            advertiser_id,
-            filtering=[{
-                "field": "CAMPAIGN_IDS", "operator": "IN",
-                "values": [str(campaign_id)],
-            }],
-            page_size=100,
-        )
-        for camp in result:
-            if str(camp.get('campaign_id')) == str(campaign_id):
-                return camp
+        for attempt in range(3):
+            result = self.list_campaigns(
+                advertiser_id,
+                filtering=[{
+                    "field": "CAMPAIGN_IDS", "operator": "IN",
+                    "values": [str(campaign_id)],
+                }],
+                page_size=100,
+            )
+            for camp in result:
+                if str(camp.get('campaign_id')) == str(campaign_id):
+                    return camp
+            # TikTok can acknowledge a create before the campaign becomes
+            # visible to the filtered read endpoint. Bound the read-back
+            # retry so a provider delay cannot outlive the Runtime deadline.
+            if attempt < 2:
+                self.sleep_with_budget(1)
         raise APIError(f"TikTok campaign {campaign_id} was not found")
     
     def create_campaign(self, advertiser_id: str, campaign: dict, live: bool = False) -> str:

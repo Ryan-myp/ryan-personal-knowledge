@@ -3625,6 +3625,24 @@ def test_tiktok_campaign_lookup_by_name_uses_list_result():
     assert result.data["campaign"]["campaign_id"] == "101"
 
 
+def test_tiktok_campaign_get_retries_eventual_consistency():
+    client = TikTokAPIClient({"access_token": "test"})
+    responses = [
+        [],
+        [{"campaign_id": "101", "campaign_name": "Eventually visible"}],
+    ]
+    sleeps = []
+    client.list_campaigns = lambda advertiser_id, filtering=None, page_size=20: (
+        responses.pop(0)
+    )
+    client.sleep_with_budget = lambda seconds: sleeps.append(seconds)
+
+    result = client.get_campaign("t1", "101")
+
+    assert result["campaign_id"] == "101"
+    assert sleeps == [1]
+
+
 def test_meta_boost_client_builds_timestamped_request():
     client = MetaAPIClient({"access_token": "test"})
     payloads = []
@@ -5627,3 +5645,34 @@ def test_tiktok_identity_reader_reuses_identity_get_endpoint():
         "7397068114548195329", "identity-1"
     )["display_name"] == "Demo"
     assert seen == [("7397068114548195329", None, 1, 100)]
+
+
+def test_google_live_campaign_defaults_required_eu_political_declaration():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def fake_mutate(resource, operation):
+        calls.append((resource, operation))
+        if resource == "campaignBudgets":
+            return {"results": [{
+                "resourceName": "customers/123/campaignBudgets/7"
+            }]}
+        return {"results": [{
+            "resourceName": "customers/123/campaigns/8"
+        }]}
+
+    client._mutate = fake_mutate
+    result = client.create_campaign(
+        name="Required declaration",
+        advertising_channel_type="SEARCH",
+        bidding_strategy="MANUAL_CPC",
+        daily_budget=1,
+        status="PAUSED",
+        live=True,
+    )
+
+    assert result == "8"
+    campaign_payload = calls[1][1]["create"]
+    assert campaign_payload["containsEuPoliticalAdvertising"] == (
+        "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+    )

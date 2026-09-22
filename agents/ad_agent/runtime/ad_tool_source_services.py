@@ -674,6 +674,11 @@ class AdToolSourceLifecycleMixin:
 
         target_key = ""
         tool_names: list[str] = []
+        registry_snapshot = None
+        parameter_snapshot = None
+        blueprint_snapshot = None
+        loaded_skill_snapshot = None
+        context_snapshot = None
         try:
             if skill_name:
                 if skill_name not in candidates:
@@ -702,9 +707,9 @@ class AdToolSourceLifecycleMixin:
                 key: set(value) for key, value in self._skill_format_ids.items()
             }
             format_catalog_snapshot = copy.deepcopy(self.ad_format_catalogs)
-            blueprint_context_snapshot = copy.deepcopy(
-                self._creation_blueprint_context_cache
-            )
+            context_service = getattr(self, "_context_service", None)
+            if callable(context_service):
+                context_snapshot = context_service().snapshot()
 
             # Use the registry's locking/unregister seam instead of mutating
             # private indexes directly.
@@ -761,9 +766,10 @@ class AdToolSourceLifecycleMixin:
                     self._skill_keys_by_platform = skill_keys_snapshot
                     self._skill_format_ids = skill_format_snapshot
                     self.ad_format_catalogs = format_catalog_snapshot
-                    self._creation_blueprint_context_cache = (
-                        blueprint_context_snapshot
-                    )
+                    if context_snapshot is not None:
+                        context_service = getattr(self, "_context_service", None)
+                        if callable(context_service):
+                            context_service().restore(context_snapshot)
                     self._refresh_parser_catalog()
             except Exception:
                 logger.exception(
