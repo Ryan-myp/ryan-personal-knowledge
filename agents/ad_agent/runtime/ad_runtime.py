@@ -17,7 +17,6 @@ import re
 import threading
 import logging
 from contextvars import ContextVar
-from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional
 
@@ -33,7 +32,6 @@ from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionTrace, ExecutionEventCallback
 from ..core.response import ResponseRenderer, ResponseSynthesizer
 from ..domain.ad.response import LLMResponseSynthesizer
-from ..core.plugins import manifest_for_builtin, manifest_for_managed_skill
 from ..features.factory import feature_for_intent
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
@@ -47,14 +45,16 @@ from ..domain.ad.security import (
     ACCOUNT_SCOPE_FIELDS,
     PROTECTED_INPUT_FIELDS,
 )
-from .skill import BaseSkill, Skill, SkillContract, SkillLoader
+from .skill import Skill, SkillLoader
 from .account_policy import AccountWhitelistValidator
 from .session_context import SessionContext
 from .security import RuntimeSecurity
-from .provider_bindings import ProviderBindings
 from .ad_runtime_policy import AdvertisingRuntimePolicy
 from .ad_runtime_context import AdvertisingRuntimeContext
 from .ad_run_service import AdvertisingRunService
+from .ad_runtime_catalog import AdvertisingCatalogService
+from .ad_runtime_lifecycle import AdvertisingLifecycleService
+from .ad_runtime_presentation import AdvertisingPresentationService
 from .ad_creation_services import AdCreationServicesMixin
 from .ad_tool_source_services import AdToolSourceLifecycleMixin
 from .ad_runtime_facades import (
@@ -334,68 +334,35 @@ class AdvertisingComposition(
                     return str(value)
         return self._resolve_workflow_item_scope(intent, platform, tools, session)
 
-    @staticmethod
-    def _clarification_field_label(
-        path: str, spec: Mapping[str, Any]
-    ) -> Optional[str]:
-        """Advertising presentation labels stay outside Core clarification."""
-        configured = spec.get("label") or spec.get("title")
-        if configured:
-            return str(configured)
-        return {
-            "account_id": "广告账户 ID",
-            "ad_account_id": "广告账户 ID",
-            "advertiser_id": "广告主 ID",
-            "customer_id": "客户账户 ID",
-            "campaign_id": "Campaign ID",
-            "campaign_ids": "Campaign ID 列表",
-            "ad_group_id": "Ad Group ID",
-            "adgroup_id": "Ad Group ID",
-            "ad_id": "Ad ID",
-        }.get(str(path or "").rsplit(".", 1)[-1])
+    def _presentation_service(self) -> AdvertisingPresentationService:
+        service = getattr(self, "presentation_service", None)
+        if service is None:
+            service = AdvertisingPresentationService(self)
+            self.presentation_service = service
+        return service
 
-    @staticmethod
-    def _clarification_field_hint(
-        path: str, _spec: Mapping[str, Any]
+    def _clarification_field_label(
+        self, path: str, spec: Mapping[str, Any]
     ) -> Optional[str]:
-        if str(path or "").rsplit(".", 1)[-1] in {
-            "account_id", "ad_account_id", "advertiser_id", "customer_id",
-        }:
-            return "请填写当前渠道的广告账户 ID，不能用其他渠道账户代替。"
-        return None
+        return self._presentation_service().clarification_field_label(path, spec)
+
+    def _clarification_field_hint(
+        self, path: str, spec: Mapping[str, Any]
+    ) -> Optional[str]:
+        return self._presentation_service().clarification_field_hint(path, spec)
+
+    def _catalog_service(self) -> AdvertisingCatalogService:
+        service = getattr(self, "catalog_service", None)
+        if service is None:
+            service = AdvertisingCatalogService(self)
+            self.catalog_service = service
+        return service
 
     def _refresh_parser_catalog(self) -> None:
-        """Synchronize parser discovery data with the active Tool registry."""
-        self._context_service().clear()
-        definitions = self.registry.list_all()
-        refresh_catalog = getattr(self.intent_parser, "refresh_tool_catalog", None)
-        if callable(refresh_catalog):
-            refresh_catalog(definitions)
-        for feature in self.features:
-            register_descriptors = getattr(
-                self.intent_parser, "register_intent_descriptors", None
-            )
-            if callable(register_descriptors):
-                register_descriptors(feature.intent_descriptors())
-
-        # Skill aliases are context metadata, but they must follow the same
-        # lifecycle as their active Skill.  Provider identity itself remains
-        # discovered from Tool metadata; aliases never create Tools.
-        for skill in list(self._skill_objects.values()):
-            register_aliases = getattr(self.intent_parser, "register_namespace_aliases", None)
-            if callable(register_aliases):
-                register_aliases(skill.namespace, skill.namespace_aliases or [])
+        return self._catalog_service().refresh_parser_catalog()
 
     def _on_generic_tool_catalog_changed(self) -> None:
-        """Refresh application indexes after a generic Tool source changes."""
-        for definition in self.registry.list_all():
-            self.parameter_catalogs.register_tool_schema(
-                definition.namespace,
-                getattr(definition.input_schema, "properties", {})
-                if definition.input_schema else {},
-                tool_name=definition.name,
-            )
-        self._refresh_parser_catalog()
+        return self._catalog_service().on_tool_catalog_changed()
 
     def register_tool(
         self,
@@ -404,75 +371,22 @@ class AdvertisingComposition(
         *,
         source_id: str = "local",
     ) -> None:
-        """Register one Tool in the live catalog used by the generic Agent."""
-        if isinstance(definition, ToolDefinition):
-            self.registry.register(definition, executor)
-            self._on_generic_tool_catalog_changed()
-            return
-        self._platform_application.register_tool(
-            definition, executor, source_id=source_id,
+        return self._catalog_service().register_tool(
+            definition, executor, source_id=source_id
         )
 
     def register_tool_source(self, source: Any) -> list[str]:
-        """Register a standard Tool Source or provider-owned Tool Source."""
-        if callable(getattr(source, "configure", None)):
-            return self.register_provider_tool_source(source)
-        bindings = getattr(source, "list_bindings", None)
-        if callable(bindings):
-            values = list(bindings())
-            if all(isinstance(item.definition, ToolDefinition) for item in values):
-                names = self.registry.register_source(source)
-                self._on_generic_tool_catalog_changed()
-                return names
-        return self._platform_application.register_tool_source(source)
+        return self._catalog_service().register_tool_source(source)
 
     def unregister_tool_source(self, source_id: str) -> list[str]:
-        """Unload a complete Tool source and refresh parser discovery."""
-        names = self.registry.unregister_source(source_id)
-        if names:
-            self._on_generic_tool_catalog_changed()
-            return names
-        return self._platform_application.unregister_tool_source(source_id)
+        return self._catalog_service().unregister_tool_source(source_id)
 
     @staticmethod
     def _canonical_platform(platform: str) -> str:
-        """Normalize aliases without keeping a Runtime platform registry."""
-        return ProviderBindings.normalize_namespace(platform)
+        return AdvertisingCatalogService.canonical_platform(platform)
 
     def _resolve_platform_identifier(self, platform: str) -> str:
-        """Resolve a caller-facing platform alias from active Skill metadata.
-
-        Canonicalization only normalizes separators. Alias resolution belongs
-        to the active Skill/Tool Source lifecycle, so structured continuation
-        payloads such as ``platform_params={"google": ...}`` can converge on
-        the registered ``google-ads`` key without a Core provider map.
-        """
-        raw = str(platform or "").strip().casefold()
-        normalized = self._canonical_platform(raw)
-        if not raw:
-            return ""
-        for skill in self.skill_loader.list_all().values():
-            canonical = self._canonical_platform(getattr(skill, "namespace", ""))
-            aliases = {
-                str(getattr(skill, "platform", "") or "").strip().casefold(),
-                canonical,
-                canonical.replace("-", " "),
-            }
-            aliases.update(
-                str(alias or "").strip().casefold()
-                for alias in (getattr(skill, "namespace_aliases", []) or [])
-            )
-            aliases.update(
-                self._canonical_platform(alias)
-                for alias in list(aliases)
-            )
-            if raw in aliases or normalized in aliases:
-                return canonical
-        for definition in self.registry.list_all():
-            canonical = self._canonical_platform(getattr(definition, "namespace", ""))
-            if normalized == canonical:
-                return canonical
-        return normalized
+        return self._catalog_service().resolve_platform_identifier(platform)
 
     @property
     def persistence_store(self):
@@ -556,123 +470,37 @@ class AdvertisingComposition(
         description: str = "",
         replace: bool = False,
     ) -> None:
-        """Publish a trusted in-process extension in the common registry."""
-
-        manifest = manifest_for_builtin(
+        return self._lifecycle_service().register_builtin_plugin(
             plugin_id,
-            version,
-            kinds=tuple(kinds),
+            contribution,
+            kinds,
+            version=version,
             description=description,
-        )
-        self.plugin_loader.install(
-            manifest,
-            contribution=contribution,
             replace=replace,
         )
-        self.plugin_registry.activate(manifest.plugin_id)
+
+    def _lifecycle_service(self) -> AdvertisingLifecycleService:
+        service = getattr(self, "lifecycle_service", None)
+        if service is None:
+            service = AdvertisingLifecycleService(self)
+            self.lifecycle_service = service
+        return service
 
     def list_plugins(self, tenant_id: Optional[str] = None) -> list[dict[str, Any]]:
-        """Return safe, tenant-scoped plugin lifecycle metadata."""
-
-        snapshots = self.plugin_registry.snapshot()
-        if tenant_id is None:
-            return snapshots
-        tenant = str(tenant_id or "default").strip().lower()
-        return [
-            item for item in snapshots
-            if item.get("manifest", {}).get("source") != "managed"
-            or item.get("manifest", {}).get("metadata", {}).get("tenant_id") == tenant
-        ]
+        return self._lifecycle_service().list_plugins(tenant_id)
 
     def load_managed_skill(self, skill_dir: str, tenant_id: str = "default") -> bool:
-        """Load a published standard Skill directory as advisory context.
-
-        This path intentionally does not call ``register_skill`` and never
-        imports ``tools.py``.  Provider Tools must continue to come from
-        built-in/verified Tool Sources; a managed Skill can guide the Agent
-        but cannot create a new side-effect path.
-        """
-        from pathlib import Path
-
-        tenant_id = str(tenant_id or "default")
-        directory = Path(skill_dir).resolve()
-        if not directory.is_dir() or not (directory / "SKILL.md").is_file():
-            raise ValueError("managed Skill directory must contain SKILL.md")
-        contract = SkillContract(str(directory)).load()
-        if contract.context_only or not contract.name:
-            raise ValueError("managed Skill must be a standalone Skill with a name")
-        # Build the complete advisory object before touching any Runtime
-        # indexes. A malformed package therefore cannot remove the old
-        # published context.
-        skill = BaseSkill(contract)
-        setattr(skill, "skill_dir", str(directory))
-
-        with self._managed_skill_lock:
-            if (
-                contract.name in self._skill_objects
-            ):
-                raise ValueError(
-                    "managed Skill name conflicts with executable Skill: "
-                    f"{contract.name}"
-                )
-
-            # Replace only a previous managed version for this tenant. A
-            # built-in Skill with the same name is protected by the conflict
-            # check above. Managed Skills never enter SkillLoader or the
-            # global parser alias index; both are process-wide and would leak
-            # tenant-owned context.
-            self._managed_context_skills.setdefault(tenant_id, {})[contract.name] = skill
-            managed_manifest = manifest_for_managed_skill(
-                tenant_id,
-                contract.name,
-                contract.version,
-                description=contract.description,
-            )
-            self.plugin_loader.install(
-                managed_manifest,
-                contribution=skill,
-                replace=True,
-            )
-            self.plugin_registry.activate(managed_manifest.plugin_id)
-            if hasattr(self.tool_selector, "register_context_skill"):
-                self.tool_selector.register_context_skill(skill, tenant_id=tenant_id)
-            self._refresh_parser_catalog()
-        return True
+        return self._lifecycle_service().load_managed_skill(
+            skill_dir, tenant_id=tenant_id
+        )
 
     def unload_managed_skill(self, skill_name: str, tenant_id: str = "default") -> bool:
-        """Remove advisory context without touching executable provider Tools."""
-        key = str(skill_name or "")
-        tenant_id = str(tenant_id or "default")
-        with self._managed_skill_lock:
-            tenant_skills = self._managed_context_skills.get(tenant_id)
-            skill = tenant_skills.pop(key, None) if tenant_skills else None
-            if skill is None:
-                return False
-            if hasattr(self.tool_selector, "unregister_context_skill"):
-                self.tool_selector.unregister_context_skill(key, tenant_id=tenant_id)
-            self.plugin_registry.unregister(
-                manifest_for_managed_skill(tenant_id, key, "1.0.0").plugin_id
-            )
-            if not tenant_skills:
-                self._managed_context_skills.pop(tenant_id, None)
-            self._refresh_parser_catalog()
-            return True
+        return self._lifecycle_service().unload_managed_skill(
+            skill_name, tenant_id=tenant_id
+        )
 
     def get_managed_skills(self, tenant_id: Optional[str] = None) -> dict[str, Skill]:
-        """Return tenant-scoped managed Skills for diagnostics/UI.
-
-        The no-argument form is retained for single-tenant callers. Once the
-        Runtime contains multiple non-default tenants it returns an empty
-        mapping instead of guessing and exposing another tenant's context.
-        """
-        with self._managed_skill_lock:
-            if tenant_id is not None:
-                return dict(self._managed_context_skills.get(str(tenant_id or "default"), {}))
-            if len(self._managed_context_skills) == 1:
-                return dict(next(iter(self._managed_context_skills.values())))
-            if "default" in self._managed_context_skills:
-                return dict(self._managed_context_skills["default"])
-            return {}
+        return self._lifecycle_service().get_managed_skills(tenant_id)
 
     def _build_skill_context(
         self,
@@ -964,36 +792,15 @@ class AdvertisingComposition(
         session: Optional["SessionContext"] = None,
         fallback_reply: Optional[str] = None,
     ) -> tuple[str, str]:
-        """Render a grounded answer with a deterministic safe fallback."""
-        fallback = fallback_reply or self.response_renderer.render(
-            intent, results, needs_confirmation, analysis=analysis
+        return self._presentation_service().render_response(
+            user_input,
+            intent,
+            results,
+            needs_confirmation,
+            analysis=analysis,
+            session=session,
+            fallback_reply=fallback_reply,
         )
-        synthesizer = self.response_synthesizer
-        if synthesizer is None or self._llm is None:
-            return fallback, "renderer"
-        skill_context = self._build_skill_context_from_metadata(session)
-        try:
-            answer = synthesizer.synthesize(
-                self._llm,
-                user_input=user_input,
-                intent=intent,
-                results=self._redact_for_persistence(results),
-                knowledge=self._redact_for_persistence(
-                    skill_context.get("knowledge", [])
-                ),
-                memory=self._redact_for_persistence(
-                    skill_context.get("memory", [])
-                ),
-                analysis=self._redact_for_persistence(analysis or {}),
-                fallback_reply=fallback,
-                needs_confirmation=needs_confirmation,
-            )
-        except Exception as exc:
-            logger.debug("LLM 最终回复生成失败，使用 Renderer 兜底: %s", exc)
-            answer = None
-        if answer:
-            return answer, "llm"
-        return fallback, "renderer"
 
     def _build_skill_context_from_metadata(
         self, session: Optional["SessionContext"] = None

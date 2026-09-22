@@ -41,7 +41,10 @@ from ..persistence.interfaces import PersistenceBackend
 from .account_policy import AccountWhitelistValidator
 from .ad_runtime_assembly import AdRuntimeAssembly, AdRuntimeAssemblyOptions
 from .ad_runtime_context import AdvertisingRuntimeContext
+from .ad_runtime_catalog import AdvertisingCatalogService
+from .ad_runtime_lifecycle import AdvertisingLifecycleService
 from .ad_runtime_policy import AdvertisingRuntimePolicy
+from .ad_runtime_presentation import AdvertisingPresentationService
 from .ad_run_service import AdvertisingRunService
 from .provider_bindings import ProviderBindings
 from .skill import Skill
@@ -279,6 +282,7 @@ class AdRuntimeBootstrap:
             runtime.plugin_registry,
             allow_trusted_source=True,
         )
+        runtime.lifecycle_service = AdvertisingLifecycleService(runtime)
         runtime.features = list(
             discover_features()
             if features is None else features
@@ -348,6 +352,8 @@ class AdRuntimeBootstrap:
             knowledge_source=runtime.knowledge_provider,
         )
         runtime.parameter_catalogs = ParameterCatalogRegistry()
+        runtime.catalog_service = AdvertisingCatalogService(runtime)
+        runtime.presentation_service = AdvertisingPresentationService(runtime)
         runtime.creation_blueprints = BlueprintRegistry()
         runtime.blueprint_cascade = BlueprintCascadeEngine()
         runtime.creation_card_builder = CreationCardBuilder(
