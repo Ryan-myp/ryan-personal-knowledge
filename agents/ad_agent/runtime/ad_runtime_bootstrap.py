@@ -42,10 +42,13 @@ from .account_policy import AccountWhitelistValidator
 from .ad_runtime_assembly import AdRuntimeAssembly, AdRuntimeAssemblyOptions
 from .ad_runtime_context import AdvertisingRuntimeContext
 from .ad_runtime_catalog import AdvertisingCatalogService
+from .ad_runtime_controls import AdvertisingRuntimeControls
 from .ad_runtime_lifecycle import AdvertisingLifecycleService
 from .ad_runtime_policy import AdvertisingRuntimePolicy
 from .ad_runtime_presentation import AdvertisingPresentationService
+from .ad_runtime_reconciliation import AdvertisingRuntimeReconciliation
 from .ad_run_service import AdvertisingRunService
+from .ad_runtime_scope import AdvertisingRuntimeScope
 from .provider_bindings import ProviderBindings
 from .skill import Skill
 from .skill import SkillLoader
@@ -147,6 +150,7 @@ class AdRuntimeBootstrap:
             conversation_title_use_llm=conversation_title_use_llm,
             auto_memory_capture_enabled=auto_memory_capture_enabled,
             metrics=metrics,
+            mode_context=mode_context,
         )
         cls._initialize_runtime_policy(
             runtime,
@@ -218,6 +222,7 @@ class AdRuntimeBootstrap:
         conversation_title_use_llm: bool,
         auto_memory_capture_enabled: bool,
         metrics: MetricsSink | None,
+        mode_context: Any,
     ) -> None:
         base_registry = registry or SimpleToolRegistry()
         runtime.registry = (
@@ -281,6 +286,10 @@ class AdRuntimeBootstrap:
         runtime.plugin_loader = PluginLoader(
             runtime.plugin_registry,
             allow_trusted_source=True,
+        )
+        runtime.controls_service = AdvertisingRuntimeControls(
+            runtime,
+            mode_context=mode_context,
         )
         runtime.lifecycle_service = AdvertisingLifecycleService(runtime)
         runtime.features = list(
@@ -354,6 +363,8 @@ class AdRuntimeBootstrap:
         runtime.parameter_catalogs = ParameterCatalogRegistry()
         runtime.catalog_service = AdvertisingCatalogService(runtime)
         runtime.presentation_service = AdvertisingPresentationService(runtime)
+        runtime.scope_service = AdvertisingRuntimeScope(runtime)
+        runtime.reconciliation_service = AdvertisingRuntimeReconciliation(runtime)
         runtime.creation_blueprints = BlueprintRegistry()
         runtime.blueprint_cascade = BlueprintCascadeEngine()
         runtime.creation_card_builder = CreationCardBuilder(

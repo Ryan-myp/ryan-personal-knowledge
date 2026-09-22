@@ -1374,6 +1374,7 @@ def test_invalid_persisted_execution_mode_fails_back_to_deployment_default():
 
 def test_execution_mode_cache_is_bounded_and_expires(monkeypatch):
     import agents.ad_agent.runtime.runtime as runtime_module
+    import agents.ad_agent.runtime.ad_runtime_controls as controls_module
 
     runtime = AdvertisingComposition(require_llm=False, execution_mode="dry_run")
     try:
@@ -1385,7 +1386,7 @@ def test_execution_mode_cache_is_bounded_and_expires(monkeypatch):
         assert ("tenant-a", "operator-0") not in runtime._execution_mode_cache
 
         runtime.set_execution_mode("live", tenant_id="tenant-a", user_id="operator-expiring")
-        monkeypatch.setattr(runtime_module.time, "monotonic", lambda: 10_000_000)
+        monkeypatch.setattr(controls_module.time, "monotonic", lambda: 10_000_000)
         assert runtime.get_execution_mode("tenant-a", "operator-expiring") == "dry_run"
     finally:
         if runtime.task_executor:

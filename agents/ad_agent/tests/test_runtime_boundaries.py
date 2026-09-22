@@ -182,7 +182,7 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     from pathlib import Path
 
     root = Path("agents/ad_agent/runtime")
-    facade = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    facade = (root / "ad_application.py").read_text(encoding="utf-8")
     bootstrap = (root / "ad_runtime_bootstrap.py").read_text(encoding="utf-8")
     assembly = (root / "ad_runtime_assembly.py").read_text(encoding="utf-8")
 
@@ -209,13 +209,18 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     from pathlib import Path
 
     root = Path("agents/ad_agent/runtime")
-    facade = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    facade = (root / "ad_application.py").read_text(encoding="utf-8")
     policy = (root / "ad_runtime_policy.py").read_text(encoding="utf-8")
     context = (root / "ad_runtime_context.py").read_text(encoding="utf-8")
     run_service = (root / "ad_run_service.py").read_text(encoding="utf-8")
     catalog = (root / "ad_runtime_catalog.py").read_text(encoding="utf-8")
     lifecycle = (root / "ad_runtime_lifecycle.py").read_text(encoding="utf-8")
     presentation = (root / "ad_runtime_presentation.py").read_text(
+        encoding="utf-8"
+    )
+    controls = (root / "ad_runtime_controls.py").read_text(encoding="utf-8")
+    scope = (root / "ad_runtime_scope.py").read_text(encoding="utf-8")
+    reconciliation = (root / "ad_runtime_reconciliation.py").read_text(
         encoding="utf-8"
     )
 
@@ -225,12 +230,18 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     assert "class AdvertisingCatalogService" in catalog
     assert "class AdvertisingLifecycleService" in lifecycle
     assert "class AdvertisingPresentationService" in presentation
+    assert "class AdvertisingRuntimeControls" in controls
+    assert "class AdvertisingRuntimeScope" in scope
+    assert "class AdvertisingRuntimeReconciliation" in reconciliation
     assert "class AdvertisingRuntimePolicy" not in facade
     assert "class AdvertisingRuntimeContext" not in facade
     assert "class AdvertisingRunService" not in facade
     assert "class AdvertisingCatalogService" not in facade
     assert "class AdvertisingLifecycleService" not in facade
     assert "class AdvertisingPresentationService" not in facade
+    assert "class AdvertisingRuntimeControls" not in facade
+    assert "class AdvertisingRuntimeScope" not in facade
+    assert "class AdvertisingRuntimeReconciliation" not in facade
     assert "self.runtime_policy" in facade
     assert "self.runtime_context" in facade
     assert "self._run_service()" in facade
@@ -240,6 +251,9 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     assert "api_clients" not in catalog
     assert "api_clients" not in lifecycle
     assert "api_clients" not in presentation
+    assert "api_clients" not in controls
+    assert "api_clients" not in scope
+    assert "api_clients" not in reconciliation
 
 
 def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback():
@@ -249,7 +263,8 @@ def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback()
     root = Path("agents/ad_agent/runtime")
     assert not (root / "ad_turn_engine.py").exists()
     assert not (root / "ad_turn_orchestrator.py").exists()
-    runtime_source = (root / "ad_runtime.py").read_text(encoding="utf-8")
+    runtime_source = (root / "ad_application.py").read_text(encoding="utf-8")
+    assert not (root / "ad_runtime.py").exists()
     assert "def _run_unlocked" not in runtime_source
     assert "getattr(self, \"_platform_application\"" not in runtime_source
 

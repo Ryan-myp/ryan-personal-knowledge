@@ -1,60 +1,54 @@
 """
-runtime/ad_runtime.py - Advertising application runtime composition
+runtime/ad_application.py - Advertising application composition root
 
-借鉴 DAP Agent internal/core/engine/runtime.go
-核心职责：
-1. 管理 Session 生命周期
-2. 处理用户输入 → LLM → ToolCall → 执行 → 返回结果
-3. 多平台 Skill 工具的统一调度
-4. 跨 Skill 上下文传递
+广告应用组合根。通用 Run/Turn 生命周期由
+``agents.agent_harness.AgentRuntime`` 提供；这里仅组装广告场景的
+Skills、Tools、策略、持久化和管理服务。
 """
 
 from __future__ import annotations
 
-import time
-import os
 import re
 import threading
-import logging
 from contextvars import ContextVar
-from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from ..core.interfaces import (
-    ToolResult, ToolSourceModule,
+    ToolResult,
     ToolRegistry, WriteGuard, IntentParser, IntentRouter,
-    ParsedIntent, ToolEffect, ExecutionMode, EffectReconciler,
+    ParsedIntent, ExecutionMode, EffectReconciler,
     ToolDefinition,
 )
-from ..core.intent import LLMIntentParser, SimpleIntentRouter
+from ..core.intent import SimpleIntentRouter
 from ..core.features import RuntimeFeature
 from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionTrace, ExecutionEventCallback
 from ..core.response import ResponseRenderer, ResponseSynthesizer
-from ..domain.ad.response import LLMResponseSynthesizer
-from ..features.factory import feature_for_intent
 from ..core.tool_selector import DynamicToolSelector
 from ..core.policy import RuntimePolicy, validate_policies
 from agents.agent_platform.tools.policy import (
     ToolExecutionPolicy,
 )
-from ..core.memory import MemoryManager
 from ..domain.ad.knowledge import KnowledgeProvider
 from ..domain.ad.auth import RequestPrincipal
 from ..domain.ad.security import (
-    ACCOUNT_SCOPE_FIELDS,
     PROTECTED_INPUT_FIELDS,
 )
 from .skill import Skill, SkillLoader
 from .account_policy import AccountWhitelistValidator
 from .session_context import SessionContext
-from .security import RuntimeSecurity
+from ..core.memory import MemoryManager
 from .ad_runtime_policy import AdvertisingRuntimePolicy
 from .ad_runtime_context import AdvertisingRuntimeContext
 from .ad_run_service import AdvertisingRunService
 from .ad_runtime_catalog import AdvertisingCatalogService
+from .ad_runtime_controls import (
+    AdvertisingRuntimeControls,
+)
 from .ad_runtime_lifecycle import AdvertisingLifecycleService
 from .ad_runtime_presentation import AdvertisingPresentationService
+from .ad_runtime_reconciliation import AdvertisingRuntimeReconciliation
+from .ad_runtime_scope import AdvertisingRuntimeScope
 from .ad_creation_services import AdCreationServicesMixin
 from .ad_tool_source_services import AdToolSourceLifecycleMixin
 from .ad_runtime_facades import (
@@ -66,9 +60,6 @@ from .ad_runtime_facades import (
 from agents.agent_harness import MetricsSink, TurnRequest
 from ..persistence.interfaces import PersistenceBackend
 
-logger = logging.getLogger(__name__)
-
-
 class SessionBusyError(RuntimeError):
     """Another Runtime instance currently owns the mutable session lease."""
 
@@ -78,8 +69,6 @@ class SessionBusyError(RuntimeError):
 _execution_mode_context: ContextVar[Optional[str]] = ContextVar(
     "ad_agent_execution_mode", default=None
 )
-_EXECUTION_MODE_CACHE_TTL_SECONDS = 5.0
-_EXECUTION_MODE_CACHE_MAX_ENTRIES = 1024
 # ─── Advertising application runtime ──────────────────────────
 
 class AdvertisingComposition(
@@ -91,7 +80,7 @@ class AdvertisingComposition(
     AdWorkflowRuntimeFacade,
 ):
     """
-    广告应用层的单 Agent 组合根。
+    广告应用层的单 Agent 组合根，不是通用 Run Runtime。
 
     通用并发、会话租约和请求生命周期由 ``AgentRuntimeKernel`` 提供；本类
     只负责把广告应用的 Skills、Tools、Tool Sources、记忆、工作流和展示
@@ -106,7 +95,10 @@ class AdvertisingComposition(
     │  └─ WriteGuard（写入保护）                 │
     └─────────────────────────────────────────┘
 
-    借鉴 DAP Agent internal/core/engine/runtime.go 的核心设计：
+    通用 Run/Turn 生命周期由 ``agents.agent_harness.AgentRuntime`` 提供；
+    本类只负责广告场景的依赖装配、领域策略和管理 API。
+
+    借鉴 DAP Agent internal/core/engine/runtime.go 的应用组合设计：
     - Core 只认接口，不 import 业务
     - 业务通过 ToolSourceModule 注入
     - Tool 执行有统一的生命周期（权限→审批→幂等→执行→审计）
@@ -181,19 +173,15 @@ class AdvertisingComposition(
 
     @staticmethod
     def _validate_execution_mode(execution_mode: str) -> str:
-        mode = str(execution_mode or "").strip().lower()
-        if mode not in {item.value for item in ExecutionMode}:
-            raise ValueError(f"Unsupported execution_mode: {execution_mode}")
-        return mode
+        return AdvertisingRuntimeControls.validate_execution_mode(execution_mode)
 
     @property
     def execution_mode(self) -> str:
-        """Return the request mode, falling back to the deployment default."""
-        return _execution_mode_context.get() or self._execution_mode
+        return self._controls_service().execution_mode
 
     @execution_mode.setter
     def execution_mode(self, value: str) -> None:
-        self._execution_mode = self._validate_execution_mode(value)
+        self._controls_service().execution_mode = value
 
     def set_execution_mode(
         self,
@@ -202,83 +190,16 @@ class AdvertisingComposition(
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> None:
-        """Set a deployment default or an isolated principal override.
-
-        The one-argument form remains available to local/CLI callers. HTTP
-        callers should provide both identity dimensions to avoid changing the
-        mode observed by another principal in the same process.
-        """
-        mode = self._validate_execution_mode(execution_mode)
-        tenant = str(tenant_id or "").strip()
-        user = str(user_id or "").strip()
-        with self._execution_mode_lock:
-            if tenant and user:
-                self._cache_execution_mode((tenant, user), mode)
-                store = self._persistence_store
-                persist = getattr(store, "set_execution_mode", None)
-                if callable(persist):
-                    try:
-                        persist(tenant, user, mode)
-                    except Exception:
-                        # A preference write must never turn a safe mode
-                        # switch into an unsafe fallback or mutate process
-                        # state for another principal. Keep the in-memory
-                        # value for this process and expose the backend issue
-                        # via structured logging for later observability.
-                        logger.warning(
-                            "Failed to persist execution mode preference",
-                            extra={"tenant_id": tenant, "user_id": user},
-                            exc_info=True,
-                        )
-            else:
-                self._execution_mode = mode
-
-    def _cache_execution_mode(self, key: tuple[str, str], mode: str) -> None:
-        """Cache a mode briefly without allowing principal cardinality leaks."""
-        self._execution_mode_cache.pop(key, None)
-        self._execution_mode_cache[key] = (
-            mode, time.monotonic() + _EXECUTION_MODE_CACHE_TTL_SECONDS
+        return self._controls_service().set_execution_mode(
+            execution_mode,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
-        while len(self._execution_mode_cache) > _EXECUTION_MODE_CACHE_MAX_ENTRIES:
-            self._execution_mode_cache.popitem(last=False)
 
     def get_execution_mode(
         self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> str:
-        """Resolve a principal-scoped override over the deployment default."""
-        tenant = str(tenant_id or "").strip()
-        user = str(user_id or "").strip()
-        with self._execution_mode_lock:
-            if tenant and user:
-                key = (tenant, user)
-                cached = self._execution_mode_cache.get(key)
-                if cached:
-                    cached_mode, expires_at = cached
-                    if time.monotonic() < expires_at:
-                        self._execution_mode_cache.move_to_end(key)
-                        return cached_mode
-                    self._execution_mode_cache.pop(key, None)
-                persisted = getattr(self._persistence_store, "get_execution_mode", None)
-                if callable(persisted):
-                    try:
-                        stored = persisted(tenant, user)
-                        if stored is not None:
-                            mode = self._validate_execution_mode(stored)
-                            self._cache_execution_mode(key, mode)
-                            return mode
-                    except ValueError:
-                        logger.warning(
-                            "Ignoring invalid persisted execution mode preference",
-                            extra={"tenant_id": tenant, "user_id": user},
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Failed to load execution mode preference",
-                            extra={"tenant_id": tenant, "user_id": user},
-                            exc_info=True,
-                        )
-                return self._execution_mode
-            return self._execution_mode
+        return self._controls_service().get_execution_mode(tenant_id, user_id)
 
     def set_policies(self, policies: Optional[Iterable[RuntimePolicy]]) -> None:
         """Replace Skill-owned policies without interpreting their vocabulary."""
@@ -288,8 +209,7 @@ class AdvertisingComposition(
             setter(self.policies)
 
     def _feature_for_intent(self, intent: Any) -> Optional[RuntimeFeature]:
-        """Resolve an optional domain feature through its generic contract."""
-        return feature_for_intent(self.features, intent)
+        return self._controls_service().feature_for_intent(intent)
 
     def _resolve_workflow_item_scope(
         self,
@@ -298,23 +218,9 @@ class AdvertisingComposition(
         tools: list[Any],
         session: Any,
     ) -> Optional[str]:
-        """Resolve the advertising scope at the application boundary.
-
-        ``WorkflowCoordinator`` persists an opaque scope returned by this
-        callback.  Account semantics therefore stay in the advertising
-        composition root instead of leaking into generic workflow
-        infrastructure.
-        """
-        if not tools:
-            return None
-        tool = tools[0]
-        fallback = None
-        if not getattr(tool, "is_write_tool", False):
-            fallback = (
-                getattr(getattr(session, "ctx", None), "account_id", None)
-                if len(getattr(intent, "namespaces", []) or []) == 1 else None
-            )
-        return self.account_resolver.resolve(intent, platform, tools, fallback)
+        return self._scope_service().resolve_item(
+            intent, platform, tools, session
+        )
 
     def _resolve_workflow_result_scope(
         self,
@@ -326,19 +232,45 @@ class AdvertisingComposition(
         input_data: Mapping[str, Any],
         output_data: Mapping[str, Any],
     ) -> Optional[str]:
-        """Resolve persisted workflow scope at the advertising boundary."""
-        for source in (item, output_data, input_data):
-            for field in ACCOUNT_SCOPE_FIELDS:
-                value = source.get(field) if isinstance(source, Mapping) else None
-                if value not in (None, ""):
-                    return str(value)
-        return self._resolve_workflow_item_scope(intent, platform, tools, session)
+        return self._scope_service().resolve_result(
+            intent,
+            platform,
+            tools,
+            session,
+            item,
+            input_data,
+            output_data,
+        )
 
     def _presentation_service(self) -> AdvertisingPresentationService:
         service = getattr(self, "presentation_service", None)
         if service is None:
             service = AdvertisingPresentationService(self)
             self.presentation_service = service
+        return service
+
+    def _controls_service(self) -> AdvertisingRuntimeControls:
+        service = getattr(self, "controls_service", None)
+        if service is None:
+            service = AdvertisingRuntimeControls(
+                self,
+                mode_context=_execution_mode_context,
+            )
+            self.controls_service = service
+        return service
+
+    def _scope_service(self) -> AdvertisingRuntimeScope:
+        service = getattr(self, "scope_service", None)
+        if service is None:
+            service = AdvertisingRuntimeScope(self)
+            self.scope_service = service
+        return service
+
+    def _reconciliation_service(self) -> AdvertisingRuntimeReconciliation:
+        service = getattr(self, "reconciliation_service", None)
+        if service is None:
+            service = AdvertisingRuntimeReconciliation(self)
+            self.reconciliation_service = service
         return service
 
     def _clarification_field_label(
@@ -394,71 +326,21 @@ class AdvertisingComposition(
         return self._session_manager.store if self._session_manager else None
 
     def close(self, wait: bool = False) -> None:
-        """Stop durable workers through the infrastructure supervisor."""
-        self.supervisor.close(wait=wait)
+        return self._controls_service().close(wait=wait)
 
     def get_readiness(self) -> dict[str, Any]:
-        """Aggregate application readiness without making Provider requests.
-
-        The Runtime remains the advertising composition root, while the
-        supervisor contributes only generic worker/backend lifecycle state.
-        This method is the application-facing readiness contract used by the
-        HTTP adapter; it is intentionally separate from liveness.
-        """
-        try:
-            tool_count = len(self.registry.list_all())
-        except Exception:
-            tool_count = 0
-        model_ready = not self.require_llm or self._llm is not None
-        supervisor_health = self.supervisor.health()
-        checks = {
-            "runtime": True,
-            "llm": model_ready,
-            "tool_registry": tool_count > 0,
-            "persistence": (
-                self._persistence_store is None
-                or supervisor_health.get("backend", {}).get("status") == "healthy"
-            ),
-            "workers": (
-                self._persistence_store is None
-                or supervisor_health.get("status") == "healthy"
-                or not self.supervisor.task_executor
-            ),
-        }
-        ready = all(checks.values())
-        return {
-            "status": "ready" if ready else "not_ready",
-            "checks": checks,
-            "tool_count": tool_count,
-            "supervisor": supervisor_health,
-        }
+        return self._controls_service().readiness()
 
     @staticmethod
     def _default_outbox_delivery(event: Any) -> None:
-        """Consume events safely until an application sink is configured.
-
-        The Runtime owns lifecycle, while SSE/Webhook/metrics integrations are
-        supplied through ``outbox_delivery``.  Do not log the event payload:
-        workflow data may contain user-provided values.
-        """
-        logger.info(
-            "Outbox event consumed by default sink: event_id=%s run_id=%s type=%s",
-            getattr(event, "event_id", ""),
-            getattr(event, "run_id", ""),
-            getattr(event, "event_type", ""),
-        )
+        return AdvertisingRuntimeControls.default_outbox_delivery(event)
 
     @property
     def memory_manager(self) -> Optional[MemoryManager]:
-        """Expose the optional, provider-neutral Agent Memory service."""
-        return self._memory_manager
+        return self._controls_service().memory_manager
 
     def set_auto_memory_capture_enabled(self, enabled: bool) -> None:
-        """Toggle automatic event capture without disabling explicit memory."""
-        self.auto_memory_capture_enabled = bool(enabled)
-        manager = self._memory_manager
-        if manager is not None:
-            manager.set_auto_capture_enabled(bool(enabled))
+        return self._controls_service().set_auto_memory_capture_enabled(enabled)
 
     def _register_builtin_plugin(
         self,
@@ -596,53 +478,16 @@ class AdvertisingComposition(
         )
 
     def inject_llm(self, llm_client) -> None:
-        """注入 LLM 客户端"""
-        self._llm = llm_client
-        if self.response_synthesizer is None and llm_client is not None:
-            self.response_synthesizer = LLMResponseSynthesizer(
-                profile=self.agent_profile
-            )
-        if isinstance(self.intent_parser, LLMIntentParser):
-            self.intent_parser.inject_llm(llm_client)
+        return self._controls_service().inject_llm(llm_client)
 
     def assert_llm_ready(self) -> None:
-        """Fail fast when a production Runtime has no model-backed parser."""
-        if (
-            self.require_llm
-            and isinstance(self.intent_parser, LLMIntentParser)
-            and self._llm is None
-        ):
-            raise RuntimeError(
-                "LLM client is required; configure the model before starting the Agent"
-            )
+        return self._controls_service().assert_llm_ready()
 
     def enable_read_only_mode(self) -> None:
-        """
-        启用只读模式：从注册表中移除所有 WRITE 类工具。
-        调用此方法后，所有写操作工具将不可用。
-        """
-        self._read_only_mode = True
-
-        self._filter_write_tools()
+        return self._controls_service().enable_read_only_mode()
 
     def _filter_write_tools(self) -> None:
-        """Remove write tools from the registry at every registration seam."""
-
-        # 收集所有 WRITE 类工具名称
-        write_tools = []
-        for tool_def in self.registry.list_all():
-            if tool_def.effect_class in (ToolEffect.WRITE, ToolEffect.EXTERNAL_WRITE):
-                write_tools.append(tool_def.name)
-
-        # 从注册表中移除
-        for name in write_tools:
-            try:
-                self.registry.unregister(name)
-                logger.debug(f"只读模式：已移除写工具 {name}")
-            except Exception as e:
-                logger.warning(f"移除工具 {name} 失败: {e}")
-
-        logger.info(f"✅ 只读模式已启用，已过滤 {len(write_tools)} 个写工具")
+        return self._controls_service().filter_write_tools()
 
     # ─── Tool Source 注册 ───────────────────────────────────────
 
@@ -702,19 +547,11 @@ class AdvertisingComposition(
 
     @staticmethod
     def _freeze_credentials(value: Any) -> Any:
-        """Make credentials visible to handlers as a read-only snapshot."""
-        if isinstance(value, dict):
-            return MappingProxyType({
-                    key: AdvertisingComposition._freeze_credentials(item)
-                for key, item in value.items()
-            })
-        if isinstance(value, list):
-            return tuple(AdvertisingComposition._freeze_credentials(item) for item in value)
-        return value
+        return AdvertisingRuntimeControls.freeze_credentials(value)
 
     @staticmethod
     def _redact_for_persistence(value: Any) -> Any:
-        return RuntimeSecurity.redact_for_persistence(value)
+        return AdvertisingRuntimeControls.redact_for_persistence(value)
 
     def persist_conversation_turn(
         self, session: "SessionContext", turn_id: str,
@@ -740,45 +577,9 @@ class AdvertisingComposition(
 
 
     def _resolve_readback_definition(self, write_tool: str):
-        """Find the read Tool matching a write Tool's resource metadata."""
-        try:
-            write_definition, _handler = self._get_registered_tool(write_tool)
-        except KeyError:
-            return None
-        platform = self._canonical_platform(write_definition.namespace)
-        declared_readback = str(
-            getattr(write_definition, "readback_tool", "") or ""
-        ).strip()
-        if declared_readback:
-            try:
-                candidate, _handler = self._get_registered_tool(declared_readback)
-            except KeyError:
-                return None
-            if not candidate.is_read_tool:
-                return None
-            if self._canonical_platform(candidate.namespace) != platform:
-                return None
-            if candidate.action != "get" or candidate.resource_type != write_definition.resource_type:
-                return None
-            if candidate.parent_resource_type != write_definition.parent_resource_type:
-                return None
-            return candidate
-
-        candidates = []
-        for definition in self.registry.list_all():
-            if not definition.is_read_tool:
-                continue
-            if self._canonical_platform(definition.namespace) != platform:
-                continue
-            if definition.action != "get" or definition.resource_type != write_definition.resource_type:
-                continue
-            if definition.parent_resource_type != write_definition.parent_resource_type:
-                continue
-            candidates.append(definition)
-        # A name/order based tie-breaker would make a provider upgrade
-        # silently reconcile against the wrong endpoint. Ambiguity is a
-        # provider contract problem and must remain visible to recovery.
-        return candidates[0] if len(candidates) == 1 else None
+        return self._reconciliation_service().resolve_readback_definition(
+            write_tool
+        )
 
     # ─── 主循环入口 ────────────────────────────────────────────
 

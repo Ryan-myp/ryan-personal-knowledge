@@ -474,7 +474,7 @@ Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/age
 提供不依赖广告域的 Tool catalog。任意应用都通过同一个 Harness Agent 或
 Turn Handler 执行，不再创建业务 Pipeline。
 
-广告的 `runtime/ad_runtime.py` 是场景组合根，负责把广告 Skills、Tools、Provider
+广告的 `runtime/ad_application.py` 是场景组合根，负责把广告 Skills、Tools、Provider
 Modules、数据适配和基础设施资源注入唯一的平台应用。广告不再拥有自己的 Pipeline、
 Stages 或回合状态机；`runtime/ad_runtime_assembly.py` 只提供一个符合 Harness
 契约的 Turn Handler。`runtime/runtime.py` 仅作为稳定导出入口。Generic Runtime
@@ -546,7 +546,7 @@ ad_agent/
 │   └── intent.py            # 意图解析与路由
 ├── runtime/
 │   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
-│   ├── ad_runtime.py        # 广告应用组合根
+│   ├── ad_application.py    # 广告应用组合根
 │   ├── ad_runtime_assembly.py # AgentPlatform 场景装配
 │   ├── task_executor.py     # 通用异步 Task 队列与租约
 │   ├── scheduler.py         # 通用定时任务调度

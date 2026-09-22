@@ -534,7 +534,7 @@ Tool Registry、权限、账户范围或执行计划。
 | `core/tool_selector.py` | 当前源码 | Skill/Wiki/租户上下文组合与筛选 |
 | `agents/agent_platform/tools/policy.py` | 当前源码 | Tool/Scope/Effect/执行模式策略决策 |
 | `runtime/runtime.py` | 30 | 稳定的广告应用公共导出入口，不承载主循环 |
-| `runtime/ad_runtime.py` | 约 1,670 | 广告应用组合根：组装 Skills、Tools、Tool Sources、业务服务和 Kernel |
+| `runtime/ad_application.py` | 当前源码 | 广告应用组合根：组装 Skills、Tools、Tool Sources、业务服务和通用 Harness |
 | `runtime/ad_runtime_assembly.py` | 当前源码 | 广告组合图与 `AdRunStoreAdapter` |
 | `runtime/ad_runtime_assembly.py` | 当前源码 | 场景通过 `AgentPlatform` 装配标准 Harness |
 | `integration.py` | 当前源码 | 广告 Tool Catalog、Model Adapter 和 Executor 适配 |
