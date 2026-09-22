@@ -130,6 +130,25 @@ class AgentApplication:
             **kwargs,
         ))
 
+    def healthcheck(self) -> dict[str, Any]:
+        check = getattr(self.runtime, "healthcheck", None)
+        if callable(check):
+            return dict(check())
+        return {"status": "ok", "closed": self.runtime.closed}
+
+    def readiness(self) -> dict[str, Any]:
+        check = getattr(self.runtime, "readiness", None)
+        if callable(check):
+            return dict(check())
+        health = self.healthcheck()
+        ready = health.get("status") == "ok"
+        return {
+            "ready": ready,
+            "status": "ready" if ready else "not_ready",
+            "reason": None if ready else health.get("status"),
+            "health": health,
+        }
+
     def close(self) -> None:
         self.runtime.close()
 

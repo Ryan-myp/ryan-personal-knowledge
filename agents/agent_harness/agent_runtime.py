@@ -367,6 +367,42 @@ class AgentRuntime:
         list_skills = getattr(self.skill_catalog, "list_skills", None)
         return list_skills() if callable(list_skills) else []
 
+    def healthcheck(self) -> dict[str, Any]:
+        """Return safe runtime state for platform readiness endpoints."""
+        closed = self.closed
+        tool_count = len(self.list_tools())
+        skill_count = len(self.list_skills())
+        status = "closed" if closed else "ok"
+        return {
+            "status": status,
+            "closed": closed,
+            "pipeline": type(self.pipeline).__name__,
+            "tools": tool_count,
+            "skills": skill_count,
+            "run_store": self.run_store is not None,
+            "tool_catalog": self._catalog_health(self.tool_registry),
+            "skill_catalog": self._catalog_health(self.skill_catalog),
+        }
+
+    @staticmethod
+    def _catalog_health(catalog: Any) -> dict[str, Any]:
+        check = getattr(catalog, "healthcheck", None)
+        if callable(check):
+            result = check()
+            if isinstance(result, dict):
+                return dict(result)
+        return {"status": "ok" if catalog is not None else "unconfigured"}
+
+    def readiness(self) -> dict[str, Any]:
+        health = self.healthcheck()
+        ready = health["status"] == "ok"
+        return {
+            "ready": ready,
+            "status": "ready" if ready else "not_ready",
+            "reason": None if ready else health["status"],
+            "health": health,
+        }
+
     def forget_session(
         self,
         session_id: str,

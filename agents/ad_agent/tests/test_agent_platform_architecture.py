@@ -9,6 +9,7 @@ import pytest
 from agents.agent_harness import (
     AgentMessage,
     AgentState,
+    SkillBinding,
     StaticSkillSource,
     StaticToolSource,
     ToolBinding,
@@ -323,6 +324,197 @@ def test_integration_layer_tool_sources_are_registered_in_the_harness():
         assert application.prompt("find").reply == "search"
     finally:
         application.close()
+
+
+def test_platform_application_readiness_and_catalog_health_are_real():
+    skill = StaticSkillSource(
+        "skill:general",
+        [
+            SkillBinding(
+                name="general",
+                instructions="Use the registered tools.",
+            ),
+        ],
+    )
+    tool = StaticToolSource(
+        "tool:general",
+        [ToolBinding({"name": "lookup"}, lambda _context, _value: {"ok": True})],
+    )
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(
+        agent_id="default-agent",
+        skill_sources=(skill,),
+        tool_sources=(tool,),
+    ))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="diagnostics",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "diagnostics",
+        model=lambda _messages, _tools, _request: "done",
+    )
+    try:
+        assert application.readiness()["ready"] is False
+        assert application.readiness()["reason"] == "not_started"
+        assert application.healthcheck()["tools"] == 1
+        assert application.healthcheck()["skills"] == 1
+        assert application.tools.healthcheck()["source_snapshot"] == {
+            "tool:general": ["lookup"],
+        }
+        assert application.skills.healthcheck()["source_snapshot"] == {
+            "skill:general": ["general"],
+        }
+        runtime_health = application.healthcheck()["runtime"]
+        assert runtime_health["tool_catalog"]["tools"] == 1
+        assert runtime_health["skill_catalog"]["skills"] == 1
+
+        application.prompt("hello")
+        readiness = application.readiness()
+        assert readiness["ready"] is True
+        assert readiness["status"] == "ready"
+        assert application.started is True
+    finally:
+        application.close()
+
+
+def test_platform_application_manages_external_integration_lifecycle_and_health():
+    events = []
+
+    class Integration:
+        integration_id = "integration:test"
+
+        def start(self):
+            events.append("integration:start")
+
+        def healthcheck(self):
+            return {
+                "status": "ok",
+                "latency_ms": 1,
+                "access_token": "must-not-leak",
+            }
+
+        def close(self):
+            events.append("integration:close")
+
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="integration-health",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "integration-health",
+        model=lambda _messages, _tools, _request: "done",
+        dependencies=PlatformDependencies(
+            integrations=IntegrationLayer(
+                integrations=(Integration(),),
+            ),
+        ),
+    )
+    try:
+        assert application.healthcheck()["integrations"] == [{
+            "integration_id": "integration:test",
+            "status": "not_started",
+        }]
+        application.prompt("hello")
+        assert events == ["integration:start"]
+        assert application.healthcheck()["integrations"] == [{
+            "integration_id": "integration:test",
+            "status": "ok",
+            "latency_ms": 1,
+        }]
+        assert "access_token" not in str(application.healthcheck())
+    finally:
+        application.close()
+    assert events == ["integration:start", "integration:close"]
+
+
+def test_unstarted_external_integrations_are_not_closed():
+    events = []
+
+    class Integration:
+        integration_id = "integration:lazy"
+
+        def start(self):
+            events.append("start")
+
+        def close(self):
+            events.append("close")
+
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="lazy-close",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "lazy-close",
+        model=lambda _messages, _tools, _request: "done",
+        dependencies=PlatformDependencies(
+            integrations=IntegrationLayer(integrations=(Integration(),)),
+        ),
+    )
+    application.close()
+    assert events == []
+
+
+def test_platform_application_reports_unhealthy_resources_without_leaking_errors():
+    class BrokenResource:
+        def start(self):
+            return None
+
+        def check(self):
+            raise RuntimeError("contains internal connection details")
+
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="broken-health",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "broken-health",
+        model=lambda _messages, _tools, _request: "done",
+        dependencies=PlatformDependencies(
+            infrastructure=InfrastructureLayer(
+                resources=(BrokenResource(),),
+            ),
+        ),
+    )
+    try:
+        application.prompt("hello")
+        health = application.healthcheck()
+        assert health["status"] == "unhealthy"
+        assert health["infrastructure"]["resources"][0] == {
+            "name": "BrokenResource",
+            "index": 0,
+            "status": "unhealthy",
+            "error_type": "RuntimeError",
+        }
+        assert "internal connection details" not in str(health)
+        assert application.readiness()["ready"] is False
+    finally:
+        application.close()
+
+
+def test_closed_platform_application_rejects_new_runs_and_is_idempotent():
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="closed",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "closed",
+        model=lambda _messages, _tools, _request: "done",
+    )
+    application.close()
+    application.close()
+    assert application.closed is True
+    assert application.readiness()["ready"] is False
+    with pytest.raises(RuntimeError, match="closed"):
+        application.prompt("hello")
 
 
 def test_scenario_rejects_unknown_sources_instead_of_silently_dropping_them():

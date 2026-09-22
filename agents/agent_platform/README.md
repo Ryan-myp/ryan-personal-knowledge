@@ -46,6 +46,9 @@ application = platform.create_application("knowledge-qa", model=model)
 Integration Source 和 Infrastructure 生命周期。`PlatformDependencies.integrations`
 中的 Tool Source 会与场景选择的 Source 合并后注册到同一个 Harness；业务入口不应
 直接绕过它创建 Runtime。
+应用同时提供 `healthcheck()` 和 `readiness()`，用于检查 Runtime、Skill/Tool
+目录、外部集成和基础设施状态；未启动应用会明确返回 `not_started`，已关闭应用
+不会接受新的 Run。
 平台默认给 Harness 装配 `ToolExecutionPolicy`，统一执行输入 Schema、权限、风险、
 live 开关、跨进程 SQL 幂等和审计门禁。`GovernancePolicy` 的默认执行模式、Tool 数量、
 最大回合数和 Skill 上下文上限会真实下沉到 Harness，而不是只停留在架构元数据。

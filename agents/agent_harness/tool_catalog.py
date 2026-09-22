@@ -17,6 +17,12 @@ class ToolCatalog(Protocol):
     def get_binding(self, name: str) -> ToolBinding:
         ...
 
+    def source_snapshot(self) -> dict[str, list[str]]:
+        ...
+
+    def healthcheck(self) -> dict[str, Any]:
+        ...
+
 
 def _tool_name(definition: Any) -> str:
     if isinstance(definition, dict):
@@ -80,6 +86,23 @@ class InMemoryToolCatalog:
 
     def list_all(self) -> list[Any]:
         return self.list_tools()
+
+    def source_snapshot(self) -> dict[str, list[str]]:
+        """Return source ownership without exposing executor internals."""
+        with self._lock:
+            return {
+                source_id: list(names)
+                for source_id, names in sorted(self._sources.items())
+            }
+
+    def healthcheck(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "status": "ok",
+                "tools": len(self._bindings),
+                "sources": len(self._sources),
+                "source_snapshot": self.source_snapshot(),
+            }
 
 
 __all__ = ["InMemoryToolCatalog", "ToolCatalog"]

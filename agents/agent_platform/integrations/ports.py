@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping, Protocol
+from typing import Any, Mapping, Protocol
 
 from agents.agent_harness import ToolExecutor, ToolSource
 
@@ -12,6 +12,9 @@ class ExternalIntegration(Protocol):
 
     @property
     def integration_id(self) -> str:
+        ...
+
+    def start(self) -> None:
         ...
 
     def healthcheck(self) -> Mapping[str, Any]:

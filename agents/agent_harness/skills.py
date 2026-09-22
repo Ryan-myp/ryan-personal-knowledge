@@ -110,6 +110,12 @@ class SkillCatalog(Protocol):
     def build_context(self, user_input: str) -> str:
         ...
 
+    def source_snapshot(self) -> dict[str, list[str]]:
+        ...
+
+    def healthcheck(self) -> dict[str, Any]:
+        ...
+
 
 class InMemorySkillCatalog:
     """Bounded advisory Skill catalog shared by any Agent application."""
@@ -194,6 +200,23 @@ class InMemorySkillCatalog:
             if remaining <= 0:
                 break
         return "\n".join(chunks)
+
+    def source_snapshot(self) -> dict[str, list[str]]:
+        """Return source ownership without exposing Skill file contents."""
+        with self._lock:
+            return {
+                source_id: list(names)
+                for source_id, names in sorted(self._sources.items())
+            }
+
+    def healthcheck(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "status": "ok",
+                "skills": len(self._skills),
+                "sources": len(self._sources),
+                "source_snapshot": self.source_snapshot(),
+            }
 
 
 __all__ = [
