@@ -90,3 +90,19 @@ def test_parser_failure_closes_durable_run_instead_of_leaving_it_running():
         )
     finally:
         runtime.close(wait=True)
+
+
+def test_cancelled_and_partial_runs_have_terminal_timestamps():
+    store = AdAgentStore(":memory:")
+    store.create_execution_run(_run("cancelled"))
+    store.create_execution_run(_run("partial"))
+
+    assert store.update_execution_run("cancelled", status="cancelled")
+    assert store.update_execution_run("partial", status="partially_failed")
+
+    cancelled = store.get_execution_run("cancelled")
+    partial = store.get_execution_run("partial")
+    assert cancelled.status == "cancelled"
+    assert cancelled.finished_at
+    assert partial.status == "partially_failed"
+    assert partial.finished_at

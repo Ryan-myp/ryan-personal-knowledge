@@ -2585,7 +2585,10 @@ class AdAgentStore:
                 return True
             status = str(event.get("status") or "")
             is_done = event_type == "done"
-            terminal = status in {"succeeded", "failed", "recovery_required"}
+            terminal = status in {
+                "succeeded", "failed", "partially_failed",
+                "recovery_required", "cancelled",
+            }
             assignments = ["updated_at = ?"]
             values: list[Any] = [now]
             if is_done and status:
@@ -2677,7 +2680,10 @@ class AdAgentStore:
         if status is not None:
             assignments.append("status = ?")
             values.append(str(status))
-            if status in {"succeeded", "failed", "recovery_required"}:
+            if status in {
+                "succeeded", "failed", "partially_failed",
+                "recovery_required", "cancelled",
+            }:
                 assignments.append("finished_at = COALESCE(finished_at, ?)")
                 values.append(datetime.now(timezone.utc).isoformat())
         if metadata is not None:
@@ -3964,6 +3970,15 @@ class AdAgentStore:
                 ConversationMessageRecord.from_row(dict(row))
                 for row in reversed(rows)
             ]
+
+    def delete_conversation_messages(self, session_id: str) -> None:
+        """Delete one session transcript after the adapter checked its scope."""
+        with self._lock:
+            self._get_conn().execute(
+                "DELETE FROM conversation_messages WHERE session_id = ?",
+                (str(session_id),),
+            )
+            self._get_conn().commit()
 
     # -- Tenant-scoped Markdown Wiki documents -------------------------
 

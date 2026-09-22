@@ -58,6 +58,7 @@ class AgentApplication:
         max_input_tokens: int | None = None,
         max_output_tokens: int | None = None,
         max_total_tokens: int | None = None,
+        max_tool_result_chars: int = 32_000,
         session_ttl_seconds: float = 3600.0,
         max_sessions: int = 1000,
     ) -> "AgentApplication":
@@ -100,6 +101,7 @@ class AgentApplication:
             max_input_tokens=max_input_tokens,
             max_output_tokens=max_output_tokens,
             max_total_tokens=max_total_tokens,
+            max_tool_result_chars=max_tool_result_chars,
             session_ttl_seconds=session_ttl_seconds,
             max_sessions=max_sessions,
         )

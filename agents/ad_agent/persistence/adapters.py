@@ -130,5 +130,18 @@ class PersistenceTranscriptStore:
                 metadata=payload.get("metadata") or {},
             ))
 
+    def clear(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> None:
+        self._assert_scope(session_id, tenant_id, user_id)
+        clear = getattr(self.backend, "delete_conversation_messages", None)
+        if not callable(clear):
+            raise TypeError("persistence backend lacks transcript deletion")
+        clear(str(session_id))
+
 
 __all__ = ["PersistenceIdempotencyStore", "PersistenceTranscriptStore"]

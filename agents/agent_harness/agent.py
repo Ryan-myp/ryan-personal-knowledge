@@ -125,6 +125,7 @@ class Agent:
         max_output_tokens: int | None = None,
         max_total_tokens: int | None = None,
         max_stream_delta_chars: int = 4096,
+        max_tool_result_chars: int = 32_000,
     ) -> None:
         if max_turns <= 0:
             raise ValueError("max_turns must be positive")
@@ -157,6 +158,8 @@ class Agent:
                 raise ValueError(f"{name} must be positive")
         if max_stream_delta_chars <= 0:
             raise ValueError("max_stream_delta_chars must be positive")
+        if max_tool_result_chars <= 0:
+            raise ValueError("max_tool_result_chars must be positive")
         self.model = model
         self.tool_catalog = tool_catalog
         self.skill_catalog = skill_catalog
@@ -182,6 +185,7 @@ class Agent:
         self.max_output_tokens = max_output_tokens
         self.max_total_tokens = max_total_tokens
         self.max_stream_delta_chars = int(max_stream_delta_chars)
+        self.max_tool_result_chars = int(max_tool_result_chars)
         self.before_tool_call = before_tool_call
         self.after_tool_call = after_tool_call
         self.should_stop_after_turn = should_stop_after_turn
@@ -283,16 +287,52 @@ class Agent:
             self._session_locks.pop(key, None)
             self._abort_events.pop(key, None)
 
-    def reset(self, session_id: str | None = None) -> None:
-        state = self._state_for(session_id)
-        with self._lock_for(session_id):
+    def reset(
+        self,
+        session_id: str | None = None,
+        *,
+        user_id: str = "anonymous",
+        tenant_id: str = "default",
+    ) -> None:
+        state = self._state_for(session_id, user_id, tenant_id)
+        with self._lock_for(session_id, user_id, tenant_id):
             if state.is_running:
                 raise RuntimeError("Agent is already running")
+            if self.transcript_store is not None and session_id:
+                clear = getattr(self.transcript_store, "clear", None)
+                if callable(clear):
+                    try:
+                        clear(
+                            str(session_id),
+                            tenant_id=str(tenant_id or "default"),
+                            user_id=str(user_id or "anonymous"),
+                        )
+                    except Exception as error:
+                        raise TranscriptPersistenceError(
+                            "transcript clear failed",
+                        ) from error
             state.messages = list(self._system_messages)
             state.error_message = None
             state.usage = {}
             state.hydrated = False
-            self._abort_event_for(session_id).clear()
+            self._abort_event_for(session_id, user_id, tenant_id).clear()
+
+    def forget_session(
+        self,
+        session_id: str,
+        *,
+        user_id: str = "anonymous",
+        tenant_id: str = "default",
+    ) -> None:
+        """Drop one in-memory session after its durable record was deleted."""
+        key = self._session_key(session_id, user_id, tenant_id)
+        with self._session_guard:
+            state = self._session_states.get(key)
+            if state is not None and state.is_running:
+                raise RuntimeError("Agent session is already running")
+            self._session_states.pop(key, None)
+            self._session_locks.pop(key, None)
+            self._abort_events.pop(key, None)
 
     def subscribe(
         self, callback: Callable[[dict[str, Any]], None],
@@ -918,7 +958,22 @@ class Agent:
             tool_definition=getattr(binding, "definition", None),
         )
         if callable(self.before_tool_call):
-            decision = self.before_tool_call(context)
+            try:
+                decision = self.before_tool_call(context)
+            except Exception as error:
+                return {
+                    "tool_call_id": call.id,
+                    "name": call.name,
+                    "content": "Tool policy evaluation failed",
+                    "is_error": True,
+                    "terminate": True,
+                    "recovery_required": True,
+                    "effect_state": "unknown",
+                    "runtime_signals": {
+                        "tool_policy_error": True,
+                        "tool_policy_error_type": type(error).__name__,
+                    },
+                }
             if isinstance(decision, Mapping) and decision.get("block"):
                 result = {
                     "tool_call_id": call.id,
@@ -949,21 +1004,26 @@ class Agent:
                 output = binding.executor(context, dict(call.arguments))
             else:
                 raise TypeError(f"Tool '{call.name}' has no executor")
+            safe_output = redact_for_persistence(output)
             result = {
                 "tool_call_id": call.id,
                 "name": call.name,
-                "content": output,
+                "content": self._bound_tool_value(safe_output),
                 "is_error": False,
                 "terminate": False,
             }
-            if isinstance(output, Mapping):
+            if isinstance(safe_output, Mapping):
                 for key in (
                     "needs_input", "needs_confirmation", "confirmation_payload",
                     "runtime_signals", "recovery_required", "success",
                     "effect_state", "data", "execution_status",
                 ):
-                    if key in output:
-                        result[key] = output[key]
+                    if key in safe_output:
+                        result[key] = (
+                            self._bound_tool_value(safe_output[key])
+                            if key == "data"
+                            else safe_output[key]
+                        )
         except Exception as error:
             result = {
                 "tool_call_id": call.id,
@@ -973,10 +1033,42 @@ class Agent:
                 "terminate": False,
             }
         if callable(self.after_tool_call):
-            override = self.after_tool_call(context, result)
+            try:
+                override = self.after_tool_call(context, result)
+            except Exception as error:
+                return {
+                    **result,
+                    "content": "Tool post-execution policy failed",
+                    "is_error": True,
+                    "terminate": True,
+                    "recovery_required": True,
+                    "effect_state": "unknown",
+                    "runtime_signals": {
+                        **dict(result.get("runtime_signals") or {}),
+                        "tool_policy_error": True,
+                        "tool_policy_error_type": type(error).__name__,
+                    },
+                }
             if isinstance(override, Mapping):
                 result = {**result, **dict(override)}
         return result
+
+    def _bound_tool_value(self, value: Any) -> Any:
+        """Keep model-facing Tool content bounded without dropping status data."""
+        if isinstance(value, str):
+            text = value
+        else:
+            try:
+                text = json.dumps(
+                    value, ensure_ascii=False, sort_keys=True, default=str,
+                )
+            except (TypeError, ValueError):
+                text = str(value)
+        if len(text) <= self.max_tool_result_chars:
+            return value
+        marker = "\n...[tool output truncated]"
+        limit = max(0, self.max_tool_result_chars - len(marker))
+        return text[:limit] + marker
 
     def _execute_tools(
         self,

@@ -40,5 +40,13 @@ class TranscriptStore(Protocol):
         user_id: str,
     ) -> None: ...
 
+    def clear(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+    ) -> None: ...
+
 
 __all__ = ["IdempotencyStore", "TranscriptStore"]

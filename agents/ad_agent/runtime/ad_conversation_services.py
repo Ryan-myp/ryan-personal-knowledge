@@ -336,6 +336,15 @@ class AdConversationServices:
         deleted = self.runtime._session_manager.delete_session(normalized_session_id)
         if deleted:
             self.runtime._sessions.pop(normalized_session_id, None)
+            forget_session = getattr(
+                self.runtime._runtime_kernel, "forget_session", None
+            )
+            if callable(forget_session):
+                forget_session(
+                    normalized_session_id,
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                )
         return deleted
 
     def delete_conversations(

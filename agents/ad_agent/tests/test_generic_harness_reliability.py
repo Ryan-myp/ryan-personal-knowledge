@@ -29,6 +29,10 @@ class _TranscriptStore:
             key = (tenant_id, user_id, session_id)
             self.messages.setdefault(key, []).extend(messages)
 
+    def clear(self, session_id, *, tenant_id, user_id):
+        with self.lock:
+            self.messages.pop((tenant_id, user_id, session_id), None)
+
 
 def test_sql_idempotency_is_cross_store_and_hash_bound(tmp_path):
     path = tmp_path / "idempotency.db"
@@ -165,6 +169,65 @@ def test_transcript_store_keeps_tenant_and_user_scopes_separate():
         app.prompt("private", session_id="same", user_id="u1", tenant_id="t1")
         app.prompt("other", session_id="same", user_id="u2", tenant_id="t1")
         assert "private" not in seen[-1]
+    finally:
+        app.close()
+
+
+def test_reset_clears_durable_transcript_when_the_store_supports_clear():
+    store = _TranscriptStore()
+    seen = []
+
+    class Model:
+        def complete(self, messages, _tools, _request):
+            seen.append([message.content for message in messages])
+            return "done"
+
+    app = AgentApplication.create(model=Model(), transcript_store=store)
+    try:
+        app.prompt("old", session_id="reset-session", user_id="u1", tenant_id="t1")
+        app.agent.reset(
+            "reset-session",
+            user_id="u1",
+            tenant_id="t1",
+        )
+    finally:
+        app.close()
+
+    second = AgentApplication.create(model=Model(), transcript_store=store)
+    try:
+        second.prompt(
+            "new",
+            session_id="reset-session",
+            user_id="u1",
+            tenant_id="t1",
+        )
+        assert "old" not in seen[-1]
+        assert "new" in seen[-1]
+    finally:
+        second.close()
+
+
+def test_forget_session_drops_only_the_in_memory_working_window():
+    store = _TranscriptStore()
+    seen = []
+
+    class Model:
+        def complete(self, messages, _tools, _request):
+            seen.append([message.content for message in messages])
+            return "done"
+
+    app = AgentApplication.create(model=Model(), transcript_store=store)
+    try:
+        app.prompt("old", session_id="forget-session", user_id="u1", tenant_id="t1")
+        store.clear("forget-session", tenant_id="t1", user_id="u1")
+        app.runtime.forget_session(
+            "forget-session",
+            user_id="u1",
+            tenant_id="t1",
+        )
+        app.prompt("new", session_id="forget-session", user_id="u1", tenant_id="t1")
+        assert "old" not in seen[-1]
+        assert "new" in seen[-1]
     finally:
         app.close()
 
@@ -349,5 +412,77 @@ def test_model_budget_is_scoped_to_one_run_not_the_whole_session():
         assert first.status.value == "succeeded"
         assert second.status.value == "succeeded"
         assert second.data["usage"]["total_tokens"] == 6
+    finally:
+        app.close()
+
+
+def test_tool_policy_hook_failure_requires_recovery():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(
+                content="",
+                tool_calls=(ToolCall("call-1", "protected_tool", {}),),
+            )
+
+    class Tool:
+        def execute(self, _context, _arguments):
+            raise AssertionError("policy hook should run before the Tool")
+
+    from agents.agent_harness import StaticToolSource, ToolBinding
+
+    app = AgentApplication.create(
+        model=Model(),
+        before_tool_call=lambda _context: (_ for _ in ()).throw(
+            RuntimeError("policy unavailable")
+        ),
+    )
+    app.register_tool_source(StaticToolSource(
+        "test",
+        [ToolBinding({"name": "protected_tool"}, Tool())],
+    ))
+    try:
+        result = app.prompt("protected")
+        assert result.status.value == "recovery_required"
+        assert result.recovery_required is True
+        assert result.runtime_signals["tool_policy_error"] is True
+    finally:
+        app.close()
+
+
+def test_tool_output_is_bounded_before_it_enters_the_next_model_turn():
+    seen_tool_content = []
+
+    class Model:
+        def complete(self, messages, _tools, _request):
+            if any(message.role == "tool" for message in messages):
+                seen_tool_content.append(
+                    next(message.content for message in messages if message.role == "tool")
+                )
+                return "done"
+            return ModelTurn(
+                content="",
+                tool_calls=(ToolCall("call-1", "large_tool", {}),),
+            )
+
+    class Tool:
+        def execute(self, _context, _arguments):
+            return "x" * 200
+
+    from agents.agent_harness import StaticToolSource, ToolBinding
+
+    app = AgentApplication.create(
+        model=Model(),
+        max_tool_result_chars=32,
+    )
+    app.register_tool_source(StaticToolSource(
+        "test",
+        [ToolBinding({"name": "large_tool"}, Tool())],
+    ))
+    try:
+        result = app.prompt("large")
+        assert result.status.value == "succeeded"
+        assert len(seen_tool_content) == 1
+        assert len(seen_tool_content[0]) <= 32
+        assert "truncated" in seen_tool_content[0]
     finally:
         app.close()

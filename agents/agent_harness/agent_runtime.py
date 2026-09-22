@@ -367,6 +367,22 @@ class AgentRuntime:
         list_skills = getattr(self.skill_catalog, "list_skills", None)
         return list_skills() if callable(list_skills) else []
 
+    def forget_session(
+        self,
+        session_id: str,
+        *,
+        user_id: str = "anonymous",
+        tenant_id: str = "default",
+    ) -> None:
+        """Forget only the local working window after durable deletion."""
+        forget = getattr(self.pipeline, "forget_session", None)
+        if callable(forget):
+            forget(
+                str(session_id),
+                user_id=str(user_id or "anonymous"),
+                tenant_id=str(tenant_id or "default"),
+            )
+
     def close(self) -> None:
         if self._closed:
             return
