@@ -212,6 +212,10 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
 
     root = Path("agents/ad_agent/runtime")
     facade = (root / "ad_application.py").read_text(encoding="utf-8")
+    application_facade = (root / "ad_application_facade.py").read_text(
+        encoding="utf-8"
+    )
+    hooks = (root / "ad_application_hooks.py").read_text(encoding="utf-8")
     policy = (root / "ad_runtime_policy.py").read_text(encoding="utf-8")
     context = (root / "ad_runtime_context.py").read_text(encoding="utf-8")
     run_service = (root / "ad_run_service.py").read_text(encoding="utf-8")
@@ -244,9 +248,13 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     assert "class AdvertisingRuntimeControls" not in facade
     assert "class AdvertisingRuntimeScope" not in facade
     assert "class AdvertisingRuntimeReconciliation" not in facade
-    assert "self.runtime_policy" in facade
-    assert "self.runtime_context" in facade
-    assert "self._run_service()" in facade
+    assert "self.runtime_policy" in hooks
+    assert "self.runtime_context" in hooks
+    assert "self._run_service()" in application_facade
+    assert "def run(" in application_facade
+    assert "def register_tool_source(" in application_facade
+    assert "api_clients" not in application_facade
+    assert "api_clients" not in hooks
     assert "api_clients" not in policy
     assert "api_clients" not in context
     assert "api_clients" not in run_service
@@ -256,6 +264,29 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     assert "api_clients" not in controls
     assert "api_clients" not in scope
     assert "api_clients" not in reconciliation
+
+
+def test_ad_application_root_only_declares_composition_and_constructor():
+    from pathlib import Path
+
+    root = Path("agents/ad_agent/runtime")
+    source = (root / "ad_application.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    classes = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef)
+        and node.name == "AdvertisingComposition"
+    ]
+    assert len(classes) == 1
+    methods = [
+        node.name
+        for node in classes[0].body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    assert methods == ["__init__"]
+    assert "class AdApplicationFacadeMixin" not in source
+    assert "class AdApplicationHooksMixin" not in source
 
 
 def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback():
