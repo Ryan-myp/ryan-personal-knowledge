@@ -9,7 +9,7 @@ from agents.ad_agent.core.interfaces import (
 )
 from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 class _Noop(ToolHandler):
@@ -42,7 +42,7 @@ def _tool(name, *, action="list", resource="campaign", effect=ToolEffect.READ,
 def _runtime(*tools):
     validator = AccountWhitelistValidator("/path/does/not/exist")
     validator.allowed_accounts = {"meta": ["m-test"]}
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
         enforce_account_scope=True,

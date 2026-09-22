@@ -22,7 +22,7 @@ from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
-from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AgentRuntime
+from agents.ad_agent.runtime.runtime import AccountWhitelistValidator, AdvertisingComposition
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.skill import BaseSkill, SkillContract, SkillLoader
 from agents.ad_agent.core.tool_registry import validate_tool_input
@@ -394,7 +394,7 @@ def test_four_channel_create_chains_are_dry_run_only(
 ):
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {platform: [account_id]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(factory())
 
     result = runtime.run(
@@ -412,7 +412,7 @@ def test_four_channel_create_chains_are_dry_run_only(
 
 def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
     """The provider-owned alias must keep the TikTok create chain intact."""
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(tiktok=["t1"]),
     )
@@ -454,7 +454,7 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
 
 def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
     """One incomplete channel must not let another channel create first."""
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(meta=["m1"], tiktok=["t1"]),
     )
@@ -504,7 +504,7 @@ def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
 def test_structured_google_platform_alias_params_reach_provider_tool():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["g1"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
@@ -584,7 +584,7 @@ def test_provider_free_detail_reads_fail_closed_for_all_channels():
         ("dv360", "d1", create_dv360_tool_source),
     ]
     for platform, account, factory in cases:
-        runtime = AgentRuntime(require_llm=False,
+        runtime = AdvertisingComposition(require_llm=False,
             whitelist_validator=whitelist(**{platform: [account]}),
             offline_mode=False,
         )
@@ -599,7 +599,7 @@ def test_provider_free_detail_reads_fail_closed_for_all_channels():
 
 
 def test_read_result_without_evidence_status_is_marked_unknown():
-    runtime = AgentRuntime(require_llm=False, offline_mode=False)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=False)
     runtime.registry.register(
         ToolDefinition(
             name="statusless_read",
@@ -622,7 +622,7 @@ def test_read_result_without_evidence_status_is_marked_unknown():
 
 
 def test_structured_red_line_fields_are_rejected_without_mutating_credentials():
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=whitelist(meta=["m1"]))
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=whitelist(meta=["m1"]))
     runtime.register_tool_source(create_meta_tool_source())
     credentials = {"meta": {"access_token": "caller-secret"}}
     result = runtime.run(
@@ -642,7 +642,7 @@ def test_structured_red_line_fields_are_rejected_without_mutating_credentials():
 
 
 def test_generic_token_is_a_red_line_in_structured_inputs():
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=whitelist(meta=["m1"]))
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=whitelist(meta=["m1"]))
     runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "更新 Meta campaign campaign_id=123",
@@ -659,7 +659,7 @@ def test_generic_token_is_a_red_line_in_structured_inputs():
 
 
 def test_credential_in_natural_language_is_rejected_after_parser_redaction():
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     result = runtime.run(
         "创建 TikTok campaign，目标=APP_PROMOTION，access_token=natural-language-secret",
     )
@@ -671,7 +671,7 @@ def test_credential_in_natural_language_is_rejected_after_parser_redaction():
 
 
 def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     calls = []
 
     class Handler:
@@ -703,7 +703,7 @@ def test_account_configuration_fields_are_only_allowed_as_top_level_selectors():
 
 
 def test_live_write_rejects_custom_handler_without_provider_client():
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         execution_mode=ExecutionMode.LIVE.value,
         allow_live_writes=True,
         enforce_account_scope=False,
@@ -734,7 +734,7 @@ def test_live_write_rejects_custom_handler_without_provider_client():
 
 
 def test_redaction_handles_json_and_python_dict_strings():
-    redact = AgentRuntime._redact_for_persistence
+    redact = AdvertisingComposition._redact_for_persistence
     value = redact(
         "{'access_token': 'SECRET', \"client_secret\": \"CS\", "
         "'private_key': 'KEY', 'partnerId': 'PARTNER', 'perterId': 'TYPO_PARTNER', 'mcc': 'MCC'}"
@@ -752,7 +752,7 @@ def test_redaction_handles_json_and_python_dict_strings():
     ],
 )
 def test_configuration_redlines_are_rejected_at_top_level_platform_params(field):
-    runtime = AgentRuntime(require_llm=False, )
+    runtime = AdvertisingComposition(require_llm=False, )
     result = runtime.run(
         "你好",
         session_id=f"redline-{field}",
@@ -766,7 +766,7 @@ def test_configuration_redlines_are_rejected_at_top_level_platform_params(field)
 
 
 def test_account_selector_remains_allowed_while_configuration_fields_do_not():
-    runtime = AgentRuntime(require_llm=False, )
+    runtime = AdvertisingComposition(require_llm=False, )
     assert runtime.security.validate_input_redline({"account_id": "test-account"}) == []
     assert runtime.security.validate_input_redline({"advertiser_id": "test-advertiser"}) == []
     assert runtime.security.validate_input_redline({"customer_id": "test-customer"}) == []
@@ -792,7 +792,7 @@ class TemporaryFailureMetaClient(MinimalMetaClient):
 
 def test_confirmation_payload_is_bound_to_the_exact_plan():
     client = MinimalMetaClient()
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
         allow_live_writes=True,
@@ -833,7 +833,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan():
 
 
 def test_live_cross_channel_batch_is_explicitly_unsupported():
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
         allow_live_writes=True,
@@ -1044,7 +1044,7 @@ def test_update_contract_rejects_unknown_nested_provider_fields():
 def test_tool_specific_unknown_creation_parameter_is_not_silently_dropped():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "创建 Meta campaign",
@@ -1066,7 +1066,7 @@ def test_tool_specific_unknown_creation_parameter_is_not_silently_dropped():
 def test_conditional_missing_parameter_exposes_lookup_tool():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_tiktok_tool_source())
     result = runtime.run(
         "创建 TikTok campaign",
@@ -1100,7 +1100,7 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
 
 def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     validator = whitelist(meta=["m1"], tiktok=["t1"])
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
     runtime.register_tool_source(create_tiktok_tool_source())
 
@@ -1124,7 +1124,7 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
 
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         whitelist_validator=validator,
         selection_token_secret="selection-secret-1234",
     )
@@ -1194,7 +1194,7 @@ def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
 
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         whitelist_validator=validator,
         selection_token_secret="selection-secret-1234",
     )
@@ -1221,7 +1221,7 @@ def test_tiktok_adgroup_lookup_populates_specialized_ad_creation_picker():
                 "adgroup_name": "Traffic group",
             }]
 
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(tiktok=["t1"]),
         selection_token_secret="selection-secret-1234",
@@ -1267,7 +1267,7 @@ def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
             calls.append((filtering, page_size))
             return [{"app_id": "app-global", "app_name": "Global App"}]
 
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(tiktok=["t1"]),
         selection_token_secret="selection-secret-1234",
@@ -1295,7 +1295,7 @@ def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
 
 
 def test_nested_google_manual_app_identifier_is_explicit_not_a_fake_lookup():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     definition = runtime.registry.get("google_create_campaign")[0]
     app_id = definition.input_schema.properties["app_campaign_setting"]["properties"]["app_id"]
@@ -1315,7 +1315,7 @@ def test_lookup_dependency_is_checked_before_meta_provider_call():
             calls.append((args, kwargs))
             return [{"id": "ps-1", "name": "Product Set"}]
 
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(meta=["m1"]),
     )
@@ -1339,7 +1339,7 @@ def test_lookup_dependency_context_is_forwarded_to_google_provider_tool():
             calls.append((campaign_id, page_size))
             return [{"id": "ag-1", "name": "Search Group"}]
 
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(**{"google-ads": ["g1"]}),
         selection_token_secret="selection-secret-1234",
@@ -1358,7 +1358,7 @@ def test_lookup_dependency_context_is_forwarded_to_google_provider_tool():
 def test_live_dynamic_parameter_rejects_unattested_raw_value():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         whitelist_validator=validator,
         execution_mode=ExecutionMode.LIVE.value,
         allow_live_writes=True,
@@ -1382,7 +1382,7 @@ def test_live_creation_chain_trusts_parent_id_from_prior_runtime_result():
     """A provider-created parent must flow to the next node without a second picker."""
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"]}
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=validator,
         execution_mode=ExecutionMode.LIVE.value,
@@ -1403,7 +1403,7 @@ def test_live_creation_chain_trusts_parent_id_from_prior_runtime_result():
 
 
 def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(**{"google-ads": ["g1"]}),
         execution_mode=ExecutionMode.LIVE.value,
@@ -1428,7 +1428,7 @@ def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
 def test_provider_status_is_normalized_before_dry_run_update_plan():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"], "google-ads": ["g1"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_tiktok_tool_source())
     runtime.register_tool_source(create_google_tool_source())
 
@@ -1450,7 +1450,7 @@ def test_provider_status_is_normalized_before_dry_run_update_plan():
 def test_common_business_objective_uses_skill_owned_provider_mapping():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
     runtime.register_tool_source(create_tiktok_tool_source())
 
@@ -1478,7 +1478,7 @@ def test_common_business_objective_uses_skill_owned_provider_mapping():
 def test_dry_run_reports_provider_fields_still_pending_without_calling_api():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
     result = runtime.run(
         "创建 Meta campaign 名称=Pending provider fields",
@@ -1582,7 +1582,7 @@ def test_runtime_rejects_tool_version_not_supported_by_provider_client():
             calls.append(True)
             return ToolResult.ok({"unexpected": True})
 
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     runtime.registry.register(
         ToolDefinition(
             name="versioned_read",
@@ -1635,7 +1635,7 @@ def test_tool_source_without_version_metadata_does_not_create_unknown_contract()
                 Handler(),
             )]
 
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     runtime.register_tool_source(VersionlessToolSource())
     definition, _handler = runtime._get_registered_tool("versionless_read")
 
@@ -1724,7 +1724,7 @@ def test_all_provider_transports_normalize_empty_or_non_json_success_body(monkey
 def test_write_reservation_survives_runtime_restart():
     store = AdAgentStore(":memory:")
     first_client = MinimalMetaClient()
-    first_runtime = AgentRuntime(require_llm=False,
+    first_runtime = AdvertisingComposition(require_llm=False,
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
@@ -1752,7 +1752,7 @@ def test_write_reservation_survives_runtime_restart():
     assert executed["results"][0]["success"] is True
 
     second_client = MinimalMetaClient()
-    second_runtime = AgentRuntime(require_llm=False,
+    second_runtime = AdvertisingComposition(require_llm=False,
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
@@ -1781,7 +1781,7 @@ def test_write_reservation_survives_runtime_restart():
 def test_uncertain_live_write_keeps_reservation_for_recovery():
     store = AdAgentStore(":memory:")
     first_client = TemporaryFailureMetaClient()
-    first_runtime = AgentRuntime(require_llm=False,
+    first_runtime = AdvertisingComposition(require_llm=False,
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
@@ -1817,7 +1817,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
     assert reservation["status"] == "pending"
 
     second_client = TemporaryFailureMetaClient()
-    second_runtime = AgentRuntime(require_llm=False,
+    second_runtime = AdvertisingComposition(require_llm=False,
         persistence_store=store,
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,

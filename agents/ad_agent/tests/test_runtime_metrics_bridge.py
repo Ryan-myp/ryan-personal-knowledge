@@ -1,10 +1,10 @@
 from agents.agent_harness import InMemoryMetrics
-from agents.ad_agent import AgentRuntime
+from agents.ad_agent import AdvertisingComposition
 
 
 def test_ad_runtime_forwards_generic_metrics_to_the_harness_kernel():
     metrics = InMemoryMetrics()
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         enforce_account_scope=False,
         metrics=metrics,

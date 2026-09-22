@@ -24,6 +24,7 @@ class AdPersistenceServices:
         user_input: str, reply: str,
         execution_trace: Optional[ExecutionTrace] = None,
         ui: Optional[Mapping[str, Any]] = None,
+        persist_messages: bool = True,
     ) -> None:
         """Persist a complete sanitized turn and keep bounded model context.
 
@@ -82,12 +83,13 @@ class AdPersistenceServices:
             session.ctx.metadata["conversation_title_source"] = title_source
         if not self.runtime._session_manager:
             return
-        self.runtime._session_manager.record_conversation_message(
-            session.session_id, turn_id, "user", safe_user
-        )
-        self.runtime._session_manager.record_conversation_message(
-            session.session_id, turn_id, "assistant", safe_reply
-        )
+        if persist_messages:
+            self.runtime._session_manager.record_conversation_message(
+                session.session_id, turn_id, "user", safe_user
+            )
+            self.runtime._session_manager.record_conversation_message(
+                session.session_id, turn_id, "assistant", safe_reply
+            )
         metadata = {
             "execution_mode": self.runtime.execution_mode,
             "read_only_mode": self.runtime._read_only_mode,

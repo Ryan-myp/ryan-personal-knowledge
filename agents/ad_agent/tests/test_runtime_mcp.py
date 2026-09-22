@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from agents.ad_agent import AgentRuntime
+from agents.ad_agent import AdvertisingComposition
 from agents.ad_agent.runtime_mcp import RuntimeMCPServers, _current_principal
 from agents.ad_agent.core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolResult, ToolSchema,
@@ -24,7 +24,7 @@ class _ReadHandler(ToolHandler):
 
 
 def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
-    runtime = AgentRuntime(require_llm=False, features=[])
+    runtime = AdvertisingComposition(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_create",
         skill="test-tool_source",
@@ -76,7 +76,7 @@ def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
 
 
 def test_runtime_mcp_server_uses_principal_scoped_mode_for_write_guard():
-    runtime = AgentRuntime(require_llm=False, features=[])
+    runtime = AdvertisingComposition(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_create",
         skill="test-tool_source",
@@ -114,7 +114,7 @@ def test_runtime_mcp_server_uses_principal_scoped_mode_for_write_guard():
 def test_runtime_mcp_server_streamable_http_starts_lifespan_and_calls_tool(monkeypatch):
     """The mounted protocol endpoint must initialize FastMCP's session manager."""
     monkeypatch.setenv("AD_AGENT_MCP_CHANNELS_ENABLED", "1")
-    runtime = AgentRuntime(require_llm=False, features=[])
+    runtime = AdvertisingComposition(require_llm=False, features=[])
     definition = ToolDefinition(
         name="test_channel_read",
         skill="test-tool_source",

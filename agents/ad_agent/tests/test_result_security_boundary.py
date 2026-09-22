@@ -10,7 +10,7 @@ from agents.ad_agent.core.interfaces import (
     ToolResult,
     ToolSchema,
 )
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 class _LeakyHandler(ToolHandler):
@@ -51,7 +51,7 @@ def _register(runtime, name, handler):
 
 
 def test_tool_result_data_error_and_card_are_redacted_before_return():
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     _register(runtime, "security_leak_probe", _LeakyHandler())
 
     result = runtime.tool_executor.execute(
@@ -70,7 +70,7 @@ def test_tool_result_data_error_and_card_are_redacted_before_return():
 
 
 def test_handler_exception_becomes_redacted_tool_result():
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     _register(runtime, "security_exception_probe", _ExplodingHandler())
 
     result = runtime.tool_executor.execute(

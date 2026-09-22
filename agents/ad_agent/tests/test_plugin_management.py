@@ -7,7 +7,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from agents.ad_agent import AgentRuntime
+from agents.ad_agent import AdvertisingComposition
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.plugin_management import PluginPackageManager
 from agents.ad_agent.core.plugin_package import (
@@ -130,7 +130,7 @@ def test_standard_plugin_zip_is_validated_without_execution(tmp_path):
 
 def test_plugin_package_api_is_tenant_scoped_and_control_plane_only(monkeypatch, tmp_path):
     store = AdAgentStore(str(tmp_path / "api.db"))
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False, persistence_store=store, offline_mode=True
     )
     monkeypatch.setattr(api_server, "runtime", runtime)

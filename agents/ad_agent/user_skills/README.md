@@ -1,7 +1,7 @@
 # User Skills
 
 用户 Skill 只提供标准 `SKILL.md` 目录中的知识、SOP、参考资料和评测素材。
-它们不会注册可执行的编排器，也不会绕过 `AgentRuntime`、`IntentRouter` 或
+它们不会注册可执行的编排器，也不会绕过 `AdvertisingComposition`、`IntentRouter` 或
 `ToolRegistry`。
 
 跨渠道广告创建由 Runtime 根据各 Tool Source 发布的 Tool 元数据、Schema 和

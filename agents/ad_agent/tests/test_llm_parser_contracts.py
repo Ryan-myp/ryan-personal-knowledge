@@ -8,7 +8,7 @@ Tool plan.
 
 from agents.ad_agent.core.interfaces import ToolContext
 from agents.ad_agent.core.intent import LLMIntentParser
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
 
@@ -23,7 +23,7 @@ class _SequenceLLM:
 
 
 def _parser_with_tiktok(llm):
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=True,
         llm_client=llm,
         enforce_account_scope=False,

@@ -33,7 +33,7 @@ from agents.ad_agent.tools.providers.api_surface import (  # noqa: E402
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.domain.ad.contracts import AdFormatCoverage  # noqa: E402
 from agents.ad_agent.domain.ad.provider_evidence import load_provider_evidence  # noqa: E402
-from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
+from agents.ad_agent.runtime.runtime import AdvertisingComposition  # noqa: E402
 from agents.ad_agent.skill_management import (  # noqa: E402
     SkillPackageError,
     _validate_no_credential_assignments,
@@ -124,7 +124,7 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
             "providers": {},
             "path": str(resolved_evidence_path),
         }
-    runtime = AgentRuntime(offline_mode=True, enforce_account_scope=False)
+    runtime = AdvertisingComposition(offline_mode=True, enforce_account_scope=False)
 
     for slug in discover_platform_slugs():
         try:

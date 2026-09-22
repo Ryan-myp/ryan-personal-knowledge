@@ -82,7 +82,7 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
         Args:
             llm_client: LLM 客户端，需实现 call(messages) -> str 方法
             allow_rule_fallback: 仅供本地单元测试或显式嵌入场景使用。生产
-                                 AgentRuntime 会关闭该选项，LLM 不可用时直接失败。
+                                 AdvertisingComposition 会关闭该选项，LLM 不可用时直接失败。
         """
         self._llm = llm_client
         self.allow_rule_fallback = bool(allow_rule_fallback)

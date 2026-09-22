@@ -185,6 +185,9 @@ class ConversationMessageRecord:
     role: str
     content: str
     created_at: str = ""
+    tool_call_id: str | None = None
+    name: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -196,6 +199,13 @@ class ConversationMessageRecord:
         else:
             columns = ["message_id", "session_id", "turn_id", "role", "content", "created_at"]
             data = dict(zip(columns, row))
+        metadata = data.get("metadata")
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata or "{}")
+            except (TypeError, ValueError):
+                metadata = {}
+        data["metadata"] = metadata if isinstance(metadata, dict) else {}
         return cls(**data)
 
 

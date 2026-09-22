@@ -1,4 +1,5 @@
 import threading
+import time
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -93,6 +94,15 @@ def test_run_result_normalizes_application_payload_without_losing_data():
     ).status == RunStatus.PARTIALLY_FAILED
 
 
+def test_run_result_treats_audit_failure_as_recovery_required():
+    result = RunResult.from_payload({
+        "status": "succeeded",
+        "runtime_signals": {"audit_error": True},
+    })
+    assert result.status == RunStatus.RECOVERY_REQUIRED
+    assert result.recovery_required is True
+
+
 def test_agent_harness_owns_durable_run_lifecycle_when_run_store_is_bound():
     events = []
 
@@ -122,6 +132,43 @@ def test_agent_harness_owns_durable_run_lifecycle_when_run_store_is_bound():
     assert events[0] == ("start", run_id)
     assert ("event", run_id, "stage.completed") in events
     assert events[-1][0:3] == ("finish", run_id, "succeeded")
+
+
+def test_session_lease_loss_marks_a_run_result_for_recovery():
+    class LeaseStore:
+        def acquire_session_lease(self, _session_id, _owner, _seconds):
+            return True
+
+        def heartbeat_session_lease(self, _session_id, _owner, _seconds):
+            return False
+
+        def release_session_lease(self, _session_id, _owner):
+            return True
+
+    pipeline = SequentialTurnPipeline([
+        lambda _context: time.sleep(1.1) or RunResult(reply="done"),
+    ])
+    runtime = AgentRuntime(
+        ports=RuntimePorts(
+            session_manager=LeaseStore(),
+            session_locks={},
+            session_locks_guard=threading.RLock(),
+            lease_owner="test",
+            lease_seconds=1,
+            mode_context=ContextVar("lease_loss_mode", default=None),
+            validate_mode=lambda value: value or "dry_run",
+            resolve_mode=lambda _tenant, _user, _requested: "dry_run",
+            assert_ready=lambda: None,
+            ensure_session=lambda _request: None,
+        ),
+        pipeline=pipeline,
+    )
+
+    result = runtime.run(TurnRequest(user_input="hello"))
+
+    assert result.status == RunStatus.RECOVERY_REQUIRED
+    assert result.recovery_required is True
+    assert result.runtime_signals["session_lease_lost"] is True
 
 
 def test_agent_runtime_rolls_back_tool_source_when_catalog_refresh_fails():

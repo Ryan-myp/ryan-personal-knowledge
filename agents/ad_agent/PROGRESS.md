@@ -2,9 +2,11 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
-## 当前契约（2026-09-09）
+## 当前契约（2026-09-22）
 
 - 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 302 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 通用 Harness 已补齐平台治理参数下沉：默认 execution mode、最大 Tool 数、最大回合数和 Skill 上下文上限会进入真实 Runtime；模型临时失败支持有限重试，Session transcript 有消息数/字符数上限。
+- RunStore 启动/事件/收尾失败、Session lease 丢失和 Tool 审计故障都会返回结构化 `recovery_required`，不再静默当作成功；默认平台审计事件沿通用 Run event stream 持久化。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；live 只在测试账号白名单、显式模式、权限和二次确认同时满足时执行。三渠道指定测试账号的真实验证证据见 `contracts/provider_e2e_evidence.json`，未验证项不推断为成功。
 - live 仅允许配置白名单账户，且 API 确认必须携带与当前 `session_id + account_id + tool + normalized input + idempotency key` 绑定的 `confirmation_payload`。
 - 只读查询在白名单只有一个账户时允许自动选择；创建、更新、删除、暂停/恢复及批量写必须由当前请求显式指定目标账户，多账户同样必须显式指定。
@@ -15,7 +17,7 @@
   过期或非终态任务；当前 SQLite 仍按单进程部署，多实例需换共享 backend。
 - 已增加通用异步 `TaskExecutor`：`agent.turn` 任务通过持久化队列、有限 worker/queue、
   幂等提交、lease 心跳、暂停/恢复/取消和 stale recovery 执行；worker 只重新进入
-  `AgentRuntime.run`，不会直接调用 Provider Handler。HTTP 入口为 `/tasks`，默认仍是
+  `AdvertisingComposition.run`，不会直接调用 Provider Handler。HTTP 入口为 `/tasks`，默认仍是
   dry-run；取消/暂停只改变本地调度状态，不表示外部平台回滚。
 - 知识库已统一为 Markdown-first LLM Wiki：`core.knowledge.MarkdownWikiKnowledgeProvider`
   是 Runtime 和 Wiki Tool 的唯一数据入口；文档使用 `SCHEMA.md` 的元数据，
@@ -130,7 +132,7 @@ ad_agent/
 │   └── intent.py            # 意图解析与路由
 │
 ├── runtime/                 # 运行时
-│   ├── runtime.py           # AgentRuntime 主循环
+│   ├── runtime.py           # AdvertisingComposition 主循环
 │   └── skill.py             # Skill 加载器
 │
 ├── tools/providers/            # 业务能力层
@@ -169,10 +171,10 @@ make ad-agent-install
 
 ### 离线契约评测模式（无需凭证）
 ```python
-from ad_agent import AgentRuntime, create_meta_tool_source, create_google_tool_source
+from ad_agent import AdvertisingComposition, create_meta_tool_source, create_google_tool_source
 
 # 仅用于显式离线测试/评测；产品 Runtime 默认必须配置 LLM。
-runtime = AgentRuntime(require_llm=False, offline_mode=True)
+runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
 runtime.register_tool_source(create_meta_tool_source())
 runtime.register_tool_source(create_google_tool_source())
 
@@ -187,7 +189,7 @@ print(result["reply"])
 ```python
 import json
 import os
-from ad_agent import AgentRuntime
+from ad_agent import AdvertisingComposition
 from ad_agent.core.llm_client import create_llm_client
 from ad_agent.api_clients.meta_client import MetaAPIClient
 from ad_agent.tools.providers.meta import create_meta_tool_source
@@ -201,7 +203,7 @@ api_client = MetaAPIClient(credentials["meta"])
 tool_source = create_meta_tool_source(api_client)
 
 # 生产入口仍需注入 LLM；真实 API 客户端只负责渠道调用，写操作仍默认为 dry-run。
-runtime = AgentRuntime(
+runtime = AdvertisingComposition(
     llm_client=create_llm_client(model=os.environ["LLM_MODEL"], api_key=os.environ["OPENAI_API_KEY"]),
     require_llm=True,
 )
@@ -215,7 +217,7 @@ make ad-agent-test
 ```
 
 测试结果：
-- 当前 `agents/ad_agent/tests/`：738 passed（另有 1 条本机依赖弃用 warning）。
+- 当前 `agents/ad_agent/tests/`：914 passed（另有 1 条本机依赖弃用 warning）。
 - 覆盖：工具注册、Schema 校验、白名单、dry-run 不调用 Client、跨平台账户、层级 ID 传递、live 确认、持久化和 Runtime 集成
 
 ## 扩展新平台
@@ -270,7 +272,7 @@ Tool Source。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；
 
 | DAP Agent (Go) | ad-agent (Python) | 说明 |
 |----------------|-------------------|------|
-| Core Engine | AgentRuntime | 主循环入口 |
+| Core Engine | AdvertisingComposition | 主循环入口 |
 | SkillLoader | SkillLoader | Skill 加载 |
 | ToolRegistry | ToolRegistry | 工具注册表 |
 | IntentRouter | SimpleIntentRouter | 意图路由 |
@@ -294,7 +296,7 @@ Tool Source。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；
 - 根因：`_get_api_client` 和 `auto_load_skills` 未正确处理平台别名映射（`google-ads` vs `google`）
 
 ### 修复
-1. **添加 `_credentials` 属性**：在 `AgentRuntime.__init__` 中添加
+1. **添加 `_credentials` 属性**：在 `AdvertisingComposition.__init__` 中添加
 2. **实现 `set_credentials` 方法**：支持外部设置凭证
 3. **修复 `_get_api_client`**：支持平台别名映射（`google-ads` → `google`）
 4. **修复 `auto_load_skills`**：使用正确的 credentials key

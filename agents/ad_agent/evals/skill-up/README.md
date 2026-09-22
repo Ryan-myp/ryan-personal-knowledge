@@ -1,9 +1,9 @@
 # skill-up 集成评测
 
-这套评测针对 `ad-agent` 的真实 `AgentRuntime`，不是另写一套 mock
+这套评测针对 `ad-agent` 的真实 `AdvertisingComposition`，不是另写一套 mock
 Runtime。`skill-up` 负责 case 生命周期、rule/script/agent judge、报告和
 benchmark；`skill_up_engine.py` 负责把标准 `SessionInput` 转成一次
-`AgentRuntime.run()`，再返回标准 `SessionResult`。
+`AdvertisingComposition.run()`，再返回标准 `SessionResult`。
 
 ## 运行
 

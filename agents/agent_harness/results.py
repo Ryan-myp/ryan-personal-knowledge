@@ -27,6 +27,7 @@ class RunResult:
     needs_input: bool = False
     effect_state: str = "none"
     recovery_required: bool = False
+    runtime_signals: Mapping[str, Any] = field(default_factory=dict)
     data: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -44,6 +45,8 @@ class RunResult:
             source.get("recovery_required")
             or signals.get("session_lease_lost")
             or signals.get("task_lease_lost")
+            or signals.get("run_store_error")
+            or signals.get("audit_error")
             or source.get("effect_state") in {"unknown", "recovery_required"}
         )
         needs_input = bool(
@@ -83,6 +86,7 @@ class RunResult:
             needs_input=needs_input,
             effect_state=str(source.get("effect_state") or "none"),
             recovery_required=recovery,
+            runtime_signals=dict(signals),
             data=source,
         )
 
@@ -96,6 +100,7 @@ class RunResult:
             "needs_input": self.needs_input,
             "effect_state": self.effect_state,
             "recovery_required": self.recovery_required,
+            "runtime_signals": dict(self.runtime_signals),
         })
         return result
 

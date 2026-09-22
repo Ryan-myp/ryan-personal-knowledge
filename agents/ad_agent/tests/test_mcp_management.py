@@ -9,7 +9,7 @@ from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.mcp_management import MCPServerManager
 from agents.ad_agent.persistence.mysql_store import _mysql_schema
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 class _MCPHandler(BaseHTTPRequestHandler):
@@ -59,7 +59,7 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, features=[])
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
     manager = MCPServerManager(store)
     try:
         created = manager.create_server(

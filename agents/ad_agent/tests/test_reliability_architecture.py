@@ -12,7 +12,7 @@ from agents.ad_agent.persistence.models import (
 )
 from agents.ad_agent.persistence.mysql_store import _MySQLPool
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.runtime.task_executor import TaskExecutor
 from agents.ad_agent.persistence.mysql_store import _mysql_schema, _translate_sql
 
@@ -148,7 +148,7 @@ def test_runtime_recovery_checks_permission_and_provider_verification():
         created_at=datetime.now(timezone.utc).isoformat(),
         updated_at=datetime.now(timezone.utc).isoformat(),
     ))
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, features=[])
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
     with pytest.raises(PermissionError):
         runtime.recover_task(
             "runtime-recovery", user_id="user", tenant_id="tenant",
@@ -392,7 +392,7 @@ def test_mysql_translation_preserves_numeric_unique_columns_and_transactions():
 
 def test_runtime_can_disable_background_workers_for_in_memory_tests():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False, persistence_store=store, features=[],
         start_background_workers=False,
     )
@@ -406,7 +406,7 @@ def test_runtime_can_disable_background_workers_for_in_memory_tests():
 
 def test_runtime_readiness_includes_backend_and_started_worker_health():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         persistence_store=store,
         features=[],

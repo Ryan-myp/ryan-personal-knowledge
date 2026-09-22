@@ -248,29 +248,6 @@ class AdvertisingToolExecutor:
                 clients = self.owner._build_request_clients(
                     request_context.get("credentials")
                 )
-                reservation = None
-                if (
-                    self.definition.is_write_tool
-                    and str(request.execution_mode or "dry_run").lower() == "live"
-                    and self.owner.write_guard is not None
-                ):
-                    reserve_record = getattr(
-                        self.owner.write_guard, "reserve_write_record", None
-                    )
-                    if callable(reserve_record):
-                        allowed, reason, reservation = reserve_record(
-                            session.ctx, self.definition, dict(input_data)
-                        )
-                    else:
-                        allowed, reason = self.owner.write_guard.reserve_write(
-                            session.ctx, self.definition, dict(input_data)
-                        )
-                    if not allowed:
-                        return {
-                            "success": False,
-                            "error": f"Write guard blocked: {reason}",
-                            "data": {"execution_status": "duplicate"},
-                        }
                 result = self.owner.tool_executor.execute(
                     session.ctx,
                     self.definition.name,
@@ -298,32 +275,6 @@ class AdvertisingToolExecutor:
                         "requires_reconciliation": True,
                         "effect_state": "unknown",
                     }
-                if (
-                    self.definition.is_write_tool
-                    and str(request.execution_mode or "dry_run").lower() == "live"
-                    and self.owner.write_guard is not None
-                ):
-                    if reservation is not None and hasattr(
-                        self.owner.write_guard, "finalize"
-                    ):
-                        self.owner.write_guard.finalize(reservation, result)
-                    elif result.success and not result.simulated:
-                        self.owner.write_guard.mark_executed(
-                            self.definition.name,
-                            dict(input_data),
-                            session.ctx.user_id,
-                        )
-                    elif (
-                        not result.success
-                        and not self.owner.security.is_uncertain_provider_failure(
-                            self.definition, result
-                        )
-                    ):
-                        self.owner.write_guard.release_write(
-                            self.definition.name,
-                            dict(input_data),
-                            session.ctx.user_id,
-                        )
                 if (
                     result.success
                     and request_context.get("confirmed")

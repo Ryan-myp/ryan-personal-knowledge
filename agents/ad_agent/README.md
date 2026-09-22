@@ -89,13 +89,13 @@ scripts/ad-agent-python；不要直接使用 macOS 系统的 python3。包装器
 ```python
 import os
 
-from ad_agent import AgentRuntime, create_meta_tool_source, create_google_tool_source
+from ad_agent import AdvertisingComposition, create_meta_tool_source, create_google_tool_source
 from ad_agent.core.llm_client import create_llm_client
 from ad_agent.persistence.store import AdAgentStore
 
 # 初始化（LLM 驱动、默认 dry-run，带持久化）
 store = AdAgentStore("ad_agent.db")
-runtime = AgentRuntime(
+runtime = AdvertisingComposition(
     persistence_store=store,
     require_llm=True,
     llm_client=create_llm_client(
@@ -122,7 +122,7 @@ result = runtime.run(
 print(result["reply"])
 ```
 
-`AgentRuntime` 默认要求已注入 LLM；不会在模型不可用时自动切换为规则解析。
+`AdvertisingComposition` 默认要求已注入 LLM；不会在模型不可用时自动切换为规则解析。
 只有测试或明确的离线工具才可以显式传入 `require_llm=False`，并且这不代表产品运行模式。
 
 ### Markdown LLM Wiki 与 Agent Memory
@@ -375,13 +375,13 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 ### Runtime 边界结论
 
-广告 `AgentRuntime` 是应用组合根：它把广告 Skill、Provider Module、Feature、
+广告 `AdvertisingComposition` 是应用组合根：它把广告 Skill、Provider Module、Feature、
 Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
 通用队列、租约或 Provider 分支。通用执行壳是 `agents/agent_harness/`，队列/Outbox/
 Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
 Tool Source/Executor 或独立 Feature。
 
-当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AgentRuntime` 负责广告应用
+当前装配图已经收敛到 `runtime/ad_runtime_assembly.py`：`AdvertisingComposition` 负责广告应用
 配置、能力注册入口和稳定门面，`AdRuntimeAssembly` 负责把 `PersistenceBackend`、通用
 `AgentRuntimeKernel`、Tool 执行器、Schedule/Task/Outbox worker 与广告应用服务接起来。
 Assembly 只做依赖连接，不根据渠道或业务流程分支；新的简单能力仍应通过 Skill + Tool/MCP
@@ -469,7 +469,8 @@ Runtime Harness 分为四个可组合部分：`agents/agent_harness/runtime_kern
 Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/agent.py`
 提供维护 transcript 的通用 model→Tool→model loop；`agents/agent_harness/turn_pipeline.py`
 提供通用 Turn Handler 适配契约；`agents/agent_harness/agent_runtime.py`
-提供可嵌入的 `AgentRuntime` 门面；`agents/agent_harness/tool_catalog.py`
+通用 Harness 提供可嵌入的 `agents.agent_harness.AgentRuntime` 门面；
+`agents/agent_harness/tool_catalog.py`
 提供不依赖广告域的 Tool catalog。任意应用都通过同一个 Harness Agent 或
 Turn Handler 执行，不再创建业务 Pipeline。
 
@@ -494,7 +495,7 @@ publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有�
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                        AgentRuntime                         │
+│                        AdvertisingComposition                         │
 │   ┌─────────────┐  ┌─────────────┐  ┌───────────────────┐   │
 │   │ IntentParser │  │IntentRouter │  │   ToolRegistry     │   │
 │   │ (LLM)        │  │ (多平台)    │  │   (工具注册表)      │   │
@@ -587,7 +588,7 @@ agents/agent_harness/
 └── results.py          # RunResult/RunStatus
 ```
 
-广告侧 `AgentRuntime` 负责现有广告安全策略、账户范围、Workflow 和 Provider
+广告侧 `AdvertisingComposition` 负责现有广告安全策略、账户范围、Workflow 和 Provider
 恢复逻辑，但不是通用 Harness。新业务应使用
 `agents.agent_harness.AgentApplication`，通过 `SkillSource + ToolSource` 接入。
 广告侧也提供 `advertising_skill_source()` 和 `advertising_tool_source()`，用于把
@@ -670,7 +671,7 @@ def create_skill(api_client=None):
 ## 使用 skill-up 评测
 
 仓库提供了一个 `skill-up` Custom Engine 适配器，直接调用生产
-`AgentRuntime`，并将 Runtime 的结构化结果转换为 `SessionResult`。评测默认
+`AdvertisingComposition`，并将 Runtime 的结构化结果转换为 `SessionResult`。评测默认
 使用内存 SQLite、dry-run、offline fixtures 和测试账户白名单，不会调用真实
 Provider 写接口。
 

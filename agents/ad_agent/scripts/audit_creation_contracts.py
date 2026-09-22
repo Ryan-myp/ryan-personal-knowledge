@@ -34,7 +34,7 @@ from agents.ad_agent.domain.ad.blueprint import (  # noqa: E402
 )
 from agents.ad_agent.core.interfaces import ToolEffect  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
-from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
+from agents.ad_agent.runtime.runtime import AdvertisingComposition  # noqa: E402
 
 
 _RESOURCE_FIELD = re.compile(
@@ -277,7 +277,7 @@ def _blueprint_match_score(entry: Mapping[str, Any], blueprint: Any) -> int:
     return 0
 
 
-def _audit_blueprint_coverage(runtime: AgentRuntime) -> dict[str, Any]:
+def _audit_blueprint_coverage(runtime: AdvertisingComposition) -> dict[str, Any]:
     """Report format-to-Blueprint coverage without changing execution rules.
 
     A catalog can legitimately be partial or declared-only, so missing
@@ -329,7 +329,7 @@ def _audit_blueprint_coverage(runtime: AgentRuntime) -> dict[str, Any]:
 
 
 def _blueprint_required_field_gaps(
-    runtime: AgentRuntime, blueprint: Any,
+    runtime: AdvertisingComposition, blueprint: Any,
 ) -> list[dict[str, str]]:
     """Check that a Blueprint's effective form contains required Tool fields.
 
@@ -370,7 +370,7 @@ def _blueprint_required_field_gaps(
     return gaps
 
 
-def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
+def audit_creation_contracts(runtime: AdvertisingComposition) -> dict[str, Any]:
     issues: list[str] = []
     lookup_contracts: list[dict[str, Any]] = []
     unresolved_fields: list[dict[str, str]] = []
@@ -571,8 +571,8 @@ def audit_creation_contracts(runtime: AgentRuntime) -> dict[str, Any]:
     }
 
 
-def build_runtime() -> AgentRuntime:
-    runtime = AgentRuntime(
+def build_runtime() -> AdvertisingComposition:
+    runtime = AdvertisingComposition(
         persistence_store=AdAgentStore(":memory:"),
         offline_mode=True,
         enforce_account_scope=False,

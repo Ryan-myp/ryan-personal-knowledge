@@ -19,14 +19,14 @@ from agents.ad_agent.domain.ad.creation_card import CreationCardBuilder
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 BLUEPRINT_PATH = Path(__file__).parents[1] / "tools" / "providers" / "tiktok" / "blueprints" / "app_conversion_video.v1.json"
 
 
 def test_tiktok_blueprint_is_json_and_references_registered_tools():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
 
     items = runtime.list_creation_blueprints("tiktok", "SINGLE_VIDEO")
@@ -46,7 +46,7 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
 
 
 def test_creation_blueprint_list_publishes_contract_and_support_metadata():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     for tool_source in (
         create_google_tool_source(), create_meta_tool_source(), create_tiktok_tool_source(),
     ):
@@ -65,7 +65,7 @@ def test_creation_blueprint_list_publishes_contract_and_support_metadata():
 
 
 def test_creation_blueprint_support_does_not_claim_unverified_tiktok_formats():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
 
     formats = runtime.list_ad_formats("tiktok")
@@ -81,7 +81,7 @@ def test_creation_blueprint_support_does_not_claim_unverified_tiktok_formats():
 
 
 def test_dv360_guided_surfaces_start_from_explicit_existing_parents():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_dv360_tool_source())
 
     blueprints = runtime.list_creation_blueprints(provider="dv360")
@@ -99,7 +99,7 @@ def test_dv360_guided_surfaces_start_from_explicit_existing_parents():
 
 
 def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     blueprint = runtime.creation_blueprints.get("tiktok.lead_generation")
 
@@ -116,7 +116,7 @@ def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():
 
 
 def test_tiktok_optional_boolean_defaults_are_materialized_in_creation_card():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
@@ -132,7 +132,7 @@ def test_tiktok_optional_boolean_defaults_are_materialized_in_creation_card():
 
 
 def test_creation_card_separates_safe_defaults_from_account_context_inputs():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
@@ -150,7 +150,7 @@ def test_creation_card_separates_safe_defaults_from_account_context_inputs():
 
 
 def test_meta_creation_card_materializes_objective_dependent_defaults():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Meta 流量广告", ["meta"],
@@ -166,7 +166,7 @@ def test_meta_creation_card_materializes_objective_dependent_defaults():
 
 
 def test_tiktok_spark_blueprint_uses_current_all_in_one_surface():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
 
     blueprint = runtime.creation_blueprints.get("tiktok.spark")
@@ -189,7 +189,7 @@ def test_tiktok_spark_blueprint_uses_current_all_in_one_surface():
 
 
 def test_blueprint_registry_resolves_each_provider_entry_dimension_without_router_branches():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     for factory in (create_meta_tool_source, create_tiktok_tool_source, create_google_tool_source):
         runtime.register_tool_source(factory())
 
@@ -211,7 +211,7 @@ def test_blueprint_registry_resolves_each_provider_entry_dimension_without_route
 
 
 def test_demand_gen_variants_resolve_by_explicit_format_or_declared_terms():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
 
     assert runtime.resolve_creation_blueprint(
@@ -234,7 +234,7 @@ def test_demand_gen_variants_resolve_by_explicit_format_or_declared_terms():
 
 
 def test_demand_gen_without_variant_returns_specific_blueprint_choices():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Google Demand Gen 广告", ["google-ads"],
@@ -279,7 +279,7 @@ def test_meta_and_google_blueprints_use_only_registered_tool_fields():
         ("meta.conversion_link", create_meta_tool_source, "meta"),
         ("google-ads.search", create_google_tool_source, "google-ads"),
     ):
-        runtime = AgentRuntime(require_llm=False, offline_mode=True)
+        runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
         runtime.register_tool_source(factory())
         blueprint = runtime.creation_blueprints.get(blueprint_id)
         assert blueprint is not None
@@ -291,7 +291,7 @@ def test_meta_and_google_blueprints_use_only_registered_tool_fields():
 
 
 def test_google_bidding_strategy_cascade_requires_only_matching_target():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     result = runtime.evaluate_creation_blueprint(
         "google-ads.search",
@@ -304,7 +304,7 @@ def test_google_bidding_strategy_cascade_requires_only_matching_target():
 
 
 def test_meta_objective_cascade_resolves_optimization_and_billing_options():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
 
     result = runtime.evaluate_creation_blueprint(
@@ -331,7 +331,7 @@ def test_meta_objective_cascade_resolves_optimization_and_billing_options():
 
 
 def test_meta_blueprint_lookup_declarations_are_carried_to_creation_card():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 潜在客户广告", ["meta"],
@@ -354,7 +354,7 @@ def test_meta_blueprint_lookup_declarations_are_carried_to_creation_card():
 
 
 def test_tiktok_cascade_filters_app_options_and_clears_incompatible_value():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     result = runtime.evaluate_creation_blueprint(
         "tiktok.app_conversion_video",
@@ -385,7 +385,7 @@ def test_tiktok_cascade_filters_app_options_and_clears_incompatible_value():
 
 
 def test_google_search_blueprint_exposes_format_specific_bidding_catalog():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     blueprint = runtime.creation_blueprints.get("google-ads.search")
     assert blueprint is not None
@@ -398,7 +398,7 @@ def test_google_search_blueprint_exposes_format_specific_bidding_catalog():
 
 
 def test_google_entry_type_is_not_repeated_at_ad_group_level():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     blueprint = runtime.creation_blueprints.get("google-ads.display")
     assert blueprint is not None
@@ -415,7 +415,7 @@ def test_google_entry_type_is_not_repeated_at_ad_group_level():
 
 def test_provider_applicability_hides_unrelated_google_fields_and_keeps_derived_format_fields_visible():
     """Provider UI rules must narrow the card without Runtime channel branches."""
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Google Search 广告", ["google-ads"],
@@ -431,7 +431,7 @@ def test_provider_applicability_hides_unrelated_google_fields_and_keeps_derived_
 
 
 def test_provider_applicability_switches_tiktok_asset_controls_by_selected_format():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     card = runtime.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 商品视频广告", ["tiktok"],
@@ -448,7 +448,7 @@ def test_provider_applicability_switches_tiktok_asset_controls_by_selected_forma
 
 
 def test_all_google_blueprints_make_ad_group_type_provider_derived():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     for blueprint in runtime.creation_blueprints.list(provider="google-ads"):
         field = next(
@@ -462,7 +462,7 @@ def test_all_google_blueprints_make_ad_group_type_provider_derived():
 
 
 def test_google_demand_gen_does_not_expose_a_second_ad_group_type_selector():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     for blueprint_id in (
         "google-ads.demand_gen_multi_asset",
@@ -503,7 +503,7 @@ def test_google_video_ad_group_type_is_derived_from_video_format():
 
 
 def test_creation_cards_expose_complete_schema_limits_and_provider_source_groups():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Google Search 广告", ["google-ads"],
@@ -531,7 +531,7 @@ def test_creation_cards_expose_complete_schema_limits_and_provider_source_groups
 
 
 def test_tiktok_creation_card_does_not_truncate_provider_parameter_catalog():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 TikTok 商品销售广告", ["tiktok"],
@@ -546,7 +546,7 @@ def test_tiktok_creation_card_does_not_truncate_provider_parameter_catalog():
 
 
 def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
@@ -567,7 +567,7 @@ def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
 
 
 def test_creation_contracts_expose_provider_resource_sources_and_fixed_placements():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
@@ -592,7 +592,7 @@ def test_creation_contracts_expose_provider_resource_sources_and_fixed_placement
 
 
 def test_provider_and_blueprint_visibility_conditions_are_deduplicated():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
@@ -606,7 +606,7 @@ def test_provider_and_blueprint_visibility_conditions_are_deduplicated():
 
 
 def test_declared_resource_fields_inherit_provider_lookup_metadata():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 商品广告", ["meta"],
@@ -622,7 +622,7 @@ def test_declared_resource_fields_inherit_provider_lookup_metadata():
 
 
 def test_creation_catalog_covers_provider_reference_sources_across_channels():
-    google = AgentRuntime(require_llm=False, offline_mode=True)
+    google = AdvertisingComposition(require_llm=False, offline_mode=True)
     google.register_tool_source(create_google_tool_source())
     shopping = google.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 Google Shopping 广告", ["google-ads"],
@@ -631,7 +631,7 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
     shopping_fields = {item["path"]: item for item in shopping["fields"]}
     assert shopping_fields["product_group.parent_criterion_id"]["control"] == "lookup"
 
-    tiktok = AgentRuntime(require_llm=False, offline_mode=True)
+    tiktok = AdvertisingComposition(require_llm=False, offline_mode=True)
     tiktok.register_tool_source(create_tiktok_tool_source())
     lead = tiktok.build_creation_ui(ParsedIntent(
         "create_campaign", "创建 TikTok 线索广告", ["tiktok"],
@@ -651,7 +651,7 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
 
 
 def test_lookup_catalog_applies_provider_defaults_without_network_call():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
     catalog = runtime.list_parameter_options(
         "meta", "targeting.geo_locations.regions", "meta_create_adset"
@@ -662,7 +662,7 @@ def test_lookup_catalog_applies_provider_defaults_without_network_call():
 
 
 def test_blueprint_submission_composes_declared_parent_child_tools():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     intent = ParsedIntent(
         "create_search_ad", "按 Google Search 蓝图提交", ["google-ads"],
@@ -705,7 +705,7 @@ def test_blueprint_submission_composes_declared_parent_child_tools():
 
 
 def test_incomplete_creation_returns_card_without_failed_tool_result():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
@@ -723,7 +723,7 @@ def test_incomplete_creation_returns_card_without_failed_tool_result():
 
 def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
     events = []
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
 
     result = runtime.run(
@@ -752,7 +752,7 @@ def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
 
 
 def test_creation_follow_up_adopts_persisted_selector_and_then_shows_full_form():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     session_id = "follow-up-tiktok-creation"
 
@@ -775,7 +775,7 @@ def test_creation_follow_up_adopts_persisted_selector_and_then_shows_full_form()
 
 def test_incomplete_update_asks_for_resource_before_materializing_tool_plan():
     events = []
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_meta_tool_source())
 
     result = runtime.run(
@@ -803,7 +803,7 @@ def test_action_clarification_draft_survives_restart_and_merges_short_follow_up(
     store = AdAgentStore(":memory:")
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["meta-test-account"]}
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
         persistence_store=store,
@@ -818,7 +818,7 @@ def test_action_clarification_draft_survives_restart_and_merges_short_follow_up(
     )
     assert first["ui"]["clarification"]["kind"] == "action_clarification"
 
-    restarted = AgentRuntime(
+    restarted = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
         persistence_store=store,
@@ -840,7 +840,7 @@ def test_action_clarification_draft_survives_restart_and_merges_short_follow_up(
 def test_explicit_blueprint_submission_waits_for_required_fields_before_execution():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["123"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
@@ -860,7 +860,7 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
 def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["123"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
@@ -916,7 +916,7 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
 
 
 def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Google App 广告", ["google-ads"],
@@ -988,7 +988,7 @@ def test_creation_cards_publish_outer_shape_for_advanced_provider_payloads():
 
 
 def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Google App Engagement 广告", ["google-ads"],
@@ -1021,7 +1021,7 @@ def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
 
 
 def test_nested_creation_assets_keep_provider_sources_and_controls():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Google Demand Gen 轮播广告", ["google-ads"],
@@ -1037,7 +1037,7 @@ def test_nested_creation_assets_keep_provider_sources_and_controls():
     assert card_props["marketing_image_asset"]["lookup_tool"] == "google_list_assets"
     assert card_props["marketing_image_asset"]["presentation"] == "asset_picker"
 
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     tiktok_intent = ParsedIntent(
         "create_campaign", "创建 TikTok 视频广告", ["tiktok"],
@@ -1071,7 +1071,7 @@ def test_cascade_hides_and_requires_app_fields_for_app_objective():
 
 
 def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     intent = ParsedIntent(
         "create_campaign",
@@ -1104,7 +1104,7 @@ def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
 
 
 def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 TikTok 广告", ["tiktok"], objective="sales"

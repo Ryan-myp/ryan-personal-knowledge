@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .ad_runtime import (
-    AgentRuntime,
+    AdvertisingComposition,
     AccountWhitelistValidator,
     SessionBusyError,
     SessionContext,
@@ -13,7 +13,7 @@ from .ad_runtime import (
 )
 
 __all__ = [
-    "AgentRuntime",
+    "AdvertisingComposition",
     "AccountWhitelistValidator",
     "SessionBusyError",
     "SessionContext",

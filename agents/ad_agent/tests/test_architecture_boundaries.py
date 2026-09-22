@@ -9,7 +9,7 @@ from agents.ad_agent.core.interfaces import (
     ParsedIntent, ToolDefinition, ToolSchema, ToolEffect, ToolContext, ToolResult,
 )
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.runtime.skill import SkillLoader
 from agents.ad_agent.skills.businesses.policy import BusinessSkillPolicy
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
@@ -132,7 +132,7 @@ def test_generic_runtime_adapters_do_not_import_ad_domain_or_name_account_fields
 
 
 def test_runtime_discovers_domain_features_without_a_central_workflow_table():
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
 
     assert "cross-channel" in {
         feature.feature_name for feature in runtime.features
@@ -192,7 +192,7 @@ def test_business_skill_policy_is_loaded_and_enforced_outside_runtime(tmp_path):
     assert errors
     assert "不允许使用 tiktok" in errors[0]
 
-    runtime = AgentRuntime(require_llm=False, policies=[policy])
+    runtime = AdvertisingComposition(require_llm=False, policies=[policy])
     assert runtime._validate_policies(intent) == errors
 
 
@@ -427,7 +427,7 @@ def test_parser_drops_llm_operation_and_note_metadata_from_scoped_parameters():
 
 
 def test_non_chat_request_without_a_tool_never_uses_greeting_fallback():
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         features=[],
         whitelist_validator=__import__(

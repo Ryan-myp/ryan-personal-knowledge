@@ -58,16 +58,26 @@ class InfrastructureLayer:
                     if callable(start):
                         start()
                     started.append(resource)
-            except Exception:
+            except Exception as error:
                 for resource in reversed(started):
-                    close = getattr(resource, "close", None)
-                    if callable(close):
-                        try:
-                            close()
-                        except Exception:
-                            pass
+                    try:
+                        self._stop_resource(resource)
+                    except Exception as cleanup_error:
+                        if hasattr(error, "add_note"):
+                            error.add_note(
+                                "infrastructure rollback failed: "
+                                f"{type(cleanup_error).__name__}"
+                            )
                 raise
             self._started = True
+
+    @staticmethod
+    def _stop_resource(resource: Any) -> None:
+        stop = getattr(resource, "stop", None)
+        close = getattr(resource, "close", None)
+        action = stop if callable(stop) else close
+        if callable(action):
+            action()
 
     def close(self) -> None:
         with self._lock:
@@ -75,11 +85,8 @@ class InfrastructureLayer:
                 return
             first_error: Optional[Exception] = None
             for resource in reversed(self.resources):
-                close = getattr(resource, "close", None)
-                if not callable(close):
-                    continue
                 try:
-                    close()
+                    self._stop_resource(resource)
                 except Exception as error:
                     first_error = first_error or error
             self._started = False
@@ -190,13 +197,13 @@ class PlatformApplication:
         with self._lock:
             first_error: Optional[Exception] = None
             try:
-                close = getattr(self.harness, "close", None)
-                if callable(close):
-                    close()
+                self.dependencies.infrastructure.close()
             except Exception as error:
                 first_error = error
             try:
-                self.dependencies.infrastructure.close()
+                close = getattr(self.harness, "close", None)
+                if callable(close):
+                    close()
             except Exception as error:
                 first_error = first_error or error
             self._started = False

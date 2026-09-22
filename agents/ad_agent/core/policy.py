@@ -2,7 +2,7 @@
 
 Policies constrain an Agent turn without becoming a second router or
 execution engine.  A business Skill can implement this contract to filter
-namespaces and validate domain rules; AgentRuntime only invokes the generic
+namespaces and validate domain rules; AdvertisingComposition only invokes the generic
 methods and never knows the policy's business vocabulary.
 """
 

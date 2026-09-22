@@ -13,7 +13,7 @@ from agents.ad_agent.features.scheduling import SchedulingFeature
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.persistence.models import ScheduledTaskRecord
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.runtime.scheduler import CronExpression, CronExpressionError, next_run_at
 
 
@@ -114,7 +114,7 @@ def test_schedule_requires_tool_source_and_explicit_confirmation_before_persisti
         ),
         _NoopReportHandler(),
     )
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         registry=registry, persistence_store=store, require_llm=False, offline_mode=True,
         enforce_account_scope=False,
     )
@@ -151,7 +151,7 @@ def test_schedule_requires_tool_source_and_explicit_confirmation_before_persisti
 def test_schedule_does_not_guess_daily_time_or_create_without_a_provider():
     path = tempfile.mktemp(suffix=".db")
     store = AdAgentStore(path)
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         persistence_store=store, require_llm=False, offline_mode=True,
         enforce_account_scope=False,
     )
@@ -199,7 +199,7 @@ def test_schedule_preflight_checks_tool_required_parameters_before_confirmation(
         ),
         _NoopReportHandler(),
     )
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         registry=registry, persistence_store=store, require_llm=False,
         offline_mode=True, enforce_account_scope=False,
     )
@@ -224,7 +224,7 @@ def test_schedule_preflight_checks_tool_required_parameters_before_confirmation(
 def test_schedule_draft_is_restored_after_runtime_restart_and_skill_is_injected():
     path = tempfile.mktemp(suffix=".db")
     store = AdAgentStore(path)
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         persistence_store=store, require_llm=False, offline_mode=True,
         enforce_account_scope=False,
     )
@@ -239,7 +239,7 @@ def test_schedule_draft_is_restored_after_runtime_restart_and_skill_is_injected(
         )["expert_knowledge"]
         runtime.close(wait=True)
 
-        restarted = AgentRuntime(
+        restarted = AdvertisingComposition(
             persistence_store=store, require_llm=False, offline_mode=True,
             enforce_account_scope=False,
         )

@@ -2,7 +2,7 @@
 """Validate the executable ad-agent tool contract without provider I/O.
 
 This is intentionally a release gate rather than a unit-test helper.  It
-loads the same built-in Tool Sources through AgentRuntime, so a new Skill or
+loads the same built-in Tool Sources through AdvertisingComposition, so a new Skill or
 Tool must satisfy the same registration boundary used by the service.
 """
 
@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.ad_agent import AgentRuntime  # noqa: E402
+from agents.ad_agent import AdvertisingComposition  # noqa: E402
 from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
 )
@@ -49,10 +49,10 @@ def _walk_keys(value, path=""):
             yield from _walk_keys(child, f"{path}[{index}]")
 
 
-def build_runtime() -> AgentRuntime:
+def build_runtime() -> AdvertisingComposition:
     """Build the same no-I/O runtime used by the release contract gate."""
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         persistence_store=store,
         offline_mode=True,
         # Contract discovery is synchronous and uses a temporary in-memory
@@ -65,7 +65,7 @@ def build_runtime() -> AgentRuntime:
         if callable(factory):
             runtime.register_tool_source(factory())
     # Keep the in-memory backend reachable for callers that want to close it
-    # after inspecting the runtime without changing AgentRuntime's public API.
+    # after inspecting the runtime without changing AdvertisingComposition's public API.
     runtime._contract_gate_store = store
     return runtime
 
@@ -83,7 +83,7 @@ def _digest(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
-def build_contract_snapshot(runtime: AgentRuntime) -> dict:
+def build_contract_snapshot(runtime: AdvertisingComposition) -> dict:
     """Return a deterministic, JSON-safe snapshot of executable contracts.
 
     This is a release artifact, not Runtime configuration.  A new Tool Source

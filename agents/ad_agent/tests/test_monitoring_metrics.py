@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from agents.ad_agent import AdAgentStore, AgentRuntime
+from agents.ad_agent import AdAgentStore, AdvertisingComposition
 from agents.ad_agent import api_server
 from agents.ad_agent.persistence.models import ExecutionRunRecord, TaskRecord, ToolCallRecord
 
@@ -62,7 +62,7 @@ def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():
 
 
 def test_monitoring_http_endpoint_is_authenticated_and_scoped(monkeypatch):
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         enforce_account_scope=False,

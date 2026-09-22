@@ -11,7 +11,7 @@ from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.persistence.models import OutboxEvent
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.outbox import OutboxConsumer
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.runtime.security import RuntimeSecurity
 from agents.ad_agent.runtime.tool_executor import classify_error
 
@@ -114,7 +114,7 @@ def test_outbox_delivery_moves_to_dead_letter_after_bounded_retries():
 def test_runtime_starts_outbox_consumer_and_workflow_publishes_once():
     store = AdAgentStore(":memory:")
     delivered = []
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         persistence_store=store,
         features=[],

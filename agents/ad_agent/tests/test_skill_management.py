@@ -5,7 +5,7 @@ import time
 import threading
 from pathlib import Path
 
-from agents.ad_agent import AgentRuntime
+from agents.ad_agent import AdvertisingComposition
 from agents.ad_agent.core.interfaces import ParsedIntent
 from agents.ad_agent.core.interfaces import ToolDefinition, ToolSchema
 from agents.ad_agent.persistence.store import AdAgentStore
@@ -70,7 +70,7 @@ def test_channel_and_cross_channel_skills_are_natural_language_guidance():
 
 
 def test_channel_skill_body_is_available_to_model_context():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     try:
         examples = {
             "google-ads": ("查询 Google Ads campaign", "Google Ads API 专家 Skill"),
@@ -115,7 +115,7 @@ def test_standard_skill_directory_is_versioned_and_published(tmp_path):
     )
     assert detailed["files"]["scripts/check.py"]["encoding"] == "base64"
 
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
     published = manager.publish(
         "tenant-a", "business-growth", "1.0.0", runtime=runtime
     )
@@ -158,7 +158,7 @@ def test_unpublish_removes_release_but_keeps_version_for_explicit_rollback(tmp_p
     manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
     manager.create_version("tenant-a", "business-growth", "1.0.0", _files(), "u1")
 
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
     manager.publish("tenant-a", "business-growth", "1.0.0", runtime=runtime)
     assert "business-growth" in runtime.get_managed_skills("tenant-a")
 
@@ -260,7 +260,7 @@ def test_invalid_standard_skill_package_is_rejected(files, message):
 
 def test_managed_skills_are_isolated_by_tenant_on_shared_runtime():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
     manager = ManagedSkillManager(store)
     first_files = _files("first-skill")
     first_files["SKILL.md"] = first_files["SKILL.md"].replace(
@@ -677,7 +677,7 @@ def test_runtime_turn_uses_request_tenant_managed_context():
     from agents.ad_agent.domain.ad.auth import RequestPrincipal
 
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
     manager = ManagedSkillManager(store)
     manager.create_version("tenant-a", "tenant-skill", "1.0.0", _files("tenant-skill"), "u1")
     manager.publish("tenant-a", "tenant-skill", "1.0.0", runtime=runtime)

@@ -10,7 +10,7 @@ from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
 from agents.ad_agent.core.tool_registry import validate_tool_input
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
 from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
@@ -678,7 +678,7 @@ def test_tiktok_identity_tools_cover_create_lookup_and_spark_video_preflight():
 
 
 def test_generic_campaign_type_maps_to_google_wire_field():
-    runtime = AgentRuntime(require_llm=False, )
+    runtime = AdvertisingComposition(require_llm=False, )
     definition = next(
         definition
         for definition, _handler in create_google_tool_source().register_tools()
@@ -3769,7 +3769,7 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
         include_tool_requirements=True,
     )
 
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(tool_source)
     routed = runtime.intent_router.route(
         ParsedIntent(
@@ -3838,7 +3838,7 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
             "IMAGE", "VIDEO"
         ]
 
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(tool_source)
     cases = [
         (
@@ -3921,7 +3921,7 @@ def test_meta_engagement_tool_routes_post_and_video_objectives():
     assert engagement.input_schema.properties["engagement_type"]["enum"] == [
         "POST_ENGAGEMENT", "VIDEO_VIEWS"
     ]
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(tool_source)
     cases = [
         ("POST_ENGAGEMENT", {"post_id": "post-1"}),
@@ -4944,7 +4944,7 @@ def test_google_pmax_listing_group_filter_tools_and_blueprint_are_declared():
         include_tool_requirements=True,
     )
 
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     blueprint = runtime.creation_blueprints.get("google-ads.performance_max")
     assert "google_create_asset_group_listing_group_filter" in blueprint.tools

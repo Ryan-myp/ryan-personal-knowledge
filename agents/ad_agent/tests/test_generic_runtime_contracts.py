@@ -12,7 +12,7 @@ from agents.ad_agent.core.interfaces import (
 from agents.ad_agent.core.scope import ResourceScope
 from agents.agent_harness import TurnRequest
 from agents.ad_agent.runtime.account_context import AccountResolver
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 def _tool(**overrides):
@@ -117,7 +117,7 @@ def test_account_resolver_exposes_a_provider_neutral_scope():
 
 
 def test_live_permission_is_declared_by_tool_not_inferred_as_ads_write():
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     runtime.execution_mode = "live"
 
     generic_tool = _tool()
@@ -151,7 +151,7 @@ def test_context_query_is_immutable_and_bounds_provider_inputs():
 
 
 def test_ad_runtime_exposes_generic_tool_registration_without_tool_source():
-    runtime = AgentRuntime(require_llm=False, features=[])
+    runtime = AdvertisingComposition(require_llm=False, features=[])
 
     class Executor:
         def execute(self, _ctx, _input_data):
@@ -170,7 +170,7 @@ def test_ad_runtime_exposes_generic_tool_registration_without_tool_source():
 
 
 def test_ad_runtime_uses_the_standard_agent_loop():
-    runtime = AgentRuntime(require_llm=False, features=[])
+    runtime = AdvertisingComposition(require_llm=False, features=[])
     try:
         from agents.agent_harness import Agent, AgentRuntime as HarnessRuntime
 

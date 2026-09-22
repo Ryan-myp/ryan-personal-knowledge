@@ -11,7 +11,7 @@ from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.domain.ad.response import LLMResponseSynthesizer
 from agents.ad_agent.core.interfaces import ParsedIntent, ToolContext
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.runtime.ad_turn_context import AdTurnContext, AdTurnContextService
 
 
@@ -840,7 +840,7 @@ def test_memory_purge_removes_expired_and_old_tombstones_but_keeps_active_record
 
 def test_session_window_and_digest_restore_after_restart():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, features=[])
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
     session = runtime._ensure_session("session-1", "user-1", None, {}, tenant_id="tenant-1")
     for index in range(12):
         runtime.persist_conversation_turn(
@@ -851,7 +851,7 @@ def test_session_window_and_digest_restore_after_restart():
     assert len(metadata["messages"]) == 20
     assert "用户请求 0" in metadata["conversation_digest"]
 
-    restarted = AgentRuntime(require_llm=False, persistence_store=store, features=[])
+    restarted = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
     restored = restarted._ensure_session("session-1", "user-1", None, {}, tenant_id="tenant-1")
     assert len(restored.messages) == 20
     assert restored.messages[0]["content"] == "用户请求 2"
@@ -886,7 +886,7 @@ def test_runtime_recalls_explicit_memory_across_sessions_without_granting_tools(
 
     llm = FakeLLM()
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=True,
         llm_client=llm,
         persistence_store=store,
@@ -1007,7 +1007,7 @@ def test_context_budget_is_uniform_and_reported():
 
 def test_session_working_memory_has_character_budget_and_preserves_digest():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(require_llm=False, persistence_store=store, features=[])
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
     session = runtime._ensure_session("budget-session", "user-1", None, {}, tenant_id="tenant-1")
 
     for index in range(10):
@@ -1080,7 +1080,7 @@ def test_runtime_inject_llm_enables_response_synthesis_after_late_bootstrap():
         def call(self, _messages):
             return '{"intent_type":"chat","namespaces":[]}'
 
-    runtime = AgentRuntime(require_llm=True, features=[])
+    runtime = AdvertisingComposition(require_llm=True, features=[])
     assert runtime.response_synthesizer is None
     runtime.inject_llm(FakeLLM())
     assert runtime.response_synthesizer is not None

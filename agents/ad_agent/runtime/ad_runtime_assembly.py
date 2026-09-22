@@ -1,6 +1,6 @@
 """Composition of the advertising application's Runtime dependencies.
 
-``AgentRuntime`` is the public application facade, not the place where
+``AdvertisingComposition`` is the public application facade, not the place where
 every infrastructure object should be constructed.  This module owns the
 application composition graph and returns explicit components to the facade.
 
@@ -41,6 +41,10 @@ from ..domain.ad.security import ACCOUNT_SCOPE_FIELDS
 from ..persistence.interfaces import PersistenceBackend
 from ..persistence.models import ScheduledTaskRecord
 from ..persistence.session_manager import SessionManager
+from ..persistence.adapters import (
+    PersistenceIdempotencyStore,
+    PersistenceTranscriptStore,
+)
 from .account_context import AccountResolver
 from .ad_conversation_services import AdConversationServices
 from .ad_persistence_services import AdPersistenceServices
@@ -138,7 +142,7 @@ class AdRuntimeAssemblyOptions:
     """Infrastructure options supplied by the application boundary.
 
     Domain settings such as Skill roots, Tool definitions and provider
-    clients are initialized by ``AgentRuntime`` before this assembly runs.
+    clients are initialized by ``AdvertisingComposition`` before this assembly runs.
     Only lifecycle/queue options belong here, which keeps the composition
     graph explicit and makes it possible to replace SQLite with MySQL through
     the same persistence port.
@@ -516,7 +520,11 @@ class AdRuntimeAssembly:
         tool_policy = ToolExecutionPolicy(
             permissions=frozenset(runtime._granted_permissions),
             allow_live_writes=bool(runtime.allow_live_writes),
-            live_approved_tools=frozenset(runtime._live_approved_tools),
+            # Keep the policy connected to the trusted deployment-owned
+            # approval set. Tool Sources may be registered, verified or
+            # approved after the composition root has been built; copying
+            # this set here would leave the live gate stale.
+            live_approved_tools=runtime._live_approved_tools,
             # The concrete WriteGuard is supplied by the selected Tool Source
             # before a live call. The dynamic scope check below remains the
             # source of truth for this application-owned resource.
@@ -524,6 +532,11 @@ class AdRuntimeAssembly:
             require_confirmation_for_writes=True,
             before_check=policy_scope_check,
             confirmation_builder=confirmation_builder,
+            live_approved_tools_provider=lambda: runtime._live_approved_tools,
+            require_audit=True,
+            idempotency_store=(
+                PersistenceIdempotencyStore(store) if store is not None else None
+            ),
         )
         ports = RuntimePorts(
             session_manager=session_manager,
@@ -589,6 +602,9 @@ class AdRuntimeAssembly:
                 "context_provider": AdvertisingContextProvider(runtime),
                 "input_sanitizer": runtime._redact_for_persistence,
                 "run_store": run_store,
+                "transcript_store": (
+                    PersistenceTranscriptStore(store) if store is not None else None
+                ),
                 "metrics": getattr(runtime, "metrics", None),
                 "max_turns": max(4, int(runtime.max_tool_calls) + 2),
                 "tool_execution": "sequential",

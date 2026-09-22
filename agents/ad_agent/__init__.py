@@ -4,10 +4,10 @@ ad_agent - 多渠道广告投放 Agent
 单 Agent + 多 Skills 架构，支持 Meta、Google Ads、TikTok Ads、DV360。
 
 快速开始：
-    from ad_agent import AgentRuntime, create_meta_tool_source
+    from ad_agent import AdvertisingComposition, create_meta_tool_source
     from ad_agent.core.llm_client import create_llm_client
     
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=True,
         llm_client=create_llm_client(
             model=os.environ["LLM_MODEL"], api_key=os.environ["OPENAI_API_KEY"]
@@ -17,7 +17,7 @@ ad_agent - 多渠道广告投放 Agent
     result = runtime.run(user_input="投放Meta广告", user_id="user_001")
 """
 
-from .runtime.runtime import AgentRuntime, SessionContext
+from .runtime.runtime import AdvertisingComposition, SessionContext
 from .application import AdvertisingApplication, create_advertising_application
 from .tools.providers.meta import MetaToolSource, create_meta_tool_source
 from .tools.providers.google import GoogleToolSource, create_google_tool_source
@@ -50,7 +50,7 @@ from .runtime.task_executor import (
 
 __version__ = "1.0.0"
 __all__ = [
-    "AgentRuntime",
+    "AdvertisingComposition",
     "AdvertisingApplication",
     "create_advertising_application",
     "SessionContext",

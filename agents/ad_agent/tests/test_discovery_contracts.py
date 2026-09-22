@@ -22,7 +22,7 @@ from agents.ad_agent.tools.providers.meta import create_meta_tool_source
 from agents.ad_agent.tools.providers.google import create_google_tool_source
 from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
-from agents.ad_agent.runtime.runtime import AgentRuntime, AccountWhitelistValidator
+from agents.ad_agent.runtime.runtime import AdvertisingComposition, AccountWhitelistValidator
 from agents.ad_agent.runtime.skill import SkillContract
 from agents.ad_agent.tools.providers.source_factory import create_tool_source, discover_tool_source_factory
 from agents.ad_agent.api_clients.factory import create_platform_client
@@ -133,7 +133,7 @@ def test_cross_channel_tools_publish_result_relationship_metadata():
 def test_google_campaign_route_selects_type_specific_creation_chain(
     campaign_type, expected_tools,
 ):
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_google_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
@@ -149,7 +149,7 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
 
 
 def test_google_app_campaign_route_selects_app_hierarchy_chain():
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_google_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
@@ -177,7 +177,7 @@ def test_google_app_campaign_route_selects_app_hierarchy_chain():
 def test_google_app_campaign_requires_declared_parameters_before_execution():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"google-ads": ["123"]}
-    runtime = AgentRuntime(require_llm=False, whitelist_validator=validator)
+    runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
 
     result = runtime.run(
@@ -290,7 +290,7 @@ def test_google_app_campaign_requires_declared_parameters_before_execution():
 def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
     platform, params, expected_tools,
 ):
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     factory = create_meta_tool_source if platform == "meta" else create_tiktok_tool_source
     runtime.register_tool_source(factory())
     routed = runtime.intent_router.route(
@@ -304,7 +304,7 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
 
 
 def test_tiktok_legacy_app_and_product_tools_are_explicit_only():
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_tiktok_tool_source())
 
     app_route = runtime.intent_router.route(
@@ -334,7 +334,7 @@ def test_tiktok_legacy_app_and_product_tools_are_explicit_only():
 def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
     intent_type, expected_tool,
 ):
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_tiktok_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
@@ -349,7 +349,7 @@ def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
 
 
 def test_meta_campaign_only_route_does_not_expand_hierarchy():
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_meta_tool_source())
     routed = runtime.intent_router.route(
         ParsedIntent(
@@ -377,7 +377,7 @@ def test_campaign_only_routes_are_provider_declared_and_do_not_expand_hierarchy(
         ("tiktok", create_tiktok_tool_source(), "tiktok_smart_plus_create_campaign"),
     ]
     for platform, tool_source, expected_tool in cases:
-        runtime = AgentRuntime(require_llm=False)
+        runtime = AdvertisingComposition(require_llm=False)
         runtime.register_tool_source(tool_source)
         params = {
             "name": "campaign-only",
@@ -444,7 +444,7 @@ def test_resource_results_follow_declared_parent_fields_across_channels():
             },
         ])
 
-    results = AgentRuntime._build_resource_results(normalized)
+    results = AdvertisingComposition._build_resource_results(normalized)
     assert len(results) == 6
     for index in (1, 3, 5):
         assert results[index]["parent_sequence"] == results[index - 1]["sequence"]
@@ -732,14 +732,14 @@ def test_production_llm_parser_does_not_fallback_when_model_is_unavailable():
 
 
 def test_runtime_can_require_model_backed_intent_parsing():
-    runtime = AgentRuntime(require_llm=True)
+    runtime = AdvertisingComposition(require_llm=True)
 
     with pytest.raises(RuntimeError, match="LLM client is required"):
         runtime.run("查询 Meta campaign")
 
 
 def test_runtime_requires_llm_by_default():
-    runtime = AgentRuntime()
+    runtime = AdvertisingComposition()
 
     with pytest.raises(RuntimeError, match="LLM client is required"):
         runtime.run("查询 Meta campaign")
@@ -808,7 +808,7 @@ def test_plugin_only_channel_auto_discovers_without_tool_source_or_central_confi
         encoding="utf-8",
     )
 
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
 
     assert runtime.auto_load_skills(
         str(skill_root), allow_executable_plugins=True,
@@ -852,7 +852,7 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
         encoding="utf-8",
     )
 
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
 
     assert runtime.auto_load_skills(
         str(skill_root), allow_executable_plugins=True,
@@ -880,7 +880,7 @@ def test_untrusted_skill_root_is_advisory_only_by_default(tmp_path):
         encoding="utf-8",
     )
 
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     assert runtime.auto_load_skills(str(skill_root)) == 0
     assert not marker.exists()
     assert runtime.registry.list_all() == []
@@ -919,12 +919,12 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
         intent_types=["create_campaign"],
         effect_class=ToolEffect.WRITE,
     )
-    runtime = AgentRuntime.__new__(AgentRuntime)
+    runtime = AdvertisingComposition.__new__(AdvertisingComposition)
     runtime.registry = SimpleToolRegistry()
     simulated = runtime._simulate_write(definition, {"name": "demo"}, "new-network")
     assert simulated.data["campaign_id"].startswith("dry_new-network_")
 
-    assert AgentRuntime._build_resource_results([{
+    assert AdvertisingComposition._build_resource_results([{
         "tool": "provider_operation",
         "platform": "new-network",
         "success": True,
@@ -952,7 +952,7 @@ def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():
         intent_types=["create_resource"],
         effect_class=ToolEffect.WRITE,
     )
-    runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     intent = ParsedIntent(
         intent_type="create_resource",
         raw_input="create resource",
@@ -979,7 +979,7 @@ def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():
 def test_live_mode_alone_cannot_enable_provider_writes():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"meta": ["m1"]}
-    runtime = AgentRuntime(require_llm=False,
+    runtime = AdvertisingComposition(require_llm=False,
         execution_mode="live",
         live_approved_tools={"meta_update_campaign"},
         granted_permissions={"ads.read", "ads.plan", "ads.write"},
@@ -996,7 +996,7 @@ def test_live_mode_alone_cannot_enable_provider_writes():
 
 
 def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     definition = runtime.registry.get("tiktok_create_all_in_one_spark_ad")[0]
 
@@ -1024,7 +1024,7 @@ def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
 
 
 def test_tiktok_smart_plus_product_fields_publish_lookup_contracts():
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     definition = runtime.registry.get("tiktok_smart_plus_create_adgroup")[0]
     properties = definition.input_schema.properties

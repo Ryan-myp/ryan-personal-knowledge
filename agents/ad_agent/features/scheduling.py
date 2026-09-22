@@ -4,7 +4,7 @@ This feature owns only the schedule control plane.  It keeps an auditable,
 durable conversational draft until the request has a concrete cadence, scope,
 an instruction that maps to the current Tool Registry, and an explicit user
 confirmation.  The scheduled instruction is later handed back to
-AgentRuntime; this feature never calls a Provider.
+AdvertisingComposition; this feature never calls a Provider.
 """
 
 from __future__ import annotations

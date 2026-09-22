@@ -36,7 +36,8 @@ Tool Source/Skill 的注册、卸载、Parser catalog 刷新和 ownership index 
 ```text
 agents/agent_harness/
   Agent                 transcript + model/tool loop
-  AgentRuntime          Run facade and Tool Source ownership
+  AgentApplication       standard Skills + Tools assembly
+  AgentRuntime           Run facade and Tool Source ownership
   Runtime Kernel         identity, session lock, lease, mode
   TurnPipeline           application stage composition
   ToolCatalog             definitions + trusted executors
@@ -52,7 +53,7 @@ agents/ad_agent/
 每个 turn 可以执行零个或多个 Tool，再把 Tool result 放回 transcript 继续下一轮。
 它提供稳定事件顺序、并行/串行 Tool 策略、取消、最大回合数和
 `before_tool_call`/`after_tool_call` hooks。业务应用可以直接使用它，也可以选择
-`TurnPipeline` 表达更强的领域阶段；这两者都通过同一个 `AgentRuntime` 和 Run identity
+`TurnPipeline` 表达更强的领域阶段；这两者都通过同一个通用 `AgentRuntime` 和 Run identity
 进入系统。
 
 广告 Provider 适配器只负责发布 Tool Source。通用 Harness 不依赖任何 Provider
@@ -70,7 +71,7 @@ Agent Harness Registry
     AgentApplication + AgentRuntime
 ```
 
-广告只是其中一组 Skills、Tools 和 Provider adapters。广告侧 `AgentRuntime`
+广告只是其中一组 Skills、Tools 和 Provider adapters。广告侧 `AdvertisingComposition`
 负责安全和 Workflow 的应用编排；它不向
 `agents/agent_harness` 反向提供类型或路由规则。其他 Agent 可以直接注册广告
 `SkillSource` 和 `ToolSource`，也可以只取广告知识而不加载广告执行器。
@@ -199,7 +200,7 @@ Session 并发、租约和 `run_id`/`turn_id` 生命周期；
 阶段元数据、终止和错误语义；
 `agents/agent_harness/agent_runtime.py` 的 `AgentRuntime` 通过注入 `TurnPipeline` 提供可嵌入的
 通用门面。应用 pipeline 消费 Kernel 注入的 Run identity，并将持久化、审计和响应关联到
-同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AgentRuntime` 只负责组装
+同一 `run_id`/`turn_id`，不得在 pipeline 内覆盖。广告侧 `AdvertisingComposition` 只负责组装
 领域服务。广告通过 `AgentPlatform.create_application()` 装配标准 Harness Agent；
 `AdvertisingModelAdapter` 只负责把广告场景的模型输入转换为通用 `ModelTurn`，
 不创建自己的 Pipeline、Stages 或回合状态机。广告安全、账户、Blueprint、
@@ -632,7 +633,7 @@ skills/
 
 ```python
 # api_server.py 初始化（生产入口注入 LLM；离线评测才显式 require_llm=False）
-runtime = AgentRuntime(llm_client=create_llm_client(...), require_llm=True)
+runtime = AdvertisingComposition(llm_client=create_llm_client(...), require_llm=True)
 runtime.auto_load_skills(
     str(skills_root), credentials,
     allow_executable_plugins=True,

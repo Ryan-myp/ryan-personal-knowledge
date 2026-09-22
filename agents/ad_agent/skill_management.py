@@ -377,9 +377,9 @@ def _evaluation_secret_values() -> tuple[str, ...]:
 
 def _safe_evaluation_payload(value: Any) -> Any:
     """Redact persisted evaluation evidence, including echoed env secrets."""
-    from .runtime.runtime import AgentRuntime
+    from .runtime.runtime import AdvertisingComposition
 
-    redacted = AgentRuntime._redact_for_persistence(value)
+    redacted = AdvertisingComposition._redact_for_persistence(value)
 
     def scrub(item: Any) -> Any:
         if isinstance(item, str):

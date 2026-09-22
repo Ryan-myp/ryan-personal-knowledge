@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agents.ad_agent import AgentRuntime, create_meta_tool_source
+from agents.ad_agent import AdvertisingComposition, create_meta_tool_source
 from agents.ad_agent.core.plugins import (
     PluginKind,
     PluginLoader,
@@ -294,7 +294,7 @@ def test_plugin_package_loader_never_imports_package_files(tmp_path):
 
 
 def test_runtime_publishes_tool_source_and_builtin_extensions_to_one_registry():
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
         enforce_account_scope=False,

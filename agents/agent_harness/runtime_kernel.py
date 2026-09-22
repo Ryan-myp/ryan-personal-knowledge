@@ -3,10 +3,24 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Mapping, Optional, Protocol
+
+
+SUPPORTED_EXECUTION_MODES = frozenset({"dry_run", "live"})
+
+
+def validate_execution_mode(
+    value: Optional[str], *, default: str = "dry_run",
+) -> str:
+    """Normalize the provider-neutral execution mode vocabulary."""
+    mode = str(value or default).strip().lower()
+    if mode not in SUPPORTED_EXECUTION_MODES:
+        raise ValueError(f"unsupported execution mode: {value}")
+    return mode
 
 
 class RuntimeSessionBusyError(RuntimeError):
@@ -15,6 +29,28 @@ class RuntimeSessionBusyError(RuntimeError):
 
 class RuntimeSessionLeaseLostError(RuntimeError):
     """The durable owner lease was lost while a turn was running."""
+
+
+class _AnyEvent:
+    """Read-only event view that is set when any source event is set."""
+
+    def __init__(self, *events: Optional[threading.Event]) -> None:
+        self._events = tuple(event for event in events if event is not None)
+
+    def is_set(self) -> bool:
+        return any(event.is_set() for event in self._events)
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        if self.is_set():
+            return True
+        if timeout is None:
+            while not self.is_set():
+                time.sleep(0.01)
+            return True
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while not self.is_set() and time.monotonic() < deadline:
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+        return self.is_set()
 
 
 class SessionLeaseStore(Protocol):
@@ -46,6 +82,7 @@ class TurnRequest:
     task_id: Optional[str] = None
     run_id: Optional[str] = None
     turn_id: Optional[str] = None
+    streaming: bool = False
 
     def with_effective_identity(
         self, *, session_id: str, user_id: str, tenant_id: str,
@@ -132,15 +169,26 @@ class SessionLease:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=0.2)
+        release_error: Optional[Exception] = None
         if self._acquired:
             release = getattr(self.store, "release_session_lease", None)
             if callable(release):
                 try:
-                    release(self.session_id, self.owner)
-                except Exception:
-                    pass
+                    released = release(self.session_id, self.owner)
+                    if released is False:
+                        raise RuntimeError("session lease release rejected")
+                except Exception as error:
+                    if _exc is not None and hasattr(_exc, "add_note"):
+                        _exc.add_note(
+                            "session lease release failed: "
+                            f"{type(error).__name__}"
+                        )
+                    elif _exc is None:
+                        release_error = error
         self._thread = None
         self._acquired = False
+        if release_error is not None:
+            raise release_error
 
 
 class AgentRuntimeKernel:
@@ -247,15 +295,49 @@ class AgentRuntimeKernel:
                         if self.refresh_session is not None:
                             self.refresh_session(normalized)
                         normalized = replace(
-                            normalized, lease_lost_event=lease.lost_event,
+                            normalized,
+                            lease_lost_event=_AnyEvent(
+                                normalized.lease_lost_event,
+                                lease.lost_event,
+                            ),
                         )
                         lease.assert_owned()
                         result = self.execute_unlocked(normalized)
-                        if lease.lost and isinstance(result, dict):
-                            result = dict(result)
-                            signals = dict(result.get("runtime_signals") or {})
-                            signals["session_lease_lost"] = True
-                            result["runtime_signals"] = signals
+                        if lease.lost:
+                            signals = {"session_lease_lost": True}
+                            if isinstance(result, dict):
+                                result = dict(result)
+                                result["recovery_required"] = True
+                                result["runtime_signals"] = {
+                                    **dict(result.get("runtime_signals") or {}),
+                                    **signals,
+                                }
+                            else:
+                                try:
+                                    from .results import RunResult, RunStatus
+
+                                    if isinstance(result, RunResult):
+                                        result = replace(
+                                            result,
+                                            status=RunStatus.RECOVERY_REQUIRED,
+                                            recovery_required=True,
+                                            runtime_signals={
+                                                **dict(result.runtime_signals),
+                                                **signals,
+                                            },
+                                        )
+                                    else:
+                                        result = {
+                                            "value": result,
+                                            "recovery_required": True,
+                                            "runtime_signals": signals,
+                                        }
+                                except (ImportError, TypeError):
+                                    result = {
+                                        "value": result,
+                                        "recovery_required": True,
+                                        "runtime_signals": signals,
+                                    }
                         return result
             finally:
                 self._release_session_lock(session_id, lock)
@@ -269,5 +351,7 @@ __all__ = [
     "RuntimeSessionLeaseLostError",
     "SessionLeaseStore",
     "SessionLease",
+    "SUPPORTED_EXECUTION_MODES",
     "TurnRequest",
+    "validate_execution_mode",
 ]

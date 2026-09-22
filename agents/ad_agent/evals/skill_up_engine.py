@@ -3,7 +3,7 @@
 
 The adapter intentionally evaluates the application runtime, not a second
 mock implementation of it.  ``skill-up`` owns the case lifecycle and judges;
-this process owns one isolated ``AgentRuntime`` invocation and translates its
+this process owns one isolated ``AdvertisingComposition`` invocation and translates its
 result to the Custom Engine ``SessionResult`` contract.
 
 Security defaults are deliberately stricter than the normal embedding API:
@@ -70,7 +70,7 @@ def _messages(session_input: Mapping[str, Any]) -> List[Dict[str, str]]:
 def _runtime_prompt(messages: List[Dict[str, str]]) -> str:
     """Convert protocol history into one bounded Runtime request.
 
-    AgentRuntime currently exposes a one-request API. Keeping quoted
+    AdvertisingComposition currently exposes a one-request API. Keeping quoted
     user/assistant/tool turns here is safer than silently discarding context;
     a future session-aware adapter can replace this fallback without changing
     the skill-up contract.
@@ -184,7 +184,7 @@ def _session_result(
 def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     root = _bootstrap_import_path()
     from agents.ad_agent.persistence.store import AdAgentStore
-    from agents.ad_agent.runtime.runtime import AgentRuntime
+    from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
     messages = _messages(session_input)
     prompt = _runtime_prompt(messages)
@@ -202,7 +202,7 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     # once. This registers provider schemas before parsing (important for
     # numeric/array fields) without loading the same Skill files twice.
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         persistence_store=store,
         skill_roots=[str(skills_root / ".skill-up-bootstrap")],
         # skill-up's Runtime engine intentionally uses deterministic rule

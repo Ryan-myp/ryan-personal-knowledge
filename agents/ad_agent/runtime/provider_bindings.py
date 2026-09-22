@@ -13,7 +13,7 @@ from typing import Any
 
 
 class ProviderBindings:
-    """Late-bound provider factories kept outside AgentRuntime."""
+    """Late-bound provider factories kept outside AdvertisingComposition."""
 
     @staticmethod
     def normalize_namespace(namespace: str) -> str:

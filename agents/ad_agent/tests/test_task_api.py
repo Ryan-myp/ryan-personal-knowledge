@@ -5,7 +5,7 @@ import time
 
 from fastapi.testclient import TestClient
 
-from agents.ad_agent import AdAgentStore, AgentRuntime
+from agents.ad_agent import AdAgentStore, AdvertisingComposition
 from agents.ad_agent import api_server
 
 
@@ -21,7 +21,7 @@ def _wait_terminal(client, task_id, headers):
 
 
 def test_task_api_queues_runtime_turn_and_returns_result(monkeypatch):
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         enforce_account_scope=False,
@@ -67,7 +67,7 @@ def test_task_api_queues_runtime_turn_and_returns_result(monkeypatch):
 
 
 def test_task_api_rejects_credentials_and_enforces_principal_scope(monkeypatch):
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         enforce_account_scope=False,

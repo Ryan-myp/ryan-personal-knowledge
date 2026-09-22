@@ -4,7 +4,7 @@ from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.tools.providers.google import create_google_tool_source
 from agents.ad_agent.core.interfaces import ParsedIntent
 from agents.ad_agent.core.tool_registry import validate_tool_input
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 def _definitions():
@@ -15,7 +15,7 @@ def _definitions():
 
 
 def test_google_specialized_creation_chains_are_metadata_driven():
-    runtime = AgentRuntime(require_llm=False)
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_google_tool_source())
     expected = {
         "DEMAND_GEN": [

@@ -87,7 +87,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 20
+    SCHEMA_VERSION = 21
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -142,6 +142,9 @@ class AdAgentStore:
         role TEXT NOT NULL,
         content TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        tool_call_id TEXT,
+        name TEXT,
+        metadata TEXT NOT NULL DEFAULT '{}',
         FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
 
@@ -622,6 +625,7 @@ class AdAgentStore:
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
+            self._conn.execute("PRAGMA busy_timeout=5000")
         return self._conn
     
     def _init_db(self):
@@ -987,6 +991,15 @@ class AdAgentStore:
                 cls._add_column_if_missing(
                     conn, "raw_knowledge_sources", column, definition
                 )
+        elif version == 21:
+            for column, definition in {
+                "tool_call_id": "TEXT",
+                "name": "TEXT",
+                "metadata": "TEXT NOT NULL DEFAULT '{}'",
+            }.items():
+                cls._add_column_if_missing(
+                    conn, "conversation_messages", column, definition,
+                )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -1026,8 +1039,6 @@ class AdAgentStore:
                 (str(worker_id), str(worker_kind), now.isoformat(), now.isoformat(),
                  expires.isoformat(), payload),
             )
-            self._get_conn().commit()
-
     def heartbeat_worker(
         self, worker_id: str, *, lease_seconds: float = 30.0,
     ) -> bool:
@@ -2106,6 +2117,8 @@ class AdAgentStore:
         claimed: list[tuple[ScheduledTaskRecord, ScheduledTaskRunRecord]] = []
         with self._lock:
             conn = self._get_conn()
+            if conn.in_transaction:
+                conn.commit()
             conn.execute("BEGIN IMMEDIATE")
             try:
                 rows = conn.execute(
@@ -2288,28 +2301,47 @@ class AdAgentStore:
         """
         with self._lock:
             conn = self._get_conn()
-            now = datetime.now()
-            row = conn.execute(
-                "SELECT status, updated_at, request_hash FROM write_reservations WHERE idempotency_key = ?",
-                (idempotency_key,),
-            ).fetchone()
-            if row:
-                if row["request_hash"] and request_hash and str(row["request_hash"]) != str(request_hash):
-                    return False
-                try:
-                    age = (now - datetime.fromisoformat(row["updated_at"])).total_seconds()
-                except (TypeError, ValueError):
-                    age = 0
-                if age < ttl_seconds:
-                    return False
-            timestamp = now.isoformat()
-            conn.execute(
-                "INSERT OR REPLACE INTO write_reservations "
-                "(idempotency_key, request_hash, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (idempotency_key, request_hash, "pending", timestamp, timestamp),
-            )
-            conn.commit()
-            return True
+            if conn.in_transaction:
+                conn.commit()
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                now = datetime.now(timezone.utc)
+                row = conn.execute(
+                    "SELECT status, updated_at, request_hash "
+                    "FROM write_reservations WHERE idempotency_key = ?",
+                    (str(idempotency_key),),
+                ).fetchone()
+                if row:
+                    if (
+                        row["request_hash"]
+                        and request_hash
+                        and str(row["request_hash"]) != str(request_hash)
+                    ):
+                        conn.rollback()
+                        return False
+                    try:
+                        age = (
+                            now - datetime.fromisoformat(row["updated_at"])
+                        ).total_seconds()
+                    except (TypeError, ValueError):
+                        age = 0
+                    if age < float(ttl_seconds):
+                        conn.rollback()
+                        return False
+                timestamp = now.isoformat()
+                conn.execute(
+                    "INSERT OR REPLACE INTO write_reservations "
+                    "(idempotency_key, request_hash, status, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (str(idempotency_key), request_hash, "pending",
+                     timestamp, timestamp),
+                )
+                conn.commit()
+                return True
+            except Exception:
+                if conn.in_transaction:
+                    conn.rollback()
+                raise
 
     def mark_write_executed(
         self, idempotency_key: str, request_hash: Optional[str] = None,
@@ -3905,11 +3937,14 @@ class AdAgentStore:
             conn = self._get_conn()
             conn.execute(
                 """INSERT OR REPLACE INTO conversation_messages
-                   (message_id, session_id, turn_id, role, content, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (message_id, session_id, turn_id, role, content, created_at,
+                    tool_call_id, name, metadata)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     data["message_id"], data["session_id"], data["turn_id"],
                     data["role"], data["content"], data["created_at"],
+                    data.get("tool_call_id"), data.get("name"),
+                    json.dumps(data.get("metadata") or {}, ensure_ascii=False),
                 ),
             )
             conn.commit()

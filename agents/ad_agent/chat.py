@@ -108,7 +108,7 @@ def print_result(result: dict):
     print("=" * 60)
 
 
-def print_status(runtime: AgentRuntime, session_id: str):
+def print_status(runtime: AdvertisingComposition, session_id: str):
     """打印当前状态"""
     tools = runtime.registry.list_all()
     platforms = set(t.namespace for t in tools)

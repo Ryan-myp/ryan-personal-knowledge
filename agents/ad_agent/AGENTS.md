@@ -13,7 +13,7 @@ Agent 运行时、测试、评测、审计和知识库维护脚本统一使用 P
 
 ```text
 用户请求
-  -> AgentRuntime / Run Kernel
+  -> 通用 Agent Harness Runtime / Run Kernel
   -> TurnPipeline
   -> IntentParser
   -> Skill 上下文与 Tool metadata

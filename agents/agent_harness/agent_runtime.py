@@ -9,7 +9,8 @@ from dataclasses import replace
 from typing import Any, Optional
 
 from .ports import RuntimePorts
-from .results import RunResult
+from .redaction import redact_for_persistence
+from .results import RunResult, RunStatus
 from .run_store import RunStore, run_start_payload
 from .observability import MetricsSink
 from .skills import SkillSource
@@ -17,6 +18,7 @@ from .runtime_kernel import (
     AgentRuntimeKernel,
     RuntimeSessionBusyError,
     TurnRequest,
+    validate_execution_mode,
 )
 from .tool_sources import StaticToolSource, ToolBinding, ToolSource
 from .turn_pipeline import TurnPipeline
@@ -48,10 +50,14 @@ class AgentRuntime:
         ensure_session: Optional[callable] = None,
         refresh_session: Optional[callable] = None,
         busy_error: type[Exception] = RuntimeSessionBusyError,
+        default_execution_mode: str = "dry_run",
     ) -> None:
         if pipeline is not None and agent is not None:
             raise ValueError("provide either pipeline or agent, not both")
         pipeline = pipeline or agent
+        normalized_default_mode = validate_execution_mode(
+            default_execution_mode,
+        )
         if ports is None:
             if pipeline is None:
                 raise TypeError("Agent Runtime requires ports and pipeline")
@@ -64,9 +70,13 @@ class AgentRuntime:
                 mode_context=mode_context or ContextVar(
                     "agent_harness_execution_mode", default=None,
                 ),
-                validate_mode=validate_mode or (lambda value: value or "dry_run"),
+                validate_mode=validate_mode or (
+                    lambda value: validate_execution_mode(
+                        value, default=normalized_default_mode,
+                    )
+                ),
                 resolve_mode=resolve_mode or (
-                    lambda _tenant, _user, _requested: "dry_run"
+                    lambda _tenant, _user, _requested: normalized_default_mode
                 ),
                 assert_ready=assert_ready or (lambda: None),
                 ensure_session=ensure_session or (lambda _request: None),
@@ -122,59 +132,175 @@ class AgentRuntime:
     def _execute_pipeline(self, request: TurnRequest) -> Any:
         store = self.run_store
         original_callback = request.event_callback
+        observer_errors: list[str] = []
+        run_store_errors: list[str] = []
+        observer_guard = threading.RLock()
+
+        def record_observer_error(
+            error: Exception, *, run_store: bool = False,
+        ) -> None:
+            with observer_guard:
+                observer_errors.append(type(error).__name__)
+                if run_store:
+                    run_store_errors.append(type(error).__name__)
 
         def observe(event: dict[str, Any]) -> None:
+            safe_event = redact_for_persistence(event)
             if self.metrics is not None:
                 try:
-                    self.metrics.observe(event)
-                except Exception:
-                    pass
+                    self.metrics.observe(safe_event)
+                except Exception as error:
+                    record_observer_error(error)
             if store is not None:
                 try:
-                    store.append_event(str(request.run_id), dict(event))
-                except Exception:
-                    pass
+                    accepted = store.append_event(
+                        str(request.run_id), dict(safe_event),
+                    )
+                    if accepted is False:
+                        record_observer_error(
+                            RuntimeError("RunStore rejected event"),
+                            run_store=True,
+                        )
+                except Exception as error:
+                    record_observer_error(error, run_store=True)
             if callable(original_callback):
                 try:
-                    original_callback(event)
-                except Exception:
-                    pass
+                    original_callback(safe_event)
+                except Exception as error:
+                    record_observer_error(error)
 
         request = replace(request, event_callback=observe)
-        if store is None:
-            return self.pipeline.execute(request)
-
-        store.start_run(**run_start_payload(request))
+        if store is not None:
+            try:
+                started = store.start_run(**run_start_payload(request))
+                if started is False:
+                    raise RuntimeError("RunStore rejected run start")
+            except Exception as error:
+                return RunResult(
+                    run_id=str(request.run_id or ""),
+                    turn_id=str(request.turn_id or ""),
+                    status=RunStatus.RECOVERY_REQUIRED,
+                    recovery_required=True,
+                    runtime_signals={
+                        "run_store_error": True,
+                        "run_store_error_types": [type(error).__name__],
+                        "run_store_phase": "start",
+                    },
+                    data={
+                        "error": "run_store_start_failed",
+                        "error_type": type(error).__name__,
+                    },
+                )
         try:
             result = self.pipeline.execute(request)
         except Exception as error:
-            store.finish_run(
-                str(request.run_id),
-                status="failed",
-                metadata={"error_type": type(error).__name__},
-            )
+            if store is not None:
+                try:
+                    store.finish_run(
+                        str(request.run_id),
+                        status="failed",
+                        metadata={"error_type": type(error).__name__},
+                    )
+                except Exception as finish_error:
+                    if hasattr(error, "add_note"):
+                        error.add_note(
+                            "RunStore finish_run failed: "
+                            f"{type(finish_error).__name__}"
+                        )
             raise
-        normalized = RunResult.from_payload(result)
         result_metadata = (
             dict(result.get("run_metadata") or {})
             if isinstance(result, dict)
             and isinstance(result.get("run_metadata"), dict)
             else {}
         )
+        if observer_errors:
+            runtime_signals = {
+                "observer_error_types": sorted(set(observer_errors)),
+            }
+            if run_store_errors:
+                runtime_signals["run_store_error"] = True
+                runtime_signals["run_store_error_types"] = sorted(
+                    set(run_store_errors)
+                )
+            if isinstance(result, RunResult):
+                result = replace(
+                    result,
+                    status=(
+                        RunStatus.RECOVERY_REQUIRED
+                        if run_store_errors else result.status
+                    ),
+                    recovery_required=(
+                        result.recovery_required or bool(run_store_errors)
+                    ),
+                    runtime_signals={
+                        **dict(result.runtime_signals), **runtime_signals,
+                    },
+                )
+            elif isinstance(result, dict):
+                result = dict(result)
+                if run_store_errors:
+                    result["recovery_required"] = True
+                result["runtime_signals"] = {
+                    **dict(result.get("runtime_signals") or {}),
+                    **runtime_signals,
+                }
+            else:
+                result = {
+                    "value": result,
+                    "recovery_required": bool(run_store_errors),
+                    "runtime_signals": runtime_signals,
+                }
+            result_metadata.update(runtime_signals)
+        normalized = RunResult.from_payload(result)
+        if store is None:
+            return result
         try:
-            store.finish_run(
+            finished = store.finish_run(
                 str(request.run_id),
                 status=normalized.status.value,
                 metadata={
                     "effect_state": normalized.effect_state,
                     "recovery_required": normalized.recovery_required,
-                    **result_metadata,
+                    **redact_for_persistence(result_metadata),
                 },
             )
-        except Exception:
-            # The Run remains recoverable from its last durable event. Do not
-            # replace a valid provider result with a persistence observer error.
-            pass
+            if finished is False:
+                raise RuntimeError("RunStore rejected run completion")
+        except Exception as error:
+            if isinstance(result, RunResult):
+                result = replace(
+                    result,
+                    status=RunStatus.RECOVERY_REQUIRED,
+                    recovery_required=True,
+                    runtime_signals={
+                        **dict(result.runtime_signals),
+                        "run_store_error": True,
+                        "observer_error_types": sorted({
+                            *observer_errors,
+                            type(error).__name__,
+                        }),
+                        "run_store_error_types": sorted({
+                            *run_store_errors,
+                            type(error).__name__,
+                        }),
+                    },
+                )
+            elif isinstance(result, dict):
+                result = dict(result)
+                result["recovery_required"] = True
+                result["runtime_signals"] = {
+                    **dict(result.get("runtime_signals") or {}),
+                    "run_store_error": True,
+                    "observer_error_types": sorted({
+                        *observer_errors,
+                        type(error).__name__,
+                    }),
+                    "run_store_error_types": sorted({
+                        *run_store_errors,
+                        type(error).__name__,
+                    }),
+                }
         return result
 
     def register_tool(

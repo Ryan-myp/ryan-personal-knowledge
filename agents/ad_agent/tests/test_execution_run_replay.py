@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from agents.ad_agent.persistence.models import ExecutionRunRecord
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.runtime import AgentRuntime
+from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
 
 def _run(run_id="run-1", *, updated_at=None):
@@ -43,7 +43,7 @@ def test_stale_execution_run_becomes_recovery_required_with_event():
 
 def test_runtime_exposes_durable_latest_run_after_async_free_turn():
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         persistence_store=store,
         offline_mode=True,
@@ -67,7 +67,7 @@ def test_parser_failure_closes_durable_run_instead_of_leaving_it_running():
             raise RuntimeError("model transport failed")
 
     store = AdAgentStore(":memory:")
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         intent_parser=BrokenParser(),
         persistence_store=store,

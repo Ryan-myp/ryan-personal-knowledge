@@ -1,7 +1,7 @@
 """
 persistence/session_manager.py - 会话管理器
 
-管理会话生命周期，与 AgentRuntime 的 SessionContext 配合。
+管理会话生命周期，与 AdvertisingComposition 的 SessionContext 配合。
 """
 
 import json

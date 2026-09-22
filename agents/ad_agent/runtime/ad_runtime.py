@@ -107,7 +107,7 @@ _BLUEPRINT_CONTEXT_CACHE_MAX_ENTRIES = 128
 
 # ─── Advertising application runtime ──────────────────────────
 
-class AgentRuntime(
+class AdvertisingComposition(
     AdToolSourceLifecycleMixin,
     AdCreationServicesMixin,
     AdTaskRuntimeFacade,
@@ -124,7 +124,7 @@ class AgentRuntime(
 
     架构层次：
     ┌─────────────────────────────────────────┐
-    │  AgentRuntime（广告应用组合根）             │
+    │  AdvertisingComposition（广告应用组合根）             │
     │  ├─ SessionManager（会话管理）             │
     │  ├─ IntentRouter（意图路由）               │
     │  ├─ ToolRegistry（工具执行）               │
@@ -1220,7 +1220,7 @@ class AgentRuntime(
         """Return the trusted principal's account scope, or ``None`` if absent."""
         if account_scope is None:
             return None
-        normalized = AgentRuntime._canonical_platform(platform)
+        normalized = AdvertisingComposition._canonical_platform(platform)
         aliases = {normalized, platform}
         accounts: set[str] = set()
         for key in aliases:
@@ -1428,11 +1428,11 @@ class AgentRuntime(
         """Make credentials visible to handlers as a read-only snapshot."""
         if isinstance(value, dict):
             return MappingProxyType({
-                    key: AgentRuntime._freeze_credentials(item)
+                    key: AdvertisingComposition._freeze_credentials(item)
                 for key, item in value.items()
             })
         if isinstance(value, list):
-            return tuple(AgentRuntime._freeze_credentials(item) for item in value)
+            return tuple(AdvertisingComposition._freeze_credentials(item) for item in value)
         return value
 
     @staticmethod
@@ -1715,12 +1715,16 @@ class AgentRuntime(
             trace.done(
                 "failed" if payload.get("status") == "failed" else "succeeded"
             )
-            self.persist_conversation_turn(
+            # The generic Harness is the single owner of durable transcript
+            # messages. Advertising keeps only its bounded UI working window
+            # and trace metadata; it does not append another SQL transcript.
+            self.persistence_services.persist_conversation_turn(
                 session,
                 str(payload.get("turn_id") or ""),
                 self._redact_for_persistence(user_input),
                 str(payload.get("reply") or ""),
                 execution_trace=trace,
+                persist_messages=False,
             )
         return payload
 

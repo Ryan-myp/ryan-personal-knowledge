@@ -27,7 +27,7 @@ from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
 )
 from agents.ad_agent.core.interfaces import ParsedIntent  # noqa: E402
 from agents.ad_agent.persistence.store import AdAgentStore  # noqa: E402
-from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
+from agents.ad_agent.runtime.runtime import AdvertisingComposition  # noqa: E402
 
 
 class _RecordingCampaignClient:
@@ -102,7 +102,7 @@ def run_harness(path: str | Path) -> dict[str, Any]:
         parser = _DeterministicIntentParser(
             "list_campaigns", platform, {platform: {account_field: account_id}}
         )
-        runtime = AgentRuntime(
+        runtime = AdvertisingComposition(
             intent_parser=parser,
             require_llm=False,
             persistence_store=store,

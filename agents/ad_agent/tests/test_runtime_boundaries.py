@@ -231,9 +231,6 @@ def test_turn_application_services_do_not_import_provider_implementations():
     root = Path("agents/ad_agent/runtime")
     for name in (
         "ad_turn_context.py",
-        "ad_turn_planning.py",
-        "ad_tool_execution.py",
-        "ad_turn_result.py",
         "ad_runtime_facades.py",
     ):
         source = (root / name).read_text(encoding="utf-8")

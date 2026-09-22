@@ -640,11 +640,11 @@ def test_session_rename_uses_authenticated_user_and_tenant_scope(monkeypatch, fa
 
 
 def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
-    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent import AdvertisingComposition
     from agents.ad_agent.persistence.store import AdAgentStore
 
     store = AdAgentStore(":memory:")
-    managed_runtime = AgentRuntime(
+    managed_runtime = AdvertisingComposition(
         require_llm=False, persistence_store=store, features=[]
     )
     monkeypatch.setattr(api_server, "runtime", managed_runtime)
@@ -1007,10 +1007,10 @@ def test_runtime_initialization_fails_without_llm(monkeypatch, tmp_path):
 
 
 def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
-    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent import AdvertisingComposition
     from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "test-key")
@@ -1028,10 +1028,10 @@ def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
 
 
 def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
-    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent import AdvertisingComposition
     from agents.ad_agent.tools.providers.tiktok import create_tiktok_tool_source
 
-    runtime = AgentRuntime(require_llm=False, offline_mode=True)
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "test-key")
@@ -1120,11 +1120,11 @@ def test_parameter_options_resolve_allows_global_catalog_without_account_id(fake
 
 
 def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch, tmp_path):
-    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent import AdvertisingComposition
     from agents.ad_agent.persistence.store import AdAgentStore
 
     store = AdAgentStore(str(tmp_path / "skills.db"))
-    managed_runtime = AgentRuntime(require_llm=False, persistence_store=store, offline_mode=True)
+    managed_runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
     monkeypatch.setattr(api_server, "runtime", managed_runtime)
     monkeypatch.setattr(api_server, "API_KEY", "")
     monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
@@ -1187,13 +1187,13 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
 
 
 def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeypatch, tmp_path):
-    from agents.ad_agent import AgentRuntime
+    from agents.ad_agent import AdvertisingComposition
     from agents.ad_agent.core.interfaces import ParsedIntent
     from agents.ad_agent.persistence.store import AdAgentStore
     from agents.ad_agent.skill_management import ManagedSkillManager
 
     store = AdAgentStore(str(tmp_path / "multi-tenant-skills.db"))
-    managed_runtime = AgentRuntime(
+    managed_runtime = AdvertisingComposition(
         require_llm=False, persistence_store=store, offline_mode=True
     )
     manager = ManagedSkillManager(store)

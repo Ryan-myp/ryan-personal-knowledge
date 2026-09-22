@@ -14,11 +14,18 @@ import threading
 import uuid
 import queue
 import time
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .models import OutboxEvent, TaskRecord, ScheduledTaskRecord, ScheduledTaskRunRecord
+from .models import (
+    ConversationMessageRecord,
+    OutboxEvent,
+    TaskRecord,
+    ScheduledTaskRecord,
+    ScheduledTaskRunRecord,
+)
 from .store import AdAgentStore
 
 
@@ -469,6 +476,115 @@ class MySQLStore(AdAgentStore):
                 "pool": self._pool.metrics(),
             }
 
+    def reserve_write(
+        self, idempotency_key: str, ttl_seconds: int = 300,
+        request_hash: Optional[str] = None,
+    ) -> bool:
+        """Atomically reserve one replay key with an InnoDB row lock."""
+        conn = self._get_conn()
+        conn.begin()
+        try:
+            now = datetime.now(timezone.utc)
+            row = conn.execute(
+                "SELECT status, updated_at, request_hash "
+                "FROM write_reservations WHERE idempotency_key = ? FOR UPDATE",
+                (str(idempotency_key),),
+            ).fetchone()
+            if row:
+                if (
+                    row["request_hash"]
+                    and request_hash
+                    and str(row["request_hash"]) != str(request_hash)
+                ):
+                    conn.rollback()
+                    return False
+                try:
+                    age = (
+                        now - datetime.fromisoformat(str(row["updated_at"]))
+                    ).total_seconds()
+                except (TypeError, ValueError):
+                    age = 0
+                if age < float(ttl_seconds):
+                    conn.rollback()
+                    return False
+            timestamp = now.isoformat()
+            conn.execute(
+                """INSERT INTO write_reservations
+                   (idempotency_key, request_hash, status, created_at, updated_at)
+                   VALUES (?, ?, 'pending', ?, ?)
+                   ON DUPLICATE KEY UPDATE
+                     request_hash = VALUES(request_hash),
+                     status = 'pending',
+                     created_at = VALUES(created_at),
+                     updated_at = VALUES(updated_at)""",
+                (str(idempotency_key), request_hash, timestamp, timestamp),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+
+    def mark_write_executed(
+        self, idempotency_key: str, request_hash: Optional[str] = None,
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "UPDATE write_reservations SET status = ?, updated_at = ? "
+            "WHERE idempotency_key = ? AND "
+            "(request_hash IS NULL OR request_hash = ?)",
+            (
+                "executed", datetime.now(timezone.utc).isoformat(),
+                str(idempotency_key), request_hash,
+            ),
+        )
+
+    def release_write(
+        self, idempotency_key: str, request_hash: Optional[str] = None,
+    ) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "DELETE FROM write_reservations WHERE idempotency_key = ? "
+            "AND status = 'pending' AND "
+            "(request_hash IS NULL OR request_hash = ?)",
+            (str(idempotency_key), request_hash),
+        )
+
+    def record_conversation_message(
+        self, record: ConversationMessageRecord,
+    ) -> None:
+        data = record.to_dict()
+        self._get_conn().execute(
+            """INSERT INTO conversation_messages
+               (message_id, session_id, turn_id, role, content, created_at,
+                tool_call_id, name, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE
+                 turn_id = VALUES(turn_id), role = VALUES(role),
+                 content = VALUES(content), created_at = VALUES(created_at),
+                 tool_call_id = VALUES(tool_call_id), name = VALUES(name),
+                 metadata = VALUES(metadata)""",
+            (
+                data["message_id"], data["session_id"], data["turn_id"],
+                data["role"], data["content"], data["created_at"],
+                data.get("tool_call_id"), data.get("name"),
+                json.dumps(data.get("metadata") or {}, ensure_ascii=False),
+            ),
+        )
+
+    def list_conversation_messages(
+        self, session_id: str, limit: int = 200,
+    ) -> list[ConversationMessageRecord]:
+        rows = self._get_conn().execute(
+            """SELECT * FROM conversation_messages
+               WHERE session_id = ?
+               ORDER BY created_at DESC, message_id DESC LIMIT ?""",
+            (str(session_id), max(1, int(limit))),
+        ).fetchall()
+        return [
+            ConversationMessageRecord.from_row(dict(row))
+            for row in reversed(rows)
+        ]
     @staticmethod
     def _table_columns(conn: _MySQLConnection, table: str) -> set[str]:
         rows = conn.execute("SHOW COLUMNS FROM `" + str(table) + "`").fetchall()
@@ -765,6 +881,15 @@ class MySQLStore(AdAgentStore):
             }.items():
                 self._add_mysql_column_if_missing(
                     conn, "raw_knowledge_sources", column, definition
+                )
+        elif version == 21:
+            for column, definition in {
+                "tool_call_id": "VARCHAR(255)",
+                "name": "VARCHAR(255)",
+                "metadata": "LONGTEXT NOT NULL",
+            }.items():
+                self._add_mysql_column_if_missing(
+                    conn, "conversation_messages", column, definition,
                 )
 
     def claim_task(

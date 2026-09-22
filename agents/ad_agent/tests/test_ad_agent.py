@@ -23,7 +23,7 @@ from agents.ad_agent.tools.providers.dv360 import (
     DV360ListCampaignsHandler,
     DV360GetLineItemReportHandler,
 )
-from agents.ad_agent.runtime.runtime import AgentRuntime, AccountWhitelistValidator
+from agents.ad_agent.runtime.runtime import AdvertisingComposition, AccountWhitelistValidator
 from agents.ad_agent.skills.businesses.policy import BusinessSkillPolicy
 from agents.ad_agent.core.interfaces import (
     ToolContext, ToolResult, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema,
@@ -56,7 +56,7 @@ def store():
 def runtime():
     """创建只读模式的 runtime"""
     store = AdAgentStore(":memory:")
-    rt = AgentRuntime(require_llm=False, persistence_store=store, read_only_mode=True)
+    rt = AdvertisingComposition(require_llm=False, persistence_store=store, read_only_mode=True)
     rt.register_tool_source(create_meta_tool_source_mock())
     rt.register_tool_source(create_google_tool_source_mock())
     rt.register_tool_source(create_tiktok_tool_source_mock())
@@ -97,7 +97,7 @@ def create_dv360_tool_source_mock():
 
 
 def configured_parser():
-    """Build the parser with the same published catalog as AgentRuntime."""
+    """Build the parser with the same published catalog as AdvertisingComposition."""
     parser = LLMIntentParser()
     loader = SkillLoader()
     loader.load_all()
@@ -121,7 +121,7 @@ def configured_parser():
 
 def test_runtime_conversation_delete_enforces_user_and_tenant_scope():
     store = AdAgentStore(":memory:")
-    rt = AgentRuntime(require_llm=False, persistence_store=store)
+    rt = AdvertisingComposition(require_llm=False, persistence_store=store)
     manager = rt._session_manager
     manager.create_session("tenant-a-session", "user-a", metadata={"tenant_id": "tenant-a"})
     manager.create_session("tenant-b-session", "user-a", metadata={"tenant_id": "tenant-b"})
@@ -152,7 +152,7 @@ def test_runtime_generates_and_persists_llm_conversation_title():
 
     store = AdAgentStore(":memory:")
     llm = TitleLLM()
-    rt = AgentRuntime(
+    rt = AdvertisingComposition(
         require_llm=True,
         llm_client=llm,
         persistence_store=store,
@@ -189,7 +189,7 @@ def test_runtime_does_not_block_first_turn_on_conversation_title_llm():
 
     store = AdAgentStore(":memory:")
     llm = TitleLLM()
-    rt = AgentRuntime(
+    rt = AdvertisingComposition(
         require_llm=True,
         llm_client=llm,
         persistence_store=store,
@@ -330,7 +330,7 @@ class TestReadOnlyMode:
 
     def test_non_readonly_keeps_write_tools(self):
         """非只读模式下，写工具应保留"""
-        rt = AgentRuntime(require_llm=False, read_only_mode=False)
+        rt = AdvertisingComposition(require_llm=False, read_only_mode=False)
         rt.register_tool_source(create_meta_tool_source_mock())
         all_tools = rt.registry.list_all()
         write_tools = [t for t in all_tools if t.is_write_tool]
@@ -338,11 +338,11 @@ class TestReadOnlyMode:
 
     def test_tool_count_decreases_after_filter(self):
         """过滤前后工具数量应对比"""
-        rt_full = AgentRuntime(require_llm=False, read_only_mode=False)
+        rt_full = AdvertisingComposition(require_llm=False, read_only_mode=False)
         rt_full.register_tool_source(create_meta_tool_source_mock())
         count_full = len(rt_full.registry.list_all())
 
-        rt_readonly = AgentRuntime(require_llm=False, read_only_mode=True)
+        rt_readonly = AdvertisingComposition(require_llm=False, read_only_mode=True)
         rt_readonly.register_tool_source(create_meta_tool_source_mock())
         rt_readonly.enable_read_only_mode()
         count_readonly = len(rt_readonly.registry.list_all())
@@ -601,7 +601,7 @@ class TestIntentParser:
 
         llm = FakeLLM()
         parser = LLMIntentParser(llm)
-        runtime = AgentRuntime(require_llm=False, enforce_account_scope=False)
+        runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
         session = SessionContext("s1", ToolContext("s1", "u1"))
         session.save_result(
             "meta_list_campaigns",
@@ -791,7 +791,7 @@ class TestIntentParser:
         assert "id" not in values
 
     def test_creation_reply_is_a_complete_text_fallback_for_chinese_and_english(self):
-        from agents.ad_agent.runtime.runtime import AgentRuntime
+        from agents.ad_agent.runtime.runtime import AdvertisingComposition
 
         ui = {
             "cards": [{
@@ -819,13 +819,13 @@ class TestIntentParser:
             }],
         }
 
-        chinese = AgentRuntime.creation_ui_reply(ui, "创建 TikTok App 转化广告")
+        chinese = AdvertisingComposition.creation_ui_reply(ui, "创建 TikTok App 转化广告")
         assert "广告账户 ID" in chinese
         assert "列表中搜索选择" in chinese
         assert "不会猜测 ID" in chinese
         assert "确认后才会提交" in chinese
 
-        english = AgentRuntime.creation_ui_reply(ui, "Create a TikTok app conversion campaign")
+        english = AdvertisingComposition.creation_ui_reply(ui, "Create a TikTok app conversion campaign")
         assert "account" in english.lower()
         assert "current account list" in english
         assert "confirmation" in english.lower()
@@ -852,7 +852,7 @@ class TestIntentParser:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
@@ -937,7 +937,7 @@ class TestRuntimeQuery:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=True,
             llm_client=SequenceLLM(),
             persistence_store=AdAgentStore(":memory:"),
@@ -971,7 +971,7 @@ class TestRuntimeQuery:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
@@ -1008,7 +1008,7 @@ class TestRuntimeQuery:
         client = MetaClient()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
@@ -1038,7 +1038,7 @@ class TestRuntimeQuery:
         llm = FakeLLM()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             llm_client=llm,
             whitelist_validator=validator,
             offline_mode=True,
@@ -1114,7 +1114,7 @@ class TestRuntimeQuery:
         from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1", "m2"]}
-        rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=True)
+        rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=True)
         rt.register_tool_source(create_meta_tool_source())
 
         result = rt.run("列出 Meta campaign", user_id="multi-account-user")
@@ -1127,7 +1127,7 @@ class TestRuntimeQuery:
         from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=False)
+        rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=False)
         rt.register_tool_source(create_meta_tool_source())
         result = rt.run(
             "列出 Meta campaign 列表",
@@ -1142,7 +1142,7 @@ class TestRuntimeQuery:
         from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(require_llm=False, whitelist_validator=validator, offline_mode=True)
+        rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=True)
         rt.register_tool_source(create_meta_tool_source())
         result = rt.run(
             "列出 Meta campaign 列表",
@@ -1155,7 +1155,7 @@ class TestRuntimeQuery:
     def test_business_context_blocks_disallowed_channel(self):
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"tiktok": ["t1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             whitelist_validator=validator,
             policies=[BusinessSkillPolicy.from_values(
                 name="app",
@@ -1176,7 +1176,7 @@ class TestRuntimeQuery:
                 seen.extend(messages)
                 return '{"intent_type":"chat","namespaces":[]}'
 
-        rt = AgentRuntime(require_llm=False, persistence_store=AdAgentStore(":memory:"), intent_parser=__import__(
+        rt = AdvertisingComposition(require_llm=False, persistence_store=AdAgentStore(":memory:"), intent_parser=__import__(
             "agents.ad_agent.core.intent", fromlist=["LLMIntentParser"]
         ).LLMIntentParser(LLM()))
         result = rt.run(
@@ -1200,7 +1200,7 @@ class TestRuntimeQuery:
             def call(self, messages):
                 return '{"intent_type":"chat","namespaces":[]}'
 
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             intent_parser=__import__(
@@ -1237,7 +1237,7 @@ class TestRuntimeQuery:
             def call(self, messages):
                 return '{"intent_type":"chat","namespaces":[]}'
 
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             intent_parser=LLMIntentParser(LLM()),
@@ -1294,7 +1294,7 @@ class TestSafeWriteExecution:
             "meta": ["m1"], "google-ads": ["g1"],
             "tiktok": ["t1"], "dv360": ["d1"],
         }
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=mode,
@@ -1380,7 +1380,7 @@ class TestSafeWriteExecution:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
@@ -1509,7 +1509,7 @@ class TestSafeWriteExecution:
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
         calls = []
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=False, intent_parser=ChainParser(),
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
@@ -1635,7 +1635,7 @@ class TestSafeWriteExecution:
         google = self.FakeClient("google-ads")
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
-        rt = AgentRuntime(require_llm=False, persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
+        rt = AdvertisingComposition(require_llm=False, persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
         rt.register_tool_source(create_meta_tool_source(meta))
         rt.register_tool_source(create_google_tool_source(google))
         result = rt.run(
@@ -1649,7 +1649,7 @@ class TestSafeWriteExecution:
         store = AdAgentStore(":memory:")
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["meta-test"]}
-        first_runtime = AgentRuntime(require_llm=False,
+        first_runtime = AdvertisingComposition(require_llm=False,
             persistence_store=store,
             whitelist_validator=validator,
         )
@@ -1660,7 +1660,7 @@ class TestSafeWriteExecution:
             account_id="meta-test",
         )
 
-        second_runtime = AgentRuntime(require_llm=False,
+        second_runtime = AdvertisingComposition(require_llm=False,
             persistence_store=store,
             whitelist_validator=validator,
         )
@@ -1682,7 +1682,7 @@ class TestSafeWriteExecution:
 
     def test_runtime_credentials_are_read_only_and_caller_owned_input_is_unchanged(self):
         credentials = {"meta": {"access_token": "caller-token"}}
-        rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
         rt.register_tool_source(create_meta_tool_source_mock())
         result = rt.run("你好", user_id="u1", credentials=credentials)
         assert credentials == {"meta": {"access_token": "caller-token"}}
@@ -1738,7 +1738,7 @@ class TestSafeWriteExecution:
             "tiktok": ["t1"], "dv360": ["d1"],
         }
         clients = [self.FakeClient(platform) for platform in ("meta", "google", "tiktok")]
-        rt = AgentRuntime(
+        rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
@@ -1932,7 +1932,7 @@ class TestIterationContracts:
     def test_dv360_report_routes_with_line_item_id(self):
         from agents.ad_agent.tools.providers.dv360 import create_dv360_tool_source
 
-        rt = AgentRuntime(require_llm=False, enforce_account_scope=True, offline_mode=True)
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=True, offline_mode=True)
         rt.register_tool_source(create_dv360_tool_source())
         result = rt.run(
             "下载 DV360 line_item_id=li-1 最近7天报表",
@@ -2268,7 +2268,7 @@ class TestIterationContracts:
 
                 return Handler()
 
-        rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
         assert [tool.name for tool in rt.registry.list_all()] == ["custom_meta_insight"]
@@ -2318,7 +2318,7 @@ class TestIterationContracts:
             encoding="utf-8",
         )
 
-        rt = AgentRuntime(require_llm=False, enforce_account_scope=False)
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
         assert rt.auto_load_skills(
             str(skill_root), allow_executable_plugins=True,
         ) == 1
@@ -2532,7 +2532,7 @@ class TestIterationContracts:
         google = GoogleClient()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
@@ -2668,7 +2668,7 @@ class TestIterationContracts:
         client = FakeClient()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
@@ -2715,7 +2715,7 @@ class TestIterationContracts:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
@@ -2793,7 +2793,7 @@ class TestCrossChannelAnalysis:
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
-        rt = AgentRuntime(require_llm=False,
+        rt = AdvertisingComposition(require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             offline_mode=True,

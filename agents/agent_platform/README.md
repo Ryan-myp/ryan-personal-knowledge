@@ -43,9 +43,12 @@ application = platform.create_application("knowledge-qa", model=model)
 ```
 
 `application` 是六层 `PlatformApplication`，统一负责 Harness 执行、Data Port、
-Integration Source 和 Infrastructure 生命周期；业务入口不应直接绕过它创建 Runtime。
+Integration Source 和 Infrastructure 生命周期。`PlatformDependencies.integrations`
+中的 Tool Source 会与场景选择的 Source 合并后注册到同一个 Harness；业务入口不应
+直接绕过它创建 Runtime。
 平台默认给 Harness 装配 `ToolExecutionPolicy`，统一执行输入 Schema、权限、风险、
-live 开关、Run 内幂等和审计门禁。
+live 开关、跨进程 SQL 幂等和审计门禁。`GovernancePolicy` 的默认执行模式、Tool 数量、
+最大回合数和 Skill 上下文上限会真实下沉到 Harness，而不是只停留在架构元数据。
 
 产品只能通过标准 Harness 的 Agent loop 和 Tool/Skill 适配器接入场景行为。
 它不能创建业务专用 Pipeline、第二个 Agent、第二个 Runtime 或第二套 Tool 门禁；

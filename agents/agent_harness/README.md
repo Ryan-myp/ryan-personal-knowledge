@@ -37,7 +37,9 @@ user message
 
 Applications inject:
 
-- a model adapter with `complete(messages, tools, request)`;
+- a model adapter with `complete(messages, tools, request)`. Providers may
+  additionally expose `stream(...)`; streamed deltas are observer events and
+  Tool calls are executed only after the final `ModelTurn` is assembled;
 - standard `SKILL.md` directories through `MarkdownSkillSource` or
   `MarkdownSkillDirectorySource`;
 - a `ToolCatalog` and `ToolSource` backed by local, SDK/HTTP or MCP Tool
@@ -45,7 +47,24 @@ Applications inject:
 - one request-level Turn Handler when the application needs a deterministic
   orchestration adapter;
 - policy hooks such as `before_tool_call` and `after_tool_call`;
-- an optional `RunStore` and session implementation.
+- an optional `RunStore`, `TranscriptStore` and session implementation;
+- an optional `IdempotencyStore` for cross-process, SQL-backed write replay
+  protection.
+
+Tool exposure is bounded per model turn. `AgentApplication.create` accepts
+`max_tools` and an optional `tool_selector(request, tools)` so applications
+can select a relevant subset without changing the Runtime or Tool contracts.
+Session transcripts are isolated by tenant, user and `session_id`. The in-memory
+working window is bounded, while an injected `TranscriptStore` keeps the full
+sanitized history and hydrates a new process. Model adapters support bounded
+retries, provider fallback for retryable failures, timeout signalling, streaming
+deltas and cumulative token budgets. Persistence, lease, idempotency and audit
+failures are returned as `recovery_required` with structured runtime signals.
+
+The generic Runtime accepts only `dry_run` and `live` execution modes. A
+platform may choose the default mode through governance, but live Tool writes
+still require the Tool policy's explicit approval, permission, confirmation,
+idempotency and write-guard checks.
 
 Advertising is only one collection of Skills and Tool Sources. Provider
 objects publish Tool definitions at the integration boundary; the Harness

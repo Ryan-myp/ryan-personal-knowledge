@@ -18,7 +18,7 @@ if str(ROOT) not in sys.path:
 
 from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight  # noqa: E402
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator  # noqa: E402
-from agents.ad_agent.runtime.runtime import AgentRuntime  # noqa: E402
+from agents.ad_agent.runtime.runtime import AdvertisingComposition  # noqa: E402
 from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
     normalize_platform,
@@ -45,9 +45,9 @@ def _credential_configured(path: Path, platform: str) -> bool:
     return any(normalize_platform(str(key)) == wanted and isinstance(item, dict) and bool(item) for key, item in value.items())
 
 
-def build_runtime(config_path: Path) -> AgentRuntime:
+def build_runtime(config_path: Path) -> AdvertisingComposition:
     config = _load_mapping(config_path)
-    runtime = AgentRuntime(
+    runtime = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
         enforce_account_scope=True,
