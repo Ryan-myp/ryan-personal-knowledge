@@ -6,13 +6,18 @@ import threading
 from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, Optional
 
-from agents.agent_harness import AgentApplication, RunStore, TurnRequest
+from agents.agent_harness import TurnRequest
 
 from .architecture import PlatformArchitecture
 from .definitions import AgentDefinition, ScenarioDefinition
 from .governance.policy import GovernancePolicy
 from .integrations.ports import ToolSource
-from .data.ports import KnowledgeStore, MemoryStore, RunStore, SessionStore
+from .data.ports import (
+    KnowledgeStore,
+    MemoryStore,
+    RunStore as DataRunStore,
+    SessionStore,
+)
 
 
 _SAFE_HEALTH_KEYS = frozenset({
@@ -45,7 +50,81 @@ class DataLayer:
     knowledge_store: Optional[KnowledgeStore] = None
     memory_store: Optional[MemoryStore] = None
     session_store: Optional[SessionStore] = None
-    run_store: Optional[RunStore] = None
+    run_store: Optional[DataRunStore] = None
+
+    def components(self) -> tuple[tuple[str, Any], ...]:
+        """Return configured stores once, preserving declaration order."""
+        values = (
+            ("knowledge", self.knowledge_store),
+            ("memory", self.memory_store),
+            ("session", self.session_store),
+            ("run", self.run_store),
+        )
+        seen: set[int] = set()
+        result: list[tuple[str, Any]] = []
+        for name, component in values:
+            if component is None or id(component) in seen:
+                continue
+            seen.add(id(component))
+            result.append((name, component))
+        return tuple(result)
+
+    def healthcheck(self, *, started: bool) -> dict[str, Any]:
+        """Check configured stores without probing them with a data operation."""
+        components = self.components()
+        if not components:
+            return {
+                "status": "not_configured",
+                "started": started,
+                "configured": 0,
+                "stores": [],
+            }
+        checks: list[dict[str, Any]] = []
+        for name, component in components:
+            item: dict[str, Any] = {
+                "name": name,
+                "component": type(component).__name__,
+                "status": "not_started" if not started else "unknown",
+            }
+            if started:
+                check = getattr(component, "check", None)
+                if not callable(check):
+                    check = getattr(component, "healthcheck", None)
+                if not callable(check):
+                    item["status"] = "ok"
+                else:
+                    try:
+                        result = check()
+                        if isinstance(result, Mapping):
+                            item.update(_safe_health_fields(result))
+                        item["status"] = str(item.get("status") or "ok")
+                    except Exception as error:
+                        item["status"] = "unhealthy"
+                        item["error_type"] = type(error).__name__
+            checks.append(item)
+        statuses = {str(item["status"]) for item in checks}
+        return {
+            "status": (
+                "unhealthy"
+                if "unhealthy" in statuses
+                else "degraded"
+                if "unknown" in statuses
+                else "not_started"
+                if not started
+                else "ok"
+            ),
+            "started": started,
+            "configured": len(checks),
+            "stores": checks,
+        }
+
+    @staticmethod
+    def _close_component(component: Any) -> None:
+        close = getattr(component, "close", None)
+        if not callable(close):
+            close = getattr(component, "stop", None)
+        if callable(close):
+            close()
 
 
 @dataclass(frozen=True)
@@ -330,6 +409,11 @@ class PlatformApplication:
     tool_source_ids: tuple[str, ...] = ()
     _started: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
+    _started_data_components: tuple[Any, ...] = field(
+        default=(),
+        init=False,
+        repr=False,
+    )
     _started_integrations: tuple[Any, ...] = field(
         default=(),
         init=False,
@@ -431,9 +515,15 @@ class PlatformApplication:
                 raise RuntimeError("Platform application is closed")
             if self._started:
                 return
+            started_data: list[Any] = []
             started_integrations: list[Any] = []
             infrastructure_started = False
             try:
+                for _name, component in self.dependencies.data.components():
+                    start = getattr(component, "start", None)
+                    if callable(start):
+                        start()
+                    started_data.append(component)
                 for integration in self.dependencies.integrations.integrations:
                     started_integrations.append(integration)
                     start = getattr(integration, "start", None)
@@ -441,6 +531,7 @@ class PlatformApplication:
                         start()
                 self.dependencies.infrastructure.start()
                 infrastructure_started = True
+                self._started_data_components = tuple(started_data)
                 self._started_integrations = tuple(started_integrations)
                 self._started = True
             except Exception:
@@ -451,6 +542,9 @@ class PlatformApplication:
                         pass
                 for integration in reversed(started_integrations):
                     self._close_component(integration)
+                for component in reversed(started_data):
+                    self._close_component(component)
+                self._started_data_components = ()
                 self._started_integrations = ()
                 raise
 
@@ -587,12 +681,15 @@ class PlatformApplication:
             self._integration_health(item, started=self.started)
             for item in self.dependencies.integrations.integrations
         ]
+        data = self.dependencies.data.healthcheck(started=self.started)
         infrastructure = self.dependencies.infrastructure.healthcheck()
         statuses = [
             str(runtime_health.get("status") or "ok"),
             str(infrastructure.get("status") or "ok"),
             *[str(item.get("status") or "unknown") for item in integrations],
         ]
+        if data["configured"]:
+            statuses.append(str(data.get("status") or "unknown"))
         status = "ok"
         if "unhealthy" in statuses:
             status = "unhealthy"
@@ -603,6 +700,7 @@ class PlatformApplication:
             "started": self.started,
             "closed": self.closed,
             "runtime": runtime_health,
+            "data": data,
             "integrations": integrations,
             "infrastructure": infrastructure,
             "tools": len(self.list_tools()),
@@ -651,11 +749,17 @@ class PlatformApplication:
                     self._close_component(integration)
                 except Exception as error:
                     first_error = first_error or error
+            for component in reversed(self._started_data_components):
+                try:
+                    self._close_component(component)
+                except Exception as error:
+                    first_error = first_error or error
             try:
                 self.dependencies.infrastructure.close()
             except Exception as error:
                 first_error = first_error or error
             self._started = False
+            self._started_data_components = ()
             self._started_integrations = ()
             self._closed = True
             if first_error is not None:

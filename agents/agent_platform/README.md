@@ -49,6 +49,12 @@ Integration Source 和 Infrastructure 生命周期。`PlatformDependencies.integ
 应用同时提供 `healthcheck()` 和 `readiness()`，用于检查 Runtime、Skill/Tool
 目录、外部集成和基础设施状态；未启动应用会明确返回 `not_started`，已关闭应用
 不会接受新的 Run。
+
+`DataLayer` 中注入的 Knowledge、Memory、Session 和 Run Store 也属于应用生命周期：
+如果实现了 `start()`/`close()`，平台会按声明顺序启动、按逆序关闭，并在启动失败时回滚
+已经成功启动的 Store。实现 `check()` 或 `healthcheck()` 的 Store 会出现在受限的
+`healthcheck()` 输出中；平台不会通过真实数据查询来探测健康状态，也不会把凭证字段
+复制到健康结果。
 平台默认给 Harness 装配 `ToolExecutionPolicy`，统一执行输入 Schema、权限、风险、
 live 开关、跨进程 SQL 幂等和审计门禁。`GovernancePolicy` 的默认执行模式、Tool 数量、
 最大回合数和 Skill 上下文上限会真实下沉到 Harness，而不是只停留在架构元数据。
@@ -56,3 +62,7 @@ live 开关、跨进程 SQL 幂等和审计门禁。`GovernancePolicy` 的默认
 产品只能通过标准 Harness 的 Agent loop 和 Tool/Skill 适配器接入场景行为。
 它不能创建业务专用 Pipeline、第二个 Agent、第二个 Runtime 或第二套 Tool 门禁；
 Run、Session、Tool、Skill、审计和权限边界始终由中台契约统一负责。
+
+仓库内的 `agents.agent_platform.examples.ticket_support` 是一个不依赖广告包的参考
+应用。它只注册一个 Skill Source 和一个 Tool Source，使用同一个
+`AgentPlatform`、`PlatformApplication` 和 Harness，可作为新业务接入的最小起点。

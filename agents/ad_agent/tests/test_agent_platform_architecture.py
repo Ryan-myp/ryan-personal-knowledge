@@ -63,6 +63,107 @@ def test_platform_core_ports_have_resolvable_annotations():
     assert "payload" in get_type_hints(TaskPort.submit)
 
 
+def test_non_ad_reference_application_uses_the_same_platform_boundary():
+    from agents.agent_platform.examples import create_ticket_support_application
+
+    application = create_ticket_support_application(
+        model=lambda _messages, tools, _request: tools[0]["name"],
+    )
+    try:
+        assert application.scenario.scenario_id == "ticket-support"
+        assert [item["name"] for item in application.list_tools()] == [
+            "lookup_ticket",
+        ]
+        assert application.prompt("Find ticket status").reply == "lookup_ticket"
+        assert application.healthcheck()["data"]["status"] == "not_configured"
+    finally:
+        application.close()
+
+
+def test_data_layer_has_lifecycle_health_and_failure_rollback():
+    events = []
+
+    class Store:
+        def __init__(self, name, fail=False):
+            self.name = name
+            self.fail = fail
+
+        def start(self):
+            events.append(f"start:{self.name}")
+            if self.fail:
+                raise RuntimeError("data store unavailable")
+
+        def healthcheck(self):
+            return {
+                "status": "ok",
+                "latency_ms": 2,
+                "access_token": "must-not-leak",
+            }
+
+        def close(self):
+            events.append(f"close:{self.name}")
+
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="data-health",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "data-health",
+        model=lambda _messages, _tools, _request: "ok",
+        dependencies=PlatformDependencies(
+            data=DataLayer(session_store=Store("session")),
+        ),
+    )
+    try:
+        assert application.healthcheck()["data"]["status"] == "not_started"
+        application.start()
+        assert application.healthcheck()["data"] == {
+            "status": "ok",
+            "started": True,
+            "configured": 1,
+            "stores": [{
+                "name": "session",
+                "component": "Store",
+                "status": "ok",
+                "latency_ms": 2,
+            }],
+        }
+    finally:
+        application.close()
+    assert events == ["start:session", "close:session"]
+
+    first = Store("first")
+    failing = Store("failing", fail=True)
+    broken = AgentPlatform()
+    broken.register_agent(AgentDefinition(agent_id="default-agent"))
+    broken.register_scenario(ScenarioDefinition(
+        scenario_id="data-rollback",
+        agent_id="default-agent",
+    ))
+    broken_app = broken.create_application(
+        "data-rollback",
+        model=lambda _messages, _tools, _request: "ok",
+        dependencies=PlatformDependencies(
+            data=DataLayer(
+                knowledge_store=first,
+                memory_store=failing,
+            ),
+        ),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="data store unavailable"):
+            broken_app.start()
+    finally:
+        broken_app.close()
+    assert events[-3:] == [
+        "start:first",
+        "start:failing",
+        "close:first",
+    ]
+
+
 def test_platform_is_single_agent_with_multiple_scenarios():
     skills, tools = _sources()
     platform = AgentPlatform()
