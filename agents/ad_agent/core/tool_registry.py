@@ -315,9 +315,10 @@ class GuardedToolRegistry(ToolRegistry):
 
     def __init__(self, inner: ToolRegistry):
         self._inner = inner
-        # The token is held by AdvertisingComposition and is required for every internal
-        # execution seam. Public callers can inspect definitions, but cannot
-        # obtain a live Handler or invoke the authorized path by accident.
+        # The token is held by the owning application Runtime and is required
+        # for every internal execution seam. Public callers can inspect
+        # definitions, but cannot obtain a live Handler or invoke the
+        # authorized path by accident.
         self._execution_token = object()
 
     def register(self, definition: ToolDefinition, handler: ToolHandler) -> None:
@@ -355,7 +356,7 @@ class GuardedToolRegistry(ToolRegistry):
     ) -> tuple[ToolDefinition, ToolHandler]:
         """Return the raw Handler only to the owning Runtime seam."""
         if _execution_token is not self._execution_token:
-            raise PermissionError("Raw tool handlers are only available to AdvertisingComposition")
+            raise PermissionError("Raw tool handlers are only available to the owning Runtime")
         return self._inner.get(name)
 
     def list_by_namespace(self, namespace: str) -> list[ToolDefinition]:
@@ -379,7 +380,7 @@ class GuardedToolRegistry(ToolRegistry):
         _execution_token: object = None,
     ) -> list[tuple[ToolDefinition, ToolHandler]]:
         if _execution_token is not self._execution_token:
-            raise PermissionError("Tool lifecycle snapshots are only available to AdvertisingComposition")
+            raise PermissionError("Tool lifecycle snapshots are only available to the owning Runtime")
         snapshot = getattr(self._inner, "_snapshot_tools", None)
         if not callable(snapshot):
             return [
@@ -394,7 +395,7 @@ class GuardedToolRegistry(ToolRegistry):
         _execution_token: object = None,
     ) -> None:
         if _execution_token is not self._execution_token:
-            raise PermissionError("Tool lifecycle restore is only available to AdvertisingComposition")
+            raise PermissionError("Tool lifecycle restore is only available to the owning Runtime")
         restore = getattr(self._inner, "_restore_tools", None)
         if callable(restore):
             restore(entries)
@@ -407,7 +408,7 @@ class GuardedToolRegistry(ToolRegistry):
 
     def execute(self, ctx: ToolContext, tool_name: str, input_data: dict[str, Any]) -> ToolResult:
         return ToolResult.error(
-            "Direct registry execution is disabled; execute tools through AdvertisingComposition"
+            "Direct registry execution is disabled; execute tools through the owning Runtime"
         )
 
     def execute_authorized(
@@ -417,7 +418,7 @@ class GuardedToolRegistry(ToolRegistry):
         """Internal Runtime seam after all policy gates have passed."""
         if _execution_token is not self._execution_token:
             return ToolResult.error(
-                "Authorized registry execution is only available to AdvertisingComposition"
+                "Authorized registry execution is only available to the owning Runtime"
             )
         return self._inner.execute(ctx, tool_name, input_data)
 
@@ -444,7 +445,7 @@ class _BlockedToolHandler:
 
     def execute(self, _ctx: ToolContext, _input_data: dict[str, Any]) -> ToolResult:
         return ToolResult.error(
-            "Direct handler execution is disabled; execute tools through AdvertisingComposition"
+            "Direct handler execution is disabled; execute tools through the owning Runtime"
         )
 
 

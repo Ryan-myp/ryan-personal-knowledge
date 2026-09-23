@@ -242,6 +242,39 @@ def test_platform_application_is_the_real_six_layer_runtime_boundary():
     assert events == ["start", "close"]
 
 
+def test_platform_application_exposes_all_injected_data_ports():
+    knowledge = object()
+    memory = object()
+    session = object()
+    run_store = object()
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="ports",
+        agent_id="default-agent",
+    ))
+
+    application = platform.create_application(
+        "ports",
+        model=lambda _messages, _tools, _request: "ok",
+        dependencies=PlatformDependencies(
+            data=DataLayer(
+                knowledge_store=knowledge,
+                memory_store=memory,
+                session_store=session,
+                run_store=run_store,
+            ),
+        ),
+    )
+    try:
+        assert application.data.knowledge_store is knowledge
+        assert application.data.memory_store is memory
+        assert application.data.session_store is session
+        assert application.data.run_store is run_store
+    finally:
+        application.close()
+
+
 def test_infrastructure_supports_stop_only_resources_and_reverse_order():
     events = []
 

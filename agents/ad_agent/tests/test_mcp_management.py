@@ -4,9 +4,11 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
+import pytest
+
 from agents.ad_agent.core.interfaces import ToolContext
 from agents.ad_agent.domain.ad.auth import RequestPrincipal
-from agents.ad_agent.mcp_management import MCPServerManager
+from agents.ad_agent.mcp_management import MCPManagementError, MCPServerManager
 from agents.ad_agent.persistence.mysql_store import _mysql_schema
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AdvertisingComposition
@@ -131,3 +133,20 @@ def test_mysql_schema_preserves_mcp_payload_capacity():
     assert "validation_report LONGTEXT" in sql
     assert "input_schema LONGTEXT" in sql
     assert "annotations LONGTEXT" in sql
+
+
+def test_mcp_conflicts_are_normalized_at_the_persistence_boundary():
+    store = AdAgentStore(":memory:")
+    manager = MCPServerManager(store)
+    payload = {
+        "server_id": "duplicate-server",
+        "name": "duplicate",
+        "endpoint": "http://127.0.0.1:8765/mcp",
+        "auth_type": "none",
+    }
+    try:
+        manager.create_server("tenant-a", payload, "operator")
+        with pytest.raises(MCPManagementError, match="同名 MCP Server"):
+            manager.create_server("tenant-a", payload, "operator")
+    finally:
+        store.close()

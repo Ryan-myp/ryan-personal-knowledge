@@ -29,6 +29,7 @@ class RunResult:
     recovery_required: bool = False
     runtime_signals: Mapping[str, Any] = field(default_factory=dict)
     data: Mapping[str, Any] = field(default_factory=dict)
+    application_data: Mapping[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_payload(cls, payload: Any) -> "RunResult":

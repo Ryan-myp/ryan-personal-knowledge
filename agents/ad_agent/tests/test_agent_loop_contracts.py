@@ -39,6 +39,31 @@ class ScriptedModel:
         return ModelTurn(content="finished")
 
 
+class LifecycleAwareModel:
+    def __init__(self):
+        self.cleaned = []
+
+    def complete(self, _messages, _tools, _request):
+        return ModelTurn(content="finished")
+
+    def on_run_end(self, request, _model_turn, _tool_results, _state):
+        return {"intent": "demo", "run_id": request.run_id}
+
+    def on_run_cleanup(self, request, _state):
+        self.cleaned.append(request.run_id)
+
+
+class LifecycleAwareContext:
+    def __init__(self):
+        self.cleaned = []
+
+    def build_context(self, request, _messages):
+        return {"prompt": "context"}
+
+    def cleanup(self, request, _state):
+        self.cleaned.append(request.run_id)
+
+
 def test_agent_loop_owns_transcript_tool_turns_and_events():
     events = []
     model = ScriptedModel()
@@ -103,6 +128,19 @@ def test_agent_loop_can_block_tool_and_cancel_before_next_model_turn():
     assert result.data["tool_results"][0]["is_error"] is True
     assert model.calls == 1
     assert events[-1]["type"] == "agent_end"
+
+
+def test_agent_exposes_application_data_and_cleans_run_scoped_adapters():
+    model = LifecycleAwareModel()
+    context = LifecycleAwareContext()
+    agent = Agent(model=model, context_provider=context)
+
+    result = agent.run(TurnRequest(user_input="hello"))
+
+    assert result.application_data["intent"] == "demo"
+    assert "application_data" not in result.to_dict()
+    assert model.cleaned == [result.run_id]
+    assert context.cleaned == [result.run_id]
 
 
 def test_agent_message_is_json_safe_and_runtime_request_ids_are_preserved():

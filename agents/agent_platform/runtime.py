@@ -242,6 +242,21 @@ class PlatformApplication:
     def tools(self) -> Any:
         return getattr(self.harness, "tools", None)
 
+    @property
+    def data(self) -> DataLayer:
+        """Injected data ports for application-specific services."""
+        return self.dependencies.data
+
+    @property
+    def integrations(self) -> IntegrationLayer:
+        """Injected Tool Sources and external integration ports."""
+        return self.dependencies.integrations
+
+    @property
+    def infrastructure(self) -> InfrastructureLayer:
+        """Lifecycle-managed deployment resources."""
+        return self.dependencies.infrastructure
+
     def layer_snapshot(self) -> tuple[str, ...]:
         return self.architecture.layer_names()
 

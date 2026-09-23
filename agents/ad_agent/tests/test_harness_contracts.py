@@ -54,7 +54,7 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
     )
 
     assert result.success is False
-    assert "AdvertisingComposition" in result.error
+    assert "owning Runtime" in result.error
 
     definition, handler = runtime.registry.get("meta_create_campaign")
     direct_handler_result = handler.execute(
@@ -62,7 +62,7 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
         {"account_id": "m1", "name": "direct"},
     )
     assert direct_handler_result.success is False
-    assert "AdvertisingComposition" in direct_handler_result.error
+    assert "owning Runtime" in direct_handler_result.error
     assert runtime.registry.execute_authorized(
         ToolContext(session_id="s1", user_id="u1", account_id="m1"),
         definition.name,

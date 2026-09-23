@@ -22,7 +22,7 @@ class AdPersistenceServices:
     def persist_conversation_turn(
         self, session: "SessionContext", turn_id: str,
         user_input: str, reply: str,
-        execution_trace: Optional[ExecutionTrace] = None,
+        execution_trace: Optional[ExecutionTrace | Mapping[str, Any]] = None,
         ui: Optional[Mapping[str, Any]] = None,
         persist_messages: bool = True,
     ) -> None:
@@ -146,7 +146,12 @@ class AdPersistenceServices:
         if execution_trace is not None:
             traces = session.ctx.metadata.get("execution_traces", {})
             traces = dict(traces) if isinstance(traces, dict) else {}
-            traces[str(turn_id)] = execution_trace.snapshot()
+            snapshot = (
+                execution_trace.snapshot()
+                if callable(getattr(execution_trace, "snapshot", None))
+                else dict(execution_trace)
+            )
+            traces[str(turn_id)] = self.runtime._redact_for_persistence(snapshot)
             # Keep durable trace context bounded just like the recent message
             # window. The full live stream remains available to observers.
             traces = dict(list(traces.items())[-20:])

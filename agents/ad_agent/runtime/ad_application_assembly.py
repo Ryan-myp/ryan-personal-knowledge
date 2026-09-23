@@ -584,11 +584,17 @@ class AdApplicationAssembly:
             agent_id=platform.agent_id,
             display_name="Advertising",
         ))
+        context_provider = AdvertisingContextProvider(runtime)
         platform_application = platform.create_application(
             "advertising",
             model=AdvertisingModelAdapter(runtime),
             dependencies=PlatformDependencies(
-                data=DataLayer(run_store=run_store),
+                data=DataLayer(
+                    knowledge_store=runtime.knowledge_provider,
+                    memory_store=memory_manager,
+                    session_store=session_manager,
+                    run_store=run_store,
+                ),
                 integrations=IntegrationLayer(registry=runtime.registry),
                 infrastructure=InfrastructureLayer(
                     resources=(supervisor,) if options.start_background_workers else (),
@@ -599,7 +605,7 @@ class AdApplicationAssembly:
                 "tool_catalog": AdvertisingToolCatalog(runtime),
                 "skill_catalog": InMemorySkillCatalog(),
                 "tool_policy": tool_policy,
-                "context_provider": AdvertisingContextProvider(runtime),
+                "context_provider": context_provider,
                 "input_sanitizer": runtime._redact_for_persistence,
                 "run_store": run_store,
                 "transcript_store": (

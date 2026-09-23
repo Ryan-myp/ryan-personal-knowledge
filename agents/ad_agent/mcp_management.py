@@ -23,7 +23,6 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -519,7 +518,7 @@ class MCPServerManager:
                 "timeout_seconds": max(1.0, min(float(data.get("timeout_seconds") or 20.0), 120.0)),
                 "created_by": str(created_by),
             })
-        except (sqlite3.IntegrityError, PersistenceConflictError) as exc:
+        except PersistenceConflictError as exc:
             raise MCPManagementError("当前租户已存在同名 MCP Server 或 server_id") from exc
         return self._public_server(record, [])
 
@@ -675,7 +674,7 @@ class MCPServerManager:
             self._unregister(server_id, runtime)
         try:
             self.store.update_mcp_server(server_id, tenant_id, normalized)
-        except (sqlite3.IntegrityError, PersistenceConflictError) as exc:
+        except PersistenceConflictError as exc:
             raise MCPManagementError("当前租户已存在同名 MCP Server") from exc
         return self.get_server(tenant_id, server_id) or {}
 

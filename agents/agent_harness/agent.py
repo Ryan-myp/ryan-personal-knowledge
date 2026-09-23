@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from dataclasses import replace
 import json
+import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
@@ -429,21 +430,46 @@ class Agent:
         model_turn: ModelTurn,
         tool_results: Sequence[Mapping[str, Any]],
         state: AgentState,
-    ) -> None:
+    ) -> Mapping[str, Any]:
         """Allow a model adapter to shape application results at Run end."""
         callback = getattr(self.model, "on_run_end", None)
         if not callable(callback):
-            return
+            return {}
         try:
-            callback(
+            result = callback(
                 request,
                 model_turn,
                 tuple(dict(item) for item in tool_results),
                 state,
             )
+            return dict(result) if isinstance(result, Mapping) else {}
         except Exception:
             # Application result shaping cannot break the generic lifecycle.
-            return
+            return {}
+
+    def _notify_model_run_cleanup(
+        self, request: TurnRequest, state: AgentState,
+    ) -> None:
+        """Release adapter-owned state after every Run, including failures."""
+        callback = getattr(self.model, "on_run_cleanup", None)
+        if callable(callback):
+            try:
+                callback(request, state)
+            except Exception:
+                # Adapter cleanup is best effort and must not replace the Run
+                # result or hide the original failure.
+                return
+
+    def _notify_context_cleanup(
+        self, request: TurnRequest, state: AgentState,
+    ) -> None:
+        """Release context-provider state after every Run."""
+        callback = getattr(self.context_provider, "cleanup", None)
+        if callable(callback):
+            try:
+                callback(request, state)
+            except Exception:
+                return
 
     def _model_inputs(
         self, request: TurnRequest, state: AgentState,
@@ -1136,6 +1162,11 @@ class Agent:
         return result
 
     def run(self, request: TurnRequest) -> RunResult:
+        request = replace(
+            request,
+            run_id=str(request.run_id or uuid.uuid4()),
+            turn_id=str(request.turn_id or uuid.uuid4()),
+        )
         state = self._state_for(
             request.session_id, request.user_id, request.tenant_id,
         )
@@ -1170,6 +1201,7 @@ class Agent:
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
             last_reply = ""
+            application_data: Mapping[str, Any] = {}
             for turn_index in range(self.max_turns):
                 interrupt_reason = self._interrupt_reason(request, abort_event)
                 if interrupt_reason is not None:
@@ -1243,7 +1275,7 @@ class Agent:
                         and self.should_stop_after_turn(state)
                     )
                 ):
-                    self._notify_model_run_end(
+                    application_data = self._notify_model_run_end(
                         request, model_turn, tool_results, state,
                     )
                     awaiting_input = (
@@ -1293,9 +1325,13 @@ class Agent:
                             "needs_input": awaiting_input,
                             "usage": dict(state.usage),
                         },
+                        application_data=application_data,
                     )
                     self._emit("agent_end", request, status=result.status.value)
                     return result
+            application_data = self._notify_model_run_end(
+                request, model_turn, tool_results, state,
+            )
             result = RunResult(
                 run_id=str(request.run_id or ""),
                 turn_id=str(request.turn_id or ""),
@@ -1307,6 +1343,7 @@ class Agent:
                     "error": "maximum agent turns exceeded",
                     "usage": dict(state.usage),
                 },
+                application_data=application_data,
             )
             self._emit("agent_end", request, status=result.status.value)
             return result
@@ -1396,6 +1433,8 @@ class Agent:
             abort_event.clear()
             with self._event_guard:
                 self._event_sequences.pop(str(request.run_id or ""), None)
+            self._notify_model_run_cleanup(request, state)
+            self._notify_context_cleanup(request, state)
 
     def execute(self, request: TurnRequest) -> RunResult:
         """Execute one Run through the shared TurnPipeline contract."""

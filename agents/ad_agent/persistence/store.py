@@ -3404,23 +3404,28 @@ class AdAgentStore:
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
             conn = self._get_conn()
-            conn.execute(
-                """INSERT INTO mcp_servers
-                   (server_id, tenant_id, name, description, endpoint, transport,
-                    auth_type, credential_ref, auth_header, timeout_seconds, status,
-                    enabled, validation_status, validation_report, created_by,
-                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, 'not_run', '{}', ?, ?, ?)""",
-                (
-                    str(data["server_id"]), str(data["tenant_id"]), str(data["name"]),
-                    str(data.get("description") or ""), str(data["endpoint"]),
-                    str(data.get("transport") or "streamable_http"),
-                    str(data.get("auth_type") or "none"), data.get("credential_ref"),
-                    str(data.get("auth_header") or "Authorization"),
-                    float(data.get("timeout_seconds") or 20.0), str(data["created_by"]),
-                    now, now,
-                ),
-            )
+            try:
+                conn.execute(
+                    """INSERT INTO mcp_servers
+                       (server_id, tenant_id, name, description, endpoint, transport,
+                        auth_type, credential_ref, auth_header, timeout_seconds, status,
+                        enabled, validation_status, validation_report, created_by,
+                        created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, 'not_run', '{}', ?, ?, ?)""",
+                    (
+                        str(data["server_id"]), str(data["tenant_id"]), str(data["name"]),
+                        str(data.get("description") or ""), str(data["endpoint"]),
+                        str(data.get("transport") or "streamable_http"),
+                        str(data.get("auth_type") or "none"), data.get("credential_ref"),
+                        str(data.get("auth_header") or "Authorization"),
+                        float(data.get("timeout_seconds") or 20.0), str(data["created_by"]),
+                        now, now,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceConflictError(
+                    "MCP server violates a persistence uniqueness constraint"
+                ) from exc
             conn.commit()
             return self._mcp_decode(conn.execute(
                 "SELECT * FROM mcp_servers WHERE server_id = ?",
@@ -3464,10 +3469,15 @@ class AdAgentStore:
         values = list(updates.values()) + [str(tenant_id), str(server_id)]
         with self._lock:
             conn = self._get_conn()
-            cursor = conn.execute(
-                f"UPDATE mcp_servers SET {assignments} WHERE tenant_id = ? AND server_id = ?",
-                values,
-            )
+            try:
+                cursor = conn.execute(
+                    f"UPDATE mcp_servers SET {assignments} WHERE tenant_id = ? AND server_id = ?",
+                    values,
+                )
+            except sqlite3.IntegrityError as exc:
+                raise PersistenceConflictError(
+                    "MCP server violates a persistence uniqueness constraint"
+                ) from exc
             conn.commit()
             if cursor.rowcount == 0:
                 return None

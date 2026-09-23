@@ -80,6 +80,10 @@ class AdvertisingContextProvider:
         self._contexts[run_id] = result
         return dict(result)
 
+    def cleanup(self, request: Any, _state: Any = None) -> None:
+        """Release the bounded context snapshot owned by one Run."""
+        self._contexts.pop(str(getattr(request, "run_id", "") or ""), None)
+
     def _account_from_platform_params(self, request_context: Mapping[str, Any]) -> Any:
         values_by_platform = request_context.get("platform_params")
         if not isinstance(values_by_platform, Mapping):
@@ -357,9 +361,59 @@ class AdvertisingModelAdapter:
         self.owner = owner
         self._turns: dict[str, dict[str, Any]] = {}
         self._completed: dict[str, dict[str, Any]] = {}
+        self._max_completed = 256
 
-    def take_completed(self, run_id: str) -> dict[str, Any]:
-        return self._completed.pop(str(run_id or ""), {})
+    def _prune_completed(self) -> None:
+        """Bound results when a caller disconnects before reading a Run."""
+        while len(self._completed) > self._max_completed:
+            oldest = next(iter(self._completed), None)
+            if oldest is None:
+                return
+            self._completed.pop(oldest, None)
+
+    @staticmethod
+    def _export_application_state(state: Mapping[str, Any]) -> dict[str, Any]:
+        """Expose only response data through the generic RunResult extension."""
+        intent = state.get("intent")
+        if callable(getattr(intent, "to_dict", None)):
+            intent = intent.to_dict()
+        calls = []
+        for call in state.get("calls") or ():
+            to_dict = getattr(call, "to_dict", None)
+            calls.append(to_dict() if callable(to_dict) else dict(call))
+        keys = (
+            "last_reply",
+            "last_results",
+            "policy_errors",
+            "tool_selection",
+            "memory",
+            "memory_updates",
+            "execution_plan",
+            "workflow_id",
+            "ui",
+            "response_source",
+            "resource_results",
+            "cross_channel_summary",
+            "cross_channel_insights",
+            "cross_channel_budget_plan",
+            "cross_channel_export",
+            "clarification",
+            "creation_validation",
+            "needs_input",
+            "needs_confirmation",
+            "confirmation_payload",
+            "error_type",
+            "reason",
+            "tool_plan",
+        )
+        result = {
+            key: state[key]
+            for key in keys
+            if key in state
+        }
+        result["intent"] = intent
+        result["calls"] = calls
+        return result
 
     def complete(
         self,
@@ -1435,14 +1489,14 @@ class AdvertisingModelAdapter:
         _model_turn: ModelTurn,
         tool_results: tuple[dict[str, Any], ...],
         _agent_state: Any,
-    ) -> None:
+    ) -> Mapping[str, Any]:
         """Finalize application results when Harness stops on a Tool gate."""
         run_id = str(request.run_id or "")
         if run_id in self._completed:
-            return
+            return self._export_application_state(self._completed[run_id])
         state = self._turns.get(run_id)
         if state is None:
-            return
+            return {}
         results: list[dict[str, Any]] = []
         for item in tool_results:
             name = str(item.get("name") or "")
@@ -1498,6 +1552,14 @@ class AdvertisingModelAdapter:
         self._finish_workflow(state, results, state.get("intent"))
         self._completed[run_id] = dict(state)
         self._turns.pop(run_id, None)
+        self._prune_completed()
+        return self._export_application_state(state)
+
+    def on_run_cleanup(self, request: Any, _state: Any = None) -> None:
+        """Release in-flight state even when the generic loop is interrupted."""
+        run_id = str(getattr(request, "run_id", "") or "")
+        self._turns.pop(run_id, None)
+        self._prune_completed()
 
     def _finish_workflow(
         self,

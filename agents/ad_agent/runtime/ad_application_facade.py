@@ -84,6 +84,26 @@ class AdApplicationFacadeMixin:
         """Expose the persistence abstraction to management services."""
         return self._session_manager.store if self._session_manager else None
 
+    @property
+    def platform_application(self) -> Any:
+        """Expose the single generic PlatformApplication entrypoint."""
+        return self._platform_application
+
+    @property
+    def session_manager(self) -> Any:
+        """Expose the application persistence/session port."""
+        return self._session_manager
+
+    @property
+    def sessions(self) -> dict[str, Any]:
+        """Expose the bounded in-process session cache to application services."""
+        return self._sessions
+
+    @property
+    def redact_for_persistence(self) -> Any:
+        """Expose the configured application redaction boundary."""
+        return self._redact_for_persistence
+
     def close(self, wait: bool = False) -> None:
         return self._controls_service().close(wait=wait)
 
