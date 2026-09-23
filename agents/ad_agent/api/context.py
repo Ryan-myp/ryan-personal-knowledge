@@ -10,7 +10,42 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from fastapi import HTTPException
+
 from agents.ad_agent.domain.ad.auth import RequestPrincipal
+
+
+async def read_request_body_limited(request: Any, *, max_bytes: int) -> bytes:
+    """Read an ASGI request body without buffering beyond the declared limit."""
+    limit = int(max_bytes)
+    if limit <= 0:
+        raise ValueError("max_bytes must be positive")
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > limit:
+                raise HTTPException(
+                    status_code=413,
+                    detail="request body exceeds the allowed size",
+                )
+        except ValueError:
+            # The ASGI server may still enforce framing. Continue with the
+            # streaming counter so malformed or chunked requests stay bounded.
+            pass
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail="request body exceeds the allowed size",
+            )
+        chunks.append(bytes(chunk))
+    return b"".join(chunks)
 
 
 @dataclass(frozen=True)
@@ -35,4 +70,4 @@ class ApiContext:
         return self.runtime_getter()
 
 
-__all__ = ["ApiContext"]
+__all__ = ["ApiContext", "read_request_body_limited"]

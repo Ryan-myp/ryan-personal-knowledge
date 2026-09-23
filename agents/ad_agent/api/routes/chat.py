@@ -34,8 +34,12 @@ def create_chat_router(context: ApiContext) -> APIRouter:
             raise HTTPException(status_code=503, detail="服务未初始化")
         try:
             principal = context.authorize_request(x_api_key, http_request)
-            context.activate_tenant_skills(principal)
-            context.sync_tenant_extensions(principal)
+            await run_in_threadpool(
+                context.activate_tenant_skills, principal
+            )
+            await run_in_threadpool(
+                context.sync_tenant_extensions, principal
+            )
             if request.confirmed and not request.confirmation_payload:
                 raise HTTPException(
                     status_code=400,
@@ -103,8 +107,12 @@ def create_chat_router(context: ApiContext) -> APIRouter:
             )
         try:
             principal = context.authorize_request(x_api_key, http_request)
-            context.activate_tenant_skills(principal)
-            context.sync_tenant_extensions(principal)
+            await run_in_threadpool(
+                context.activate_tenant_skills, principal
+            )
+            await run_in_threadpool(
+                context.sync_tenant_extensions, principal
+            )
             if request.confirmed and not request.confirmation_payload:
                 raise HTTPException(
                     status_code=400,

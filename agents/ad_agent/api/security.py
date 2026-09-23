@@ -80,13 +80,21 @@ class RequestAuthorizer:
         principal: RequestPrincipal,
         permission: str,
     ) -> None:
-        if (
-            permission not in principal.permissions
-            and "ads.write" not in principal.permissions
-        ):
+        requested = str(permission or "").strip()
+        granted = set(principal.permissions or ())
+        domain = requested.split(".", 1)[0] if "." in requested else ""
+        # ``ads.write`` is a higher privilege only inside the advertising
+        # domain. It must not become a cross-domain administrator for Wiki,
+        # MCP, Plugin, Skill, or Memory control-plane APIs.
+        allowed = (
+            requested in granted
+            or "admin" in granted
+            or (domain == "ads" and "ads.write" in granted)
+        )
+        if not allowed:
             raise HTTPException(
                 status_code=403,
-                detail=f"缺少操作所需权限：{permission}",
+                detail=f"缺少操作所需权限：{requested}",
             )
 
     def configured_service_principal(self) -> RequestPrincipal:

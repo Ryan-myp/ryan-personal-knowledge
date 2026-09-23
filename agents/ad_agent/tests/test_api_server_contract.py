@@ -5,12 +5,18 @@ clients or call an external advertising API.
 """
 
 import json
+import threading
+from pathlib import Path
 
 import pytest
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agents.ad_agent import api_server
+from agents.ad_agent.api.context import ApiContext
+from agents.ad_agent.api.routes.chat import create_chat_router
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
 
 
 def _chat_page_javascript() -> str:
@@ -75,6 +81,43 @@ def test_chat_routes_are_owned_by_a_dedicated_route_module():
     }
 
 
+def test_chat_request_preparation_does_not_block_the_event_loop():
+    main_thread = threading.get_ident()
+    callback_threads = []
+    principal = RequestPrincipal(
+        user_id="user-a",
+        tenant_id="tenant-a",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        def run(self, **_kwargs):
+            return {"success": True, "reply": "ok", "results": []}
+
+    context = ApiContext(
+        runtime_getter=lambda: Runtime(),
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: callback_threads.append(
+            ("skills", threading.get_ident())
+        ),
+        sync_tenant_extensions=lambda _principal: callback_threads.append(
+            ("mcp", threading.get_ident())
+        ),
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+
+    with TestClient(app) as client:
+        response = client.post("/chat", json={"user_input": "hello"})
+
+    assert response.status_code == 200
+    assert {name for name, _thread_id in callback_threads} == {"skills", "mcp"}
+    assert all(thread_id != main_thread for _name, thread_id in callback_threads)
+
+
 def test_operational_routes_are_owned_by_dedicated_route_modules():
     routes = list(api_server.app.routes)
     for included in routes:
@@ -118,9 +161,13 @@ def test_management_and_catalog_routes_are_owned_by_dedicated_route_modules():
     }
 
     assert route_modules["/creation-templates"] == "agents.ad_agent.api.routes.catalog"
-    assert route_modules["/plugins/packages"] == "agents.ad_agent.api.routes.management"
-    assert route_modules["/mcp/servers"] == "agents.ad_agent.api.routes.management"
-    assert route_modules["/skills"] == "agents.ad_agent.api.routes.management"
+    assert route_modules["/plugins/packages"] == "agents.ad_agent.api.routes.plugins"
+    assert route_modules["/mcp/servers"] == "agents.ad_agent.api.routes.mcp"
+    assert route_modules["/skills"] == "agents.ad_agent.api.routes.skills"
+    management_source = Path(
+        api_server.project_root / "agents/ad_agent/api/routes/management.py"
+    )
+    assert len(management_source.read_text(encoding="utf-8").splitlines()) <= 80
     assert route_modules["/tools"] == "agents.ad_agent.api.routes.catalog"
     assert route_modules["/parameter-options"] == "agents.ad_agent.api.routes.catalog"
     assert route_modules["/workflows/{workflow_id}"] == "agents.ad_agent.api.routes.workflows"
