@@ -27,6 +27,9 @@ class ApiContext:
     safe_exception_text: Callable[[Exception], str]
     redact: Callable[[Any], Any]
     persistence_store_getter: Callable[[], Any] | None = None
+    mcp_manager_getter: Callable[[], Any] | None = None
+    runtime_mcp_servers_getter: Callable[[], Any] | None = None
+    builtin_skill_catalog_getter: Callable[[], Any] | None = None
 
     def runtime(self) -> Any:
         return self.runtime_getter()

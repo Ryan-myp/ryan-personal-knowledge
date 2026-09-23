@@ -97,6 +97,35 @@ def test_operational_routes_are_owned_by_dedicated_route_modules():
     assert route_modules["/memory"] == "agents.ad_agent.api.routes.knowledge"
 
 
+def test_management_and_catalog_routes_are_owned_by_dedicated_route_modules():
+    routes = list(api_server.app.routes)
+    for included in routes:
+        original = getattr(included, "original_router", None)
+        if original is not None:
+            routes.extend(original.routes)
+    route_modules = {
+        route.path: route.endpoint.__module__
+        for route in routes
+        if getattr(route, "path", None) in {
+            "/creation-templates",
+            "/plugins/packages",
+            "/mcp/servers",
+            "/skills",
+            "/tools",
+            "/parameter-options",
+            "/workflows/{workflow_id}",
+        }
+    }
+
+    assert route_modules["/creation-templates"] == "agents.ad_agent.api.routes.catalog"
+    assert route_modules["/plugins/packages"] == "agents.ad_agent.api.routes.management"
+    assert route_modules["/mcp/servers"] == "agents.ad_agent.api.routes.management"
+    assert route_modules["/skills"] == "agents.ad_agent.api.routes.management"
+    assert route_modules["/tools"] == "agents.ad_agent.api.routes.catalog"
+    assert route_modules["/parameter-options"] == "agents.ad_agent.api.routes.catalog"
+    assert route_modules["/workflows/{workflow_id}"] == "agents.ad_agent.api.routes.workflows"
+
+
 def test_cors_allows_existing_mutation_methods_and_request_headers(fake_server):
     with TestClient(api_server.app) as client:
         response = client.options(
