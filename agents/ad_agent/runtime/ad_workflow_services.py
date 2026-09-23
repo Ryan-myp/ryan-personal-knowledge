@@ -1,29 +1,15 @@
-"""Workflow recovery and provider read-back application services.
-
-Recovery owns durable state transitions and invokes only registered read Tools
-through the Runtime security boundary. It never replays a write handler.
-"""
+"""Durable workflow inspection and verified state reconciliation."""
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 from typing import Any, Mapping, Optional
 
-from ..domain.ad.auth import RequestPrincipal
-from ..core.interfaces import (
-    ReconciliationContext,
-    ReconciliationObservation,
-    ToolContext,
-    ToolResult,
-    ExecutionMode,
-)
-from .reconciliation import ToolReadbackReconciler
-
-logger = logging.getLogger(__name__)
+from ..core.interfaces import ExecutionMode
+from .ad_workflow_provider_reconciliation import ProviderWorkflowReconciliationMixin
 
 
-class AdWorkflowServices:
+class AdWorkflowServices(ProviderWorkflowReconciliationMixin):
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
 
@@ -33,7 +19,7 @@ class AdWorkflowServices:
         user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> Optional[dict]:
-        """Read a durable workflow while enforcing its owning user boundary."""
+        """Read a durable workflow while enforcing its owner boundary."""
         if not self.runtime._session_manager:
             return None
         workflow = self.runtime._session_manager.get_workflow(
@@ -41,9 +27,6 @@ class AdWorkflowServices:
         )
         if workflow:
             return workflow
-        # Preserve the public distinction between “not found” and an
-        # authenticated caller crossing an owner boundary, but compare only
-        # normalized columns—not metadata copies.
         if user_id is not None or tenant_id is not None:
             existing = self.runtime._session_manager.get_workflow(workflow_id)
             if existing:
@@ -53,7 +36,9 @@ class AdWorkflowServices:
                     ) or {}
                     if str(session.get("user_id") or "") != str(user_id):
                         raise PermissionError("workflow belongs to a different user")
-                if tenant_id is not None and str(existing.get("tenant_id") or "default") != str(tenant_id or "default"):
+                if tenant_id is not None and str(
+                    existing.get("tenant_id") or "default"
+                ) != str(tenant_id or "default"):
                     raise PermissionError("workflow belongs to a different tenant")
         return None
 
@@ -63,19 +48,16 @@ class AdWorkflowServices:
         user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> dict:
-        """Return a safe replay plan without executing any provider operation.
-
-        Recovery is deliberately an explicit two-step protocol.  This method
-        only exposes the durable items that still need action; a future worker
-        must call the normal Runtime path with a fresh approval and current
-        principal instead of replaying handlers directly from SQLite.
-        """
+        """Return a safe replay plan without executing provider operations."""
         workflow = self.runtime.get_workflow(
             workflow_id, user_id=user_id, tenant_id=tenant_id
         )
         if not workflow:
             raise KeyError("workflow not found")
-        if workflow.get("status") == "running" and self.runtime._is_stale_workflow(workflow):
+        if (
+            workflow.get("status") == "running"
+            and self.runtime._is_stale_workflow(workflow)
+        ):
             self.runtime._session_manager.recover_stale_workflow(
                 workflow_id,
                 self.runtime.workflow_stale_after_seconds,
@@ -137,12 +119,16 @@ class AdWorkflowServices:
             "workflow_id": workflow_id,
             "status": workflow.get("status"),
             "resumable": bool(pending),
-            "requires_fresh_confirmation": workflow.get("execution_mode") == ExecutionMode.LIVE.value,
+            "requires_fresh_confirmation": (
+                workflow.get("execution_mode") == ExecutionMode.LIVE.value
+            ),
             "replay_policy": "explicit_operator_confirmation",
             "items": [
                 {
                     "sequence": item.get("sequence"),
-                    "platform": self.runtime._canonical_platform(str(item.get("platform") or "")),
+                    "platform": self.runtime._canonical_platform(
+                        str(item.get("platform") or "")
+                    ),
                     "account_id": item_account_id(item),
                     "tool_name": item.get("tool_name"),
                     "resource_type": item_definition_value(item, "resource_type"),
@@ -151,15 +137,18 @@ class AdWorkflowServices:
                     ),
                     "parent_resource_id": item.get("parent_resource_id"),
                     "status": item.get("status"),
-                    "input_data": self.runtime._redact_for_persistence(item.get("input_data") or {}),
-                    "error": self.runtime._redact_for_persistence(item.get("error")),
+                    "input_data": self.runtime._redact_for_persistence(
+                        item.get("input_data") or {}
+                    ),
+                    "error": self.runtime._redact_for_persistence(
+                        item.get("error")
+                    ),
                 }
                 for item in pending
             ],
         }
 
     def _is_stale_workflow(self, workflow: Mapping[str, Any]) -> bool:
-        """Treat a running workflow as recoverable only after its lease age."""
         try:
             updated_at = datetime.fromisoformat(str(workflow.get("updated_at")))
             age = (datetime.now() - updated_at).total_seconds()
@@ -168,20 +157,20 @@ class AdWorkflowServices:
         return age >= self.runtime.workflow_stale_after_seconds
 
     def list_resumable_workflows(
-        self, user_id: Optional[str] = None, tenant_id: Optional[str] = None,
+        self,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
         limit: int = 50,
     ) -> list[dict]:
-        """List failed or stale-running workflows within an optional tenant."""
         if not self.runtime._session_manager:
             return []
-        workflows = self.runtime._session_manager.list_resumable_workflows(
+        return self.runtime._session_manager.list_resumable_workflows(
             user_id=user_id,
             limit=limit,
             include_stale_running=True,
             stale_after_seconds=self.runtime.workflow_stale_after_seconds,
             tenant_id=tenant_id,
         )
-        return workflows
 
     def reconcile_workflow(
         self,
@@ -190,21 +179,17 @@ class AdWorkflowServices:
         user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> dict:
-        """Apply provider-verified observations to a durable workflow.
-
-        No provider is contacted here.  Every observation must explicitly set
-        ``verified=true`` so an untrusted status guess cannot mark a failed
-        live write as successful.  Unknown outcomes remain recovery-required.
-        """
+        """Apply provider-verified observations to durable workflow state."""
         workflow = self.runtime.get_workflow(
             workflow_id, user_id=user_id, tenant_id=tenant_id
         )
         if not workflow:
             raise KeyError("workflow not found")
-        if isinstance(observations, dict):
-            entries = [dict(value, sequence=key) for key, value in observations.items()]
-        else:
-            entries = list(observations or [])
+        entries = (
+            [dict(value, sequence=key) for key, value in observations.items()]
+            if isinstance(observations, dict)
+            else list(observations or [])
+        )
         if not entries:
             raise ValueError("reconciliation requires at least one observation")
         known_sequences = {
@@ -220,9 +205,14 @@ class AdWorkflowServices:
         allowed_item_transitions = {
             "failed": {"failed", "succeeded", "unknown"},
             "unknown": {"unknown", "succeeded", "failed"},
-            "awaiting_confirmation": {"awaiting_confirmation", "succeeded", "failed", "unknown"},
+            "awaiting_confirmation": {
+                "awaiting_confirmation", "succeeded", "failed", "unknown",
+            },
             "running": {"running", "succeeded", "failed", "unknown"},
-            "planned": {"planned", "awaiting_confirmation", "running", "succeeded", "failed", "unknown"},
+            "planned": {
+                "planned", "awaiting_confirmation", "running",
+                "succeeded", "failed", "unknown",
+            },
             "succeeded": {"succeeded"},
             "unsupported": {"unsupported"},
             "skipped": {"skipped"},
@@ -233,7 +223,9 @@ class AdWorkflowServices:
                 raise ValueError("each reconciliation observation must set verified=true")
             status = str(observation.get("status", "unknown"))
             if status not in {"succeeded", "failed", "unknown"}:
-                raise ValueError("reconciliation status must be succeeded, failed or unknown")
+                raise ValueError(
+                    "reconciliation status must be succeeded, failed or unknown"
+                )
             if observation.get("sequence") is None:
                 raise ValueError("reconciliation observation requires sequence")
             try:
@@ -247,22 +239,25 @@ class AdWorkflowServices:
             current_status = current_statuses[sequence]
             if status not in allowed_item_transitions.get(current_status, set()):
                 raise ValueError(
-                    f"cannot reconcile workflow item {sequence} from {current_status} to {status}"
+                    f"cannot reconcile workflow item {sequence} "
+                    f"from {current_status} to {status}"
                 )
             seen_sequences.add(sequence)
         for observation in entries:
             sequence = int(observation["sequence"])
-            status = str(observation.get("status", "unknown"))
             updated_item = self.runtime._session_manager.update_workflow_item(
                 workflow_id,
                 sequence,
-                status,
-                output_data=self.runtime._redact_for_persistence(observation.get("output_data")),
-                error=self.runtime._redact_for_persistence(observation.get("error")),
+                str(observation.get("status", "unknown")),
+                output_data=self.runtime._redact_for_persistence(
+                    observation.get("output_data")
+                ),
+                error=self.runtime._redact_for_persistence(
+                    observation.get("error")
+                ),
             )
             if not updated_item:
                 raise ValueError(f"workflow item {sequence} could not be updated")
-
         updated = self.runtime._session_manager.get_workflow(workflow_id)
         items = updated.get("items", []) if updated else []
         statuses = [str(item.get("status")) for item in items]
@@ -278,7 +273,9 @@ class AdWorkflowServices:
             workflow_status = "partially_failed"
         elif failed:
             workflow_status = "failed"
-        elif statuses and all(status in {"succeeded", "unsupported"} for status in statuses):
+        elif statuses and all(
+            status in {"succeeded", "unsupported"} for status in statuses
+        ):
             workflow_status = "succeeded"
         else:
             workflow_status = "recovery_required"
@@ -294,158 +291,9 @@ class AdWorkflowServices:
             workflow_id, user_id=user_id, tenant_id=tenant_id
         ) or {}
 
-    def reconcile_workflow_from_provider(
-        self,
-        workflow_id: str,
-        user_id: Optional[str] = None,
-        tenant_id: Optional[str] = None,
-        credentials: Optional[dict] = None,
-        principal: Optional[RequestPrincipal] = None,
-    ) -> dict:
-        """Resolve pending items through provider-owned read-back adapters.
-
-        This method never replays a write. A reconciler can only invoke a
-        registered read tool through the Runtime, and its observation is
-        applied by the same verified state-transition path as externally
-        supplied observations.
-        """
-        if not self.runtime._session_manager:
-            raise RuntimeError("provider reconciliation requires persistence")
-        effective_user_id = principal.user_id if principal is not None else user_id
-        effective_tenant_id = principal.tenant_id if principal is not None else tenant_id
-        permissions = (
-            principal.permissions if principal is not None else self.runtime._granted_permissions
-        )
-        permissions = frozenset(permissions or ())
-        if "ads.reconcile" not in permissions and "ads.write" not in permissions:
-            raise PermissionError("provider reconciliation requires ads.reconcile or ads.write")
-        if "ads.read" not in permissions and "ads.write" not in permissions:
-            raise PermissionError("provider reconciliation requires ads.read")
-
-        workflow = self.runtime.get_workflow(
-            workflow_id,
-            user_id=effective_user_id,
-            tenant_id=effective_tenant_id,
-        )
-        if not workflow:
-            raise KeyError("workflow not found")
-        if not self.runtime._session_manager.claim_workflow_recovery(
-            workflow_id,
-            self.runtime._workflow_lease_owner,
-            self.runtime.workflow_stale_after_seconds,
-            self.runtime.workflow_stale_after_seconds,
-        ):
-            raise RuntimeError("workflow is already being recovered or is still active")
-        try:
-            workflow = self.runtime.get_workflow(
-                workflow_id,
-                user_id=effective_user_id,
-                tenant_id=effective_tenant_id,
-            ) or workflow
-            session_record = self.runtime._session_manager.get_session(workflow.get("session_id")) or {}
-            request_clients = self.runtime._build_request_clients(credentials)
-            account_scope = principal.account_scope if principal is not None else None
-            observations: list[dict[str, Any]] = []
-            pending_statuses = {
-                "planned", "running", "awaiting_confirmation", "failed", "unknown",
-            }
-
-            for item in workflow.get("items", []):
-                if str(item.get("status")) not in pending_statuses:
-                    continue
-                platform = self.runtime._canonical_platform(item.get("platform") or "")
-                input_data = item.get("input_data") if isinstance(item.get("input_data"), dict) else {}
-                account_id = None
-                for account_key in self.runtime.account_resolver.ACCOUNT_FIELDS:
-                    if input_data.get(account_key):
-                        account_id = str(input_data[account_key])
-                        break
-                account_id = account_id or str(session_record.get("account_id") or "")
-                allowed, account_error = self.runtime._validate_account_with_principal(
-                    platform, account_id, False, account_scope
-                )
-                if not allowed:
-                    observations.append({
-                        "sequence": item.get("sequence"),
-                        "status": "unknown",
-                        "verified": True,
-                        "error": f"read-back account boundary rejected: {account_error}",
-                        "source": "runtime_account_boundary",
-                    })
-                    continue
-
-                reconciler = self.runtime._effect_reconcilers.get(platform) or ToolReadbackReconciler(platform)
-
-                ctx = ToolContext(
-                    session_id=str(workflow.get("session_id") or ""),
-                    user_id=str(effective_user_id or session_record.get("user_id") or ""),
-                    account_id=account_id,
-                    credentials=self.runtime._freeze_credentials(credentials or {}),
-                    metadata={
-                        "tenant_id": str(effective_tenant_id or "default"),
-                        "reconciliation": True,
-                    },
-                )
-
-                def execute_read(read_tool: str, read_input: dict[str, Any]) -> ToolResult:
-                    definition, _handler = self.runtime._get_registered_tool(read_tool)
-                    if not definition.is_read_tool:
-                        return ToolResult.error("reconciliation callback only permits read tools")
-                    permission_error = self.runtime._check_tool_permissions(definition, permissions)
-                    if permission_error:
-                        return ToolResult.error(permission_error)
-                    return self.runtime.tool_executor.execute(
-                        ctx, read_tool, read_input, request_clients
-                    )
-
-                observation = reconciler.reconcile(
-                    ReconciliationContext(
-                        workflow=workflow,
-                        item=item,
-                        tool_context=ctx,
-                        execute_read=execute_read,
-                        resolve_read_tool=self.runtime._resolve_readback_definition,
-                    )
-                )
-                if not isinstance(observation, ReconciliationObservation):
-                    raise TypeError("EffectReconciler must return ReconciliationObservation")
-                if int(observation.sequence) != int(item.get("sequence")):
-                    raise ValueError("EffectReconciler returned a mismatched workflow sequence")
-                if not observation.verified:
-                    raise ValueError("EffectReconciler must return verified observations")
-                payload = dict(observation.output_data or {})
-                payload["_reconciliation"] = {
-                    "source": observation.source,
-                    "observed_at": observation.observed_at,
-                    "provider_resource_id": observation.external_resource_id,
-                }
-                observations.append({
-                    "sequence": observation.sequence,
-                    "status": observation.status,
-                    "verified": True,
-                    "output_data": payload,
-                    "error": observation.error,
-                    "source": observation.source,
-                })
-
-            if not observations:
-                raise ValueError("workflow has no pending items eligible for provider reconciliation")
-            reconciled = self.runtime.reconcile_workflow(
-                workflow_id,
-                observations,
-                user_id=effective_user_id,
-                tenant_id=effective_tenant_id,
-            )
-            return reconciled
-        finally:
-            self.runtime._session_manager.release_workflow_lease(
-                workflow_id, self.runtime._workflow_lease_owner
-            )
-
     def cancel_workflow(
         self, workflow_id: str, user_id: str, tenant_id: Optional[str] = None
     ) -> bool:
-        """Cancel a non-terminal workflow without contacting a provider."""
         workflow = self.runtime.get_workflow(
             workflow_id, user_id=user_id, tenant_id=tenant_id
         )
@@ -454,3 +302,6 @@ class AdWorkflowServices:
         return self.runtime._session_manager.update_workflow(
             workflow_id, "cancelled", {"cancelled_by": str(user_id)}
         )
+
+
+__all__ = ["AdWorkflowServices"]

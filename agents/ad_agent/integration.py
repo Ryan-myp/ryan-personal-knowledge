@@ -90,24 +90,26 @@ class AdvertisingContextProvider:
         values_by_platform = request_context.get("platform_params")
         if not isinstance(values_by_platform, Mapping):
             return None
-        for definition in self.owner.registry.list_all():
-            namespace = str(getattr(definition, "namespace", "") or "")
-            values = next(
-                (
-                    candidate
-                    for key, candidate in values_by_platform.items()
-                    if self.owner._canonical_platform(str(key)) ==
-                    self.owner._canonical_platform(namespace)
-                ),
-                None,
-            )
+        scoped_accounts: dict[str, Any] = {}
+        for raw_platform, values in values_by_platform.items():
             if not isinstance(values, Mapping):
                 continue
-            fields = tuple(getattr(definition, "scope_fields", ()) or ())
-            for field in fields or ("account_id", "ad_account_id", "advertiser_id", "customer_id"):
+            platform = self.owner._canonical_platform(str(raw_platform))
+            definitions = self.owner.registry.list_by_namespace(platform)
+            fields = {
+                field
+                for definition in definitions
+                for field in (getattr(definition, "scope_fields", ()) or ())
+            } or {
+                "account_id", "ad_account_id", "advertiser_id", "customer_id",
+            }
+            for field in fields:
                 if values.get(field) not in (None, ""):
-                    return values[field]
-        return None
+                    scoped_accounts[platform] = values[field]
+                    break
+        # The request-level account is a single-scope convenience. A
+        # multi-platform request must keep account IDs namespace-scoped.
+        return next(iter(scoped_accounts.values())) if len(scoped_accounts) == 1 else None
 
     @staticmethod
     def _render_prompt(skill_context: Mapping[str, Any]) -> str:
@@ -724,44 +726,54 @@ class AdvertisingModelAdapter:
                 intent = repaired
                 self.owner._load_required_skills(intent.namespaces)
                 routed = self.owner.intent_router.route(intent, self.owner.registry)
+            if isinstance(request.context, dict):
+                request.context["_agent_intent_namespaces"] = list(
+                    getattr(intent, "namespaces", []) or []
+                )
             if isinstance(request.context, dict) and request.context.get("account_id") in (None, ""):
                 context_updates: dict[str, Any] = {}
-                for definitions in routed.values():
-                    if any(getattr(item, "is_write_tool", False) for item in definitions):
-                        break
-                    accounts = self.owner._available_accounts_for_request(
-                        definitions[0].namespace if definitions else "",
-                        getattr(request.principal, "account_scope", None),
-                    ) if definitions else []
-                    if len(accounts) == 1:
-                        request.context["account_id"] = accounts[0]
-                        context_updates["account_id"] = accounts[0]
-                        session.ctx.account_id = accounts[0]
-                        break
-                    if len(accounts) > 1:
-                        state.update({
-                            "intent": intent,
-                            "calls": (),
-                            "next_index": 0,
-                            "session": session,
-                            "last_results": [{
-                                "success": False,
-                                "data": {},
-                                "needs_confirmation": True,
-                                "confirmation_payload": {
-                                    "type": "ask_account",
-                                    "platform": definitions[0].namespace,
-                                    "question": "请提供要操作的广告账户 ID。",
-                                },
-                            }],
-                        })
-                        run_key = str(request.run_id or "")
-                        self._completed[run_key] = dict(state)
-                        self._turns.pop(run_key, None)
-                        return ModelTurn(
-                            content="请提供要操作的广告账户 ID。",
-                            stop_reason="awaiting_input",
-                        )
+                routed_platforms = {
+                    self.owner._canonical_platform(platform)
+                    for platform in routed
+                }
+                if len(routed_platforms) == 1:
+                    definitions = next(iter(routed.values()), [])
+                    if not any(
+                        getattr(item, "is_write_tool", False)
+                        for item in definitions
+                    ):
+                        accounts = self.owner._available_accounts_for_request(
+                            definitions[0].namespace if definitions else "",
+                            getattr(request.principal, "account_scope", None),
+                        ) if definitions else []
+                        if len(accounts) == 1:
+                            request.context["account_id"] = accounts[0]
+                            context_updates["account_id"] = accounts[0]
+                            session.ctx.account_id = accounts[0]
+                        elif len(accounts) > 1:
+                            state.update({
+                                "intent": intent,
+                                "calls": (),
+                                "next_index": 0,
+                                "session": session,
+                                "last_results": [{
+                                    "success": False,
+                                    "data": {},
+                                    "needs_confirmation": True,
+                                    "confirmation_payload": {
+                                        "type": "ask_account",
+                                        "platform": definitions[0].namespace,
+                                        "question": "请提供要操作的广告账户 ID。",
+                                    },
+                                }],
+                            })
+                            run_key = str(request.run_id or "")
+                            self._completed[run_key] = dict(state)
+                            self._turns.pop(run_key, None)
+                            return ModelTurn(
+                                content="请提供要操作的广告账户 ID。",
+                                stop_reason="awaiting_input",
+                            )
             else:
                 context_updates = {}
             skill_context = session.ctx.metadata.get("skill_context", {})

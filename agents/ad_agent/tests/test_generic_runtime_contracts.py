@@ -132,6 +132,59 @@ def test_account_resolver_exposes_a_provider_neutral_scope():
     }
 
 
+def test_account_resolver_does_not_propagate_global_account_across_namespaces():
+    class InputBuilder:
+        @staticmethod
+        def platform_params_for_intent(_intent, _namespace):
+            return {}
+
+    services = SimpleNamespace(
+        input_builder=InputBuilder(),
+        canonical_platform=lambda value: {
+            "google": "google-ads",
+        }.get(value, value),
+        available_accounts=lambda platform, _scope: {
+            "meta": ["meta-test-account"],
+            "google-ads": ["google-test-account"],
+        }[platform],
+    )
+    resolver = AccountResolver(services)
+    intent = ParsedIntent(
+        "cross_channel_compare",
+        "compare",
+        ["meta", "google-ads"],
+    )
+    meta_tool = _tool(
+        name="meta_list",
+        namespace="meta",
+        effect_class=ToolEffect.READ,
+        scope_type="account",
+        scope_fields=["account_id"],
+        input_schema=ToolSchema(properties={"account_id": {"type": "string"}}),
+    )
+    google_tool = _tool(
+        name="google_list",
+        namespace="google-ads",
+        effect_class=ToolEffect.READ,
+        scope_type="account",
+        scope_fields=["customer_id"],
+        input_schema=ToolSchema(properties={"customer_id": {"type": "string"}}),
+    )
+
+    assert resolver.resolve(
+        intent,
+        "meta",
+        [meta_tool],
+        "global-meta-account",
+    ) == "meta-test-account"
+    assert resolver.resolve(
+        intent,
+        "google-ads",
+        [google_tool],
+        "global-meta-account",
+    ) == "google-test-account"
+
+
 def test_live_permission_is_declared_by_tool_not_inferred_as_ads_write():
     runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     runtime.execution_mode = "live"

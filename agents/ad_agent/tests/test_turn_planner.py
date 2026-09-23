@@ -62,6 +62,49 @@ def test_build_tool_calls_removes_internal_input_builder_markers():
     assert calls[0].arguments == {"account_id": "act-2"}
 
 
+def test_build_tool_calls_resolves_scope_per_namespace():
+    definitions = [
+        SimpleNamespace(
+            name="meta_list_campaigns",
+            namespace="meta",
+            input_schema=SimpleNamespace(properties={"account_id": {}}),
+            scope_fields=("account_id",),
+            is_write_tool=False,
+        ),
+        SimpleNamespace(
+            name="google_list_campaigns",
+            namespace="google-ads",
+            input_schema=SimpleNamespace(properties={"customer_id": {}}),
+            scope_fields=("customer_id",),
+            is_write_tool=False,
+        ),
+    ]
+    owner = _Owner()
+    owner.input_builder = SimpleNamespace(build=lambda *_args: {})
+    owner.account_resolver = SimpleNamespace(
+        resolve=lambda _intent, platform, _tools, _fallback, **_kwargs: {
+            "meta": "meta-test-account",
+            "google-ads": "google-test-account",
+        }[platform]
+    )
+    planner = AdvertisingTurnPlanner(owner)
+    intent = SimpleNamespace(
+        namespaces=["meta", "google-ads"],
+        scoped_parameters={"meta": {}, "google-ads": {}},
+    )
+
+    calls = planner.build_tool_calls(
+        {"meta": [definitions[0]], "google-ads": [definitions[1]]},
+        intent,
+        SimpleNamespace(account_id="global-meta-account"),
+    )
+
+    assert [call.arguments for call in calls] == [
+        {"account_id": "meta-test-account"},
+        {"customer_id": "google-test-account"},
+    ]
+
+
 def test_build_plan_returns_one_execution_contract_for_the_turn():
     definition = SimpleNamespace(
         name="meta_list_accounts",

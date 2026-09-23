@@ -10,7 +10,8 @@
       "code_contract",
       "dry_run",
       "provider_e2e",
-      "live_verified"
+      "live_verified",
+      "quality_95"
     ]
   },
   "evidence_policy": {

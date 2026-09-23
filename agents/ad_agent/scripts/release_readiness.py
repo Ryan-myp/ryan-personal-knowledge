@@ -115,6 +115,78 @@ def _contract_gate_errors() -> list[str]:
             store.close()
 
 
+def _application_service_module_lines() -> int | None:
+    """Measure only advertising application service modules.
+
+    Platform bootstrap, generic input construction, and task executor code are
+    infrastructure concerns with their own contracts. The maintainability
+    dimension measures the business-facing service modules that are expected
+    to remain independently understandable.
+    """
+    runtime_root = ROOT / "agents" / "ad_agent" / "runtime"
+    paths = [
+        path for path in runtime_root.glob("*.py")
+        if (
+            path.name.startswith("ad_")
+            and (
+                path.name.endswith("_services.py")
+                or path.name in {
+                    "ad_scheduling_preflight.py",
+                    "ad_creation_state_services.py",
+                    "ad_creation_template_services.py",
+                    "ad_creation_blueprint_services.py",
+                    "ad_creation_ui_services.py",
+                    "ad_creation_contract_services.py",
+                    "ad_creation_response_services.py",
+                    "ad_tool_source_registration.py",
+                    "ad_skill_lifecycle.py",
+                    "ad_skill_plugins.py",
+                    "ad_skill_discovery.py",
+                    "ad_provider_runtime_services.py",
+                    "ad_workflow_provider_reconciliation.py",
+                    "ad_task_operational_services.py",
+                }
+            )
+        )
+    ]
+    if not paths:
+        return None
+    return max(len(path.read_text(encoding="utf-8").splitlines()) for path in paths)
+
+
+def _run_generic_platform_smoke() -> dict[str, Any]:
+    """Exercise the business-neutral six-layer reference application."""
+    try:
+        from agents.agent_platform.examples import create_ticket_support_application
+
+        application = create_ticket_support_application(
+            model=lambda _messages, tools, _request: tools[0]["name"],
+        )
+        try:
+            response = application.prompt("Find ticket status")
+            layers = tuple(application.layer_snapshot())
+            passed = (
+                application.scenario.scenario_id == "ticket-support"
+                and [item["name"] for item in application.list_tools()]
+                == ["lookup_ticket"]
+                and response.reply == "lookup_ticket"
+                and len(layers) == 6
+            )
+            return {
+                "passed": passed,
+                "evidence": "ticket_support_reference_application_smoke",
+                "layers": list(layers),
+            }
+        finally:
+            application.close()
+    except Exception as exc:
+        return {
+            "passed": False,
+            "evidence": "ticket_support_reference_application_smoke",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
     tool_source_report = audit_provider_tools()
@@ -123,12 +195,17 @@ def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
         ROOT / "agents" / "ad_agent" / "contracts" / "provider_contract_scenarios.json"
     )
     skill_report = _run_skill_up_cases()
+    generic_platform_report = _run_generic_platform_smoke()
     dry_run_report = {
         "executed": bool(provider_report.get("executed") and skill_report.get("executed")),
         "failed": int(provider_report.get("failed", 0) or 0) + int(skill_report.get("failed", 0) or 0),
         "errors": list(provider_report.get("errors") or []) + list(skill_report.get("errors") or []),
         "provider_harness": provider_report,
         "skill_up": skill_report,
+        "generic_platform_evidence": bool(generic_platform_report.get("passed")),
+        "generic_platform": generic_platform_report,
+        "max_runtime_module_lines": _application_service_module_lines(),
+        "production_evidence": False,
     }
     report = build_readiness_report(
         tool_source_report=tool_source_report,

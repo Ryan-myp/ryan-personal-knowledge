@@ -1,28 +1,22 @@
-"""Application task and schedule control services.
-
-This module owns durable task-facing APIs while delegating execution back to
-the application Runtime. It contains no Provider dispatch.
-"""
+"""Application task and schedule control services."""
 
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 from ..domain.ad.auth import RequestPrincipal
 from ..knowledge_ingest import KnowledgeIngestService
 from ..knowledge_management import ManagedKnowledgeManager
 from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
+from .ad_task_operational_services import AdTaskOperationalServicesMixin
 from .task_executor import TaskExecutionContext
 
 
-class AdTaskServices:
+class AdTaskServices(AdTaskOperationalServicesMixin):
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
-
-    # -- Durable asynchronous Agent tasks -------------------------------
 
     def submit_task(
         self,
@@ -35,18 +29,13 @@ class AdTaskServices:
         idempotency_key: Optional[str] = None,
         workflow_id: Optional[str] = None,
     ) -> tuple[dict[str, Any], bool]:
-        """Submit a task that will re-enter the normal Runtime turn loop.
-
-        The public task contract is intentionally data-only.  ``agent.turn``
-        is validated here before persistence; credentials, confirmation
-        tokens, arbitrary callbacks and identity fields are never accepted.
-        New task kinds must be registered by trusted application code, not by
-        an HTTP request or an uploaded Skill package.
-        """
+        """Submit a task that re-enters the normal Runtime turn loop."""
         if self.runtime.task_executor is None:
             raise RuntimeError("durable task executor is not configured")
         effective_user = principal.user_id if principal is not None else str(user_id)
-        effective_tenant = principal.tenant_id if principal is not None else str(tenant_id or "default")
+        effective_tenant = (
+            principal.tenant_id if principal is not None else str(tenant_id or "default")
+        )
         kind = str(kind or "").strip()
         if kind != "agent.turn":
             raise ValueError(f"unsupported task kind: {kind}")
@@ -98,7 +87,8 @@ class AdTaskServices:
             principal.to_safe_dict()
             if principal is not None
             else RequestPrincipal(
-                user_id=effective_user, tenant_id=effective_tenant,
+                user_id=effective_user,
+                tenant_id=effective_tenant,
                 permissions=self.runtime._granted_permissions,
             ).to_safe_dict()
         )
@@ -142,19 +132,20 @@ class AdTaskServices:
                 return existing_task.to_dict(), False
             if source.status == "ingesting" and existing_task is None:
                 raise ValueError("raw 文档正在 ingest，任务状态暂不可用")
-        payload = {"source_id": str(source.source_id)}
-        claims = principal.to_safe_dict()
         attempt = max(int(source.ingest_attempts or 0) + 1, 1)
         record, created = self.runtime.task_executor.submit(
             "knowledge.ingest",
-            payload,
+            {"source_id": str(source.source_id)},
             tenant_id=principal.tenant_id,
             user_id=principal.user_id,
             idempotency_key=(
                 f"knowledge-ingest:{principal.tenant_id}:{source.source_id}:"
                 f"attempt-{attempt}"
             ),
-            metadata={"principal": claims, "submission_source": "knowledge"},
+            metadata={
+                "principal": principal.to_safe_dict(),
+                "submission_source": "knowledge",
+            },
         )
         self.runtime.persistence_store.update_raw_knowledge_source(
             source.source_id,
@@ -166,10 +157,7 @@ class AdTaskServices:
         )
         return record.to_dict(), created
 
-    # -- Recurring schedule control plane ------------------------------
-
     def create_schedule(self, **kwargs: Any) -> dict[str, Any]:
-        """Adapt advertising request data into the generic schedule contract."""
         values = dict(kwargs)
         account_id = values.pop("account_id", None)
         platform_params = values.pop("platform_params", None)
@@ -236,11 +224,13 @@ class AdTaskServices:
         return self.runtime.scheduling_service.submit_occurrence(schedule, occurrence)
 
     def execute_agent_task(self, context: TaskExecutionContext) -> dict[str, Any]:
-        """Re-enter Runtime; this handler never resolves or calls a Provider."""
         if context.is_cancelled():
             return {"success": False, "cancelled": True}
         claims = context.metadata.get("principal")
-        principal = RequestPrincipal.from_claims(claims) if isinstance(claims, dict) else None
+        principal = (
+            RequestPrincipal.from_claims(claims)
+            if isinstance(claims, dict) else None
+        )
         payload = context.payload
         return self.runtime.run(
             user_input=str(payload.get("user_input") or ""),
@@ -260,10 +250,14 @@ class AdTaskServices:
             task_id=context.task_id,
         )
 
-    def execute_knowledge_ingest_task(self, context: TaskExecutionContext) -> dict[str, Any]:
-        """Run only the trusted, structured Wiki ingest service."""
+    def execute_knowledge_ingest_task(
+        self, context: TaskExecutionContext
+    ) -> dict[str, Any]:
         claims = context.metadata.get("principal")
-        principal = RequestPrincipal.from_claims(claims) if isinstance(claims, dict) else None
+        principal = (
+            RequestPrincipal.from_claims(claims)
+            if isinstance(claims, dict) else None
+        )
         source_id = str(context.payload.get("source_id") or "")
         if not source_id:
             raise ValueError("knowledge.ingest requires source_id")
@@ -272,7 +266,9 @@ class AdTaskServices:
         service = KnowledgeIngestService(
             store=self.runtime.persistence_store,
             llm=self.runtime._llm,
-            knowledge_manager=ManagedKnowledgeManager(self.runtime.persistence_store),
+            knowledge_manager=ManagedKnowledgeManager(
+                self.runtime.persistence_store
+            ),
             knowledge_provider=self.runtime.knowledge_provider,
         )
         return service.ingest(
@@ -283,136 +279,38 @@ class AdTaskServices:
         )
 
     def get_task(
-        self, task_id: str, *, user_id: Optional[str] = None,
+        self,
+        task_id: str,
+        *,
+        user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         if self.runtime.task_executor is None:
             return None
-        record = self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id)
+        record = self.runtime.task_executor.get(
+            task_id, tenant_id=tenant_id, user_id=user_id
+        )
         return record.to_dict() if record else None
 
     def list_tasks(
-        self, *, user_id: str, tenant_id: str,
-        statuses: Optional[list[str]] = None, limit: int = 50,
+        self,
+        *,
+        user_id: str,
+        tenant_id: str,
+        statuses: Optional[list[str]] = None,
+        limit: int = 50,
     ) -> list[dict[str, Any]]:
         if self.runtime.task_executor is None:
             return []
         return [
             record.to_dict()
             for record in self.runtime.task_executor.list(
-                tenant_id=tenant_id, user_id=user_id,
-                statuses=statuses, limit=limit,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                statuses=statuses,
+                limit=limit,
             )
         ]
 
-    def get_monitoring_snapshot(
-        self, *, user_id: Optional[str] = None, tenant_id: Optional[str] = None,
-    ) -> dict[str, Any]:
-        """Build the read-only operational view used by the monitoring console."""
-        if self.runtime._persistence_store is None:
-            raise RuntimeError("monitoring requires a persistence-backed Runtime")
-        getter = getattr(self.runtime._persistence_store, "get_monitoring_snapshot", None)
-        if not callable(getter):
-            raise RuntimeError("persistence backend does not support monitoring")
-        snapshot = getter(
-            tenant_id=tenant_id,
-            user_id=user_id,
-            stale_after_seconds=self.runtime.workflow_stale_after_seconds,
-        )
-        task_executor = self.runtime.task_executor
-        outbox_consumer = self.runtime.outbox_consumer
-        snapshot["instance"] = {
-            "process_id": os.getpid(),
-            "execution_mode": self.runtime.get_execution_mode(tenant_id, user_id)
-            if tenant_id and user_id else self.runtime.execution_mode,
-            "tool_count": len(self.runtime.registry.list_all()),
-            "platform_count": len(self.runtime.registry.list_all_namespaces()),
-            "task_executor": task_executor.metrics() if task_executor else {"state": "disabled"},
-            "outbox_consumer": outbox_consumer.metrics() if outbox_consumer else {"state": "disabled"},
-            "event_repair": self.runtime.event_repair_consumer.metrics()
-            if self.runtime.event_repair_consumer else {"state": "disabled"},
-            "scheduler": self.runtime.scheduler.metrics() if self.runtime.scheduler else {"state": "disabled"},
-        }
-        memory_manager = self.runtime.memory_manager
-        knowledge_provider = self.runtime.knowledge_provider
-        memory_metrics = (
-            memory_manager.cache_metrics()
-            if memory_manager and callable(getattr(memory_manager, "cache_metrics", None))
-            else {"state": "disabled"}
-        )
-        knowledge_metrics = (
-            knowledge_provider.cache_metrics()
-            if callable(getattr(knowledge_provider, "cache_metrics", None))
-            else {"state": "unavailable"}
-        )
-        snapshot["instance"]["cache"] = {
-            "memory": memory_metrics,
-            "knowledge": knowledge_metrics,
-        }
-        return snapshot
 
-    def pause_task(
-        self, task_id: str, *, user_id: str, tenant_id: str,
-    ) -> Optional[dict[str, Any]]:
-        if self.runtime.task_executor is None:
-            return None
-        if self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
-            return None
-        record = self.runtime.task_executor.pause(
-            task_id, tenant_id=tenant_id, user_id=user_id,
-        )
-        return record.to_dict() if record else None
-
-    def resume_task(
-        self, task_id: str, *, user_id: str, tenant_id: str,
-    ) -> Optional[dict[str, Any]]:
-        if self.runtime.task_executor is None:
-            return None
-        if self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
-            return None
-        record = self.runtime.task_executor.resume(
-            task_id, tenant_id=tenant_id, user_id=user_id,
-        )
-        return record.to_dict() if record else None
-
-    def recover_task(
-        self, task_id: str, *, user_id: str, tenant_id: str,
-        recovery_reference: str, provider_verified: bool = False,
-        permissions: Optional[Iterable[str]] = None,
-    ) -> Optional[dict[str, Any]]:
-        """Explicitly requeue an uncertain task after provider readback.
-
-        A stale task is never replayed merely because a process restarted.
-        The caller must prove that a provider/workflow reconciliation was
-        performed and supply its audit reference.  The task then re-enters
-        the normal ``agent.turn`` Runtime boundary.
-        """
-        if self.runtime.task_executor is None:
-            return None
-        task = self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id)
-        if task is None:
-            return None
-        granted = set(permissions or self.runtime._granted_permissions)
-        if "ads.reconcile" not in granted and "ads.write" not in granted:
-            raise PermissionError("task recovery requires ads.reconcile or ads.write")
-        if not provider_verified:
-            raise ValueError("provider_verified=true is required before task recovery")
-        if not str(recovery_reference or "").strip():
-            raise ValueError("recovery_reference is required")
-        recovered = self.runtime.task_executor.requeue_recovery(
-            task_id, recovery_reference=str(recovery_reference),
-            tenant_id=tenant_id, user_id=user_id,
-        )
-        return recovered.to_dict() if recovered else None
-
-    def cancel_task(
-        self, task_id: str, *, user_id: str, tenant_id: str,
-    ) -> Optional[dict[str, Any]]:
-        if self.runtime.task_executor is None:
-            return None
-        if self.runtime.task_executor.get(task_id, tenant_id=tenant_id, user_id=user_id) is None:
-            return None
-        record = self.runtime.task_executor.cancel(
-            task_id, tenant_id=tenant_id, user_id=user_id,
-        )
-        return record.to_dict() if record else None
+__all__ = ["AdTaskServices"]

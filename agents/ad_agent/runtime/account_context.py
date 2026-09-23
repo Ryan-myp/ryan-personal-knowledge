@@ -43,6 +43,12 @@ class AccountResolver:
             intent, platform
         )
         actual_platform = self.services.canonical_platform(platform)
+        requested_platforms = {
+            self.services.canonical_platform(namespace)
+            for namespace in (getattr(intent, "namespaces", []) or [])
+            if str(namespace).strip()
+        }
+        has_multiple_platforms = len(requested_platforms) > 1
         declared_keys = []
         for tool in tools:
             published_fields = getattr(tool, "scope_fields", None) or ()
@@ -69,7 +75,10 @@ class AccountResolver:
                 value = source.get(key)
                 if value not in (None, ""):
                     return str(value)
-        if fallback_account:
+        # A session-level account is only meaningful for a single namespace.
+        # In a multi-namespace turn it would silently target the first
+        # provider's account on every subsequent Tool Call.
+        if fallback_account and not has_multiple_platforms:
             return str(fallback_account)
         if not allow_automatic_account or any(
             bool(getattr(tool, "is_write_tool", False)) for tool in tools

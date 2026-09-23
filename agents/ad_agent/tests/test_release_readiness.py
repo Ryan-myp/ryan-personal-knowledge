@@ -1,6 +1,14 @@
 """Regression tests for the evidence-based release gate."""
 
-from agents.ad_agent.domain.ad.release_readiness import ReadinessPolicy, build_readiness_report
+from agents.ad_agent.domain.ad.quality_scorecard import (
+    QUALITY_THRESHOLD,
+    build_quality_scorecard,
+    provider_evidence_ratios,
+)
+from agents.ad_agent.domain.ad.release_readiness import (
+    ReadinessPolicy,
+    build_readiness_report,
+)
 from agents.ad_agent.scripts.provider_contract_harness import run_harness
 
 
@@ -10,7 +18,13 @@ def _policy() -> ReadinessPolicy:
         "default_profile": "local",
         "profiles": {
             "local": ["code_contract", "dry_run"],
-            "release": ["code_contract", "dry_run", "provider_e2e", "live_verified"],
+            "release": [
+                "code_contract",
+                "dry_run",
+                "provider_e2e",
+                "live_verified",
+                "quality_95",
+            ],
         },
     })
 
@@ -48,7 +62,20 @@ def test_release_profile_blocks_without_operation_specific_evidence():
     )
 
     assert report["passed"] is False
-    assert report["blocking_stages"] == ["provider_e2e", "live_verified"]
+    assert report["blocking_stages"] == [
+        "provider_e2e",
+        "live_verified",
+        "quality_95",
+    ]
+    scorecard = report["stage_results"]["quality_95"]["scorecard"]
+    assert scorecard["passed"] is False
+    assert {
+        "generic_platform",
+        "provider_e2e",
+        "live_verified",
+        "production",
+        "maintainability",
+    }.issubset(scorecard["blocking_dimensions"])
 
 
 def test_provider_contract_harness_covers_all_builtin_provider_factories():
@@ -116,3 +143,40 @@ def test_release_report_exposes_controlled_evidence_without_promoting_partial_ru
     assert evidence["providers"]["meta"]["fully_verified_runs"] == 0
     assert evidence["providers"]["meta"]["partial_runs"] == 1
     assert report["passed"] is True
+
+
+def test_quality_scorecard_requires_explicit_evidence_and_95_threshold():
+    scorecard = build_quality_scorecard(
+        code_contract_ok=True,
+        dry_run_ok=True,
+        generic_platform_ok=False,
+        security_ok=True,
+        provider_e2e_ratio=0.95,
+        live_verified_ratio=0.95,
+        production_evidence_ok=False,
+        max_runtime_module_lines=None,
+    )
+
+    assert QUALITY_THRESHOLD == 95
+    assert scorecard["passed"] is False
+    assert "generic_platform" in scorecard["blocking_dimensions"]
+    assert "production" in scorecard["blocking_dimensions"]
+    assert "maintainability" in scorecard["blocking_dimensions"]
+
+
+def test_provider_evidence_ratios_use_operation_totals():
+    e2e, live = provider_evidence_ratios({
+        "meta": {
+            "total": 4,
+            "evidence_levels": {"provider_e2e": 3},
+            "execution_statuses": {"live_verified": 2},
+        },
+        "tiktok": {
+            "total": 6,
+            "evidence_levels": {"provider_e2e": 6},
+            "execution_statuses": {"live_verified": 5},
+        },
+    })
+
+    assert e2e == 0.9
+    assert live == 0.7

@@ -352,14 +352,40 @@ class AdApplicationAssembly:
                                     break
                         if scoped_account not in (None, ""):
                             break
+            intent_namespaces = (
+                request.context.get("_agent_intent_namespaces", ())
+                if isinstance(request.context, Mapping) else ()
+            )
+            if not intent_namespaces and isinstance(request.context, Mapping):
+                platform_params = request.context.get("platform_params")
+                intent_namespaces = (
+                    list(platform_params.keys())
+                    if isinstance(platform_params, Mapping) else []
+                )
+            multiple_namespaces = len({
+                runtime._canonical_platform(namespace)
+                for namespace in (intent_namespaces or ())
+            }) > 1
+            scope_fields = tuple(
+                getattr(tool, "scope_fields", ()) or (
+                    "account_id", "ad_account_id",
+                    "advertiser_id", "customer_id",
+                )
+            )
             account = (
                 scoped_account
-                or (request.context.get("account_id")
-                    if isinstance(request.context, Mapping) else None)
+                or (
+                    None
+                    if multiple_namespaces
+                    else (
+                        request.context.get("account_id")
+                        if isinstance(request.context, Mapping) else None
+                    )
+                )
                 or next(
                     (
                         arguments.get(field)
-                        for field in getattr(tool, "scope_fields", ()) or ()
+                        for field in scope_fields
                         if arguments.get(field) not in (None, "")
                     ),
                     None,
@@ -443,12 +469,35 @@ class AdApplicationAssembly:
             request_context = (
                 request.context if isinstance(request.context, Mapping) else {}
             )
+            intent_namespaces = request_context.get(
+                "_agent_intent_namespaces", ()
+            )
+            if not intent_namespaces:
+                platform_params = request_context.get("platform_params")
+                intent_namespaces = (
+                    list(platform_params.keys())
+                    if isinstance(platform_params, Mapping) else []
+                )
+            multiple_namespaces = len({
+                runtime._canonical_platform(namespace)
+                for namespace in (intent_namespaces or ())
+            }) > 1
+            scope_fields = tuple(
+                getattr(tool, "scope_fields", ()) or (
+                    "account_id", "ad_account_id",
+                    "advertiser_id", "customer_id",
+                )
+            )
             account = (
-                request_context.get("account_id")
+                (
+                    None
+                    if multiple_namespaces
+                    else request_context.get("account_id")
+                )
                 or next(
                     (
                         arguments.get(field)
-                        for field in getattr(tool, "scope_fields", ()) or ()
+                        for field in scope_fields
                         if arguments.get(field) not in (None, "")
                     ),
                     None,

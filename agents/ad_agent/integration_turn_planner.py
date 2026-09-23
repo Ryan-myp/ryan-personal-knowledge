@@ -103,6 +103,51 @@ class AdvertisingTurnPlanner:
                             and platform_values.get(field) not in (None, "")
                         ):
                             arguments[field] = platform_values[field]
+                resolver = getattr(self.owner, "account_resolver", None)
+                resolve_account = getattr(resolver, "resolve", None)
+                if callable(resolve_account):
+                    properties = getattr(
+                        getattr(definition, "input_schema", None),
+                        "properties",
+                        {},
+                    ) or {}
+                    scope_fields = tuple(
+                        getattr(definition, "scope_fields", ()) or (
+                            "account_id",
+                            "ad_account_id",
+                            "advertiser_id",
+                            "customer_id",
+                        )
+                    )
+                    resolved_account = resolve_account(
+                        intent,
+                        str(definition.namespace),
+                        [definition],
+                        getattr(session_context, "account_id", None),
+                        allow_automatic_account=not bool(
+                            getattr(definition, "is_write_tool", False)
+                        ),
+                    )
+                    multi_namespace = len({
+                        self.owner._canonical_platform(namespace)
+                        for namespace in (getattr(intent, "namespaces", []) or [])
+                    }) > 1
+                    for field in scope_fields:
+                        if field not in properties:
+                            continue
+                        explicit_scoped = (
+                            isinstance(platform_values, Mapping)
+                            and platform_values.get(field) not in (None, "")
+                        )
+                        if resolved_account not in (None, "") and (
+                            arguments.get(field) in (None, "")
+                            or (multi_namespace and not explicit_scoped)
+                        ):
+                            arguments[field] = str(resolved_account)
+                        elif multi_namespace and not explicit_scoped:
+                            # Do not let InputBuilder's session fallback leak
+                            # a different namespace's account into this call.
+                            arguments.pop(field, None)
                 for key in (
                     "_missing_params",
                     "_unknown_params",

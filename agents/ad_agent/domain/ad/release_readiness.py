@@ -18,6 +18,10 @@ from typing import Any, Mapping
 
 from ...core.namespace import normalize_namespace as normalize_platform
 from .provider_evidence import build_provider_evidence_report
+from .quality_scorecard import (
+    build_quality_scorecard,
+    provider_evidence_ratios,
+)
 
 
 EVIDENCE_STAGES = (
@@ -25,6 +29,7 @@ EVIDENCE_STAGES = (
     "dry_run",
     "provider_e2e",
     "live_verified",
+    "quality_95",
 )
 
 
@@ -139,6 +144,25 @@ def build_readiness_report(
         item["live_verified_complete_for_implemented_surface"]
         for item in provider_summaries.values()
     )
+    provider_e2e_ratio, live_verified_ratio = provider_evidence_ratios(
+        inventory_reports
+    )
+    scorecard = build_quality_scorecard(
+        code_contract_ok=code_contract_ok,
+        dry_run_ok=dry_run_ok,
+        generic_platform_ok=bool(dry_run.get("generic_platform_evidence", False)),
+        security_ok=code_contract_ok,
+        provider_e2e_ratio=provider_e2e_ratio,
+        live_verified_ratio=live_verified_ratio,
+        production_evidence_ok=bool(
+            dry_run.get("production_evidence", False)
+        ),
+        max_runtime_module_lines=(
+            int(dry_run["max_runtime_module_lines"])
+            if dry_run.get("max_runtime_module_lines") is not None
+            else None
+        ),
+    )
     stage_results = {
         "code_contract": {
             "status": "passed" if code_contract_ok else "failed",
@@ -166,6 +190,12 @@ def build_readiness_report(
             "errors": [] if live_verified_ok else [
                 "当前 Tool Source 默认 dry_run_only，未提供 live_verified 证据"
             ],
+        },
+        "quality_95": {
+            "status": "passed" if scorecard["passed"] else "failed",
+            "evidence": "all platform quality dimensions must score at least 95",
+            "scorecard": scorecard,
+            "errors": list(scorecard["blockers"]),
         },
     }
     blocking = [stage for stage in required if stage_results[stage]["status"] != "passed"]
