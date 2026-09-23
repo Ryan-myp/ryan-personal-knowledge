@@ -57,6 +57,24 @@ def test_local_env_file_is_loaded_without_overriding_process_environment(tmp_pat
     assert api_server.os.environ["TEST_AD_AGENT_EXISTING"] == "from-process"
 
 
+def test_chat_routes_are_owned_by_a_dedicated_route_module():
+    routes = list(api_server.app.routes)
+    for included in routes:
+        original = getattr(included, "original_router", None)
+        if original is not None:
+            routes.extend(original.routes)
+    chat_routes = {
+        route.path: route.endpoint.__module__
+        for route in routes
+        if getattr(route, "path", None) in {"/chat", "/chat/stream"}
+    }
+
+    assert chat_routes == {
+        "/chat": "agents.ad_agent.api.routes.chat",
+        "/chat/stream": "agents.ad_agent.api.routes.chat",
+    }
+
+
 class FakeRegistry:
     def list_all(self):
         return []

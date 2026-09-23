@@ -1258,6 +1258,52 @@ def test_tool_timeout_returns_explicit_timed_out_result_and_signals_handler():
     assert observed["event"].is_set() is True
 
 
+def test_run_cancellation_is_visible_to_provider_handler():
+    observed = {}
+    cancellation = threading.Event()
+    handler_started = threading.Event()
+
+    class CancellableHandler:
+        def execute(self, ctx, _input):
+            observed["event"] = ctx.metadata["cancel_event"]
+            handler_started.set()
+            cancellation.wait(2)
+            return ToolResult.ok({"finished": True})
+
+    runtime = AdvertisingComposition(require_llm=False)
+    definition = ToolDefinition(
+        name="cancellable_read",
+        skill="test",
+        namespace="meta",
+        description="cancellation propagation test",
+        input_schema=ToolSchema(),
+        effect_class=ToolEffect.READ,
+        timeout_seconds=1,
+    )
+    runtime.registry.register(definition, CancellableHandler())
+    context = ToolContext(
+        "cancellable-session",
+        "u1",
+        metadata={"cancellation_event": cancellation},
+    )
+    result_holder = {}
+    worker = threading.Thread(
+        target=lambda: result_holder.setdefault(
+            "result",
+            runtime.tool_executor.execute(
+                context, "cancellable_read", {}
+            ),
+        ),
+    )
+    worker.start()
+    assert handler_started.wait(1)
+    cancellation.set()
+    worker.join(2)
+
+    assert observed["event"].is_set() is True
+    assert result_holder["result"].success is True
+
+
 def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
     class SlowWriteHandler:
         def execute(self, _ctx, _input):

@@ -17,6 +17,40 @@ from typing import Any, Optional
 from ..core.interfaces import ToolDefinition, ToolError, ToolResult
 from ..core.tool_registry import validate_tool_input
 from ..core.features import RuntimeExecutionServices
+
+
+class _CancellationBridge:
+    """Expose Run/task cancellation while retaining a local timeout signal."""
+
+    def __init__(self, *signals: Any) -> None:
+        self._signals = tuple(
+            signal for signal in signals if signal is not None
+        )
+        self._local = threading.Event()
+
+    def is_set(self) -> bool:
+        return self._local.is_set() or any(
+            bool(signal.is_set())
+            for signal in self._signals
+            if callable(getattr(signal, "is_set", None))
+        )
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        if self.is_set():
+            return True
+        if timeout is None:
+            while not self.is_set():
+                time.sleep(0.01)
+            return True
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while not self.is_set() and time.monotonic() < deadline:
+            time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
+        return self.is_set()
+
+    def set(self) -> None:
+        self._local.set()
+
+
 def classify_error(error: Exception, tool: ToolDefinition) -> ToolError:
     """Map execution failures to stable recovery semantics.
 
@@ -107,7 +141,14 @@ class ToolExecutor:
         task_cancel_event = (
             ctx.metadata.get("task_cancel_event") if ctx else None
         )
-        if task_cancel_event is not None and task_cancel_event.is_set():
+        run_cancel_event = (
+            ctx.metadata.get("cancellation_event") if ctx else None
+        )
+        if any(
+            signal is not None and signal.is_set()
+            for signal in (task_cancel_event, run_cancel_event)
+            if callable(getattr(signal, "is_set", None))
+        ):
             return ToolResult(
                 success=False,
                 data={"execution_status": "cancelled"},
@@ -157,7 +198,10 @@ class ToolExecutor:
             )
 
         previous_deadline = ctx.metadata.get("tool_deadline") if ctx else None
-        cancel_event = threading.Event()
+        cancel_event = _CancellationBridge(
+            task_cancel_event,
+            run_cancel_event,
+        )
         if ctx:
             ctx.metadata["tool_deadline"] = deadline
             ctx.metadata["cancel_event"] = cancel_event
@@ -332,7 +376,7 @@ class ToolExecutor:
                 return ToolResult.error(f"Input validation failed: {errors}")
 
             def invoke() -> ToolResult:
-                if task_cancel_event is not None and task_cancel_event.is_set():
+                if cancel_event.is_set():
                     return ToolResult(
                         success=False,
                         data={"execution_status": "cancelled"},

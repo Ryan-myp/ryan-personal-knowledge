@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 from agents.agent_harness import AgentMessage, ToolCall
+from .core.execution_plan import ExecutionPlan
+
+
+@dataclass(frozen=True)
+class AdvertisingTurnPlan:
+    """The application planning result consumed by the generic Agent loop."""
+
+    calls: tuple[ToolCall, ...]
+    tool_plan: Mapping[str, tuple[str, ...]]
+    execution_plan: ExecutionPlan
 
 
 class AdvertisingTurnPlanner:
@@ -105,6 +116,29 @@ class AdvertisingTurnPlanner:
                 ))
         return calls
 
+    def build_plan(
+        self,
+        routed: Mapping[str, list[Any]],
+        intent: Any,
+        session_context: Any,
+    ) -> AdvertisingTurnPlan:
+        """Return one immutable plan contract for the current routed intent."""
+        calls = tuple(self.build_tool_calls(routed, intent, session_context))
+        tool_plan = {
+            str(platform): tuple(item.name for item in definitions)
+            for platform, definitions in routed.items()
+        }
+        execution_plan = ExecutionPlan.from_tool_plan(
+            intent,
+            routed,
+            canonicalize=self.owner._canonical_platform,
+        )
+        return AdvertisingTurnPlan(
+            calls=calls,
+            tool_plan=tool_plan,
+            execution_plan=execution_plan,
+        )
+
     def hydrate_dependency_call(
         self,
         call: ToolCall,
@@ -169,3 +203,6 @@ class AdvertisingTurnPlanner:
             if self.owner._resolve_platform_identifier(str(key)) == target:
                 return values if isinstance(values, Mapping) else None
         return None
+
+
+__all__ = ["AdvertisingTurnPlan", "AdvertisingTurnPlanner"]

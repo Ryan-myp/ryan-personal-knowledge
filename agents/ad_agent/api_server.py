@@ -7,8 +7,6 @@ import sys
 import os
 import json
 import logging
-import asyncio
-import queue
 import inspect
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -69,11 +67,11 @@ from agents.ad_agent.creation_templates import (
 )
 from agents.ad_agent.persistence.factory import create_persistence_store
 from agents.ad_agent.api.security import RequestAuthorizer
+from agents.ad_agent.api.context import ApiContext
+from agents.ad_agent.api.routes.chat import create_chat_router
 from agents.ad_agent.api.models import (
     BlueprintEvaluationRequest,
     BlueprintResolveRequest,
-    ChatRequest,
-    ChatStreamRequest,
     CreationTemplateDuplicateRequest,
     CreationTemplateRequest,
     CreationTemplateUpdateRequest,
@@ -806,61 +804,6 @@ async def delete_session(
     if not deleted:
         raise HTTPException(status_code=404, detail="会话不存在或无权访问")
     return {"deleted": True, "deleted_session_id": str(session_id)}
-
-
-@app.post("/chat", tags=["chat"])
-async def chat(
-    request: ChatRequest,
-    http_request: Request,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-):
-    if not runtime:
-        raise HTTPException(status_code=503, detail="服务未初始化")
-    try:
-        principal = _authorize_request(x_api_key, http_request)
-        _activate_request_tenant_skills(principal)
-        _sync_request_tenant_extensions(principal)
-        if request.confirmed and not request.confirmation_payload:
-            raise HTTPException(
-                status_code=400,
-                detail="confirmed=true 必须携带与当前计划匹配的 confirmation_payload",
-            )
-        user_input = request.user_input
-        
-        result = await run_in_threadpool(
-            runtime.run,
-            user_input=user_input,
-            session_id=request.session_id,
-            account_id=request.account_id or None,
-            platform_params=request.platform_params,
-            confirmed=request.confirmed,
-            confirmation_payload=request.confirmation_payload,
-            creation_blueprint_id=request.creation_blueprint_id,
-            creation_blueprint_version=request.creation_blueprint_version,
-            creation_template_id=request.creation_template_id,
-            execution_mode=request.execution_mode,
-            principal=principal,
-        )
-        return JSONResponse(content=result)
-    except HTTPException:
-        raise
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except RuntimeError as e:
-        message = str(e)
-        if "session is busy" in message:
-            raise HTTPException(status_code=409, detail="会话正在其他实例执行，请稍后重试")
-        if "durable Agent run persistence" in message:
-            raise HTTPException(status_code=503, detail="运行状态存储暂不可用，请稍后重试")
-        return JSONResponse(
-            content={"success": False, "error": _safe_exception_text(e)},
-            status_code=500,
-        )
-    except Exception as e:
-        return JSONResponse(
-            content={"success": False, "error": _safe_exception_text(e)},
-            status_code=500,
-        )
 
 
 @app.post("/tasks", tags=["tasks"])
@@ -2167,6 +2110,7 @@ async def get_tools(
                 "replay_policy": t.replay_policy.value,
                 "traits": list(t.traits),
                 "live_support": t.live_support,
+                "cancellation_mode": t.cancellation_mode,
                 "timeout_seconds": t.timeout_seconds,
                 "max_output_bytes": t.max_output_bytes,
                 "required_permissions": list(t.required_permissions),
@@ -2332,6 +2276,17 @@ def _sync_request_tenant_extensions(principal: RequestPrincipal) -> None:
             principal.tenant_id, _safe_exception_text(exc),
         )
         raise HTTPException(status_code=503, detail="MCP 扩展同步失败，请稍后重试") from exc
+
+
+_chat_api_context = ApiContext(
+    runtime_getter=lambda: runtime,
+    authorize_request=_authorize_request,
+    activate_tenant_skills=_activate_request_tenant_skills,
+    sync_tenant_extensions=_sync_request_tenant_extensions,
+    safe_exception_text=_safe_exception_text,
+    redact=redact_for_persistence,
+)
+app.include_router(create_chat_router(_chat_api_context))
 
 
 @app.get("/skills", tags=["skills"])
@@ -2540,179 +2495,6 @@ async def get_managed_skill_evaluation(
     if not result:
         raise HTTPException(status_code=404, detail="Skill evaluation not found")
     return result
-
-
-@app.post("/chat/stream", tags=["chat"])
-async def chat_stream(
-    request: ChatStreamRequest,
-    http_request: Request,
-    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-):
-    """Stream the Runtime's safe execution events over SSE.
-
-    The Runtime owns the execution lifecycle.  This endpoint only bridges its
-    observer callback to the browser; it must not infer plans or replay Tool
-    results after the turn has finished.
-    """
-    from fastapi.responses import StreamingResponse
-    
-    if not runtime:
-        return JSONResponse(content={"success": False, "error": "服务未初始化"}, status_code=503)
-    
-    try:
-        principal = _authorize_request(x_api_key, http_request)
-        _activate_request_tenant_skills(principal)
-        _sync_request_tenant_extensions(principal)
-        if request.confirmed and not request.confirmation_payload:
-            raise HTTPException(
-                status_code=400,
-                detail="confirmed=true 必须携带与当前计划匹配的 confirmation_payload",
-            )
-        user_input = request.user_input
-        
-        async def generate():
-            def event(payload: dict) -> str:
-                return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-            event_queue: queue.Queue[dict] = queue.Queue(maxsize=256)
-
-            # This is only the stream lifecycle marker.  It intentionally
-            # carries no guessed Intent/Skill/account/Tool node; those can
-            # only arrive from Runtime's real plan/events below.
-            yield event({
-                "type": "start",
-                "event_type": "start",
-                "status": "running",
-                "safe_metadata": {"source": "stream_gateway"},
-            })
-
-            def observe(payload: dict) -> None:
-                # Runtime runs in the worker thread.  Only put the already
-                # sanitized event into the bridge queue; no request data is
-                # reconstructed in the HTTP layer.
-                try:
-                    event_queue.put_nowait(payload)
-                except queue.Full:
-                    # The trace is diagnostic; never let a slow/disconnected
-                    # client block the Agent or a Tool execution.
-                    return
-
-            task = asyncio.create_task(
-                run_in_threadpool(
-                    runtime.run,
-                    user_input=user_input,
-                    session_id=request.session_id,
-                    account_id=request.account_id or None,
-                    platform_params=request.platform_params,
-                    confirmed=request.confirmed,
-                    confirmation_payload=request.confirmation_payload,
-                    creation_blueprint_id=request.creation_blueprint_id,
-                    creation_blueprint_version=request.creation_blueprint_version,
-                    creation_template_id=request.creation_template_id,
-                    execution_mode=request.execution_mode,
-                    principal=principal,
-                    event_callback=observe,
-                )
-            )
-            final_event = None
-            reply_marker = None
-            try:
-                while True:
-                    try:
-                        payload = await asyncio.to_thread(event_queue.get, True, 0.25)
-                    except queue.Empty:
-                        if task.done():
-                            break
-                        continue
-                    # Runtime emits done after it has rendered the reply, but
-                    # the reply body is intentionally kept out of the trace
-                    # envelope.  Buffer done so the HTTP bridge can append the
-                    # safe final response before closing the stream.
-                    if payload.get("type") == "done":
-                        final_event = payload
-                    elif payload.get("type") == "reply":
-                        # The Runtime marker intentionally has no reply body.
-                        # It becomes the metadata envelope for the one final
-                        # reply event below, avoiding duplicate UI entries.
-                        reply_marker = payload
-                    else:
-                        yield event(payload)
-
-                result = await task
-            except Exception as exc:
-                yield event({
-                    "type": "error",
-                    "event_type": "error",
-                    "status": "failed",
-                    "safe_metadata": {"reason": "runtime_error"},
-                    "error": _safe_exception_text(exc),
-                })
-                yield event({"type": "done", "status": "failed"})
-                return
-
-            safe_results = []
-            for item in result.get("results", []) if isinstance(result, dict) else []:
-                if not isinstance(item, dict):
-                    continue
-                safe_results.append({
-                    key: redact_for_persistence(item.get(key))
-                    for key in ("tool", "platform", "resource_type", "success", "error", "needs_confirmation", "skipped", "data")
-                    if key in item
-                })
-            run_id = result.get("run_id") if isinstance(result, dict) else None
-            # Runtime implementations that do not persist runs (for example
-            # an embedded/test runtime) may legitimately omit this optional
-            # readback API. The stream already has the authoritative result;
-            # only enrich it with a run id when the tool_source is available.
-            get_latest_run = getattr(runtime, "get_latest_run", None)
-            if (
-                not run_id
-                and isinstance(result, dict)
-                and result.get("session_id")
-                and callable(get_latest_run)
-            ):
-                latest = await run_in_threadpool(
-                    get_latest_run,
-                    session_id=result.get("session_id"),
-                    user_id=principal.user_id,
-                    tenant_id=principal.tenant_id,
-                )
-                run_id = (latest or {}).get("run_id")
-            yield event({
-                "type": "reply",
-                "event_type": "reply",
-                "trace_id": (reply_marker or {}).get("trace_id"),
-                "seq": (reply_marker or {}).get("seq"),
-                "status": "awaiting_confirmation" if result.get("needs_confirmation") else "succeeded",
-                "content": redact_for_persistence(result.get("reply", "")),
-                "session_id": result.get("session_id"),
-                "turn_id": result.get("turn_id"),
-                "run_id": run_id,
-                "needs_confirmation": bool(result.get("needs_confirmation")),
-                "confirmation_payload": redact_for_persistence(result.get("confirmation_payload")),
-                "results": safe_results,
-                "ui": redact_for_persistence(result.get("ui") or {}),
-            })
-            yield event(final_event or {
-                "type": "done",
-                "event_type": "done",
-                "status": "awaiting_confirmation" if result.get("needs_confirmation") else "succeeded",
-            })
-        
-        return StreamingResponse(
-            generate(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        return JSONResponse(
-            content={"success": False, "error": _safe_exception_text(e)},
-            status_code=500,
-        )
 
 
 @app.get("/parameter-options", tags=["info"])

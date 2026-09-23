@@ -50,6 +50,22 @@ def test_tool_definition_publishes_scope_and_live_permission_metadata():
     assert contract["live_permission"] == "custom.write"
 
 
+def test_tool_definition_publishes_provider_cancellation_contract():
+    tool = _tool(cancellation_mode="interruptible")
+
+    assert tool.cancellation_mode == "interruptible"
+    assert tool.to_dict()["cancellation_mode"] == "interruptible"
+
+
+def test_tool_definition_rejects_unknown_cancellation_contract():
+    try:
+        _tool(cancellation_mode="force_kill")
+    except ValueError as exc:
+        assert "cancellation_mode" in str(exc)
+    else:
+        raise AssertionError("invalid cancellation mode was accepted")
+
+
 def test_account_resolver_prefers_publisher_declared_scope_fields():
     class InputBuilder:
         @staticmethod

@@ -179,6 +179,8 @@ class _GenericContextExecutor:
                 "execution_mode": str(request.execution_mode or "dry_run"),
                 "run_id": str(request.run_id or ""),
                 "turn_id": str(request.turn_id or ""),
+                "cancellation_event": request.cancellation_event,
+                "lease_lost_event": request.lease_lost_event,
             },
         )
         execute = getattr(self.executor, "execute", None)
@@ -437,6 +439,8 @@ class AdvertisingModelAdapter:
                 "execution_mode": str(request.execution_mode or "dry_run"),
                 "run_id": str(request.run_id or ""),
                 "turn_id": str(request.turn_id or ""),
+                "cancellation_event": request.cancellation_event,
+                "lease_lost_event": request.lease_lost_event,
                 "skill_context": (
                     dict(request_context.get("agent_context", {}).get("skill_context", {}))
                     if isinstance(request_context.get("agent_context"), Mapping)
@@ -990,11 +994,12 @@ class AdvertisingModelAdapter:
                         stop_reason="awaiting_input",
                         context_updates=context_updates,
                     )
-            calls = self._planner.build_tool_calls(
+            turn_plan = self._planner.build_plan(
                 routed,
                 intent,
                 session.ctx,
             )
+            calls = list(turn_plan.calls)
             state.update({
                 "intent": intent,
                 "calls": tuple(calls),
@@ -1003,8 +1008,8 @@ class AdvertisingModelAdapter:
                 "ui": creation_ui,
                 "workflow_id": None,
                 "tool_plan": {
-                    str(platform): [item.name for item in definitions]
-                    for platform, definitions in routed.items()
+                    platform: list(names)
+                    for platform, names in turn_plan.tool_plan.items()
                 },
                 "execution_plan": {},
             })
@@ -1219,11 +1224,7 @@ class AdvertisingModelAdapter:
                         stop_reason="awaiting_input",
                         context_updates=context_updates,
                     )
-            execution_plan = ExecutionPlan.from_tool_plan(
-                intent,
-                routed,
-                canonicalize=self.owner._canonical_platform,
-            )
+            execution_plan = turn_plan.execution_plan
             workflow_id = None
             if any(
                 getattr(item, "is_write_tool", False)

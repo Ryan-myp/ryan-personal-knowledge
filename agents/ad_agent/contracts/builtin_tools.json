@@ -1,14 +1,15 @@
 {
-  "digest": "978a5034b0f90be738fa3b3290f1a158825cbb79e358c0c16d67c80667e0cf87",
+  "digest": "eb8266d300eb771638f0d479834303d49fdf237280604e93252d4d072cf9b48c",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "a05bd2c6f18bcbf2f2ca5c595266e3f677b0799cee6f83da0d5d8733b29b1321",
+      "digest": "4e7398579821ec556bbda7637b8df61142c8640c9149bc0561b1c59f33a22128",
       "tool_count": 31,
       "tools": [
         {
           "action": "activate",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "57485981bc4aa012a24a0724346e57012bab3b2be771662fe1c5cc533c8b08c4",
           "contract_version": "1.2.0",
           "description": "调用 DV360 activate_io 管理接口；默认仅生成 dry-run 计划。",
@@ -72,6 +73,7 @@
         {
           "action": "activate",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9063fef59c5953729e66f6b70480a72b115b4edf944e8b8a4643fbe7a9895221",
           "contract_version": "1.2.0",
           "description": "激活 DV360 Line Item；默认仅生成 dry-run 计划。",
@@ -139,6 +141,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "6240367fe07fa8c9ce3a9d9c80e72eba113b4e5ed1c159ac160fe669b091b478",
           "contract_version": "1.2.0",
           "description": "创建 DV360 Creative；默认仅生成 dry-run 计划。",
@@ -212,6 +215,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3016425037cb4af4dd5131fe031e7b132b37e52998e8bb23bccc6299bf74ef69",
           "contract_version": "1.2.0",
           "description": "创建 DV360 IO（Order & Invoice）。",
@@ -348,6 +352,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b7c453ab374e65a8f39a901c040ac6d643b24c18c0fd7a97268d486f6bc6865e",
           "contract_version": "1.2.0",
           "description": "创建 DV360 Line Item。",
@@ -529,6 +534,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "1da68b2e5323f4cf4955d9f09889a65f3aabfcc43c9d29fdf277cbaebfa84daf",
           "contract_version": "1.2.0",
           "description": "为 DV360 Line Item 绑定定向选项；默认仅生成 dry-run 计划。",
@@ -611,6 +617,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "541257fa67c055351c43904ded43bc4e348d0c1058b00e634a029c7e00268267",
           "contract_version": "1.2.0",
           "description": "创建 DV360 异步报表任务；默认仅生成 dry-run 计划。",
@@ -684,6 +691,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b94881f6d308701eb684efba7623f28a3793255a4f170edf04d9fa309f60c5a7",
           "contract_version": "1.2.0",
           "description": "删除 DV360 Campaign；默认仅生成 dry-run 计划。",
@@ -748,6 +756,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b6b3cfa829ec23cac70e245d86aa52e25225aa6eca664ea13db6899ce73b3f5e",
           "contract_version": "1.2.0",
           "description": "删除 DV360 Creative；默认仅生成 dry-run 计划。",
@@ -811,6 +820,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "57485981bc4aa012a24a0724346e57012bab3b2be771662fe1c5cc533c8b08c4",
           "contract_version": "1.2.0",
           "description": "删除 DV360 Insertion Order；默认仅生成 dry-run 计划。",
@@ -874,6 +884,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9063fef59c5953729e66f6b70480a72b115b4edf944e8b8a4643fbe7a9895221",
           "contract_version": "1.2.0",
           "description": "删除 DV360 Line Item；默认仅生成 dry-run 计划。",
@@ -941,6 +952,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "89004f5ad84855df04d89039f8adbb837bece36b17a01a9bf94d811d6664f201",
           "contract_version": "1.2.0",
           "description": "解除 DV360 Line Item 的定向绑定；默认仅生成 dry-run 计划。",
@@ -1012,6 +1024,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ba37151e2d864678f1e98997d35de950eb5113340559c9bd335f312a4e56d87d",
           "contract_version": "1.2.0",
           "description": "获取 DV360 Advertiser 详情。",
@@ -1071,6 +1084,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d389db6521b6b83e899e64d9397dc65ee8df40c6348b6704855e69df8ced0cf8",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Campaign 详情（支持 campaign_id 或 campaign_name）。",
@@ -1136,6 +1150,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b6b3cfa829ec23cac70e245d86aa52e25225aa6eca664ea13db6899ce73b3f5e",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Creative 详情。",
@@ -1199,6 +1214,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f420b68f6615ae7be6943e5b94b6d526992b3a91e4b0021fa7930086e3d41e85",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Insertion Order 详情。",
@@ -1258,6 +1274,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "bc5e5478e6f75bd34f363e623e77f24947d809d2239ad7160aa895c51b7161b5",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 详情。",
@@ -1324,6 +1341,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b70702d9cc124eaa080f55ef171febae6fea560d722dcd639dfe4eb0f37700d0",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 报表；当前不提供 Campaign-level report。",
@@ -1405,6 +1423,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0601a77fd9f5327f5efd09ae20ccfbc99ea4d0a8189e69690aca4eddfdacf2cc",
           "contract_version": "1.2.0",
           "description": "获取 DV360 异步报表结果。",
@@ -1471,6 +1490,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Advertiser 列表。",
@@ -1524,6 +1544,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "46f3ef372d1f6c662c34acc00d79a777a64094881238f01ce3dc1f9907aa0b85",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Campaign 列表。",
@@ -1597,6 +1618,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d32d9ef7331dc6456badda0d22dd4c6d7f104cdb5dab53106eb1cf4e79699013",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Advertiser 下的 Creative 列表。",
@@ -1662,6 +1684,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "46f3ef372d1f6c662c34acc00d79a777a64094881238f01ce3dc1f9907aa0b85",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Insertion Order 列表。",
@@ -1724,6 +1747,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "706502187a9c143ac4b392b6266c814e66155e907f31a6792c7c41a9b27a2ef2",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 已绑定的定向选项。",
@@ -1794,6 +1818,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ba4afe40b75baa75fcbce57146ef29eb52b840fed156779358e325e8909fc400",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Line Item 列表，可按 IO 过滤。",
@@ -1859,6 +1884,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "63c0543a25a23a63f73c51e1c4bfc72916a0f6a96f383113e0927dcadb5eebb4",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Targeting Option 目录（枚举/参考数据）。",
@@ -1924,6 +1950,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "57485981bc4aa012a24a0724346e57012bab3b2be771662fe1c5cc533c8b08c4",
           "contract_version": "1.2.0",
           "description": "调用 DV360 pause_io 管理接口；默认仅生成 dry-run 计划。",
@@ -1987,6 +2014,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d863d6475b59f252e09edde761b469a7472cfe193998fd3eb02ca94605ee665a",
           "contract_version": "1.2.0",
           "description": "更新 DV360 campaign，默认仅生成 dry-run 计划。",
@@ -2100,6 +2128,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0ad0b24e24dac15aa376b352a1196853a1c6df0ed38901f3a9738fee60e8899e",
           "contract_version": "1.2.0",
           "description": "更新 DV360 Creative；默认仅生成 dry-run 计划。",
@@ -2167,6 +2196,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "38a9217e27fad3d4e86daac7b4c00c3d01a5b0a3f69ca56102d0832d6c8e3079",
           "contract_version": "1.2.0",
           "description": "更新 DV360 io，默认仅生成 dry-run 计划。",
@@ -2285,6 +2315,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "34f2ff428696497fa3202e6aeb374c7c84b50c4cae3f8dce6da99c11593a9281",
           "contract_version": "1.2.0",
           "description": "更新 DV360 line_item，默认仅生成 dry-run 计划。",
@@ -2413,7 +2444,7 @@
       ]
     },
     "google-ads": {
-      "digest": "3c3cccccb9b6c2f38e5e7888c100446e1670302c1b27a830abf7f1e4776fda37",
+      "digest": "85a96cbcd0cb40743591ec7b53bd5090f4a5166350d478806439e7d20cde7da6",
       "tool_count": 103,
       "tools": [
         {
@@ -2430,6 +2461,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "590cd67b6c19362bdbf0722c0c385b4e77a63b3ff7042b202d57beac0855ce2e",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Ad。",
@@ -2753,6 +2785,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f1dac9b46370ee5da74e1c3855fc9ea3ddb17ca6275c69fd40f1abb5d083d25c",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Ad Group。",
@@ -3055,6 +3088,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "bbf903707f3b833259b4f6dc2db60790ea411a0327e1cc70bebe8aa91314de2d",
           "contract_version": "1.4.0",
           "description": "创建 Google App Campaign AppAd 素材广告；live 仅在受控测试账号和确认后执行。",
@@ -3335,6 +3369,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "20df59f32e12358d84b232510a58efed001bd30ea3bc35e135ea53056342bfb0",
           "contract_version": "1.4.0",
           "description": "创建 Google App Campaign Ad Group；live 仅在受控测试账号和确认后执行。",
@@ -3425,6 +3460,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b225aaf1253c61c7ea0b101599e6e900fb47954f29cb2c23ed30f61c93a6138d",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；默认仅生成 dry-run 计划。",
@@ -3606,6 +3642,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5da6e03c16f779966d8af07e669d2d93eba8057ec34e52c12935016788e9a580",
           "contract_version": "1.4.0",
           "description": "创建 Google PMax Asset Group；live 仅在受控测试账号和确认后执行。",
@@ -3967,6 +4004,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "712e88b6fdb32f0686e75469631151c08d05ff28678a4626a5b9d81ddb1199f1",
           "contract_version": "1.4.0",
           "description": "将 Google Asset 关联到 PMax Asset Group；默认仅生成 dry-run 计划。",
@@ -4113,6 +4151,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cd953c067eb7e4f969b131ce77664c215dadf26e4fbdbea11936c9a7da035398",
           "contract_version": "1.4.0",
           "description": "创建 Google PMax Listing Group Filter；根节点或商品/网页/Retail 子节点，默认仅生成 dry-run 计划。",
@@ -4466,6 +4505,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9c126d1009f086af1ac6399a28160148bf93b9545c1741e4586fb5b3f0c9b910",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
@@ -4622,6 +4662,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "1411d6613981ecdf93d2180becbc84171044aa91ae0f44b298599f57b8bba39e",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Campaign。",
@@ -5654,6 +5695,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "055e1f9c0c1f1e68e9bfae3007531c28275df04dc14a8b8e994018fb44e9fd63",
           "contract_version": "1.4.0",
           "description": "将 Google Asset 关联到 Campaign；默认仅生成 dry-run 计划。",
@@ -5788,6 +5830,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cf153e1ed8382ef47fed1d2e6947ea70f2e53195dce6e4d6685d091e0603137e",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
@@ -5897,6 +5940,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "995c84c2ec6162b025bad1be302e27d36e42ff80c62587dc68d691f8373d8f35",
           "contract_version": "1.4.0",
           "description": "批量创建 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
@@ -6159,6 +6203,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "28256bb18d3c46ff399476666db3439973412fc7be8a07c7c7823f65599c6d49",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
@@ -6372,6 +6417,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f00089d820899b4655ebaecc7a17c8e33845d57f3ecaee1e2ebb87fca539f695",
           "contract_version": "1.4.0",
           "description": "创建 Google Demand Gen Carousel Ad；默认仅生成 dry-run 计划。",
@@ -6645,6 +6691,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3619932c1db38a5231c376578c3fe14d0f4a77a71a39eacec051486f30ef65ef",
           "contract_version": "1.4.0",
           "description": "创建 Google Demand Gen Multi Asset Ad；默认仅生成 dry-run 计划。",
@@ -7063,6 +7110,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "44e75f1fe32816abefe5570ea5a3a1dc04a4b517896e200a41d8c9f079dbf892",
           "contract_version": "1.4.0",
           "description": "创建 Google Demand Gen Product Ad；默认仅生成 dry-run 计划。",
@@ -7261,6 +7309,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "4b0fe469aa98327cd1241d4f0cd22c0468ac6c296b965e646f8de0bcfe529f45",
           "contract_version": "1.4.0",
           "description": "创建 Google Demand Gen Video Responsive Ad；默认仅生成 dry-run 计划。",
@@ -7602,6 +7651,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7859d17a5800c413ff32ac6519ab8fb620675477efc3107a7da309cabacc6265",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Experiment；默认仅生成 dry-run 计划。",
@@ -7852,6 +7902,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d8036b1197a7cb07ba5d13616e7a7f795ffd81b6b62a9f70cb4a32b7d1f4d6c1",
           "contract_version": "1.4.0",
           "description": "创建 Google Hotel Ad；默认仅生成 dry-run 计划。",
@@ -7951,6 +8002,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e3c8931357bb3c701c19ee471d31407bc58104c36e24ed96a49ab99a26ff0289",
           "contract_version": "1.4.0",
           "description": "批量创建 Google Ad Group 关键词/否定关键词；默认仅生成 dry-run 计划。",
@@ -8091,6 +8143,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ef4607a6c90535df63b89bd12ade1dbce2b9d1db104e70ea5f43324c47adb118",
           "contract_version": "1.4.0",
           "description": "创建 Google Local Ad；默认仅生成 dry-run 计划。",
@@ -8422,6 +8475,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5da6e03c16f779966d8af07e669d2d93eba8057ec34e52c12935016788e9a580",
           "contract_version": "1.4.0",
           "description": "创建 Google PMax Asset Group；live 仅在受控测试账号和确认后执行。",
@@ -8793,6 +8847,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "151e096e83c1c47da6a48a755f233163d01d0a8de0ddb68da57fce3aaa742476",
           "contract_version": "1.4.0",
           "description": "创建 Google Shopping Product Group/Listing Group；live 仅在受控测试账号和确认后执行。",
@@ -9169,6 +9224,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9bb3ba7877f3a2186ca0016a5e24e693a18fd2a0f96fe66e0bbd5154dfed1a85",
           "contract_version": "1.4.0",
           "description": "创建 Google Responsive Display Ad；默认仅生成 dry-run 计划。",
@@ -9563,6 +9619,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "447677accfec8c162fde8e9ddd08c15615f309abd2f3055bf4f92782cdd14e2b",
           "contract_version": "1.4.0",
           "description": "创建 Google Responsive Search Ad；默认仅生成 dry-run 计划。",
@@ -9846,6 +9903,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "18a1c72751591515c6b2bb836475151d8e4ba1369043e5c6d5fb0b270b26a822",
           "contract_version": "1.4.0",
           "description": "创建 Google Smart Campaign Ad；默认仅生成 dry-run 计划。",
@@ -9998,6 +10056,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ee6adebf970f8942f47d451517d349e43592d022e1444afe060a6baabbf7d039",
           "contract_version": "1.4.0",
           "description": "创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
@@ -10280,6 +10339,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "81e7bd26b5dd1a8cd9c27e72a3ca7c3b839c8ae9f58ea2087f5544b827636666",
           "contract_version": "1.4.0",
           "description": "创建 Google Travel Ad；默认仅生成 dry-run 计划。",
@@ -10379,6 +10439,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "550783cb24a0f65f013b0be7a7772a9e7ec5ab76702177256ec90cb3e04cd37b",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Customer Match User List；默认仅生成 dry-run 计划。",
@@ -10520,6 +10581,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "6830060ef78794b1107834363f12ac296e1784f6dda7f65a6088c18fa54734ab",
           "contract_version": "1.4.0",
           "description": "创建 Google Video Ad（可跳过、不可跳过、Bumper 或 Outstream）；默认仅生成 dry-run 计划。",
@@ -10684,6 +10746,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "59c781538af205ffe0102d1b9b50eeae22d0b6fbfac30549f0d90dd51d7c5dcc",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Ad；默认仅生成 dry-run 计划。",
@@ -10790,6 +10853,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "6c5e4a466f63f697284372d69e108ac30be13afbd10f8e83c84c3744fbaf2d23",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Ad Group；默认仅生成 dry-run 计划。",
@@ -10871,6 +10935,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "86e2e8e3dbc3b7654ead4953435b158f4013e617eb08e98c964e513cfdd630b0",
           "contract_version": "1.4.0",
           "description": "移除 Google Ads 客户级可复用 Asset；Asset 仍被引用时由 Google Ads 拒绝；默认仅生成 dry-run 计划。",
@@ -10955,6 +11020,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "712e88b6fdb32f0686e75469631151c08d05ff28678a4626a5b9d81ddb1199f1",
           "contract_version": "1.4.0",
           "description": "移除 PMax Asset Group 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
@@ -11090,6 +11156,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5a71f2247350da8b043266db37b0b7ead8efd5c7f9336808ce15cbc2e26da1b1",
           "contract_version": "1.4.0",
           "description": "删除 Google PMax Listing Group Filter 节点；需先删除其子节点，默认仅生成 dry-run 计划。",
@@ -11203,6 +11270,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "76b8b4edf85267363526fcad67bfd73bdf948b8a704f88fe4ed260cf5e8b0670",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
@@ -11281,6 +11349,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8e9fbf452bc3916e6d8ae5759afa94295286b0918bfcad3e8b77e2c8d584ac4f",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Campaign；默认仅生成 dry-run 计划。",
@@ -11358,6 +11427,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "055e1f9c0c1f1e68e9bfae3007531c28275df04dc14a8b8e994018fb44e9fd63",
           "contract_version": "1.4.0",
           "description": "移除 Campaign 与 Google Asset 的关联；默认仅生成 dry-run 计划。",
@@ -11492,6 +11562,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "872e155e2435d9450f45deb47db0b4f8b767d0db22274bf8ce7112eaacc7ab3d",
           "contract_version": "1.4.0",
           "description": "删除未被引用的 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
@@ -11596,6 +11667,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "92ffda7317ec66f592f095e1ef9a59349bc9889c191a9c6a27ee73c525654049",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads CampaignCriterion；默认仅生成 dry-run 计划。",
@@ -11700,6 +11772,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "177526e6bd88f0aadf2cb4714b50bc177d49a83651e44a79a03447684fa32bb9",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
@@ -11777,6 +11850,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a902c48ee98821a9f578bb61497d413d31b935855b713c99eecba26f7c935122",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads Experiment；默认仅生成 dry-run 计划。",
@@ -11850,6 +11924,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2744816ec26d51669cdf3fe7db0c79e3b7bfa38beef4794c4706cfe072e321d4",
           "contract_version": "1.4.0",
           "description": "删除 Google Ad Group 关键词；默认仅生成 dry-run 计划。",
@@ -11953,6 +12028,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fc4ab30f9f27e9a9d6d1f0c9450e57e36548bb22dd432a305ccb81bfa84af301",
           "contract_version": "1.4.0",
           "description": "删除 Google Shopping Product Group/Listing Group；默认仅生成 dry-run 计划。",
@@ -12071,6 +12147,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ded2ef159ddbf23dfc7e134569065e629abd4b4b4cb2156448bb2746ae6daaf9",
           "contract_version": "1.4.0",
           "description": "删除 Google Ads User List；默认仅生成 dry-run 计划。",
@@ -12149,6 +12226,7 @@
         {
           "action": "end",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a902c48ee98821a9f578bb61497d413d31b935855b713c99eecba26f7c935122",
           "contract_version": "1.4.0",
           "description": "结束 Google Ads Experiment；默认仅生成 dry-run 计划。",
@@ -12223,6 +12301,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f5c53e0edcaddace22b57c9d37413edd8c85ce591dc4fc84e2cac1170e1b501d",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Ad 详情。",
@@ -12325,6 +12404,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "089e4a896e47f6b425bc7d150a46df3f0e95069fa5c3f597387aec5f3908a0d6",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Ad Group 详情。",
@@ -12419,6 +12499,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e39989b83b91dae607745db3ee903bd97cd09f06c554e8c5a6213b4c6c19c975",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Ad Group 级报表。",
@@ -12503,6 +12584,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "86e2e8e3dbc3b7654ead4953435b158f4013e617eb08e98c964e513cfdd630b0",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 客户级 Asset 详情。",
@@ -12587,6 +12669,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8c8ce5405ffe9d66fb26aa342e243ef0f9917445b80a3a8f7cc7ac2a4d927f56",
           "contract_version": "1.4.0",
           "description": "查询 PMax Asset Group 详情。",
@@ -12681,6 +12764,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5a71f2247350da8b043266db37b0b7ead8efd5c7f9336808ce15cbc2e26da1b1",
           "contract_version": "1.4.0",
           "description": "查询 Google PMax 单个 Listing Group Filter 节点。",
@@ -12794,6 +12878,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "683e0334e1d36e31de9ebafff5255031ad91c0f0d4527fd47ae0a2792d97ee7a",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 出价策略详情。",
@@ -12869,6 +12954,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d389db6521b6b83e899e64d9397dc65ee8df40c6348b6704855e69df8ced0cf8",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
@@ -12947,6 +13033,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "872e155e2435d9450f45deb47db0b4f8b767d0db22274bf8ce7112eaacc7ab3d",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads CampaignBudget 详情。",
@@ -13051,6 +13138,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "92ffda7317ec66f592f095e1ef9a59349bc9889c191a9c6a27ee73c525654049",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 单个 CampaignCriterion 详情。",
@@ -13155,6 +13243,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a32e4d50412f49a6748b6f1dbe97b829aed2d62fe4b221d69bf6621a26109689",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
@@ -13232,6 +13321,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "644416d1a26c403b2aaf35a3bede5cdb739445309f66668ea63298ee2ac6f9b2",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 转化动作详情。",
@@ -13307,6 +13397,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d20a93d699c8ede072a002a8fd089f55d50b85d714fe989148eab057a6d99c4c",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 单个 Experiment 详情。",
@@ -13522,6 +13613,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fc4ab30f9f27e9a9d6d1f0c9450e57e36548bb22dd432a305ccb81bfa84af301",
           "contract_version": "1.4.0",
           "description": "查询 Google Shopping 单个 Product Group/Listing Group 详情。",
@@ -13640,6 +13732,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "389ffef86aa9fe9e0cf5226d73d43e0b934c1b040888ec3d8d64f35c303fa2bd",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 第一方 User List 详情。",
@@ -13715,6 +13808,7 @@
         {
           "action": "graduate",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a902c48ee98821a9f578bb61497d413d31b935855b713c99eecba26f7c935122",
           "contract_version": "1.4.0",
           "description": "将 Google Ads Experiment 正式毕业；默认仅生成 dry-run 计划。",
@@ -13789,6 +13883,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f904bbecbe3bf53b14b3910413468c0caafe9c99bf66e53cd349fc71009b9d14",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Ad Group 列表。",
@@ -13863,6 +13958,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "31ac7b4f94035cc98ad914cb3c86159b2058f9b39571e479cd0f8b60069b1dad",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Ad 列表。",
@@ -13945,6 +14041,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "6a704ec0d6fc5b62f5df2cd3cbd816dafb9a4b2c6d3acaa28e557d422fa92a98",
           "contract_version": "1.4.0",
           "description": "查询 Google PMax Asset Group 已关联的 Asset 列表。",
@@ -14074,6 +14171,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5e696aec799a5d4cf94382d2a476bbaaecd7c9bafca291d09f0d78801b62b91e",
           "contract_version": "1.4.0",
           "description": "查询 Google PMax Asset Group 下的 Listing Group Filter 树。",
@@ -14186,6 +14284,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f904bbecbe3bf53b14b3910413468c0caafe9c99bf66e53cd349fc71009b9d14",
           "contract_version": "1.4.0",
           "description": "查询 PMax Campaign 的 Asset Group 列表。",
@@ -14260,6 +14359,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "aa6a46b3e3365943c421f807dd51995df254914bbf5f2673b3cc8d3a8128d381",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 客户级可复用 Asset 列表。",
@@ -14343,6 +14443,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3682a0756a82c1771e5d67404753c97ca284c581da4b5f67bfb06ee023cbbae2",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 出价策略列表。",
@@ -14405,6 +14506,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "c9ce498cb6142215d57f3d1a36756bcbcb16f5c6c99acc5f18090798e669b6ce",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign 已关联的 Asset 列表。",
@@ -14533,6 +14635,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ff9db0253836ac34a50fdc459d34f40d71368b242bdc8ec7e0a7c3bbbb8cd538",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads CampaignBudget 列表。",
@@ -14637,6 +14740,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f8290abb707b1eed408ebfc1ddf86938bed98cbcff5bc8666465de97f757a61f",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign Conversion Goal 列表。",
@@ -14747,6 +14851,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "1d1535d93fe47e147d66ea478a1b14201d0a9982f80587ba04147a0ae4c673d7",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads CampaignCriterion（地域、语言、设备、受众和人口属性定向）。",
@@ -14829,6 +14934,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8614629f28069a8867ff96afa497af6507d300a7dbce11098bda0c04fb6e2acc",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign 列表。",
@@ -14922,6 +15028,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3682a0756a82c1771e5d67404753c97ca284c581da4b5f67bfb06ee023cbbae2",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 转化动作列表。",
@@ -14984,6 +15091,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3682a0756a82c1771e5d67404753c97ca284c581da4b5f67bfb06ee023cbbae2",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 经理账户下可访问的客户账户。",
@@ -15046,6 +15154,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "48103a536317dd779cd6013d69d3961eb623aa7be433007267f36e4cbb51c4bf",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Customer Conversion Goal 列表。",
@@ -15155,6 +15264,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "792f8bf8581779706b273984ecffd3e6f399ec2cf1750a97ad677b877f5c5db0",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Experiment Arm。",
@@ -15221,6 +15331,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "792f8bf8581779706b273984ecffd3e6f399ec2cf1750a97ad677b877f5c5db0",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign Experiment。",
@@ -15287,6 +15398,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "75f02a9f724f7f18884c6894da041249029c03b44efb0e390fec9c2ffc6122b5",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 关键词，可按 Campaign 或 Ad Group 过滤。",
@@ -15385,6 +15497,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a358bb190b11efb71e4b6daadc34c8fa248e916bef4ef629566ef08b81e53923",
           "contract_version": "1.4.0",
           "description": "查询 Google Shopping Ad Group 下的 Product Group/Listing Group 列表。",
@@ -15502,6 +15615,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3682a0756a82c1771e5d67404753c97ca284c581da4b5f67bfb06ee023cbbae2",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 第一方 User List 列表。",
@@ -15564,6 +15678,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a52cf9486425087b91851f32a940c1d55ff91ff4cf6b0f55f4933eb449b9934d",
           "contract_version": "1.4.0",
           "description": "调用 Google Ads pause_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -15635,6 +15750,7 @@
         {
           "action": "promote",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a902c48ee98821a9f578bb61497d413d31b935855b713c99eecba26f7c935122",
           "contract_version": "1.4.0",
           "description": "推广 Google Ads Experiment 结果；默认仅生成 dry-run 计划。",
@@ -15709,6 +15825,7 @@
         {
           "action": "resume",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a52cf9486425087b91851f32a940c1d55ff91ff4cf6b0f55f4933eb449b9934d",
           "contract_version": "1.4.0",
           "description": "调用 Google Ads resume_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -15780,6 +15897,7 @@
         {
           "action": "schedule",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a902c48ee98821a9f578bb61497d413d31b935855b713c99eecba26f7c935122",
           "contract_version": "1.4.0",
           "description": "排期并启动 Google Ads Experiment；默认仅生成 dry-run 计划。",
@@ -15854,6 +15972,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a197852b9a9b6e3fa02b04fa56b724222302a8c7e66e5753e56a6118a295fc4c",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
@@ -16023,6 +16142,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "75c162efb16603e3dcd9ac165af0dd0ae80ad5ad90f28864014887e142c37ced",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads ad_group，默认仅生成 dry-run 计划。",
@@ -16175,6 +16295,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a2335280b0fea9aea08e0b6c7a6d61b64d20e902346de8e25fa1f90906cff68f",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads asset_group，默认仅生成 dry-run 计划。",
@@ -16332,6 +16453,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "abe57f777d7a5012709475908e64ea5dedf0ed4f894d81f61b50f9ad5d88aef1",
           "contract_version": "1.4.0",
           "description": "更新 Google PMax Listing Group Filter 的 case value；默认仅生成 dry-run 计划。",
@@ -16584,6 +16706,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "23cc4b396709aa1c1608ce198ae2f32f37b24b1fcd44b33dd53d2b29266ebd84",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Portfolio BiddingStrategy；默认仅生成 dry-run 计划。",
@@ -16728,6 +16851,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5ff8be20da6ba9b7b49e43516581df7429eeaa2154e214be078d4e2c4351769c",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads campaign，默认仅生成 dry-run 计划。",
@@ -16858,6 +16982,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cf41a863197c46b4192a365671ff07af285d8d0304098e2e499539583d02c137",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads CampaignBudget；默认仅生成 dry-run 计划。",
@@ -16997,6 +17122,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "89d596e050703ebebb0c0d2158788708b849b28a868ad5e33a6e86e09f53a309",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Campaign Conversion Goal；默认仅生成 dry-run 计划。",
@@ -17115,6 +17241,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f0924762e4c77bf470a9fe606c84ca8d0ddbc573f1b5358710738715504ab025",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads CampaignCriterion 的状态、排除标记或出价系数；默认仅生成 dry-run 计划。",
@@ -17245,6 +17372,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "46abb05e644197bf265e0f3cb648b96a203b2c9a247aa12347417e0aa4ef698e",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Conversion Action；默认仅生成 dry-run 计划。",
@@ -17419,6 +17547,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d5792e58a56435a5fad5f87fa041c3a02964bd5d32525f698a7a7e69371bf9f7",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Customer Conversion Goal；默认仅生成 dry-run 计划。",
@@ -17535,6 +17664,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3be15c26e33204da557bade509aebd27360ac17690526eb7d5e1b6bdb23f210d",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Experiment 可变字段；默认仅生成 dry-run 计划。",
@@ -17704,6 +17834,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "60fec762af0e0084ee278491bd51562f4083f752597a36454e879b920e1dffa8",
           "contract_version": "1.4.0",
           "description": "更新 Google Ad Group 关键词状态或 CPC 出价；默认仅生成 dry-run 计划。",
@@ -17830,6 +17961,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "45482d8e52cb240624f9925440921fc6b704f28a51f2a797c6cffff916231977",
           "contract_version": "1.4.0",
           "description": "更新 Google Shopping Product Group 状态或 CPC 出价；默认仅生成 dry-run 计划。",
@@ -17977,6 +18109,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e17b669026e87d06f18c2251119eb4af35b1774bfc43bbdbc38caba06be19ce0",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads User List 的可变字段；默认仅生成 dry-run 计划。",
@@ -18088,6 +18221,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2c02a1a2932ec8e6a267fd5d0954910f77d4f6065e5504e03a4361757ff919c0",
           "contract_version": "1.4.0",
           "description": "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；默认仅生成 dry-run 计划。",
@@ -18173,12 +18307,13 @@
       ]
     },
     "meta": {
-      "digest": "c529bd013fe5313ba0e7b0653d70a4fb898e31281bf5e0fb6996f48551eeefdd",
+      "digest": "d88c6b2acb60c2cbbdf5d704b935da9cc62e1cc53110efd0bc52f22d2014af11",
       "tool_count": 78,
       "tools": [
         {
           "action": "boost",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b1a07fd10d8cd923adc4d44fe685194bfee731474f2eebb6963d9e265b14da82",
           "contract_version": "1.4.0",
           "description": "将已有 Meta Page 帖子创建为推广广告。",
@@ -18319,6 +18454,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fc8e8e7607bfe836dd9a31520b6fec9e1de8d08f7df7cd40fa6419f5dce52b06",
           "contract_version": "1.4.0",
           "description": "创建 Meta Ad。",
@@ -18937,6 +19073,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0bf8bacd651606fa062501ee58cbcf3b9699f8c24b23616cc684314f38ac1b9d",
           "contract_version": "1.4.0",
           "description": "创建 Meta Ad Set。",
@@ -20416,6 +20553,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "db0c012cebb3408b572c7921e75f37a275012b3fd439dd4e33e3f18a8b6b38af",
           "contract_version": "1.4.0",
           "description": "创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
@@ -20613,6 +20751,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f73ffb2923b1c85b01b40af5764a36394f8fd6eb2a425699c38317cd147df602",
           "contract_version": "1.4.0",
           "description": "创建 Meta Campaign。",
@@ -20957,6 +21096,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f2af06ad9c564e8417ae329acf8982d9eb8ffe019e4964e10b14b5e43fbe09a0",
           "contract_version": "1.4.0",
           "description": "创建 Meta 商品目录；默认仅生成 dry-run 计划。",
@@ -21089,6 +21229,7 @@
               "field": "product_set_id"
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b9ffced78946d20600b049754eaa814f0b4ce5b4500d95ef29416baff57b21a9",
           "contract_version": "1.4.0",
           "description": "创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
@@ -21302,6 +21443,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "54576730ab2ddc80f4f1d636ebc80e46cfa17d239a8a2c0f6a2de68edead33ad",
           "contract_version": "1.4.0",
           "description": "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。",
@@ -21531,6 +21673,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "362d525e2772e9c9986d6e1584f17712865d9e56d4cf84085a3c79293f645a9d",
           "contract_version": "1.4.0",
           "description": "创建 Meta Creative；受控 live 路径仅允许配合 PAUSED Ad 使用。",
@@ -21664,6 +21807,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e71a3b64ba85f122baf9d5cb5bd9ec94dbde9f38d842201bad9228268218a9d4",
           "contract_version": "1.4.0",
           "description": "为 Meta Pixel 创建 Custom Conversion；默认仅生成 dry-run 计划。",
@@ -21859,6 +22003,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0d3f26d1f424dcf06cb10cda94e2f0cb855b634d9ea90dfe478ee84fa6f59c00",
           "contract_version": "1.4.0",
           "description": "创建 Meta Post Engagement/Video Views 广告；默认仅生成 dry-run 计划。",
@@ -22087,6 +22232,7 @@
               "field": "form_id"
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "80c50f3c523371e213003c399d972bd6e5c52d9cb36f33500cc82e4280255294",
           "contract_version": "1.4.0",
           "description": "创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
@@ -22263,6 +22409,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8e5bd73ff42fe7cc930c89e717a84266648073e597ee02bb1dfc5554e7da25bd",
           "contract_version": "1.4.0",
           "description": "创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
@@ -22511,6 +22658,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9b686e56297de4eff860c444c55635eb0883a7522149585eb12cddbd0bc9c639",
           "contract_version": "1.4.0",
           "description": "基于 Meta Custom Audience 创建 Lookalike Audience；源 Audience 必须来自当前广告账户，默认仅生成 dry-run 计划。",
@@ -22653,6 +22801,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "bfa6b8f3e1263e1e6f17987cbcc9c4232ef10735d625ec53f0fa2bfcfb1b8fb4",
           "contract_version": "1.4.0",
           "description": "创建 Meta Click-to-Message 消息广告；默认仅生成 dry-run 计划。",
@@ -22849,6 +22998,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "70c1c4f6307dfa7c3bd99e84b772c2ffa6da1dadbd3ea8af97c021ffb33a5de3",
           "contract_version": "1.4.0",
           "description": "在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
@@ -22972,6 +23122,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "54576730ab2ddc80f4f1d636ebc80e46cfa17d239a8a2c0f6a2de68edead33ad",
           "contract_version": "1.4.0",
           "description": "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。",
@@ -23201,6 +23352,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cb78f343943946da413edf2b417afdbe14909d85a96d4da0833c12de43743daf",
           "contract_version": "1.4.0",
           "description": "删除 Meta ad；默认仅生成 dry-run 计划。",
@@ -23289,6 +23441,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "45a63167b50e69aebf90a3400383797e4939be5f1ef897f1f7e6d020a38194a3",
           "contract_version": "1.4.0",
           "description": "删除 Meta ad_set；默认仅生成 dry-run 计划。",
@@ -23377,6 +23530,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "970095094d888bb9caef52cc20fa715aa02a3aa3204d23d1a24482cdd31daac8",
           "contract_version": "1.4.0",
           "description": "删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
@@ -23457,6 +23611,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a7382059fe91fee88dff58a81a9f65efa35c07b14e256cc1f575bb48a7513849",
           "contract_version": "1.4.0",
           "description": "删除 Meta campaign；默认仅生成 dry-run 计划。",
@@ -23540,6 +23695,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "654e18c8dcef16aba53dc56b97b5b726668ee3adb8df34c91c303e04b63c50dc",
           "contract_version": "1.4.0",
           "description": "删除 Meta 商品目录；默认仅生成 dry-run 计划。",
@@ -23620,6 +23776,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "92d0151f2168141e32f5c73f814a06556046cc26bb70cf58854a048d1daf25aa",
           "contract_version": "1.4.0",
           "description": "删除 Meta Creative；默认仅生成 dry-run 计划。",
@@ -23700,6 +23857,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2abbfa29f325643707eb11b9b6db91e95de8ac5de5100a35cc878a6bfd6d5d3b",
           "contract_version": "1.4.0",
           "description": "删除 Meta Custom Conversion；默认仅生成 dry-run 计划。",
@@ -23783,6 +23941,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e71aa20d34055790d1812dd69a30aa8649ca5d246936ef4fbcd717392e38eb4b",
           "contract_version": "1.4.0",
           "description": "删除 Meta 商品集；默认仅生成 dry-run 计划。",
@@ -23891,6 +24050,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5f53d20538dc3e30e6f4dc9af0772b6ea775be37ebcd40876930a18142fea5d4",
           "contract_version": "1.4.0",
           "description": "获取 Meta 广告账户详情。",
@@ -23956,6 +24116,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ede8b6c8ab4acab02d36b62d4276d316813a2559c16c9c9058bb4a54af2efd54",
           "contract_version": "1.4.0",
           "description": "获取 Meta Ad 详情。",
@@ -24062,6 +24223,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f0484aa4063bd4ab10bda5199b42744dc753a5bdbe195724638ebac70e8d7080",
           "contract_version": "1.4.0",
           "description": "查询 Meta Ad 级报表。",
@@ -24138,6 +24300,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8ad0b7041eca1042e0cd3d43ae2226d7b52b19f32653aef679b68a2d6c9572df",
           "contract_version": "1.4.0",
           "description": "获取 Meta Ad Set 详情。",
@@ -24244,6 +24407,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "adbb42b67e89d310733a8943b3251b74669e06f70b68a97516bafeb359cc44e3",
           "contract_version": "1.4.0",
           "description": "查询 Meta Ad Set 级报表。",
@@ -24320,6 +24484,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "970095094d888bb9caef52cc20fa715aa02a3aa3204d23d1a24482cdd31daac8",
           "contract_version": "1.4.0",
           "description": "查询 Meta Custom 或 Lookalike Audience 详情。",
@@ -24400,6 +24565,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "99327a2ca5cfd0bb2a870cc718da61be23d0d1b6d3b87c6baa73acbcf83ddb48",
           "contract_version": "1.4.0",
           "description": "查询 Meta Business Manager 详情。",
@@ -24488,6 +24654,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "91f04c50def19ae6ebb3f5f7926ffc146aaf14be35985b437927ce3a1c9a4154",
           "contract_version": "1.4.0",
           "description": "获取 Meta Campaign 详情。",
@@ -24575,6 +24742,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "57604e398efb0842c0f54f7a85b1aaf063b91541a6a61b44e953cf031a80c262",
           "contract_version": "1.4.0",
           "description": "查询 Meta Campaign 报表。",
@@ -24673,6 +24841,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "61f125dcee5b77dafbf83d89a3f0b7c94c44ffee84cd43307faac8851f54a4e9",
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录详情。",
@@ -24760,6 +24929,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0c62eed4da2f1142f4ca4e3ec68225f8f9156380af30a2b83f3a507250c8c669",
           "contract_version": "1.4.0",
           "description": "查询 Meta Creative 详情。",
@@ -24847,6 +25017,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "dfbf9356082120c3b6b35aa8727acbc1c4795bf9bd9933bba52bf70521f61b58",
           "contract_version": "1.4.0",
           "description": "查询 Meta Custom Conversion 详情。",
@@ -24936,6 +25107,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b964d0b67ea830cdea1160dea0be855e7dd9a9c67fde8602b16003982013922b",
           "contract_version": "1.4.0",
           "description": "查询 Meta Instant Form 中单个 Lead 详情。",
@@ -25067,6 +25239,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a404c2b4a743f82d7c5d797a2c8f11daef614220936b23b1354185cf2480ba9c",
           "contract_version": "1.4.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
@@ -25172,6 +25345,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3f321c76c31beb223689368f7b85968f6c5fd32027d3e3941f1444416123bfad",
           "contract_version": "1.4.0",
           "description": "查询 Meta Pixel 详情。",
@@ -25255,6 +25429,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "094acf92294ff3f480d51a08fdca831bd76cebad4c89ba0359664b26340729d9",
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品集详情。",
@@ -25370,6 +25545,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "dc0c1a4888be55e03ddc141f45f6f0da875df321a4ea2e2b6e8e8a61cb91a90f",
           "contract_version": "1.4.0",
           "description": "列出 Meta 可访问的广告账户。",
@@ -25441,6 +25617,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f904bbecbe3bf53b14b3910413468c0caafe9c99bf66e53cd349fc71009b9d14",
           "contract_version": "1.4.0",
           "description": "列出 Meta Ad Set 列表。",
@@ -25517,6 +25694,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "dbc98069bfc2d40117ece25ec105c016977c174c245454218f63ac401d96846c",
           "contract_version": "1.4.0",
           "description": "列出 Meta Ad 列表。",
@@ -25601,6 +25779,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
           "contract_version": "1.4.0",
           "description": "查询 Meta Custom Audience 列表。",
@@ -25663,6 +25842,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fd48219e91a1af38fd726b443ef9db1e361ba6638efdd084087ca581aaf862ca",
           "contract_version": "1.4.0",
           "description": "查询当前 Meta 用户可访问的 Business Manager 列表。",
@@ -25749,6 +25929,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
           "contract_version": "1.4.0",
           "description": "列出 Meta Campaign 列表。",
@@ -25824,6 +26005,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录。",
@@ -25886,6 +26068,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "87652da425212a232ebb3efead5fd8961f78fa6c663e9970c7cd60041829ecd0",
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Creative。",
@@ -25952,6 +26135,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f4bb54d2491910eba95fe05174900c2938f00d44fb8e26cd115b5b97d4350543",
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Custom Conversion。",
@@ -26027,6 +26211,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7a215cc1ab46014f3bac8620a0071f20c8b9195dedde0d66499a16414890b316",
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户已上传的图片素材。",
@@ -26095,6 +26280,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9c6027b0866614cede10e679573e632fed2158c43082cc82b98ee50ea8d756e5",
           "contract_version": "1.4.0",
           "description": "查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
@@ -26171,6 +26357,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "1a35c0e4011298a576cc136efb2ddbb09a4dc28db1a7217c0130acfcd56d84eb",
           "contract_version": "1.4.0",
           "description": "查询 Meta Instant Form 收集到的 Lead 数据。",
@@ -26300,6 +26487,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
           "contract_version": "1.4.0",
           "description": "查询广告账户可推广的 Facebook Page。",
@@ -26362,6 +26550,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户下的 Pixel。",
@@ -26424,6 +26613,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "db1b54e9cfbffaba14c76ba1d8b06a91da7d90188672789b399b2f0294e3767c",
           "contract_version": "1.4.0",
           "description": "查询 Meta 商品目录下的商品集。",
@@ -26505,6 +26695,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "677ce9c4fbdcc204da038df693c5baa216beca12712017e886db973cd84f8123",
           "contract_version": "1.4.0",
           "description": "查询 Meta 广告账户已上传的视频素材。",
@@ -26573,6 +26764,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8e3038cf6855d93780eb926d396df0111bb0a001879049a032510bf2013cd081",
           "contract_version": "1.4.0",
           "description": "按 Ad Set ID 精确查询 Meta Ad Set，供创建广告时选择指定父级。",
@@ -26667,6 +26859,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0c62eed4da2f1142f4ca4e3ec68225f8f9156380af30a2b83f3a507250c8c669",
           "contract_version": "1.4.0",
           "description": "按 Creative ID 精确查询 Meta Creative，供创建广告时选择刚创建或不在首屏列表中的素材。",
@@ -26755,6 +26948,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d57e52fd0a42e397177510c3d5a61a4c4b3d36251a6b2be25c7c3319ee9daa0c",
           "contract_version": "1.4.0",
           "description": "调用 Meta pause_ad 管理接口；默认仅生成 dry-run 计划。",
@@ -26836,6 +27030,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "aa58d8b67d08ac54d250c255c4cc7d4b0e01ecaa0ddc13119ddd048b11877482",
           "contract_version": "1.4.0",
           "description": "调用 Meta pause_adset 管理接口；默认仅生成 dry-run 计划。",
@@ -26917,6 +27112,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a52cf9486425087b91851f32a940c1d55ff91ff4cf6b0f55f4933eb449b9934d",
           "contract_version": "1.4.0",
           "description": "调用 Meta pause_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -26990,6 +27186,7 @@
         {
           "action": "resume",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a52cf9486425087b91851f32a940c1d55ff91ff4cf6b0f55f4933eb449b9934d",
           "contract_version": "1.4.0",
           "description": "调用 Meta resume_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -27063,6 +27260,7 @@
         {
           "action": "search",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cb67b1b105be12f1dbd67d00500619908d1d593fb72e217902146ed032f2999a",
           "contract_version": "1.4.0",
           "description": "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；只读，返回的 ID 可用于后续 Ad Set 定向选择。",
@@ -27155,6 +27353,7 @@
         {
           "action": "send",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5edecab5427395299395de6a73818ee8711585d1d0455ca447a89a3f23fa72ab",
           "contract_version": "1.4.0",
           "description": "向 Meta Pixel 发送 Conversions API 事件；默认仅生成 dry-run 计划。",
@@ -27353,6 +27552,7 @@
         {
           "action": "test",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0c2d64390476b8de263e76141b2be310758c84be4e2d967ffa0a8a19c8fd8e0a",
           "contract_version": "1.4.0",
           "description": "向 Meta Test Events 发送一批 Conversions API 测试事件；默认仅生成 dry-run 计划。",
@@ -27556,6 +27756,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3866d8057ad45863f836d18e2e093fcb7380703fb60602a93aed74b11c04730e",
           "contract_version": "1.4.0",
           "description": "更新 Meta ad；受控 live 路径仅允许操作已暂停测试资源。",
@@ -27728,6 +27929,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "525c7eca3045b5137b1ccb3b903a0c7f12effb7761071c9a930b2d1afc4832d5",
           "contract_version": "1.4.0",
           "description": "更新 Meta ad_set；受控 live 路径仅允许操作已暂停测试资源。",
@@ -27914,6 +28116,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "dcd83df2e3d82dae7c81a53ea800efbf5928e344b62789512543574395674ffb",
           "contract_version": "1.4.0",
           "description": "更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
@@ -28024,6 +28227,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7fccd957da7537197f2d0ef48e81a5f75e1f9be657a27ae5eed0bccace40424e",
           "contract_version": "1.4.0",
           "description": "更新 Meta campaign；受控 live 路径仅允许操作已暂停测试资源。",
@@ -28154,6 +28358,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a42ff2c42ba270325b6f9a77003b91ff756d7e9b0bd0c468878f8c069e1d026c",
           "contract_version": "1.4.0",
           "description": "更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
@@ -28248,6 +28453,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "68e45484928377c8a72cd294f8fb5b62e08ca2cdd5249e7cb80b1d4635097306",
           "contract_version": "1.4.0",
           "description": "更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
@@ -28342,6 +28548,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cdc988d113329ac764a75ad64372f9314b52961438103e80c9aa44816f6773c1",
           "contract_version": "1.4.0",
           "description": "更新 Meta Custom Conversion 的可变字段；默认仅生成 dry-run 计划。",
@@ -28450,6 +28657,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "c58b9aae767b15bb0267a26418ab7c45b9de81a1280f6269b4fcc99fbffc55e7",
           "contract_version": "1.4.0",
           "description": "更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
@@ -28693,6 +28901,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0803d4fb4a91649e64ce21bc23b4c8236345bcce5d9edad284a9b6552d43e137",
           "contract_version": "1.4.0",
           "description": "更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
@@ -28826,6 +29035,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "1dff7d9de094a0977bda2d5cc9059cb750574a3b97e591ce705ff6ec28917e90",
           "contract_version": "1.4.0",
           "description": "向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
@@ -29110,6 +29320,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e610b928fa229d6a3d2044cd5aa4f3d49e6ba3c93546487ac4926465222ee909",
           "contract_version": "1.4.0",
           "description": "上传可由 Meta 获取的 HTTPS 图片素材；默认仅生成 dry-run 计划。",
@@ -29192,6 +29403,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "72d8ffbe8da9262058883c23b6b6231eb3ed7100fc4450c1611e09bce7662d69",
           "contract_version": "1.4.0",
           "description": "上传可由 Meta 获取的 HTTPS 视频素材；默认仅生成 dry-run 计划。",
@@ -29279,7 +29491,7 @@
       ]
     },
     "tiktok": {
-      "digest": "3f197b710891720e3aba13b722dd8fa6bbbebd0836427478628f2f10b1eebaea",
+      "digest": "5b859eb406095b5487c5f11cf3665f5d57a975269143a5dc47404932109d76ec",
       "tool_count": 90,
       "tools": [
         {
@@ -29351,6 +29563,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d24d74a02bbc05ebeb68b542ef8a260cf586a710d7976d24c0b03b2ae96500fa",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Ad。",
@@ -30029,6 +30242,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "755535b0a93f100d21ff1c04c81df1044e06d3618a756f92cde0d2d21f45e6f9",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Ad Group。",
@@ -31404,6 +31618,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "bdac21057c3f6143d87456c6d5d27903b8d28f6729aa1acee699d0e90fcae825",
           "contract_version": "1.3.0",
           "description": "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；覆盖 Reach、Video views、Community interaction。live 仅允许暂停状态。",
@@ -31881,6 +32096,7 @@
               "field": "app_id"
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "5a5631545cadc4ad124c332c3d5f87e89b08bca77fddd430be8dbd028fa2ac69",
           "contract_version": "1.3.0",
           "description": "创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
@@ -32248,6 +32464,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b702141e59a993a45785a8fe0961b86e11f97a07ace9bf4fb1c08f41f7e8ea52",
           "contract_version": "1.3.0",
           "description": "通过已上传的加密文件创建 TikTok Custom Audience；默认仅生成 dry-run 计划。",
@@ -32390,6 +32607,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f3568a069b0ef6600599545648f139a4d8df6325a4c62176a6117ec86352d12f",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Campaign。",
@@ -32737,6 +32955,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "52de1754f76afb30cb03fac2722709a272992ac6381e00ee54a1579034acdc16",
           "contract_version": "1.3.0",
           "description": "创建 TikTok CAROUSEL 广告；默认仅生成 dry-run 计划。",
@@ -33372,6 +33591,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "915446a901faf8768444e18fb536ddc3e1e6c5d0e0dceedd32b72246843a63ed",
           "contract_version": "2",
           "description": "创建 TikTok 广告创意；TikTok v1.3 会将创意作为 Ad 的 creatives 载荷创建，需要提供所属 Campaign、Ad Group 和素材/文案，默认仅生成 dry-run 计划。",
@@ -34016,6 +34236,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "75198d14cd42914013f9d5cb47e7a958c3880a52222acb115ffed9d9539151e6",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
@@ -34107,6 +34328,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "311c4efe6187bad7363517e46767ecdc020449af27abc62ffe31a9366d2ebe5a",
           "contract_version": "1.3.0",
           "description": "创建 TikTok 自定义广告身份；默认仅生成 dry-run 计划。",
@@ -34213,6 +34435,7 @@
               "field": "page_id"
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "52f59cf410ba02bbd7c56e2a6c948bee11e1351c2416c265c5c4803bc73afa98",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
@@ -34549,6 +34772,7 @@
         {
           "action": "create",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0e3c1d034d54dc50f58dd61cb4aeb4764af83ddcd2c5f1526c9f207c974db666",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Website 或 App Pixel；默认仅生成 dry-run 计划。",
@@ -34664,6 +34888,7 @@
               "field": "store_id"
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "57932e2ce7ab60bc5f99f2155e260f68e24f5dcf620cb58ad10d500a7547a742",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Product Sales 商品销售广告，支持 Catalog、Shop 商品引用和素材创意；默认仅生成 dry-run 计划。",
@@ -35391,6 +35616,7 @@
               "field": "store_id"
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "aa5f766bb826ab3ac5edc4bcfc87d4fe61765473383d3bbc957b4a101f1e4c88",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Product Sales 商品销售广告组，支持 Website、Catalog 和 Shop 商品来源；默认仅生成 dry-run 计划。",
@@ -36803,6 +37029,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "009fa51058a954e5e5227caf05f13923c26f954e71681e64b58a7fcd3ce3f6d7",
           "contract_version": "1.3.0",
           "description": "创建 TikTok SINGLE_IMAGE 广告；默认仅生成 dry-run 计划。",
@@ -37466,6 +37693,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2e311c63354752a851526aaae8984e4a7788d94a7e06036b56d767fe91ccf99b",
           "contract_version": "1.3.0",
           "description": "创建 TikTok SINGLE_VIDEO 广告；默认仅生成 dry-run 计划。",
@@ -38103,6 +38331,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7967bd0eaa4adec5162f4cf71331d1f43a42f3049f44175f6b64615417e64398",
           "contract_version": "1.3.0",
           "description": "删除 TikTok Ads Ad；默认仅生成 dry-run 计划。",
@@ -38189,6 +38418,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2b27064fbb607bdffdb92b9661bec9457c006709e16f13f58d2a70f30ad0b0fb",
           "contract_version": "1.3.0",
           "description": "删除 TikTok Custom Audience；默认仅生成 dry-run 计划。",
@@ -38265,6 +38495,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "4c60d520bb99e8f1b68b248f8fc067f85c993c27c44dc9e529d28e7fac71a057",
           "contract_version": "1.3.0",
           "description": "调用 TikTok delete_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -38343,6 +38574,7 @@
         {
           "action": "delete",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "4c4a9f0fe2100db843216efbe69f3920d7fb0a6abb7d22fa98a04b6c0f4191f8",
           "contract_version": "2",
           "description": "删除 TikTok 广告创意；TikTok 将其作为 Ad 删除，Creative ID 应填写对应的 Ad ID，默认仅生成 dry-run 计划。",
@@ -38411,6 +38643,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3c0ec0101601f9fb5465f24aacd29aafc1fd8b2ee62ca2e21b83f764e6da9f06",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告主账户详情。",
@@ -38471,6 +38704,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "980eada727e0378f963ac2385cbdaeb0e55b9fb7a3cce0f2b2085ab9f0e0616a",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Ad 详情。",
@@ -38574,6 +38808,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "9d987e6394cbba169d3c7c1eb504db5078128a72a200e093ffa8da11c512bdf2",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Ad Group 详情。",
@@ -38669,6 +38904,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a40adb1a1f283f507e600b8a4c286840762037e6893eeed9a3fadeacde42d96c",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ad Group 级报表。",
@@ -38753,6 +38989,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "caf130b85cb2690a2cbb19439594097fc7eaf2dfedb7e82f23ca4983a6334592",
           "contract_version": "1.3.0",
           "description": "获取 TikTok Audience 详情。",
@@ -38827,6 +39064,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d389db6521b6b83e899e64d9397dc65ee8df40c6348b6704855e69df8ced0cf8",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
@@ -38903,6 +39141,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fc724e26ee876bf9ebd7e7d18be42112426644d5fe887f36a975202e7c641011",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Campaign 报表。",
@@ -38979,6 +39218,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "cf7a5aff20fd52fc3bc2b4a28725d5baa3240a75709d1a92849268f8ca9576a8",
           "contract_version": "1.3.0",
           "description": "查询 TikTok catalog 详情。",
@@ -39054,6 +39294,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "84ccfa4eb250ae950f5ba3199b913ea29202dbaecbbade95b475429ba62fafb1",
           "contract_version": "1.3.0",
           "description": "获取 TikTok 转化事件详情。",
@@ -39129,6 +39370,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ed362feebc0364934deaefeb691c5bb8f3ffdfd59f90590c5afd86fc502d8dba",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Creative 详情。",
@@ -39219,6 +39461,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0fce87306cd79608c9816aef7914574036672834b0c967fe014c7b84192bf5d1",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Creative Portfolio 详情。",
@@ -39289,6 +39532,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "eae6029aa94b833764b75d3dc40c8af61b5012cf9166a119d581c3394400997b",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告身份详情。",
@@ -39371,6 +39615,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e7dfb0cfde74c259e24c80e97b2639b577452dad1fd335d343f522d4996efecf",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 身份关联的自有帖子信息，用于 Spark Ads 预校验。",
@@ -39471,6 +39716,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f5953d27085dd3b6ee8503fbc1566a92f5e5803b0d8346d5a7ffedb4c293ee0e",
           "contract_version": "1.3.0",
           "description": "查询 TikTok image 详情。",
@@ -39535,6 +39781,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "25f92d9b435a90a97ce5ea932658b541e319680116ec85b57b0f64bb69bf432f",
           "contract_version": "1.3.0",
           "description": "获取 TikTok 兴趣类别详情。",
@@ -39594,6 +39841,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "07d6e9c87a1e0c1e6d64f6697340143945ac3aed23af82aab5ee5d97da76354d",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Pixel 详情。",
@@ -39674,6 +39922,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "430124990e9e0ef1931ce0015aaec87cedec068a1ff10a2f31b6f5d1e9000906",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Product Set 详情。",
@@ -39774,6 +40023,7 @@
         {
           "action": "report",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "dc2025d2e01ca65276ef07a754a872b7ad42000a1a544eb9466c83dcd97691e9",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告报表。",
@@ -39845,6 +40095,7 @@
         {
           "action": "get",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7d4a855d1eb41c4edf6a481bfe1e2e6452dcc1cb831171bae7fd63c9368b465f",
           "contract_version": "1.3.0",
           "description": "查询 TikTok video 详情。",
@@ -39921,6 +40172,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "add1fe8203a52d9ee94555643b0ee2e8cf1afd18d8de4b7cd115ade0131fa061",
           "contract_version": "1.3.0",
           "description": "列出 TikTok 广告主账户。",
@@ -39983,6 +40235,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "deb3aa857b5177e0e69ab83f7692ef15c82aebf3524c9fcbd2a437f42e59fd4a",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Action 类别和特殊行业类别。",
@@ -40056,6 +40309,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "f904bbecbe3bf53b14b3910413468c0caafe9c99bf66e53cd349fc71009b9d14",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Ad Group 列表。",
@@ -40129,6 +40383,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "03754c3f793266d13774aace4508dee38cae48a17e04d3a0933af54bf9b7bcb2",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Ad 列表。",
@@ -40212,6 +40467,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "81e01e1385c666d09bc43bc664f265bdb42b388dd9754f465ba1f247e787ddd3",
           "contract_version": "1.3.0",
           "description": "查询 TikTok apps 参考数据。",
@@ -40282,6 +40538,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Audience 列表。",
@@ -40342,6 +40599,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d1528719787084969ef95007ed9de19b583edc2b39b7b787099930b52dc3ac14",
           "contract_version": "1.3.0",
           "description": "查询 TikTok brand_safety 参考数据。",
@@ -40405,6 +40663,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
           "contract_version": "1.3.0",
           "description": "查询 TikTok browser 定向选项。",
@@ -40458,6 +40717,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Campaign 列表。",
@@ -40532,6 +40792,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
           "contract_version": "1.3.0",
           "description": "查询 TikTok carrier 定向选项。",
@@ -40585,6 +40846,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "0fcfecb1626ac7222c8cdc1642c0758ba3b38d72e43d82770e261073c8a06b36",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 商品目录；Catalog/Product Set 的创建、更新和删除当前没有经过验证的 Ads API Tool。",
@@ -40655,6 +40917,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "427c124c0d0dca996f74f87e824a733e7b6a64b01448b716b3cde9bf7583d077",
           "contract_version": "1.3.0",
           "description": "查询 TikTok conversions 参考数据。",
@@ -40723,6 +40986,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a1f7077b2569dc0bffafcf6bc6686b151a6640d5e23ddaa25b8f6627eff8e0e9",
           "contract_version": "1.3.0",
           "description": "查询 TikTok creatives 素材库。",
@@ -40789,6 +41053,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "81f5a0e02833f5f6ca1615b06c6486ecbc825e2c6e76de1d294be86d53cbd714",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 官方设备型号定向选项。",
@@ -40851,6 +41116,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d1528719787084969ef95007ed9de19b583edc2b39b7b787099930b52dc3ac14",
           "contract_version": "1.3.0",
           "description": "查询 TikTok devices 参考数据。",
@@ -40914,6 +41180,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "64091373285426b99ca1fcb27a62b572e9857a1c3f6f0f6b122809eacdda46fb",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告账户下的可用广告身份。",
@@ -41014,6 +41281,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a1f7077b2569dc0bffafcf6bc6686b151a6640d5e23ddaa25b8f6627eff8e0e9",
           "contract_version": "1.3.0",
           "description": "查询 TikTok images 素材库。",
@@ -41080,6 +41348,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "04760f1f229cc06e32d2b0f8cf669bb0b70f34e774871be7cc0b75a09bce8d71",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 兴趣类别。",
@@ -41192,6 +41461,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "81f5a0e02833f5f6ca1615b06c6486ecbc825e2c6e76de1d294be86d53cbd714",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 官方语言定向选项。",
@@ -41254,6 +41524,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d1528719787084969ef95007ed9de19b583edc2b39b7b787099930b52dc3ac14",
           "contract_version": "1.3.0",
           "description": "查询 TikTok locations 参考数据。",
@@ -41317,6 +41588,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
           "contract_version": "1.3.0",
           "description": "查询 TikTok operating_system 定向选项。",
@@ -41370,6 +41642,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "3f316515a734563f84cbb215c6a76b1f75b6a6ce6f8560231fb7ccfa63b01c39",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告主下的 Pixel。",
@@ -41448,6 +41721,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fcc0dd853784c7a866337127dd95931de29f26f949a8456b0b3eae1ae0baf4cc",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 商品集。",
@@ -41532,6 +41806,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "feefb3ffd7e4308d26587dfedbb59652d23cd9e367f765b9d60e55c6542d9cc6",
           "contract_version": "1.3.0",
           "description": "按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
@@ -41663,6 +41938,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a1f7077b2569dc0bffafcf6bc6686b151a6640d5e23ddaa25b8f6627eff8e0e9",
           "contract_version": "1.3.0",
           "description": "查询 TikTok videos 素材库。",
@@ -41729,6 +42005,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "a822acd785376530273baf937359672d759f58a6fb2dbcf4b2a282aef2646c18",
           "contract_version": "1.3.0",
           "description": "调用 TikTok pause_adgroup 管理接口；默认仅生成 dry-run 计划。",
@@ -41828,6 +42105,7 @@
         {
           "action": "pause",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "4c60d520bb99e8f1b68b248f8fc067f85c993c27c44dc9e529d28e7fac71a057",
           "contract_version": "1.3.0",
           "description": "调用 TikTok pause_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -41905,6 +42183,7 @@
         {
           "action": "preview",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7368bbe8a989969d07addf6cd6f8d88945cfe6fc0f541fe9795c1c33d8c48452",
           "contract_version": "1.3.0",
           "description": "生成 TikTok Creative Portfolio 预览链接。",
@@ -41983,6 +42262,7 @@
         {
           "action": "recommend",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "88acb3341ed43259549a02fd73986d6dc33d29f6634b2f4f93d50ce66f3cb792",
           "contract_version": "1.3.0",
           "description": "根据种子词查询 TikTok 兴趣定向推荐关键词。",
@@ -42091,6 +42371,7 @@
         {
           "action": "resume",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "4c60d520bb99e8f1b68b248f8fc067f85c993c27c44dc9e529d28e7fac71a057",
           "contract_version": "1.3.0",
           "description": "调用 TikTok resume_campaign 管理接口；默认仅生成 dry-run 计划。",
@@ -42168,6 +42449,7 @@
         {
           "action": "list",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "85b1874a605c94db0c8292e8197e52e4b88ffaf6635cee1c789f27c43c44aab7",
           "contract_version": "1.3.0",
           "description": "按关键词搜索 TikTok 投放地域。",
@@ -42230,6 +42512,7 @@
         {
           "action": "send",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "222e5649e53aa7e5777d567ec1a36910da38c7256c01cafbed3e105d766a3d27",
           "contract_version": "1.3.0",
           "description": "通过 TikTok Pixel Track 发送单个转化事件；默认仅生成 dry-run 计划。",
@@ -42432,6 +42715,7 @@
         {
           "action": "send",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "8e9672c1362c466d05452c878ebfe5423f739e6db235b178b722f87d2009340d",
           "contract_version": "1.3.0",
           "description": "通过 TikTok Pixel Batch 发送一批转化事件；默认仅生成 dry-run 计划。",
@@ -42669,6 +42953,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "98fb4c45b007aa65a49851f6346bd659a28a37e442c4c1ff80e1b234541d3099",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
@@ -43516,6 +43801,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ae2ad06d2753b44db8579d5ff9182f17819ce544c20ab1bcf55d0c69f4704a2e",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
@@ -44317,6 +44603,7 @@
               ]
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "e85e3033cfc9cfc4b23ab5e1cd615a56eb54a18c500d19362c3039bec2f3a63c",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、Sales 和 Product Sales，live 仅允许创建暂停状态。",
@@ -44633,6 +44920,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "78634ca77e0c81f65112ba39d224ea6c64543fe19b32d2a5e92494e144fdf2f5",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。",
@@ -44810,6 +45098,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "09b07a37de30dc5d8ef96bf7272f067ff602f6a4c8c51cfb8c167cac9e2600a8",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Upgraded Smart+ ad_group；仅允许在测试账号和确认后执行。",
@@ -45046,6 +45335,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "c94a5449a32d6090f1b4b586cbafc00d8b6298174e077067cdb079b00f431884",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Upgraded Smart+ campaign；仅允许在测试账号和确认后执行。",
@@ -45229,6 +45519,7 @@
               }
             }
           ],
+          "cancellation_mode": "cooperative",
           "contract_hash": "7c338a22b10f8c4ac4140b95fb5fe6a084d3427557fd5ea10272afc3d74e7121",
           "contract_version": "1.3.0",
           "description": "使用达人已有帖子创建 TikTok Spark Ad。",
@@ -45339,6 +45630,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "c281ecff4c3024372444c58e063605c889233f9803d2ae894466ddcd5a229ccb",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
@@ -45483,6 +45775,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b87b027d5fecc81322b47d605e32e2f59aa3df37f4beb655fb28186d5484f367",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Ads ad_group，默认仅生成 dry-run 计划。",
@@ -45792,6 +46085,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "65d138533c458630292ec7237d02bf16bca37d6b6abb0543bd4ebd5475b6a465",
           "contract_version": "1.3.0",
           "description": "独立更新 TikTok Ad Group 定向；动态 ID 必须来自对应 lookup Tool，默认仅生成 dry-run 计划。",
@@ -46099,6 +46393,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "16ca708fd6d2f477de24c6cad7783397462d297162ef4408b6c5008186f5ada1",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Custom Audience 名称或已上传文件；默认仅生成 dry-run 计划。",
@@ -46227,6 +46522,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "414629b0aa610cf5683f6dd80ecf7f0dc3ea8a95d35728bd0f44796a7d18f3d3",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Ads campaign，默认仅生成 dry-run 计划。",
@@ -46391,6 +46687,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fd868eb9d1f6aa2c80c796951a245c1b2c889e58f93248453ae0adb22ebe301f",
           "contract_version": "2",
           "description": "更新 TikTok 广告创意；实际通过所属 Ad 的 ad/update 接口修改创意字段，需要明确提供 Ad Group ID 和 Creative（对应 Ad）ID，默认仅生成 dry-run 计划。",
@@ -46529,6 +46826,7 @@
         {
           "action": "update",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "20ef84dc86d003436e8f216b0e7aa604b5bb6f7940acbe018c531b901e8d7721",
           "contract_version": "1.3.0",
           "description": "更新 TikTok Pixel 名称；默认仅生成 dry-run 计划。",
@@ -46623,6 +46921,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "acd99f0b6fb2faef8fac741d1814096777a804e3cde514bb828900aa48a7640f",
           "contract_version": "1.3.0",
           "description": "上传 TikTok Custom Audience 的加密 CSV/TXT 文件；默认仅生成 dry-run 计划。",
@@ -46716,6 +47015,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "fcfad3873c547567f9e75be622eb5c36a56c38158a9532c6b5cd0ee866ceb738",
           "contract_version": "1.3.0",
           "description": "上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",
@@ -46812,6 +47112,7 @@
         {
           "action": "upload",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "59a6a004cd2f942305d1f34da00351dd24c260962a810b5efaf61b4ea93f1b47",
           "contract_version": "1.3.0",
           "description": "上传或绑定 TikTok 广告视频素材；默认仅生成 dry-run 计划。",
@@ -46941,6 +47242,7 @@
         {
           "action": "validate",
           "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ec12ee55f7519da283a2ffebe4040d08bfdf5ccb54f88eb542e2515cd4e92e50",
           "contract_version": "1.3.0",
           "description": "校验 TikTok Catalog 与 Product Set 的归属关系；通过 product_set/get 完成可用的引用校验，不声称覆盖商品 Feed 健康度诊断。",

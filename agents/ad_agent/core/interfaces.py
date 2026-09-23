@@ -48,6 +48,13 @@ class ExecutionMode(Enum):
     LIVE = "live"
 
 
+TOOL_CANCELLATION_MODES = frozenset({
+    "cooperative",
+    "interruptible",
+    "not_interruptible",
+})
+
+
 # ─── Tool 定义 ──────────────────────────────────────────────────
 
 @dataclass
@@ -182,6 +189,10 @@ class ToolDefinition:
     result_id_fields: list[str] = field(default_factory=list)
     related_resource_type: Optional[str] = None
     related_resource_id_fields: list[str] = field(default_factory=list)
+    # External-system cancellation contract. ``cooperative`` means the
+    # executor receives a cancellation signal but may finish the in-flight
+    # request; ``interruptible`` means the adapter can safely abort it.
+    cancellation_mode: str = "cooperative"
     # Immutable fingerprint of the public input contract.  It is calculated
     # from ToolSchema rather than vendor/channel names, so Registry and
     # approval code can detect schema drift without a central router.
@@ -197,6 +208,14 @@ class ToolDefinition:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes <= 0:
             raise ValueError("max_output_bytes must be positive")
+        self.cancellation_mode = str(
+            self.cancellation_mode or "cooperative"
+        ).strip().lower()
+        if self.cancellation_mode not in TOOL_CANCELLATION_MODES:
+            raise ValueError(
+                "cancellation_mode must be one of: "
+                + ", ".join(sorted(TOOL_CANCELLATION_MODES))
+            )
         self.scope_type = str(self.scope_type or "").strip() or None
         self.scope_fields = list(dict.fromkeys(
             str(item).strip() for item in (self.scope_fields or [])
@@ -330,6 +349,7 @@ class ToolDefinition:
             "result_id_fields": list(self.result_id_fields),
             "related_resource_type": self.related_resource_type,
             "related_resource_id_fields": list(self.related_resource_id_fields),
+            "cancellation_mode": self.cancellation_mode,
             "contract_hash": self.contract_hash,
             "input_schema": self.input_schema.to_dict() if self.input_schema else None,
         }
