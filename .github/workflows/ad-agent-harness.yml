@@ -45,8 +45,8 @@ jobs:
         run: ./scripts/ad-agent-python -m compileall -q agents/ad_agent
       - name: Validate executable tool contracts
         run: ./scripts/ad-agent-python agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
-      - name: Audit provider capability coverage
-        run: ./scripts/ad-agent-python agents/ad_agent/scripts/audit_capabilities.py
+      - name: Audit provider Tool coverage
+        run: ./scripts/ad-agent-python agents/ad_agent/scripts/audit_provider_tools.py
       - name: Audit creation blueprints and lookup sources
         run: ./scripts/ad-agent-python agents/ad_agent/scripts/audit_creation_contracts.py --strict-guided
       - name: Run evidence-based local readiness gate

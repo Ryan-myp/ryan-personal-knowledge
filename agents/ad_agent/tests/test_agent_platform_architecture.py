@@ -3,6 +3,7 @@
 import ast
 import inspect
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
@@ -54,6 +55,12 @@ def test_platform_exposes_the_six_primary_layers_and_cross_cutting_concerns():
     assert architecture.layer_names() == tuple(layer.value for layer in PlatformLayer)
     assert "governance_operations" in architecture.cross_cutting
     assert "agent_market" in architecture.cross_cutting
+
+
+def test_platform_core_ports_have_resolvable_annotations():
+    from agents.agent_platform.core.ports import TaskPort
+
+    assert "payload" in get_type_hints(TaskPort.submit)
 
 
 def test_platform_is_single_agent_with_multiple_scenarios():
