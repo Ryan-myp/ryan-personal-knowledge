@@ -5,9 +5,16 @@ from __future__ import annotations
 import threading
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol
 
 from .runtime_kernel import RuntimeSessionBusyError, TurnRequest
+
+
+class SessionLockProvider(Protocol):
+    """Provide the one in-process lock used by the stateful Agent loop."""
+
+    def __call__(self, request: TurnRequest) -> Any:
+        ...
 
 
 @dataclass(frozen=True)
@@ -25,6 +32,7 @@ class RuntimePorts:
     assert_ready: Callable[[], None]
     ensure_session: Callable[[TurnRequest], Any]
     refresh_session: Optional[Callable[[TurnRequest], Any]] = None
+    session_lock_provider: Optional[SessionLockProvider] = None
     busy_error: type[Exception] = RuntimeSessionBusyError
 
     def __post_init__(self) -> None:
@@ -38,3 +46,8 @@ class RuntimePorts:
             raise TypeError("assert_ready must be callable")
         if not callable(self.ensure_session):
             raise TypeError("ensure_session must be callable")
+        if (
+            self.session_lock_provider is not None
+            and not callable(self.session_lock_provider)
+        ):
+            raise TypeError("session_lock_provider must be callable")

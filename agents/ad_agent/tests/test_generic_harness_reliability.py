@@ -4,8 +4,10 @@ import time
 from agents.agent_harness import (
     AgentApplication,
     AgentMessage,
+    AgentState,
     ModelTurn,
     ToolCall,
+    ToolCallContext,
     TurnRequest,
 )
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
@@ -128,6 +130,44 @@ def test_tool_policy_uses_durable_idempotency_across_runs(tmp_path):
     blocked = policy.before_tool_call(second)
     assert blocked is not None
     assert blocked["reason"].startswith("Duplicate")
+
+
+def test_live_write_fails_closed_without_durable_idempotency_store():
+    policy = ToolExecutionPolicy(
+        allow_live_writes=True,
+        live_approved_tools={"update_record"},
+        write_guard_configured=True,
+        require_confirmation_for_writes=True,
+    )
+    context = ToolCallContext(
+        request=TurnRequest(
+            user_input="update",
+            execution_mode="live",
+            context={
+                "confirmed": True,
+                "confirmation_payload": {"plan": "current"},
+            },
+        ),
+        assistant_message=AgentMessage.assistant(""),
+        tool_call=ToolCall("call-1", "update_record", {"request_id": "same"}),
+        state=AgentState(),
+        tool_definition={
+            "name": "update_record",
+            "effect_class": "write",
+            "live_support": True,
+            "idempotency_key_field": "request_id",
+            "input_schema": {
+                "type": "object",
+                "required": ["request_id"],
+                "properties": {"request_id": {"type": "string"}},
+            },
+        },
+    )
+
+    result = policy.before_tool_call(context)
+
+    assert result is not None
+    assert result["runtime_signals"]["idempotency_store_error"] is True
 
 
 def test_transcript_store_restores_across_application_instances():

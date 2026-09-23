@@ -84,6 +84,73 @@ def test_platform_is_single_agent_with_multiple_scenarios():
         platform.register_agent(AgentDefinition(agent_id="second-agent"))
 
 
+def test_multiple_scenarios_share_one_runtime_and_filter_sources_per_run():
+    source_a = StaticToolSource(
+        "tool:a",
+        [ToolBinding({"name": "tool_a"}, lambda _context, _value: "a")],
+    )
+    source_b = StaticToolSource(
+        "tool:b",
+        [ToolBinding({"name": "tool_b"}, lambda _context, _value: "b")],
+    )
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(
+        agent_id="default-agent",
+        tool_sources=(source_a, source_b),
+    ))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="a",
+        agent_id="default-agent",
+        tool_source_ids=("tool:a",),
+    ))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="b",
+        agent_id="default-agent",
+        tool_source_ids=("tool:b",),
+    ))
+
+    model = lambda _messages, tools, _request: ",".join(
+        str(item["name"]) for item in tools
+    )
+    first = platform.create_application("a", model=model)
+    second = platform.create_application("b", model=model)
+    try:
+        assert first.runtime is second.runtime
+        assert first.harness is second.harness
+        assert [item["name"] for item in first.list_tools()] == ["tool_a"]
+        assert [item["name"] for item in second.list_tools()] == ["tool_b"]
+        assert first.prompt("list").reply == "tool_a"
+        assert second.prompt("list").reply == "tool_b"
+    finally:
+        first.close()
+
+
+def test_scenario_view_keeps_dynamic_source_registration_visible():
+    platform = AgentPlatform()
+    platform.register_agent(AgentDefinition(agent_id="default-agent"))
+    platform.register_scenario(ScenarioDefinition(
+        scenario_id="dynamic",
+        agent_id="default-agent",
+    ))
+    application = platform.create_application(
+        "dynamic",
+        model=lambda _messages, tools, _request: ",".join(
+            str(item["name"]) for item in tools
+        ),
+    )
+    try:
+        application.register_tool_source(StaticToolSource(
+            "tool:dynamic",
+            [ToolBinding({"name": "dynamic_tool"}, lambda *_: "ok")],
+        ))
+        assert [item["name"] for item in application.list_tools()] == [
+            "dynamic_tool"
+        ]
+        assert application.prompt("list").reply == "dynamic_tool"
+    finally:
+        application.close()
+
+
 def test_platform_does_not_expose_a_second_runtime_factory():
     assert "factory" not in inspect.signature(AgentPlatform.register_agent).parameters
 
@@ -935,6 +1002,7 @@ def test_tool_policy_scopes_idempotency_to_run_and_releases_failed_reservations(
         live_approved_tools=frozenset({"update_record"}),
         write_guard_configured=True,
         require_confirmation_for_writes=True,
+        require_durable_idempotency=False,
     )
 
     def context(run_id, turn_id, call_id="call-1"):

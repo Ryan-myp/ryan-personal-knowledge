@@ -65,6 +65,16 @@ class SessionLeaseStore(Protocol):
     def release_session_lease(self, session_id: str, owner: str) -> bool: ...
 
 
+class CancellationToken(Protocol):
+    """Provider-neutral cooperative cancellation signal."""
+
+    def is_set(self) -> bool:
+        ...
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        ...
+
+
 @dataclass(frozen=True)
 class TurnRequest:
     """Opaque request envelope passed from an application boundary."""
@@ -75,8 +85,8 @@ class TurnRequest:
     tenant_id: str = "default"
     context: Mapping[str, Any] = field(default_factory=dict)
     principal: Any = None
-    cancellation_event: Optional[threading.Event] = None
-    lease_lost_event: Optional[threading.Event] = None
+    cancellation_event: Optional[CancellationToken] = None
+    lease_lost_event: Optional[CancellationToken] = None
     event_callback: Optional[Callable[[dict[str, Any]], None]] = None
     execution_mode: Optional[str] = None
     task_id: Optional[str] = None
@@ -208,6 +218,7 @@ class AgentRuntimeKernel:
         assert_ready: Callable[[], None],
         ensure_session: Callable[[TurnRequest], Any],
         refresh_session: Optional[Callable[[TurnRequest], Any]] = None,
+        session_lock_provider: Optional[Callable[[TurnRequest], Any]] = None,
         execute_unlocked: Callable[[TurnRequest], Any],
         busy_error: type[Exception] = RuntimeSessionBusyError,
     ) -> None:
@@ -222,6 +233,7 @@ class AgentRuntimeKernel:
         self.assert_ready = assert_ready
         self.ensure_session = ensure_session
         self.refresh_session = refresh_session
+        self.session_lock_provider = session_lock_provider
         self.execute_unlocked = execute_unlocked
         self.busy_error = busy_error
         self._session_lock_refs: dict[str, int] = {}
@@ -276,14 +288,20 @@ class AgentRuntimeKernel:
         try:
             request = replace(request, execution_mode=requested_mode)
             session_id = str(request.session_id or uuid.uuid4())
-            lock = self._get_session_lock(session_id)
+            normalized = request.with_effective_identity(
+                session_id=session_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+            lock = (
+                self.session_lock_provider(normalized)
+                if self.session_lock_provider is not None
+                else self._get_session_lock(session_id)
+            )
+            if lock is None:
+                raise TypeError("session_lock_provider returned no lock")
             try:
                 with lock:
-                    normalized = request.with_effective_identity(
-                        session_id=session_id,
-                        user_id=user_id,
-                        tenant_id=tenant_id,
-                    )
                     self.ensure_session(normalized)
                     with SessionLease(
                         self.session_manager,
@@ -340,13 +358,15 @@ class AgentRuntimeKernel:
                                     }
                         return result
             finally:
-                self._release_session_lock(session_id, lock)
+                if self.session_lock_provider is None:
+                    self._release_session_lock(session_id, lock)
         finally:
             self.mode_context.reset(token)
 
 
 __all__ = [
     "AgentRuntimeKernel",
+    "CancellationToken",
     "RuntimeSessionBusyError",
     "RuntimeSessionLeaseLostError",
     "SessionLeaseStore",

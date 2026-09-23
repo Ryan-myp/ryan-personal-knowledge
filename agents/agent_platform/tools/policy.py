@@ -69,6 +69,7 @@ class PolicyRequest:
     confirmed: bool = False
     scope_policy: Any = None
     require_confirmation: bool = True
+    idempotency_store_configured: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,7 @@ class ToolExecutionPolicy:
     write_guard_configured: bool = False
     require_confirmation_for_risk: bool = True
     require_confirmation_for_writes: bool = False
+    require_durable_idempotency: bool = True
     require_audit: bool = False
     before_check: Optional[
         Callable[[Any, Any, Mapping[str, Any]], Optional[tuple[str, str]]]
@@ -329,6 +331,11 @@ class ToolExecutionPolicy:
                 _value(definition, "effect_class", ""), "value",
                 _value(definition, "effect_class", ""),
             )),
+            "durable_idempotency": (
+                request.idempotency_store_configured
+                if request.idempotency_store_configured is not None
+                else self.idempotency_store is not None
+            ),
         }
         if errors:
             return PolicyDecision(
@@ -374,6 +381,16 @@ class ToolExecutionPolicy:
                 return PolicyDecision(
                     allowed=False,
                     requires_confirmation=True,
+                    metadata=metadata,
+                )
+            if (
+                request.confirmed
+                and self.require_durable_idempotency
+                and not bool(metadata["durable_idempotency"])
+            ):
+                return PolicyDecision(
+                    allowed=False,
+                    errors=("live writes require a durable idempotency store",),
                     metadata=metadata,
                 )
         return PolicyDecision(allowed=True, metadata=metadata)
@@ -472,6 +489,14 @@ class ToolExecutionPolicy:
 
         if _is_write(definition):
             if mode == "live" and _confirmed(request):
+                if (
+                    self.require_durable_idempotency
+                    and self.idempotency_store is None
+                ):
+                    return (
+                        "idempotency_store_error",
+                        "live writes require a durable idempotency store",
+                    )
                 try:
                     normalized = json.dumps(
                         arguments, ensure_ascii=False, sort_keys=True, default=str,

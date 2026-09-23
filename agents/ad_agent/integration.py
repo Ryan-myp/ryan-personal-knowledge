@@ -206,6 +206,12 @@ class AdvertisingToolCatalog:
     def list_all(self) -> list[Any]:
         return self.list_tools()
 
+    def source_snapshot(self) -> dict[str, list[str]]:
+        snapshot = getattr(self.owner.registry, "source_snapshot", None)
+        if not callable(snapshot):
+            return {}
+        return dict(snapshot())
+
     def get_binding(self, name: str) -> ToolBinding:
         definition, _handler = self.owner.registry.get(str(name))
         return ToolBinding(definition, AdvertisingToolExecutor(self.owner, definition))

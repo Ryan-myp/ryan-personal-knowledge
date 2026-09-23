@@ -12,6 +12,7 @@ from .architecture import PlatformArchitecture
 from .definitions import AgentDefinition, ScenarioDefinition
 from .governance.policy import GovernancePolicy
 from .integrations.ports import ToolSource
+from .data.ports import KnowledgeStore, MemoryStore, RunStore, SessionStore
 
 
 _SAFE_HEALTH_KEYS = frozenset({
@@ -41,9 +42,9 @@ def _safe_health_fields(value: Mapping[str, Any]) -> dict[str, Any]:
 class DataLayer:
     """Data dependencies injected into one platform application."""
 
-    knowledge_store: Any = None
-    memory_store: Any = None
-    session_store: Any = None
+    knowledge_store: Optional[KnowledgeStore] = None
+    memory_store: Optional[MemoryStore] = None
+    session_store: Optional[SessionStore] = None
     run_store: Optional[RunStore] = None
 
 
@@ -205,6 +206,116 @@ class PlatformDependencies:
         )
 
 
+class _ToolCatalogView:
+    """Scenario-scoped read view over the one shared Tool catalog."""
+
+    def __init__(self, catalog: Any, source_ids: tuple[str, ...]) -> None:
+        self._catalog = catalog
+        self._source_ids = tuple(source_ids)
+
+    def _allowed_names(self) -> set[str]:
+        snapshot_getter = getattr(self._catalog, "source_snapshot", None)
+        if not callable(snapshot_getter):
+            return set()
+        snapshot = snapshot_getter()
+        return {
+            name
+            for source_id in self._source_ids
+            for name in snapshot.get(source_id, ())
+        }
+
+    def list_tools(self) -> list[Any]:
+        allowed = self._allowed_names()
+        if not allowed and not callable(
+            getattr(self._catalog, "source_snapshot", None)
+        ):
+            return list(self._catalog.list_tools())
+        return [
+            item for item in self._catalog.list_tools()
+            if str(getattr(item, "name", None) or (
+                item.get("name") if isinstance(item, Mapping) else ""
+            )) in allowed
+        ]
+
+    def get_binding(self, name: str) -> Any:
+        if (
+            callable(getattr(self._catalog, "source_snapshot", None))
+            and str(name) not in self._allowed_names()
+        ):
+            raise KeyError(f"Tool '{name}' is not enabled for this scenario")
+        return self._catalog.get_binding(name)
+
+    def source_snapshot(self) -> dict[str, list[str]]:
+        snapshot_getter = getattr(self._catalog, "source_snapshot", None)
+        if not callable(snapshot_getter):
+            return {}
+        snapshot = snapshot_getter()
+        return {
+            source_id: list(snapshot.get(source_id, ()))
+            for source_id in self._source_ids
+            if source_id in snapshot
+        }
+
+    def healthcheck(self) -> dict[str, Any]:
+        result = dict(self._catalog.healthcheck())
+        result["tools"] = len(self.list_tools())
+        result["source_snapshot"] = self.source_snapshot()
+        result["sources"] = len(result["source_snapshot"])
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._catalog, name)
+
+
+class _SkillCatalogView:
+    """Scenario-scoped read view over the one shared Skill catalog."""
+
+    def __init__(self, catalog: Any, source_ids: tuple[str, ...]) -> None:
+        self._catalog = catalog
+        self._source_ids = tuple(source_ids)
+
+    def list_skills(self) -> list[Any]:
+        snapshot_getter = getattr(self._catalog, "source_snapshot", None)
+        if not callable(snapshot_getter):
+            return list(self._catalog.list_skills())
+        allowed = {
+            name
+            for source_id in self._source_ids
+            for name in self._catalog.source_snapshot().get(source_id, ())
+        }
+        return [
+            item for item in self._catalog.list_skills()
+            if str(getattr(item, "name", "")) in allowed
+        ]
+
+    def build_context(self, user_input: str) -> str:
+        return self._catalog.build_context(
+            user_input,
+            source_ids=self._source_ids,
+        )
+
+    def source_snapshot(self) -> dict[str, list[str]]:
+        snapshot_getter = getattr(self._catalog, "source_snapshot", None)
+        if not callable(snapshot_getter):
+            return {}
+        snapshot = snapshot_getter()
+        return {
+            source_id: list(snapshot.get(source_id, ()))
+            for source_id in self._source_ids
+            if source_id in snapshot
+        }
+
+    def healthcheck(self) -> dict[str, Any]:
+        result = dict(self._catalog.healthcheck())
+        result["skills"] = len(self.list_skills())
+        result["source_snapshot"] = self.source_snapshot()
+        result["sources"] = len(result["source_snapshot"])
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._catalog, name)
+
+
 @dataclass
 class PlatformApplication:
     """Concrete runtime assembled from all six platform layers."""
@@ -215,6 +326,8 @@ class PlatformApplication:
     architecture: PlatformArchitecture
     governance: GovernancePolicy
     dependencies: PlatformDependencies
+    skill_source_ids: tuple[str, ...] = ()
+    tool_source_ids: tuple[str, ...] = ()
     _started: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
     _started_integrations: tuple[Any, ...] = field(
@@ -225,6 +338,13 @@ class PlatformApplication:
     _lock: threading.RLock = field(
         default_factory=threading.RLock, init=False, repr=False,
     )
+    _owner: Optional["PlatformApplication"] = field(
+        default=None, init=False, repr=False,
+    )
+
+    @property
+    def _root(self) -> "PlatformApplication":
+        return self._owner or self
 
     @property
     def runtime(self) -> Any:
@@ -236,11 +356,13 @@ class PlatformApplication:
 
     @property
     def skills(self) -> Any:
-        return getattr(self.harness, "skills", None)
+        catalog = getattr(self.harness, "skills", None)
+        return _SkillCatalogView(catalog, self.skill_source_ids)
 
     @property
     def tools(self) -> Any:
-        return getattr(self.harness, "tools", None)
+        catalog = getattr(self.harness, "tools", None)
+        return _ToolCatalogView(catalog, self.tool_source_ids)
 
     @property
     def data(self) -> DataLayer:
@@ -262,15 +384,48 @@ class PlatformApplication:
 
     @property
     def started(self) -> bool:
-        with self._lock:
-            return self._started
+        root = self._root
+        with root._lock:
+            return root._started
 
     @property
     def closed(self) -> bool:
-        with self._lock:
-            return self._closed
+        root = self._root
+        with root._lock:
+            return root._closed
+
+    def for_scenario(
+        self,
+        scenario: ScenarioDefinition,
+        *,
+        skill_source_ids: tuple[str, ...],
+        tool_source_ids: tuple[str, ...],
+    ) -> "PlatformApplication":
+        """Return a scenario view without creating another Runtime."""
+        view = PlatformApplication(
+            definition=self.definition,
+            scenario=scenario,
+            harness=self.harness,
+            architecture=self.architecture,
+            governance=self.governance,
+            dependencies=self.dependencies,
+            skill_source_ids=skill_source_ids,
+            tool_source_ids=tool_source_ids,
+        )
+        view._owner = self._root
+        return view
+
+    def _request_for_scenario(self, request: TurnRequest) -> TurnRequest:
+        context = dict(request.context or {})
+        context["platform_scenario_id"] = self.scenario.scenario_id
+        context["skill_source_ids"] = list(self.skill_source_ids)
+        context["tool_source_ids"] = list(self.tool_source_ids)
+        return replace(request, context=context)
 
     def start(self) -> None:
+        if self._owner is not None:
+            self._root.start()
+            return
         with self._lock:
             if self._closed:
                 raise RuntimeError("Platform application is closed")
@@ -301,11 +456,17 @@ class PlatformApplication:
 
     def prompt(self, user_input: str, **kwargs: Any) -> Any:
         self.start()
-        return self.harness.prompt(user_input, **kwargs)
+        context = dict(kwargs.pop("context", {}) or {})
+        context.update({
+            "platform_scenario_id": self.scenario.scenario_id,
+            "skill_source_ids": list(self.skill_source_ids),
+            "tool_source_ids": list(self.tool_source_ids),
+        })
+        return self.harness.prompt(user_input, context=context, **kwargs)
 
     def run(self, request: TurnRequest) -> Any:
         self.start()
-        return self.runtime.run(request)
+        return self.runtime.run(self._request_for_scenario(request))
 
     def register_tool(
         self, definition: Any, executor: Any, *, source_id: str = "local",
@@ -313,13 +474,26 @@ class PlatformApplication:
         register = getattr(self.runtime, "register_tool", None)
         if not callable(register):
             raise TypeError("platform runtime does not support Tool registration")
-        return register(definition, executor, source_id=source_id)
+        name = (
+            definition.get("name")
+            if isinstance(definition, Mapping)
+            else getattr(definition, "name", "tool")
+        )
+        result = register(definition, executor, source_id=source_id)
+        source_key = f"{source_id}:{name}"
+        if source_key not in self.tool_source_ids:
+            self.tool_source_ids = (*self.tool_source_ids, source_key)
+        return result
 
     def register_tool_source(self, source: Any) -> Any:
         register = getattr(self.runtime, "register_tool_source", None)
         if not callable(register):
             raise TypeError("platform runtime does not support Tool Source registration")
-        return register(source)
+        result = register(source)
+        source_id = str(getattr(source, "source_id", "") or "").strip()
+        if source_id and source_id not in self.tool_source_ids:
+            self.tool_source_ids = (*self.tool_source_ids, source_id)
+        return result
 
     def register_skill_source(self, source: Any) -> Any:
         register = getattr(self.runtime, "register_skill_source", None)
@@ -327,13 +501,22 @@ class PlatformApplication:
             raise TypeError(
                 "platform runtime does not support Skill source registration"
             )
-        return register(source)
+        result = register(source)
+        source_id = str(getattr(source, "source_id", "") or "").strip()
+        if source_id and source_id not in self.skill_source_ids:
+            self.skill_source_ids = (*self.skill_source_ids, source_id)
+        return result
 
     def unregister_tool_source(self, source_id: str) -> Any:
         unregister = getattr(self.runtime, "unregister_tool_source", None)
         if not callable(unregister):
             raise TypeError("platform runtime does not support Tool Source removal")
-        return unregister(source_id)
+        result = unregister(source_id)
+        self.tool_source_ids = tuple(
+            item for item in self.tool_source_ids
+            if item != str(source_id)
+        )
+        return result
 
     def unregister_skill_source(self, source_id: str) -> Any:
         unregister = getattr(self.runtime, "unregister_skill_source", None)
@@ -341,19 +524,18 @@ class PlatformApplication:
             raise TypeError(
                 "platform runtime does not support Skill source removal"
             )
-        return unregister(source_id)
+        result = unregister(source_id)
+        self.skill_source_ids = tuple(
+            item for item in self.skill_source_ids
+            if item != str(source_id)
+        )
+        return result
 
     def list_tools(self) -> list[Any]:
-        list_tools = getattr(self.runtime, "list_tools", None)
-        if callable(list_tools):
-            return list(list_tools())
-        catalog = getattr(self.runtime, "tool_registry", None)
-        list_all = getattr(catalog, "list_all", None)
-        return list(list_all()) if callable(list_all) else []
+        return list(self.tools.list_tools())
 
     def list_skills(self) -> list[Any]:
-        list_skills = getattr(self.runtime, "list_skills", None)
-        return list(list_skills()) if callable(list_skills) else []
+        return list(self.skills.list_skills())
 
     @staticmethod
     def _close_component(component: Any) -> None:
@@ -393,6 +575,8 @@ class PlatformApplication:
 
     def healthcheck(self) -> dict[str, Any]:
         """Return safe health data for all six-layer runtime components."""
+        if self._owner is not None:
+            return self._root.healthcheck()
         runtime_health = {}
         check = getattr(self.runtime, "healthcheck", None)
         if callable(check):
@@ -450,6 +634,8 @@ class PlatformApplication:
         }
 
     def close(self) -> None:
+        if self._owner is not None:
+            return
         with self._lock:
             if self._closed:
                 return

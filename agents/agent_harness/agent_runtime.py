@@ -12,7 +12,7 @@ from .ports import RuntimePorts
 from .redaction import redact_for_persistence
 from .results import RunResult, RunStatus
 from .run_store import RunStore, run_start_payload
-from .observability import MetricsSink
+from .observability import AlertSink, MetricsSink, TraceSink
 from .skills import SkillSource
 from .runtime_kernel import (
     AgentRuntimeKernel,
@@ -38,6 +38,8 @@ class AgentRuntime:
         on_tool_catalog_changed: Optional[callable] = None,
         run_store: Optional[RunStore] = None,
         metrics: Optional[MetricsSink] = None,
+        trace: Optional[TraceSink] = None,
+        alerts: Optional[AlertSink] = None,
         session_manager: Any = None,
         session_locks: Optional[dict[str, threading.RLock]] = None,
         session_locks_guard: Optional[threading.RLock] = None,
@@ -94,6 +96,8 @@ class AgentRuntime:
         self._on_tool_catalog_changed = on_tool_catalog_changed
         self.run_store = run_store
         self.metrics = metrics
+        self.trace = trace
+        self.alerts = alerts
         self._kernel = AgentRuntimeKernel(
             session_manager=ports.session_manager,
             session_locks=ports.session_locks,
@@ -106,6 +110,10 @@ class AgentRuntime:
             assert_ready=ports.assert_ready,
             ensure_session=ports.ensure_session,
             refresh_session=ports.refresh_session,
+            session_lock_provider=(
+                ports.session_lock_provider
+                or getattr(pipeline, "session_lock", None)
+            ),
             execute_unlocked=self._execute_pipeline,
             busy_error=ports.busy_error,
         )
@@ -149,6 +157,11 @@ class AgentRuntime:
             if self.metrics is not None:
                 try:
                     self.metrics.observe(safe_event)
+                except Exception as error:
+                    record_observer_error(error)
+            if self.trace is not None:
+                try:
+                    self.trace.emit(safe_event)
                 except Exception as error:
                     record_observer_error(error)
             if store is not None:
@@ -252,6 +265,18 @@ class AgentRuntime:
                     "runtime_signals": runtime_signals,
                 }
             result_metadata.update(runtime_signals)
+        if self.alerts is not None:
+            try:
+                normalized_preview = RunResult.from_payload(result)
+                if normalized_preview.recovery_required:
+                    self.alerts.publish({
+                        "type": "run_recovery_required",
+                        "run_id": str(request.run_id or ""),
+                        "turn_id": str(request.turn_id or ""),
+                        "signals": dict(normalized_preview.runtime_signals),
+                    })
+            except Exception as error:
+                record_observer_error(error)
         normalized = RunResult.from_payload(result)
         if store is None:
             return result

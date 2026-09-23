@@ -60,6 +60,43 @@ def test_harness_metric_observer_failure_does_not_fail_a_run():
     app.close()
 
 
+def test_harness_routes_redacted_events_to_trace_and_recovery_to_alert():
+    trace_events = []
+    alerts = []
+
+    class Store:
+        def start_run(self, **_payload):
+            return True
+
+        def append_event(self, _run_id, _event):
+            return False
+
+        def finish_run(self, _run_id, *, status, metadata=None):
+            return True
+
+    class Trace:
+        def emit(self, event):
+            trace_events.append(dict(event))
+
+    class Alerts:
+        def publish(self, alert):
+            alerts.append(dict(alert))
+
+    app = AgentApplication.create(
+        model=lambda *_args: "done",
+        run_store=Store(),
+        trace=Trace(),
+        alerts=Alerts(),
+    )
+    try:
+        result = app.prompt("hello")
+        assert result.recovery_required is True
+        assert any(item["type"] == "agent_start" for item in trace_events)
+        assert alerts[0]["type"] == "run_recovery_required"
+    finally:
+        app.close()
+
+
 def test_harness_keeps_transcripts_isolated_per_session():
     seen = []
 

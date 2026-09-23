@@ -790,9 +790,10 @@ class TemporaryFailureMetaClient(MinimalMetaClient):
         raise TemporaryError("provider timeout")
 
 
-def test_confirmation_payload_is_bound_to_the_exact_plan():
+def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
     client = MinimalMetaClient()
     runtime = AdvertisingComposition(require_llm=False,
+        persistence_store=AdAgentStore(str(tmp_path / "confirmation.db")),
         whitelist_validator=whitelist(meta=["m1"]),
         execution_mode=ExecutionMode.LIVE.value,
         allow_live_writes=True,

@@ -8,7 +8,7 @@ from typing import Any, Optional
 from .agent import Agent
 from .agent_runtime import AgentRuntime
 from .context import ContextProvider
-from .observability import MetricsSink
+from .observability import AlertSink, MetricsSink, TraceSink
 from .run_store import RunStore
 from .skills import InMemorySkillCatalog, SkillCatalog, SkillSource
 from .tool_catalog import InMemoryToolCatalog, ToolCatalog
@@ -34,6 +34,8 @@ class AgentApplication:
         tool_execution: str = "parallel",
         run_store: Optional[RunStore] = None,
         metrics: Optional[MetricsSink] = None,
+        trace: Optional[TraceSink] = None,
+        alerts: Optional[AlertSink] = None,
         event_callback: Any = None,
         before_tool_call: Any = None,
         after_tool_call: Any = None,
@@ -111,6 +113,8 @@ class AgentApplication:
             skill_catalog=skills,
             run_store=run_store,
             metrics=metrics,
+            trace=trace,
+            alerts=alerts,
             ports=ports,
             default_execution_mode=default_execution_mode,
         )

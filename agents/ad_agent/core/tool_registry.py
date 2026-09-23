@@ -182,6 +182,26 @@ class SimpleToolRegistry(ToolRegistry):
         with self._lock:
             return [defn for defn, _ in self._tools.values()]
 
+    def source_snapshot(self) -> dict[str, list[str]]:
+        """Return source ownership, including explicitly unscoped Tools."""
+        with self._lock:
+            snapshot = {
+                source_id: list(names)
+                for source_id, names in sorted(self._by_source.items())
+            }
+            owned = {
+                name
+                for names in snapshot.values()
+                for name in names
+            }
+            unscoped = [
+                name for name in self._tools
+                if name not in owned
+            ]
+            if unscoped:
+                snapshot["__unscoped__"] = unscoped
+            return snapshot
+
     def list_all_namespaces(self) -> list[str]:
         """列出所有已注册的 namespace。"""
         with self._lock:
@@ -364,6 +384,12 @@ class GuardedToolRegistry(ToolRegistry):
 
     def list_by_skill(self, skill_name: str) -> list[ToolDefinition]:
         return self._inner.list_by_skill(skill_name)
+
+    def source_snapshot(self) -> dict[str, list[str]]:
+        snapshot = getattr(self._inner, "source_snapshot", None)
+        if not callable(snapshot):
+            return {}
+        return dict(snapshot())
 
     def unregister(self, tool_name: str) -> None:
         self._inner.unregister(tool_name)

@@ -68,6 +68,13 @@ class AgentLeaseLostError(RuntimeError):
     """The current Agent Run lost its durable Runtime session lease."""
 
 
+TOOL_CANCELLATION_MODES = frozenset({
+    "cooperative",
+    "interruptible",
+    "not_interruptible",
+})
+
+
 @dataclass(frozen=True)
 class ToolCallContext:
     request: TurnRequest
@@ -240,6 +247,14 @@ class Agent:
         key = self._session_key(session_id, user_id, tenant_id)
         with self._session_guard:
             return self._session_locks.setdefault(key, threading.RLock())
+
+    def session_lock(self, request: TurnRequest) -> threading.RLock:
+        """Return the Agent state lock used by the Runtime Kernel."""
+        return self._lock_for(
+            request.session_id,
+            request.user_id,
+            request.tenant_id,
+        )
 
     def _abort_event_for(
         self,
@@ -501,7 +516,15 @@ class Agent:
                         *messages,
                     ]
         if self.skill_catalog is not None:
-            skill_context = self.skill_catalog.build_context(request.user_input)
+            source_ids = None
+            if isinstance(request.context, Mapping):
+                configured_sources = request.context.get("skill_source_ids")
+                if isinstance(configured_sources, (list, tuple, set, frozenset)):
+                    source_ids = tuple(str(item) for item in configured_sources)
+            skill_context = self.skill_catalog.build_context(
+                request.user_input,
+                source_ids=source_ids,
+            )
             if skill_context:
                 messages = [
                     AgentMessage.system(
@@ -983,6 +1006,21 @@ class Agent:
             state=state,
             tool_definition=getattr(binding, "definition", None),
         )
+        interrupted = self._interrupt_reason(request)
+        if interrupted is not None:
+            return {
+                "tool_call_id": call.id,
+                "name": call.name,
+                "content": interrupted,
+                "is_error": True,
+                "terminate": True,
+                "cancelled": interrupted == "cancelled",
+                "recovery_required": interrupted == "session_lease_lost",
+                "effect_state": (
+                    "unknown" if interrupted == "session_lease_lost" else "none"
+                ),
+                "runtime_signals": {interrupted: True},
+            }
         if callable(self.before_tool_call):
             try:
                 decision = self.before_tool_call(context)
@@ -1050,6 +1088,31 @@ class Agent:
                             if key == "data"
                             else safe_output[key]
                         )
+            cancellation_mode = self._tool_cancellation_mode(
+                getattr(binding, "definition", None),
+            )
+            interrupted = self._interrupt_reason(request)
+            if interrupted == "cancelled":
+                result["cancelled"] = True
+                result["terminate"] = True
+                if cancellation_mode != "interruptible" and self._tool_is_write(
+                    getattr(binding, "definition", None),
+                ):
+                    result["recovery_required"] = True
+                    result["effect_state"] = "unknown"
+                    result["runtime_signals"] = {
+                        "cancelled": True,
+                        "effect_state": "unknown",
+                    }
+                else:
+                    result["runtime_signals"] = {"cancelled": True}
+            elif interrupted == "session_lease_lost":
+                result.update({
+                    "terminate": True,
+                    "recovery_required": True,
+                    "effect_state": "unknown",
+                    "runtime_signals": {"session_lease_lost": True},
+                })
         except Exception as error:
             result = {
                 "tool_call_id": call.id,
@@ -1078,6 +1141,30 @@ class Agent:
             if isinstance(override, Mapping):
                 result = {**result, **dict(override)}
         return result
+
+    @staticmethod
+    def _tool_value(definition: Any, name: str, default: Any = None) -> Any:
+        if isinstance(definition, Mapping):
+            return definition.get(name, default)
+        return getattr(definition, name, default)
+
+    @classmethod
+    def _tool_cancellation_mode(cls, definition: Any) -> str:
+        value = str(
+            cls._tool_value(definition, "cancellation_mode", "cooperative")
+            or "cooperative"
+        ).strip().lower()
+        return value if value in TOOL_CANCELLATION_MODES else "cooperative"
+
+    @classmethod
+    def _tool_is_write(cls, definition: Any) -> bool:
+        effect = cls._tool_value(
+            definition,
+            "effect_class",
+            cls._tool_value(definition, "effect", "read"),
+        )
+        effect = getattr(effect, "value", effect)
+        return str(effect or "").strip().lower() in {"write", "external_write"}
 
     def _bound_tool_value(self, value: Any) -> Any:
         """Keep model-facing Tool content bounded without dropping status data."""
@@ -1295,9 +1382,15 @@ class Agent:
                         )
                         for item in tool_results
                     )
+                    tool_cancelled = any(
+                        bool(item.get("cancelled"))
+                        for item in tool_results
+                    )
                     terminal_status = (
                         RunStatus.RECOVERY_REQUIRED
                         if tool_recovery
+                        else RunStatus.CANCELLED
+                        if tool_cancelled
                         else RunStatus.FAILED
                         if model_turn.stop_reason in {"error", "policy_blocked"}
                         else RunStatus.AWAITING_INPUT

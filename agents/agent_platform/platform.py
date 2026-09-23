@@ -53,6 +53,7 @@ class AgentPlatform:
         self._agents: dict[str, AgentDefinition] = {}
         self._scenarios: dict[str, ScenarioDefinition] = {}
         self._lock = threading.RLock()
+        self._application: Optional[PlatformApplication] = None
 
     def register_agent(self, definition: AgentDefinition) -> None:
         if not isinstance(definition, AgentDefinition):
@@ -122,6 +123,47 @@ class AgentPlatform:
         cannot accidentally pass platform metadata as a runtime option.
         """
         scenario = self.get_scenario(scenario_id)
+        with self._lock:
+            existing = self._application
+        if existing is not None:
+            if model is not getattr(existing.agent, "model", None):
+                raise ValueError(
+                    "AgentPlatform already has a Runtime; model is immutable"
+                )
+            if dependencies is not None or options or kwargs:
+                raise ValueError(
+                    "AgentPlatform already has a Runtime; "
+                    "dependencies and options are immutable"
+                )
+            definition = self.get_agent(scenario.agent_id)
+            selected_skills, selected_tools = definition.select_sources(
+                skill_source_ids=scenario.skill_source_ids,
+                tool_source_ids=scenario.tool_source_ids,
+            )
+            definition_tool_ids = {
+                str(getattr(source, "source_id", "") or "")
+                for source in definition.tool_sources
+            }
+            integration_ids = tuple(
+                str(getattr(source, "source_id", "") or "")
+                for source in existing.dependencies.integrations.tool_sources
+                if str(getattr(source, "source_id", "") or "")
+                not in definition_tool_ids
+            )
+            return existing.for_scenario(
+                scenario,
+                skill_source_ids=tuple(
+                    str(getattr(source, "source_id", "") or "")
+                    for source in selected_skills
+                ),
+                tool_source_ids=(
+                    tuple(
+                        str(getattr(source, "source_id", "") or "")
+                        for source in selected_tools
+                    )
+                    + integration_ids
+                ),
+            )
         definition = self.get_agent(scenario.agent_id)
         skill_sources, tool_sources = definition.select_sources(
             skill_source_ids=scenario.skill_source_ids,
@@ -130,11 +172,15 @@ class AgentPlatform:
         dependencies = (
             dependencies or PlatformDependencies()
         )
-        tool_sources = _merge_tool_sources(
-            tool_sources,
-            tuple(dependencies.integrations.tool_sources),
+        integration_sources = tuple(dependencies.integrations.tool_sources)
+        # Validate the scenario selection above, then register the complete
+        # Agent source graph once. Scenario views filter the shared catalogs
+        # per Run; they never build another Runtime.
+        all_tool_sources = _merge_tool_sources(
+            tuple(definition.tool_sources),
+            integration_sources,
         )
-        dependencies = dependencies.with_tool_sources(tool_sources)
+        dependencies = dependencies.with_tool_sources(all_tool_sources)
         factory_options = dict(options or {})
         factory_options.update(kwargs)
         factory_options.setdefault(
@@ -180,19 +226,68 @@ class AgentPlatform:
         try:
             for source in skill_sources:
                 application.register_skill_source(source)
-            for source in tool_sources:
+            for source in definition.skill_sources:
+                if source not in skill_sources:
+                    application.register_skill_source(source)
+            for source in all_tool_sources:
                 application.register_tool_source(source)
         except Exception:
             application.close()
             raise
-        return PlatformApplication(
+        base_selector = factory_options.get("tool_selector")
+
+        def select_tools(request: Any, tools: Any) -> list[Any]:
+            selected = (
+                list(base_selector(request, tools))
+                if callable(base_selector) else list(tools)
+            )
+            context = getattr(request, "context", {})
+            source_ids = (
+                context.get("tool_source_ids")
+                if isinstance(context, Mapping) else None
+            )
+            if source_ids is None:
+                return selected
+            catalog = getattr(application.runtime, "tool_registry", None)
+            snapshot_getter = getattr(catalog, "source_snapshot", None)
+            if not callable(snapshot_getter):
+                return selected
+            snapshot = snapshot_getter()
+            allowed = {
+                name
+                for source_id in source_ids
+                for name in snapshot.get(str(source_id), ())
+            }
+            return [
+                item for item in selected
+                if str(getattr(item, "name", None) or (
+                    item.get("name") if isinstance(item, Mapping) else ""
+                )) in allowed
+            ]
+
+        application.agent.tool_selector = select_tools
+        platform_application = PlatformApplication(
             definition=definition,
             scenario=scenario,
             harness=application,
             architecture=self.architecture,
             governance=self.governance,
             dependencies=dependencies,
+            skill_source_ids=tuple(
+                str(getattr(source, "source_id", "") or "")
+                for source in skill_sources
+            ),
+            tool_source_ids=tuple(
+                str(getattr(source, "source_id", "") or "")
+                for source in (
+                    *tool_sources,
+                    *integration_sources,
+                )
+            ),
         )
+        with self._lock:
+            self._application = platform_application
+        return platform_application
 
 
 __all__ = [

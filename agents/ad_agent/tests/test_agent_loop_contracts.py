@@ -1,7 +1,10 @@
 import threading
 
+from contextvars import ContextVar
+
 from agents.agent_harness import (
     Agent,
+    AgentApplication,
     AgentMessage,
     AgentRuntime,
     InMemoryToolCatalog,
@@ -10,11 +13,39 @@ from agents.agent_harness import (
     ToolBinding,
     ToolCall,
     TurnRequest,
+    RuntimePorts,
 )
-from agents.agent_harness import RuntimePorts
-from contextvars import ContextVar
 
 
+def test_cancelled_non_interruptible_write_requires_recovery():
+    cancellation = threading.Event()
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(
+                tool_calls=(ToolCall("call-1", "publish", {}),),
+            )
+
+    def publish(context, _data):
+        context.request.cancellation_event.set()
+        return {"ok": True}
+
+    app = AgentApplication.create(model=Model(), max_turns=1)
+    app.register_tool_source(StaticToolSource(
+        "writes",
+        [ToolBinding({
+            "name": "publish",
+            "effect_class": "write",
+            "cancellation_mode": "cooperative",
+        }, publish)],
+    ))
+    try:
+        result = app.prompt("publish", cancellation_event=cancellation)
+        assert result.status.value == "recovery_required"
+        assert result.recovery_required is True
+        assert result.runtime_signals["effect_state"] == "unknown"
+    finally:
+        app.close()
 class EchoTool:
     name = "echo"
 

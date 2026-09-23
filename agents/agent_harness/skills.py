@@ -107,7 +107,12 @@ class SkillCatalog(Protocol):
     def list_skills(self) -> list[SkillBinding]:
         ...
 
-    def build_context(self, user_input: str) -> str:
+    def build_context(
+        self,
+        user_input: str,
+        *,
+        source_ids: Sequence[str] | None = None,
+    ) -> str:
         ...
 
     def source_snapshot(self) -> dict[str, list[str]]:
@@ -174,14 +179,34 @@ class InMemorySkillCatalog:
         ).casefold()
         return sum(1 for term in terms if term and term in haystack)
 
-    def build_context(self, user_input: str) -> str:
+    def build_context(
+        self,
+        user_input: str,
+        *,
+        source_ids: Sequence[str] | None = None,
+    ) -> str:
         terms = {
             token.casefold()
             for token in re.findall(r"[\w-]{2,}", str(user_input or ""))
         }
+        allowed_sources = (
+            {str(item).strip() for item in source_ids if str(item).strip()}
+            if source_ids is not None else None
+        )
         with self._lock:
+            allowed_names = (
+                {
+                    name
+                    for source_id in allowed_sources or ()
+                    for name in self._sources.get(source_id, ())
+                }
+                if allowed_sources is not None else None
+            )
             skills = sorted(
-                self._skills.values(),
+                (
+                    skill for skill in self._skills.values()
+                    if allowed_names is None or skill.name in allowed_names
+                ),
                 key=lambda item: (-self._score(item, terms), item.name),
             )[:self.max_skills]
         chunks: list[str] = []
