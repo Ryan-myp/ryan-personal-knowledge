@@ -28,7 +28,7 @@ from .models import (
     CreationTemplateRecord,
 )
 from .errors import PersistenceConflictError
-from ..core.memory import MemoryRecord
+from ..core.memory import MEMORY_SOURCE_PRIORITIES, MemoryRecord
 
 logger = logging.getLogger(__name__)
 
@@ -3768,8 +3768,12 @@ class AdAgentStore:
                 age_days = 3650.0
             half_life = half_life_days.get(record.kind, 30.0)
             recency = math.pow(0.5, age_days / half_life)
+            source_priority = MEMORY_SOURCE_PRIORITIES.get(record.source, 50)
+            source_weight = 0.75 + 0.25 * max(
+                0.0, min(1.0, source_priority / 100.0)
+            )
             score = (
-                score * (0.7 + 0.3 * recency)
+                score * (0.7 + 0.3 * recency) * source_weight
                 + record.importance * 0.5
                 + record.confidence * 0.5
             )

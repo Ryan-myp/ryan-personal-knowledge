@@ -119,22 +119,12 @@ class AdvertisingRunService:
                 "run_metadata",
                 {"error_type": str(completed["error_type"])},
             )
-        if completed.get("reason") and runtime.session_manager is not None:
-            runtime.session_manager.append_execution_run_event(
-                str(payload.get("run_id") or ""),
-                {
-                    "type": "stage_status",
-                    "stage_id": "intent",
-                    "status": "failed",
-                    "run_id": str(payload.get("run_id") or ""),
-                    "turn_id": str(payload.get("turn_id") or ""),
-                },
-            )
-            runtime.session_manager.update_execution_run(
-                str(payload.get("run_id") or ""),
-                status="failed",
-                metadata={"reason": str(completed["reason"])},
-            )
+        if completed.get("reason"):
+            payload.setdefault("run_metadata", {})
+            if isinstance(payload["run_metadata"], dict):
+                payload["run_metadata"].setdefault(
+                    "reason", str(completed["reason"]),
+                )
 
         tool_plan: dict[str, list[str]] = {}
         for call in completed.get("calls") or ():

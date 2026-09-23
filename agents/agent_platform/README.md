@@ -57,7 +57,19 @@ Integration Source 和 Infrastructure 生命周期。`PlatformDependencies.integ
 复制到健康结果。
 平台默认给 Harness 装配 `ToolExecutionPolicy`，统一执行输入 Schema、权限、风险、
 live 开关、跨进程 SQL 幂等和审计门禁。`GovernancePolicy` 的默认执行模式、Tool 数量、
-最大回合数和 Skill 上下文上限会真实下沉到 Harness，而不是只停留在架构元数据。
+最大回合数、Skill 上下文上限、Tool 超时、只读重试和熔断参数会真实下沉到 Harness，
+而不是只停留在架构元数据。Tool Call 依赖由 Harness 按拓扑批次执行；写操作不会自动
+重试，超时写入会进入未知效果恢复态。
+
+Knowledge 与 Memory 通过 Harness 的 `BoundedContextProvider` 作为有界 advisory
+context 注入。它们可以提供检索证据和用户偏好，但不能提供身份、权限、账户范围或
+Tool 授权；Knowledge 使用 tenant/user 范围，Memory 额外使用 session 范围。MCP 同样
+只是通用 `MCPToolSource`/`MCPToolExecutor` 集成，不属于广告 Runtime 专属能力。
+
+Knowledge 的语义增强使用 `data.semantic` 的 `EmbeddingProvider` 与
+`SemanticIndex` port。默认仍可只使用 Markdown + lexical/BM25；启用后按 scope
+建立向量索引，并在 semantic 服务异常时降级到 lexical，检索结果始终保留原始
+document/chunk provenance。
 
 产品只能通过标准 Harness 的 Agent loop 和 Tool/Skill 适配器接入场景行为。
 它不能创建业务专用 Pipeline、第二个 Agent、第二个 Runtime 或第二套 Tool 门禁；

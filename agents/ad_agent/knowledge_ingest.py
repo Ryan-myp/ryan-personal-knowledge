@@ -13,6 +13,7 @@ import logging
 import re
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from .knowledge_management import (
@@ -64,13 +65,75 @@ def _safe_error(exc: BaseException) -> str:
 class RawKnowledgeManager:
     """Validate, persist and expose immutable raw source records."""
 
-    def __init__(self, store: KnowledgeStorePort):
+    def __init__(
+        self,
+        store: KnowledgeStorePort,
+        raw_root: Optional[str | Path] = None,
+    ):
         self.store = store
+        configured_root = str(raw_root or "").strip()
+        if not configured_root:
+            db_path = str(getattr(store, "_db_path", "") or "").strip()
+            if db_path and not db_path.startswith(":memory:"):
+                configured_root = str(
+                    Path(db_path).expanduser().resolve().parent / "knowledge-raw"
+                )
+        self.raw_root = (
+            Path(configured_root).expanduser().resolve()
+            if configured_root else None
+        )
+
+    def _raw_file_path(
+        self, *, tenant_id: str, source_id: str, filename: str,
+    ) -> Optional[Path]:
+        if self.raw_root is None:
+            return None
+        tenant_key = hashlib.sha256(
+            str(tenant_id or "default").encode("utf-8")
+        ).hexdigest()[:24]
+        return self.raw_root / tenant_key / str(source_id) / filename
+
+    def _write_raw_file(self, record: RawKnowledgeSourceRecord) -> Optional[Path]:
+        path = self._raw_file_path(
+            tenant_id=record.tenant_id,
+            source_id=record.source_id,
+            filename=record.filename,
+        )
+        if path is None:
+            return None
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_text(record.content, encoding="utf-8")
+            temporary.replace(path)
+        except OSError:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise KnowledgeIngestError("raw 原始文件保存失败")
+        return path
 
     @staticmethod
-    def _public(record: RawKnowledgeSourceRecord) -> dict[str, Any]:
+    def _public_file_ref(path: Optional[Path], raw_root: Optional[Path]) -> str:
+        if path is None or raw_root is None:
+            return ""
+        try:
+            return path.relative_to(raw_root).as_posix()
+        except ValueError:
+            return ""
+
+    def _public(self, record: RawKnowledgeSourceRecord) -> dict[str, Any]:
         value = record.to_dict()
         value.pop("content", None)
+        value["raw_file_ref"] = self._public_file_ref(
+            self._raw_file_path(
+                tenant_id=record.tenant_id,
+                source_id=record.source_id,
+                filename=record.filename,
+            ),
+            self.raw_root,
+        )
         return value
 
     @staticmethod
@@ -135,15 +198,28 @@ class RawKnowledgeManager:
             created_at=now,
             updated_at=now,
         )
+        raw_file_path = self._write_raw_file(record)
         try:
             saved = self.store.create_raw_knowledge_source(record)
         except PersistenceConflictError:
+            if raw_file_path is not None:
+                try:
+                    raw_file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
             existing = self.store.find_raw_knowledge_source_by_hash(tenant, digest)
             if not existing:
                 raise
             result = self._public(existing)
             result["duplicate"] = True
             return result
+        except Exception:
+            if raw_file_path is not None:
+                try:
+                    raw_file_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
         result = self._public(saved)
         result["duplicate"] = False
         return result
@@ -159,6 +235,14 @@ class RawKnowledgeManager:
         result = record.to_dict()
         if not include_content:
             result.pop("content", None)
+        result["raw_file_ref"] = self._public_file_ref(
+            self._raw_file_path(
+                tenant_id=record.tenant_id,
+                source_id=record.source_id,
+                filename=record.filename,
+            ),
+            self.raw_root,
+        )
         return result
 
     def update_source(
@@ -178,7 +262,7 @@ class RawKnowledgeManager:
         )
         if not record:
             raise KnowledgeIngestError("raw 文档不存在或无权访问")
-        return record.to_dict()
+        return self._public(record)
 
 
 class KnowledgeIngestService:

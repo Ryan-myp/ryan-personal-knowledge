@@ -70,6 +70,36 @@ def test_raw_source_is_immutable_and_deduplicated_by_tenant_hash(store):
         manager.update_source(first["source_id"], tenant_id="tenant-a", content="tampered")
 
 
+def test_persistent_raw_upload_keeps_an_original_file_next_to_the_database(tmp_path):
+    database = tmp_path / "agent.sqlite"
+    persistent_store = AdAgentStore(str(database))
+    try:
+        source = RawKnowledgeManager(persistent_store).create_source(
+            tenant_id="tenant-a",
+            filename="original-notes.md",
+            content="# Original\n\nKeep this source intact.",
+            created_by="user-a",
+        )
+        raw_root = tmp_path / "knowledge-raw"
+        files = list(raw_root.rglob("original-notes.md"))
+
+        assert len(files) == 1
+        assert files[0].read_text(encoding="utf-8") == (
+            "# Original\n\nKeep this source intact."
+        )
+        assert source["raw_file_ref"].endswith(
+            f"/{source['source_id']}/original-notes.md"
+        )
+        public = RawKnowledgeManager(persistent_store).get_source(
+            source["source_id"],
+            tenant_id="tenant-a",
+        )
+        assert public["raw_file_ref"] == source["raw_file_ref"]
+        assert "content" not in public
+    finally:
+        persistent_store.close()
+
+
 def test_ingest_creates_drafts_with_source_lineage_and_keeps_raw_out_of_runtime(store):
     raw = RawKnowledgeManager(store).create_source(
         tenant_id="tenant-a",

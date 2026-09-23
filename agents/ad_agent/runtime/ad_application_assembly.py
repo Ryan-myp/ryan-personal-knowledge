@@ -136,6 +136,35 @@ class AdRunStoreAdapter:
             metadata=merged,
         ))
 
+    def save_checkpoint(
+        self, run_id: str, checkpoint: Mapping[str, Any],
+    ) -> bool:
+        current = self.session_manager.get_execution_run(str(run_id))
+        metadata = getattr(current, "metadata", {}) if current else {}
+        merged = dict(metadata) if isinstance(metadata, dict) else {}
+        merged["checkpoint"] = dict(checkpoint)
+        return bool(self.session_manager.update_execution_run(
+            str(run_id), metadata=merged,
+        ))
+
+    def load_checkpoint(self, run_id: str) -> Optional[Mapping[str, Any]]:
+        current = self.session_manager.get_execution_run(str(run_id))
+        metadata = getattr(current, "metadata", {}) if current else {}
+        checkpoint = (
+            metadata.get("checkpoint")
+            if isinstance(metadata, dict) else None
+        )
+        return dict(checkpoint) if isinstance(checkpoint, Mapping) else None
+
+    def clear_checkpoint(self, run_id: str) -> bool:
+        current = self.session_manager.get_execution_run(str(run_id))
+        metadata = getattr(current, "metadata", {}) if current else {}
+        merged = dict(metadata) if isinstance(metadata, dict) else {}
+        merged.pop("checkpoint", None)
+        return bool(self.session_manager.update_execution_run(
+            str(run_id), metadata=merged,
+        ))
+
 
 @dataclass(frozen=True)
 class AdApplicationAssemblyOptions:
@@ -657,6 +686,7 @@ class AdApplicationAssembly:
                 "context_provider": context_provider,
                 "input_sanitizer": runtime._redact_for_persistence,
                 "run_store": run_store,
+                "checkpoint_store": run_store,
                 "transcript_store": (
                     PersistenceTranscriptStore(store) if store is not None else None
                 ),

@@ -20,7 +20,7 @@ from .agent import (
     AgentLeaseLostError,
 )
 from .agent_runtime import AgentRuntime
-from .context import ContextProvider
+from .context import BoundedContextProvider, ContextProvider
 from .messages import AgentMessage, ModelTurn, ToolCall
 from .observability import (
     AlertSink,
@@ -36,7 +36,8 @@ from .persistence import IdempotencyStore, TranscriptStore
 from .ports import RuntimePorts
 from .redaction import redact_for_persistence
 from .results import RunResult, RunStatus
-from .run_store import RunStore
+from .run_store import RunCheckpointStore, RunStore
+from .mcp import MCPClient, MCPToolExecutor, MCPToolSource
 from .skills import (
     InMemorySkillCatalog,
     MarkdownSkillDirectorySource,
@@ -58,6 +59,7 @@ from .runtime_kernel import (
 )
 from .tool_sources import StaticToolSource, ToolBinding, ToolExecutor, ToolSource
 from .tool_catalog import InMemoryToolCatalog, ToolCatalog
+from .tool_execution import ToolExecutionCoordinator
 from .turn_pipeline import (
     CallableTurnPipeline,
     SequentialTurnPipeline,
@@ -72,6 +74,7 @@ __all__ = [
     "AgentApplication",
     "Agent",
     "ContextProvider",
+    "BoundedContextProvider",
     "AgentMessage",
     "AlertSink",
     "AgentState",
@@ -94,6 +97,10 @@ __all__ = [
     "RunResult",
     "RunStatus",
     "RunStore",
+    "RunCheckpointStore",
+    "MCPClient",
+    "MCPToolExecutor",
+    "MCPToolSource",
     "CallableTurnPipeline",
     "SequentialTurnPipeline",
     "SessionLease",
@@ -110,6 +117,7 @@ __all__ = [
     "ToolCatalog",
     "ToolExecutor",
     "ToolSource",
+    "ToolExecutionCoordinator",
     "TraceSink",
     "TurnExecutionContext",
     "TurnPipeline",

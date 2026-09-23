@@ -204,6 +204,24 @@ class AgentPlatform:
             "model_timeout_seconds", self.governance.model_timeout_seconds,
         )
         factory_options.setdefault(
+            "tool_timeout_seconds", self.governance.tool_timeout_seconds,
+        )
+        factory_options.setdefault(
+            "tool_max_retries", self.governance.tool_max_retries,
+        )
+        factory_options.setdefault(
+            "tool_retry_delay_seconds",
+            self.governance.tool_retry_delay_seconds,
+        )
+        factory_options.setdefault(
+            "tool_circuit_failure_threshold",
+            self.governance.tool_circuit_failure_threshold,
+        )
+        factory_options.setdefault(
+            "tool_circuit_reset_seconds",
+            self.governance.tool_circuit_reset_seconds,
+        )
+        factory_options.setdefault(
             "max_input_tokens", self.governance.max_input_tokens,
         )
         factory_options.setdefault(

@@ -63,6 +63,12 @@ class AgentApplication:
         max_tool_result_chars: int = 32_000,
         session_ttl_seconds: float = 3600.0,
         max_sessions: int = 1000,
+        tool_timeout_seconds: float | None = None,
+        tool_max_retries: int = 0,
+        tool_retry_delay_seconds: float = 0.0,
+        tool_circuit_failure_threshold: int = 5,
+        tool_circuit_reset_seconds: float = 30.0,
+        checkpoint_store: Any = None,
     ) -> "AgentApplication":
         if tool_policy is not None:
             if before_tool_call is not None or after_tool_call is not None:
@@ -106,6 +112,12 @@ class AgentApplication:
             max_tool_result_chars=max_tool_result_chars,
             session_ttl_seconds=session_ttl_seconds,
             max_sessions=max_sessions,
+            tool_timeout_seconds=tool_timeout_seconds,
+            tool_max_retries=tool_max_retries,
+            tool_retry_delay_seconds=tool_retry_delay_seconds,
+            tool_circuit_failure_threshold=tool_circuit_failure_threshold,
+            tool_circuit_reset_seconds=tool_circuit_reset_seconds,
+            checkpoint_store=checkpoint_store,
         )
         runtime = AgentRuntime(
             agent=agent,

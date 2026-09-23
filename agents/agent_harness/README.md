@@ -35,6 +35,20 @@ user message
   -> agent end
 ```
 
+Tool planning and execution are separated inside the Harness. The Agent owns
+model turns and transcript state; `ToolExecutionCoordinator` owns dependency
+topology, bounded parallelism, policy hooks, timeout/retry rules, circuit
+breaking, cancellation and output limits. This keeps the execution kernel
+reusable for non-advertising Agents.
+
+Tool execution is dependency-aware. A model may set `ToolCall.depends_on` to
+another call ID; independent calls are bounded into parallel batches and a
+failed dependency prevents its dependents from running. Every Tool can also
+use a bounded timeout. Automatic retry is limited to explicitly read/none
+effects with a safe or idempotent replay policy; writes are never retried by
+the Harness. Repeated failures open a per-Tool circuit breaker, and a timed
+out write returns an unknown effect with `recovery_required`.
+
 Applications inject:
 
 - a model adapter with `complete(messages, tools, request)`. Providers may
@@ -49,7 +63,10 @@ Applications inject:
 - policy hooks such as `before_tool_call` and `after_tool_call`;
 - an optional `RunStore`, `TranscriptStore` and session implementation;
 - an optional `IdempotencyStore` for cross-process, SQL-backed write replay
-  protection.
+  protection;
+- an optional `RunCheckpointStore` for sanitized per-turn recovery snapshots;
+  successful Runs clear the snapshot while cancelled or uncertain Runs leave it
+  available for reconciliation.
 
 Tool exposure is bounded per model turn. `AgentApplication.create` accepts
 `max_tools` and an optional `tool_selector(request, tools)` so applications
@@ -69,6 +86,11 @@ idempotency and write-guard checks.
 Advertising is only one collection of Skills and Tool Sources. Provider
 objects publish Tool definitions at the integration boundary; the Harness
 does not require any provider-specific abstraction.
+
+Advisory knowledge can optionally use the generic semantic ports in
+`agents.agent_platform.data.semantic`. Lexical retrieval remains the fallback;
+an embedding provider and scoped semantic index only improve recall/ranking.
+They never grant identity, permissions or Tool authority.
 
 The convenient `AgentApplication` assembly is the recommended starting point
 for a new Agent integration:

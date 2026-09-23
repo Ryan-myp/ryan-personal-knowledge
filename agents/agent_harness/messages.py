@@ -79,13 +79,28 @@ class ToolCall:
     id: str
     name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
+    depends_on: Sequence[str] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "depends_on",
+            tuple(
+                str(item).strip()
+                for item in (self.depends_on or ())
+                if str(item).strip()
+            ),
+        )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "id": self.id,
             "name": self.name,
             "arguments": _json_safe(dict(self.arguments)),
         }
+        if self.depends_on:
+            value["depends_on"] = list(self.depends_on)
+        return value
 
 
 @dataclass(frozen=True)

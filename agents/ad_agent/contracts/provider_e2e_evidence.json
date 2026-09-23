@@ -17,9 +17,9 @@
       "campaign_type": "TRAFFIC",
       "status": "live_verified",
       "resources": {
-        "campaign": {"tool": "meta_create_campaign", "id": "120251262026940251", "status": "PAUSED", "create": "passed", "update": "passed"},
-        "ad_set": {"tool": "meta_create_adset", "id": "120251262047420251", "status": "PAUSED", "create": "passed", "update": "passed"},
-        "ad": {"tool": "meta_create_ad", "id": "120251262049910251", "status": "PAUSED", "create": "passed", "update": "passed"}
+        "campaign": {"tool": "meta_create_campaign", "id": "120251262026940251", "status": "PAUSED", "create": "passed", "update": "passed", "readback": "passed"},
+        "ad_set": {"tool": "meta_create_adset", "id": "120251262047420251", "status": "PAUSED", "create": "passed", "update": "passed", "readback": "passed"},
+        "ad": {"tool": "meta_create_ad", "id": "120251262049910251", "status": "PAUSED", "create": "passed", "update": "passed", "readback": "passed"}
       },
       "notes": ["The first Ad Set attempt was rejected by the account budget/bid rule; the same Campaign was reused and the corrected Ad Set/Ad chain passed."]
     },
@@ -30,9 +30,9 @@
       "campaign_type": "CATALOG_SALES",
       "status": "live_verified",
       "resources": {
-        "campaign": {"tool": "meta_create_campaign", "id": "120251279654070251", "status": "PAUSED", "create": "passed", "update": "passed"},
-        "ad_set": {"tool": "meta_create_adset", "id": "120251280075130251", "status": "PAUSED", "create": "passed", "update": "passed"},
-        "ad": {"tool": "meta_create_ad", "id": "120251280082800251", "status": "PAUSED", "create": "passed", "update": "passed"}
+        "campaign": {"tool": "meta_create_campaign", "id": "120251279654070251", "status": "PAUSED", "create": "passed", "update": "passed", "readback": "passed"},
+        "ad_set": {"tool": "meta_create_adset", "id": "120251280075130251", "status": "PAUSED", "create": "passed", "update": "passed", "readback": "passed"},
+        "ad": {"tool": "meta_create_ad", "id": "120251280082800251", "status": "PAUSED", "create": "passed", "update": "passed", "readback": "passed"}
       }
     },
     {
@@ -97,8 +97,8 @@
       "campaign_type": "LEAD_GENERATION",
       "status": "live_verified",
       "resources": {
-        "campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875745928535297", "status": "DISABLE", "create": "passed", "update": "passed"},
-        "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": "1875745930658113", "status": "DISABLE", "create": "passed", "update": "passed"},
+        "campaign": {"tool": "tiktok_smart_plus_create_campaign", "id": "1875745928535297", "status": "DISABLE", "create": "passed", "update": "passed", "readback": "passed"},
+        "ad_group": {"tool": "tiktok_smart_plus_create_adgroup", "id": "1875745930658113", "status": "DISABLE", "create": "passed", "update": "passed", "readback": "passed"},
         "ad": {"tool": "tiktok_smart_plus_create_ad", "id": null, "status": null, "create": "not_run"}
       }
     },

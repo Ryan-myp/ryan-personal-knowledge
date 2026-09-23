@@ -22,6 +22,7 @@ from ...core.namespace import normalize_namespace as normalize_platform
 
 SUPPORTED_RUN_STATUSES = {
     "live_verified",
+    "read_verified",
     "partial_live_verified",
     "provider_limited",
     "live_verified_with_provider_limits",
@@ -121,6 +122,9 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
         errors.append("scope is required")
 
     safety = raw.get("safety")
+    safety_values: Mapping[str, Any] = (
+        safety if isinstance(safety, Mapping) else {}
+    )
     if not isinstance(safety, Mapping):
         errors.append("safety must be an object")
     else:
@@ -178,6 +182,25 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
                         errors.append(
                             f"{prefix}.resources.{resource_path}.{action} "
                             "passed but id is missing"
+                        )
+                    if (
+                        status == "live_verified"
+                        and str(record.get("readback") or "").strip() != "passed"
+                    ):
+                        errors.append(
+                            f"{prefix}.resources.{resource_path}.{action} "
+                            "passed but readback is not passed"
+                        )
+                    if (
+                        action == "create"
+                        and status == "live_verified"
+                        and safety_values.get("new_resources_paused") is True
+                        and str(record.get("status") or "").strip().upper()
+                        not in {"PAUSED", "DISABLE", "DISABLED"}
+                    ):
+                        errors.append(
+                            f"{prefix}.resources.{resource_path}.{action} "
+                            "passed but resource is not paused/disabled"
                         )
                 elif state in {"provider_rejected", "failed", "unknown"}:
                     rejected_count += 1

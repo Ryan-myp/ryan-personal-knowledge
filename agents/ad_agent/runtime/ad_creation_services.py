@@ -6,6 +6,7 @@ Kernel or executes Provider clients directly.
 """
 
 from .ad_creation_blueprint_services import AdCreationBlueprintServicesMixin
+from .ad_creation_catalog_services import AdCreationCatalogServicesMixin
 from .ad_creation_contract_services import AdCreationContractServicesMixin
 from .ad_creation_response_services import AdCreationResponseServicesMixin
 from .ad_creation_state_services import AdCreationStateServicesMixin
@@ -17,6 +18,7 @@ from .ad_scheduling_preflight import AdSchedulingPreflightMixin
 class AdCreationServicesMixin(
     AdCreationStateServicesMixin,
     AdCreationTemplateServicesMixin,
+    AdCreationCatalogServicesMixin,
     AdCreationBlueprintServicesMixin,
     AdCreationUIServicesMixin,
     AdCreationContractServicesMixin,

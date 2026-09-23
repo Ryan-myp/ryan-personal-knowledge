@@ -6,7 +6,7 @@ import threading
 import uuid
 from contextvars import ContextVar
 from dataclasses import replace
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from .ports import RuntimePorts
 from .redaction import redact_for_persistence
@@ -143,6 +143,7 @@ class AgentRuntime:
         observer_errors: list[str] = []
         run_store_errors: list[str] = []
         observer_guard = threading.RLock()
+        event_sequence = 0
 
         def record_observer_error(
             error: Exception, *, run_store: bool = False,
@@ -153,7 +154,17 @@ class AgentRuntime:
                     run_store_errors.append(type(error).__name__)
 
         def observe(event: dict[str, Any]) -> None:
+            nonlocal event_sequence
             safe_event = redact_for_persistence(event)
+            with observer_guard:
+                try:
+                    incoming_seq = int(safe_event.get("seq"))
+                except (TypeError, ValueError):
+                    incoming_seq = 0
+                if incoming_seq <= event_sequence:
+                    incoming_seq = event_sequence + 1
+                    safe_event["seq"] = incoming_seq
+                event_sequence = incoming_seq
             if self.metrics is not None:
                 try:
                     self.metrics.observe(safe_event)
@@ -227,6 +238,19 @@ class AgentRuntime:
             and isinstance(result.get("run_metadata"), dict)
             else {}
         )
+        if isinstance(result, RunResult):
+            application_data = result.application_data
+            if isinstance(application_data, Mapping):
+                declared_metadata = application_data.get("run_metadata")
+                if isinstance(declared_metadata, Mapping):
+                    result_metadata.update(
+                        redact_for_persistence(dict(declared_metadata)),
+                    )
+                for key in ("reason", "error_type", "workflow_id"):
+                    if key in application_data and key not in result_metadata:
+                        result_metadata[key] = redact_for_persistence(
+                            application_data[key],
+                        )
         if observer_errors:
             runtime_signals = {
                 "observer_error_types": sorted(set(observer_errors)),

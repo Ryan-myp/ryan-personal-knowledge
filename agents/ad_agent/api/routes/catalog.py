@@ -320,6 +320,37 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
             ),
         }
 
+    @router.get("/creation-catalog", tags=["info"])
+    async def get_creation_catalog(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+        provider: Optional[str] = Query(None, max_length=50),
+        ad_format: Optional[str] = Query(None, max_length=80),
+        account_id: Optional[str] = Query(None, max_length=200),
+        selector_dimension: Optional[str] = Query(None, max_length=40),
+        selector_value: Optional[str] = Query(None, max_length=120),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        runtime = runtime_or_503()
+        validator = getattr(runtime, "whitelist_validator", None)
+        configured_accounts = (
+            getattr(validator, "allowed_accounts", {}) if validator else {}
+        )
+        account_scope = getattr(principal, "account_scope", None)
+        if not any(configured_accounts.values()):
+            account_scope = None
+        return runtime.list_creation_catalog(
+            provider,
+            ad_format=ad_format,
+            selector_dimension=selector_dimension,
+            selector_value=selector_value,
+            account_id=account_id,
+            account_scope=account_scope,
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+        )
+
     @router.post("/creation-blueprints/resolve", tags=["info"])
     async def resolve_creation_blueprint(
         body: BlueprintResolveRequest,

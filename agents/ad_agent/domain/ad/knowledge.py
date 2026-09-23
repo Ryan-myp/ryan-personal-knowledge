@@ -15,7 +15,9 @@ import re
 import threading
 import time
 import unicodedata
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from functools import lru_cache
 from collections import OrderedDict
 from pathlib import Path
@@ -23,6 +25,7 @@ from typing import Any, Iterable, Mapping, Optional, Protocol
 
 from ...core.namespace import normalize_namespace as normalize_platform
 from ...core.context import ContextQuery
+from agents.agent_platform.data.semantic import validate_vector
 
 
 WIKI_SCHEMA_VERSION = "1"
@@ -32,6 +35,8 @@ WIKI_OBJECT_TYPES = {"raw", "entity", "concept", "comparison", "query", "system"
 SOURCE_KINDS = {"official", "code", "internal", "user", "inferred"}
 AUTHORITIES = {"official", "repository", "operator", "llm"}
 EVIDENCE_LEVELS = {"verified", "reviewed", "provisional"}
+_EVIDENCE_WEIGHTS = {"verified": 1.18, "reviewed": 1.10, "provisional": 0.92}
+_AUTHORITY_WEIGHTS = {"official": 1.10, "repository": 1.06, "operator": 1.0, "llm": 0.92}
 
 
 @dataclass(frozen=True)
@@ -264,6 +269,12 @@ class MarkdownWikiKnowledgeProvider:
         include_raw: bool = False,
         query_cache_ttl_seconds: float = 5.0,
         query_cache_max_entries: int = 256,
+        embedding_provider: Any = None,
+        semantic_index: Any = None,
+        semantic_scope: str = "builtin",
+        semantic_top_k: int = 64,
+        semantic_batch_size: int = 64,
+        semantic_timeout_seconds: float = 2.0,
     ):
         self.base_path = Path(base_path).resolve()
         self.search_index = search_index
@@ -272,8 +283,23 @@ class MarkdownWikiKnowledgeProvider:
             raise ValueError("query_cache_ttl_seconds cannot be negative")
         if query_cache_max_entries <= 0:
             raise ValueError("query_cache_max_entries must be positive")
+        if semantic_top_k <= 0:
+            raise ValueError("semantic_top_k must be positive")
+        if semantic_batch_size <= 0:
+            raise ValueError("semantic_batch_size must be positive")
+        if semantic_timeout_seconds <= 0:
+            raise ValueError("semantic_timeout_seconds must be positive")
         self._query_cache_ttl_seconds = float(query_cache_ttl_seconds)
         self._query_cache_max_entries = int(query_cache_max_entries)
+        self.embedding_provider = embedding_provider
+        self.semantic_index = semantic_index
+        self.semantic_scope = str(semantic_scope or "builtin").strip() or "builtin"
+        self.semantic_top_k = min(int(semantic_top_k), 1000)
+        self.semantic_batch_size = min(int(semantic_batch_size), 256)
+        self.semantic_timeout_seconds = float(semantic_timeout_seconds)
+        self._semantic_available = False
+        self._semantic_dimension: int | None = None
+        self._semantic_error: str | None = None
         self._tenant_cache_max_entries = 256
         self._query_cache: OrderedDict[
             tuple[Any, ...], tuple[float, tuple[KnowledgeDocument, ...]]
@@ -406,6 +432,28 @@ class MarkdownWikiKnowledgeProvider:
         self._fts_available = self._rebuild_search_index(
             self._chunks, scope=self._fts_scope
         )
+        self._semantic_available = self._rebuild_semantic_index(
+            self._chunks, scope=self.semantic_scope,
+        )
+
+    @property
+    def semantic_available(self) -> bool:
+        return self._semantic_available
+
+    def semantic_metrics(self) -> dict[str, Any]:
+        """Expose semantic readiness without returning vectors or content."""
+        return {
+            "configured": bool(
+                self.embedding_provider is not None and self.semantic_index is not None
+            ),
+            "available": self._semantic_available,
+            "scope": self.semantic_scope,
+            "dimension": self._semantic_dimension,
+            "top_k": self.semantic_top_k,
+            "batch_size": self.semantic_batch_size,
+            "timeout_seconds": self.semantic_timeout_seconds,
+            "error_type": self._semantic_error,
+        }
 
     @staticmethod
     def _confidence(value: Any, default: float) -> float:
@@ -749,6 +797,126 @@ class MarkdownWikiKnowledgeProvider:
         except (OSError, RuntimeError, TypeError, ValueError):
             return False
 
+    @classmethod
+    def _semantic_text(cls, chunk: KnowledgeDocument) -> str:
+        """Build a bounded, redacted embedding input from source metadata."""
+        clean = lambda value: cls._SENSITIVE_TERMS.sub("<redacted>", str(value or ""))
+        parts = (
+            clean(chunk.title),
+            clean(" ".join(chunk.heading_path)),
+            clean(" ".join(chunk.tags)),
+            clean(chunk.category),
+            clean(chunk.subcategory),
+            clean(chunk.excerpt),
+        )
+        return " ".join(part for part in parts if part).strip()[:8_000]
+
+    def _embed(self, texts: list[str]) -> list[tuple[float, ...]]:
+        embed = getattr(self.embedding_provider, "embed", None)
+        if not callable(embed):
+            raise TypeError("embedding_provider must expose embed()")
+        executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="knowledge-embedding",
+        )
+        future: Future[Any] = executor.submit(embed, texts)
+        try:
+            raw = future.result(timeout=self.semantic_timeout_seconds)
+        except FutureTimeoutError as error:
+            future.cancel()
+            raise TimeoutError("knowledge embedding timed out") from error
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        if isinstance(raw, (str, bytes)) or not isinstance(raw, Iterable):
+            raise ValueError("embedding provider returned an invalid batch")
+        vectors = list(raw)
+        if len(vectors) != len(texts):
+            raise ValueError("embedding provider returned an incomplete batch")
+        normalized: list[tuple[float, ...]] = []
+        for vector in vectors:
+            normalized_vector = validate_vector(
+                vector,
+                expected_dimension=self._semantic_dimension,
+            )
+            if self._semantic_dimension is None:
+                self._semantic_dimension = len(normalized_vector)
+            normalized.append(normalized_vector)
+        return normalized
+
+    def _rebuild_semantic_index(
+        self,
+        chunks: Iterable[KnowledgeDocument],
+        *,
+        scope: str,
+    ) -> bool:
+        if self.embedding_provider is None or self.semantic_index is None:
+            return False
+        rebuild = getattr(self.semantic_index, "rebuild", None)
+        if not callable(rebuild):
+            self._semantic_error = "index_missing_rebuild"
+            return False
+        self._semantic_error = None
+        self._semantic_dimension = None
+        chunk_list = list(chunks)
+        records: list[dict[str, Any]] = []
+        try:
+            for offset in range(0, len(chunk_list), self.semantic_batch_size):
+                batch = chunk_list[offset:offset + self.semantic_batch_size]
+                vectors = self._embed([self._semantic_text(chunk) for chunk in batch])
+                records.extend(
+                    {
+                        "chunk_id": chunk.chunk_id,
+                        "document_id": chunk.document_id,
+                        "vector": vector,
+                    }
+                    for chunk, vector in zip(batch, vectors)
+                )
+            rebuild(records, scope=str(scope or "builtin"))
+            return True
+        except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as error:
+            self._semantic_error = type(error).__name__
+            self._semantic_dimension = None
+            return False
+
+    def _semantic_search_hits(
+        self,
+        query: str,
+        *,
+        scope: str | None = None,
+    ) -> Optional[dict[str, float]]:
+        if (
+            not self._semantic_available
+            or self.embedding_provider is None
+            or self.semantic_index is None
+        ):
+            return None
+        search = getattr(self.semantic_index, "search", None)
+        if not callable(search):
+            return None
+        try:
+            vectors = self._embed([
+                self._SENSITIVE_TERMS.sub("<redacted>", str(query or ""))[:8_000]
+            ])
+            rows = search(
+                vectors[0],
+                scope=str(scope or self.semantic_scope),
+                limit=self.semantic_top_k,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as error:
+            self._semantic_error = type(error).__name__
+            self._semantic_available = False
+            return None
+        result: dict[str, float] = {}
+        for row in rows or ():
+            if not isinstance(row, Mapping) or not row.get("chunk_id"):
+                continue
+            try:
+                score = float(row.get("score", 0.0))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(score):
+                result[str(row["chunk_id"])] = max(-1.0, min(1.0, score))
+        return result
+
     def _search_index_hits(
         self, query: str, terms: Iterable[str], *, scopes: list[str],
     ) -> Optional[dict[str, float]]:
@@ -869,6 +1037,7 @@ class MarkdownWikiKnowledgeProvider:
         fts_hits = self._search_index_hits(
             query, terms, scopes=[self._fts_scope]
         )
+        semantic_hits = self._semantic_search_hits(query)
         result = self._query_chunks(
             self._chunks,
             self._documents,
@@ -879,6 +1048,7 @@ class MarkdownWikiKnowledgeProvider:
             limit=effective_limit,
             max_excerpt_chars=effective_excerpt_chars,
             fts_hits=fts_hits,
+            semantic_hits=semantic_hits,
         )
         if self._query_cache_ttl_seconds > 0:
             with self._query_cache_lock:
@@ -968,6 +1138,7 @@ class MarkdownWikiKnowledgeProvider:
         limit: int = 4,
         max_excerpt_chars: int = 1200,
         fts_hits: Optional[Mapping[str, float]] = None,
+        semantic_hits: Optional[Mapping[str, float]] = None,
     ) -> list[KnowledgeDocument]:
         if limit <= 0 or max_excerpt_chars <= 0:
             return []
@@ -989,7 +1160,24 @@ class MarkdownWikiKnowledgeProvider:
                 continue
             if allowed_types and chunk.knowledge_type not in allowed_types:
                 continue
-            if fts_hits is not None and chunk.chunk_id not in fts_hits:
+            if (
+                fts_hits is not None
+                and semantic_hits is None
+                and chunk.chunk_id not in fts_hits
+            ):
+                continue
+            if (
+                semantic_hits is not None
+                and fts_hits is None
+                and chunk.chunk_id not in semantic_hits
+            ):
+                continue
+            if (
+                semantic_hits is not None
+                and fts_hits is not None
+                and chunk.chunk_id not in fts_hits
+                and chunk.chunk_id not in semantic_hits
+            ):
                 continue
             filtered.append(chunk)
         if not filtered:
@@ -1015,6 +1203,10 @@ class MarkdownWikiKnowledgeProvider:
             score = 0.0
             if fts_hits is not None:
                 score += min(12.0, fts_hits.get(document.chunk_id, 0.0))
+            if semantic_hits is not None:
+                semantic_score = semantic_hits.get(document.chunk_id)
+                if semantic_score is not None:
+                    score += max(0.0, (semantic_score + 1.0) / 2.0) * 8.0
             if phrase and phrase in searchable:
                 score += 6.0
             if phrase and phrase in title:
@@ -1072,7 +1264,12 @@ class MarkdownWikiKnowledgeProvider:
                 score = 0.1
             if score <= 0:
                 continue
-            ranked.append((score * max(document.confidence, 0.01), document))
+            ranked.append((
+                score
+                * max(document.confidence, 0.01)
+                * cls._retrieval_quality(document),
+                document,
+            ))
         ranked.sort(key=lambda item: (-item[0], item[1].document_id))
         results = []
         seen_documents: set[str] = set()
@@ -1091,7 +1288,13 @@ class MarkdownWikiKnowledgeProvider:
                         ),
                         "score": round(score, 6),
                         "retrieval_method": (
-                            "sqlite_fts5_bm25" if fts_hits is not None else document.retrieval_method
+                            "hybrid"
+                            if fts_hits is not None and semantic_hits is not None
+                            else "sqlite_fts5_bm25"
+                            if fts_hits is not None
+                            else "semantic_vector"
+                            if semantic_hits is not None
+                            else document.retrieval_method
                         ),
                         "matched_terms": tuple(dict.fromkeys(matched_terms)),
                         "match_coverage": round(match_coverage, 4),
@@ -1124,6 +1327,26 @@ class MarkdownWikiKnowledgeProvider:
             start = line_start + 1 if line_start >= 0 else start
         excerpt = value[start:end].strip()
         return ("…" if start > 0 else "") + excerpt + ("…" if end < len(value) else "")
+
+    @staticmethod
+    def _retrieval_quality(document: KnowledgeDocument) -> float:
+        """Apply bounded provenance and freshness weighting after lexical ranking."""
+        evidence = _EVIDENCE_WEIGHTS.get(document.evidence_level, 0.92)
+        authority = _AUTHORITY_WEIGHTS.get(document.authority, 1.0)
+        updated_at = str(document.last_verified_at or document.updated_at or "").strip()
+        freshness = 1.0
+        try:
+            parsed = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            age_days = max(
+                0.0,
+                (datetime.now(timezone.utc) - parsed).total_seconds() / 86400.0,
+            )
+            freshness = max(0.85, 1.0 - min(age_days, 3650.0) / 3650.0 * 0.15)
+        except (TypeError, ValueError, OverflowError):
+            pass
+        return max(0.75, min(1.35, evidence * authority * freshness))
 
     def validate(self) -> list[dict[str, Any]]:
         """Validate Wiki metadata without requiring an external parser."""

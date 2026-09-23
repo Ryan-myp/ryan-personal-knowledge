@@ -1,133 +1,18 @@
-"""Blueprint and creation-card composition services for advertising."""
+"""Blueprint resolution and cascade evaluation services for advertising."""
 
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any, Iterable, Mapping, Optional
 
 from ..core.intent import SimpleIntentRouter
 from ..core.interfaces import ParsedIntent
 from ..domain.ad.blueprint import _schema_at_path
-from ..domain.ad.contracts import AdFormatCoverage
 
 logger = logging.getLogger(__name__)
 
 
 class AdCreationBlueprintServicesMixin:
-    def list_ad_formats(
-        self, platform: Optional[str] = None, coverage: Optional[str] = None
-    ) -> list[dict[str, Any]]:
-        """Return JSON-safe format coverage metadata for UI/planners."""
-        if coverage is not None:
-            coverage = str(coverage).strip().lower()
-            if coverage not in {item.value for item in AdFormatCoverage}:
-                raise ValueError(f"unsupported ad format coverage: {coverage}")
-        platforms = [self._canonical_platform(platform)] if platform else sorted(
-            self.ad_format_catalogs
-        )
-        result: list[dict[str, Any]] = []
-        for current in platforms:
-            for entry in self.ad_format_catalogs.get(current, []):
-                if coverage and entry.get("coverage") != coverage:
-                    continue
-                result.append({"platform": current, **dict(entry)})
-        return result
-
-    def list_parameter_options(
-        self, platform: Optional[str] = None, field: Optional[str] = None,
-        tool_name: Optional[str] = None,
-    ) -> list[dict[str, Any]]:
-        """Return JSON-safe static or dynamic provider parameter metadata."""
-        return [
-            catalog.to_dict()
-            for catalog in self.parameter_catalogs.list(
-                platform=platform, field=field, tool_name=tool_name
-            )
-        ]
-
-    def list_creation_blueprints(
-        self, provider: Optional[str] = None, ad_format: Optional[str] = None,
-        selector_dimension: Optional[str] = None, selector_value: Any = None,
-    ) -> list[dict[str, Any]]:
-        """Return provider-owned creation metadata without making network calls."""
-        result = []
-        for blueprint in self.creation_blueprints.list(
-            provider, ad_format, selector_dimension, selector_value
-        ):
-            expanded = self.creation_card_builder.expand_blueprint(blueprint)
-            document = expanded.to_dict()
-            document["support"] = self._creation_blueprint_support(expanded)
-            result.append(document)
-        return result
-
-    @staticmethod
-    def _creation_format_tokens(value: Any) -> set[str]:
-        return {
-            token for token in re.split(
-                r"[^a-z0-9]+", str(value or "").casefold()
-            )
-            if token
-        }
-
-    def _creation_blueprint_support(self, blueprint: Any) -> dict[str, Any]:
-        """Attach catalog evidence without inventing provider mappings."""
-        suffix = str(getattr(blueprint, "blueprint_id", "")).rsplit(".", 1)[-1]
-        blueprint_tokens = (
-            self._creation_format_tokens(suffix)
-            | self._creation_format_tokens(getattr(blueprint, "ad_format", ""))
-        )
-        candidates: list[tuple[int, Mapping[str, Any]]] = []
-        for entry in self.ad_format_catalogs.get(
-            str(getattr(blueprint, "provider", "")), []
-        ) or []:
-            if not isinstance(entry, Mapping):
-                continue
-            format_id = str(entry.get("format_id") or "")
-            category = str(entry.get("category") or "")
-            format_key = format_id.casefold()
-            suffix_key = suffix.casefold()
-            score = 0
-            if format_key == suffix_key:
-                score = 100
-            elif format_key == str(getattr(blueprint, "ad_format", "")).casefold():
-                score = 100
-            elif category and category.casefold() == suffix_key:
-                score = 80
-            elif blueprint_tokens & (
-                self._creation_format_tokens(format_id)
-                | self._creation_format_tokens(category)
-            ):
-                score = 60
-            if score:
-                candidates.append((score, entry))
-        if not candidates:
-            return {
-                "level": "contract_only",
-                "label": "已接入字段合同",
-                "catalog_match": False,
-                "gaps": ["尚未关联渠道广告类型目录"],
-            }
-        _score, entry = sorted(
-            candidates,
-            key=lambda item: (-item[0], str(item[1].get("format_id"))),
-        )[0]
-        coverage = str(entry.get("coverage") or "contract_only")
-        labels = {
-            "supported_dry_run": "支持草稿校验",
-            "partial_dry_run": "部分支持草稿",
-            "declared_only": "暂不支持向导创建",
-            "contract_only": "已接入字段合同",
-        }
-        return {
-            "level": coverage,
-            "label": labels.get(coverage, coverage),
-            "catalog_match": True,
-            "catalog_format": entry.get("format_id"),
-            "dependencies": list(entry.get("dependencies") or [])[:8],
-            "gaps": list(entry.get("gaps") or [])[:8],
-        }
-
     def resolve_creation_blueprint(
         self,
         provider: str,
@@ -274,7 +159,10 @@ class AdCreationBlueprintServicesMixin:
             return None, None
         blueprint = self.creation_blueprints.get(blueprint_id, blueprint_version)
         if blueprint is None:
-            return None, f"广告创建蓝图不存在：{blueprint_id}@{blueprint_version or 'latest'}"
+            return None, (
+                f"广告创建蓝图不存在：{blueprint_id}@"
+                f"{blueprint_version or 'latest'}"
+            )
         requested_platforms = {
             self._canonical_platform(platform)
             for platform in (getattr(intent, "namespaces", []) or [])
@@ -295,7 +183,9 @@ class AdCreationBlueprintServicesMixin:
                 continue
             definitions.append(definition)
         if missing_tools:
-            return None, "广告创建蓝图依赖的能力暂不可用：" + ", ".join(missing_tools[:8])
+            return None, "广告创建蓝图依赖的能力暂不可用：" + ", ".join(
+                missing_tools[:8]
+            )
         if not definitions:
             return None, "广告创建蓝图没有可用的创建能力。"
         ordered = SimpleIntentRouter._order_by_resource_dependencies(definitions)

@@ -45,6 +45,15 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _load_optional_provider_evidence(path: Path | None) -> tuple[dict[str, Any] | None, str | None]:
+    if path is None:
+        return None, None
+    try:
+        return _load_json(path), None
+    except (OSError, json.JSONDecodeError, ValueError) as error:
+        return None, f"{type(error).__name__}: {error}"
+
+
 def _run_skill_up_cases() -> dict[str, Any]:
     """Run repository cases through the Runtime adapter without CLI/network."""
     try:
@@ -187,8 +196,15 @@ def _run_generic_platform_smoke() -> dict[str, Any]:
         }
 
 
-def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
+def build_report(
+    profile: str,
+    policy_path: Path,
+    provider_evidence_path: Path | None = None,
+) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
+    provider_evidence, provider_evidence_error = _load_optional_provider_evidence(
+        provider_evidence_path
+    )
     tool_source_report = audit_provider_tools()
     contract_errors = _contract_gate_errors()
     provider_report = run_harness(
@@ -211,6 +227,7 @@ def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
         tool_source_report=tool_source_report,
         contract_gate_errors=contract_errors,
         dry_run_report=dry_run_report,
+        provider_evidence=provider_evidence,
         policy=policy,
         profile=profile,
     )
@@ -220,6 +237,10 @@ def build_report(profile: str, policy_path: Path) -> dict[str, Any]:
         "tool_source_audit": tool_source_report,
         "contract_snapshot_errors": contract_errors,
         "dry_run": dry_run_report,
+        "provider_evidence_source": (
+            str(provider_evidence_path) if provider_evidence_path else None
+        ),
+        "provider_evidence_load_error": provider_evidence_error,
     }
     return report
 
@@ -233,9 +254,18 @@ def main(argv: list[str] | None = None) -> int:
         default=Path(__file__).resolve().parents[1] / "contracts" / "readiness_policy.json",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--provider-evidence",
+        type=Path,
+        help="Optional controlled Provider E2E evidence JSON; never inferred from local tests.",
+    )
     args = parser.parse_args(argv)
     try:
-        report = build_report(args.profile, args.policy)
+        report = build_report(
+            args.profile,
+            args.policy,
+            provider_evidence_path=args.provider_evidence,
+        )
     except Exception as exc:
         report = {
             "format_version": 1,

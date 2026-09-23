@@ -157,6 +157,10 @@ class MemoryManager:
             r"(?is)^(?:以后|后续|接下来)(?:请|都)?[：:\s]*(?P<content>(?:使用|优先|采用|选择|按|不要|避免).+)$"
         )),
     )
+    _NON_DEFAULT_AUTHORITY_RE = re.compile(
+        r"(?i)(?:account|账户|广告账户|resource|资源|credential|凭证|token|令牌|"
+        r"\bact[_-]?\d+\b|\b\d{6,}\b)"
+    )
 
     def __init__(
         self,
@@ -667,12 +671,39 @@ class MemoryManager:
             limit=5,
         )
         bounded_max_chars = max(0, min(int(max_chars), 2400))
-        context = "\n\n".join(
-            f"[memory:{record.kind}] {record.content} "
-            f"(source={record.source}, confidence={record.confidence:.2f})"
-            for record in records
-        )[:bounded_max_chars]
-        return [record.to_context_dict() for record in records], context
+        context_records: list[dict[str, Any]] = []
+        context_parts: list[str] = []
+        for record in records:
+            value = record.to_context_dict()
+            role = self.context_role(record)
+            safe_for_default = self.safe_for_default(record)
+            value["context_role"] = role
+            value["safe_for_default"] = safe_for_default
+            context_records.append(value)
+            context_parts.append(
+                f"[memory:{record.kind}] role={role} safe_default={int(safe_for_default)} "
+                f"{record.content} (source={record.source}, confidence={record.confidence:.2f})"
+            )
+        return context_records, "\n\n".join(context_parts)[:bounded_max_chars]
+
+    @classmethod
+    def context_role(cls, record: MemoryRecord) -> str:
+        """Classify how a record may influence model guidance."""
+        if record.kind in {"semantic", "procedural"}:
+            return "default_hint"
+        return "historical_signal"
+
+    @classmethod
+    def safe_for_default(cls, record: MemoryRecord) -> bool:
+        """Only stable preference guidance may suggest defaults.
+
+        Account IDs, resource IDs, credentials and other external facts must
+        come from the current trusted account/tool context, never Memory.
+        """
+        return (
+            cls.context_role(record) == "default_hint"
+            and not cls._NON_DEFAULT_AUTHORITY_RE.search(record.content or "")
+        )
 
     def forget(self, memory_id: str, *, tenant_id: str, user_id: str) -> bool:
         deleted = self.store.delete_memory(

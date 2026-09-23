@@ -237,12 +237,6 @@ class AdCreationStateServicesMixin:
         self.persist_conversation_turn(
             session, turn_id, user_input, reply, execution_trace=trace, ui=ui,
         )
-        updater = getattr(self._session_manager, "update_execution_run", None)
-        if callable(updater):
-            try:
-                updater(str(run_id), status="awaiting_confirmation")
-            except Exception:
-                logger.debug("failed to finalize action clarification run", exc_info=True)
         results = []
         if confirmation_payload:
             results.append({

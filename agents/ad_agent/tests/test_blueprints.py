@@ -1192,6 +1192,50 @@ def test_creation_form_keeps_selected_account_and_only_matching_templates():
     } == {"tiktok.traffic_video"}
 
 
+def test_creation_catalog_unifies_ad_types_required_inputs_and_account_templates():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "tiktok": ["7397068114548195329"],
+    }
+    runtime.register_tool_source(create_tiktok_tool_source())
+
+    catalog = runtime.list_creation_catalog(
+        provider="tiktok",
+        account_id="7397068114548195329",
+        account_scope={"tiktok": ["7397068114548195329"]},
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+
+    traffic = next(
+        item for item in catalog["ad_types"]
+        if item["blueprint_id"] == "tiktok.traffic_video"
+    )
+    assert traffic["provider"] == "tiktok"
+    assert traffic["ad_format"] == "SINGLE_VIDEO"
+    assert traffic["required_inputs"]
+    assert all(
+        set(item) >= {"path", "label", "required"}
+        for item in traffic["required_inputs"]
+    )
+    assert traffic["template_options"]
+    assert all(
+        item["account_id"] == "7397068114548195329"
+        for item in traffic["template_options"]
+    )
+    assert all(
+        "missing_input_count" in item
+        and "recommendation_score" in item
+        for item in traffic["template_options"]
+    )
+
+
 def test_creation_run_gates_known_type_on_account_before_showing_full_form():
     from agents.ad_agent.persistence.store import AdAgentStore
 

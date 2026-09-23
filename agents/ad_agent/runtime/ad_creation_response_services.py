@@ -54,15 +54,6 @@ class AdCreationResponseServicesMixin:
         self.persist_conversation_turn(
             session, turn_id, user_input, reply, execution_trace=trace, ui=ui,
         )
-        updater = getattr(self._session_manager, "update_execution_run", None)
-        if callable(updater):
-            try:
-                updater(str(run_id), status="awaiting_confirmation")
-            except Exception:
-                logger.debug(
-                    "failed to finalize clarification execution run",
-                    exc_info=True,
-                )
         return {
             "session_id": session_id,
             "run_id": run_id,
@@ -106,15 +97,6 @@ class AdCreationResponseServicesMixin:
         self.persist_conversation_turn(
             session, turn_id, user_input, reply, execution_trace=trace,
         )
-        updater = getattr(self._session_manager, "update_execution_run", None)
-        if callable(updater):
-            try:
-                updater(str(run_id), status="failed")
-            except Exception:
-                logger.debug(
-                    "failed to finalize creation policy run",
-                    exc_info=True,
-                )
         return {
             "session_id": session_id,
             "run_id": run_id,

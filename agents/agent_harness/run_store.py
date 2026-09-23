@@ -26,6 +26,19 @@ class RunStore(Protocol):
         ...
 
 
+class RunCheckpointStore(Protocol):
+    """Optional durable checkpoint port for interrupted Agent Runs."""
+
+    def save_checkpoint(self, run_id: str, checkpoint: Mapping[str, Any]) -> Any:
+        ...
+
+    def load_checkpoint(self, run_id: str) -> Optional[Mapping[str, Any]]:
+        ...
+
+    def clear_checkpoint(self, run_id: str) -> Any:
+        ...
+
+
 def run_start_payload(request: TurnRequest) -> dict[str, Any]:
     """Build a sanitized, application-neutral start payload."""
     return {
@@ -39,4 +52,4 @@ def run_start_payload(request: TurnRequest) -> dict[str, Any]:
     }
 
 
-__all__ = ["RunStore", "run_start_payload"]
+__all__ = ["RunCheckpointStore", "RunStore", "run_start_payload"]

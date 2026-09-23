@@ -12,7 +12,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from dataclasses import replace
-import json
 import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
@@ -20,10 +19,15 @@ from .context import ContextProvider, context_prompt
 from .messages import AgentMessage, ModelTurn, ToolCall
 from .persistence import TranscriptStore
 from .redaction import redact_for_persistence
+from .reliability import ToolCircuitBreaker
 from .results import RunResult, RunStatus
 from .runtime_kernel import TurnRequest
 from .skills import SkillCatalog
 from .tool_catalog import ToolCatalog
+from .tool_execution import (
+    ToolCallContext,
+    ToolExecutionCoordinator,
+)
 
 
 class ModelAdapter(Protocol):
@@ -66,22 +70,6 @@ class AgentCancelledError(RuntimeError):
 
 class AgentLeaseLostError(RuntimeError):
     """The current Agent Run lost its durable Runtime session lease."""
-
-
-TOOL_CANCELLATION_MODES = frozenset({
-    "cooperative",
-    "interruptible",
-    "not_interruptible",
-})
-
-
-@dataclass(frozen=True)
-class ToolCallContext:
-    request: TurnRequest
-    assistant_message: AgentMessage
-    tool_call: ToolCall
-    state: "AgentState"
-    tool_definition: Any = None
 
 
 @dataclass
@@ -134,6 +122,12 @@ class Agent:
         max_total_tokens: int | None = None,
         max_stream_delta_chars: int = 4096,
         max_tool_result_chars: int = 32_000,
+        tool_timeout_seconds: float | None = None,
+        tool_max_retries: int = 0,
+        tool_retry_delay_seconds: float = 0.0,
+        tool_circuit_failure_threshold: int = 5,
+        tool_circuit_reset_seconds: float = 30.0,
+        checkpoint_store: Any = None,
     ) -> None:
         if max_turns <= 0:
             raise ValueError("max_turns must be positive")
@@ -168,6 +162,12 @@ class Agent:
             raise ValueError("max_stream_delta_chars must be positive")
         if max_tool_result_chars <= 0:
             raise ValueError("max_tool_result_chars must be positive")
+        if tool_timeout_seconds is not None and tool_timeout_seconds <= 0:
+            raise ValueError("tool_timeout_seconds must be positive")
+        if tool_max_retries < 0:
+            raise ValueError("tool_max_retries must be non-negative")
+        if tool_retry_delay_seconds < 0:
+            raise ValueError("tool_retry_delay_seconds must be non-negative")
         self.model = model
         self.tool_catalog = tool_catalog
         self.skill_catalog = skill_catalog
@@ -194,6 +194,17 @@ class Agent:
         self.max_total_tokens = max_total_tokens
         self.max_stream_delta_chars = int(max_stream_delta_chars)
         self.max_tool_result_chars = int(max_tool_result_chars)
+        self.tool_timeout_seconds = (
+            float(tool_timeout_seconds)
+            if tool_timeout_seconds is not None else None
+        )
+        self.tool_max_retries = int(tool_max_retries)
+        self.tool_retry_delay_seconds = float(tool_retry_delay_seconds)
+        self._tool_circuit = ToolCircuitBreaker(
+            failure_threshold=tool_circuit_failure_threshold,
+            reset_seconds=tool_circuit_reset_seconds,
+        )
+        self.checkpoint_store = checkpoint_store
         self.before_tool_call = before_tool_call
         self.after_tool_call = after_tool_call
         self.should_stop_after_turn = should_stop_after_turn
@@ -211,6 +222,21 @@ class Agent:
         self._subscriber_guard = threading.RLock()
         self._event_guard = threading.RLock()
         self._event_sequences: dict[str, int] = {}
+        self._tool_executor = ToolExecutionCoordinator(
+            tool_catalog=self.tool_catalog,
+            emit=self._emit,
+            interrupt_reason=lambda request: self._interrupt_reason(request),
+            assert_not_interrupted=lambda request: self._assert_not_interrupted(request),
+            before_tool_call=self.before_tool_call,
+            after_tool_call=self.after_tool_call,
+            tool_execution=self.tool_execution,
+            max_parallel_tools=self.max_parallel_tools,
+            tool_timeout_seconds=self.tool_timeout_seconds,
+            tool_max_retries=self.tool_max_retries,
+            tool_retry_delay_seconds=self.tool_retry_delay_seconds,
+            tool_circuit=self._tool_circuit,
+            max_tool_result_chars=self.max_tool_result_chars,
+        )
 
     @staticmethod
     def _session_key(
@@ -429,6 +455,7 @@ class Agent:
                         id=str(item.get("id") or item.get("tool_call_id") or ""),
                         name=str(item.get("name") or ""),
                         arguments=dict(item.get("arguments") or item.get("args") or {}),
+                        depends_on=tuple(item.get("depends_on") or ()),
                     ))
             return ModelTurn(
                 content=value.get("content", value.get("reply", "")),
@@ -639,6 +666,7 @@ class Agent:
                             id=str(item.get("id") or item.get("tool_call_id") or ""),
                             name=str(item.get("name") or ""),
                             arguments=dict(item.get("arguments") or item.get("args") or {}),
+                            depends_on=tuple(item.get("depends_on") or ()),
                         ))
             else:
                 delta = ""
@@ -986,267 +1014,120 @@ class Agent:
                     "transcript append failed",
                 ) from error
 
-    def _execute_one(
+    def _save_checkpoint(
         self,
         request: TurnRequest,
-        assistant: AgentMessage,
-        call: ToolCall,
         state: AgentState,
-    ) -> dict[str, Any]:
-        binding = None
-        if self.tool_catalog is not None:
-            try:
-                binding = self.tool_catalog.get_binding(call.name)
-            except Exception:
-                binding = None
-        context = ToolCallContext(
-            request=request,
-            assistant_message=assistant,
-            tool_call=call,
-            state=state,
-            tool_definition=getattr(binding, "definition", None),
-        )
-        interrupted = self._interrupt_reason(request)
-        if interrupted is not None:
-            return {
-                "tool_call_id": call.id,
-                "name": call.name,
-                "content": interrupted,
-                "is_error": True,
-                "terminate": True,
-                "cancelled": interrupted == "cancelled",
-                "recovery_required": interrupted == "session_lease_lost",
-                "effect_state": (
-                    "unknown" if interrupted == "session_lease_lost" else "none"
-                ),
-                "runtime_signals": {interrupted: True},
-            }
-        if callable(self.before_tool_call):
-            try:
-                decision = self.before_tool_call(context)
-            except Exception as error:
-                return {
-                    "tool_call_id": call.id,
-                    "name": call.name,
-                    "content": "Tool policy evaluation failed",
-                    "is_error": True,
-                    "terminate": True,
-                    "recovery_required": True,
-                    "effect_state": "unknown",
-                    "runtime_signals": {
-                        "tool_policy_error": True,
-                        "tool_policy_error_type": type(error).__name__,
-                    },
-                }
-            if isinstance(decision, Mapping) and decision.get("block"):
-                result = {
-                    "tool_call_id": call.id,
-                    "name": call.name,
-                    "content": str(decision.get("reason") or "tool call blocked"),
-                    "is_error": True,
-                    "terminate": bool(decision.get("terminate")),
-                }
-                for key in (
-                    "needs_input", "needs_confirmation", "confirmation_payload",
-                    "runtime_signals", "recovery_required", "success",
-                    "effect_state", "data", "execution_status",
-                ):
-                    if key in decision:
-                        result[key] = decision[key]
-                return result
+        *,
+        turn_index: int,
+        tool_results: Sequence[Mapping[str, Any]],
+    ) -> bool:
+        save = getattr(self.checkpoint_store, "save_checkpoint", None)
+        if not callable(save):
+            return True
         try:
-            if self.tool_catalog is None:
-                raise KeyError(f"Tool '{call.name}' not found")
-            if binding is None:
-                if self.tool_catalog is None:
-                    raise KeyError(f"Tool '{call.name}' not found")
-                binding = self.tool_catalog.get_binding(call.name)
-            execute = getattr(binding.executor, "execute", None)
-            if callable(execute):
-                output = execute(context, dict(call.arguments))
-            elif callable(binding.executor):
-                output = binding.executor(context, dict(call.arguments))
-            else:
-                raise TypeError(f"Tool '{call.name}' has no executor")
-            safe_output = redact_for_persistence(output)
-            result = {
-                "tool_call_id": call.id,
-                "name": call.name,
-                "content": self._bound_tool_value(safe_output),
-                "is_error": False,
-                "terminate": False,
-            }
-            if isinstance(safe_output, Mapping):
-                for key in (
-                    "needs_input", "needs_confirmation", "confirmation_payload",
-                    "runtime_signals", "recovery_required", "success",
-                    "effect_state", "data", "execution_status",
-                ):
-                    if key in safe_output:
-                        result[key] = (
-                            self._bound_tool_value(safe_output[key])
-                            if key == "data"
-                            else safe_output[key]
-                        )
-            cancellation_mode = self._tool_cancellation_mode(
-                getattr(binding, "definition", None),
+            save(
+                str(request.run_id or ""),
+                {
+                    "run_id": str(request.run_id or ""),
+                    "turn_id": str(request.turn_id or ""),
+                    "session_id": str(request.session_id or ""),
+                    "tenant_id": str(request.tenant_id or "default"),
+                    "user_id": str(request.user_id or "anonymous"),
+                    "turn_index": int(turn_index),
+                    "messages": [
+                        redact_for_persistence(item.to_dict())
+                        for item in state.messages
+                    ],
+                    "tool_results": redact_for_persistence(
+                        [dict(item) for item in tool_results],
+                    ),
+                    "usage": dict(state.usage),
+                    "saved_at": time.time(),
+                },
             )
-            interrupted = self._interrupt_reason(request)
-            if interrupted == "cancelled":
-                result["cancelled"] = True
-                result["terminate"] = True
-                if cancellation_mode != "interruptible" and self._tool_is_write(
-                    getattr(binding, "definition", None),
-                ):
-                    result["recovery_required"] = True
-                    result["effect_state"] = "unknown"
-                    result["runtime_signals"] = {
-                        "cancelled": True,
-                        "effect_state": "unknown",
-                    }
-                else:
-                    result["runtime_signals"] = {"cancelled": True}
-            elif interrupted == "session_lease_lost":
-                result.update({
-                    "terminate": True,
-                    "recovery_required": True,
-                    "effect_state": "unknown",
-                    "runtime_signals": {"session_lease_lost": True},
-                })
-        except Exception as error:
-            result = {
-                "tool_call_id": call.id,
-                "name": call.name,
-                "content": redact_for_persistence(str(error)),
-                "is_error": True,
-                "terminate": False,
-            }
-        if callable(self.after_tool_call):
-            try:
-                override = self.after_tool_call(context, result)
-            except Exception as error:
-                return {
-                    **result,
-                    "content": "Tool post-execution policy failed",
-                    "is_error": True,
-                    "terminate": True,
-                    "recovery_required": True,
-                    "effect_state": "unknown",
-                    "runtime_signals": {
-                        **dict(result.get("runtime_signals") or {}),
-                        "tool_policy_error": True,
-                        "tool_policy_error_type": type(error).__name__,
-                    },
-                }
-            if isinstance(override, Mapping):
-                result = {**result, **dict(override)}
-        return result
-
-    @staticmethod
-    def _tool_value(definition: Any, name: str, default: Any = None) -> Any:
-        if isinstance(definition, Mapping):
-            return definition.get(name, default)
-        return getattr(definition, name, default)
-
-    @classmethod
-    def _tool_cancellation_mode(cls, definition: Any) -> str:
-        value = str(
-            cls._tool_value(definition, "cancellation_mode", "cooperative")
-            or "cooperative"
-        ).strip().lower()
-        return value if value in TOOL_CANCELLATION_MODES else "cooperative"
-
-    @classmethod
-    def _tool_is_write(cls, definition: Any) -> bool:
-        effect = cls._tool_value(
-            definition,
-            "effect_class",
-            cls._tool_value(definition, "effect", "read"),
-        )
-        effect = getattr(effect, "value", effect)
-        return str(effect or "").strip().lower() in {"write", "external_write"}
-
-    def _bound_tool_value(self, value: Any) -> Any:
-        """Keep model-facing Tool content bounded without dropping status data."""
-        if isinstance(value, str):
-            text = value
-        else:
-            try:
-                text = json.dumps(
-                    value, ensure_ascii=False, sort_keys=True, default=str,
-                )
-            except (TypeError, ValueError):
-                text = str(value)
-        if len(text) <= self.max_tool_result_chars:
-            return value
-        marker = "\n...[tool output truncated]"
-        limit = max(0, self.max_tool_result_chars - len(marker))
-        return text[:limit] + marker
-
-    def _execute_tools(
-        self,
-        request: TurnRequest,
-        assistant: AgentMessage,
-        calls: Sequence[ToolCall],
-        state: AgentState,
-    ) -> list[dict[str, Any]]:
-        if self.tool_execution == "sequential" or len(calls) <= 1:
-            return [
-                self._execute_emitting(request, assistant, call, state)
-                for call in calls
-            ]
-        for call in calls:
             self._emit(
-                "tool_execution_start",
+                "checkpoint_saved",
                 request,
-                tool_call_id=call.id,
-                tool_name=call.name,
-                arguments=dict(call.arguments),
+                turn_index=int(turn_index),
             )
-        with ThreadPoolExecutor(
-            max_workers=min(self.max_parallel_tools, len(calls)),
-            thread_name_prefix="agent-tool",
-        ) as pool:
-            futures = [
-                pool.submit(self._execute_one, request, assistant, call, state)
-                for call in calls
-            ]
-            results = []
-            for call, future in zip(calls, futures):
-                result = future.result()
-                self._emit_tool_end(request, call, result)
-                results.append(result)
-            return results
+            return True
+        except Exception as error:
+            self._emit(
+                "checkpoint_error",
+                request,
+                error_type=type(error).__name__,
+            )
+            return False
 
-    def _emit_tool_end(
-        self, request: TurnRequest, call: ToolCall, result: Mapping[str, Any],
+    def _clear_checkpoint(self, request: TurnRequest) -> None:
+        self._clear_checkpoint_id(str(request.run_id or ""), request)
+
+    def _clear_checkpoint_id(
+        self, checkpoint_id: str, request: TurnRequest,
     ) -> None:
-        self._emit(
-            "tool_execution_end",
-            request,
-            tool_call_id=call.id,
-            tool_name=call.name,
-            result=dict(result),
-            is_error=bool(result.get("is_error")),
-        )
+        clear = getattr(self.checkpoint_store, "clear_checkpoint", None)
+        if not callable(clear):
+            return
+        try:
+            clear(str(checkpoint_id or ""))
+            self._emit("checkpoint_cleared", request)
+        except Exception:
+            self._emit(
+                "checkpoint_error",
+                request,
+                phase="clear",
+            )
 
-    def _execute_emitting(
-        self,
-        request: TurnRequest,
-        assistant: AgentMessage,
-        call: ToolCall,
-        state: AgentState,
-    ) -> dict[str, Any]:
+    def _restore_checkpoint(
+        self, request: TurnRequest, state: AgentState,
+    ) -> str | None:
+        context = request.context
+        if not isinstance(context, Mapping) or not context.get(
+            "resume_from_checkpoint"
+        ):
+            return None
+        checkpoint_id = str(
+            context.get("resume_run_id") or request.run_id or ""
+        ).strip()
+        load = getattr(self.checkpoint_store, "load_checkpoint", None)
+        if not checkpoint_id or not callable(load):
+            return None
+        try:
+            checkpoint = load(checkpoint_id)
+        except Exception as error:
+            self._emit(
+                "checkpoint_error",
+                request,
+                phase="load",
+                error_type=type(error).__name__,
+            )
+            return None
+        if not isinstance(checkpoint, Mapping):
+            return None
+        messages = [
+            message for item in checkpoint.get("messages") or ()
+            if (message := self._message_from_payload(item)) is not None
+            and message.role != "system"
+        ]
+        if messages:
+            state.messages = list(self._system_messages)
+            for message in messages:
+                self._append_message(state, message, persist=False)
+        saved_usage = checkpoint.get("usage")
+        if isinstance(saved_usage, Mapping):
+            state.usage = {
+                str(key): max(0, int(value))
+                for key, value in saved_usage.items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool)
+            }
         self._emit(
-            "tool_execution_start",
+            "checkpoint_resumed",
             request,
-            tool_call_id=call.id,
-            tool_name=call.name,
-            arguments=dict(call.arguments),
+            source_run_id=checkpoint_id,
+            turn_index=checkpoint.get("turn_index"),
         )
-        result = self._execute_one(request, assistant, call, state)
-        self._emit_tool_end(request, call, result)
-        return result
+        return checkpoint_id
 
     def run(self, request: TurnRequest) -> RunResult:
         request = replace(
@@ -1273,8 +1154,10 @@ class Agent:
             # model budget.
             state.usage = {}
             state.last_used_at = time.monotonic()
+        checkpoint_source_id: str | None = None
         try:
             self._hydrate_state(request, state)
+            checkpoint_source_id = self._restore_checkpoint(request, state)
             self._emit("agent_start", request)
             self._emit("turn_start", request, turn_index=0)
             user_message = AgentMessage.user(
@@ -1287,6 +1170,7 @@ class Agent:
             self._append_message(state, user_message, request=request)
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
+            all_tool_results: list[dict[str, Any]] = []
             last_reply = ""
             application_data: Mapping[str, Any] = {}
             for turn_index in range(self.max_turns):
@@ -1318,9 +1202,10 @@ class Agent:
                 last_reply = str(model_turn.content or "")
                 self._emit("message_end", request, message=assistant.to_dict())
                 if model_turn.tool_calls:
-                    tool_results = self._execute_tools(
+                    tool_results = self._tool_executor.execute_tools(
                         request, assistant, model_turn.tool_calls, state,
                     )
+                    all_tool_results.extend(tool_results)
                     for result in tool_results:
                         tool_message = AgentMessage.tool(
                             result.get("content"),
@@ -1350,6 +1235,12 @@ class Agent:
                 self._emit(
                     "turn_end",
                     request,
+                    turn_index=turn_index,
+                    tool_results=tool_results,
+                )
+                checkpoint_ok = self._save_checkpoint(
+                    request,
+                    state,
                     turn_index=turn_index,
                     tool_results=tool_results,
                 )
@@ -1386,9 +1277,17 @@ class Agent:
                         bool(item.get("cancelled"))
                         for item in tool_results
                     )
+                    runtime_signals = {
+                        key: value
+                        for item in tool_results
+                        if isinstance(item.get("runtime_signals"), Mapping)
+                        for key, value in item["runtime_signals"].items()
+                    }
+                    if not checkpoint_ok:
+                        runtime_signals["checkpoint_error"] = True
                     terminal_status = (
                         RunStatus.RECOVERY_REQUIRED
-                        if tool_recovery
+                        if not checkpoint_ok or tool_recovery
                         else RunStatus.CANCELLED
                         if tool_cancelled
                         else RunStatus.FAILED
@@ -1403,23 +1302,30 @@ class Agent:
                         status=terminal_status,
                         reply=last_reply,
                         needs_input=awaiting_input,
-                        recovery_required=tool_recovery,
-                        runtime_signals={
-                            key: value
-                            for item in tool_results
-                            if isinstance(item.get("runtime_signals"), Mapping)
-                            for key, value in item["runtime_signals"].items()
-                        },
+                        recovery_required=tool_recovery or not checkpoint_ok,
+                        runtime_signals=runtime_signals,
                         data={
                             "messages": [
                                 item.to_dict() for item in state.messages
                             ],
-                            "tool_results": tool_results,
+                            "tool_results": list(all_tool_results),
                             "needs_input": awaiting_input,
                             "usage": dict(state.usage),
                         },
                         application_data=application_data,
                     )
+                    if result.status not in {
+                        RunStatus.RECOVERY_REQUIRED,
+                        RunStatus.CANCELLED,
+                    }:
+                        self._clear_checkpoint(request)
+                        if (
+                            checkpoint_source_id
+                            and checkpoint_source_id != str(request.run_id or "")
+                        ):
+                            self._clear_checkpoint_id(
+                                checkpoint_source_id, request,
+                            )
                     self._emit("agent_end", request, status=result.status.value)
                     return result
             application_data = self._notify_model_run_end(
@@ -1432,7 +1338,7 @@ class Agent:
                 reply=last_reply,
                 data={
                     "messages": [item.to_dict() for item in state.messages],
-                    "tool_results": tool_results,
+                    "tool_results": list(all_tool_results),
                     "error": "maximum agent turns exceeded",
                     "usage": dict(state.usage),
                 },

@@ -1,6 +1,7 @@
 import pytest
 
 from agents.ad_agent.domain.ad.knowledge import MarkdownWikiKnowledgeProvider
+from agents.agent_platform.data.semantic import InMemorySemanticIndex
 from agents.ad_agent.knowledge_management import (
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
@@ -361,6 +362,87 @@ def test_wiki_draft_is_not_retrieved_and_compatibility_facade_uses_same_document
     assert provider.query("secret draft", limit=10) == []
 
 
+def test_managed_knowledge_publish_is_immediately_visible_and_unpublish_is_immediate(tmp_path):
+    base = MarkdownWikiKnowledgeProvider(tmp_path, query_cache_ttl_seconds=60)
+    store = AdAgentStore(":memory:")
+    provider = ManagedKnowledgeProvider(base, store)
+    manager = ManagedKnowledgeManager(store)
+
+    created = manager.create_document(
+        "tenant-a",
+        {
+            "title": "Tenant campaign defaults",
+            "content": "Meta campaign default budget and objective guidance.",
+            "platform": "meta",
+            "layer": "business",
+            "knowledge_type": "workflow",
+            "source": "user",
+            "source_ref": "managed://tenant-campaign-defaults",
+            "version": "1.0.0",
+        },
+        "user-a",
+    )
+    assert provider.query(
+        "campaign default budget",
+        tenant_id="tenant-a",
+        platforms=["meta"],
+    ) == []
+
+    published = manager.publish("tenant-a", created["document_id"])
+    assert published["status"] == "published"
+    assert provider.query(
+        "campaign default budget",
+        tenant_id="tenant-a",
+        platforms=["meta"],
+    )[0].document_id == f"managed:{created['document_id']}"
+
+    manager.unpublish("tenant-a", created["document_id"])
+    assert provider.query(
+        "campaign default budget",
+        tenant_id="tenant-a",
+        platforms=["meta"],
+    ) == []
+
+
+def test_knowledge_retrieval_prefers_verified_evidence_when_lexical_match_is_equal(tmp_path):
+    (tmp_path / "reviewed.md").write_text(
+        "---\n"
+        "id: reviewed-guide\n"
+        "title: Campaign budget guide\n"
+        "platform: meta\n"
+        "source_ref: https://example.invalid/official\n"
+        "source_kind: official\n"
+        "authority: official\n"
+        "evidence_level: reviewed\n"
+        "confidence: 1.0\n"
+        "status: published\n"
+        "---\n\nCampaign budget guidance.",
+        encoding="utf-8",
+    )
+    (tmp_path / "provisional.md").write_text(
+        "---\n"
+        "id: provisional-guide\n"
+        "title: Campaign budget guide\n"
+        "platform: meta\n"
+        "source_ref: internal://notes\n"
+        "source_kind: internal\n"
+        "authority: operator\n"
+        "evidence_level: provisional\n"
+        "confidence: 1.0\n"
+        "status: published\n"
+        "---\n\nCampaign budget guidance.",
+        encoding="utf-8",
+    )
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+
+    result = provider.query("Campaign budget guidance", platforms=["meta"], limit=2)
+
+    assert [item.document_id for item in result] == [
+        "reviewed-guide",
+        "provisional-guide",
+    ]
+
+
 def test_query_platform_name_is_a_hard_boundary_when_selector_is_all(tmp_path):
     (tmp_path / "namespaces").mkdir()
     (tmp_path / "namespaces" / "meta.md").write_text(
@@ -414,6 +496,121 @@ def test_managed_wiki_documents_are_versioned_published_and_tenant_scoped():
     unpublished = manager.unpublish("tenant-a", created["document_id"])
     assert unpublished["status"] == "draft"
     assert provider.query("Meta 广告类型", tenant_id="tenant-a") == []
+
+
+def test_managed_wiki_semantic_index_is_scoped_to_the_trusted_tenant(tmp_path):
+    store = AdAgentStore(":memory:")
+    manager = ManagedKnowledgeManager(store)
+    created = manager.create_document(
+        "tenant-a",
+        {
+            "title": "Private pacing preference",
+            "content": "# Private pacing preference\n\nSpend efficiency guidance.",
+            "platform": "all",
+        },
+        "user-a",
+    )
+    manager.publish("tenant-a", created["document_id"])
+
+    class Embeddings:
+        def embed(self, texts):
+            return [
+                [1.0, 0.0] if "spend" in str(text).lower() else [0.0, 1.0]
+                for text in texts
+            ]
+
+    provider = ManagedKnowledgeProvider(
+        MarkdownWikiKnowledgeProvider(
+            tmp_path,
+            embedding_provider=Embeddings(),
+            semantic_index=InMemorySemanticIndex(),
+        ),
+        store,
+    )
+
+    assert provider.query(
+        "spend efficiency", tenant_id="tenant-a", limit=1
+    )[0].document_id == f"managed:{created['document_id']}"
+    assert provider.query("spend efficiency", tenant_id="tenant-b") == []
+
+
+def test_knowledge_hybrid_retrieval_keeps_provenance_and_uses_semantic_index(tmp_path):
+    (tmp_path / "budget.md").write_text(
+        "---\n"
+        "id: budget-guide\n"
+        "title: Budget pacing guide\n"
+        "platform: all\n"
+        "status: published\n"
+        "---\n\n"
+        "# Budget pacing guide\n\n"
+        "Control spend efficiency with budget pacing and marginal CPA.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "creative.md").write_text(
+        "---\n"
+        "id: creative-guide\n"
+        "title: Creative guide\n"
+        "platform: all\n"
+        "status: published\n"
+        "---\n\n"
+        "# Creative guide\n\n"
+        "Use strong creative assets and landing pages.\n",
+        encoding="utf-8",
+    )
+
+    class Embeddings:
+        def embed(self, texts):
+            return [
+                [1.0, 0.0]
+                if "budget" in str(text).lower() or "spend" in str(text).lower()
+                else [0.0, 1.0]
+                for text in texts
+            ]
+
+    fts_store = AdAgentStore(":memory:")
+    try:
+        provider = MarkdownWikiKnowledgeProvider(
+            tmp_path,
+            search_index=fts_store,
+            embedding_provider=Embeddings(),
+            semantic_index=InMemorySemanticIndex(),
+        )
+        results = provider.query("spend efficiency", limit=2)
+
+        assert results[0].document_id == "budget-guide"
+        assert results[0].retrieval_method == "hybrid"
+        assert results[0].citation["document_id"] == "budget-guide"
+        assert results[0].chunk_id
+    finally:
+        fts_store.close()
+
+
+def test_knowledge_semantic_failure_degrades_to_lexical(tmp_path):
+    (tmp_path / "guide.md").write_text(
+        "---\n"
+        "id: guide\n"
+        "title: Campaign guide\n"
+        "platform: all\n"
+        "status: published\n"
+        "---\n\n"
+        "# Campaign guide\n\n"
+        "Campaign setup and budget controls.\n",
+        encoding="utf-8",
+    )
+
+    class BrokenEmbeddings:
+        def embed(self, _texts):
+            raise RuntimeError("embedding unavailable")
+
+    provider = MarkdownWikiKnowledgeProvider(
+        tmp_path,
+        embedding_provider=BrokenEmbeddings(),
+        semantic_index=InMemorySemanticIndex(),
+    )
+    results = provider.query("campaign", limit=1)
+
+    assert results[0].document_id == "guide"
+    assert results[0].retrieval_method in {"lexical_bm25", "sqlite_fts5_bm25"}
 
 
 def test_managed_wiki_supports_draft_edit_versioned_edit_and_safe_delete():
@@ -586,6 +783,76 @@ def test_memory_recall_cache_is_scoped_and_invalidated():
     )
     assert calls["count"] == 4
     assert manager.cache_metrics()["invalidation_total"] >= 2
+
+
+def test_memory_recall_prioritizes_explicit_preferences_over_automatic_history():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store, cache_ttl_seconds=0)
+    automatic = manager.remember(
+        "优先使用 Meta 流量广告",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="runtime_automatic",
+        kind="semantic",
+        memory_key="auto-meta-preference",
+        importance=0.9,
+        confidence=0.9,
+    )
+    explicit = manager.remember(
+        "优先使用 Meta 流量广告",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="user_explicit",
+        kind="semantic",
+        memory_key="explicit-meta-preference",
+        importance=0.5,
+        confidence=0.5,
+    )
+
+    result = manager.recall(
+        "Meta 流量广告",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        limit=2,
+    )
+
+    assert result[0].memory_id == explicit.memory_id
+    assert result[0].memory_id != automatic.memory_id
+
+
+def test_memory_context_marks_safe_defaults_and_blocks_resource_authority():
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store, cache_ttl_seconds=0)
+    preference = manager.remember(
+        "以后优先使用 TikTok 流量广告",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="user_explicit",
+        kind="semantic",
+        memory_key="preference:tiktok",
+    )
+    resource = manager.remember(
+        "默认使用广告账户 act_123456 和 campaign_id 999999",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        source="user_explicit",
+        kind="semantic",
+        memory_key="preference:account",
+    )
+
+    records, context = manager.build_context(
+        "创建 TikTok 流量广告",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        max_chars=2400,
+    )
+    by_id = {item["memory_id"]: item for item in records}
+
+    assert by_id[preference.memory_id]["context_role"] == "default_hint"
+    assert by_id[preference.memory_id]["safe_for_default"] is True
+    assert by_id[resource.memory_id]["context_role"] == "default_hint"
+    assert by_id[resource.memory_id]["safe_for_default"] is False
+    assert "safe_default=0" in context
 
 
 def test_memory_expiry_is_enforced_by_the_backend():

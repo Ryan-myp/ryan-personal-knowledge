@@ -525,6 +525,31 @@ class ManagedKnowledgeProvider:
             )
             if fts_available:
                 self.base._fts_available = True
+            if (
+                self.base.embedding_provider is not None
+                and self.base.semantic_index is not None
+                and self.base.semantic_available
+            ):
+                try:
+                    vectors = self.base._embed([
+                        self.base._semantic_text(chunk)
+                        for chunk in managed_chunks
+                    ])
+                    self.base.semantic_index.rebuild(
+                        [
+                            {
+                                "chunk_id": chunk.chunk_id,
+                                "document_id": chunk.document_id,
+                                "vector": vector,
+                            }
+                            for chunk, vector in zip(managed_chunks, vectors)
+                        ],
+                        scope=f"tenant:{tenant_key}",
+                    )
+                except (OSError, RuntimeError, TypeError, ValueError, TimeoutError):
+                    # Managed Wiki retrieval remains correct through lexical
+                    # search when the optional semantic port is unavailable.
+                    pass
             self._tenant_cache[tenant_key] = (signature, managed, managed_chunks)
             self._tenant_cache.move_to_end(tenant_key)
             while len(self._tenant_cache) > self._tenant_cache_max_entries:
@@ -605,6 +630,11 @@ class ManagedKnowledgeProvider:
         fts_hits = self.base._search_index_hits(
             query, terms, scopes=["builtin", managed_scope]
         )
+        semantic_hits: dict[str, float] = {}
+        for scope in (self.base.semantic_scope, managed_scope):
+            hits = self.base._semantic_search_hits(query, scope=scope)
+            if hits:
+                semantic_hits.update(hits)
         result = MarkdownWikiKnowledgeProvider._query_chunks(
             all_chunks,
             all_documents,
@@ -615,6 +645,7 @@ class ManagedKnowledgeProvider:
             limit=effective_limit,
             max_excerpt_chars=effective_excerpt_chars,
             fts_hits=fts_hits,
+            semantic_hits=semantic_hits or None,
         )
         if self._query_cache_ttl_seconds > 0:
             with self._tenant_cache_lock:
