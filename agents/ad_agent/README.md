@@ -245,8 +245,9 @@ reconcile 还需要显式 `ads.reconcile`（或 `ads.write`）权限；`verified
 不把 Outbox 误当成 Agent 执行队列。
 
 Workflow 在执行前预登记 write item，并通过 upsert checkpoint 更新状态；Task、Outbox、
-Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 仍由
-进程内锁保护并明确限制为单进程；配置 `AD_AGENT_DATABASE_URL=mysql+pymysql://...`
+Workflow 和 Session 都通过 `PersistenceBackend` 的租约/claim 边界协调。SQLite 的进程级
+实证只用于验证契约，SQLite 仍明确限制为单进程部署；配置
+`AD_AGENT_DATABASE_URL=mysql+pymysql://...`
 后使用 MySQL/InnoDB 的事务、`FOR UPDATE SKIP LOCKED` 和跨实例 Session lease，
 Runtime、Skill、Tool、Tool Source 代码无需修改。运行中的 workflow 会 heartbeat，恢复 worker
 通过持久化 lease 原子 claim，避免把新鲜任务误判为可恢复或被多个 worker 同时接管。
@@ -261,6 +262,19 @@ Outbox 投递采用有界重试（默认 10 次）；超过上限的事件进入
 `agent.turn` 队列，不会绕过 Runtime 的 Skill、Tool、账户、确认和审计门禁。事件落库失败会
 进入 `execution_event_repairs` 补偿队列，避免一次短暂数据库异常让前端永久丢失 Run Event。
 Worker 注册与心跳则写入 `worker_instances`，运行监控可区分共享队列状态和当前进程状态。
+
+仓库提供进程级可靠性实证：
+
+```bash
+make ad-agent-reliability-evidence
+```
+
+它会启动独立进程，验证 Session lease 互斥、Task 单次 claim、两个 Worker 竞争同一
+`agent.turn`，以及 Worker 崩溃后进入 `recovery_required`、经过显式回查引用后才能重新
+排队。报告只保存状态、计数和脱敏摘要，不调用 Provider。该报告证明的是共享持久化契约和
+Runtime 边界，不等同于已经完成生产集群部署、MySQL 压测、跨可用区故障演练或 Provider
+live 验证；`release_readiness` 会将 `reliability_evidence` 与
+`production_deployment_attested` 分开记录。
 
 ### 存储后端与部署切换
 

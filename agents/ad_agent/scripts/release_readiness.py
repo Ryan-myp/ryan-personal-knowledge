@@ -196,6 +196,37 @@ def _run_generic_platform_smoke() -> dict[str, Any]:
         }
 
 
+def _run_reliability_evidence() -> dict[str, Any]:
+    """Run local process-level coordination and recovery evidence.
+
+    This is intentionally reported separately from ``production_evidence``.
+    Passing local shared-persistence scenarios does not attest that a
+    production deployment, database cluster, or provider environment has been
+    exercised.
+    """
+    try:
+        from agents.ad_agent.scripts.production_reliability_evidence import (
+            run_reliability_evidence,
+        )
+
+        report = run_reliability_evidence(timeout_seconds=30)
+        return {
+            "executed": True,
+            "passed": bool(report.get("passed")),
+            "production_deployment_attested": bool(
+                report.get("production_deployment_attested")
+            ),
+            "report": report,
+        }
+    except Exception as exc:
+        return {
+            "executed": False,
+            "passed": False,
+            "production_deployment_attested": False,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
 def build_report(
     profile: str,
     policy_path: Path,
@@ -212,6 +243,7 @@ def build_report(
     )
     skill_report = _run_skill_up_cases()
     generic_platform_report = _run_generic_platform_smoke()
+    reliability_report = _run_reliability_evidence()
     dry_run_report = {
         "executed": bool(provider_report.get("executed") and skill_report.get("executed")),
         "failed": int(provider_report.get("failed", 0) or 0) + int(skill_report.get("failed", 0) or 0),
@@ -220,8 +252,13 @@ def build_report(
         "skill_up": skill_report,
         "generic_platform_evidence": bool(generic_platform_report.get("passed")),
         "generic_platform": generic_platform_report,
+        "reliability_evidence": bool(reliability_report.get("passed")),
+        "reliability": reliability_report,
         "max_runtime_module_lines": _application_service_module_lines(),
-        "production_evidence": False,
+        # Local subprocess evidence is not a production deployment attestation.
+        "production_evidence": bool(
+            reliability_report.get("production_deployment_attested")
+        ),
     }
     report = build_readiness_report(
         tool_source_report=tool_source_report,
@@ -237,6 +274,7 @@ def build_report(
         "tool_source_audit": tool_source_report,
         "contract_snapshot_errors": contract_errors,
         "dry_run": dry_run_report,
+        "reliability": reliability_report,
         "provider_evidence_source": (
             str(provider_evidence_path) if provider_evidence_path else None
         ),

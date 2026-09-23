@@ -19,6 +19,9 @@
   幂等提交、lease 心跳、暂停/恢复/取消和 stale recovery 执行；worker 只重新进入
   `AdvertisingComposition.run`，不会直接调用 Provider Handler。HTTP 入口为 `/tasks`，默认仍是
   dry-run；取消/暂停只改变本地调度状态，不表示外部平台回滚。
+- 已增加 `scripts/production_reliability_evidence.py` 进程级实证：独立进程验证 Session
+  lease 互斥、Task 单次 claim、Worker 统一 `agent.turn` 路由和崩溃恢复；证据明确标记为
+  `local_shared_persistence_processes`，不会冒充真实生产部署或 Provider live 证据。
 - 知识库已统一为 Markdown-first LLM Wiki：`core.knowledge.MarkdownWikiKnowledgeProvider`
   是 Runtime 和 Wiki Tool 的唯一数据入口；文档使用 `SCHEMA.md` 的元数据，
   采用有界确定性词法检索，不接入向量库。

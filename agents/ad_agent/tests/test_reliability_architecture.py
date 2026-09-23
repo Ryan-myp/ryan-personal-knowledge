@@ -481,3 +481,25 @@ def test_mysql_pool_wakes_waiters_and_closes_checked_out_connections():
     assert pool.metrics()["created"] == 0
     with pytest.raises(RuntimeError, match="pool is closed"):
         pool.acquire()
+
+
+def test_process_reliability_evidence_covers_multi_instance_worker_and_recovery():
+    from agents.ad_agent.scripts.production_reliability_evidence import (
+        run_reliability_evidence,
+    )
+
+    report = run_reliability_evidence(timeout_seconds=15)
+
+    assert report["format_version"] == 1
+    assert report["evidence_scope"] == "local_shared_persistence_processes"
+    assert report["production_deployment_attested"] is False
+    assert report["passed"] is True
+    assert report["scenario_count"] >= 4
+    assert all(item["passed"] for item in report["scenarios"])
+
+    scenarios = {item["scenario"]: item for item in report["scenarios"]}
+    assert scenarios["session_lease_multi_instance"]["busy_count"] == 1
+    assert scenarios["durable_task_claim_multi_instance"]["winner_count"] == 1
+    assert scenarios["worker_runtime_route"]["terminal_status"] == "succeeded"
+    assert scenarios["worker_crash_recovery"]["recovered_status"] == "recovery_required"
+    assert scenarios["worker_crash_recovery"]["final_status"] == "succeeded"

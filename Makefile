@@ -1,4 +1,4 @@
-.PHONY: ad-agent-python-version ad-agent-install ad-agent-run ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-check
+.PHONY: ad-agent-python-version ad-agent-install ad-agent-run ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-check
 
 AD_AGENT_PYTHON := ./scripts/ad-agent-python
 AD_AGENT_TEST_ENV := PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=.
@@ -27,6 +27,9 @@ ad-agent-validate:
 ad-agent-knowledge-check:
 	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/validate_knowledge_quality.py
 	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/audit_knowledge_base.py
+
+ad-agent-reliability-evidence:
+	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/production_reliability_evidence.py
 
 ad-agent-check: ad-agent-python-version ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-test
 	@git diff --check
