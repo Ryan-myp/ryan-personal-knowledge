@@ -1,11 +1,17 @@
 """Tests for account-aware, data-only creation templates."""
 
 import pytest
+import glob
 from fastapi.testclient import TestClient
 
 from agents.ad_agent import api_server
-from agents.ad_agent.creation_templates import CreationTemplateError, CreationTemplateManager
+from agents.ad_agent.creation_templates import (
+    CreationTemplateError,
+    CreationTemplateManager,
+    load_builtin_template_definitions,
+)
 from agents.ad_agent.persistence.store import AdAgentStore
+from agents.ad_agent.domain.ad.blueprint import load_blueprint_file
 
 
 BLUEPRINT = {
@@ -141,3 +147,146 @@ def test_template_http_contract_uses_trusted_principal_and_blueprint_registry(mo
         )
     assert applied.status_code == 200
     assert applied.json()["usage_count"] == 1
+
+
+def test_builtin_template_is_account_bound_read_only_and_duplicable():
+    definitions = [{
+        "key": "meta.test.leads",
+        "name": "Meta 测试获客",
+        "description": "受控测试账号的标准获客参数。",
+        "provider": "meta",
+        "blueprint_id": BLUEPRINT["id"],
+        "blueprint_version": BLUEPRINT["version"],
+        "ad_format": BLUEPRINT["ad_format"],
+        "account_id": "act_123",
+        "verification_status": "live_verified",
+        "required_inputs": ["campaign.daily_budget"],
+        "values": {"campaign.objective": "LEADS"},
+    }]
+    templates = CreationTemplateManager(
+        AdAgentStore(":memory:"),
+        lambda blueprint_id, version=None: (
+            BLUEPRINT
+            if blueprint_id == BLUEPRINT["id"]
+            and (version is None or version == BLUEPRINT["version"])
+            else None
+        ),
+        builtin_templates=definitions,
+        allowed_accounts={"meta": ["act_123"]},
+    )
+
+    listed = templates.list("tenant-a", "user-a")
+    assert len(listed) == 1
+    builtin = listed[0]
+    assert builtin["source"] == "builtin"
+    assert builtin["editable"] is False
+    assert builtin["account_id"] == "act_123"
+    assert builtin["verification_status"] == "live_verified"
+    assert builtin["template_id"].startswith("builtin_")
+    assert templates.apply("tenant-a", "user-a", builtin["template_id"])["usage_count"] == 0
+
+    with pytest.raises(CreationTemplateError, match="不可修改"):
+        templates.update("tenant-a", "user-a", builtin["template_id"], {"name": "不应修改"})
+    with pytest.raises(CreationTemplateError, match="不可删除"):
+        templates.delete("tenant-a", "user-a", builtin["template_id"])
+
+    duplicate = templates.duplicate("tenant-a", "user-a", builtin["template_id"], "我的获客模板")
+    assert duplicate["source"] == "user"
+    assert duplicate["template_id"] != builtin["template_id"]
+    assert duplicate["name"] == "我的获客模板"
+
+
+def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
+    definitions = load_builtin_template_definitions()
+    assert len(definitions) == 11
+    assert {item["provider"] for item in definitions} == {
+        "meta", "google-ads", "tiktok", "dv360",
+    }
+    assert all(item["account_id"] for item in definitions)
+    assert all(item["verification_status"] in {
+        "live_verified", "partial_live_verified",
+        "live_verified_with_provider_limits", "dry_run_only", "provider_limited",
+    } for item in definitions)
+
+    templates = CreationTemplateManager(
+        AdAgentStore(":memory:"),
+        lambda blueprint_id, version=None: next((
+            {
+                "id": blueprint_id,
+                "version": item["blueprint_version"],
+                "provider": item["provider"],
+                "ad_format": item["ad_format"],
+                "fields": [{"path": path} for path in item["values"]],
+            }
+            for item in definitions
+            if item["blueprint_id"] == blueprint_id
+            and (version is None or version == item["blueprint_version"])
+        ), None),
+        builtin_templates=definitions,
+        allowed_accounts={"meta": ["2806375919473667"]},
+    )
+    listed = templates.list("tenant-a", "user-a")
+    assert listed
+    assert {item["provider"] for item in listed} == {"meta"}
+    assert {item["account_id"] for item in listed} == {"2806375919473667"}
+
+
+def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
+    blueprint_paths = glob.glob("agents/ad_agent/tools/providers/*/blueprints/*.json")
+    blueprints = {
+        load_blueprint_file(path).blueprint_id: load_blueprint_file(path)
+        for path in blueprint_paths
+    }
+
+    class Registry:
+        def get(self, blueprint_id, version=None):
+            blueprint = blueprints.get(blueprint_id)
+            return blueprint if blueprint and (
+                version is None or version == blueprint.version
+            ) else None
+
+    class Validator:
+        allowed_accounts = {
+            "meta": ["2806375919473667"],
+            "google-ads": ["9055507554"],
+            "tiktok": ["7397068114548195329"],
+            "dv360": ["5110831"],
+        }
+
+    class Runtime:
+        persistence_store = AdAgentStore(":memory:")
+        creation_blueprints = Registry()
+        creation_card_builder = None
+        whitelist_validator = Validator()
+        _granted_permissions = {"ads.read", "ads.plan"}
+
+    monkeypatch.setattr(api_server, "runtime", Runtime())
+    monkeypatch.setattr(api_server, "API_KEY", "builtin-key")
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/creation-templates",
+            headers={"X-API-Key": "builtin-key"},
+        )
+        assert response.status_code == 200
+        templates = response.json()["templates"]
+        assert len(templates) == 11
+        assert all(item["source"] == "builtin" for item in templates)
+        assert {item["account_id"] for item in templates} == {
+            "2806375919473667", "9055507554",
+            "7397068114548195329", "5110831",
+        }
+        builtin_id = templates[0]["template_id"]
+        duplicate = client.post(
+            f"/creation-templates/{builtin_id}/duplicate",
+            headers={"X-API-Key": "builtin-key"},
+            json={},
+        )
+        assert duplicate.status_code == 201
+        assert duplicate.json()["source"] == "user"
+        protected = client.patch(
+            f"/creation-templates/{builtin_id}",
+            headers={"X-API-Key": "builtin-key"},
+            json={"name": "不能改"},
+        )
+        assert protected.status_code == 422

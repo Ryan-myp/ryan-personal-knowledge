@@ -119,10 +119,18 @@
         }
 
         function resetExecutionTrace() {
-            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, expanded: traceState.expanded, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown', orderCounter: 0 };
-            document.body.classList.remove('trace-collapsed');
-            document.body.classList.toggle('trace-expanded', traceState.expanded);
-            document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
+            traceState = { nodes: [], events: [], selectedId: null, collapsed: false, expanded: false, activeTurn: traceState.activeTurn, traceId: null, status: 'unknown', orderCounter: 0 };
+            const preserveCreationWorkbench = typeof workbenchState !== 'undefined'
+                && workbenchState.open
+                && workbenchState.activeView === 'creation';
+            if (preserveCreationWorkbench) {
+                setWorkbenchView('creation');
+            } else if (typeof closeAgentWorkbench === 'function') {
+                closeAgentWorkbench();
+            } else {
+                document.body.classList.remove('workbench-open', 'trace-collapsed', 'trace-expanded');
+                document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
+            }
             updateTraceHeader('unknown', '等待下一次 Agent 回合');
             renderExecutionTrace();
         }
@@ -267,7 +275,6 @@
 
         function startExecutionTrace(userInput) {
             stopDurableRunPolling();
-            if (typeof openAgentWorkbench === 'function') openAgentWorkbench('trace');
             traceState.activeTurn += 1;
             traceState.nodes = [];
             traceState.events = [];
@@ -276,6 +283,103 @@
             traceState.orderCounter = 0;
             updateTraceHeader('running', '等待 Agent 返回真实执行事件');
             renderExecutionTrace();
+        }
+
+        function traceToolIdentity(event) {
+            const tool = String(event.tool || event.tool_name || event.name || '').trim();
+            const namespace = String(event.platform || event.namespace || tool.split('.')[0] || '').trim();
+            const parts = tool.split('.');
+            return {
+                tool,
+                namespace,
+                resource_type: event.resource_type || parts[1] || '',
+                action: event.action || parts.slice(2).join('.') || parts[1] || '',
+            };
+        }
+
+        function normalizeExecutionEvent(rawEvent) {
+            const raw = rawEvent && typeof rawEvent === 'object' ? rawEvent : {};
+            const type = String(raw.type || raw.event_type || '').trim();
+            if (!type || !['agent_start', 'agent_end', 'tool_execution_start', 'tool_execution_end', 'turn_start', 'turn_end', 'message_end', 'model_usage'].includes(type)) {
+                return { ...raw, type: type || raw.event_type };
+            }
+            if (type === 'agent_start') {
+                return { ...raw, type: 'start', event_type: 'start', status: 'running' };
+            }
+            if (type === 'agent_end') {
+                return {
+                    ...raw,
+                    type: 'done',
+                    event_type: 'done',
+                    status: raw.status === 'failed' ? 'failed' : 'succeeded',
+                };
+            }
+            if (type === 'tool_execution_start') {
+                const identity = traceToolIdentity(raw);
+                return {
+                    ...raw,
+                    type: 'node_started',
+                    event_type: 'node_started',
+                    node_id: raw.node_id || `tool:${raw.tool_call_id || identity.tool || traceState.orderCounter + 1}`,
+                    tool: identity.tool,
+                    platform: identity.namespace,
+                    resource_type: identity.resource_type,
+                    action: identity.action,
+                    status: 'running',
+                    safe_input: raw.safe_input !== undefined ? raw.safe_input : raw.arguments,
+                };
+            }
+            if (type === 'tool_execution_end') {
+                const identity = traceToolIdentity(raw);
+                const failed = Boolean(raw.is_error || raw.result?.is_error);
+                return {
+                    ...raw,
+                    type: 'node_status',
+                    event_type: 'node_status',
+                    node_id: raw.node_id || `tool:${raw.tool_call_id || identity.tool || ''}`,
+                    tool: identity.tool,
+                    platform: identity.namespace,
+                    resource_type: identity.resource_type,
+                    action: identity.action,
+                    status: failed ? 'failed' : 'succeeded',
+                    safe_output: raw.safe_output !== undefined ? raw.safe_output : raw.result,
+                    safe_metadata: {
+                        ...(raw.safe_metadata || {}),
+                        reason: raw.safe_metadata?.reason || (failed ? 'tool_execution_failed' : 'tool_execution_succeeded'),
+                    },
+                };
+            }
+            return raw;
+        }
+
+        function shouldOpenTraceForEvent(event) {
+            return ['plan', 'stage_started', 'stage_status', 'node_discovered', 'node_started', 'node_status', 'confirmation'].includes(event.type);
+        }
+
+        function upsertTraceToolNode(event) {
+            const identity = traceToolIdentity(event);
+            const id = String(event.node_id || `tool:${event.tool_call_id || identity.tool || traceState.orderCounter + 1}`);
+            const existing = traceState.nodes.find(item => item.id === id);
+            const node = {
+                ...(existing || {}),
+                id,
+                title: event.title || identity.tool || event.action || 'Tool 节点',
+                meta: [identity.namespace, identity.resource_type, identity.action].filter(Boolean).join(' · '),
+                kind: identity.namespace || event.platform || 'Tool',
+                tool: identity.tool || existing?.tool,
+                platform: identity.namespace || event.platform || existing?.platform,
+                resource_type: identity.resource_type || existing?.resource_type,
+                action: identity.action || existing?.action,
+                state: event.status || existing?.state || 'unknown',
+                order: existing?.order || (++traceState.orderCounter),
+                reason: event.safe_metadata?.reason || existing?.reason,
+                duration_ms: event.safe_metadata?.duration_ms || existing?.duration_ms,
+                input: event.safe_input !== undefined ? event.safe_input : existing?.input,
+                output: event.safe_output !== undefined ? event.safe_output : existing?.output,
+            };
+            traceState.nodes = traceState.nodes.filter(item => item.id !== id);
+            traceState.nodes.push(node);
+            return node;
         }
 
         function updateExecutionTrace(data) {
@@ -318,8 +422,13 @@
         }
 
         function applyExecutionEvent(event) {
-            if (!event || !event.type) return null;
+            if (!event || !(event.type || event.event_type)) return null;
+            event = normalizeExecutionEvent(event);
+            if (!event.type) return null;
             const duplicateStart = event.type === 'start' && traceState.events.some(item => item.type === 'start');
+            if (shouldOpenTraceForEvent(event) && typeof openAgentWorkbench === 'function') {
+                openAgentWorkbench('trace');
+            }
             if (event.type === 'start') {
                 traceState.traceId = event.trace_id || traceState.traceId;
                 if (event.turn_id) traceState.activeTurn = event.turn_id;
@@ -371,16 +480,18 @@
                 updateTraceHeader(node.state, `${node.title} · ${traceStatusLabel(node.state)}`);
             }
             if (event.type === 'node_started' || event.type === 'node_status' || event.type === 'confirmation') {
-                const node = traceState.nodes.find(item => item.id === event.node_id);
+                const node = upsertTraceToolNode(event);
                 if (node) {
                     node.state = event.status || 'unknown';
+                    node.title = event.title || node.title;
+                    node.meta = [node.platform, node.resource_type, node.action].filter(Boolean).join(' · ');
                     node.reason = event.safe_metadata?.reason || node.reason;
                     node.duration_ms = event.safe_metadata?.duration_ms || node.duration_ms;
                     if (event.safe_input !== undefined) node.input = event.safe_input;
                     if (event.safe_output !== undefined) node.output = event.safe_output;
                     traceState.selectedId = node.state === 'failed' || node.state === 'recovery_required' ? node.id : traceState.selectedId;
                 }
-                updateTraceHeader(event.status || 'unknown', node ? `${node.tool} · ${traceStatusLabel(event.status)}` : 'Tool 事件已到达');
+                updateTraceHeader(event.status || 'unknown', node ? `${node.tool || node.title} · ${traceStatusLabel(event.status)}` : 'Tool 事件已到达');
             }
             if (event.type === 'done') updateTraceHeader(event.status || 'succeeded', event.status === 'awaiting_confirmation' ? '等待用户确认后继续' : '本回合已完成');
             if (event.type === 'error') updateTraceHeader('failed', '本回合未完成，请查看安全事件');

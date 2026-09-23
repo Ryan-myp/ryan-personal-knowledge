@@ -67,6 +67,7 @@ from agents.ad_agent.knowledge_ingest import (
 from agents.ad_agent.creation_templates import (
     CreationTemplateError,
     CreationTemplateManager,
+    creation_template_manager_for_runtime,
 )
 from agents.ad_agent.persistence.factory import create_persistence_store
 
@@ -419,6 +420,7 @@ class ChatRequest(BaseModel):
     platform_params: Optional[dict] = None
     creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
     creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
+    creation_template_id: Optional[str] = Field(default=None, max_length=240)
     # Per-turn override; omitted requests use the principal-scoped setting.
     execution_mode: Optional[Literal["dry_run", "live"]] = None
 
@@ -910,6 +912,7 @@ async def chat(
             confirmation_payload=request.confirmation_payload,
             creation_blueprint_id=request.creation_blueprint_id,
             creation_blueprint_version=request.creation_blueprint_version,
+            creation_template_id=request.creation_template_id,
             execution_mode=request.execution_mode,
             principal=principal,
         )
@@ -1423,26 +1426,24 @@ def _raw_knowledge_manager_or_503() -> RawKnowledgeManager:
     return RawKnowledgeManager(runtime.persistence_store)
 
 
-def _creation_template_manager_or_503() -> CreationTemplateManager:
+def _creation_template_manager_or_503(principal: Optional[RequestPrincipal] = None) -> CreationTemplateManager:
     if not runtime or not getattr(runtime, "persistence_store", None):
         raise HTTPException(status_code=503, detail="创建模板存储未初始化")
-
-    def get_blueprint(blueprint_id: str, version: Optional[str] = None) -> Optional[dict]:
-        registry = getattr(runtime, "creation_blueprints", None)
-        getter = getattr(registry, "get", None)
-        if not callable(getter):
-            return None
-        blueprint = getter(str(blueprint_id), version or None)
-        if blueprint is None:
-            return None
-        builder = getattr(runtime, "creation_card_builder", None)
-        expand = getattr(builder, "expand_blueprint", None)
-        if callable(expand):
-            blueprint = expand(blueprint)
-        to_dict = getattr(blueprint, "to_dict", None)
-        return to_dict() if callable(to_dict) else blueprint if isinstance(blueprint, dict) else None
-
-    return CreationTemplateManager(runtime.persistence_store, get_blueprint)
+    try:
+        validator = getattr(runtime, "whitelist_validator", None)
+        configured_accounts = getattr(validator, "allowed_accounts", {}) if validator else {}
+        principal_scope = getattr(principal, "account_scope", None) if principal else None
+        # A test/local Runtime with no configured whitelist has no account
+        # boundary to apply yet. Once accounts are configured, an empty
+        # principal scope remains deny-by-default.
+        if not any(configured_accounts.values()):
+            principal_scope = None
+        return creation_template_manager_for_runtime(
+            runtime,
+            account_scope=principal_scope,
+        )
+    except CreationTemplateError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/creation-templates", tags=["creation-templates"])
@@ -1462,7 +1463,7 @@ async def list_creation_templates(
     return {
         "tenant_id": principal.tenant_id,
         "user_id": principal.user_id,
-        "templates": _creation_template_manager_or_503().list(
+        "templates": _creation_template_manager_or_503(principal).list(
             principal.tenant_id, principal.user_id,
             provider=provider, blueprint_id=blueprint_id, status=status,
             query=query, limit=limit,
@@ -1479,7 +1480,7 @@ async def create_creation_template(
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.plan")
     try:
-        result = _creation_template_manager_or_503().create(
+        result = _creation_template_manager_or_503(principal).create(
             principal.tenant_id, principal.user_id, body.model_dump()
         )
     except CreationTemplateError as exc:
@@ -1495,7 +1496,7 @@ async def get_creation_template(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.read")
-    result = _creation_template_manager_or_503().get(
+    result = _creation_template_manager_or_503(principal).get(
         principal.tenant_id, principal.user_id, template_id
     )
     if not result:
@@ -1513,7 +1514,7 @@ async def update_creation_template(
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.plan")
     try:
-        result = _creation_template_manager_or_503().update(
+        result = _creation_template_manager_or_503(principal).update(
             principal.tenant_id, principal.user_id, template_id, body.model_dump(exclude_unset=True)
         )
     except CreationTemplateError as exc:
@@ -1531,9 +1532,12 @@ async def delete_creation_template(
 ):
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.plan")
-    result = _creation_template_manager_or_503().delete(
-        principal.tenant_id, principal.user_id, template_id
-    )
+    try:
+        result = _creation_template_manager_or_503(principal).delete(
+            principal.tenant_id, principal.user_id, template_id
+        )
+    except CreationTemplateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not result:
         raise HTTPException(status_code=404, detail="创建模板不存在或无权访问")
     return result
@@ -1549,7 +1553,7 @@ async def duplicate_creation_template(
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.plan")
     try:
-        result = _creation_template_manager_or_503().duplicate(
+        result = _creation_template_manager_or_503(principal).duplicate(
             principal.tenant_id, principal.user_id, template_id, body.name
         )
     except CreationTemplateError as exc:
@@ -1568,7 +1572,7 @@ async def apply_creation_template(
     """Record usage without bypassing the Blueprint evaluation or write gates."""
     principal = _authorize_request(x_api_key, http_request)
     _require_principal_permission(principal, "ads.plan")
-    result = _creation_template_manager_or_503().apply(
+    result = _creation_template_manager_or_503(principal).apply(
         principal.tenant_id, principal.user_id, template_id
     )
     if not result:
@@ -2783,6 +2787,7 @@ class ChatStreamRequest(BaseModel):
     platform_params: Optional[dict] = None
     creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
     creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
+    creation_template_id: Optional[str] = Field(default=None, max_length=240)
     execution_mode: Optional[Literal["dry_run", "live"]] = None
 
 
@@ -2857,6 +2862,7 @@ async def chat_stream(
                     confirmation_payload=request.confirmation_payload,
                     creation_blueprint_id=request.creation_blueprint_id,
                     creation_blueprint_version=request.creation_blueprint_version,
+                    creation_template_id=request.creation_template_id,
                     execution_mode=request.execution_mode,
                     principal=principal,
                     event_callback=observe,

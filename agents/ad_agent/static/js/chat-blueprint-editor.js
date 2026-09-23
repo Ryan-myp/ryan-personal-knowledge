@@ -1,3 +1,13 @@
+        function creationTemplateVerificationLabel(status) {
+            return ({
+                live_verified: '已验证',
+                partial_live_verified: '部分验证',
+                live_verified_with_provider_limits: '已验证 · 渠道限制',
+                provider_limited: '渠道限制',
+                dry_run_only: '仅草稿',
+            }[status] || status || '未标注');
+        }
+
         function blueprintDraftPlatformParams(blueprint) {
             const values = {};
             const scopedSelectionTokens = {};
@@ -45,43 +55,22 @@
             return [...options].map(([value, label]) => ({ value, label }));
         }
 
-        const CREATION_FIELD_GROUPS = [
-            { id: 'campaign', title: '系列基础', description: '先确定账户、目标、预算与投放节奏。', tokens: ['campaign', 'objective', 'budget', 'bid', 'schedule', 'start', 'end', 'name', 'status', 'optimization'] },
-            { id: 'audience', title: '受众与版位', description: '控制广告展示给谁，以及出现在哪里。', tokens: ['audience', 'target', 'location', 'region', 'country', 'city', 'age', 'gender', 'interest', 'behavior', 'placement', 'device', 'language', 'geo'] },
-            { id: 'creative', title: '素材与落地页', description: '配置素材、文案、行动按钮和最终到达地址。', tokens: ['creative', 'asset', 'image', 'video', 'headline', 'title', 'body', 'text', 'copy', 'url', 'landing', 'page', 'call_to_action', 'cta', 'thumbnail', 'identity'] },
-            { id: 'measurement', title: '转化与追踪', description: '补充 Pixel、事件、归因与数据回传设置。', tokens: ['conversion', 'pixel', 'event', 'tracking', 'track', 'attribution', 'measurement', 'promoted', 'catalog', 'app', 'optimization_goal'] },
-            { id: 'advanced', title: '高级设置', description: '仅在需要覆盖默认行为时展开，保持主流程清爽。', tokens: ['advanced', 'json', 'payload', 'custom', 'extra', 'spec', 'raw'] },
-            { id: 'other', title: '其他设置', description: '平台特有或暂未归类的参数。', tokens: [] },
-        ];
-
-        function fieldSearchText(field) {
-            return [field?.path, field?.label, field?.description, field?.control, field?.presentation]
-                .filter(Boolean).join(' ').toLowerCase();
-        }
-
-        function creationFieldGroup(field) {
-            if (field?.ui_group === 'advanced') return 'advanced';
-            if (field?.ui_group && CREATION_FIELD_GROUPS.some(group => group.id === field.ui_group)) return field.ui_group;
-            const advancedAutoField = field?.auto_exposed
-                && !field.required && !field.required_when
-                && !field.lookup_tool && field.presentation !== 'asset_picker'
-                && field.presentation !== 'file_reference';
-            if (field?.advanced || advancedAutoField) return 'advanced';
-            const text = fieldSearchText(field);
-            return CREATION_FIELD_GROUPS.find(group => group.tokens.some(token => text.includes(token)))?.id || 'other';
-        }
-
         function creationFieldGroups(fields) {
-            const grouped = new Map(CREATION_FIELD_GROUPS.map(group => [group.id, { ...group, fields: [] }]));
+            const grouped = new Map(
+                BLUEPRINT_HIERARCHY_GROUPS.map(group => [group.id, { ...group, fields: [] }])
+            );
             (fields || []).forEach(field => {
                 if (field.visible === false) return;
-                grouped.get(creationFieldGroup(field)).fields.push(field);
+                const group = grouped.get(blueprintHierarchyInfo(field).id) || grouped.get('extension');
+                group.fields.push(field);
             });
-            return CREATION_FIELD_GROUPS.map(group => grouped.get(group.id)).filter(group => group.fields.length);
+            return BLUEPRINT_HIERARCHY_GROUPS
+                .map(group => grouped.get(group.id))
+                .filter(group => group.fields.length);
         }
 
         function creationDirectoryHierarchy(field) {
-            return creationHierarchyLabel(field) || '通用设置';
+            return creationHierarchyLabel(field) || '平台扩展层级';
         }
 
         function creationDirectoryHierarchyGroups(fields) {
@@ -97,7 +86,7 @@
         function creationDirectoryLevelGroups(fields) {
             const preferredOrder = [
                 'Campaign 层级', 'Ad Set 层级', 'Ad Group 层级', 'Ad 层级',
-                'Insertion Order 层级', 'Line Item 层级', 'Creative 层级', '通用设置',
+                'Insertion Order 层级', 'Line Item 层级', 'Creative 层级', '平台扩展层级',
             ];
             const grouped = new Map();
             (fields || []).forEach(field => {
@@ -193,6 +182,132 @@
             return '';
         }
 
+        const BLUEPRINT_HIERARCHY_GROUPS = [
+            {
+                id: 'campaign',
+                roots: ['campaign', 'campaigns'],
+                title: 'Campaign',
+                label: '广告系列',
+                description: '先确定目标、预算、投放时间和竞价方式。',
+            },
+            {
+                id: 'insertion_order',
+                roots: ['insertion_order'],
+                title: 'Insertion Order',
+                label: '订单层级',
+                description: '配置 DV360 订单、预算和投放周期。',
+            },
+            {
+                id: 'ad_set',
+                roots: ['ad_set', 'adset'],
+                title: 'Ad Set',
+                label: '广告组',
+                description: '配置受众、版位、优化目标和账户资源。',
+            },
+            {
+                id: 'ad_group',
+                roots: ['ad_group', 'adgroup'],
+                title: 'Ad Group',
+                label: '广告组',
+                description: '配置关键词、受众、出价和广告组级资源。',
+            },
+            {
+                id: 'line_item',
+                roots: ['line_item'],
+                title: 'Line Item',
+                label: '广告项',
+                description: '配置 DV360 广告项的渠道、出价和投放约束。',
+            },
+            {
+                id: 'asset_group',
+                roots: ['asset_group'],
+                title: 'Asset Group',
+                label: '素材组',
+                description: '组织 Performance Max 或 Demand Gen 的素材组合。',
+            },
+            {
+                id: 'product_group',
+                roots: ['product_group', 'listing_group_filter'],
+                title: 'Product Group',
+                label: '商品组',
+                description: '配置商品筛选、分组和商品级出价。',
+            },
+            {
+                id: 'ad',
+                roots: ['ad'],
+                title: 'Ad',
+                label: '广告',
+                description: '填写文案、素材、行动按钮和落地页。',
+            },
+            {
+                id: 'creative',
+                roots: ['creative'],
+                title: 'Creative',
+                label: '创意',
+                description: '配置可复用创意及其平台资源引用。',
+            },
+            {
+                id: 'extension',
+                roots: [],
+                title: 'Provider Extension',
+                label: '平台扩展',
+                description: '渠道特有或暂未归类的参数。',
+            },
+        ];
+
+        function blueprintHierarchyInfo(field) {
+            const root = String(field?.path || '').split('.', 1)[0].toLowerCase();
+            return BLUEPRINT_HIERARCHY_GROUPS.find(group => group.roots.includes(root))
+                || BLUEPRINT_HIERARCHY_GROUPS[BLUEPRINT_HIERARCHY_GROUPS.length - 1];
+        }
+
+        function blueprintHierarchyStats(fields, evaluation) {
+            const states = (fields || []).map(field => blueprintFieldEvaluation(field, evaluation));
+            const required = states.filter(state => state.required);
+            const missing = required.filter(state => state.status === 'missing' || state.status === 'invalid');
+            const completed = states.filter(state => state.status === 'complete').length;
+            return {
+                total: states.length,
+                required: required.length,
+                missing: missing.length,
+                completed,
+            };
+        }
+
+        function blueprintHierarchyGroups(fields, evaluation) {
+            const grouped = new Map(
+                BLUEPRINT_HIERARCHY_GROUPS.map(group => [group.id, { ...group, fields: [] }])
+            );
+            (fields || []).forEach(field => {
+                const state = blueprintFieldEvaluation(field, evaluation);
+                if (state.visible === false) return;
+                const group = grouped.get(blueprintHierarchyInfo(field).id) || grouped.get('extension');
+                group.fields.push(field);
+            });
+            return BLUEPRINT_HIERARCHY_GROUPS
+                .map(group => grouped.get(group.id))
+                .filter(group => group.fields.length)
+                .map(group => ({
+                    ...group,
+                    fields: group.fields
+                        .map((field, index) => ({
+                            field,
+                            index,
+                            state: blueprintFieldEvaluation(field, evaluation),
+                        }))
+                        .sort((left, right) => {
+                            const priority = item => {
+                                if (item.state.status === 'missing' || item.state.status === 'invalid') return 0;
+                                if (item.state.required) return 1;
+                                if (creationFieldIsAuto(item.field)) return 2;
+                                return 3;
+                            };
+                            return priority(left) - priority(right) || left.index - right.index;
+                        })
+                        .map(item => item.field),
+                }));
+        }
+
         function setCreationSectionExpanded(section, expanded) {
             if (!section) return;
             section.classList.toggle('is-collapsed', !expanded);
@@ -240,17 +355,16 @@
             header.innerHTML = '<span>填写目录</span><small>点击字段快速定位</small>';
             container.appendChild(header);
 
-            creationDirectoryLevelGroups(blueprint.fields || []).forEach(({ hierarchy, fields: levelFields }) => {
+            blueprintHierarchyGroups(blueprint.fields || [], evaluation).forEach((group, groupIndex) => {
+                const levelFields = group.fields;
                 const states = levelFields.map(field => blueprintFieldEvaluation(field, evaluation));
                 const visibleFields = levelFields.filter((field, index) => states[index].visible);
                 if (!visibleFields.length) return;
-                const progress = fieldGroupProgress(levelFields.map((field, index) => ({
-                    ...field,
-                    ...states[index],
-                    value: states[index].value,
-                })));
-                const branchKey = `blueprint:${blueprint.id || blueprint.provider}:level:${hierarchy}`;
-                const collapsed = creationDirectoryCollapseState.get(branchKey) === true;
+                const progress = blueprintHierarchyStats(levelFields, evaluation);
+                const branchKey = `blueprint:${blueprint.id || blueprint.provider}:hierarchy:${group.id}`;
+                const collapsed = creationDirectoryCollapseState.has(branchKey)
+                    ? creationDirectoryCollapseState.get(branchKey) === true
+                    : groupIndex > 0 && !progress.missing;
 
                 const groupButton = document.createElement('button');
                 groupButton.type = 'button';
@@ -259,9 +373,11 @@
                 const groupCopy = document.createElement('span');
                 groupCopy.className = 'blueprint-nav-group-copy';
                 const groupTitle = document.createElement('strong');
-                groupTitle.textContent = hierarchy;
+                groupTitle.textContent = `${group.title} · ${group.label}`;
                 const groupMeta = document.createElement('small');
-                groupMeta.textContent = progress.missing ? `待填 ${progress.missing} · 共 ${progress.total} 项` : `已就绪 · 共 ${progress.total} 项`;
+                groupMeta.textContent = progress.missing
+                    ? `待填 ${progress.missing} · ${progress.total} 项`
+                    : `${progress.completed}/${progress.total} 项已处理`;
                 groupCopy.append(groupTitle, groupMeta);
                 const groupStatus = document.createElement('span');
                 groupStatus.className = `blueprint-nav-status${progress.missing ? ' missing' : ' complete'}`;
@@ -418,23 +534,19 @@
         function renderBlueprintFlowbar(blueprint, evaluation) {
             const container = document.getElementById('blueprintFlowbar');
             if (!container || !blueprint) return;
-            const groups = creationFieldGroups(blueprint.fields || []);
+            const groups = blueprintHierarchyGroups(blueprint.fields || [], evaluation);
             container.replaceChildren();
+            const label = document.createElement('div');
+            label.className = 'blueprint-flowbar-label';
+            label.innerHTML = '<strong>投放层级</strong><small>按上游到下游填写</small>';
+            container.appendChild(label);
             groups.forEach((group, index) => {
-                const progress = fieldGroupProgress(group.fields.map(field => {
-                    const state = evaluation?.fields?.find(item => item.path === field.path);
-                    return {
-                        ...field,
-                        required: state?.required ?? field.required,
-                        state: state?.state,
-                        value: state?.value ?? blueprintState.values[field.path],
-                    };
-                }));
+                const progress = blueprintHierarchyStats(group.fields, evaluation);
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = `blueprint-flow-step${index === 0 ? ' active' : ''}${progress.missing ? ' has-missing' : ''}`;
                 button.dataset.step = group.id;
-                button.innerHTML = `<span class="blueprint-flow-index">${index + 1}</span><span class="blueprint-flow-copy"><strong>${escapeHtml(group.title)}</strong><small>${progress.missing ? `待填 ${progress.missing}` : '已就绪'}</small></span>`;
+                button.innerHTML = `<span class="blueprint-flow-index">${String(index + 1).padStart(2, '0')}</span><span class="blueprint-flow-copy"><strong>${escapeHtml(group.label)}</strong><small>${escapeHtml(group.title)} · ${progress.missing ? `待填 ${progress.missing}` : '已就绪'}</small></span>`;
                 button.addEventListener('click', () => {
                     blueprintScrollTo(document.querySelector(`#blueprintFields [data-step="${CSS.escape(group.id)}"]`));
                     container.querySelectorAll('.blueprint-flow-step').forEach(node => node.classList.toggle('active', node === button));
@@ -630,6 +742,8 @@
                     .filter(Boolean).join(' ').toLowerCase().includes(query);
             };
             const visibleTemplates = blueprintState.templates.filter(matches);
+            const builtinTemplates = visibleTemplates.filter(template => template.source === 'builtin');
+            const userTemplates = visibleTemplates.filter(template => template.source !== 'builtin');
             const visibleItems = blueprintState.mode === 'templates' ? [] : blueprintState.items.filter(matches);
             const visibleFormats = blueprintState.mode === 'templates' ? [] : blueprintState.formats.filter(format => {
                 if (!matches(format)) return false;
@@ -646,24 +760,36 @@
                 values.forEach(item => section.appendChild(renderItem(item)));
                 items.appendChild(section);
             };
-            renderSection('我的模板', '可按账户与地区复用', visibleTemplates, template => {
+            const renderTemplate = template => {
                 const button = document.createElement('button');
                 button.type = 'button';
                 button.className = `blueprint-list-item blueprint-template-item${blueprintState.selectedTemplateId === template.template_id ? ' active' : ''}`;
                 button.onclick = () => selectCreationTemplate(template.template_id);
+                button.title = template.required_inputs?.length
+                    ? `仍需补充：${template.required_inputs.join('、')}`
+                    : '可直接应用此模板';
                 const title = document.createElement('span');
                 title.className = 'blueprint-list-title';
                 title.textContent = template.name || '未命名模板';
                 const meta = document.createElement('span');
                 meta.className = 'blueprint-list-meta';
-                meta.textContent = `${creationProviderLabel(template.provider)} · ${template.scope_label || '个人通用'}${template.is_default ? ' · 默认' : ''}${template.status !== 'active' ? ' · 已停用' : ''} · ${template.covered_fields || 0} 项 · 使用 ${template.usage_count || 0} 次`;
+                const sourceLabel = template.source === 'builtin' ? '内置' : (template.scope_label || '个人通用');
+                const accountLabel = template.account_id ? ` · 账号 ${template.account_id}` : '';
+                const usageLabel = template.source === 'builtin'
+                    ? ' · 只读'
+                    : ` · 使用 ${template.usage_count || 0} 次`;
+                meta.textContent = `${creationProviderLabel(template.provider)} · ${sourceLabel}${accountLabel}${template.is_default ? ' · 默认' : ''}${template.status !== 'active' ? ' · 已停用' : ''} · ${creationTemplateVerificationLabel(template.verification_status)} · ${template.covered_fields || 0} 项${usageLabel}`;
                 button.append(title, meta);
                 const status = document.createElement('span');
-                status.className = `blueprint-template-status ${template.status === 'active' ? 'active' : 'inactive'}`;
-                status.textContent = template.status === 'active' ? '启用' : '停用';
+                status.className = `blueprint-template-status ${template.source === 'builtin' ? 'builtin' : (template.status === 'active' ? 'active' : 'inactive')}`;
+                status.textContent = template.source === 'builtin'
+                    ? '内置'
+                    : (template.status === 'active' ? '启用' : '停用');
                 button.appendChild(status);
                 return button;
-            });
+            };
+            renderSection('内置模板', '绑定受控测试账号，应用后仍需补充账户资产与素材', builtinTemplates, renderTemplate);
+            renderSection('我的模板', '可按账户与地区复用并继续编辑', userTemplates, renderTemplate);
             renderSection('系统蓝图', '平台维护的字段与联动规则', visibleItems, item => {
                 const button = document.createElement('button');
                 button.type = 'button';
@@ -849,6 +975,11 @@
 
         function updateSelectedCreationTemplate() {
             if (!blueprintState.selectedTemplateId) return;
+            const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
+            if (template?.source === 'builtin') {
+                showBlueprintNotice('内置模板为只读配置，请使用“复制”保存为个人模板。');
+                return;
+            }
             toggleCreationTemplatePanel(true);
         }
 
@@ -873,6 +1004,10 @@
         async function toggleSelectedCreationTemplateStatus() {
             const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
             if (!template) return;
+            if (template.source === 'builtin') {
+                showBlueprintNotice('内置模板不能停用，请复制后管理个人模板。');
+                return;
+            }
             const nextStatus = template.status === 'active' ? 'inactive' : 'active';
             try {
                 const result = await apiFetch(`/creation-templates/${encodeURIComponent(template.template_id)}`, {
@@ -889,6 +1024,10 @@
         async function deleteSelectedCreationTemplate() {
             const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
             if (!template || !window.confirm(`确定删除模板“${template.name}”吗？`)) return;
+            if (template.source === 'builtin') {
+                showBlueprintNotice('内置模板不能删除，请复制后管理个人模板。');
+                return;
+            }
             try {
                 await apiFetch(`/creation-templates/${encodeURIComponent(template.template_id)}`, { method: 'DELETE' });
                 blueprintState.templates = blueprintState.templates.filter(item => item.template_id !== template.template_id);
@@ -923,7 +1062,7 @@
             const managementMode = blueprintState.mode === 'templates';
             if (title) title.textContent = managementMode && template ? template.name : blueprint.title || blueprint.id;
             if (meta) meta.textContent = template && managementMode
-                ? `${creationProviderLabel(blueprint.provider)} · ${blueprint.ad_format} · ${template.scope_label || '个人通用'} · ${template.status === 'active' ? '已启用' : '已停用'} · 使用 ${template.usage_count || 0} 次 · 蓝图 v${blueprint.version}`
+                ? `${creationProviderLabel(blueprint.provider)} · ${blueprint.ad_format} · ${template.account_id ? `账号 ${template.account_id} · ` : ''}${template.source === 'builtin' ? '内置只读' : (template.scope_label || '个人通用')} · ${template.source === 'builtin' ? creationTemplateVerificationLabel(template.verification_status) : (template.status === 'active' ? '已启用' : '已停用')} · ${template.source === 'builtin' ? '应用后仍需补充资源' : `使用 ${template.usage_count || 0} 次`} · 蓝图 v${blueprint.version}`
                 : `${creationProviderLabel(blueprint.provider)} · ${blueprint.ad_format} · 蓝图 v${blueprint.version}${template ? ` · 已应用模板：${template.name}` : ''}`;
             const saveButton = document.getElementById('blueprintTemplateSaveButton');
             const updateButton = document.getElementById('blueprintTemplateUpdateButton');
@@ -934,13 +1073,13 @@
                 saveButton.textContent = template ? '另存为模板' : '保存为模板';
                 saveButton.hidden = managementMode;
             }
-            if (updateButton) updateButton.hidden = !managementMode || !template;
+            if (updateButton) updateButton.hidden = !managementMode || !template || template.source === 'builtin';
             if (duplicateButton) duplicateButton.hidden = !managementMode || !template;
             if (statusButton) {
-                statusButton.hidden = !managementMode || !template;
+                statusButton.hidden = !managementMode || !template || template.source === 'builtin';
                 statusButton.textContent = template?.status === 'active' ? '停用' : '启用';
             }
-            if (deleteButton) deleteButton.hidden = !managementMode || !template;
+            if (deleteButton) deleteButton.hidden = !managementMode || !template || template.source === 'builtin';
             const accountInput = document.getElementById('blueprintAccountInput');
             const accountLabel = document.querySelector('label[for="blueprintAccountInput"]');
             if (accountLabel) accountLabel.innerHTML = `${escapeHtml(creationAccountLabel(blueprint.provider))} <span class="blueprint-required">*</span>`;
@@ -983,7 +1122,7 @@
                 ['必填', contract.required_count || 0],
                 ['契约默认', contract.declared_default_count || 0],
                 ['可选查询', contract.lookup_count || 0],
-                ['高级设置', contract.advanced_count || 0],
+                ['平台特有', contract.advanced_count || 0],
             ].forEach(([label, value]) => {
                 const metric = document.createElement('div');
                 metric.className = 'blueprint-contract-metric';
@@ -991,6 +1130,20 @@
                 metrics.appendChild(metric);
             });
             container.appendChild(metrics);
+            const selectedTemplate = blueprintState.templates.find(item =>
+                item.template_id === blueprintState.selectedTemplateId
+            );
+            if (selectedTemplate?.source === 'builtin' && Array.isArray(selectedTemplate.required_inputs)
+                && selectedTemplate.required_inputs.length) {
+                const requirements = document.createElement('div');
+                requirements.className = 'blueprint-template-requirements';
+                const heading = document.createElement('strong');
+                heading.textContent = '应用模板后仍需补充';
+                const list = document.createElement('span');
+                list.textContent = selectedTemplate.required_inputs.join('、');
+                requirements.append(heading, list);
+                container.appendChild(requirements);
+            }
             const hierarchies = Array.isArray(contract.hierarchies) ? contract.hierarchies : [];
             if (hierarchies.length) {
                 const hierarchy = document.createElement('div');
@@ -1020,15 +1173,21 @@
             if (!container || !blueprint) return;
             container.replaceChildren();
             const stateMap = new Map((evaluation?.fields || []).map(item => [item.path, item]));
-            const groups = creationFieldGroups(blueprint.fields || []);
+            const groups = blueprintHierarchyGroups(blueprint.fields || [], evaluation);
             groups.forEach((group, groupIndex) => {
                 const section = document.createElement('section');
-                section.className = `blueprint-field-group${groupIndex === 0 ? ' active' : ''}`;
-                if (['advanced', 'other'].includes(group.id)) section.classList.add('is-collapsed');
+                const progress = blueprintHierarchyStats(group.fields, evaluation);
+                const branchKey = `blueprint:${blueprint.id || blueprint.provider}:hierarchy:${group.id}`;
+                const defaultCollapsed = groupIndex > 0 && !progress.missing;
+                const collapsed = creationDirectoryCollapseState.has(branchKey)
+                    ? creationDirectoryCollapseState.get(branchKey) === true
+                    : defaultCollapsed;
+                section.className = `blueprint-field-group${groupIndex === 0 ? ' active' : ''}${collapsed ? ' is-collapsed' : ''}`;
+                section.dataset.hierarchy = group.id;
                 section.dataset.step = group.id;
                 const sectionHeader = document.createElement('div');
                 sectionHeader.className = 'blueprint-field-group-header';
-                sectionHeader.innerHTML = `<div><span class="blueprint-field-group-index">${String(groupIndex + 1).padStart(2, '0')}</span><div><h3>${escapeHtml(group.title)}</h3><p>${escapeHtml(group.description)}</p></div></div><span class="blueprint-field-group-count">${group.fields.length} 项</span>`;
+                sectionHeader.innerHTML = `<div class="blueprint-field-group-heading"><span class="blueprint-field-group-index">${String(groupIndex + 1).padStart(2, '0')}</span><div><span class="blueprint-field-group-kicker">${escapeHtml(group.title)}</span><h3>${escapeHtml(group.label)}</h3><p>${escapeHtml(group.description)}</p></div></div><span class="blueprint-field-group-count">${progress.required ? `${progress.required} 必填 · ` : ''}${progress.total} 项</span>`;
                 const sectionToggle = document.createElement('button');
                 sectionToggle.type = 'button';
                 sectionToggle.className = 'creation-section-toggle';
@@ -1085,13 +1244,6 @@
                     required.className = 'blueprint-required';
                     required.textContent = '*';
                     label.appendChild(required);
-                }
-                const hierarchy = creationHierarchyLabel(field);
-                if (hierarchy) {
-                    const badge = document.createElement('span');
-                    badge.className = 'creation-hierarchy-badge';
-                    badge.textContent = hierarchy;
-                    label.appendChild(badge);
                 }
                 wrapper.appendChild(label);
                 const fieldHint = schemaConstraintHint(schema);
@@ -1383,4 +1535,3 @@
             setInput(`请按“${blueprint.title || blueprint.id}”继续创建广告。参数草稿已带入，请先检查并确认后提交。`);
             closeBlueprintManager();
         }
-

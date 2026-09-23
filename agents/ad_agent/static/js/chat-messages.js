@@ -1,4 +1,4 @@
-        function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null) {
+        function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null, uiOptions = null) {
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
             if (welcome) welcome.style.display = 'none';
@@ -22,6 +22,14 @@
                 `).join('')}</div>`;
             }
             if (ui?.cards?.length) bodyHtml += '<div class="message-ui-cards"></div>';
+            if (ui?.confirmation?.payload) {
+                bodyHtml += `
+                    <div class="message-confirmation-launcher">
+                        <span>${escapeHtml(ui.confirmation.payload.question || '本回合需要确认')}</span>
+                        <button type="button" class="message-confirmation-button">打开确认</button>
+                    </div>
+                `;
+            }
             if (ui?.clarification?.options?.length) {
                 const options = ui.clarification.options
                     .filter(option => option && (option.label || option.value))
@@ -61,7 +69,18 @@
 
             if (ui?.cards?.length) {
                 msg.classList.add('has-ui-cards');
-                msg.querySelector('.message-ui-cards').appendChild(renderUiCards(ui));
+                msg.querySelector('.message-ui-cards').appendChild(
+                    renderUiCards(ui, uiOptions || {}),
+                );
+            }
+            const confirmationButton = msg.querySelector('.message-confirmation-button');
+            if (confirmationButton && ui?.confirmation?.payload) {
+                confirmationButton.addEventListener('click', () => {
+                    showConfirm(
+                        ui.confirmation.payload,
+                        ui.confirmation.original_request || null,
+                    );
+                });
             }
             msg.querySelectorAll('.clarification-option').forEach(button => {
                 button.addEventListener('click', () => {

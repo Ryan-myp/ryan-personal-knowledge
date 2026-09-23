@@ -225,13 +225,19 @@ class AdConversationServices:
                 "content": self.runtime._redact_for_persistence(record.content),
                 "created_at": record.created_at,
                 "turn_id": record.turn_id,
+                **(
+                    {"ui": self.runtime._redact_for_persistence(record.metadata["ui"])}
+                    if isinstance(getattr(record, "metadata", None), dict)
+                    and isinstance(record.metadata.get("ui"), dict)
+                    else {}
+                ),
             }
             for record in records
         ]
         ui_by_turn = metadata.get("conversation_ui", {})
         if isinstance(ui_by_turn, dict):
             for message in messages:
-                if message.get("role") != "assistant":
+                if message.get("role") != "assistant" or message.get("ui"):
                     continue
                 stored_ui = ui_by_turn.get(str(message.get("turn_id")))
                 if isinstance(stored_ui, dict) and stored_ui:

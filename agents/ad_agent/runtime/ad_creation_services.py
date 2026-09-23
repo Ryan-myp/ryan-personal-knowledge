@@ -16,6 +16,10 @@ from typing import Any, Iterable, Mapping, Optional
 
 from ..domain.ad.auth import normalize_account_id
 from ..domain.ad.blueprint import _schema_at_path
+from ..creation_templates import (
+    CreationTemplateError,
+    creation_template_manager_for_runtime,
+)
 from ..core.execution_plan import ExecutionPlan
 from ..core.execution_trace import ExecutionTrace
 from ..core.interfaces import ExecutionMode, ParsedIntent, ToolResult
@@ -28,6 +32,149 @@ logger = logging.getLogger(__name__)
 
 
 class AdCreationServicesMixin:
+    def _creation_template_manager_for_request(
+        self, account_scope: Any = None,
+    ) -> Any:
+        return creation_template_manager_for_runtime(
+            self, account_scope=account_scope,
+        )
+
+    def list_creation_templates(
+        self,
+        *,
+        provider: Optional[str] = None,
+        account_id: Optional[str] = None,
+        account_scope: Any = None,
+        tenant_id: str = "default",
+        user_id: str = "anonymous",
+        blueprint_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """Return templates visible to one principal and optional account."""
+        try:
+            return self._creation_template_manager_for_request(
+                account_scope,
+            ).list(
+                tenant_id,
+                user_id,
+                provider=provider,
+                blueprint_id=blueprint_id,
+                status="active",
+                account_id=account_id,
+                account_scope=account_scope,
+                limit=100,
+            )
+        except CreationTemplateError:
+            return []
+
+    def apply_creation_template_to_intent(
+        self,
+        intent: ParsedIntent,
+        template_id: str,
+        *,
+        account_id: Optional[str] = None,
+        account_scope: Any = None,
+        tenant_id: str = "default",
+        user_id: str = "anonymous",
+    ) -> ParsedIntent:
+        """Apply a data-only template to a draft, never to a Tool executor."""
+        manager = self._creation_template_manager_for_request(account_scope)
+        template = manager.get(
+            tenant_id,
+            user_id,
+            str(template_id),
+            account_id=account_id,
+            account_scope=account_scope,
+        )
+        if not template or template.get("status") != "active":
+            raise CreationTemplateError("模板不存在、已停用或不在当前账户授权范围内")
+        provider = self._canonical_platform(str(template.get("provider") or ""))
+        if not provider:
+            raise CreationTemplateError("模板没有声明有效的广告平台")
+        namespaces = [
+            self._canonical_platform(item)
+            for item in (getattr(intent, "namespaces", []) or [])
+        ]
+        if namespaces and provider not in namespaces:
+            raise CreationTemplateError("模板平台与当前创建请求的平台不一致")
+        namespaces = [provider] if not namespaces else namespaces
+        scoped = {
+            str(namespace): dict(values or {})
+            for namespace, values in (
+                getattr(intent, "scoped_parameters", {}) or {}
+            ).items()
+            if isinstance(values, Mapping)
+        }
+        existing = dict(scoped.get(provider, {}) or {})
+        template_values = template.get("values")
+        if not isinstance(template_values, Mapping):
+            raise CreationTemplateError("模板参数不是对象")
+        normalized_values = copy.deepcopy(dict(template_values))
+        blueprint = self.creation_blueprints.get(
+            str(template.get("blueprint_id") or ""),
+            str(template.get("blueprint_version") or "") or None,
+        )
+        blueprint_fields = getattr(blueprint, "fields", ()) if blueprint else ()
+        for field in blueprint_fields:
+            if not isinstance(field, Mapping):
+                continue
+            path = str(field.get("path") or "")
+            if path not in template_values:
+                continue
+            tool_ref = str(field.get("tool_ref") or "")
+            if "." not in tool_ref:
+                continue
+            tool_name, schema_path = tool_ref.split(".", 1)
+            # Templates persist Blueprint paths. The Tool input builder also
+            # accepts the provider schema path and tool-scoped copy, which is
+            # required for selector resolution and repeated fields such as
+            # resource names.
+            parts = [item for item in schema_path.split(".") if item]
+            target = normalized_values
+            for part in parts[:-1]:
+                child = target.get(part)
+                if not isinstance(child, Mapping):
+                    child = {}
+                    target[part] = child
+                target = child
+            if parts:
+                target[parts[-1]] = copy.deepcopy(template_values[path])
+            scoped_tool = normalized_values.setdefault(tool_name, {})
+            target = scoped_tool
+            for part in parts[:-1]:
+                child = target.get(part)
+                if not isinstance(child, Mapping):
+                    child = {}
+                    target[part] = child
+                target = child
+            if parts:
+                target[parts[-1]] = copy.deepcopy(template_values[path])
+        merged_values = {
+            **normalized_values,
+            **existing,
+        }
+        scoped[provider] = merged_values
+        metadata = dict(getattr(intent, "metadata", {}) or {})
+        metadata.update({
+            "creation_template_id": str(template.get("template_id") or template_id),
+            "creation_template_source": str(template.get("source") or "user"),
+            "creation_blueprint_id": str(template.get("blueprint_id") or ""),
+            "creation_blueprint_version": str(
+                template.get("blueprint_version") or ""
+            ),
+            "creation_template_account_id": str(
+                template.get("account_id") or account_id or ""
+            ),
+        })
+        return ParsedIntent(
+            "create_campaign",
+            getattr(intent, "raw_input", ""),
+            namespaces,
+            attributes=dict(getattr(intent, "attributes", {}) or {}),
+            parameters=dict(getattr(intent, "parameters", {}) or {}),
+            scoped_parameters=scoped,
+            metadata=metadata,
+        )
+
     def get_schedule_draft(self, session_id: str) -> Optional[dict[str, Any]]:
         """Return the pending schedule draft restored for this session."""
         session = self._sessions.get(str(session_id or ""))
@@ -478,10 +625,22 @@ class AdCreationServicesMixin:
         self,
         intent: ParsedIntent,
         tool_plan: Optional[Mapping[str, Any]] = None,
+        *,
+        account_scope: Any = None,
+        tenant_id: str = "default",
+        user_id: str = "anonymous",
+        account_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """Build safe conversational creation cards without executing Tools."""
         try:
-            cards = self.creation_card_builder.build(intent, tool_plan=tool_plan)
+            cards = self.creation_card_builder.build(
+                intent,
+                tool_plan=tool_plan,
+                account_scope=account_scope,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                account_id=account_id,
+            )
         except Exception:
             logger.exception("构建广告创建参数卡失败")
             cards = []
@@ -491,7 +650,14 @@ class AdCreationServicesMixin:
             "cards": cards,
             "schema_version": "1.0",
             "needs_input": any(
-                bool(card.get("missing_fields") or card.get("invalid_fields"))
+                bool(
+                    card.get("missing_fields")
+                    or card.get("invalid_fields")
+                    or (
+                        card.get("account_required")
+                        and not str(card.get("account_id") or "").strip()
+                    )
+                )
                 for card in cards
             ),
         })
@@ -642,20 +808,39 @@ class AdCreationServicesMixin:
                     choices.append(f"{field.get('label') or '广告类型'}：" + "、".join(labels))
             if is_english:
                 choice_text = " ".join(f"{item}." for item in choices)
-                account_text = "Provide the advertiser/account ID (it is never guessed). " if missing_account else ""
+                account_text = (
+                    "Choose an authorized advertiser/account first; it is never guessed. "
+                    if missing_account else ""
+                )
                 options_text = f"Available choices: {choice_text} " if choice_text else ""
+                template_count = len(selector.get("template_options") or [])
+                template_text = (
+                    f"{template_count} account templates are available; "
+                    "you may use one or continue without a template. "
+                    if template_count else
+                    "No matching template is available; you can continue without one. "
+                )
                 return (
                     f"I identified a {provider} ad creation request. {account_text}"
-                    f"{options_text}Choose a campaign goal or ad format, then I will show only the parameters"
+                    f"{template_text}{options_text}Choose a campaign goal or ad format, then I will show only the parameters"
                     " allowed for that combination. You can also continue in plain language."
                     " Once the details are complete, I will show a final preview and wait for your confirmation before submitting."
                 )
             choice_text = "；".join(choices)
-            account_text = "请提供要操作的广告账户 ID（请人工填写，系统不会猜测账户）。" if missing_account else ""
+            account_text = (
+                "请先从当前身份可用的广告账户中选择一个，系统不会猜测账户。"
+                if missing_account else ""
+            )
             options_text = f"当前可选：{choice_text}。" if choice_text else ""
+            template_count = len(selector.get("template_options") or [])
+            template_text = (
+                f"当前账户有 {template_count} 个可用模板，你可以直接使用模板，也可以跳过模板。"
+                if template_count else
+                "当前账户没有匹配模板，可以直接跳过模板选择。"
+            )
             return (
-                f"我识别到你要在 {provider} 创建广告。{account_text}{options_text}"
-                "你可以直接用文字继续补充目标、类型和参数；选定后我只展示该组合允许的字段。"
+                f"我识别到你要在 {provider} 创建广告。{account_text}{template_text}{options_text}"
+                "选定账户后，可以直接使用模板，或选择广告类型进入标准参数向导。"
                 "信息完整后，我会先给你看最终方案，等你确认后才提交创建。"
             )
         subject = titles[0] if len(titles) == 1 else "广告创建参数"

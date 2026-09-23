@@ -810,6 +810,45 @@ def test_creation_cards_are_declared_as_a_right_side_workbench_contract():
     assert "message-card-launcher" in html
 
 
+def test_history_cards_restore_as_launchers_without_opening_workbench():
+    html = _chat_page_javascript()
+    assert "function renderUiCards(ui, options = {})" in html
+    assert "const openWorkbench = options.openWorkbench !== false;" in html
+    assert "{ openWorkbench: false }" in html
+
+
+def test_creation_card_uses_provider_resource_hierarchy_for_all_field_groups():
+    html = _chat_page_javascript()
+    assert "function creationFieldGroups(fields)" in html
+    assert "blueprintHierarchyInfo(field)" in html
+    assert "BLUEPRINT_HIERARCHY_GROUPS" in html
+    assert "CREATION_FIELD_GROUPS" not in html
+    for resource_level in ("Campaign", "Ad Set", "Ad Group", "Line Item", "Asset Group", "Product Group", "Ad", "Creative"):
+        assert resource_level in html
+    assert "系列基础" not in html
+    assert "受众与版位" not in html
+    assert "素材与落地页" not in html
+    assert "转化与追踪" not in html
+    assert "高级设置" not in html
+
+
+def test_workbench_is_on_demand_and_normalizes_generic_harness_events():
+    """The browser must not reserve the workbench for empty or query turns."""
+    html = (
+        api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+        + "\n"
+        + _chat_page_javascript()
+        + "\n"
+        + _chat_page_styles()
+    )
+    assert "body:not(.workbench-open)" in html
+    assert "function closeAgentWorkbench()" in html
+    assert "tool_execution_start" in html
+    assert "tool_execution_end" in html
+    assert "function normalizeExecutionEvent" in html
+    assert "shouldOpenTraceForEvent" in html
+
+
 def test_api_key_principal_replaces_request_user_id(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",

@@ -30,6 +30,7 @@ class AdvertisingRunService:
         confirmation_payload: Optional[dict] = None,
         creation_blueprint_id: Optional[str] = None,
         creation_blueprint_version: Optional[str] = None,
+        creation_template_id: Optional[str] = None,
         principal: Optional[RequestPrincipal] = None,
         tenant_id: Optional[str] = None,
         cancellation_event: Optional[threading.Event] = None,
@@ -54,6 +55,7 @@ class AdvertisingRunService:
                     "confirmation_payload": confirmation_payload,
                     "creation_blueprint_id": creation_blueprint_id,
                     "creation_blueprint_version": creation_blueprint_version,
+                    "creation_template_id": creation_template_id,
                 },
                 principal=principal,
                 cancellation_event=cancellation_event,
@@ -169,6 +171,26 @@ class AdvertisingRunService:
         )
         session = runtime._sessions.get(effective_session_id)
         if session is not None:
+            raw_ui = payload.get("ui")
+            persisted_ui = dict(raw_ui) if isinstance(raw_ui, dict) else {}
+            if payload.get("confirmation_payload"):
+                persisted_ui["confirmation"] = {
+                    "payload": payload.get("confirmation_payload"),
+                    "original_request": {
+                        "user_input": user_input,
+                        "account_id": account_id,
+                        "platforms": [
+                            item.get("platform")
+                            for item in (payload.get("results") or [])
+                            if isinstance(item, dict) and item.get("platform")
+                        ],
+                        "platform_params": platform_params or {},
+                        "creation_blueprint_id": creation_blueprint_id,
+                        "creation_blueprint_version": creation_blueprint_version,
+                        "creation_template_id": creation_template_id,
+                    },
+                }
+                payload["ui"] = persisted_ui
             trace = ExecutionTrace(
                 turn_id=str(payload.get("turn_id") or ""),
                 redactor=runtime._redact_for_persistence,
@@ -184,6 +206,7 @@ class AdvertisingRunService:
                 runtime._redact_for_persistence(user_input),
                 str(payload.get("reply") or ""),
                 execution_trace=trace,
+                ui=persisted_ui if persisted_ui else None,
                 persist_messages=False,
             )
         return payload

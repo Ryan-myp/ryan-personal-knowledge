@@ -26,6 +26,17 @@
             .sidebar { display: none; }
         }
 
+        /* The workbench is an on-demand surface. It must not reserve a
+           permanent third column while a turn has no inspectable artifact. */
+        @media (min-width: 981px) {
+            body:not(.workbench-open) {
+                grid-template-columns: 228px minmax(0, 1fr) 0;
+            }
+            body:not(.workbench-open) .right-panel {
+                display: none;
+            }
+        }
+
         /* 执行轨迹：只展示安全的执行事件，不展示模型思维链。 */
         .right-panel {
             width: min(46vw, 660px);
@@ -906,6 +917,7 @@
         }
         .blueprint-support-badge.supported,
         .blueprint-template-status.active { color: #087d73; border-color: #9ccfc9; background: #e5f7f3; }
+        .blueprint-template-status.builtin { color: #a8771b; border-color: #dcb66a; background: #fff6dd; }
         .blueprint-support-badge.partial { color: #9b6f18; border-color: #e4bd66; background: #fff7e6; }
         .blueprint-support-badge.declared,
         .blueprint-template-status.inactive { color: #8b5960; border-color: #dfb6bc; background: #fff0f1; }
@@ -929,6 +941,8 @@
         .blueprint-contract-heading strong { color: #16333b; font-size: 12px; }
         .blueprint-contract-heading small { margin-top: 3px; overflow: hidden; color: #66818a; font-size: 10px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
         .blueprint-contract-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+        .blueprint-template-requirements { display: grid; gap: 4px; margin-top: 10px; padding: 9px 10px; border-left: 3px solid #d4a04c; color: #56727b; background: rgba(212,160,76,.1); font-size: 10px; line-height: 1.45; }
+        .blueprint-template-requirements strong { color: #8a641c; font-size: 10px; }
         .blueprint-contract-metric { padding: 7px 9px; border-left: 2px solid #a8d6d2; background: rgba(255,255,255,.72); }
         .blueprint-contract-metric strong,
         .blueprint-contract-metric span { display: block; }
@@ -2518,7 +2532,7 @@
         .creation-card-section-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; padding-top: 11px; }
         .creation-card-section.collapsible .creation-card-section-fields { display: none; }
         .creation-card-section.collapsible:focus-within .creation-card-section-fields, .creation-card-section.collapsible:hover .creation-card-section-fields { display: grid; }
-        .creation-card-section.collapsible::after { display: block; margin-top: 9px; color: #6f929e; content: '高级字段默认收起，聚焦后展开'; font-size: 9px; }
+        .creation-card-section.collapsible::after { display: block; margin-top: 9px; color: #6f929e; content: '平台特有字段默认收起，聚焦后展开'; font-size: 9px; }
         .creation-card-field { min-width: 0; padding: 11px; border-radius: 10px; background: #102638; border-color: #284b5e; }
         .creation-card-field:hover { background: #123047; border-color: #58e6d0; }
         .creation-card-field.wide { grid-column: span 2; }
@@ -3493,6 +3507,45 @@
             font-weight: 700;
         }
         .message-card-launcher-button:hover { background: #7af0dd; }
+        .message-confirmation-launcher {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            width: min(100%, 860px);
+            margin-top: 12px;
+            padding: 11px 13px;
+            border: 1px solid rgba(245, 190, 76, .32);
+            border-radius: 10px;
+            background: rgba(245, 190, 76, .08);
+            color: var(--text-secondary);
+            font-size: 12px;
+        }
+        .message-confirmation-button {
+            flex: 0 0 auto;
+            padding: 7px 11px;
+            border: 1px solid rgba(245, 190, 76, .46);
+            border-radius: 7px;
+            background: rgba(245, 190, 76, .16);
+            color: var(--text-primary);
+            cursor: pointer;
+            font: inherit;
+            font-size: 11px;
+            font-weight: 650;
+        }
+        .message-confirmation-button:hover {
+            background: rgba(245, 190, 76, .28);
+        }
+        body.light-theme .message-confirmation-launcher {
+            border-color: #e5c980;
+            background: #fff8e8;
+            color: #6d5d3d;
+        }
+        body.light-theme .message-confirmation-button {
+            border-color: #d9b86b;
+            background: #fff0c8;
+            color: #4c3b1a;
+        }
         body.light-theme .workbench-tabbar,
         body.light-theme .creation-workbench-header { background: #fff; border-color: #c8dcde; }
         body.light-theme .workbench-tab { color: #66838b; }
@@ -4121,3 +4174,174 @@
         .mcp-test-result { max-height: 180px; overflow: auto; margin: 10px 0 0; padding: 10px; color: #42636a; background: #f1f6f6; border-radius: 8px; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
         @media (max-width: 900px) { .mcp-overlay { padding: 0; } .mcp-console { height: 100%; border-radius: 0; } .mcp-console-body { grid-template-columns: 1fr; grid-template-rows: 190px minmax(0,1fr); } .mcp-server-list { border-right: 0; border-bottom: 1px solid #d0e0e2; } .mcp-check-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } .mcp-managed-summary-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
         @media (max-width: 760px) { .mcp-overlay { top: 56px; } .mcp-panel-heading { flex-direction: column; } .mcp-tool-heading-actions { width: 100%; justify-content: space-between; } .mcp-tool-search { width: min(260px, 62vw); } .mcp-parameter-form, .mcp-metadata-grid { grid-template-columns: 1fr; } .mcp-metadata-grid label.wide { grid-column: auto; } .mcp-test-overlay { padding: 12px; } .mcp-test-panel { padding: 14px; border-radius: 12px; } .mcp-test-heading-actions { width: 100%; justify-content: space-between; align-items: center; } }
+
+        /* Creation starts with an explicit account/template decision. */
+        .creation-selector-main { display: grid; gap: 12px; padding: 14px 18px 18px; }
+        .creation-selector-block { min-width: 0; padding: 13px; border: 1px solid #24465a; border-radius: 10px; background: #0d2131; }
+        .creation-selector-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+        .creation-selector-heading strong { color: #e8f7f4; font-size: 12px; }
+        .creation-selector-heading small { color: #85a5ae; font-size: 10px; line-height: 1.4; text-align: right; }
+        .creation-selector-block select { width: 100%; min-height: 38px; box-sizing: border-box; padding: 8px 10px; color: #e8f7f4; background: #081722; border: 1px solid #36586b; border-radius: 8px; outline: none; font: inherit; }
+        .creation-selector-block select:focus { border-color: #58e6d0; box-shadow: 0 0 0 3px rgba(88,230,208,.12); }
+        .creation-selector-template-list { display: grid; gap: 8px; }
+        .creation-selector-template { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 10px 11px; border: 1px solid #2a5064; border-radius: 8px; background: #102a3d; }
+        .creation-selector-template.selected { border-color: #58e6d0; background: #123b43; }
+        .creation-selector-template-copy { min-width: 0; display: grid; gap: 3px; }
+        .creation-selector-template-copy strong { overflow: hidden; color: #e8f7f4; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+        .creation-selector-template-copy small { overflow: hidden; color: #91b1ba; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+        .creation-selector-template-copy span { color: #d7b26a; font-size: 9px; }
+        .creation-selector-template-use { flex: 0 0 auto; min-height: 29px; padding: 6px 9px; color: #06201f; background: #58e6d0; border: 0; border-radius: 7px; cursor: pointer; font: inherit; font-size: 10px; font-weight: 700; }
+        .creation-selector-field { display: grid; gap: 6px; color: #b7d0d2; font-size: 10px; font-weight: 650; }
+        .creation-selector-selection { min-height: 17px; margin-top: 8px; color: #8eafb9; font-size: 10px; }
+        .creation-selector-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+        .creation-selector-actions .creation-card-action { min-height: 32px; }
+        .creation-selector-empty { padding: 9px 10px; color: #7899a8; border: 1px dashed #2d5062; border-radius: 8px; font-size: 10px; line-height: 1.45; }
+        body.light-theme .creation-selector-block { border-color: #c9dfe0; background: #f4faf9; }
+        body.light-theme .creation-selector-heading strong { color: #244d56; }
+        body.light-theme .creation-selector-heading small, body.light-theme .creation-selector-selection { color: #66838a; }
+        body.light-theme .creation-selector-block select { color: #244d56; background: #fff; border-color: #a9c8ca; }
+        body.light-theme .creation-selector-template { border-color: #c6dfe0; background: #fff; }
+        body.light-theme .creation-selector-template.selected { border-color: #0b9f91; background: #eaf7f5; }
+        body.light-theme .creation-selector-template-copy strong { color: #244d56; }
+        body.light-theme .creation-selector-template-copy small { color: #66838a; }
+        body.light-theme .creation-selector-empty { color: #66838a; border-color: #bdd6d7; }
+        @media (max-width: 640px) {
+            .creation-selector-heading { display: grid; gap: 3px; }
+            .creation-selector-heading small { text-align: left; }
+            .creation-selector-template { align-items: flex-start; }
+            .creation-selector-actions { flex-direction: column; }
+            .creation-selector-actions .creation-card-action { width: 100%; }
+        }
+
+        /* Blueprint hierarchy pass: keep the visual order aligned with the
+           provider resource tree instead of letting column flow mix fields. */
+        .blueprint-flowbar {
+            align-items: center;
+            gap: 8px;
+        }
+        .blueprint-flowbar-label {
+            display: grid;
+            flex: 0 0 auto;
+            gap: 2px;
+            min-width: 86px;
+            padding-right: 8px;
+            border-right: 1px solid #1d4051;
+        }
+        .blueprint-flowbar-label strong {
+            color: #eaf7f5;
+            font-size: 10px;
+            font-weight: 750;
+        }
+        .blueprint-flowbar-label small {
+            color: #6f929e;
+            font-size: 8px;
+            white-space: nowrap;
+        }
+        .blueprint-flow-step {
+            min-width: 126px;
+        }
+        .blueprint-flow-copy strong {
+            font-size: 10px;
+        }
+        .blueprint-flow-copy small {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .blueprint-field-group {
+            position: relative;
+            border-left-width: 3px;
+            border-left-color: #2b6070;
+        }
+        .blueprint-field-group[data-hierarchy="campaign"] { border-left-color: #58e6d0; }
+        .blueprint-field-group[data-hierarchy="insertion_order"],
+        .blueprint-field-group[data-hierarchy="line_item"] { border-left-color: #8fb9ff; }
+        .blueprint-field-group[data-hierarchy="ad_set"],
+        .blueprint-field-group[data-hierarchy="ad_group"] { border-left-color: #a9a0ff; }
+        .blueprint-field-group[data-hierarchy="asset_group"],
+        .blueprint-field-group[data-hierarchy="product_group"] { border-left-color: #d7b26a; }
+        .blueprint-field-group[data-hierarchy="ad"],
+        .blueprint-field-group[data-hierarchy="creative"] { border-left-color: #f2b66a; }
+        .blueprint-field-group-header {
+            align-items: center;
+        }
+        .blueprint-field-group-heading {
+            align-items: flex-start;
+        }
+        .blueprint-field-group-kicker {
+            display: block;
+            margin-bottom: 2px;
+            color: #6f929e;
+            font: 9px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+        .blueprint-field-group-header h3 {
+            line-height: 1.2;
+        }
+        .blueprint-field-group-header p {
+            max-width: 520px;
+        }
+        .blueprint-field-group-count {
+            white-space: nowrap;
+        }
+        .blueprint-field-group-fields {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-auto-flow: row;
+            column-count: initial !important;
+            column-gap: initial;
+            align-items: start;
+        }
+        .blueprint-field-group-fields > .blueprint-field {
+            display: block;
+            width: auto;
+            margin: 0;
+            break-inside: auto;
+        }
+        .blueprint-field-group-fields > .blueprint-field.wide {
+            grid-column: 1 / -1;
+        }
+        .blueprint-field-label {
+            line-height: 1.35;
+        }
+        .blueprint-field-source {
+            min-height: 13px;
+        }
+        body.light-theme .blueprint-flowbar-label {
+            border-right-color: #c4dfe0;
+        }
+        body.light-theme .blueprint-flowbar-label strong {
+            color: #173d45;
+        }
+        body.light-theme .blueprint-flowbar-label small,
+        body.light-theme .blueprint-field-group-kicker {
+            color: #6b8991;
+        }
+        body.light-theme .blueprint-field-group {
+            border-left-color: #7cb9b1;
+        }
+        body.light-theme .blueprint-field-group[data-hierarchy="campaign"] { border-left-color: #0b9f91; }
+        body.light-theme .blueprint-field-group[data-hierarchy="ad_set"],
+        body.light-theme .blueprint-field-group[data-hierarchy="ad_group"] { border-left-color: #786fca; }
+        body.light-theme .blueprint-field-group[data-hierarchy="ad"],
+        body.light-theme .blueprint-field-group[data-hierarchy="creative"] { border-left-color: #bd842d; }
+        @media (max-width: 900px) {
+            .blueprint-flowbar-label {
+                min-width: 74px;
+            }
+            .blueprint-field-group-fields {
+                grid-template-columns: 1fr;
+            }
+            .blueprint-field-group-fields > .blueprint-field.wide {
+                grid-column: auto;
+            }
+        }
+        @media (max-width: 760px) {
+            .blueprint-flowbar-label {
+                min-width: 68px;
+                padding-right: 6px;
+            }
+            .blueprint-flowbar-label small {
+                white-space: normal;
+            }
+        }

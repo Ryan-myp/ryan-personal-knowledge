@@ -3971,6 +3971,45 @@ class AdAgentStore:
                 for row in reversed(rows)
             ]
 
+    def update_conversation_message_metadata(
+        self,
+        session_id: str,
+        turn_id: str,
+        role: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> int:
+        """Merge metadata into matching transcript rows without changing content."""
+        with self._lock:
+            conn = self._get_conn()
+            rows = conn.execute(
+                """SELECT message_id, metadata
+                   FROM conversation_messages
+                   WHERE session_id = ? AND turn_id = ? AND role = ?""",
+                (str(session_id), str(turn_id), str(role)),
+            ).fetchall()
+            if not rows:
+                return 0
+            updates = []
+            for row in rows:
+                current = row["metadata"]
+                if isinstance(current, str):
+                    try:
+                        current = json.loads(current or "{}")
+                    except (TypeError, ValueError):
+                        current = {}
+                merged = dict(current) if isinstance(current, dict) else {}
+                merged.update(dict(metadata or {}))
+                updates.append((
+                    json.dumps(merged, ensure_ascii=False, default=str),
+                    str(row["message_id"]),
+                ))
+            conn.executemany(
+                "UPDATE conversation_messages SET metadata = ? WHERE message_id = ?",
+                updates,
+            )
+            conn.commit()
+            return len(updates)
+
     def delete_conversation_messages(self, session_id: str) -> None:
         """Delete one session transcript after the adapter checked its scope."""
         with self._lock:

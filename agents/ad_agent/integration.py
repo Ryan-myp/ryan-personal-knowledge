@@ -399,7 +399,7 @@ class AdvertisingModelAdapter:
     def _start_turn(self, state: dict[str, Any], request: Any) -> ModelTurn:
         run_id = str(request.run_id or "")
         request_context = (
-            request.context if isinstance(request.context, Mapping) else {}
+            dict(request.context) if isinstance(request.context, Mapping) else {}
         )
         session = self.owner._sessions.get(str(request.session_id or ""))
         if session is None:
@@ -480,6 +480,84 @@ class AdvertisingModelAdapter:
                     stop_reason="policy_blocked",
                 )
             intent = self.owner.intent_parser.parse(safe_input, ad_context)
+            template_id = str(
+                request_context.get("creation_template_id") or ""
+            ).strip()
+            if template_id:
+                try:
+                    intent = self.owner.apply_creation_template_to_intent(
+                        intent,
+                        template_id,
+                        account_id=request_context.get("account_id"),
+                        account_scope=getattr(
+                            request.principal, "account_scope", None,
+                        ),
+                        tenant_id=str(request.tenant_id or "default"),
+                        user_id=str(request.user_id or "anonymous"),
+                    )
+                except Exception as exc:
+                    state.update({
+                        "intent": intent,
+                        "calls": (),
+                        "next_index": 0,
+                        "session": session,
+                        "policy_errors": ["creation_template_invalid"],
+                        "last_results": [],
+                        "last_reply": f"❌ 无法应用创建模板：{exc}",
+                        "response_source": "policy",
+                        "ui": {},
+                    })
+                    self._completed[run_id] = dict(state)
+                    self._turns.pop(run_id, None)
+                    return ModelTurn(
+                        content=state["last_reply"],
+                        stop_reason="policy_blocked",
+                    )
+                template_blueprint_id = str(
+                    getattr(intent, "metadata", {}).get(
+                        "creation_blueprint_id", ""
+                    ) or ""
+                ).strip()
+                requested_blueprint_id = str(
+                    request_context.get("creation_blueprint_id") or ""
+                ).strip()
+                if (
+                    requested_blueprint_id
+                    and template_blueprint_id
+                    and requested_blueprint_id != template_blueprint_id
+                ):
+                    state.update({
+                        "intent": intent,
+                        "calls": (),
+                        "next_index": 0,
+                        "session": session,
+                        "policy_errors": ["creation_template_blueprint_mismatch"],
+                        "last_results": [],
+                        "last_reply": "❌ 创建模板与当前广告类型不一致，请重新选择模板。",
+                        "response_source": "policy",
+                        "ui": {},
+                    })
+                    self._completed[run_id] = dict(state)
+                    self._turns.pop(run_id, None)
+                    return ModelTurn(
+                        content=state["last_reply"],
+                        stop_reason="policy_blocked",
+                    )
+                if template_blueprint_id:
+                    request_context["creation_blueprint_id"] = template_blueprint_id
+                    request_context["creation_blueprint_version"] = str(
+                        getattr(intent, "metadata", {}).get(
+                            "creation_blueprint_version", ""
+                        ) or ""
+                    ) or None
+                if not request_context.get("account_id"):
+                    template_account_id = str(
+                        getattr(intent, "metadata", {}).get(
+                            "creation_template_account_id", ""
+                        ) or ""
+                    ).strip()
+                    if template_account_id:
+                        request_context["account_id"] = template_account_id
             if (
                 request_context.get("creation_blueprint_id")
                 and getattr(intent, "intent_type", "") == "chat"
@@ -802,13 +880,28 @@ class AdvertisingModelAdapter:
             creation_ui = {}
             if self.owner.creation_card_builder.is_creation_intent(intent):
                 creation_ui = self.owner.build_creation_ui(
-                    intent, tool_plan=routed
+                    intent,
+                    tool_plan=routed,
+                    account_scope=getattr(
+                        request.principal, "account_scope", None,
+                    ),
+                    tenant_id=str(request.tenant_id or "default"),
+                    user_id=str(request.user_id or "anonymous"),
+                    account_id=request_context.get("account_id"),
                 ) or {}
             if (
                 self.owner.creation_card_builder.is_creation_intent(intent)
                 and not request_context.get("creation_blueprint_id")
             ):
-                creation_ui = self.owner.build_creation_ui(intent) or {}
+                creation_ui = self.owner.build_creation_ui(
+                    intent,
+                    account_scope=getattr(
+                        request.principal, "account_scope", None,
+                    ),
+                    tenant_id=str(request.tenant_id or "default"),
+                    user_id=str(request.user_id or "anonymous"),
+                    account_id=request_context.get("account_id"),
+                ) or {}
                 cards = creation_ui.get("cards") if isinstance(
                     creation_ui.get("cards"), list
                 ) else []
@@ -817,7 +910,11 @@ class AdvertisingModelAdapter:
                     if isinstance(card, Mapping)
                     and card.get("type") == "ad_creation_selector"
                 ]
-                if selector_cards:
+                rich_selector = any(
+                    card.get("account_options") or card.get("template_options")
+                    for card in selector_cards
+                )
+                if selector_cards and not rich_selector:
                     clarification = self.owner.creation_card_builder.build_clarification(
                         intent
                     )

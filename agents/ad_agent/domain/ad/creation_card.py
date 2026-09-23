@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import json
 from datetime import datetime
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from .blueprint import (
     AdCreationBlueprint,
@@ -568,10 +568,119 @@ class CreationCardBuilder:
         blueprint_registry: BlueprintRegistry,
         tool_registry: Any,
         cascade: Optional[BlueprintCascadeEngine] = None,
+        *,
+        account_provider: Optional[Callable[[str, Any], list[Any]]] = None,
+        template_provider: Optional[Callable[..., list[Mapping[str, Any]]]] = None,
     ) -> None:
         self.blueprints = blueprint_registry
         self.tools = tool_registry
         self.cascade = cascade or BlueprintCascadeEngine()
+        self.account_provider = account_provider
+        self.template_provider = template_provider
+
+    def _account_options(
+        self, provider: str, account_scope: Any,
+    ) -> list[dict[str, Any]]:
+        if not callable(self.account_provider):
+            return []
+        try:
+            raw = self.account_provider(provider, account_scope) or []
+        except Exception:
+            return []
+        options: list[dict[str, Any]] = []
+        for item in raw[:100]:
+            if isinstance(item, Mapping):
+                value = str(item.get("value") or item.get("account_id") or "").strip()
+                label = str(item.get("label") or value)
+            else:
+                value = str(item or "").strip()
+                label = f"账户 {value}"
+            if value:
+                options.append({"value": value, "label": label})
+        return options
+
+    def _template_options(
+        self,
+        provider: str,
+        account_id: Optional[str],
+        account_scope: Any,
+        tenant_id: str,
+        user_id: str,
+    ) -> list[dict[str, Any]]:
+        if not callable(self.template_provider):
+            return []
+        try:
+            raw = self.template_provider(
+                provider,
+                account_id,
+                account_scope,
+                tenant_id,
+                user_id,
+            ) or []
+        except Exception:
+            return []
+        options: list[dict[str, Any]] = []
+        for item in raw[:100]:
+            if not isinstance(item, Mapping):
+                continue
+            # Values remain server-side. The selector only needs immutable
+            # identity and bounded explanation metadata.
+            options.append({
+                key: _copy_json(item[key])
+                for key in (
+                    "template_id", "name", "description", "provider",
+                    "blueprint_id", "blueprint_version", "ad_format",
+                    "scope_type", "account_id", "verification_status",
+                    "verified_scope", "required_inputs", "tags", "source",
+                    "template_kind", "is_default", "covered_fields",
+                )
+                if key in item
+            })
+        return options
+
+    @staticmethod
+    def _account_from_values(
+        provider_values: Mapping[str, Any],
+        explicit_account_id: Optional[str],
+    ) -> Optional[str]:
+        if explicit_account_id not in (None, ""):
+            return str(explicit_account_id).strip()
+        for key in ("account_id", "ad_account_id", "advertiser_id", "customer_id"):
+            value = provider_values.get(key)
+            if value not in (None, ""):
+                return str(value).strip()
+        return None
+
+    def _attach_creation_context(
+        self,
+        card: dict[str, Any],
+        *,
+        provider: str,
+        provider_values: Mapping[str, Any],
+        account_scope: Any,
+        tenant_id: str,
+        user_id: str,
+        explicit_account_id: Optional[str],
+    ) -> dict[str, Any]:
+        account_options = self._account_options(provider, account_scope)
+        account_id = self._account_from_values(provider_values, explicit_account_id)
+        card["account_options"] = account_options
+        card["account_id"] = account_id
+        card["account_required"] = True
+        template_options = self._template_options(
+            provider,
+            account_id,
+            account_scope,
+            tenant_id,
+            user_id,
+        )
+        if card.get("blueprint_id"):
+            template_options = [
+                item for item in template_options
+                if item.get("blueprint_id") == card.get("blueprint_id")
+            ]
+        card["template_options"] = template_options
+        return card
 
     @staticmethod
     def _blueprint_condition(
@@ -1515,7 +1624,12 @@ class CreationCardBuilder:
         return None, provider_values, None
 
     def _selector_card(
-        self, intent: ParsedIntent, provider: str, provider_values: Mapping[str, Any]
+        self, intent: ParsedIntent, provider: str, provider_values: Mapping[str, Any],
+        *,
+        account_scope: Any = None,
+        tenant_id: str = "default",
+        user_id: str = "anonymous",
+        account_id: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         candidates = [item for item in self.blueprints.list(provider=provider) if item.selector]
         if not candidates:
@@ -1631,7 +1745,7 @@ class CreationCardBuilder:
                 "value": card_value, "options": options, "source": "blueprint",
                 "selection_kind": selection_kind,
             })
-        return {
+        card = {
             "type": "ad_creation_selector", "version": "1.0", "id": f"{provider}.creation-selector",
             "title": f"选择 {provider} 广告创建类型", "provider": provider, "mode": "draft",
             "fields": fields,
@@ -1642,9 +1756,92 @@ class CreationCardBuilder:
             "account_required": True,
             "actions": [
                 {"id": "continue_chat", "label": "继续用文字补充"},
-                {"id": "open_form", "label": "打开填写表单"},
+                {"id": "skip_template", "label": "不使用模板"},
             ],
         }
+        return self._attach_creation_context(
+            card,
+            provider=provider,
+            provider_values=provider_values,
+            account_scope=account_scope,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            explicit_account_id=account_id,
+        )
+
+    def _account_selector_card(
+        self,
+        intent: ParsedIntent,
+        provider: str,
+        provider_values: Mapping[str, Any],
+        blueprint: AdCreationBlueprint,
+        selector_value: Any,
+        *,
+        account_scope: Any = None,
+        tenant_id: str = "default",
+        user_id: str = "anonymous",
+        account_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        selector = blueprint.selector or {}
+        field_path = str(selector.get("field") or selector.get("dimension") or "")
+        provider_field = str(selector.get("dimension") or field_path)
+        for field in blueprint.fields:
+            if str(field.get("path")) != field_path:
+                continue
+            if "." in str(field.get("tool_ref") or ""):
+                _tool_name, provider_field, _schema = _schema_for_ref(
+                    self.tools, str(field["tool_ref"])
+                )
+            break
+        option = {
+            "value": selector_value,
+            "label": blueprint.title,
+            "blueprint_id": blueprint.blueprint_id,
+            "selector_value": selector_value,
+        }
+        card = {
+            "type": "ad_creation_selector",
+            "version": "1.0",
+            "id": f"{provider}.creation-context-selector",
+            "title": f"先选择 {provider} 广告账户和创建方式",
+            "provider": provider,
+            "mode": "draft",
+            "blueprint_id": blueprint.blueprint_id,
+            "blueprint_version": blueprint.version,
+            "selector": {
+                "dimension": selector.get("dimension"),
+                "value": selector_value,
+            },
+            "fields": [{
+                "path": field_path,
+                "provider_field": provider_field,
+                "tool": "",
+                "label": selector.get("label") or blueprint.title,
+                "control": "select",
+                "required": True,
+                "state": "set",
+                "value": selector_value,
+                "options": [option],
+                "source": "blueprint",
+                "selection_kind": "blueprint",
+            }],
+            "missing_fields": [],
+            "invalid_fields": [],
+            "ready": False,
+            "actions": [
+                {"id": "continue_chat", "label": "继续用文字补充"},
+                {"id": "skip_template", "label": "不使用模板"},
+            ],
+        }
+        return self._attach_creation_context(
+            card,
+            provider=provider,
+            provider_values=provider_values,
+            account_scope=account_scope,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            explicit_account_id=account_id,
+        )
 
     def _form_card(
         self, intent: ParsedIntent, blueprint: AdCreationBlueprint,
@@ -1932,6 +2129,11 @@ class CreationCardBuilder:
         self,
         intent: ParsedIntent,
         tool_plan: Optional[Mapping[str, Any]] = None,
+        *,
+        account_scope: Any = None,
+        tenant_id: str = "default",
+        user_id: str = "anonymous",
+        account_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         if not self.is_creation_intent(intent, tool_plan=tool_plan):
             return []
@@ -1940,9 +2142,47 @@ class CreationCardBuilder:
             canonical = normalize_platform(provider)
             blueprint, values, selector_value = self._resolve(intent, canonical)
             if blueprint is None:
-                selector_card = self._selector_card(intent, canonical, values)
+                selector_card = self._selector_card(
+                    intent,
+                    canonical,
+                    values,
+                    account_scope=account_scope,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    account_id=account_id,
+                )
                 if selector_card:
                     cards.append(selector_card)
                 continue
-            cards.append(self._form_card(intent, blueprint, values, selector_value))
+            account_options = self._account_options(canonical, account_scope)
+            selected_account = self._account_from_values(values, account_id)
+            if not selected_account and account_options:
+                cards.append(self._account_selector_card(
+                    intent,
+                    canonical,
+                    values,
+                    blueprint,
+                    selector_value,
+                    account_scope=account_scope,
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    account_id=account_id,
+                ))
+                continue
+            card = self._attach_creation_context(
+                self._form_card(intent, blueprint, values, selector_value),
+                provider=canonical,
+                provider_values=values,
+                account_scope=account_scope,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                explicit_account_id=account_id,
+            )
+            metadata = getattr(intent, "metadata", {}) or {}
+            if metadata.get("creation_template_id"):
+                card["template_id"] = str(metadata["creation_template_id"])
+                card["template_source"] = str(
+                    metadata.get("creation_template_source") or "user"
+                )
+            cards.append(card)
         return cards[:_MAX_CARDS]

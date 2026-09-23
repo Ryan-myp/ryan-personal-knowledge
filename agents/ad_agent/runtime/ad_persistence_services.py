@@ -83,12 +83,27 @@ class AdPersistenceServices:
             session.ctx.metadata["conversation_title_source"] = title_source
         if not self.runtime._session_manager:
             return
+        safe_ui = (
+            self.runtime._redact_for_persistence(dict(ui))
+            if isinstance(ui, Mapping) and ui else None
+        )
         if persist_messages:
             self.runtime._session_manager.record_conversation_message(
                 session.session_id, turn_id, "user", safe_user
             )
             self.runtime._session_manager.record_conversation_message(
-                session.session_id, turn_id, "assistant", safe_reply
+                session.session_id, turn_id, "assistant", safe_reply,
+                metadata={"ui": safe_ui} if safe_ui else None,
+            )
+        elif safe_ui:
+            # The generic Harness already wrote the transcript rows. Attach
+            # presentation state to that assistant row instead of keeping the
+            # card only in bounded session metadata.
+            self.runtime._session_manager.update_conversation_message_metadata(
+                session.session_id,
+                turn_id,
+                "assistant",
+                {"ui": safe_ui},
             )
         metadata = {
             "execution_mode": self.runtime.execution_mode,
@@ -120,11 +135,11 @@ class AdPersistenceServices:
             metadata["action_draft"] = self.runtime._redact_for_persistence(action_draft)
         ui_by_turn = session.ctx.metadata.get("conversation_ui", {})
         ui_by_turn = dict(ui_by_turn) if isinstance(ui_by_turn, dict) else {}
-        if isinstance(ui, Mapping) and ui:
+        if safe_ui:
             # A2UI is persisted as sanitized message metadata, not as model
             # context. It can be restored for display, but it never grants an
             # execution permission or bypasses the confirmation boundary.
-            ui_by_turn[str(turn_id)] = self.runtime._redact_for_persistence(dict(ui))
+            ui_by_turn[str(turn_id)] = safe_ui
         ui_by_turn = dict(list(ui_by_turn.items())[-20:])
         session.ctx.metadata["conversation_ui"] = ui_by_turn
         metadata["conversation_ui"] = ui_by_turn

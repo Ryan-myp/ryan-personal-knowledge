@@ -67,7 +67,8 @@ class AdTaskServices:
         allowed_fields = {
             "user_input", "session_id", "account_id", "platform_params",
             "confirmed", "confirmation_payload", "creation_blueprint_id",
-            "creation_blueprint_version", "execution_mode",
+            "creation_blueprint_version", "creation_template_id",
+            "execution_mode",
         }
         unknown = sorted(set(payload) - allowed_fields)
         if unknown:
@@ -84,6 +85,7 @@ class AdTaskServices:
             "platform_params": platform_params,
             "creation_blueprint_id": payload.get("creation_blueprint_id"),
             "creation_blueprint_version": payload.get("creation_blueprint_version"),
+            "creation_template_id": payload.get("creation_template_id"),
             "execution_mode": payload.get("execution_mode"),
             "confirmed": False,
             "confirmation_payload": None,
@@ -247,6 +249,7 @@ class AdTaskServices:
             platform_params=payload.get("platform_params"),
             creation_blueprint_id=payload.get("creation_blueprint_id"),
             creation_blueprint_version=payload.get("creation_blueprint_version"),
+            creation_template_id=payload.get("creation_template_id"),
             execution_mode=payload.get("execution_mode"),
             confirmed=False,
             confirmation_payload=None,

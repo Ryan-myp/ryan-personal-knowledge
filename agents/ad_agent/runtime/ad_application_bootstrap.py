@@ -374,6 +374,22 @@ class AdApplicationBootstrap:
             runtime.creation_blueprints,
             runtime.registry,
             runtime.blueprint_cascade,
+            account_provider=(
+                lambda provider, account_scope:
+                runtime._available_accounts_for_request(
+                    provider, account_scope,
+                )
+            ),
+            template_provider=(
+                lambda provider, account_id, account_scope, tenant_id, user_id:
+                    runtime.list_creation_templates(
+                        provider=provider,
+                        account_id=account_id,
+                        account_scope=account_scope,
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                    )
+            ),
         )
         runtime.action_clarification_builder = ActionClarificationBuilder(
             field_labeler=runtime._clarification_field_label,

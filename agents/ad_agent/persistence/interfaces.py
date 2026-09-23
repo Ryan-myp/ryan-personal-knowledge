@@ -108,6 +108,10 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def list_conversation_messages(
         self, session_id: str, limit: int = 200,
     ) -> list[Any]: ...
+    def update_conversation_message_metadata(
+        self, session_id: str, turn_id: str, role: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> int: ...
 
     # -- Campaign creation templates ------------------------------------
     def create_creation_template(self, record: Any) -> Any: ...

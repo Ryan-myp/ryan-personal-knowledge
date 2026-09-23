@@ -4,6 +4,7 @@
             activeView: 'trace',
             activeCardId: null,
             cards: new Map(),
+            open: false,
         };
 
         function setWorkbenchView(view) {
@@ -25,9 +26,21 @@
         function openAgentWorkbench(view = 'trace') {
             const panel = document.querySelector('.right-panel');
             if (!panel) return;
+            const wasOpen = workbenchState.open;
+            workbenchState.open = true;
+            document.body.classList.add('workbench-open');
             document.body.classList.remove('trace-collapsed');
+            if (!wasOpen) document.body.classList.remove('trace-expanded');
             panel.classList.remove('trace-collapsed');
             setWorkbenchView(view);
+        }
+
+        function closeAgentWorkbench() {
+            const panel = document.querySelector('.right-panel');
+            workbenchState.open = false;
+            if (typeof traceState !== 'undefined') traceState.expanded = false;
+            document.body.classList.remove('workbench-open', 'trace-collapsed', 'trace-expanded');
+            panel?.classList.remove('trace-collapsed');
         }
 
         function openCreationWorkbench(card = null) {
@@ -52,7 +65,7 @@
         function closeCreationWorkbench() {
             const confirmationHost = document.getElementById('confirmation-workbench-host');
             if (confirmationHost) confirmationHost.hidden = true;
-            setWorkbenchView('trace');
+            closeAgentWorkbench();
         }
 
         function openConfirmationWorkbench() {
@@ -129,6 +142,7 @@
             document.getElementById('creation-workbench-host')?.replaceChildren();
             document.getElementById('confirmation-workbench-host')?.replaceChildren();
             setWorkbenchView('trace');
+            closeAgentWorkbench();
             updateCreationWorkbenchCount();
         }
 

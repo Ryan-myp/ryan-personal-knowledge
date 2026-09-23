@@ -1374,6 +1374,29 @@ class TestSafeWriteExecution:
         assert "请提供要操作的" in result["reply"]
         assert all(not item.get("success") for item in result["results"])
 
+    def test_confirmation_ui_survives_durable_conversation_reload(self):
+        rt = self._runtime("meta", self.FakeClient("meta"))
+
+        result = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            session_id="confirmation-history",
+            user_id="confirmation-user",
+        )
+
+        assert result["needs_confirmation"] is True
+        conversation = rt.get_conversation(
+            "confirmation-history",
+            "confirmation-user",
+        )
+        assistant = [
+            message for message in conversation["messages"]
+            if message["role"] == "assistant"
+        ][-1]
+        assert assistant["ui"]["confirmation"]["payload"] == result["confirmation_payload"]
+        assert assistant["ui"]["confirmation"]["original_request"]["user_input"] == (
+            "更新 Meta campaign campaign_id=123 status=PAUSED"
+        )
+
     def test_cross_platform_create_does_not_share_parent_ids(self):
         from agents.ad_agent.tools.providers.meta import create_meta_tool_source
         from agents.ad_agent.tools.providers.google import create_google_tool_source

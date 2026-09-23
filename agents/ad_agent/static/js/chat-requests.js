@@ -53,6 +53,15 @@
             const creationNeedsCorrection = data.response_source === 'creation_card' || data.response_source === 'creation_validation';
             const hasCreationCards = Boolean(data.ui?.cards?.length) && (!requestParams?.creation_blueprint_id || creationNeedsCorrection);
             if (data.needs_confirmation && data.confirmation_payload && !hasCreationCards) {
+                addMessage(
+                    data.content || '这次操作需要确认后才能继续。',
+                    'agent',
+                    results.map(item => ({ tool: item.tool, success: item.success })),
+                    false,
+                    '',
+                    null,
+                    data.ui || null,
+                );
                 showConfirm(data.confirmation_payload, {
                     user_input: requestParams.user_input,
                     account_id: requestParams.account_id || null,
@@ -492,6 +501,7 @@
                         '',
                         message.created_at,
                         message.ui || null,
+                        { openWorkbench: false },
                     );
                 }
                 if (!data.messages?.length) {

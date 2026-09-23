@@ -85,6 +85,7 @@ class SessionManager:
 
     def record_conversation_message(
         self, session_id: str, turn_id: str, role: str, content: str,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Persist one already-sanitized chat message."""
         import uuid
@@ -97,12 +98,35 @@ class SessionManager:
                 role=str(role),
                 content=str(content),
                 created_at=datetime.now().isoformat(),
+                metadata=dict(metadata or {}),
             )
         )
 
     def list_conversation_messages(self, session_id: str, limit: int = 200) -> list:
         """Return the durable chat messages in chronological order."""
         return self.store.list_conversation_messages(session_id, limit=limit)
+
+    def update_conversation_message_metadata(
+        self,
+        session_id: str,
+        turn_id: str,
+        role: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> int:
+        """Merge presentation metadata into one durable transcript turn."""
+        updater = getattr(
+            self.store, "update_conversation_message_metadata", None,
+        )
+        if not callable(updater):
+            raise TypeError(
+                "persistence backend lacks conversation message metadata updates"
+            )
+        return int(updater(
+            str(session_id),
+            str(turn_id),
+            str(role),
+            dict(metadata or {}),
+        ))
     
     def restore_session(self, session_id: str) -> dict:
         """

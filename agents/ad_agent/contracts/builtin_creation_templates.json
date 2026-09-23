@@ -1,0 +1,357 @@
+{
+  "schema_version": "1.0",
+  "templates": [
+    {
+      "key": "meta.test.traffic",
+      "name": "Meta 测试账号 · 流量链接",
+      "description": "Meta 受控测试账号的流量广告基线。默认竞价、最低成本、落地页浏览和图片素材入口。",
+      "provider": "meta",
+      "blueprint_id": "meta.traffic_link",
+      "blueprint_version": "1.0.0",
+      "ad_format": "link_traffic",
+      "account_id": "2806375919473667",
+      "verification_status": "live_verified",
+      "verified_scope": "Campaign、Ad Set、Ad 均已在受控账号以暂停状态创建并回读",
+      "required_inputs": [
+        "投放时间",
+        "campaign.daily_budget",
+        "ad_set.targeting",
+        "ad.page_id",
+        "ad.link",
+        "ad.image_hash 或 ad.video_id"
+      ],
+      "tags": ["内置", "测试账号", "Meta", "流量", "已验证"],
+      "values": {
+        "campaign.objective": "OUTCOME_TRAFFIC",
+        "campaign.special_ad_categories": ["NONE"],
+        "campaign.buying_type": "AUCTION",
+        "ad_set.optimization_goal": "LANDING_PAGE_VIEWS",
+        "ad_set.billing_event": "IMPRESSIONS",
+        "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.media_type": "IMAGE"
+      }
+    },
+    {
+      "key": "meta.test.catalog-sales",
+      "name": "Meta 测试账号 · 商品目录销售",
+      "description": "Meta 受控测试账号的目录销售基线。默认销售目标、转化价值、最低成本和轮播目录样式。",
+      "provider": "meta",
+      "blueprint_id": "meta.catalog_sales",
+      "blueprint_version": "1.0.0",
+      "ad_format": "catalog_sales",
+      "account_id": "2806375919473667",
+      "verification_status": "live_verified",
+      "verified_scope": "Campaign、Ad Set、Ad 均已在受控账号以暂停状态创建并回读",
+      "required_inputs": [
+        "投放时间",
+        "campaign.daily_budget",
+        "ad_set.targeting",
+        "ad_set.product_set_id",
+        "ad.page_id",
+        "ad.product_set_id",
+        "ad.link"
+      ],
+      "tags": ["内置", "测试账号", "Meta", "目录销售", "已验证"],
+      "values": {
+        "campaign.objective": "OUTCOME_SALES",
+        "campaign.special_ad_categories": ["NONE"],
+        "campaign.buying_type": "AUCTION",
+        "ad_set.optimization_goal": "VALUE",
+        "ad_set.billing_event": "IMPRESSIONS",
+        "ad.ad_style": "CAROUSEL"
+      }
+    },
+    {
+      "key": "google.test.performance-max",
+      "name": "Google 测试账号 · Performance Max",
+      "description": "Google Ads 受控测试账号的 Performance Max 基线。默认最大化转化价值，素材和落地页通过创建卡补齐。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.performance_max",
+      "blueprint_version": "1.0.0",
+      "ad_format": "PERFORMANCE_MAX",
+      "account_id": "9055507554",
+      "verification_status": "live_verified_with_provider_limits",
+      "verified_scope": "Campaign 和 Asset Group 已创建并回读；商品筛选状态受 Google 平台限制",
+      "required_inputs": [
+        "投放时间",
+        "campaign.daily_budget",
+        "asset_group.final_urls",
+        "asset_group.headlines",
+        "asset_group.long_headlines",
+        "asset_group.descriptions",
+        "asset_group.images",
+        "asset_group.square_marketing_images",
+        "asset_group.logos",
+        "asset_group.business_names"
+      ],
+      "tags": ["内置", "测试账号", "Google Ads", "Performance Max", "已验证"],
+      "values": {
+        "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "campaign.advertising_channel_type": "PERFORMANCE_MAX",
+        "campaign.brand_guidelines_enabled": false,
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"
+      }
+    },
+    {
+      "key": "google.test.shopping",
+      "name": "Google 测试账号 · Shopping",
+      "description": "Google Ads 受控测试账号的 Shopping 基线。默认全商品分组、暂停商品组和最大化转化价值。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.shopping",
+      "blueprint_version": "1.0.0",
+      "ad_format": "SHOPPING",
+      "account_id": "9055507554",
+      "verification_status": "live_verified_with_provider_limits",
+      "verified_scope": "Campaign 和 Ad Group 已创建并回读；Product Group 由 Google 强制保持启用",
+      "required_inputs": [
+        "投放时间",
+        "campaign.daily_budget",
+        "campaign.shopping_setting.merchant_id",
+        "product_group.cpc_bid_micros"
+      ],
+      "tags": ["内置", "测试账号", "Google Ads", "Shopping", "已验证"],
+      "values": {
+        "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "campaign.advertising_channel_type": "SHOPPING",
+        "campaign.shopping_setting.campaign_priority": 0,
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE",
+        "ad_group.type": "SHOPPING_PRODUCT_ADS",
+        "product_group.product_group_type": "all_products",
+        "product_group.partition_type": "SUBDIVISION",
+        "product_group.status": "PAUSED"
+      }
+    },
+    {
+      "key": "google.test.app",
+      "name": "Google 测试账号 · App",
+      "description": "Google Ads 受控测试账号的 App 广告基线。默认 App 安装、最大化转化，应用设置和素材由账户上下文补齐。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.app",
+      "blueprint_version": "1.0.0",
+      "ad_format": "APP",
+      "account_id": "9055507554",
+      "verification_status": "live_verified_with_provider_limits",
+      "verified_scope": "Campaign、Ad Group 和 Ad 已创建并回读；部分 App 广告资源不接受暂停更新",
+      "required_inputs": [
+        "投放时间",
+        "campaign.daily_budget",
+        "campaign.app_campaign_setting",
+        "ad.headlines",
+        "ad.descriptions",
+        "ad.images 或 ad.videos"
+      ],
+      "tags": ["内置", "测试账号", "Google Ads", "App", "已验证"],
+      "values": {
+        "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "campaign.campaign_type": "APP",
+        "campaign.advertising_channel_type": "MULTI_CHANNEL",
+        "campaign.advertising_channel_sub_type": "APP_CAMPAIGN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
+      }
+    },
+    {
+      "key": "tiktok.test.traffic",
+      "name": "TikTok 测试账号 · 流量",
+      "description": "TikTok 受控测试账号的 Website 流量基线。默认日预算、从现在开始、落地页浏览和自动探索出价。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.traffic_video",
+      "blueprint_version": "3.0.0",
+      "ad_format": "SINGLE_VIDEO",
+      "account_id": "7397068114548195329",
+      "verification_status": "partial_live_verified",
+      "verified_scope": "Campaign 和 Ad Group 已以 DISABLE 状态创建并回读；素材组合需按账户资源补齐",
+      "required_inputs": [
+        "投放时间",
+        "ad_group.budget",
+        "ad_group.location_ids",
+        "ad.identity_id",
+        "ad.tiktok_item_id",
+        "ad.call_to_action_id",
+        "ad.landing_page_url"
+      ],
+      "tags": ["内置", "测试账号", "TikTok", "流量", "部分验证"],
+      "values": {
+        "campaign.objective_type": "TRAFFIC",
+        "campaign.sales_destination": "WEBSITE",
+        "ad_group.promotion_type": "WEBSITE",
+        "ad_group.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "ad_group.schedule_type": "SCHEDULE_FROM_NOW",
+        "ad_group.optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW",
+        "ad_group.bid_type": "BID_TYPE_NO_BID",
+        "ad_group.gender": "GENDER_UNLIMITED",
+        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"]
+      }
+    },
+    {
+      "key": "tiktok.test.lead-generation",
+      "name": "TikTok 测试账号 · 线索收集",
+      "description": "TikTok 受控测试账号的 Lead Generation 基线。默认即时表单、Lead 优化、日预算和无人工出价。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.lead_generation",
+      "blueprint_version": "2.0.0",
+      "ad_format": "SINGLE_VIDEO",
+      "account_id": "7397068114548195329",
+      "verification_status": "live_verified",
+      "verified_scope": "Campaign 和 Ad Group 已以 DISABLE 状态创建并回读",
+      "required_inputs": [
+        "投放时间",
+        "campaign.budget",
+        "ad_group.location_ids",
+        "ad.video_id",
+        "ad.identity_id",
+        "ad.page_list",
+        "ad.call_to_action_id",
+        "ad.ad_text"
+      ],
+      "tags": ["内置", "测试账号", "TikTok", "线索", "已验证"],
+      "values": {
+        "campaign.objective_type": "LEAD_GENERATION",
+        "campaign.campaign_type": "REGULAR_CAMPAIGN",
+        "campaign.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "ad_group.promotion_type": "LEAD_GENERATION",
+        "ad_group.promotion_target_type": "INSTANT_PAGE",
+        "ad_group.optimization_goal": "LEAD_GENERATION",
+        "ad_group.billing_event": "OCPM",
+        "ad_group.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "ad_group.schedule_type": "SCHEDULE_FROM_NOW",
+        "ad_group.bid_type": "BID_TYPE_NO_BID",
+        "ad_group.gender": "GENDER_UNLIMITED",
+        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"],
+        "ad.ad_format": "SINGLE_VIDEO",
+        "ad.identity_type": "AUTH_CODE"
+      }
+    },
+    {
+      "key": "tiktok.test.sales",
+      "name": "TikTok 测试账号 · Website 销售",
+      "description": "TikTok 受控测试账号的 Website Sales 基线。默认转化优化和日预算；Pixel、素材和落地页按账户资源补齐。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.product_sales_video",
+      "blueprint_version": "2.0.0",
+      "ad_format": "SINGLE_VIDEO",
+      "account_id": "7397068114548195329",
+      "verification_status": "partial_live_verified",
+      "verified_scope": "Campaign 已创建并回读；Ad Group 需要账户 Pixel 才能通过渠道校验",
+      "required_inputs": [
+        "投放时间",
+        "campaign.budget",
+        "ad_group.location_ids",
+        "ad_group.pixel_id",
+        "ad_group.optimization_event",
+        "ad.video_id",
+        "ad.identity_id",
+        "ad.call_to_action_id",
+        "ad.landing_page_url"
+      ],
+      "tags": ["内置", "测试账号", "TikTok", "销售", "渠道限制"],
+      "values": {
+        "campaign.objective_type": "SALES",
+        "campaign.sales_destination": "WEBSITE",
+        "campaign.catalog_enabled": false,
+        "campaign.campaign_type": "REGULAR_CAMPAIGN",
+        "campaign.budget_optimize_on": false,
+        "campaign.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "ad_group.promotion_type": "WEBSITE",
+        "ad_group.optimization_goal": "CONVERT",
+        "ad_group.billing_event": "OCPM",
+        "ad_group.bid_type": "BID_TYPE_NO_BID",
+        "ad_group.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "ad_group.schedule_type": "SCHEDULE_FROM_NOW",
+        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"],
+        "ad.ad_format": "SINGLE_VIDEO",
+        "ad.identity_type": "AUTH_CODE"
+      }
+    },
+    {
+      "key": "tiktok.test.app-promotion",
+      "name": "TikTok 测试账号 · App 推广",
+      "description": "TikTok 受控测试账号的 App Promotion 基线。模板可用于 dry-run；当前账号的 App 配置受到渠道限制。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.app_conversion_video",
+      "blueprint_version": "2.0.0",
+      "ad_format": "SINGLE_VIDEO",
+      "account_id": "7397068114548195329",
+      "verification_status": "provider_limited",
+      "verified_scope": "测试账号返回过 App Promotion provider 校验限制，未宣称 live 创建成功",
+      "required_inputs": [
+        "投放时间",
+        "campaign.budget",
+        "campaign.app_id",
+        "ad_group.location_ids",
+        "ad.video_id",
+        "ad.identity_id",
+        "ad.call_to_action_id"
+      ],
+      "tags": ["内置", "测试账号", "TikTok", "App", "渠道限制"],
+      "values": {
+        "campaign.objective_type": "APP_PROMOTION",
+        "campaign.app_promotion_type": "APP_INSTALL",
+        "campaign.campaign_type": "REGULAR_CAMPAIGN",
+        "campaign.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "campaign.budget_optimize_on": false,
+        "ad_group.promotion_type": "APP_ANDROID",
+        "ad_group.optimization_goal": "INSTALL",
+        "ad_group.billing_event": "OCPM",
+        "ad_group.bid_type": "BID_TYPE_NO_BID",
+        "ad_group.deep_bid_type": "AEO",
+        "ad_group.operating_systems": ["ANDROID"],
+        "ad_group.budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "ad_group.schedule_type": "SCHEDULE_FROM_NOW",
+        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"],
+        "ad.ad_format": "SINGLE_VIDEO",
+        "ad.identity_type": "AUTH_CODE"
+      }
+    },
+    {
+      "key": "dv360.test.insertion-order",
+      "name": "DV360 测试账号 · Insertion Order",
+      "description": "DV360 受控测试账号的 IO 基线。默认草稿和均匀消耗；所属 Campaign 通过账户查询选择。",
+      "provider": "dv360",
+      "blueprint_id": "dv360.insertion_order",
+      "blueprint_version": "1.0.0",
+      "ad_format": "INSERTION_ORDER",
+      "account_id": "5110831",
+      "verification_status": "dry_run_only",
+      "verified_scope": "已注册 Blueprint 和 Tool 合同；当前没有 provider live evidence",
+      "required_inputs": [
+        "投放时间",
+        "insertion_order.budget",
+        "insertion_order.start_date",
+        "insertion_order.end_date",
+        "insertion_order.campaign_id"
+      ],
+      "tags": ["内置", "测试账号", "DV360", "Insertion Order", "仅草稿"],
+      "values": {
+        "insertion_order.status": "DRAFT",
+        "insertion_order.pacing_type": "EVEN"
+      }
+    },
+    {
+      "key": "dv360.test.line-item-display",
+      "name": "DV360 测试账号 · Display Line Item",
+      "description": "DV360 受控测试账号的 Display Line Item 基线。默认草稿、自动转化出价；IO、目标和定向由账户上下文补齐。",
+      "provider": "dv360",
+      "blueprint_id": "dv360.line_item",
+      "blueprint_version": "1.0.0",
+      "ad_format": "LINE_ITEM",
+      "account_id": "5110831",
+      "verification_status": "dry_run_only",
+      "verified_scope": "已注册 Blueprint 和 Tool 合同；当前没有 provider live evidence",
+      "required_inputs": [
+        "投放时间",
+        "line_item.budget",
+        "line_item.start_date",
+        "line_item.end_date",
+        "line_item.io_id",
+        "line_item.goal",
+        "line_item.targeting"
+      ],
+      "tags": ["内置", "测试账号", "DV360", "Display", "仅草稿"],
+      "values": {
+        "line_item.type": "DISPLAY_DEFAULT",
+        "line_item.status": "DRAFT",
+        "line_item.bid_strategy": "MAXIMIZE_CONVERSIONS"
+      }
+    }
+  ]
+}

@@ -593,6 +593,265 @@
             if (typeof openConfirmationWorkbench === 'function') openConfirmationWorkbench();
         }
 
+        function selectorTemplateOptions(card) {
+            const accountId = String(card.account_id || '').trim();
+            if (!accountId) return [];
+            return (card.template_options || []).filter(template => {
+                const templateAccount = String(template.account_id || '').trim();
+                return !templateAccount || templateAccount === accountId;
+            });
+        }
+
+        function selectorSelectedOption(card) {
+            const field = (card.fields || [])[0];
+            if (!field || field.value === undefined || field.value === null || field.value === '') return null;
+            const value = String(field.value);
+            return (field.options || []).find(option => String(option.value) === value) || null;
+        }
+
+        function selectorHasSelection(card) {
+            return Boolean(selectorSelectedOption(card));
+        }
+
+        function selectorFieldChanged(card, field, value) {
+            field.value = value === '' ? undefined : value;
+            field.state = field.value === undefined ? 'missing' : 'set';
+            card.selected_template_id = '';
+            card.selected_blueprint_id = '';
+            creationCardState.set(card.id, card);
+            const wrapper = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
+            if (wrapper) renderCreationSelectorState(card, wrapper);
+        }
+
+        function renderCreationSelectorState(card, wrapper) {
+            const accountSelect = wrapper.querySelector('.creation-selector-account-select');
+            if (accountSelect && accountSelect.value !== String(card.account_id || '')) {
+                accountSelect.value = String(card.account_id || '');
+            }
+            const templateList = wrapper.querySelector('.creation-selector-template-list');
+            if (templateList) {
+                templateList.replaceChildren();
+                const templates = selectorTemplateOptions(card);
+                if (!String(card.account_id || '').trim()) {
+                    const empty = document.createElement('div');
+                    empty.className = 'creation-selector-empty';
+                    empty.textContent = '先选择广告账户，再显示这个账户可用的模板。';
+                    templateList.appendChild(empty);
+                } else if (!templates.length) {
+                    const empty = document.createElement('div');
+                    empty.className = 'creation-selector-empty';
+                    empty.textContent = '这个账户暂无匹配模板，可以继续选择广告类型。';
+                    templateList.appendChild(empty);
+                } else {
+                    templates.forEach(template => {
+                        const item = document.createElement('article');
+                        item.className = 'creation-selector-template';
+                        if (template.template_id === card.selected_template_id) item.classList.add('selected');
+                        const copy = document.createElement('div');
+                        copy.className = 'creation-selector-template-copy';
+                        const title = document.createElement('strong');
+                        title.textContent = template.name || '未命名模板';
+                        const meta = document.createElement('small');
+                        meta.textContent = `${template.ad_format || template.blueprint_id || '广告类型'} · ${template.source === 'builtin' ? '系统模板' : '我的模板'}`;
+                        const note = document.createElement('span');
+                        const required = Array.isArray(template.required_inputs) ? template.required_inputs : [];
+                        note.textContent = required.length ? `还需补充 ${required.length} 项` : '参数已预设，可继续检查';
+                        copy.append(title, meta, note);
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'creation-selector-template-use';
+                        button.textContent = template.template_id === card.selected_template_id ? '已选择' : '使用模板';
+                        button.addEventListener('click', () => submitCreationSelector(card, { templateId: template.template_id }));
+                        item.append(copy, button);
+                        templateList.appendChild(item);
+                    });
+                }
+            }
+            const selected = selectorSelectedOption(card);
+            const selectionCopy = wrapper.querySelector('.creation-selector-selection');
+            if (selectionCopy) {
+                selectionCopy.textContent = selected
+                    ? `已选择：${selected.label || selected.value}`
+                    : '还没有选择广告类型';
+            }
+            const continueButton = wrapper.querySelector('.creation-selector-continue');
+            if (continueButton) continueButton.disabled = !String(card.account_id || '').trim() || !selectorHasSelection(card);
+            const status = wrapper.querySelector('.creation-card-status');
+            if (status) status.textContent = !String(card.account_id || '').trim()
+                ? '先选择一个受授权的广告账户'
+                : selectorHasSelection(card)
+                    ? '可以继续打开标准创建参数'
+                    : '可以选择模板，或继续选择广告类型';
+        }
+
+        async function submitCreationSelector(card, { templateId = '' } = {}) {
+            const accountId = String(card.account_id || '').trim();
+            if (!accountId) {
+                addMessage('请先选择本次要操作的广告账户。', 'agent', null, true);
+                return;
+            }
+            const template = templateId
+                ? (card.template_options || []).find(item => item.template_id === templateId)
+                : null;
+            const field = (card.fields || [])[0];
+            const option = selectorSelectedOption(card);
+            if (!template && !option) {
+                addMessage('请先选择一个模板，或选择广告类型后继续。', 'agent', null, true);
+                return;
+            }
+            const platformParams = {};
+            let blueprintId = template?.blueprint_id || null;
+            let blueprintVersion = template?.blueprint_version || null;
+            if (!template && field && option) {
+                const value = option.selector_value ?? option.value;
+                platformParams[card.provider] = {
+                    [field.provider_field || field.path]: value,
+                };
+                if (option.blueprint_id) blueprintId = option.blueprint_id;
+            }
+            const label = template?.name || option?.label || '广告类型';
+            const requestParams = {
+                user_input: template
+                    ? `使用模板“${label}”创建广告`
+                    : `选择${label}广告类型，继续创建`,
+                session_id: sessionId,
+                account_id: accountId,
+                platform_params: Object.keys(platformParams).length ? platformParams : null,
+                creation_blueprint_id: blueprintId,
+                creation_blueprint_version: blueprintVersion,
+                creation_template_id: templateId || null,
+            };
+            addMessage(requestParams.user_input, 'user');
+            addLoading();
+            startExecutionTrace(requestParams.user_input);
+            try {
+                const data = await streamChatRequest(requestParams);
+                removeLoading();
+                renderStreamResult(data, requestParams);
+                await refreshConversationHistory({ silent: true });
+            } catch (error) {
+                removeLoading();
+                markTraceFailed(error.message);
+                addMessage('继续创建失败：' + error.message, 'agent', null, true);
+            }
+        }
+
+        function renderCreationSelectorCard(card, wrapper) {
+            const main = document.createElement('div');
+            main.className = 'creation-selector-main';
+            const accountBlock = document.createElement('section');
+            accountBlock.className = 'creation-selector-block';
+            const accountHeading = document.createElement('div');
+            accountHeading.className = 'creation-selector-heading';
+            accountHeading.innerHTML = '<strong>1. 选择广告账户</strong><small>只显示当前身份可用的账户</small>';
+            accountBlock.appendChild(accountHeading);
+            const accountSelect = document.createElement('select');
+            accountSelect.className = 'creation-selector-account-select';
+            accountSelect.setAttribute('aria-label', '广告账户');
+            const accountEmpty = document.createElement('option');
+            accountEmpty.value = '';
+            accountEmpty.textContent = card.account_options?.length ? '请选择账户…' : '当前没有可选账户';
+            accountSelect.appendChild(accountEmpty);
+            (card.account_options || []).forEach(option => {
+                const node = document.createElement('option');
+                node.value = String(option.value);
+                node.textContent = option.label || node.value;
+                accountSelect.appendChild(node);
+            });
+            accountSelect.value = String(card.account_id || '');
+            accountSelect.addEventListener('change', () => {
+                const previous = String(card.account_id || '');
+                card.account_id = accountSelect.value.trim();
+                if (previous !== card.account_id) {
+                    card.selected_template_id = '';
+                    card.selected_blueprint_id = '';
+                    (card.fields || []).forEach(field => {
+                        field.value = undefined;
+                        field.state = 'missing';
+                    });
+                    creationCardState.set(card.id, card);
+                    renderCreationSelectorState(card, wrapper);
+                }
+            });
+            accountBlock.appendChild(accountSelect);
+            main.appendChild(accountBlock);
+
+            const templateBlock = document.createElement('section');
+            templateBlock.className = 'creation-selector-block';
+            const templateHeading = document.createElement('div');
+            templateHeading.className = 'creation-selector-heading';
+            templateHeading.innerHTML = '<strong>2. 选择模板（可选）</strong><small>模板只填充创建草稿，仍会经过完整校验和确认</small>';
+            templateBlock.append(templateHeading);
+            const templateList = document.createElement('div');
+            templateList.className = 'creation-selector-template-list';
+            templateBlock.appendChild(templateList);
+            main.appendChild(templateBlock);
+
+            const typeBlock = document.createElement('section');
+            typeBlock.className = 'creation-selector-block';
+            const typeHeading = document.createElement('div');
+            typeHeading.className = 'creation-selector-heading';
+            typeHeading.innerHTML = '<strong>3. 不使用模板时，选择广告类型</strong><small>选择后进入标准 Campaign / Ad Group / Ad 参数向导</small>';
+            typeBlock.appendChild(typeHeading);
+            const field = (card.fields || [])[0];
+            if (field) {
+                const label = document.createElement('label');
+                label.className = 'creation-selector-field';
+                label.textContent = field.label || '广告类型';
+                const select = document.createElement('select');
+                select.setAttribute('aria-label', field.label || '广告类型');
+                const empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = '请选择广告类型…';
+                select.appendChild(empty);
+                (field.options || []).forEach(option => {
+                    const node = document.createElement('option');
+                    node.value = String(option.value);
+                    node.textContent = option.label || node.value;
+                    select.appendChild(node);
+                });
+                select.value = field.value == null ? '' : String(field.value);
+                select.addEventListener('change', () => selectorFieldChanged(card, field, select.value));
+                label.appendChild(select);
+                typeBlock.appendChild(label);
+            }
+            const selection = document.createElement('div');
+            selection.className = 'creation-selector-selection';
+            typeBlock.appendChild(selection);
+            const actions = document.createElement('div');
+            actions.className = 'creation-selector-actions';
+            const skip = document.createElement('button');
+            skip.type = 'button';
+            skip.className = 'creation-card-action';
+            skip.textContent = '跳过模板，继续选择类型';
+            skip.addEventListener('click', () => field && wrapper.querySelector('.creation-selector-field select')?.focus());
+            actions.appendChild(skip);
+            const continueButton = document.createElement('button');
+            continueButton.type = 'button';
+            continueButton.className = 'creation-card-action primary creation-selector-continue';
+            continueButton.textContent = '继续创建';
+            continueButton.addEventListener('click', () => submitCreationSelector(card));
+            actions.appendChild(continueButton);
+            typeBlock.appendChild(actions);
+            main.appendChild(typeBlock);
+
+            const footer = document.createElement('div');
+            footer.className = 'creation-card-footer';
+            const status = document.createElement('span');
+            status.className = 'creation-card-status';
+            footer.appendChild(status);
+            const textAction = document.createElement('button');
+            textAction.type = 'button';
+            textAction.className = 'creation-card-focus-action';
+            textAction.textContent = '继续用文字说明';
+            textAction.addEventListener('click', () => handleCreationCardAction(card.id, 'continue_chat'));
+            footer.appendChild(textAction);
+            main.appendChild(footer);
+            wrapper.appendChild(main);
+            renderCreationSelectorState(card, wrapper);
+            return wrapper;
+        }
+
         function cancelCreationReview() {
             const card = pendingCreationReview;
             pendingCreationReview = null;
@@ -698,6 +957,10 @@
                 ['投放平台', providerLabel],
                 ['创建类型', card.selector?.value ? creationCardValueText(card.selector.value) : (card.blueprint_id ? '已识别' : '待选择')],
             ];
+            if (card.template_id) {
+                const template = (card.template_options || []).find(item => item.template_id === card.template_id);
+                contextItems.push(['创建模板', template?.name || '已应用模板']);
+            }
             contextItems.forEach(([label, value]) => {
                 const item = document.createElement('span');
                 item.className = 'creation-card-context-item';
@@ -720,6 +983,10 @@
             next.appendChild(nextValue);
             header.appendChild(next);
             wrapper.appendChild(header);
+
+            if (card.type === 'ad_creation_selector') {
+                return renderCreationSelectorCard(card, wrapper);
+            }
 
             const workbench = document.createElement('div');
             workbench.className = 'creation-card-workbench';
@@ -810,7 +1077,7 @@
                 step.type = 'button';
                 step.className = `creation-card-step${index === 0 ? ' active' : ''}${groupProgress.missing ? ' has-missing' : ''}`;
                 step.dataset.step = group.id;
-                step.innerHTML = `<span class="creation-card-step-dot">${index + 1}</span><span><strong>${escapeHtml(group.title)}</strong><small>${groupProgress.missing ? `待填 ${groupProgress.missing}` : '已就绪'}</small></span>`;
+                step.innerHTML = `<span class="creation-card-step-dot">${index + 1}</span><span><strong>${escapeHtml(group.title)}</strong><small>${escapeHtml(group.label)} · ${groupProgress.missing ? `待填 ${groupProgress.missing}` : '已就绪'}</small></span>`;
                 step.addEventListener('click', () => {
                     const target = wrapper.querySelector(`.creation-card-section[data-step="${CSS.escape(group.id)}"]`);
                     creationCardScrollTo(wrapper, target);
@@ -824,13 +1091,24 @@
             fields.className = 'creation-card-fields';
             groups.forEach(group => {
                 const section = document.createElement('section');
-                section.className = `creation-card-section${group.id === 'advanced' ? ' collapsible' : ''}`;
-                if (['advanced', 'other'].includes(group.id)) section.classList.add('is-collapsed');
+                section.className = `creation-card-section${group.id === 'extension' ? ' collapsible is-collapsed' : ''}`;
                 section.dataset.step = group.id;
                 const sectionHeader = document.createElement('div');
                 sectionHeader.className = 'creation-card-section-header';
                 const sectionTitle = document.createElement('div');
-                sectionTitle.innerHTML = `<span class="creation-card-section-icon">${group.id === 'campaign' ? '◎' : group.id === 'audience' ? '◌' : group.id === 'creative' ? '▧' : group.id === 'measurement' ? '⌁' : '⋯'}</span><span><strong>${escapeHtml(group.title)}</strong><small>${escapeHtml(group.description)}</small></span>`;
+                const sectionIcon = {
+                    campaign: '◎',
+                    insertion_order: '◈',
+                    ad_set: '◌',
+                    ad_group: '◇',
+                    line_item: '▱',
+                    asset_group: '▧',
+                    product_group: '▦',
+                    ad: '▣',
+                    creative: '✦',
+                    extension: '⋯',
+                }[group.id] || '⋯';
+                sectionTitle.innerHTML = `<span class="creation-card-section-icon">${sectionIcon}</span><span><strong>${escapeHtml(group.title)}</strong><small>${escapeHtml(group.label)} · ${escapeHtml(group.description)}</small></span>`;
                 const sectionProgress = fieldGroupProgress(group.fields);
                 const sectionCount = document.createElement('span');
                 sectionCount.className = `creation-card-section-count${sectionProgress.missing ? ' has-missing' : ''}`;
@@ -1116,7 +1394,7 @@
                     : field.source === 'lookup' || field.control === 'lookup' ? '需要从指定账户中选择'
                         : (field.control === 'asset_picker' || field.control === 'file_reference') ? '本地素材草稿'
                             : field.control === 'object_editor' ? '按字段填写，系统会按 Tool Schema 组装'
-                                : field.control === 'advanced_json' ? '高级 Provider 字段；请使用已审核的当前版本 payload'
+                                : field.control === 'advanced_json' ? '平台扩展字段；请使用已审核的当前版本 payload'
                                     : '可直接填写';
                 item.appendChild(source);
                 if (field.manual_entry && typeof field.manual_entry === 'object') {
@@ -1172,11 +1450,12 @@
             return wrapper;
         }
 
-        function renderUiCards(ui) {
+        function renderUiCards(ui, options = {}) {
             const fragment = document.createDocumentFragment();
+            const openWorkbench = options.openWorkbench !== false;
             (ui?.cards || []).forEach(card => {
                 if (typeof renderCreationCardInWorkbench === 'function') {
-                    renderCreationCardInWorkbench(card);
+                    renderCreationCardInWorkbench(card, { open: openWorkbench });
                 }
                 const launcher = typeof renderCreationCardLauncher === 'function'
                     ? renderCreationCardLauncher(card)

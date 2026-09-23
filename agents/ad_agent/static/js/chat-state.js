@@ -82,7 +82,11 @@
                 start: 'Agent 回合开始', plan: '执行计划已生成', node_started: 'Tool 开始执行',
                 node_status: 'Tool 状态更新', confirmation: '等待用户确认', reply: '回复已准备',
                 stage_started: '阶段开始', stage_status: '阶段状态更新',
-                done: '回合结束', error: '执行异常'
+                done: '回合结束', error: '执行异常',
+                agent_start: 'Agent 回合开始', agent_end: '回合结束',
+                tool_execution_start: 'Tool 开始执行', tool_execution_end: 'Tool 执行完成',
+                turn_start: 'Agent Turn 开始', turn_end: 'Agent Turn 完成',
+                message_end: '消息处理完成', model_usage: '模型调用完成',
             };
             const node = event.node_id ? ` · ${event.title || event.tool || event.node_id}` : '';
             return `${labels[event.type] || '执行事件'}${node}`;
@@ -97,4 +101,3 @@
         let workspaceMode = {
             mode: '', loading: false, saving: false, liveAvailable: false, liveReason: ''
         };
-

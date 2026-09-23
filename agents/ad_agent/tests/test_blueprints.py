@@ -25,6 +25,22 @@ from agents.ad_agent.runtime.runtime import AdvertisingComposition
 BLUEPRINT_PATH = Path(__file__).parents[1] / "tools" / "providers" / "tiktok" / "blueprints" / "app_conversion_video.v1.json"
 
 
+@pytest.fixture(autouse=True)
+def isolate_blueprint_tests_from_deployment_account_config(monkeypatch):
+    """Keep schema tests independent from the checked-in test-account config.
+
+    Account-first behavior is covered explicitly below with a configured
+    whitelist. The remaining Blueprint tests exercise field contracts and
+    should not unexpectedly turn into account-selector tests just because
+    the local deployment config contains test accounts.
+    """
+    monkeypatch.setattr(
+        AccountWhitelistValidator,
+        "_load_config",
+        lambda _self: None,
+    )
+
+
 def test_tiktok_blueprint_is_json_and_references_registered_tools():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
@@ -718,7 +734,7 @@ def test_incomplete_creation_returns_card_without_failed_tool_result():
     assert result["ui"]["needs_input"] is True
     assert result["response_source"] == "creation_card"
     assert result.get("workflow_id") is None
-    assert "请提供要操作的" in result["reply"]
+    assert "选择" in result["reply"]
 
 
 def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
@@ -734,6 +750,8 @@ def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
     )
 
     assert result["results"] == []
+    # A lightweight composition has no durable account/template context, so
+    # the generic text clarification remains the appropriate surface.
     assert result["response_source"] == "creation_clarification"
     assert result["ui"]["cards"] == []
     assert result["ui"]["clarification"]["kind"] == "creation_clarification"
@@ -1112,6 +1130,184 @@ def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous(
     card = runtime.build_creation_ui(intent)["cards"][0]
     assert card["type"] == "ad_creation_form"
     assert card["blueprint_id"] == "tiktok.product_sales_video"
+
+
+def test_creation_selector_publishes_scoped_accounts_and_templates():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "tiktok": ["7397068114548195329"],
+    }
+    runtime.register_tool_source(create_tiktok_tool_source())
+
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 TikTok 广告", ["tiktok"],
+    ))["cards"][0]
+
+    assert card["type"] == "ad_creation_selector"
+    assert card["account_required"] is True
+    assert card["account_options"] == [{
+        "value": "7397068114548195329",
+        "label": "账户 7397068114548195329",
+    }]
+    assert len(card["template_options"]) == 4
+    assert {
+        item["account_id"] for item in card["template_options"]
+    } == {"7397068114548195329"}
+    assert all(item["source"] == "builtin" for item in card["template_options"])
+
+
+def test_creation_form_keeps_selected_account_and_only_matching_templates():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "tiktok": ["7397068114548195329"],
+    }
+    runtime.register_tool_source(create_tiktok_tool_source())
+
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign", "创建 TikTok 流量广告", ["tiktok"],
+        scoped_parameters={
+            "tiktok": {
+                "account_id": "7397068114548195329",
+                "objective_type": "TRAFFIC",
+            },
+        },
+    ))["cards"][0]
+
+    assert card["type"] == "ad_creation_form"
+    assert card["account_id"] == "7397068114548195329"
+    assert {
+        item["blueprint_id"] for item in card["template_options"]
+    } == {"tiktok.traffic_video"}
+
+
+def test_creation_run_gates_known_type_on_account_before_showing_full_form():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "tiktok": ["7397068114548195329"],
+    }
+    runtime.register_tool_source(create_tiktok_tool_source())
+
+    result = runtime.run(
+        "创建 TikTok 流量广告",
+        session_id="account-first-creation",
+        user_id="template-user",
+    )
+
+    card = result["ui"]["cards"][0]
+    assert result["response_source"] == "creation_card"
+    assert card["type"] == "ad_creation_selector"
+    assert card["blueprint_id"] == "tiktok.traffic_video"
+    assert card["account_id"] is None
+    assert card["template_options"]
+
+
+def test_creation_card_ui_survives_durable_conversation_reload():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "tiktok": ["7397068114548195329"],
+    }
+    runtime.register_tool_source(create_tiktok_tool_source())
+
+    result = runtime.run(
+        "创建 TikTok 流量广告",
+        session_id="durable-card-history",
+        user_id="history-user",
+    )
+
+    assert result["ui"]["cards"]
+    conversation = runtime.get_conversation(
+        "durable-card-history",
+        "history-user",
+    )
+    assert conversation is not None
+    assistant_messages = [
+        message for message in conversation["messages"]
+        if message["role"] == "assistant"
+    ]
+    assert assistant_messages
+    assert assistant_messages[-1]["ui"] == result["ui"]
+    records = runtime._session_manager.list_conversation_messages(
+        "durable-card-history",
+        limit=20,
+    )
+    persisted_assistant = [
+        record for record in records if record.role == "assistant"
+    ]
+    assert persisted_assistant[-1].metadata["ui"] == result["ui"]
+
+
+def test_template_selection_is_applied_to_creation_draft_without_execution():
+    from agents.ad_agent.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "tiktok": ["7397068114548195329"],
+    }
+    runtime.register_tool_source(create_tiktok_tool_source())
+    template = next(
+        item for item in runtime.list_creation_templates(
+            provider="tiktok",
+            account_id="7397068114548195329",
+            user_id="template-user",
+            tenant_id="default",
+        )
+        if item["blueprint_id"] == "tiktok.traffic_video"
+    )
+
+    intent = runtime.apply_creation_template_to_intent(
+        ParsedIntent("chat", "使用模板", ["tiktok"]),
+        template["template_id"],
+        account_id="7397068114548195329",
+        user_id="template-user",
+        tenant_id="default",
+    )
+
+    assert intent.intent_type == "create_campaign"
+    assert intent.namespaces == ["tiktok"]
+    assert intent.scoped_parameters["tiktok"]["campaign.objective_type"] == "TRAFFIC"
+    assert intent.metadata["creation_template_id"] == template["template_id"]
+    assert intent.metadata["creation_blueprint_id"] == "tiktok.traffic_video"
+
+    result = runtime.run(
+        "使用模板",
+        session_id="template-selection-run",
+        user_id="template-user",
+        account_id="7397068114548195329",
+        creation_template_id=template["template_id"],
+    )
+    selected_card = result["ui"]["cards"][0]
+    assert result["results"] == []
+    assert selected_card["type"] == "ad_creation_form"
+    assert selected_card["blueprint_id"] == "tiktok.traffic_video"
+    assert selected_card["account_id"] == "7397068114548195329"
 
 
 def test_blueprint_tool_ref_supports_nested_schema_paths():
