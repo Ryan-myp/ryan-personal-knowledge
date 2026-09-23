@@ -18,6 +18,8 @@ from .core.interfaces import ParsedIntent, ToolContext, ToolResult
 from .domain.ad.auth import RequestPrincipal
 from .core.execution_plan import ExecutionPlan
 from .runtime.ad_turn_context import AdTurnContextService
+from .integration_result_assembler import AdvertisingResultAssembler
+from .integration_turn_planner import AdvertisingTurnPlanner
 
 
 class _ContextTrace:
@@ -362,58 +364,13 @@ class AdvertisingModelAdapter:
         self._turns: dict[str, dict[str, Any]] = {}
         self._completed: dict[str, dict[str, Any]] = {}
         self._max_completed = 256
-
-    def _prune_completed(self) -> None:
-        """Bound results when a caller disconnects before reading a Run."""
-        while len(self._completed) > self._max_completed:
-            oldest = next(iter(self._completed), None)
-            if oldest is None:
-                return
-            self._completed.pop(oldest, None)
-
-    @staticmethod
-    def _export_application_state(state: Mapping[str, Any]) -> dict[str, Any]:
-        """Expose only response data through the generic RunResult extension."""
-        intent = state.get("intent")
-        if callable(getattr(intent, "to_dict", None)):
-            intent = intent.to_dict()
-        calls = []
-        for call in state.get("calls") or ():
-            to_dict = getattr(call, "to_dict", None)
-            calls.append(to_dict() if callable(to_dict) else dict(call))
-        keys = (
-            "last_reply",
-            "last_results",
-            "policy_errors",
-            "tool_selection",
-            "memory",
-            "memory_updates",
-            "execution_plan",
-            "workflow_id",
-            "ui",
-            "response_source",
-            "resource_results",
-            "cross_channel_summary",
-            "cross_channel_insights",
-            "cross_channel_budget_plan",
-            "cross_channel_export",
-            "clarification",
-            "creation_validation",
-            "needs_input",
-            "needs_confirmation",
-            "confirmation_payload",
-            "error_type",
-            "reason",
-            "tool_plan",
+        self._results = AdvertisingResultAssembler(
+            owner,
+            self._turns,
+            self._completed,
+            max_completed=self._max_completed,
         )
-        result = {
-            key: state[key]
-            for key in keys
-            if key in state
-        }
-        result["intent"] = intent
-        result["calls"] = calls
-        return result
+        self._planner = AdvertisingTurnPlanner(owner)
 
     def complete(
         self,
@@ -448,7 +405,7 @@ class AdvertisingModelAdapter:
                 tool_calls=(call,),
                 stop_reason="tool_call",
             )
-        return self._finish_turn(state, request, tool_messages)
+        return self._results.finish_turn(state, request, tool_messages)
 
     def _start_turn(self, state: dict[str, Any], request: Any) -> ModelTurn:
         run_id = str(request.run_id or "")
@@ -644,31 +601,10 @@ class AdvertisingModelAdapter:
                     self._completed[run_id] = dict(state)
                     self._turns.pop(run_id, None)
                     return ModelTurn(content=f"❌ {error}", stop_reason="policy_blocked")
-                merged = dict(getattr(intent, "scoped_parameters", {}) or {})
-                for platform, values in platform_params.items():
-                    canonical = self.owner._resolve_platform_identifier(platform)
-                    target = next(
-                        (
-                            existing for existing in merged
-                            if self.owner._resolve_platform_identifier(existing) == canonical
-                        ),
-                        canonical or str(platform),
-                    )
-                    if isinstance(values, Mapping) and isinstance(merged.get(target), Mapping):
-                        merged[target] = {**dict(merged[target]), **dict(values)}
-                    else:
-                        merged[target] = dict(values) if isinstance(values, Mapping) else values
-                intent.scoped_parameters = merged
-                if len(platform_params) > 1:
-                    known = {
-                        self.owner._canonical_platform(item)
-                        for item in (getattr(intent, "namespaces", []) or [])
-                    }
-                    for platform in platform_params:
-                        canonical = self.owner._resolve_platform_identifier(str(platform))
-                        if canonical not in known:
-                            intent.namespaces.append(canonical)
-                            known.add(canonical)
+                intent = self._planner.merge_platform_params(
+                    intent,
+                    platform_params,
+                )
             for feature in self.owner.features:
                 adopt_pending = getattr(feature, "adopt_pending_intent", None)
                 if not callable(adopt_pending):
@@ -1048,51 +984,11 @@ class AdvertisingModelAdapter:
                         stop_reason="awaiting_input",
                         context_updates=context_updates,
                     )
-            calls: list[ToolCall] = []
-            for tools in routed.values():
-                for definition in tools:
-                    arguments = self.owner.input_builder.build(
-                        definition, intent, definition.namespace, session.ctx
-                    )
-                    scoped = getattr(intent, "scoped_parameters", {}) or {}
-                    platform_values = None
-                    for key, values in (
-                        scoped.items() if isinstance(scoped, Mapping) else ()
-                    ):
-                        if self.owner._resolve_platform_identifier(str(key)) == (
-                            self.owner._resolve_platform_identifier(
-                                str(definition.namespace)
-                            )
-                        ) and isinstance(values, Mapping):
-                            platform_values = values
-                            break
-                    if isinstance(platform_values, Mapping):
-                        properties = getattr(
-                            getattr(definition, "input_schema", None),
-                            "properties",
-                            {},
-                        ) or {}
-                        for field in (
-                            getattr(definition, "scope_fields", ()) or (
-                                "account_id", "ad_account_id",
-                                "advertiser_id", "customer_id",
-                            )
-                        ):
-                            if (
-                                field in properties
-                                and platform_values.get(field) not in (None, "")
-                            ):
-                                arguments[field] = platform_values[field]
-                    for key in (
-                        "_missing_params", "_unknown_params",
-                        "_selection_errors",
-                    ):
-                        arguments.pop(key, None)
-                    calls.append(ToolCall(
-                        id=f"call-{len(calls) + 1}",
-                        name=definition.name,
-                        arguments=arguments,
-                    ))
+            calls = self._planner.build_tool_calls(
+                routed,
+                intent,
+                session.ctx,
+            )
             state.update({
                 "intent": intent,
                 "calls": tuple(calls),
@@ -1390,98 +1286,8 @@ class AdvertisingModelAdapter:
         request: Any,
         tool_messages: list[AgentMessage],
     ) -> ModelTurn:
-        intent = state.get("intent")
-        results: list[dict[str, Any]] = []
-        for message in tool_messages:
-            content = message.content
-            if isinstance(content, Mapping):
-                result = dict(content)
-            else:
-                result = {"success": False, "error": str(content)}
-            if isinstance(message.metadata, Mapping):
-                for key in (
-                    "needs_input", "needs_confirmation", "confirmation_payload",
-                ):
-                    if key in message.metadata:
-                        result[key] = message.metadata[key]
-            result.setdefault("tool", message.name or "")
-            result.setdefault("platform", getattr(
-                self.owner.registry.get(message.name)[0], "namespace", ""
-            ) if message.name else "")
-            results.append(result)
-        self._decorate_results(results)
-        feature = self.owner._feature_for_intent(intent) if intent is not None else None
-        analysis: dict[str, Any] = {}
-        if (
-            feature is not None
-            and callable(getattr(feature, "handles_analysis", None))
-            and feature.handles_analysis(intent)
-        ):
-            try:
-                feature.collect_metrics(
-                    services=self.owner.services,
-                    intent=intent,
-                    tool_plan={
-                        platform: [
-                            self.owner.registry.get(name)[0]
-                            for name in names
-                        ]
-                        for platform, names in self._tool_plan_names(results).items()
-                    },
-                    results=results,
-                    session=state.get("session"),
-                    turn_id=str(request.turn_id or ""),
-                    request_clients=self.owner._build_request_clients(
-                        (
-                            request.context.get("credentials")
-                            if isinstance(request.context, Mapping) else None
-                        )
-                    ),
-                    account_scope=getattr(
-                        request.principal, "account_scope", None
-                    ),
-                    granted_permissions=self.owner._granted_permissions,
-                )
-                analysis = feature.analyze(intent, results)
-                self._decorate_results(results)
-                state["tool_plan"] = self._tool_plan_names(results)
-            except Exception:
-                analysis = {}
-        state.update(analysis)
-        if intent is None:
-            reply = "工具执行完成，但无法生成结构化业务回复。"
-        else:
-            reply, response_source = self.owner._render_response(
-                request.user_input,
-                intent,
-                results,
-                any(item.get("requires_confirmation") for item in results),
-                analysis=analysis,
-                session=state.get("session"),
-            )
-        state["last_results"] = results
-        state["last_reply"] = reply
-        state["response_source"] = response_source if intent is not None else "renderer"
-        state["needs_input"] = any(
-            item.get("needs_input") or item.get("needs_confirmation")
-            for item in results
-        )
-        state.setdefault("ui", {})
-        state.setdefault("workflow_id", None)
-        self._finish_workflow(state, results, intent)
-        self._completed[str(request.run_id or "")] = dict(state)
-        self._turns.pop(str(request.run_id or ""), None)
-        return ModelTurn(
-            content=reply,
-            stop_reason=(
-                "awaiting_input"
-                if any(
-                    item.get("needs_input") or item.get("needs_confirmation")
-                    for item in results
-                )
-                else "stop"
-            ),
-        )
+        """Delegate application result assembly to its dedicated boundary."""
+        return self._results.finish_turn(state, request, tool_messages)
 
     def on_run_end(
         self,
@@ -1490,187 +1296,24 @@ class AdvertisingModelAdapter:
         tool_results: tuple[dict[str, Any], ...],
         _agent_state: Any,
     ) -> Mapping[str, Any]:
-        """Finalize application results when Harness stops on a Tool gate."""
-        run_id = str(request.run_id or "")
-        if run_id in self._completed:
-            return self._export_application_state(self._completed[run_id])
-        state = self._turns.get(run_id)
-        if state is None:
-            return {}
-        results: list[dict[str, Any]] = []
-        for item in tool_results:
-            name = str(item.get("name") or "")
-            content = item.get("content")
-            if isinstance(content, Mapping):
-                result = dict(content)
-            else:
-                result = {
-                    "success": not bool(item.get("is_error")),
-                    "error": str(content or ""),
-                }
-            result.update({
-                "tool": name,
-                "platform": (
-                    getattr(self.owner.registry.get(name)[0], "namespace", "")
-                    if name else ""
-                ),
-            })
-            for key in ("needs_input", "needs_confirmation", "confirmation_payload"):
-                if key in item:
-                    result[key] = item[key]
-            results.append(result)
-        self._decorate_results(results)
-        state["last_results"] = results
-        state["last_reply"] = (
-            next(
-                (
-                    str(item.get("confirmation_payload", {}).get("question"))
-                    for item in results
-                    if isinstance(item.get("confirmation_payload"), Mapping)
-                    and item["confirmation_payload"].get("question")
-                ),
-                "工具调用被执行策略阻断，请根据返回的提示补充信息后重试。",
-            )
+        """Finalize application data when Harness stops on a Tool gate."""
+        return self._results.finish_policy_blocked_run(
+            request,
+            tool_results,
         )
-        state["response_source"] = "tool_policy"
-        state["needs_input"] = any(
-            item.get("needs_input") or item.get("needs_confirmation")
-            for item in results
-        )
-        state["needs_confirmation"] = any(
-            item.get("needs_confirmation") for item in results
-        )
-        state["confirmation_payload"] = next(
-            (
-                item.get("confirmation_payload")
-                for item in results
-                if item.get("confirmation_payload")
-            ),
-            None,
-        )
-        state.setdefault("workflow_id", None)
-        self._finish_workflow(state, results, state.get("intent"))
-        self._completed[run_id] = dict(state)
-        self._turns.pop(run_id, None)
-        self._prune_completed()
-        return self._export_application_state(state)
 
     def on_run_cleanup(self, request: Any, _state: Any = None) -> None:
         """Release in-flight state even when the generic loop is interrupted."""
         run_id = str(getattr(request, "run_id", "") or "")
         self._turns.pop(run_id, None)
-        self._prune_completed()
-
-    def _finish_workflow(
-        self,
-        state: Mapping[str, Any],
-        results: list[dict[str, Any]],
-        intent: Any,
-    ) -> None:
-        workflow_id = state.get("workflow_id")
-        if not workflow_id:
-            return
-        tool_plan: dict[str, list[Any]] = {}
-        for platform, names in (state.get("tool_plan") or {}).items():
-            for name in names or ():
-                try:
-                    definition, _handler = self.owner.registry.get(str(name))
-                except KeyError:
-                    continue
-                tool_plan.setdefault(str(platform), []).append(definition)
-        workflow_inputs = {
-            index: dict(call.arguments)
-            for index, call in enumerate(state.get("calls") or (), 1)
-        }
-        try:
-            self.owner.workflow.finish(
-                str(workflow_id),
-                tool_plan,
-                results,
-                workflow_inputs,
-                intent=intent,
-                session=state.get("session"),
-            )
-        except Exception:
-            return
-
-    def _decorate_results(self, results: list[dict[str, Any]]) -> None:
-        for result in results:
-            name = str(result.get("tool") or "")
-            if not name:
-                continue
-            try:
-                definition, _ = self.owner.registry.get(name)
-            except KeyError:
-                continue
-            for key in (
-                "action", "resource_type", "resource_id_field",
-                "parent_resource_type", "parent_resource_id_field",
-                "result_items_key", "result_id_fields",
-                "related_resource_type", "related_resource_id_fields",
-            ):
-                value = getattr(definition, key, None)
-                if value not in (None, "", [], ()):
-                    result.setdefault(key, value)
+        self._results.prune_completed()
 
     def _hydrate_dependency_call(
         self,
         call: ToolCall,
         tool_messages: list[AgentMessage],
     ) -> ToolCall:
-        """Bind a declared parent ID from the preceding Tool result."""
-        try:
-            definition, _ = self.owner.registry.get(call.name)
-        except KeyError:
-            return call
-        parent_field = str(
-            getattr(definition, "parent_resource_id_field", "") or ""
-        )
-        parent_type = str(
-            getattr(definition, "parent_resource_type", "") or ""
-        )
-        if not parent_field or not parent_type:
-            return call
-        arguments = dict(call.arguments)
-        if arguments.get(parent_field) not in (None, ""):
-            return call
-        for message in reversed(tool_messages):
-            content = message.content
-            if not isinstance(content, Mapping):
-                continue
-            data = content.get("data")
-            if not isinstance(data, Mapping) or content.get("success") is False:
-                continue
-            try:
-                parent_definition, _ = self.owner.registry.get(message.name or "")
-            except KeyError:
-                continue
-            if str(getattr(parent_definition, "resource_type", "") or "") != parent_type:
-                continue
-            resource_field = str(
-                getattr(parent_definition, "resource_id_field", "") or ""
-            )
-            value = data.get(resource_field) if resource_field else None
-            if value not in (None, ""):
-                arguments[parent_field] = value
-                return ToolCall(
-                    id=call.id,
-                    name=call.name,
-                    arguments=arguments,
-                )
-        return call
-
-    def _tool_plan_names(
-        self, results: list[dict[str, Any]],
-    ) -> dict[str, list[str]]:
-        plan: dict[str, list[str]] = {}
-        for result in results:
-            name = str(result.get("tool") or "")
-            platform = str(result.get("platform") or "")
-            if name and platform:
-                plan.setdefault(platform, []).append(name)
-        return plan
-
+        return self._planner.hydrate_dependency_call(call, tool_messages)
 
 __all__ = [
     "AdvertisingContextProvider",

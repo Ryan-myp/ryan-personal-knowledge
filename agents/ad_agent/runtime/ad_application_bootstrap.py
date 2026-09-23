@@ -16,7 +16,13 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Mapping
 
-from agents.agent_harness import MetricsSink
+from agents.agent_harness import (
+    AlertSink,
+    CredentialProvider,
+    MetricsSink,
+    QuotaProvider,
+    TraceSink,
+)
 
 from ..core.agent_profile import AgentProfile
 from ..core.conversation_title import ConversationTitleGenerator
@@ -131,6 +137,10 @@ class AdApplicationBootstrap:
             options.get("auto_memory_capture_enabled", True)
         )
         metrics = options.get("metrics")
+        trace_sink = options.get("trace_sink")
+        alert_sink = options.get("alert_sink")
+        credential_provider = options.get("credential_provider")
+        quota_provider = options.get("quota_provider")
 
         cls._initialize_runtime_services(
             runtime,
@@ -153,6 +163,10 @@ class AdApplicationBootstrap:
             conversation_title_use_llm=conversation_title_use_llm,
             auto_memory_capture_enabled=auto_memory_capture_enabled,
             metrics=metrics,
+            trace_sink=trace_sink,
+            alert_sink=alert_sink,
+            credential_provider=credential_provider,
+            quota_provider=quota_provider,
             mode_context=mode_context,
         )
         cls._initialize_runtime_policy(
@@ -225,6 +239,10 @@ class AdApplicationBootstrap:
         conversation_title_use_llm: bool,
         auto_memory_capture_enabled: bool,
         metrics: MetricsSink | None,
+        trace_sink: TraceSink | None,
+        alert_sink: AlertSink | None,
+        credential_provider: CredentialProvider | None,
+        quota_provider: QuotaProvider | None,
         mode_context: Any,
     ) -> None:
         base_registry = registry or SimpleToolRegistry()
@@ -240,6 +258,10 @@ class AdApplicationBootstrap:
         runtime.require_llm = require_llm
         runtime.auto_memory_capture_enabled = auto_memory_capture_enabled
         runtime.metrics = metrics
+        runtime.trace_sink = trace_sink
+        runtime.alert_sink = alert_sink
+        runtime.credential_provider = credential_provider
+        runtime.quota_provider = quota_provider
         runtime.agent_profile = AgentProfile(
             name="ad-agent",
             role="广告投放与分析助手",

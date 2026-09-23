@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 
 
@@ -17,6 +18,96 @@ class MetricsSink(Protocol):
 
     def observe(self, event: Mapping[str, Any]) -> None:
         ...
+
+
+class TraceSink(Protocol):
+    """Application-neutral trace export port."""
+
+    def emit(self, event: Mapping[str, Any]) -> None:
+        ...
+
+
+class AlertSink(Protocol):
+    """Application-neutral operational alert port."""
+
+    def publish(self, alert: Mapping[str, Any]) -> None:
+        ...
+
+
+class CredentialProvider(Protocol):
+    """Resolve deployment-owned credentials without exposing their values."""
+
+    def healthcheck(self) -> Mapping[str, Any]:
+        ...
+
+    def resolve(self, reference: str) -> Mapping[str, Any]:
+        ...
+
+
+class QuotaProvider(Protocol):
+    """Expose provider-neutral quota/rate-limit state."""
+
+    def snapshot(self) -> Mapping[str, Any]:
+        ...
+
+
+@dataclass(frozen=True)
+class HealthCheck:
+    """One bounded deployment health result."""
+
+    name: str
+    status: str
+    required: bool = True
+    details: Mapping[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": str(self.status or "unknown"),
+            "required": bool(self.required),
+            "details": dict(self.details or {}),
+        }
+
+
+@dataclass(frozen=True)
+class DeploymentHealth:
+    """Common readiness shape shared by local and production deployments."""
+
+    ready: bool
+    status: str
+    checks: Mapping[str, HealthCheck]
+    blocking_checks: tuple[str, ...] = ()
+
+    @classmethod
+    def from_checks(cls, checks: list[HealthCheck] | tuple[HealthCheck, ...]) -> "DeploymentHealth":
+        normalized = {
+            str(item.name): item
+            for item in checks
+            if str(item.name).strip()
+        }
+        blocking = tuple(sorted(
+            name
+            for name, item in normalized.items()
+            if item.required and str(item.status).lower()
+            not in {"healthy", "ready", "ok", "configured", "disabled"}
+        ))
+        ready = not blocking
+        return cls(
+            ready=ready,
+            status="ready" if ready else "not_ready",
+            checks=normalized,
+            blocking_checks=blocking,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ready": self.ready,
+            "status": self.status,
+            "blocking_checks": list(self.blocking_checks),
+            "checks": {
+                name: check.to_dict()
+                for name, check in sorted(self.checks.items())
+            },
+        }
 
 
 class InMemoryMetrics:
@@ -97,4 +188,13 @@ class InMemoryMetrics:
             self._started.clear()
 
 
-__all__ = ["InMemoryMetrics", "MetricsSink"]
+__all__ = [
+    "AlertSink",
+    "CredentialProvider",
+    "DeploymentHealth",
+    "HealthCheck",
+    "InMemoryMetrics",
+    "MetricsSink",
+    "QuotaProvider",
+    "TraceSink",
+]

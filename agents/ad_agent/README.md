@@ -389,9 +389,10 @@ Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制
 
 暂留的工程缺口：
 
-- 当前监控页提供持久化运行态聚合和 Tool 审计摘要，尚未接入外部 metrics/trace/告警系统；
-  生产环境仍需把 `queue depth`、lease expiry、recovery count、Provider latency 等指标接入
-  统一监控平台，并补充按实例维度的心跳注册。
+- 当前监控页提供持久化运行态聚合和 Tool 审计摘要；通用 Harness 已提供
+  `MetricsSink`、`TraceSink`、`AlertSink`、`CredentialProvider`、`QuotaProvider` 端口，
+  Runtime readiness 也会输出 `DeploymentHealth`。生产部署仍需注入具体 exporter/告警适配器，
+  并把 `queue depth`、lease expiry、recovery count、Provider latency 等指标接入统一平台。
 - Plugin 包控制面已支持租户隔离、版本不可变、摘要校验、依赖激活门禁和发布回滚；
   已支持标准 ZIP 导入和不执行代码的完整性/依赖健康检查；仍待补可信插件的沙箱/独立
   进程、签名来源策略的部署配置和生产级运行时探针。
@@ -571,6 +572,22 @@ ad_agent/
 └── tests/
     ├── test_ad_agent.py      # 核心回归测试
     └── ...                   # Harness、契约与 Provider 回归测试
+```
+
+HTTP 入口的声明层和安全边界位于 `agents/ad_agent/api/`：
+
+```text
+api/
+├── models.py       # 所有 HTTP 输入契约
+└── security.py     # API key -> trusted Principal、权限与脱敏边界
+```
+
+模型适配器的规划和结果边界位于同级：
+
+```text
+integration.py                  # Harness turn bridge
+integration_turn_planner.py     # 参数合并、Tool Call、依赖补全
+integration_result_assembler.py # Tool 结果、业务分析、回复与 application_data
 ```
 
 通用 Harness 位于同级的 `agents/agent_harness/`，不依赖 `ad_agent`：

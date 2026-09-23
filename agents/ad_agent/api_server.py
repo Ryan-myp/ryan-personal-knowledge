@@ -7,7 +7,6 @@ import sys
 import os
 import json
 import logging
-import hmac
 import asyncio
 import queue
 import inspect
@@ -32,8 +31,7 @@ from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Optional
 from starlette.concurrency import run_in_threadpool
 
 # Keep local credentials and model selection outside source control while
@@ -70,6 +68,33 @@ from agents.ad_agent.creation_templates import (
     creation_template_manager_for_runtime,
 )
 from agents.ad_agent.persistence.factory import create_persistence_store
+from agents.ad_agent.api.security import RequestAuthorizer
+from agents.ad_agent.api.models import (
+    BlueprintEvaluationRequest,
+    BlueprintResolveRequest,
+    ChatRequest,
+    ChatStreamRequest,
+    CreationTemplateDuplicateRequest,
+    CreationTemplateRequest,
+    CreationTemplateUpdateRequest,
+    ExecutionModeRequest,
+    KnowledgeDocumentRequest,
+    MCPServerPatchRequest,
+    MCPServerRequest,
+    MCPToolMetadataPatchRequest,
+    MCPToolTestRequest,
+    MCPValidationRequest,
+    MemoryWriteRequest,
+    PluginPackageRequest,
+    RawKnowledgeUploadRequest,
+    ScheduleCreateRequest,
+    SessionDeleteRequest,
+    SessionRenameRequest,
+    SkillVersionRequest,
+    TaskRecoveryRequest,
+    TaskSubmitRequest,
+    WorkflowReconcileRequest,
+)
 
 # 配置路径
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
@@ -163,48 +188,24 @@ def _safe_exception_text(error: Exception) -> str:
     return redact_for_persistence(str(error))
 
 
+request_authorizer = RequestAuthorizer(
+    runtime_getter=lambda: runtime,
+    api_key_getter=lambda: API_KEY,
+    principals_getter=_api_key_principals,
+    allow_unauthenticated_getter=lambda: ALLOW_UNAUTHENTICATED,
+    service_principal_getter=_configured_service_principal,
+)
+
+
 def _authorize_request(
     api_key: Optional[str], request: Optional[Request] = None
 ) -> RequestPrincipal:
-    """Authorize data-bearing endpoints without logging secrets.
-
-    The explicit unauthenticated escape hatch is intentionally localhost-only;
-    CORS is not an authentication boundary and cannot enforce that property.
-    The returned principal is the only identity passed into Runtime; request
-    body/query user IDs are intentionally ignored.
-    """
-    if ALLOW_UNAUTHENTICATED:
-        client_host = request.client.host if request and request.client else None
-        if client_host in {"127.0.0.1", "::1", "localhost"}:
-            return _configured_service_principal()
-        raise HTTPException(
-            status_code=403,
-            detail="Unauthenticated mode is restricted to localhost",
-        )
-    principals = _api_key_principals()
-    if principals:
-        claims = principals.get(api_key or "")
-        if not isinstance(claims, dict):
-            raise HTTPException(status_code=401, detail="Invalid API key")
-        try:
-            return RequestPrincipal.from_claims(claims)
-        except (TypeError, ValueError) as exc:
-            logger.error("API key principal 配置无效: %s", exc)
-            raise HTTPException(status_code=503, detail="API principal configuration is invalid")
-    if not API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="API authentication is not configured; set AD_AGENT_API_KEY or explicitly enable local unauthenticated mode",
-        )
-    if not api_key or not hmac.compare_digest(api_key, API_KEY):
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return _configured_service_principal()
+    """Route authentication through the dedicated API security boundary."""
+    return request_authorizer.authorize(api_key, request)
 
 
 def _require_principal_permission(principal: RequestPrincipal, permission: str) -> None:
-    """Keep durable recovery actions behind an explicit gateway grant."""
-    if permission not in principal.permissions and "ads.write" not in principal.permissions:
-        raise HTTPException(status_code=403, detail=f"缺少操作所需权限：{permission}")
+    request_authorizer.require_permission(principal, permission)
 
 
 def _init_runtime():
@@ -410,83 +411,6 @@ runtime_mcp_servers = RuntimeMCPServers(lambda: runtime, _authorize_request)
 runtime_mcp_servers_app = runtime_mcp_servers.asgi_app()
 
 
-class ChatRequest(BaseModel):
-    user_input: str = Field(min_length=1, max_length=12_000)
-    session_id: Optional[str] = None
-    user_id: str = Field(default="web_user", min_length=1, max_length=200)
-    account_id: str = Field(default="", max_length=200)
-    confirmed: bool = False
-    confirmation_payload: Optional[dict] = None
-    platform_params: Optional[dict] = None
-    creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
-    creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
-    creation_template_id: Optional[str] = Field(default=None, max_length=240)
-    # Per-turn override; omitted requests use the principal-scoped setting.
-    execution_mode: Optional[Literal["dry_run", "live"]] = None
-
-
-class ExecutionModeRequest(BaseModel):
-    """Request to change the authenticated principal's Runtime mode."""
-
-    mode: str = Field(min_length=1, max_length=16)
-
-
-class SessionDeleteRequest(BaseModel):
-    """Bounded local conversation deletion request."""
-
-    session_ids: list[str] = Field(min_length=1, max_length=50)
-
-
-class SessionRenameRequest(BaseModel):
-    """A short user-facing title for one local conversation."""
-
-    title: str = Field(min_length=1, max_length=32)
-
-
-class TaskSubmitRequest(BaseModel):
-    """Data-only asynchronous task envelope.
-
-    The initial registered kind is ``agent.turn``.  Its payload is the same
-    safe, provider-neutral input accepted by ``/chat``.  The API never
-    accepts callbacks, scripts, Provider clients or credentials.
-    """
-
-    kind: str = Field(default="agent.turn", min_length=1, max_length=64)
-    payload: dict = Field(default_factory=dict)
-    idempotency_key: Optional[str] = Field(default=None, max_length=200)
-
-
-class TaskRecoveryRequest(BaseModel):
-    """Explicit recovery proof for a task with unknown external state."""
-
-    recovery_reference: str = Field(min_length=1, max_length=255)
-    provider_verified: bool = False
-
-
-class ScheduleCreateRequest(BaseModel):
-    """Recurring, data-only Agent instruction."""
-
-    name: str = Field(min_length=1, max_length=120)
-    prompt: str = Field(min_length=1, max_length=12_000)
-    cron_expression: str = Field(min_length=9, max_length=120)
-    timezone: str = Field(default="Asia/Shanghai", min_length=1, max_length=80)
-    session_id: Optional[str] = Field(default=None, max_length=200)
-    account_id: Optional[str] = Field(default=None, max_length=200)
-    platform_params: Optional[dict] = None
-
-
-class MemoryWriteRequest(BaseModel):
-    """Explicit user memory; identity and tenant come from the principal."""
-
-    content: str = Field(min_length=1, max_length=4000)
-    kind: str = Field(default="semantic", min_length=1, max_length=32)
-    session_id: Optional[str] = Field(default=None, max_length=200)
-    tags: list[str] = Field(default_factory=list, max_length=20)
-    importance: float = Field(default=0.5, ge=0.0, le=1.0)
-    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-    memory_key: Optional[str] = Field(default=None, max_length=120)
-
-
 @app.get("/", response_class=HTMLResponse)
 async def index():
     try:
@@ -552,6 +476,7 @@ async def readiness():
             "checks": checks,
             "tool_count": report.get("tool_count", 0),
             "supervisor": report.get("supervisor"),
+            "deployment_health": report.get("deployment_health"),
             "error": runtime_status.get("error"),
             "service": "ad-agent",
         }
@@ -1346,74 +1271,6 @@ async def catalog_knowledge(
     }
 
 
-class KnowledgeDocumentRequest(BaseModel):
-    """A standard Markdown Wiki document body and its frontmatter fields."""
-
-    title: str = Field(min_length=1, max_length=200)
-    content: str = Field(min_length=1, max_length=60_000)
-    platform: str = Field(default="all", max_length=64)
-    layer: str = Field(default="business", max_length=32)
-    knowledge_type: str = Field(default="general", max_length=64)
-    source: str = Field(default="user", max_length=200)
-    source_ref: str = Field(default="", max_length=500)
-    version: str = Field(default="1.0.0", max_length=80)
-    confidence: float = Field(default=0.8, ge=0.0, le=1.0)
-    tags: list[str] = Field(default_factory=list, max_length=20)
-    wiki_type: str = Field(default="concept", max_length=32)
-    derived_from: str = Field(default="", max_length=200)
-    raw_sha256: str = Field(default="", max_length=128)
-    wikilinks: list[str] = Field(default_factory=list, max_length=30)
-
-
-class RawKnowledgeUploadRequest(BaseModel):
-    """A source file stored immutably before asynchronous Wiki ingest."""
-
-    filename: str = Field(min_length=1, max_length=240)
-    content: str = Field(min_length=1, max_length=120_000)
-    media_type: str = Field(default="text/markdown", max_length=100)
-    source_ref: str = Field(default="", max_length=500)
-
-
-class CreationTemplateRequest(BaseModel):
-    """A data-only preset captured from the creation wizard."""
-
-    name: str = Field(min_length=1, max_length=120)
-    description: str = Field(default="", max_length=500)
-    provider: str = Field(default="", max_length=64)
-    blueprint_id: str = Field(min_length=1, max_length=200)
-    blueprint_version: Optional[str] = Field(default=None, max_length=80)
-    ad_format: str = Field(default="", max_length=100)
-    scope_type: Literal["general", "account", "region"] = "general"
-    account_id: str = Field(default="", max_length=200)
-    region: str = Field(default="", max_length=120)
-    tags: list[str] = Field(default_factory=list, max_length=20)
-    values: dict[str, object] = Field(default_factory=dict)
-    status: Literal["active", "inactive", "archived"] = "active"
-    is_default: bool = False
-
-
-class CreationTemplateUpdateRequest(BaseModel):
-    """Mutable fields for an existing user template."""
-
-    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    description: Optional[str] = Field(default=None, max_length=500)
-    blueprint_id: Optional[str] = Field(default=None, max_length=200)
-    blueprint_version: Optional[str] = Field(default=None, max_length=80)
-    provider: Optional[str] = Field(default=None, max_length=64)
-    ad_format: Optional[str] = Field(default=None, max_length=100)
-    scope_type: Optional[Literal["general", "account", "region"]] = None
-    account_id: Optional[str] = Field(default=None, max_length=200)
-    region: Optional[str] = Field(default=None, max_length=120)
-    tags: Optional[list[str]] = Field(default=None, max_length=20)
-    values: Optional[dict[str, object]] = None
-    status: Optional[Literal["active", "inactive", "archived"]] = None
-    is_default: Optional[bool] = None
-
-
-class CreationTemplateDuplicateRequest(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
-
-
 def _knowledge_manager_or_503() -> ManagedKnowledgeManager:
     if not runtime or not getattr(runtime, "persistence_store", None):
         raise HTTPException(status_code=503, detail="知识库存储未初始化")
@@ -1871,69 +1728,6 @@ async def get_platforms(
     if not runtime:
         return {"platforms": []}
     return {"platforms": runtime.registry.list_all_namespaces()}
-
-
-class PluginPackageRequest(BaseModel):
-    """A declaration plus complete package snapshot.
-
-    This endpoint is a control-plane upload. It accepts arbitrary standard
-    package files as data, but does not import or execute them.
-    """
-
-    manifest: dict[str, object]
-    files: dict[str, object]
-
-
-class MCPServerRequest(BaseModel):
-    """External HTTP MCP declaration; secrets are deployment references only."""
-
-    name: str = Field(min_length=1, max_length=120)
-    description: str = Field(default="", max_length=500)
-    endpoint: str = Field(min_length=10, max_length=2048)
-    transport: Literal["streamable_http"] = "streamable_http"
-    auth_type: Literal["none", "bearer", "api_key"] = "none"
-    credential_ref: Optional[str] = Field(default=None, max_length=128)
-    auth_header: str = Field(default="", max_length=64)
-    timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
-
-
-class MCPServerPatchRequest(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
-    description: Optional[str] = Field(default=None, max_length=500)
-    endpoint: Optional[str] = Field(default=None, min_length=10, max_length=2048)
-    transport: Optional[Literal["streamable_http"]] = None
-    auth_type: Optional[Literal["none", "bearer", "api_key"]] = None
-    credential_ref: Optional[str] = Field(default=None, max_length=128)
-    auth_header: Optional[str] = Field(default=None, max_length=64)
-    timeout_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
-
-
-class MCPValidationRequest(BaseModel):
-    checks: list[Literal["all", "configuration", "connectivity", "tool_schema", "policy"]] = Field(
-        default_factory=lambda: ["all"], max_length=5
-    )
-
-
-class MCPToolTestRequest(BaseModel):
-    """Input for a safe test of an enabled external read-only MCP Tool."""
-
-    input: dict = Field(default_factory=dict)
-    account_id: Optional[str] = Field(default=None, max_length=200)
-
-
-class MCPToolMetadataPatchRequest(BaseModel):
-    """Publisher metadata for routing/context; remote schema stays immutable."""
-
-    intent_types: Optional[list[str]] = Field(default=None, max_length=32)
-    intent_aliases: Optional[list[str]] = Field(default=None, max_length=32)
-    skill_refs: Optional[list[str]] = Field(default=None, max_length=32)
-    action: Optional[str] = Field(default=None, min_length=1, max_length=64)
-    resource_type: Optional[str] = Field(default=None, min_length=1, max_length=191)
-    resource_id_field: Optional[str] = Field(default=None, max_length=128)
-    readback_tool: Optional[str] = Field(default=None, max_length=128)
-    idempotency_key_field: Optional[str] = Field(default=None, max_length=128)
-    required_permissions: Optional[list[str]] = Field(default=None, max_length=16)
-    traits: Optional[list[str]] = Field(default=None, max_length=32)
 
 
 @app.get("/plugins", tags=["info"])
@@ -2436,24 +2230,6 @@ async def get_creation_blueprints(
     }
 
 
-class BlueprintEvaluationRequest(BaseModel):
-    """Current draft state sent to the deterministic cascade evaluator."""
-
-    values: dict[str, object] = Field(default_factory=dict)
-    previous_values: Optional[dict[str, object]] = None
-    changed_fields: Optional[list[str]] = None
-    version: Optional[str] = Field(None, max_length=80)
-
-
-class BlueprintResolveRequest(BaseModel):
-    """Selector values used to choose a provider-owned creation Blueprint."""
-
-    provider: str = Field(min_length=1, max_length=50)
-    selector_values: dict[str, object] = Field(default_factory=dict)
-    values: dict[str, object] = Field(default_factory=dict)
-    version: Optional[str] = Field(None, max_length=80)
-
-
 @app.post("/creation-blueprints/resolve", tags=["info"])
 async def resolve_creation_blueprint(
     body: BlueprintResolveRequest,
@@ -2496,17 +2272,6 @@ async def evaluate_creation_blueprint(
         )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-
-
-class SkillVersionRequest(BaseModel):
-    """Complete standard Agent Skill directory snapshot.
-
-    ``files`` values may be UTF-8 strings or
-    ``{"encoding": "base64", "content": "..."}`` for binary assets.
-    """
-
-    version: str = Field(min_length=5, max_length=80)
-    files: dict[str, object]
 
 
 def _skill_manager_or_503() -> ManagedSkillManager:
@@ -2775,26 +2540,6 @@ async def get_managed_skill_evaluation(
     if not result:
         raise HTTPException(status_code=404, detail="Skill evaluation not found")
     return result
-
-
-class ChatStreamRequest(BaseModel):
-    user_input: str = Field(min_length=1, max_length=12_000)
-    session_id: Optional[str] = None
-    user_id: str = Field(default="web_user", min_length=1, max_length=200)
-    account_id: str = Field(default="", max_length=200)
-    confirmed: bool = False
-    confirmation_payload: Optional[dict] = None
-    platform_params: Optional[dict] = None
-    creation_blueprint_id: Optional[str] = Field(default=None, max_length=200)
-    creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
-    creation_template_id: Optional[str] = Field(default=None, max_length=240)
-    execution_mode: Optional[Literal["dry_run", "live"]] = None
-
-
-class WorkflowReconcileRequest(BaseModel):
-    """Provider-verified observations supplied by a recovery worker."""
-
-    observations: object
 
 
 @app.post("/chat/stream", tags=["chat"])

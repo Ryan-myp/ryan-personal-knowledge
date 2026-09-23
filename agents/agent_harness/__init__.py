@@ -22,7 +22,16 @@ from .agent import (
 from .agent_runtime import AgentRuntime
 from .context import ContextProvider
 from .messages import AgentMessage, ModelTurn, ToolCall
-from .observability import InMemoryMetrics, MetricsSink
+from .observability import (
+    AlertSink,
+    CredentialProvider,
+    DeploymentHealth,
+    HealthCheck,
+    InMemoryMetrics,
+    MetricsSink,
+    QuotaProvider,
+    TraceSink,
+)
 from .persistence import IdempotencyStore, TranscriptStore
 from .ports import RuntimePorts
 from .redaction import redact_for_persistence
@@ -63,6 +72,7 @@ __all__ = [
     "Agent",
     "ContextProvider",
     "AgentMessage",
+    "AlertSink",
     "AgentState",
     "AgentRuntimeKernel",
     "InMemoryToolCatalog",
@@ -73,6 +83,7 @@ __all__ = [
     "ModelTurn",
     "InMemoryMetrics",
     "MetricsSink",
+    "QuotaProvider",
     "IdempotencyStore",
     "TranscriptStore",
     "RuntimePorts",
@@ -97,6 +108,7 @@ __all__ = [
     "ToolCatalog",
     "ToolExecutor",
     "ToolSource",
+    "TraceSink",
     "TurnExecutionContext",
     "TurnPipeline",
     "TurnRequest",
@@ -105,6 +117,9 @@ __all__ = [
     "TurnStageResult",
     "redact_for_persistence",
     "__version__",
+    "CredentialProvider",
+    "DeploymentHealth",
+    "HealthCheck",
     "SkillBinding",
     "SkillCatalog",
     "SkillSource",

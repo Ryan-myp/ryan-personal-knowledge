@@ -9,6 +9,8 @@ from contextvars import ContextVar
 from types import MappingProxyType
 from typing import Any, Optional
 
+from agents.agent_harness import DeploymentHealth, HealthCheck
+
 from ..core.features import RuntimeFeature
 from ..core.intent import LLMIntentParser
 from ..core.interfaces import ExecutionMode, ToolEffect
@@ -162,12 +164,86 @@ class AdvertisingRuntimeControls:
                 or not runtime.supervisor.task_executor
             ),
         }
-        return {
+        report = {
             "status": "ready" if all(checks.values()) else "not_ready",
             "checks": checks,
             "tool_count": tool_count,
             "supervisor": supervisor_health,
         }
+        report["deployment_health"] = self.deployment_health().to_dict()
+        return report
+
+    def deployment_health(self) -> DeploymentHealth:
+        """Aggregate optional deployment adapters without inventing health."""
+        runtime = self.runtime
+        checks: list[HealthCheck] = [
+            HealthCheck(
+                "runtime",
+                "healthy",
+                details={"execution_mode": str(runtime.execution_mode)},
+            ),
+            HealthCheck(
+                "metrics",
+                "configured" if getattr(runtime, "metrics", None) else "disabled",
+                required=False,
+            ),
+            HealthCheck(
+                "trace",
+                "configured" if getattr(runtime, "trace_sink", None) else "disabled",
+                required=False,
+            ),
+            HealthCheck(
+                "alerts",
+                "configured" if getattr(runtime, "alert_sink", None) else "disabled",
+                required=False,
+            ),
+        ]
+        credential_provider = getattr(runtime, "credential_provider", None)
+        if credential_provider is not None:
+            try:
+                raw = credential_provider.healthcheck()
+                status = str(raw.get("status") or "unknown")
+                details = {
+                    key: raw[key]
+                    for key in ("component", "version", "latency_ms")
+                    if key in raw
+                }
+            except Exception as exc:
+                status = "unhealthy"
+                details = {"error_type": type(exc).__name__}
+        else:
+            status = "configured" if getattr(runtime, "_credentials", {}) else "unconfigured"
+            details = {"source": "runtime_config"}
+        checks.append(HealthCheck(
+            "credentials",
+            status,
+            required=str(runtime.execution_mode) == "live",
+            details=details,
+        ))
+
+        quota_provider = getattr(runtime, "quota_provider", None)
+        if quota_provider is not None:
+            try:
+                raw = quota_provider.snapshot()
+                status = str(raw.get("status") or "healthy")
+                details = {
+                    key: raw[key]
+                    for key in ("provider", "remaining", "reset_at")
+                    if key in raw
+                }
+            except Exception as exc:
+                status = "unhealthy"
+                details = {"error_type": type(exc).__name__}
+        else:
+            status = "disabled"
+            details = {}
+        checks.append(HealthCheck(
+            "quota",
+            status,
+            required=False,
+            details=details,
+        ))
+        return DeploymentHealth.from_checks(checks)
 
     @staticmethod
     def default_outbox_delivery(event: Any) -> None:

@@ -11,7 +11,13 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Iterable, Mapping, Optional
 
-from agents.agent_harness import MetricsSink
+from agents.agent_harness import (
+    AlertSink,
+    CredentialProvider,
+    MetricsSink,
+    QuotaProvider,
+    TraceSink,
+)
 
 from ..core.features import RuntimeFeature
 from ..core.interfaces import (
@@ -105,6 +111,10 @@ class AdvertisingComposition(
         conversation_title_use_llm: bool = False,
         auto_memory_capture_enabled: bool = True,
         metrics: Optional[MetricsSink] = None,
+        trace_sink: Optional[TraceSink] = None,
+        alert_sink: Optional[AlertSink] = None,
+        credential_provider: Optional[CredentialProvider] = None,
+        quota_provider: Optional[QuotaProvider] = None,
     ):
         from .ad_application_bootstrap import AdApplicationBootstrap
 

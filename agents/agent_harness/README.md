@@ -109,6 +109,11 @@ Applications can replace `InMemoryMetrics` with an adapter implementing
 `MetricsSink`. The built-in collector does not retain prompts, arguments,
 results, exceptions, or credentials.
 
+Deployments may also implement `TraceSink`, `AlertSink`, `CredentialProvider`
+and `QuotaProvider`. `DeploymentHealth` combines their bounded status without
+copying secret values into readiness output; an unconfigured optional adapter
+is reported as `disabled`, never as a fabricated healthy connection.
+
 Skill directories are advisory context only. They never register an
 executable Tool, receive credentials or bypass the Tool policy hook.
 

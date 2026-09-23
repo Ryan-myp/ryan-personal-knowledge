@@ -428,6 +428,23 @@ def test_runtime_readiness_includes_backend_and_started_worker_health():
         store.close()
 
 
+def test_runtime_deployment_health_requires_credentials_for_live_mode():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        execution_mode="live",
+        allow_live_writes=True,
+        features=[],
+        start_background_workers=False,
+    )
+    try:
+        report = runtime.get_readiness()["deployment_health"]
+        assert report["status"] == "not_ready"
+        assert report["checks"]["credentials"]["status"] == "unconfigured"
+        assert report["blocking_checks"] == ["credentials"]
+    finally:
+        runtime.close(wait=True)
+
+
 class _FakeMySQLConnection:
     def __init__(self):
         self.closed = False
