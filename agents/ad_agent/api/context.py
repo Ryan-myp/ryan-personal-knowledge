@@ -21,10 +21,12 @@ class ApiContext:
     authorize_request: Callable[
         [Optional[str], Any], RequestPrincipal
     ]
+    require_permission: Callable[[RequestPrincipal, str], None]
     activate_tenant_skills: Callable[[RequestPrincipal], None]
     sync_tenant_extensions: Callable[[RequestPrincipal], None]
     safe_exception_text: Callable[[Exception], str]
     redact: Callable[[Any], Any]
+    persistence_store_getter: Callable[[], Any] | None = None
 
     def runtime(self) -> Any:
         return self.runtime_getter()

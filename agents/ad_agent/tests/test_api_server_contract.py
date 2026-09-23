@@ -75,6 +75,48 @@ def test_chat_routes_are_owned_by_a_dedicated_route_module():
     }
 
 
+def test_operational_routes_are_owned_by_dedicated_route_modules():
+    routes = list(api_server.app.routes)
+    for included in routes:
+        original = getattr(included, "original_router", None)
+        if original is not None:
+            routes.extend(original.routes)
+    route_modules = {
+        route.path: route.endpoint.__module__
+        for route in routes
+        if getattr(route, "path", None) in {
+            "/sessions", "/tasks", "/schedules",
+            "/knowledge/search", "/memory",
+        }
+    }
+
+    assert route_modules["/sessions"] == "agents.ad_agent.api.routes.sessions"
+    assert route_modules["/tasks"] == "agents.ad_agent.api.routes.tasks"
+    assert route_modules["/schedules"] == "agents.ad_agent.api.routes.tasks"
+    assert route_modules["/knowledge/search"] == "agents.ad_agent.api.routes.knowledge"
+    assert route_modules["/memory"] == "agents.ad_agent.api.routes.knowledge"
+
+
+def test_cors_allows_existing_mutation_methods_and_request_headers(fake_server):
+    with TestClient(api_server.app) as client:
+        response = client.options(
+            "/knowledge/documents/example",
+            headers={
+                "Origin": "http://localhost:8765",
+                "Access-Control-Request-Method": "PUT",
+                "Access-Control-Request-Headers": (
+                    "content-type,x-api-key,idempotency-key"
+                ),
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8765"
+    assert "PUT" in response.headers["access-control-allow-methods"]
+    allowed_headers = response.headers["access-control-allow-headers"].lower()
+    assert "idempotency-key" in allowed_headers
+
+
 class FakeRegistry:
     def list_all(self):
         return []
