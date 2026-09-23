@@ -490,8 +490,9 @@ def test_process_reliability_evidence_covers_multi_instance_worker_and_recovery(
 
     report = run_reliability_evidence(timeout_seconds=15)
 
-    assert report["format_version"] == 1
-    assert report["evidence_scope"] == "local_shared_persistence_processes"
+    assert report["format_version"] == 2
+    assert report["evidence_scope"] == "local_sqlite_shared_persistence_processes"
+    assert report["persistence_backend"] == "sqlite"
     assert report["production_deployment_attested"] is False
     assert report["passed"] is True
     assert report["scenario_count"] >= 4
@@ -501,5 +502,131 @@ def test_process_reliability_evidence_covers_multi_instance_worker_and_recovery(
     assert scenarios["session_lease_multi_instance"]["busy_count"] == 1
     assert scenarios["durable_task_claim_multi_instance"]["winner_count"] == 1
     assert scenarios["worker_runtime_route"]["terminal_status"] == "succeeded"
+    assert scenarios["worker_runtime_route"]["runtime_entry"] == "AdvertisingComposition.run"
+    assert scenarios["worker_runtime_route"]["run_store_status"] == "succeeded"
     assert scenarios["worker_crash_recovery"]["recovered_status"] == "recovery_required"
     assert scenarios["worker_crash_recovery"]["final_status"] == "succeeded"
+    assert scenarios["worker_crash_recovery"]["restart_run_store_status"] == "succeeded"
+
+
+def test_reliability_process_timeout_is_shared_and_children_are_reaped():
+    import subprocess
+    import sys
+    import time
+
+    from agents.ad_agent.scripts.production_reliability_evidence import (
+        _read_processes,
+    )
+
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(5)"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    started = time.monotonic()
+    results = _read_processes(processes, timeout_seconds=0.15)
+
+    assert time.monotonic() - started < 1.0
+    assert all(code != 0 for code, _payload, _error in results)
+    assert all(process.poll() is not None for process in processes)
+
+
+def test_reliability_json_line_read_does_not_block_on_partial_output():
+    import subprocess
+    import sys
+    import time
+
+    from agents.ad_agent.scripts.production_reliability_evidence import (
+        _read_json_line,
+        _terminate_process,
+    )
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import sys, time; sys.stdout.write('{'); sys.stdout.flush(); time.sleep(5)",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    started = time.monotonic()
+    payload = _read_json_line(process.stdout, timeout_seconds=0.15)
+    _terminate_process(process)
+
+    assert payload is None
+    assert time.monotonic() - started < 1.0
+    assert process.poll() is not None
+
+
+def test_mysql_sandbox_cleanup_reconnects_if_admin_connection_was_lost(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from agents.ad_agent.scripts import production_reliability_evidence as evidence
+
+    statements = []
+
+    class Cursor:
+        def __init__(self, should_fail):
+            self.should_fail = should_fail
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def execute(self, statement):
+            if self.should_fail:
+                raise ConnectionError("connection lost")
+            statements.append(statement)
+
+    class Connection:
+        def __init__(self, should_fail):
+            self.should_fail = should_fail
+            self.closed = False
+
+        def cursor(self):
+            return Cursor(self.should_fail)
+
+        def close(self):
+            self.closed = True
+
+    original = Connection(should_fail=True)
+    replacement = Connection(should_fail=False)
+    connector = SimpleNamespace(connect=lambda **_kwargs: replacement)
+    monkeypatch.setattr(
+        evidence,
+        "_mysql_connection_options",
+        lambda _url: (connector, {}),
+    )
+
+    evidence._drop_mysql_sandbox(
+        original,
+        "agent_reliability_test",
+        admin_url="mysql://localhost/mysql",
+    )
+
+    assert original.closed is True
+    assert replacement.closed is True
+    assert statements == ["DROP DATABASE IF EXISTS `agent_reliability_test`"]
+
+
+def test_mysql_reliability_admin_url_rejects_remote_database_hosts(monkeypatch):
+    import sys
+    from types import ModuleType
+
+    from agents.ad_agent.scripts.production_reliability_evidence import (
+        _mysql_connection_options,
+    )
+
+    monkeypatch.setitem(sys.modules, "pymysql", ModuleType("pymysql"))
+    with pytest.raises(ValueError, match="restricted to a local server"):
+        _mysql_connection_options("mysql://user:secret@db.example/mysql")

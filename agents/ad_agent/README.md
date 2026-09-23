@@ -269,11 +269,24 @@ Worker 注册与心跳则写入 `worker_instances`，运行监控可区分共享
 make ad-agent-reliability-evidence
 ```
 
-它会启动独立进程，验证 Session lease 互斥、Task 单次 claim、两个 Worker 竞争同一
-`agent.turn`，以及 Worker 崩溃后进入 `recovery_required`、经过显式回查引用后才能重新
-排队。报告只保存状态、计数和脱敏摘要，不调用 Provider。该报告证明的是共享持久化契约和
-Runtime 边界，不等同于已经完成生产集群部署、MySQL 压测、跨可用区故障演练或 Provider
-live 验证；`release_readiness` 会将 `reliability_evidence` 与
+它会启动独立进程，验证 Session lease 互斥、Task 单次 claim、两个 Worker 竞争同一任务，
+并让获胜 Worker 实际通过 `AdvertisingComposition.run` 进入通用 Agent Runtime；随后核对
+Task 和 RunStore 的持久化终态。另会模拟进程在 claim 后崩溃，验证进入
+`recovery_required`，只有提供显式回查引用后才能重新排队。默认 SQLite 模式仅验证本地文件
+共享契约，不代表 SQLite 可用于多进程部署。
+
+本机 MySQL/InnoDB 的独立进程实证：
+
+```bash
+AD_AGENT_RELIABILITY_ADMIN_URL='mysql://root@localhost/mysql?unix_socket=%2Ftmp%2Fmysql.sock' \
+  make ad-agent-reliability-evidence-mysql
+```
+
+MySQL 模式只接受本地服务地址，需要该账户有创建/删除数据库权限；Runner 使用随机临时
+schema，完成或失败后都会关闭连接并删除该 schema，不读写应用数据库。两种模式都只跑
+dry-run/规则回退路径、不调用 Provider，报告只保存状态、计数和脱敏摘要。它们证明共享 SQL
+持久化契约和 Runtime 边界，不等同于真实生产集群部署、故障域演练、容量压测或 Provider
+live 验证；`release_readiness` 会将本地 `reliability_evidence` 与
 `production_deployment_attested` 分开记录。
 
 ### 存储后端与部署切换

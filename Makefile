@@ -1,4 +1,4 @@
-.PHONY: ad-agent-python-version ad-agent-install ad-agent-run ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-check
+.PHONY: ad-agent-python-version ad-agent-install ad-agent-run ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-reliability-evidence-mysql ad-agent-check
 
 AD_AGENT_PYTHON := ./scripts/ad-agent-python
 AD_AGENT_TEST_ENV := PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=.
@@ -30,6 +30,9 @@ ad-agent-knowledge-check:
 
 ad-agent-reliability-evidence:
 	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/production_reliability_evidence.py
+
+ad-agent-reliability-evidence-mysql:
+	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/production_reliability_evidence.py --backend mysql
 
 ad-agent-check: ad-agent-python-version ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-test
 	@git diff --check
