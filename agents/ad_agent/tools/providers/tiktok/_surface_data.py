@@ -128,7 +128,7 @@ API_SURFACE = [
     {"resource": "audience", "action": "update", "method": "update_audience", "status": "implemented"},
     {"resource": "audience", "action": "source_upload", "method": "upload_audience_file", "status": "implemented"},
     {"resource": "lead_form", "action": "crud", "status": "not_applicable", "gap": "Instant Form/Page 由 TikTok Instant Page Editor SDK 管理，不属于当前 Ads API CRUD；广告创建通过 page_id 引用"},
-    {"resource": "catalog", "action": "crud", "status": "planned", "gap": "当前已提供 catalog/get、product_set/get 与 Product Selection 引用校验；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现"},
+    {"resource": "catalog", "action": "crud", "status": "planned", "gap": "当前已提供 catalog/get、catalog/set/get 与 Product Selection 引用校验；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现"},
     {"resource": "ad_group_targeting", "action": "update", "method": "update_adgroup_targeting", "status": "implemented"},
     {"resource": "brand_safety", "action": "list", "method": "list_brand_safety", "status": "implemented"},
     {"resource": "ad_group", "action": "report", "method": "get_adgroup_report", "status": "implemented"},

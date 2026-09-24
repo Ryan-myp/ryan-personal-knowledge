@@ -11,7 +11,7 @@ import re
 import hashlib
 from pathlib import Path
 from datetime import date, timedelta
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import urlsplit
 import requests
 
@@ -202,8 +202,22 @@ class TikTokAPIClient(BasePlatformClient):
             encoded[id_field] = []
         return json.dumps(encoded, separators=(",", ":"))
 
-    def _list_pages(self, endpoint: str, params: dict, max_pages: int = 100) -> list:
+    def _list_pages(
+        self,
+        endpoint: str,
+        params: dict,
+        max_pages: int = 100,
+        max_items: Optional[int] = None,
+        item_filter: Optional[Callable[[Any], bool]] = None,
+    ) -> list:
         """Consume TikTok ``page_info`` pages into one deterministic list."""
+        if max_items is not None:
+            try:
+                max_items = int(max_items)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("max_items must be a positive integer") from exc
+            if max_items < 1:
+                raise ValueError("max_items must be a positive integer")
         items: list = []
         for page in range(1, max_pages + 1):
             page_params = {**params, "page": page}
@@ -230,17 +244,41 @@ class TikTokAPIClient(BasePlatformClient):
                 page_info = payload.get("page_info", {})
             else:
                 raise APIError(f"TikTok {endpoint} returned an invalid list envelope")
+            provider_page_has_items = isinstance(page_items, list) and bool(
+                page_items
+            )
             if isinstance(page_items, list):
-                items.extend(page_items)
+                if item_filter is not None:
+                    page_items = [
+                        item for item in page_items if item_filter(item)
+                    ]
+                if max_items is None:
+                    items.extend(page_items)
+                else:
+                    remaining = max_items - len(items)
+                    items.extend(page_items[:remaining])
+            if max_items is not None and len(items) >= max_items:
+                break
             if not isinstance(page_info, dict):
                 break
             try:
                 total_page = int(page_info.get("total_page", page))
             except (TypeError, ValueError):
                 total_page = page
-            if page >= total_page or not page_items:
+            if page >= total_page or not provider_page_has_items:
                 break
         return items
+
+    @staticmethod
+    def _limit_list(items: Any, limit: Any) -> list:
+        """Enforce a Tool-level total result bound even if TikTok ignores it."""
+        try:
+            total_limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("limit must be a positive integer") from exc
+        if total_limit < 1:
+            raise ValueError("limit must be a positive integer")
+        return items[:total_limit] if isinstance(items, list) else []
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         is_multipart = bool(kwargs.get('files'))
@@ -344,8 +382,10 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'advertiser/info/', params=params)
         payload = self._data_section(result)
         if isinstance(payload, dict):
-            return payload.get('advertisers', payload.get('list', []))
-        return payload
+            rows = payload.get('advertisers', payload.get('list', []))
+        else:
+            rows = payload
+        return self._limit_list(rows, len(normalized_ids))
 
     def get_account(self, advertiser_id: str) -> dict:
         """Get one TikTok advertiser through ``advertiser/info/``."""
@@ -369,7 +409,13 @@ class TikTokAPIClient(BasePlatformClient):
     
     # ==================== Campaign 管理 ====================
     
-    def list_campaigns(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+    def list_campaigns(
+        self,
+        advertiser_id: str,
+        filtering: list = None,
+        page_size: int = 20,
+        max_results: Optional[int] = None,
+    ) -> list:
         """获取 Campaign 列表"""
         data = {
             'advertiser_id': str(advertiser_id),
@@ -377,10 +423,9 @@ class TikTokAPIClient(BasePlatformClient):
         }
         if filtering:
             data['filtering'] = self._encode_filtering(filtering)
-        # Consume a bounded number of provider pages. Runtime applies the
-        # response-size limit for cards; the client must still be able to
-        # read back a newly-created resource that is not on page one.
-        return self._list_pages('campaign/get/', data, max_pages=100)
+        return self._list_pages(
+            'campaign/get/', data, max_pages=100, max_items=max_results
+        )
     
     def get_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """获取 Campaign 详情"""
@@ -533,7 +578,14 @@ class TikTokAPIClient(BasePlatformClient):
     
     # ==================== Ad Group 管理 ====================
     
-    def list_adgroups(self, advertiser_id: str, campaign_id: str, filtering: list = None, page_size: int = 20) -> list:
+    def list_adgroups(
+        self,
+        advertiser_id: str,
+        campaign_id: str,
+        filtering: list = None,
+        page_size: int = 20,
+        max_results: Optional[int] = None,
+    ) -> list:
         """获取 Ad Group 列表"""
         data = {
             'advertiser_id': str(advertiser_id),
@@ -543,16 +595,19 @@ class TikTokAPIClient(BasePlatformClient):
         data['filtering'] = self._encode_filtering(
             filtering or {'campaign_ids': [str(campaign_id)]}
         )
-        rows = self._list_pages('adgroup/get/', data, max_pages=100)
-        # TikTok may return an account-wide page despite campaign_id. Enforce
-        # the parent relation locally so lookup cards and get operations can
-        # never show another Campaign's Ad Groups.
         wanted = str(campaign_id)
-        return [
-            row for row in rows
-            if isinstance(row, dict)
-            and str(row.get('campaign_id') or row.get('campaignId') or '') == wanted
-        ]
+        return self._list_pages(
+            'adgroup/get/',
+            data,
+            max_pages=100,
+            max_items=max_results,
+            item_filter=lambda row: (
+                isinstance(row, dict)
+                and str(
+                    row.get('campaign_id') or row.get('campaignId') or ''
+                ) == wanted
+            ),
+        )
     
     def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
         """获取 Ad Group 详情"""
@@ -827,7 +882,13 @@ class TikTokAPIClient(BasePlatformClient):
     
     # ==================== Ad 管理 ====================
     
-    def list_ads(self, advertiser_id: str, adgroup_id: str, page_size: int = 20) -> list:
+    def list_ads(
+        self,
+        advertiser_id: str,
+        adgroup_id: str,
+        page_size: int = 20,
+        max_results: Optional[int] = None,
+    ) -> list:
         """获取 Ad 列表"""
         data = {
             'advertiser_id': str(advertiser_id),
@@ -839,19 +900,22 @@ class TikTokAPIClient(BasePlatformClient):
             ),
             'page_size': page_size,
         }
-        rows = self._list_pages('ad/get/', data, max_pages=100)
-        # Apply the same defense for an account-wide Ad page.
         wanted = str(adgroup_id)
-        return [
-            row for row in rows
-            if isinstance(row, dict)
-            and str(
-                row.get('adgroup_id')
-                or row.get('ad_group_id')
-                or row.get('adgroupId')
-                or ''
-            ) == wanted
-        ]
+        return self._list_pages(
+            'ad/get/',
+            data,
+            max_pages=100,
+            max_items=max_results,
+            item_filter=lambda row: (
+                isinstance(row, dict)
+                and str(
+                    row.get('adgroup_id')
+                    or row.get('ad_group_id')
+                    or row.get('adgroupId')
+                    or ''
+                ) == wanted
+            ),
+        )
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
         """获取 Ad 详情"""
@@ -2030,7 +2094,7 @@ class TikTokAPIClient(BasePlatformClient):
     
     def list_audiences(
         self, advertiser_id: str, custom_audience_ids: list[str] = None,
-        page_size: int = 20,
+        page_size: int = 20, max_results: Optional[int] = None,
     ) -> list:
         """获取人群包列表"""
         data = {
@@ -2039,7 +2103,9 @@ class TikTokAPIClient(BasePlatformClient):
         }
         if custom_audience_ids:
             data['custom_audience_ids'] = [str(item) for item in custom_audience_ids]
-        return self._list_pages('dmp/custom_audience/list/', data)
+        return self._list_pages(
+            'dmp/custom_audience/list/', data, max_items=max_results
+        )
 
     def get_audience(self, advertiser_id: str, audience_id: str) -> dict:
         """获取人群包详情"""
@@ -2498,7 +2564,8 @@ class TikTokAPIClient(BasePlatformClient):
             data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'creative/get/', params=data)
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        rows = payload.get('list', []) if isinstance(payload, dict) else []
+        return self._limit_list(rows, page_size)
 
     def get_creative(self, advertiser_id: str, creative_id: str) -> dict:
         """Get one Creative through the existing creative/get endpoint."""
@@ -2568,7 +2635,9 @@ class TikTokAPIClient(BasePlatformClient):
         # resource rows.  Return one bounded page here; callers can narrow
         # with ``filtering`` and request another page through the provider
         # adapter without overflowing Runtime's result budget.
-        return self._list_pages('file/video/ad/search/', data, max_pages=1)
+        return self._list_pages(
+            'file/video/ad/search/', data, max_pages=1, max_items=page_size
+        )
 
     def get_video(self, advertiser_id: str, video_id: str) -> dict:
         """Get one video asset through the existing video/get endpoint."""
@@ -2602,7 +2671,9 @@ class TikTokAPIClient(BasePlatformClient):
         }
         if filtering:
             data['filtering'] = self._encode_filtering(filtering)
-        return self._list_pages('file/image/ad/search/', data, max_pages=1)
+        return self._list_pages(
+            'file/image/ad/search/', data, max_pages=1, max_items=page_size
+        )
 
     def get_image(self, advertiser_id: str, image_id: str) -> dict:
         """Get one image asset through the existing image/get endpoint."""
@@ -2832,7 +2903,8 @@ class TikTokAPIClient(BasePlatformClient):
             data['filtering'] = self._encode_filtering(filtering)
         result = self.request('GET', 'conversion/get/', params=data)
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        rows = payload.get('list', []) if isinstance(payload, dict) else []
+        return self._limit_list(rows, page_size)
     
     def get_conversion(self, advertiser_id: str, conversion_id: str) -> dict:
         """获取转化事件详情"""
@@ -2873,7 +2945,7 @@ class TikTokAPIClient(BasePlatformClient):
         if not isinstance(payload, dict):
             return []
         pixels = payload.get("pixels", payload.get("list", []))
-        return pixels if isinstance(pixels, list) else []
+        return self._limit_list(pixels, page_size)
 
     def get_pixel(self, advertiser_id: str, pixel_id: str) -> dict:
         """Get one TikTok Pixel and keep the advertiser scope explicit."""
@@ -3135,8 +3207,13 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request("GET", "identity/get/", params=params)
         payload = self._data_section(result)
         if isinstance(payload, list):
-            return payload
-        return payload.get("list", payload.get("identities", [])) if isinstance(payload, dict) else []
+            rows = payload
+        else:
+            rows = (
+                payload.get("list", payload.get("identities", []))
+                if isinstance(payload, dict) else []
+            )
+        return self._limit_list(rows, page_size)
 
     def get_identity(self, advertiser_id: str, identity_id: str) -> dict:
         """Get one advertiser identity through the existing identity/get endpoint."""
@@ -3238,7 +3315,7 @@ class TikTokAPIClient(BasePlatformClient):
                     item.setdefault("catalog_authorized_bc_id", str(bc_id))
                     item.setdefault("authorized_bc_id", str(bc_id))
             normalized.append(item)
-        return normalized
+        return self._limit_list(normalized, page_size)
 
     def get_catalog(self, advertiser_id: str, catalog_id: str) -> dict:
         """Get one Catalog through the existing catalog/get endpoint."""
@@ -3263,42 +3340,52 @@ class TikTokAPIClient(BasePlatformClient):
             {},
         )
     
-    def list_product_sets(self, advertiser_id: str, catalog_id: str = None, filtering: list = None, page_size: int = 20) -> list:
-        """List TikTok Product Sets through the official v1.3 read endpoint."""
-        advertiser_id, filtering, page_size = self._validate_catalog_query(
-            advertiser_id, filtering, page_size
+    def list_product_sets(
+        self,
+        advertiser_id: str,
+        catalog_id: str,
+        limit: int = 20,
+        product_set_id: Optional[str] = None,
+    ) -> list:
+        """List Product Sets through TikTok's Business Center catalog endpoint."""
+        advertiser_id, _, limit = self._validate_catalog_query(
+            advertiser_id, None, limit
         )
-        if catalog_id is not None and not str(catalog_id).strip():
-            raise ValueError("catalog_id must not be empty when provided")
+        catalog_id = str(catalog_id or "").strip()
+        if not catalog_id:
+            raise ValueError("catalog_id is required")
+        bc_id = str(self.credentials.get("bc_id") or "").strip()
+        if not bc_id:
+            raise ValueError("TikTok Product Set queries require bc_id in credentials")
+        product_set_id = str(product_set_id or "").strip()
         self.acquire_rate_limit(self._rate_limiter)
         data = {
-            'advertiser_id': advertiser_id,
-            'page_size': page_size,
+            "catalog_id": catalog_id,
+            "bc_id": bc_id,
+            "return_product_count": True,
         }
-        if catalog_id:
-            data['catalog_id'] = str(catalog_id)
-        if filtering:
-            data['filtering'] = self._encode_filtering(filtering)
-        result = self.request('GET', 'product_set/get/', params=data)
+        if product_set_id:
+            data["product_set_id"] = product_set_id
+        result = self.request("GET", "catalog/set/get/", params=data)
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        rows = (
+            payload.get("list", payload.get("product_sets", []))
+            if isinstance(payload, dict) else []
+        )
+        return rows[:limit] if isinstance(rows, list) else []
 
     def get_product_set(
         self, advertiser_id: str, catalog_id: str, product_set_id: str
     ) -> dict:
-        """Get one Product Set through the existing product_set/get endpoint."""
+        """Get one Product Set through TikTok's catalog/set/get endpoint."""
         product_set_id = str(product_set_id or "").strip()
         if not product_set_id:
             raise ValueError("product_set_id must not be empty")
         product_sets = self.list_product_sets(
             advertiser_id,
             catalog_id=catalog_id,
-            filtering=[{
-                "field": "PRODUCT_SET_IDS",
-                "operator": "IN",
-                "values": [product_set_id],
-            }],
-            page_size=1,
+            limit=1,
+            product_set_id=product_set_id,
         )
         return next(
             (
@@ -3314,18 +3401,17 @@ class TikTokAPIClient(BasePlatformClient):
     def validate_product_selection(
         self, advertiser_id: str, catalog_id: str, product_set_id: str
     ) -> dict:
-        """Validate that a product set reference belongs to a catalog.
-
-        TikTok does not expose a separate feed-validation endpoint in the
-        currently supported API contract.  This read operation verifies the
-        strongest check available without inventing one: the product set is
-        returned by ``product_set/get`` for the supplied catalog.
-        """
+        """Validate a Product Set reference against its TikTok Catalog."""
         catalog_id = str(catalog_id or "").strip()
         product_set_id = str(product_set_id or "").strip()
         if not catalog_id or not product_set_id:
             raise ValueError("catalog_id and product_set_id are required")
-        product_sets = self.list_product_sets(advertiser_id, catalog_id=catalog_id)
+        product_sets = self.list_product_sets(
+            advertiser_id,
+            catalog_id=catalog_id,
+            limit=1,
+            product_set_id=product_set_id,
+        )
         match = next(
             (
                 item for item in product_sets
@@ -3338,7 +3424,7 @@ class TikTokAPIClient(BasePlatformClient):
             "catalog_id": catalog_id,
             "product_set_id": product_set_id,
             "product_set": match,
-            "checked_via": "product_set/get",
+            "checked_via": "catalog/set/get",
         }
     
     # ==================== 应用信息查询 ====================
@@ -3359,8 +3445,10 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'app/list/', params=data)
         payload = self._data_section(result)
         if isinstance(payload, dict):
-            return payload.get('apps', payload.get('list', []))
-        return payload if isinstance(payload, list) else []
+            rows = payload.get('apps', payload.get('list', []))
+        else:
+            rows = payload
+        return self._limit_list(rows, page_size)
     
     # ==================== 品牌安全查询 ====================
     

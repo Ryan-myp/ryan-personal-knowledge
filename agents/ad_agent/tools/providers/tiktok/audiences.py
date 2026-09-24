@@ -4,6 +4,7 @@ from typing import Optional
 
 from ....api_clients.tiktok_client import TikTokAPIClient
 from ....core.interfaces import ToolContext, ToolHandler, ToolResult
+from ..provider_base import call_with_optional_page_size
 
 
 class TikTokListAudiencesHandler(ToolHandler):
@@ -13,9 +14,11 @@ class TikTokListAudiencesHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         if self.client and ctx.account_id:
             try:
-                audiences = self.client.list_audiences(
+                audiences = call_with_optional_page_size(
+                    self.client.list_audiences,
                     ctx.account_id,
-                    page_size=input_data.get("limit", 20),
+                    limit=input_data.get("limit", 20),
+                    parameter_names=("max_results", "page_size", "limit"),
                 )
                 return ToolResult.ok({"audiences": audiences, "data_status": "live"})
             except Exception as exc:

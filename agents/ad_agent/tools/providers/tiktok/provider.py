@@ -952,22 +952,23 @@ class TikTokToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_product_sets",
                 description="查询 TikTok 商品集。", method_name="list_product_sets", result_key="product_sets",
-                properties={"account_id": {"type": "string"}, "catalog_id": {"type": "string"},
-                            "filtering": {"type": "array"},
+                properties={"account_id": {"type": "string"},
+                            "catalog_id": {"type": "string", "minLength": 1},
                             "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
-                required=["account_id"], requires=["account_id"],
+                required=["account_id", "catalog_id"],
+                requires=["account_id", "catalog_id"],
                 action="list", resource_type="product_set",
                 intent_types=["list_product_sets"], traits=["read", "catalog", "lookup"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
-                    "catalog_id": data.get("catalog_id"), "filtering": data.get("filtering"),
-                    "page_size": data.get("limit", 20),
+                    "catalog_id": data["catalog_id"],
+                    "limit": data.get("limit", 20),
                 }),
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert",
                 name="tiktok_validate_product_selection",
                 description=(
-                    "校验 TikTok Catalog 与 Product Set 的归属关系；通过 product_set/get "
+                    "校验 TikTok Catalog 与 Product Set 的归属关系；通过 catalog/set/get "
                     "完成可用的引用校验，不声称覆盖商品 Feed 健康度诊断。"
                 ),
                 method_name="validate_product_selection", result_key="validation",

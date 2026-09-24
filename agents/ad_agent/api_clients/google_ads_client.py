@@ -5309,10 +5309,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
     def list_feeds(self, page_size: int = 100) -> list[dict[str, Any]]:
         """List customer-level Feed resources through GAQL."""
-        del page_size
         rows = self._search_all(
             "SELECT feed.id, feed.resource_name, feed.name, feed.origin, "
-            "feed.status, feed.attributes FROM feed"
+            "feed.status, feed.attributes FROM feed",
+            page_size=page_size,
         )
         return [self._normalize_feed(row) for row in rows]
 
@@ -5396,12 +5396,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> list[dict[str, Any]]:
         """List FeedItem resources for one Feed through GAQL."""
         feed_id = self._numeric_id(feed_id, "feed_id")
-        del page_size
         rows = self._search_all(
             "SELECT feed_item.resource_name, feed_item.feed, feed_item.status, "
             "feed_item.attribute_values "
             f"FROM feed_item WHERE feed_item.feed = "
-            f"'customers/{self.customer_id}/feeds/{feed_id}'"
+            f"'customers/{self.customer_id}/feeds/{feed_id}'",
+            page_size=page_size,
         )
         return [self._normalize_feed_item(row) for row in rows]
 
@@ -5499,13 +5499,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         self, page_size: int = 100
     ) -> list[dict[str, Any]]:
         """List CustomerConversionGoal resources through GAQL."""
-        del page_size
         rows = self._search_all(
             "SELECT customer_conversion_goal.resource_name, "
             "customer_conversion_goal.category, customer_conversion_goal.origin, "
             "customer_conversion_goal.biddable, "
             "customer_conversion_goal.value_settings "
-            "FROM customer_conversion_goal"
+            "FROM customer_conversion_goal",
+            page_size=page_size,
         )
         return [self._normalize_conversion_goal(row) for row in rows]
 
@@ -5539,13 +5539,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> list[dict[str, Any]]:
         """List CampaignConversionGoal resources for one Campaign."""
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
-        del page_size
         rows = self._search_all(
             "SELECT campaign_conversion_goal.resource_name, "
             "campaign_conversion_goal.category, campaign_conversion_goal.origin, "
             "campaign_conversion_goal.biddable, "
             "campaign_conversion_goal.value_settings "
-            f"FROM campaign_conversion_goal WHERE campaign.id = {campaign_id}"
+            f"FROM campaign_conversion_goal WHERE campaign.id = {campaign_id}",
+            page_size=page_size,
         )
         return [self._normalize_conversion_goal(row) for row in rows]
 
@@ -5605,24 +5605,51 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def _search_all(
         self, query: str, page_size: int = 100, max_pages: int = 100,
     ) -> list[dict]:
-        """Fetch all GAQL pages while bounding malformed-token loops."""
+        """Fetch a bounded total number of GAQL rows."""
+        max_results = self._safe_limit(page_size)
+        query = self._apply_gaql_result_limit(query, max_results)
         rows: list[dict] = []
         page_token = None
         seen_tokens: set[str] = set()
         for _ in range(max_pages):
-            response = self._search(
-                query, page_token=page_token, page_size=page_size
-            )
+            response = self._search(query, page_token=page_token)
             payload = self._response_payload(response)
             page_rows = payload.get('results', []) if isinstance(payload, dict) else []
             if isinstance(page_rows, list):
                 rows.extend(row for row in page_rows if isinstance(row, dict))
+            if len(rows) >= max_results:
+                return rows[:max_results]
             next_token = payload.get('nextPageToken') if isinstance(payload, dict) else None
             if not next_token or next_token in seen_tokens:
                 break
             seen_tokens.add(next_token)
             page_token = next_token
         return rows
+
+    @staticmethod
+    def _apply_gaql_result_limit(query: str, max_results: int) -> str:
+        """Push the caller's total-result bound into a GAQL query."""
+        query = str(query or "").strip().rstrip(";")
+        if not query:
+            raise ValueError("GAQL query must not be empty")
+        matches = list(re.finditer(r"\bLIMIT\s+(\d+)\b", query, re.IGNORECASE))
+        if matches:
+            match = matches[-1]
+            requested = min(int(match.group(1)), max_results)
+            return (
+                query[:match.start()]
+                + f"LIMIT {requested}"
+                + query[match.end():]
+            )
+        parameter_clause = re.search(r"\s+PARAMETERS\b", query, re.IGNORECASE)
+        limit_clause = f" LIMIT {max_results}"
+        if parameter_clause:
+            return (
+                query[:parameter_clause.start()]
+                + limit_clause
+                + query[parameter_clause.start():]
+            )
+        return query + limit_clause
 
     def _mutate(self, resource: str, operation: dict) -> dict:
         """Execute one Google Ads customer-level mutate operation."""

@@ -26,7 +26,7 @@ class TikTokListAdGroupsHandler(ToolHandler):
                     ctx.account_id,
                     campaign_id,
                     limit=input_data.get("limit", 20),
-                    parameter_names=("page_size", "limit"),
+                    parameter_names=("max_results", "page_size", "limit"),
                 )
                 return ToolResult.ok({"adgroups": adgroups, "data_status": "live"})
             except Exception as e:

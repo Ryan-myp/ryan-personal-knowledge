@@ -31,15 +31,16 @@ def call_with_optional_page_size(
     method: Callable,
     *args: Any,
     limit: Any = None,
-    parameter_names: tuple[str, ...] = ("limit", "page_size"),
+    parameter_names: tuple[str, ...] = ("max_results", "limit", "page_size"),
 ) -> Any:
-    """Pass paging to adapters that advertise it, preserving old adapters.
+    """Pass a bounded result limit to adapters that advertise one.
 
     Provider clients are intentionally replaceable.  A read-only handler must
     not force every test/custom client to grow a paging keyword just because
-    the built-in adapter exposes one.  Signature inspection also avoids a
-    broad ``TypeError`` retry that could accidentally duplicate a call when
-    the provider method itself raises a TypeError.
+    the built-in adapter exposes one. Prefer a total-result bound when the
+    adapter distinguishes it from its provider page size. Signature inspection
+    also avoids a broad ``TypeError`` retry that could accidentally duplicate
+    a call when the provider method itself raises a TypeError.
     """
     try:
         parameters = inspect.signature(method).parameters

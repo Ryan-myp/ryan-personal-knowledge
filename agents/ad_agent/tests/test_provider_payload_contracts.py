@@ -16,13 +16,48 @@ from agents.ad_agent.api_clients.google_ads_client import GoogleAdsAPIClient
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.base import APIError
-from agents.ad_agent.tools.providers.tiktok.campaigns import TikTokGetCampaignHandler
+from agents.ad_agent.tools.providers.tiktok.campaigns import (
+    TikTokGetCampaignHandler,
+    TikTokListCampaignsHandler,
+)
 from agents.ad_agent.tools.providers.google.campaigns import GoogleCreateCampaignHandler
 from agents.ad_agent.tools.providers.meta.provider import _meta_update_adapter
 from agents.ad_agent.tools.providers.tiktok.provider import _tiktok_update_adapter
 from agents.ad_agent.tools.providers.google.provider import _google_update_adapter
 from agents.ad_agent.tools.providers.provider_base import CampaignUpdateHandler
 from agents.ad_agent.tools.providers.meta.creatives import MetaCreateCreativeHandler
+
+
+@pytest.mark.parametrize(
+    ("method_name", "row_key", "resource_key"),
+    [
+        ("list_assets", "asset", "id"),
+        ("list_campaign_budgets", "campaignBudget", "id"),
+    ],
+)
+def test_google_inventory_lists_enforce_total_result_limit(
+    method_name, row_key, resource_key
+):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def search(query, page_token=None, page_size=None):
+        calls.append((query, page_token))
+        rows = [
+            {row_key: {resource_key: str(index)}}
+            for index in range(1, 4)
+        ]
+        return {
+            "results": rows,
+            "nextPageToken": "page-2" if page_token is None else None,
+        }
+
+    client._search = search
+    result = getattr(client, method_name)(page_size=2)
+
+    assert len(result) == 2
+    assert len(calls) == 1
+    assert "LIMIT 2" in calls[0][0].upper()
 
 
 def test_creation_tools_publish_provider_payload_requirements():
@@ -390,7 +425,7 @@ def test_tiktok_pixel_lookup_rejects_provider_unsupported_page_size():
 
 
 def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_tools():
-    client = TikTokAPIClient({"access_token": "test"})
+    client = TikTokAPIClient({"access_token": "test", "bc_id": "bc-1"})
     calls = []
     client.request = lambda method, endpoint, params=None, **_kwargs: (
         calls.append((method, endpoint, params))
@@ -401,26 +436,34 @@ def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_t
         "123", filtering=[{"field": "CATALOG_IDS", "operator": "IN", "values": ["catalog-1"]}],
         page_size=50,
     ) == [{"id": "catalog-1"}]
-    assert client.list_product_sets("123", "catalog-1", page_size=10) == [
+    assert client.list_product_sets("123", "catalog-1", limit=10) == [
         {"id": "catalog-1"}
     ]
     assert calls == [
-        (
+            (
                 "GET", "catalog/get/",
-            {
-                "advertiser_id": "123", "page_size": 50,
-                "filtering": '{"catalog_ids":["catalog-1"]}',
-            },
+                {
+                    "advertiser_id": "123", "page_size": 50, "bc_id": "bc-1",
+                    "filtering": '{"catalog_ids":["catalog-1"]}',
+                },
         ),
         (
-            "GET", "product_set/get/",
-            {"advertiser_id": "123", "page_size": 10, "catalog_id": "catalog-1"},
+            "GET", "catalog/set/get/",
+            {
+                "catalog_id": "catalog-1",
+                "bc_id": "bc-1",
+                "return_product_count": True,
+            },
         ),
     ]
     with pytest.raises(ValueError, match="digits only"):
         client.list_catalogs("advertiser-123")
     with pytest.raises(ValueError, match="between 1 and 100"):
-        client.list_product_sets("123", page_size=101)
+        client.list_product_sets("123", "catalog-1", limit=101)
+    with pytest.raises(ValueError, match="bc_id"):
+        TikTokAPIClient({"access_token": "test"}).list_product_sets(
+            "123", "catalog-1"
+        )
     with pytest.raises(ValueError, match="filtering must be an array"):
         client.list_catalogs("123", filtering={"field": "CATALOG_IDS"})
 
@@ -430,6 +473,10 @@ def test_tiktok_catalog_queries_are_scoped_validated_and_published_as_provider_t
     }
     assert definitions["tiktok_list_catalogs"].input_schema.requires == ["account_id"]
     assert definitions["tiktok_list_product_sets"].input_schema.properties["limit"]["maximum"] == 100
+    assert definitions["tiktok_list_product_sets"].input_schema.required == [
+        "account_id", "catalog_id",
+    ]
+    assert "filtering" not in definitions["tiktok_list_product_sets"].input_schema.properties
     assert definitions["tiktok_list_catalogs"].traits == ["read", "catalog", "lookup"]
 
 
@@ -2544,7 +2591,7 @@ def test_tiktok_product_sales_tools_cover_catalog_and_shop_destinations():
 
 def test_tiktok_product_selection_validation_uses_product_set_lookup():
     client = TikTokAPIClient({"access_token": "test"})
-    client.list_product_sets = lambda advertiser_id, catalog_id=None: [
+    client.list_product_sets = lambda advertiser_id, catalog_id=None, limit=20, product_set_id=None: [
         {"product_set_id": "set-1", "name": "Approved products"},
     ]
 
@@ -2552,7 +2599,7 @@ def test_tiktok_product_selection_validation_uses_product_set_lookup():
     invalid = client.validate_product_selection("123", "catalog-1", "set-2")
     assert valid["valid"] is True
     assert invalid["valid"] is False
-    assert valid["checked_via"] == "product_set/get"
+    assert valid["checked_via"] == "catalog/set/get"
 
 
 def test_tiktok_adgroup_contract_exposes_optimization_targeting_and_schedule_fields():
@@ -3623,6 +3670,180 @@ def test_tiktok_campaign_lookup_by_name_uses_list_result():
 
     assert result.success is True
     assert result.data["campaign"]["campaign_id"] == "101"
+
+
+def test_tiktok_list_campaigns_handler_passes_total_result_limit():
+    calls = []
+
+    class Client:
+        def list_campaigns(
+            self, advertiser_id, filtering=None, page_size=20, max_results=None
+        ):
+            calls.append((advertiser_id, page_size, max_results))
+            return [{"campaign_id": "101"}]
+
+    result = TikTokListCampaignsHandler(Client()).execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="t1"),
+        {"limit": 5},
+    )
+
+    assert result.success is True
+    assert calls == [("t1", 20, 5)]
+
+
+def test_tiktok_pagination_stops_at_total_result_limit():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request_raw(method, url, params=None, **kwargs):
+        calls.append(dict(params or {}))
+        page = (params or {}).get("page", 1)
+        first_id = (page - 1) * 2 + 1
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": [
+                    {"campaign_id": str(first_id)},
+                    {"campaign_id": str(first_id + 1)},
+                ],
+                "page_info": {"total_page": 4},
+            },
+        }
+
+    client.request_raw = request_raw
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+
+    rows = client._list_pages(
+        "campaign/get/",
+        {"page_size": 2},
+        max_pages=100,
+        max_items=3,
+    )
+
+    assert [row["campaign_id"] for row in rows] == ["1", "2", "3"]
+    assert [call["page"] for call in calls] == [1, 2]
+
+
+def test_tiktok_adgroup_total_limit_applies_after_parent_filter():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    pages = {
+        1: [{"adgroup_id": "unrelated", "campaign_id": "other"}],
+        2: [{"adgroup_id": "wanted", "campaign_id": "campaign-1"}],
+    }
+
+    def request_raw(_method, _url, params=None, **_kwargs):
+        page = (params or {}).get("page", 1)
+        calls.append(page)
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": pages[page],
+                "page_info": {"total_page": 2},
+            },
+        }
+
+    client.request_raw = request_raw
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+
+    rows = client.list_adgroups(
+        "advertiser-1", "campaign-1", page_size=1, max_results=1
+    )
+
+    assert [row["adgroup_id"] for row in rows] == ["wanted"]
+    assert calls == [1, 2]
+
+
+def test_tiktok_ad_total_limit_applies_after_parent_filter():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    pages = {
+        1: [{"ad_id": "unrelated", "adgroup_id": "other"}],
+        2: [{"ad_id": "wanted", "adgroup_id": "adgroup-1"}],
+    }
+
+    def request_raw(_method, _url, params=None, **_kwargs):
+        page = (params or {}).get("page", 1)
+        calls.append(page)
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": pages[page],
+                "page_info": {"total_page": 2},
+            },
+        }
+
+    client.request_raw = request_raw
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+
+    rows = client.list_ads(
+        "advertiser-1", "adgroup-1", page_size=1, max_results=1
+    )
+
+    assert [row["ad_id"] for row in rows] == ["wanted"]
+    assert calls == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "response_key"),
+    [
+        ("list_catalogs", "list"),
+        ("list_creatives", "list"),
+        ("list_conversions", "list"),
+        ("list_apps", "apps"),
+        ("list_identities", "list"),
+        ("list_pixels", "pixels"),
+    ],
+)
+def test_tiktok_list_endpoints_cap_results_when_provider_ignores_page_size(
+    method_name, response_key
+):
+    client = TikTokAPIClient({"access_token": "test", "bc_id": "bc-1"})
+    provider_rows = [{"id": str(index)} for index in range(3)]
+    client.request = lambda *_args, **_kwargs: {
+        "data": {response_key: provider_rows}
+    }
+
+    method = getattr(client, method_name)
+    rows = method("123", page_size=2)
+
+    assert rows == provider_rows[:2]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "endpoint"),
+    [
+        ("list_videos", "file/video/ad/search/"),
+        ("list_images", "file/image/ad/search/"),
+    ],
+)
+def test_tiktok_media_search_caps_results_when_provider_ignores_page_size(
+    method_name, endpoint
+):
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    provider_rows = [{"id": str(index)} for index in range(3)]
+
+    def request_raw(_method, url, params=None, **_kwargs):
+        calls.append((url.split("/v1.3/", 1)[-1], params))
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": provider_rows,
+                "page_info": {"total_page": 1},
+            },
+        }
+
+    client.request_raw = request_raw
+    client.acquire_rate_limit = lambda *_args, **_kwargs: None
+    rows = getattr(client, method_name)("123", page_size=2)
+
+    assert rows == provider_rows[:2]
+    assert calls[0][0] == endpoint
 
 
 def test_tiktok_campaign_get_retries_eventual_consistency():
@@ -5604,7 +5825,7 @@ def test_tiktok_single_resource_readers_reuse_existing_list_endpoints():
         {"catalog_id": "catalog-1"}
     ]
     client.list_product_sets = (
-        lambda advertiser_id, catalog_id=None, filtering=None, page_size=20: [
+        lambda advertiser_id, catalog_id, limit=20, product_set_id=None: [
             {"product_set_id": "set-1", "catalog_id": catalog_id}
         ]
     )

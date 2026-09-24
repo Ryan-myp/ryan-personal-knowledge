@@ -1,5 +1,5 @@
 {
-  "digest": "6eab52864b366423847312994fdf0041adec85319fc3833ae814700fee4334d7",
+  "digest": "e03998898430ee26ca2e4785f7663f2a9c62ab8f6b086b1d59edc813e81b1128",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -29491,7 +29491,7 @@
       ]
     },
     "tiktok": {
-      "digest": "5b859eb406095b5487c5f11cf3665f5d57a975269143a5dc47404932109d76ec",
+      "digest": "54b290430a314ffc0a58843eb55f20050182afb336fd8d20ff537a8212789723",
       "tool_count": 90,
       "tools": [
         {
@@ -41722,7 +41722,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "fcc0dd853784c7a866337127dd95931de29f26f949a8456b0b3eae1ae0baf4cc",
+          "contract_hash": "a867c110cc0dc9d4548ccae21111474a18991919025e496458a2ad2ef3a116c0",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 商品集。",
           "effect_class": "read",
@@ -41738,6 +41738,7 @@
               "catalog_id": {
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "tiktok_list_catalogs",
+                "minLength": 1,
                 "selection_label_fields": [
                   "catalog_name",
                   "name",
@@ -41749,9 +41750,6 @@
                 ],
                 "type": "string"
               },
-              "filtering": {
-                "type": "array"
-              },
               "limit": {
                 "maximum": 100,
                 "minimum": 1,
@@ -41759,10 +41757,12 @@
               }
             },
             "required": [
-              "account_id"
+              "account_id",
+              "catalog_id"
             ],
             "requires": [
-              "account_id"
+              "account_id",
+              "catalog_id"
             ],
             "requires_any_of": [],
             "type": "object"
@@ -47245,7 +47245,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "ec12ee55f7519da283a2ffebe4040d08bfdf5ccb54f88eb542e2515cd4e92e50",
           "contract_version": "1.3.0",
-          "description": "校验 TikTok Catalog 与 Product Set 的归属关系；通过 product_set/get 完成可用的引用校验，不声称覆盖商品 Feed 健康度诊断。",
+          "description": "校验 TikTok Catalog 与 Product Set 的归属关系；通过 catalog/set/get 完成可用的引用校验，不声称覆盖商品 Feed 健康度诊断。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -51191,7 +51191,7 @@
         "api_version": "v1.3",
         "evidence_level": "code_contract",
         "execution_status": "not_supported",
-        "gap": "当前已提供 catalog/get、product_set/get 与 Product Selection 引用校验；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现",
+        "gap": "当前已提供 catalog/get、catalog/set/get 与 Product Selection 引用校验；Catalog/Product Set 创建、更新、删除尚无经过验证的 TikTok Ads API endpoint/Tool，不能伪造为已实现",
         "inventory_scope": "official_open_api_baseline",
         "provider": "tiktok",
         "resource": "catalog",

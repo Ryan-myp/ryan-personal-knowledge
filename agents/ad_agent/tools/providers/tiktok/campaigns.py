@@ -25,7 +25,7 @@ class TikTokListCampaignsHandler(ToolHandler):
                     self.client.list_campaigns,
                     advertiser_id,
                     limit=input_data.get("limit", 20),
-                    parameter_names=("page_size", "limit"),
+                    parameter_names=("max_results", "page_size", "limit"),
                 )
                 return ToolResult.ok({
                     "campaigns": campaigns,
