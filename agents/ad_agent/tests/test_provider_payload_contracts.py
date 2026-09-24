@@ -60,6 +60,68 @@ def test_google_inventory_lists_enforce_total_result_limit(
     assert "LIMIT 2" in calls[0][0].upper()
 
 
+def test_google_campaign_report_reads_all_bounded_gaql_pages():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def search(query, page_token=None, page_size=None):
+        calls.append((query, page_token))
+        rows = (
+            [{"campaign": {"id": "101"}}, {"campaign": {"id": "101"}}]
+            if page_token is None
+            else [{"campaign": {"id": "101"}}]
+        )
+        return {
+            "data": {
+                "results": rows,
+                "nextPageToken": "page-2" if page_token is None else None,
+            }
+        }
+
+    client._search = search
+    rows = client.get_campaign_report(
+        ["101"], date_from="LAST_7_DAYS", date_to="TODAY", limit=3
+    )
+
+    assert len(rows) == 3
+    assert [page_token for _query, page_token in calls] == [None, "page-2"]
+    assert all("LIMIT 3" in query.upper() for query, _token in calls)
+    assert "WHERE campaign.id IN (101) AND segments.date DURING LAST_7_DAYS" in (
+        " ".join(calls[0][0].split())
+    )
+
+
+def test_google_campaign_report_uses_gaql_in_for_multiple_campaign_ids():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._search = lambda query, **_kwargs: (
+        calls.append(query) or {"results": []}
+    )
+
+    client.get_campaign_report(["101", "102"], limit=4)
+
+    query = " ".join(calls[0].split())
+    assert "WHERE campaign.id IN (101, 102)" in query
+    assert "WHERE (" not in query
+
+
+def test_google_campaign_report_without_ids_queries_bounded_account_scope():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._search = lambda query, page_token=None, **_kwargs: (
+        calls.append((query, page_token))
+        or {"results": [{"campaign": {"id": "101"}}]}
+    )
+
+    rows = client.get_campaign_report([], limit=4)
+
+    query = " ".join(calls[0][0].split())
+    assert rows == [{"campaign": {"id": "101"}}]
+    assert "FROM campaign WHERE segments.date DURING LAST_30_DAYS" in query
+    assert "campaign.id =" not in query
+    assert "LIMIT 4" in query
+
+
 def test_creation_tools_publish_provider_payload_requirements():
     """Provider contracts must describe payload fields beyond account scope."""
     tool_sources = {
@@ -797,9 +859,16 @@ def test_tiktok_creative_list_reads_ads_instead_of_nonexistent_creative_endpoint
 def test_tiktok_integrated_report_uses_get_contract_and_json_array_parameters():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
-    client.request = lambda method, endpoint, params=None, **_kwargs: (
-        calls.append((method, endpoint, params))
-        or {"list": [{"campaign_id": "101"}]}
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, params))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": [{"campaign_id": "101"}],
+                "page_info": {"page": 1, "total_page": 1},
+            },
+        }
     )
 
     assert client.get_report(
@@ -813,7 +882,9 @@ def test_tiktok_integrated_report_uses_get_contract_and_json_array_parameters():
         limit=5,
     ) == {"list": [{"campaign_id": "101"}]}
     method, endpoint, params = calls[0]
-    assert (method, endpoint) == ("GET", "report/integrated/get/")
+    assert (method, endpoint) == (
+        "GET", client._build_url("report/integrated/get/")
+    )
     assert params == {
         "advertiser_id": "123",
         "report_type": "BASIC",
@@ -828,12 +899,112 @@ def test_tiktok_integrated_report_uses_get_contract_and_json_array_parameters():
     }
 
 
+def test_tiktok_integrated_report_consumes_provider_pages_within_limit():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request_raw(method, url, params=None, **_kwargs):
+        calls.append((method, url, dict(params or {})))
+        page = params["page"]
+        page_data = {"campaign_id": str(100 + page)}
+        if page == 1:
+            provider_data = {
+                "list": [page_data],
+                "page_info": {"page": page, "total_page": 2},
+            }
+            body = {"code": 0, "data": provider_data}
+        else:
+            body = {
+                "code": 0,
+                "data": [page_data],
+                "page_info": {"page": page, "total_page": 2},
+            }
+        return {"status_code": 200, "data": body}
+
+    client.request_raw = request_raw
+    result = client.get_report(
+        "123",
+        dimensions=["campaign_id"],
+        time_range={"start_date": "2026-09-17", "end_date": "2026-09-24"},
+        limit=5,
+    )
+
+    assert client._report_rows(result) == [
+        {"campaign_id": "101"},
+        {"campaign_id": "102"},
+    ]
+    assert [call[2]["page"] for call in calls] == [1, 2]
+    assert all(call[2]["page_size"] == 5 for call in calls)
+    assert all(call[0] == "GET" for call in calls)
+
+
+def test_tiktok_campaign_report_forwards_total_result_limit():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, dict(params or {})))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": [{"campaign_id": "101"}],
+                "page_info": {"page": 1, "total_page": 1},
+            },
+        }
+    )
+
+    client.get_campaign_report("123", ["101"], limit=7)
+
+    assert calls[0][2]["page_size"] == 7
+    assert calls[0][2]["page"] == 1
+    assert json.loads(calls[0][2]["filtering"]) == [{
+        "field_name": "campaign_ids",
+        "filter_type": "IN",
+        "filter_value": '["101"]',
+    }]
+
+
+def test_tiktok_adgroup_report_uses_plural_provider_filter_fields():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, dict(params or {})))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": [],
+                "page_info": {"page": 1, "total_page": 1},
+            },
+        }
+    )
+
+    client.get_adgroup_report("123", "101", ["201"], limit=7)
+
+    assert calls[0][2]["data_level"] == "AUCTION_ADGROUP"
+    assert json.loads(calls[0][2]["dimensions"]) == ["adgroup_id"]
+    filters = json.loads(calls[0][2]["filtering"])
+    assert [item["field_name"] for item in filters] == [
+        "campaign_ids", "adgroup_ids",
+    ]
+    assert [json.loads(item["filter_value"]) for item in filters] == [
+        ["101"], ["201"],
+    ]
+
+
 def test_tiktok_integrated_report_validates_columns_dates_and_campaign_filters():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
-    client.request = lambda method, endpoint, params=None, **_kwargs: (
-        calls.append((method, endpoint, params))
-        or {"list": []}
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, params))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": [],
+                "page_info": {"page": 1, "total_page": 1},
+            },
+        }
     )
     report_range = {"start_date": "2026-09-01", "end_date": "2026-09-24"}
 
@@ -843,7 +1014,7 @@ def test_tiktok_integrated_report_validates_columns_dates_and_campaign_filters()
     )
     params = calls[0][2]
     assert json.loads(params["filtering"]) == [{
-        "field_name": "campaign_id",
+        "field_name": "campaign_ids",
         "filter_type": "IN",
         "filter_value": '["101","102"]',
     }]
@@ -857,6 +1028,129 @@ def test_tiktok_integrated_report_validates_columns_dates_and_campaign_filters()
         )
     with pytest.raises(ValueError, match="campaign_ids"):
         client.get_report("123", campaign_ids=["not-a-numeric-id"])
+
+
+@pytest.mark.parametrize(
+    ("method_name", "resource_ids", "expected_level", "expected_filter_field"),
+    [
+        ("get_campaign_report", ["101"], "campaign", "campaign.id"),
+        ("get_adset_report", ["201"], "adset", "adset.id"),
+        ("get_ad_report", ["301"], "ad", "ad.id"),
+    ],
+)
+def test_meta_insights_reports_use_level_scoped_filters_and_pagination(
+    method_name, resource_ids, expected_level, expected_filter_field
+):
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, extra_params=None, **_kwargs):
+        calls.append((method, endpoint, dict(extra_params or {})))
+        page = len(calls)
+        return {
+            "data": [{"impressions": str(page)}],
+            "paging": {
+                "cursors": {"after": "cursor-2"} if page == 1 else {},
+            },
+        }
+
+    client.request = request
+    if method_name == "get_campaign_report":
+        rows = client.get_campaign_report(
+            "act_123",
+            resource_ids,
+            time_range={"since": "2026-09-17", "until": "2026-09-24"},
+            fields=["impressions"],
+            limit=3,
+        )
+    else:
+        rows = getattr(client, method_name)(
+            "act_123",
+            resource_ids,
+            time_range={"since": "2026-09-17", "until": "2026-09-24"},
+            fields=["impressions"],
+            limit=3,
+        )
+
+    assert [row["impressions"] for row in rows] == ["1", "2"]
+    assert len(calls) == 2
+    assert all(method == "GET" for method, _endpoint, _params in calls)
+    assert all(endpoint == "/act_123/insights" for _method, endpoint, _params in calls)
+    params = calls[0][2]
+    assert params["level"] == expected_level
+    assert json.loads(params["filtering"]) == [{
+        "field": expected_filter_field,
+        "operator": "IN",
+        "value": resource_ids,
+    }]
+    assert json.loads(params["time_range"]) == {
+        "since": "2026-09-17",
+        "until": "2026-09-24",
+    }
+    assert params["limit"] == 3
+    assert calls[1][2]["after"] == "cursor-2"
+
+
+def test_meta_insights_account_report_omits_resource_filter_when_ids_not_given():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, extra_params=None, **_kwargs: (
+        calls.append(dict(extra_params or {}))
+        or {"data": [{"campaign_id": "101"}], "paging": {}}
+    )
+
+    rows = client.get_campaign_report("act_123", [], limit=3)
+
+    assert rows == [{"campaign_id": "101"}]
+    assert "filtering" not in calls[0]
+
+
+def test_meta_insights_rejects_boolean_limit():
+    client = MetaAPIClient({"access_token": "test"})
+    client.request = lambda *_args, **_kwargs: pytest.fail(
+        "invalid report limit must be rejected before transport"
+    )
+    with pytest.raises(ValueError, match="report limit"):
+        client.get_campaign_report("act_123", ["101"], limit=True)
+
+
+def test_meta_adset_and_ad_report_tools_allow_account_queries_and_forward_limit():
+    calls = []
+
+    class MetaClient:
+        platform = "meta"
+
+        def get_adset_report(self, account_id, adset_ids, **kwargs):
+            calls.append(("adset", account_id, adset_ids, kwargs))
+            return []
+
+        def get_ad_report(self, account_id, ad_ids, **kwargs):
+            calls.append(("ad", account_id, ad_ids, kwargs))
+            return []
+
+    source = create_meta_tool_source(MetaClient())
+    registered = {
+        definition.name: (definition, handler)
+        for definition, handler in source.register_tools()
+    }
+    context = ToolContext(
+        session_id="s1", user_id="u1", account_id="123"
+    )
+    for tool_name, resource_id_field in (
+        ("meta_get_adset_report", "adset_ids"),
+        ("meta_get_ad_report", "ad_ids"),
+    ):
+        definition, handler = registered[tool_name]
+        assert definition.input_schema.required == ["account_id"]
+        assert "limit" in definition.input_schema.properties
+        assert resource_id_field not in definition.input_schema.required
+        result = handler.execute(context, {"limit": 7})
+        assert result.success is True
+
+    assert calls == [
+        ("adset", "123", [], {"time_range": None, "fields": None, "limit": 7}),
+        ("ad", "123", [], {"time_range": None, "fields": None, "limit": 7}),
+    ]
 
 
 def test_tiktok_unsupported_query_surfaces_are_not_registered_as_live_tools():
@@ -1132,8 +1426,7 @@ def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
         if "experiment_arm" in query:
             return [{
                 "experimentArm": {
-                    "id": "2",
-                    "resourceName": "customers/123/experimentArms/2",
+                    "resourceName": "customers/123/experimentArms/1~2",
                     "name": "Treatment",
                     "experiment": "customers/123/experiments/1",
                     "control": False,
@@ -1142,7 +1435,7 @@ def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
             }]
         return [{
             "experiment": {
-                "id": "1",
+                "experimentId": "1",
                 "resourceName": "customers/123/experiments/1",
                 "name": "Budget test",
                 "description": "test",
@@ -1151,8 +1444,6 @@ def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
                 "startDate": "2026-09-01",
                 "endDate": "2026-09-30",
                 "suffix": " treatment",
-                "baseCampaign": "customers/123/campaigns/9",
-                "experimentCampaign": "customers/123/campaigns/10",
             }
         }]
 
@@ -1167,14 +1458,20 @@ def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
         "start_date": "2026-09-01",
         "end_date": "2026-09-30",
         "suffix": " treatment",
-        "base_campaign": "customers/123/campaigns/9",
-        "experiment_campaign": "customers/123/campaigns/10",
     }
-    assert client.list_experiment_arms(page_size=5)[0]["traffic_split"] == 50
+    arm = client.list_experiment_arms(page_size=5)[0]
+    assert arm["id"] == "1~2"
+    assert arm["traffic_split"] == 50
     assert calls[0][1] == {"page_size": 10}
     assert calls[1][1] == {"page_size": 5}
     assert "FROM experiment" in calls[0][0]
+    assert "experiment.experiment_id" in calls[0][0]
+    assert "experiment.id" not in calls[0][0]
+    assert "experiment.base_campaign" not in calls[0][0]
+    assert "experiment.experiment_campaign" not in calls[0][0]
     assert "FROM experiment_arm" in calls[1][0]
+    assert "experiment_arm.resource_name" in calls[1][0]
+    assert "experiment_arm.id" not in calls[1][0]
 
 
 def test_google_experiment_service_lifecycle_builds_v24_payloads():
@@ -2014,6 +2311,62 @@ def test_meta_graph_pagination_caps_wire_page_size_and_keeps_total_bound():
     assert calls[1]["after"] == "cursor-1"
 
 
+def test_meta_list_accounts_uses_bounded_business_ad_account_edge():
+    client = MetaAPIClient({
+        "access_token": "test",
+        "business_id": "business-1",
+    })
+    calls = []
+
+    def list_pages(scope_id, endpoint, params, **kwargs):
+        calls.append((scope_id, endpoint, params, kwargs))
+        return [{"id": "act-1", "account_id": "1"}]
+
+    client._list_graph_pages = list_pages
+
+    accounts = client.list_accounts(limit=40)
+
+    assert accounts == [{"id": "act-1", "account_id": "1"}]
+    assert calls == [(
+        "business-1",
+        "/business-1/owned_ad_accounts",
+        {
+            "limit": 40,
+            "fields": "id,account_id,name,account_status,currency,timezone_name",
+        },
+        {},
+    )]
+
+
+def test_meta_list_accounts_defaults_to_user_ad_accounts_edge_without_business():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client._list_graph_pages = lambda scope_id, endpoint, params, **kwargs: (
+        calls.append((scope_id, endpoint, params)) or []
+    )
+
+    assert client.list_accounts(limit=20) == []
+    assert calls == [(
+        "me",
+        "/me/adaccounts",
+        {
+            "limit": 20,
+            "fields": "id,account_id,name,account_status,currency,timezone_name",
+        },
+    )]
+
+
+def test_meta_list_accounts_does_not_turn_provider_errors_into_empty_success():
+    client = MetaAPIClient({"access_token": "test"})
+    provider_error = APIError("Meta API HTTP 400: invalid ad account edge")
+    client._list_graph_pages = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        provider_error
+    )
+
+    with pytest.raises(APIError, match="invalid ad account edge"):
+        client.list_accounts()
+
+
 def test_meta_lead_form_get_checks_page_ownership_and_forwards_fields():
     client = MetaAPIClient({"access_token": "test"})
     calls = []
@@ -2324,13 +2677,18 @@ def test_google_asset_association_lifecycle_builds_v24_payloads_and_tools():
         "asset": "customers/123/assets/88",
         "fieldType": "MARKETING_IMAGE",
     }}]
-    client._search_all = lambda query, page_size=100: (
-        campaign_rows if "campaign_asset" in query else group_rows
-    )
+    queries = []
+
+    def search_assets(query, page_size=100):
+        queries.append(query)
+        return campaign_rows if "campaign_asset" in query else group_rows
+
+    client._search_all = search_assets
     assert client.list_campaign_assets("42")[0]["field_type"] == "HEADLINE"
     assert client.list_asset_group_assets("7")[0]["asset_group"] == (
         "customers/123/assetGroups/7"
     )
+    assert "campaign.id" in queries[0].split("FROM", 1)[0]
 
     with pytest.raises(ValueError, match="another customer"):
         client.create_campaign_asset("customers/999/campaigns/42", "88", "HEADLINE")
@@ -3638,8 +3996,36 @@ def test_tiktok_audience_reads_use_official_dmp_endpoints():
     }
     assert detail_calls == [(
         "GET", "dmp/custom_audience/get/",
-        {"advertiser_id": "123", "custom_audience_ids": ["456"]},
+        {"advertiser_id": "123", "custom_audience_ids": '["456"]'},
     )]
+
+
+def test_meta_account_detail_uses_ad_account_node_id():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, extra_params=None, **_kwargs: (
+        calls.append((method, endpoint, extra_params))
+        or {"id": "act_123", "name": "Test account"}
+    )
+
+    assert client.get_account("123")["id"] == "act_123"
+    assert calls == [(
+        "GET", "/act_123", {
+            "fields": "id,name,account_id,account_status,currency,timezone_name"
+        }
+    )]
+
+
+def test_meta_audience_default_fields_omit_unsupported_origin_audience_id():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.resource_belongs_to_account = lambda *_args: True
+    client.request = lambda method, endpoint, extra_params=None, **_kwargs: (
+        calls.append((method, endpoint, extra_params)) or {"id": "456"}
+    )
+
+    assert client.get_audience("act_123", "456") == {"id": "456"}
+    assert calls[0][2]["fields"] == "id,name,subtype,delivery_status"
 
 
 def test_tiktok_audience_update_builds_official_file_operation_payload():
@@ -3919,7 +4305,7 @@ def test_tiktok_integrated_report_provider_errors_are_not_silent_successes():
     def reject_report(*_args, **_kwargs):
         raise APIError("TikTok report rejected")
 
-    client.request = reject_report
+    client.request_raw = reject_report
     with pytest.raises(APIError, match="report rejected"):
         client.get_campaign_report("123", ["1"])
 
@@ -6051,19 +6437,26 @@ def test_google_feed_and_conversion_goal_methods_build_explicit_operations():
     )["success"]
     assert client.delete_feed_item("customers/123/feedItems/9")["success"]
 
-    client._search_all = lambda query, page_size=100: [{
-        "customerConversionGoal": {
-            "resourceName": "customers/123/customerConversionGoals/PURCHASE~WEBPAGE",
-            "category": "PURCHASE",
-            "origin": "WEBPAGE",
-            "biddable": True,
-        }
-    }]
+    conversion_goal_queries = []
+
+    def search_conversion_goals(query, page_size=100):
+        conversion_goal_queries.append(query)
+        return [{
+            "customerConversionGoal": {
+                "resourceName": "customers/123/customerConversionGoals/PURCHASE~WEBPAGE",
+                "category": "PURCHASE",
+                "origin": "WEBPAGE",
+                "biddable": True,
+            }
+        }]
+
+    client._search_all = search_conversion_goals
     assert client.list_customer_conversion_goals()[0]["category"] == "PURCHASE"
+    assert client.list_campaign_conversion_goals("7")[0]["category"] == "PURCHASE"
+    assert all("value_settings" not in query for query in conversion_goal_queries)
     assert client.update_customer_conversion_goal(
         "PURCHASE", "WEBPAGE", {"biddable": False}
     )["success"]
-    assert client.list_campaign_conversion_goals("7")[0]["category"] == "PURCHASE"
     assert client.update_campaign_conversion_goal(
         "7", "PURCHASE", "WEBPAGE", {"biddable": True}
     )["success"]

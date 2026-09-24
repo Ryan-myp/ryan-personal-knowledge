@@ -95,7 +95,11 @@ class ToolInputBuilder:
         return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
 
     def input_candidates(
-        self, field_name: str, field_schema: Any, available_keys: Any = (),
+        self,
+        field_name: str,
+        field_schema: Any,
+        available_keys: Any = (),
+        declared_fields: Any = (),
     ) -> list[str]:
         candidates = [str(field_name)]
         if isinstance(field_schema, dict):
@@ -111,13 +115,18 @@ class ToolInputBuilder:
             self._normalize_input_field(value)
             for value in self.scope_field_names
         }
+        declared = {
+            self._normalize_input_field(value)
+            for value in (declared_fields or ())
+            if str(value) != str(field_name)
+        }
         for key in keys:
             key_normalized = self._normalize_input_field(key)
             if key_normalized == normalized:
                 candidates.append(key)
             elif field_name == "name" and key_normalized.endswith("name"):
                 candidates.append(key)
-            elif key_normalized == normalized + "s":
+            elif key_normalized == normalized + "s" and key_normalized not in declared:
                 # Plural collection inputs (for example a batch of resource
                 # IDs) may feed a singular Tool field when that is the only
                 # field declared by the selected Tool. This is a generic
@@ -495,6 +504,7 @@ class ToolInputBuilder:
         platform_params = self.platform_params_for_intent(intent, platform)
         actual_platform = services.normalize_namespace(platform)
         tool_input: dict[str, Any] = {}
+        properties = getattr(tool_def.input_schema, "properties", {}) or {}
         specific_params = platform_params.get(tool_def.name, {})
         unknown_specific_params: list[str] = []
         if isinstance(specific_params, dict):
@@ -503,17 +513,22 @@ class ToolInputBuilder:
             accepted.update(self.scope_field_names + ("selection_tokens",))
             for field_name, schema in tool_def.input_schema.properties.items():
                 accepted.update(self.input_candidates(
-                    field_name, schema, specific_params.keys()
+                    field_name,
+                    schema,
+                    specific_params.keys(),
+                    declared_fields=properties,
                 ))
             unknown_specific_params = sorted(
                 key for key in specific_params if key not in accepted
             )
 
-        properties = getattr(tool_def.input_schema, "properties", {}) or {}
         trusted_state_fields: set[str] = set()
         for field_name, schema in properties.items():
             for candidate in self.input_candidates(
-                field_name, schema, platform_params.keys()
+                field_name,
+                schema,
+                platform_params.keys(),
+                declared_fields=properties,
             ):
                 if candidate in platform_params and platform_params[candidate] not in (None, ""):
                     tool_input[field_name] = platform_params[candidate]
@@ -533,7 +548,12 @@ class ToolInputBuilder:
             for field_name, schema in properties.items():
                 if field_name in tool_input:
                     continue
-                for candidate in self.input_candidates(field_name, schema, state_fields):
+                for candidate in self.input_candidates(
+                    field_name,
+                    schema,
+                    state_fields,
+                    declared_fields=properties,
+                ):
                     scoped_value = next(
                         (
                             protected[key]
@@ -677,32 +697,42 @@ class ToolInputBuilder:
                 tools.extend(registered_tools(canonical))
             tools = list({tool.name: tool for tool in tools}.values())
             tool_names = {tool.name for tool in tools}
+
+            def declares_key(tool: Any, key: str) -> bool:
+                properties = getattr(tool.input_schema, "properties", {}) or {}
+                return any(
+                    key in self.input_candidates(
+                        field_name,
+                        schema,
+                        [key],
+                        declared_fields=properties,
+                    )
+                    for field_name, schema in properties.items()
+                )
+
             for key in values:
                 if key.startswith("_") or key in common:
                     continue
                 if key in tool_names:
                     continue
-                if any(
-                    any(
-                        key in self.input_candidates(field_name, schema, [key])
-                        for field_name, schema in (
-                            getattr(tool.input_schema, "properties", {}) or {}
-                        ).items()
-                    )
-                    for tool in tools
-                ):
+                if any(declares_key(tool, key) for tool in tools):
                     continue
                 errors.append(f"{platform}.{key} 未被当前工具链声明")
             for tool in tools:
                 scoped = values.get(tool.name)
                 if not isinstance(scoped, dict):
                     continue
+                properties = getattr(tool.input_schema, "properties", {}) or {}
                 for key in scoped:
                     if key == "selection_tokens":
                         continue
-                    properties = getattr(tool.input_schema, "properties", {}) or {}
                     if not any(
-                        key in self.input_candidates(field_name, schema, [key])
+                        key in self.input_candidates(
+                            field_name,
+                            schema,
+                            [key],
+                            declared_fields=properties,
+                        )
                         for field_name, schema in properties.items()
                     ):
                         errors.append(f"{platform}.{tool.name}.{key} 未被工具 Schema 声明")

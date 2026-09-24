@@ -8,7 +8,6 @@ from ....core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from ....api_clients.meta_client import MetaAPIClient
-from ..provider_base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -23,34 +22,14 @@ class MetaGetReportHandler(ToolHandler):
         date_preset = input_data.get("date_preset") or input_data.get("date_range")
         if self.client and ctx.account_id:
             try:
-                # A natural-language account report normally has no campaign
-                # IDs. Resolve the account's campaigns through the same
-                # provider client before requesting campaign-scoped insights;
-                # never fabricate metrics just because the selector omitted
-                # an optional filter.
-                if not campaign_ids:
-                    campaigns = call_with_optional_page_size(
-                        self.client.list_campaigns,
-                        ctx.account_id,
-                        limit=input_data.get("limit", 25),
-                    )
-                    campaign_ids = [
-                        str(item.get("id") or item.get("campaign_id"))
-                        for item in (campaigns or [])
-                        if isinstance(item, dict)
-                        and (item.get("id") or item.get("campaign_id"))
-                    ]
-                if not campaign_ids:
-                    return ToolResult.ok({
-                        "report": [],
-                        "campaign_ids": [],
-                        "data_status": "live",
-                        "summary": "当前账户没有可查询的 Campaign",
-                    })
+                report_options = {}
+                if "limit" in input_data:
+                    report_options["limit"] = input_data["limit"]
                 report = self.client.get_campaign_report(
                     ctx.account_id,
                     campaign_ids,
                     time_range=date_preset,
+                    **report_options,
                 )
                 return ToolResult.ok({"report": report, "data_status": "live"})
             except Exception as e:

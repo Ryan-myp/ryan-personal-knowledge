@@ -902,6 +902,48 @@ class TestIntentParser:
 # ─── Runtime 集成测试 ──────────────────────────────────────────
 
 class TestRuntimeQuery:
+    def test_meta_report_campaign_ids_do_not_alias_to_singular_campaign_id(self):
+        from agents.ad_agent.core.interfaces import ParsedIntent
+        from agents.ad_agent.tools.providers.meta import create_meta_tool_source
+
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            read_only_mode=True,
+        )
+        rt.register_tool_source(create_meta_tool_source())
+        tool_def, _handler = rt.registry.get_authorized(
+            "meta_get_campaign_report", rt._registry_execution_token
+        )
+        intent = ParsedIntent(
+            intent_type="get_campaign_report",
+            raw_input="查询 Meta campaign 报表",
+            namespaces=["meta"],
+            scoped_parameters={
+                "meta": {"campaign_ids": ["101", "102"]},
+            },
+        )
+
+        tool_input = rt.input_builder.build(
+            tool_def,
+            intent,
+            "meta",
+            ToolContext(
+                session_id="meta-report-input",
+                user_id="u1",
+                account_id="act_123",
+            ),
+        )
+
+        assert "campaign_id" not in tool_input
+        assert tool_input["campaign_ids"] == ["101", "102"]
+        assert "campaign_ids" in rt.input_builder.input_candidates(
+            "campaign_id",
+            {},
+            ["campaign_ids"],
+            declared_fields={"campaign_id"},
+        )
+
     def test_llm_route_repair_rejects_unrelated_provider_and_reaches_google_report(self):
         """A hallucinated operation/provider must not become a silent no-op."""
         from agents.ad_agent.tools.providers.google import create_google_tool_source
@@ -988,7 +1030,7 @@ class TestRuntimeQuery:
         assert result["results"][0]["success"] is True
         assert result["results"][0]["data"]["summary"]["total_clicks"] == 2
 
-    def test_meta_generic_report_discovers_campaign_ids_before_query(self):
+    def test_meta_generic_report_queries_account_scope_without_campaign_discovery(self):
         from agents.ad_agent.tools.providers.meta import create_meta_tool_source
 
         class MetaClient:
@@ -1020,8 +1062,7 @@ class TestRuntimeQuery:
         assert result["tool_plan"]["meta"] == ["meta_get_campaign_report"]
         assert result["results"][0]["success"] is True
         assert client.calls == [
-            ("list_campaigns", "m1", 25),
-            ("get_campaign_report", "m1", ["m1"], None),
+            ("get_campaign_report", "m1", [], None),
         ]
 
     def test_runtime_injects_skill_context_before_llm_parsing(self):
@@ -2588,8 +2629,12 @@ class TestIterationContracts:
             def __init__(self):
                 self.campaign_report_calls = []
 
-            def get_campaign_report(self, advertiser_id, campaign_ids, time_range=None):
-                self.campaign_report_calls.append((advertiser_id, campaign_ids, time_range))
+            def get_campaign_report(
+                self, advertiser_id, campaign_ids, time_range=None, limit=None
+            ):
+                self.campaign_report_calls.append(
+                    (advertiser_id, campaign_ids, time_range, limit)
+                )
                 return [{"campaign_group_id": "t1", "impressions": 10}]
 
             def get_report(self, **kwargs):
@@ -2599,10 +2644,10 @@ class TestIterationContracts:
         handler = TikTokGetReportHandler(client)
         result = handler.execute(
             ToolContext(session_id="s1", user_id="u1", account_id="a1"),
-            {"account_id": "a1", "campaign_ids": ["t1"]},
+            {"account_id": "a1", "campaign_ids": ["t1"], "limit": 7},
         )
         assert result.success is True
-        assert client.campaign_report_calls == [("a1", ["t1"], None)]
+        assert client.campaign_report_calls == [("a1", ["t1"], None, 7)]
 
     def test_tiktok_report_handler_forwards_integrated_report_dimensions_and_bounds(self):
         from agents.ad_agent.tools.providers.tiktok.reports import TikTokGetReportHandler
@@ -2653,14 +2698,16 @@ class TestIterationContracts:
         client = TikTokAPIClient({"access_token": "caller-token"})
         calls = []
 
-        def fake_request(method, endpoint, **kwargs):
-            calls.append((method, endpoint, kwargs))
-            return {"data": {}}
+        def fake_request_raw(method, url, params=None, **kwargs):
+            calls.append((method, url, params, kwargs))
+            return {"status_code": 200, "data": {"code": 0, "data": {}}}
 
-        client.request = fake_request
+        client.request_raw = fake_request_raw
         assert client.get_report("123", date_preset="LAST_30_DAYS") == {}
-        assert calls[0][0:2] == ("GET", "report/integrated/get/")
-        params = calls[0][2]["params"]
+        assert calls[0][0:2] == (
+            "GET", client._build_url("report/integrated/get/")
+        )
+        params = calls[0][2]
         expected_range = client._normalize_time_range("LAST_30_DAYS")
         assert params == {
             "advertiser_id": "123",

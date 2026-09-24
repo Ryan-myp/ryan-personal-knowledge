@@ -2478,10 +2478,6 @@ def google_conversion_goal_schema() -> dict[str, Any]:
     """Schema for Customer/Campaign ConversionGoal read and update Tools."""
     goal_updates = _object({
         "biddable": _field("boolean", "Whether this goal is biddable"),
-        "value_settings": _field(
-            "object", "Conversion value settings",
-            additionalProperties=True,
-        ),
     }, "Allowed Google conversion goal update fields")
     return {
         "properties": {

@@ -1039,11 +1039,13 @@ class TikTokToolSource(BaseProviderToolSource):
                 description="查询 TikTok Ad Group 级报表。", method_name="get_adgroup_report", result_key="report",
                 properties={"account_id": {"type": "string"}, "campaign_id": {"type": "string"},
                             "adgroup_ids": {"type": "array", "items": {"type": "string"}},
-                            "date_range": {"type": "object"}},
+                            "date_range": {"type": "object"},
+                            "limit": {"type": "integer", "minimum": 1, "maximum": 100}},
                 required=["account_id", "campaign_id"], action="report", resource_type="ad_group",
                 intent_types=["get_adgroup_report"], traits=["read", "report", "ad_group"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"]), {
                     "adgroup_ids": data.get("adgroup_ids"), "time_range": data.get("date_range"),
+                    **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
             ),
             method_tool(
@@ -1568,6 +1570,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     "account_id": {"type": "string"},
                     "campaign_ids": {"type": "array", "items": {"type": "string"}},
                     "date_range": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
             ),
             action="report", resource_type="report",

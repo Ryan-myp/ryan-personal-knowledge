@@ -282,6 +282,8 @@ class TikTokAPIClient(BasePlatformClient):
 
     @staticmethod
     def _validate_reference_limit(limit: Any, maximum: int = 100) -> int:
+        if isinstance(limit, bool):
+            raise ValueError(f"limit must be between 1 and {maximum}")
         try:
             total_limit = int(limit)
         except (TypeError, ValueError) as exc:
@@ -2046,6 +2048,7 @@ class TikTokAPIClient(BasePlatformClient):
         advertiser_id: str,
         campaign_ids: list[str],
         time_range: Any = None,
+        limit: int = 100,
     ) -> list:
         """Query campaign rows through TikTok's synchronous Integrated Report."""
         campaign_ids = self._normalize_report_ids(campaign_ids, "campaign_ids")
@@ -2054,7 +2057,8 @@ class TikTokAPIClient(BasePlatformClient):
             data_level="AUCTION_CAMPAIGN",
             dimensions=["campaign_id"],
             time_range=time_range,
-            filtering=self._report_id_filter("campaign_id", campaign_ids),
+            filtering=self._report_id_filter("campaign_ids", campaign_ids),
+            limit=limit,
         )
         return self._report_rows(payload)
     
@@ -2064,19 +2068,21 @@ class TikTokAPIClient(BasePlatformClient):
         campaign_id: str,
         adgroup_ids: list[str] = None,
         time_range: dict = None,
+        limit: int = 100,
     ) -> list:
         """Query Ad Group rows through TikTok's synchronous Integrated Report."""
         campaign_ids = self._normalize_report_ids([campaign_id], "campaign_id")
-        filtering = self._report_id_filter("campaign_id", campaign_ids)
+        filtering = self._report_id_filter("campaign_ids", campaign_ids)
         if adgroup_ids:
             adgroup_ids = self._normalize_report_ids(adgroup_ids, "adgroup_ids")
-            filtering.extend(self._report_id_filter("adgroup_id", adgroup_ids))
+            filtering.extend(self._report_id_filter("adgroup_ids", adgroup_ids))
         payload = self._integrated_report(
             advertiser_id=advertiser_id,
             data_level="AUCTION_ADGROUP",
-            dimensions=["campaign_id", "adgroup_id"],
+            dimensions=["adgroup_id"],
             time_range=time_range,
             filtering=filtering,
+            limit=limit,
         )
         return self._report_rows(payload)
 
@@ -2176,19 +2182,74 @@ class TikTokAPIClient(BasePlatformClient):
             "metrics": json.dumps(metrics, separators=(",", ":")),
             "start_date": start_date.isoformat(),
             "end_date": end_date.isoformat(),
-            "page": 1,
-            "page_size": limit,
         }
         if filtering:
             params["filtering"] = json.dumps(filtering, separators=(",", ":"))
-        self.acquire_rate_limit(self._rate_limiter)
-        result = self.request(
-            "GET", "report/integrated/get/", params=params
+
+        first_payload: Any = None
+        rows: list[Any] = []
+        found_rows = False
+        for page in range(1, 101):
+            response = self.request_raw(
+                "GET", self._build_url("report/integrated/get/"),
+                params={**params, "page": page, "page_size": limit},
+            )
+            provider_envelope = response.get("data", {})
+            payload = self._data_section(provider_envelope)
+            if page == 1:
+                first_payload = payload
+            if isinstance(payload, list):
+                page_rows = payload
+                page_info = (
+                    provider_envelope.get("page_info", {})
+                    if isinstance(provider_envelope, dict) else {}
+                )
+                found_rows = True
+            elif isinstance(payload, dict):
+                page_rows = payload.get("list")
+                if not isinstance(page_rows, list):
+                    page_rows = payload.get("data")
+                page_info = payload.get(
+                    "page_info",
+                    provider_envelope.get("page_info", {})
+                    if isinstance(provider_envelope, dict) else {},
+                )
+                found_rows = found_rows or isinstance(page_rows, list)
+            else:
+                if page == 1:
+                    return {}
+                break
+
+            if not isinstance(page_rows, list):
+                if page == 1:
+                    return payload if isinstance(payload, dict) else {}
+                break
+            remaining = limit - len(rows)
+            rows.extend(page_rows[:remaining])
+            if len(rows) >= limit or not page_rows:
+                break
+            if not isinstance(page_info, dict):
+                break
+            try:
+                total_pages = int(page_info.get("total_page", page))
+            except (TypeError, ValueError):
+                total_pages = page
+            if page >= total_pages:
+                break
+
+        if not found_rows:
+            return first_payload if isinstance(first_payload, dict) else {}
+        result_payload = (
+            {
+                key: value
+                for key, value in first_payload.items()
+                if key not in {"list", "data", "page_info"}
+            }
+            if isinstance(first_payload, dict)
+            else {}
         )
-        payload = self._data_section(result)
-        if isinstance(payload, dict):
-            return payload
-        return {"list": payload} if isinstance(payload, list) else {}
+        result_payload["list"] = rows
+        return result_payload
 
     
     # ==================== 人群定向查询 ====================
@@ -2219,7 +2280,9 @@ class TikTokAPIClient(BasePlatformClient):
             'GET', 'dmp/custom_audience/get/',
             params={
                 'advertiser_id': advertiser_id,
-                'custom_audience_ids': [audience_id],
+                'custom_audience_ids': json.dumps(
+                    [audience_id], separators=(",", ":")
+                ),
             },
         )
         payload = self._data_section(result)
@@ -3711,7 +3774,7 @@ class TikTokAPIClient(BasePlatformClient):
                 campaign_ids, "campaign_ids"
             )
             report_filtering.extend(
-                self._report_id_filter("campaign_id", normalized_ids)
+                self._report_id_filter("campaign_ids", normalized_ids)
             )
         return self._integrated_report(
             advertiser_id=advertiser_id,

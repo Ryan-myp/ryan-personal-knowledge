@@ -59,6 +59,25 @@ _CREDENTIAL_KEYS = {
 _SAFE_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,127}\Z")
 _SAFE_CAMPAIGN_TYPE = re.compile(r"[A-Za-z0-9_. -]{1,80}\Z")
 _SAFE_OPERATION_LABEL = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
+_QUERY_FAILURE_CATEGORIES = {
+    "credential_error",
+    "local_contract",
+    "provider_error",
+    "provider_not_found",
+    "provider_permission",
+    "provider_rate_limit",
+    "provider_timeout",
+    "provider_unavailable",
+    "provider_validation",
+    "response_shape",
+}
+_QUERY_SKIP_REASONS = {
+    "missing_parent_resource",
+    "no_safe_input",
+    "sensitive_data",
+    "test_scope_unverifiable",
+    "unsupported_scope",
+}
 
 
 def _redacted_id(value: Any) -> str:
@@ -180,9 +199,23 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
             if not isinstance(query, Mapping):
                 errors.append(f"{query_prefix} must be an object")
                 continue
-            if set(query) != {"resource", "action", "tool", "outcome"}:
+            allowed_query_fields = {
+                "resource",
+                "action",
+                "tool",
+                "outcome",
+                "row_count",
+                "failure_category",
+                "skip_reason",
+            }
+            if not {"resource", "action", "tool", "outcome"}.issubset(query):
                 errors.append(
-                    f"{query_prefix} must contain only resource, action, tool, outcome"
+                    f"{query_prefix} must contain resource, action, tool, outcome"
+                )
+            unexpected_query_fields = set(query) - allowed_query_fields
+            if unexpected_query_fields:
+                errors.append(
+                    f"{query_prefix} contains unsupported fields"
                 )
             for field in ("resource", "action"):
                 value = query.get(field)
@@ -196,6 +229,53 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
             outcome = str(query.get("outcome") or "").strip()
             if outcome not in SUPPORTED_OPERATION_STATES:
                 errors.append(f"{query_prefix}.outcome has unsupported state")
+            row_count = query.get("row_count")
+            if row_count is not None and (
+                isinstance(row_count, bool)
+                or not isinstance(row_count, int)
+                or row_count < 0
+            ):
+                errors.append(f"{query_prefix}.row_count must be a non-negative integer")
+            failure_category = query.get("failure_category")
+            if failure_category is not None and (
+                not isinstance(failure_category, str)
+                or failure_category not in _QUERY_FAILURE_CATEGORIES
+            ):
+                errors.append(
+                    f"{query_prefix}.failure_category has an unsupported value"
+                )
+            skip_reason = query.get("skip_reason")
+            if skip_reason is not None and (
+                not isinstance(skip_reason, str)
+                or skip_reason not in _QUERY_SKIP_REASONS
+            ):
+                errors.append(f"{query_prefix}.skip_reason has an unsupported value")
+            if outcome == "failed" and failure_category is None:
+                errors.append(
+                    f"{query_prefix}.failure_category is required for failed queries"
+                )
+            if outcome == "skipped" and skip_reason is None:
+                errors.append(
+                    f"{query_prefix}.skip_reason is required for skipped queries"
+                )
+            if outcome == "passed" and (
+                failure_category is not None or skip_reason is not None
+            ):
+                errors.append(
+                    f"{query_prefix} cannot include failure/skip metadata when passed"
+                )
+            if outcome == "failed" and skip_reason is not None:
+                errors.append(
+                    f"{query_prefix} cannot include skip_reason when failed"
+                )
+            if outcome == "skipped" and failure_category is not None:
+                errors.append(
+                    f"{query_prefix} cannot include failure_category when skipped"
+                )
+            if outcome != "passed" and row_count is not None:
+                errors.append(
+                    f"{query_prefix}.row_count is only valid for passed queries"
+                )
 
         operation_count = 0
         passed_count = 0
@@ -362,11 +442,60 @@ def _query_evidence(runs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 "tool": str(query.get("tool") or "").strip(),
                 "campaign_types": campaign_types,
                 "outcome": outcome,
+                "result_state": (
+                    "empty"
+                    if outcome == "passed" and query.get("row_count") == 0
+                    else "non_empty"
+                    if outcome == "passed" and isinstance(
+                        query.get("row_count"), int
+                    )
+                    else "unmeasured"
+                    if outcome == "passed"
+                    else outcome
+                ),
                 "evidence_level": (
                     "provider_e2e" if outcome == "passed" else "code_contract"
                 ),
+                **(
+                    {"row_count": query["row_count"]}
+                    if "row_count" in query else {}
+                ),
+                **(
+                    {"failure_category": query["failure_category"]}
+                    if "failure_category" in query else {}
+                ),
+                **(
+                    {"skip_reason": query["skip_reason"]}
+                    if "skip_reason" in query else {}
+                ),
             })
     return rows
+
+
+def _query_summary(queries: list[Mapping[str, Any]]) -> dict[str, int]:
+    """Count live query outcomes without treating empty results as failures."""
+    outcomes = Counter(str(item.get("outcome") or "unknown") for item in queries)
+    return {
+        "total": len(queries),
+        "passed": outcomes.get("passed", 0),
+        "passed_with_rows": sum(
+            1 for item in queries
+            if item.get("outcome") == "passed"
+            and isinstance(item.get("row_count"), int)
+            and item.get("row_count") > 0
+        ),
+        "passed_empty": sum(
+            1 for item in queries
+            if item.get("outcome") == "passed" and item.get("row_count") == 0
+        ),
+        "failed": outcomes.get("failed", 0),
+        "skipped": outcomes.get("skipped", 0),
+        "unknown": sum(
+            count
+            for outcome, count in outcomes.items()
+            if outcome not in {"passed", "failed", "skipped"}
+        ),
+    }
 
 
 def build_provider_evidence_report(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -429,6 +558,12 @@ def build_provider_evidence_report(raw: Mapping[str, Any]) -> dict[str, Any]:
                 safety=raw["safety"],
             ),
             "query_evidence": _query_evidence(runs),
+            "query_summary": _query_summary([
+                query
+                for run in runs
+                for query in (run.get("queries") or [])
+                if isinstance(query, Mapping)
+            ]),
         }
 
     return {

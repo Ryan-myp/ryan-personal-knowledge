@@ -207,25 +207,37 @@ class MetaAPIClient(BasePlatformClient):
     
     # ==================== 账户管理 ====================
     
-    def list_accounts(self, business_id: str = None) -> list:
-        """获取广告账户列表"""
-        if business_id:
-            endpoint = f"{business_id}/accounts"
-        else:
-            endpoint = "me/accounts"
-        
+    def list_accounts(
+        self, business_id: str | None = None, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """List accessible Meta ad accounts without masking Graph API failures."""
+        if isinstance(limit, bool):
+            raise ValueError("account list limit must be between 1 and 1000")
         try:
-            result = self.request('GET', endpoint)
-            if isinstance(result, dict):
-                data = result.get('data', [])
-                # 确保返回的是列表而不是生成器/迭代器
-                if hasattr(data, '__iter__') and not isinstance(data, (list, dict, str)):
-                    return list(data)
-                return data
-            return result if isinstance(result, list) else []
-        except Exception as e:
-            logger.error(f"Failed to list accounts: {e}")
-            return []
+            limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "account list limit must be between 1 and 1000"
+            ) from exc
+        if not 1 <= limit <= 1000:
+            raise ValueError("account list limit must be between 1 and 1000")
+
+        selected_business_id = business_id or self.credentials.get("business_id")
+        fields = "id,account_id,name,account_status,currency,timezone_name"
+        if selected_business_id:
+            clean_business_id = self._clean_meta_id(
+                selected_business_id, "business_id"
+            )
+            scope_id = clean_business_id
+            endpoint = f"/{clean_business_id}/owned_ad_accounts"
+        else:
+            scope_id = "me"
+            endpoint = "/me/adaccounts"
+        return self._list_graph_pages(
+            scope_id,
+            endpoint,
+            {"limit": limit, "fields": fields},
+        )
 
     def list_businesses(
         self, fields: list[str] | None = None, limit: int = 25
@@ -258,9 +270,16 @@ class MetaAPIClient(BasePlatformClient):
         )
 
     def get_account(self, account_id: str, fields: list = None) -> dict:
-        """获取账户详情"""
-        params = {'fields': ','.join(fields) if fields else 'id,name,account_id,status'}
-        return self.request('GET', f"/{account_id}", extra_params=params)
+        """Get one AdAccount node using Meta's ``act_`` object identifier."""
+        account_id = self._clean_meta_id(account_id, "account_id")
+        params = {
+            'fields': ','.join(fields) if fields else (
+                'id,name,account_id,account_status,currency,timezone_name'
+            )
+        }
+        return self.request(
+            'GET', f"/act_{account_id}", extra_params=params
+        )
 
     def search_targeting(
         self, account_id: str, query: str, search_type: str = "adinterest", limit: int = 25
@@ -560,8 +579,7 @@ class MetaAPIClient(BasePlatformClient):
             )
         params = {
             "fields": ",".join(fields) if fields else (
-                "id,name,subtype,description,approximate_count,delivery_status,"
-                "operation_status,retention_days,rule,lookalike_spec,origin_audience_id"
+                "id,name,subtype,delivery_status"
             )
         }
         return self.require_resource_object(
@@ -2183,61 +2201,118 @@ class MetaAPIClient(BasePlatformClient):
         self,
         account_id: str,
         campaign_ids: list[str],
-        time_range: str = None,
+        time_range: Any = None,
         fields: list = None,
-        level: str = "campaign"
-    ) -> dict:
+        level: str = "campaign",
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
         """
-        查询 Campaign 级别报表
+        Query bounded Insights rows at Campaign, Ad Set or Ad level.
         
         Args:
             account_id: 广告账户 ID
-            campaign_ids: Campaign ID 列表
-            time_range: date_preset 值，如 "today", "yesterday", "last_7d", "last_30d" 等
+            campaign_ids: IDs for the selected reporting level
+            time_range: date preset or a {since, until} date range
             fields: 指标字段列表
-            level: 报表层级 ("campaign" | "adset" | "ad")
+            level: Insights level ("campaign" | "adset" | "ad")
+            limit: Maximum total result rows across cursor pages
         """
-        self.acquire_rate_limit(self._get_account_limiter(account_id))
-        
-        default_fields = [
-            "campaign_id", "impressions", "clicks", "ctr", "cpc",
-            "spend", "purchase_roas", "cost_per_result", "actions", "action_values"
+        account_id = self._clean_meta_id(account_id, "account_id")
+        level = str(level or "campaign").strip().lower()
+        level_id_fields = {
+            "campaign": ("campaign.id", "campaign_id"),
+            "adset": ("adset.id", "adset_id"),
+            "ad": ("ad.id", "ad_id"),
+        }
+        if level not in level_id_fields:
+            raise ValueError("level must be campaign, adset, or ad")
+        if not isinstance(campaign_ids, (list, tuple)):
+            raise ValueError("report IDs must be an array")
+        normalized_ids = [
+            self._clean_meta_id(value, f"{level}_id")
+            for value in campaign_ids
         ]
-        
-        # 如果没有提供 time_range，使用默认值（最近7天）
-        date_preset = time_range or "last_7d"
-        
+        if len(set(normalized_ids)) != len(normalized_ids):
+            raise ValueError("report IDs must not contain duplicates")
+        if isinstance(limit, bool):
+            raise ValueError("report limit must be between 1 and 10000")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("report limit must be between 1 and 10000") from exc
+        if not 1 <= limit <= 10_000:
+            raise ValueError("report limit must be between 1 and 10000")
+        filter_field, level_id_field = level_id_fields[level]
+        default_fields = [
+            "campaign_id",
+            *([level_id_field] if level != "campaign" else []),
+            "impressions", "clicks", "ctr", "cpc", "spend",
+            "purchase_roas", "cost_per_result", "actions", "action_values",
+        ]
+        selected_fields = fields or default_fields
+        if (
+            not isinstance(selected_fields, list)
+            or any(not isinstance(field, str) or not field.strip() for field in selected_fields)
+        ):
+            raise ValueError("fields must be an array of non-empty strings")
         params = {
             'level': level,
-            'fields': ','.join(fields or default_fields),
-            'date_preset': date_preset,
-            'filtering': json.dumps([
-                {'field': 'campaign.id', 'operator': 'IN', 'value': campaign_ids}
-            ]),
+            'fields': ','.join(selected_fields),
+            'limit': limit,
         }
-        
-        result = self.request('GET', f"/{account_id}/insights", extra_params=params)
-        return result.get('data', []) if isinstance(result, dict) else result
-    
+        if normalized_ids:
+            params["filtering"] = json.dumps([
+                {
+                    'field': filter_field,
+                    'operator': 'IN',
+                    'value': normalized_ids,
+                }
+            ])
+        if isinstance(time_range, dict):
+            since = time_range.get("since", time_range.get("start_date"))
+            until = time_range.get("until", time_range.get("end_date"))
+            if not since or not until:
+                raise ValueError(
+                    "time_range must provide since/until or start_date/end_date"
+                )
+            params["time_range"] = json.dumps(
+                {"since": str(since), "until": str(until)},
+                separators=(",", ":"),
+            )
+        else:
+            params["date_preset"] = str(time_range or "last_7d").strip().lower()
+
+        return self._list_graph_pages(
+            account_id,
+            self._ad_account_edge(account_id, "insights"),
+            params,
+        )
+
     def get_adset_report(
         self,
         account_id: str,
         adset_ids: list[str],
-        time_range: dict = None,
+        time_range: Any = None,
         fields: list = None,
-    ) -> dict:
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
         """查询 Ad Set 级别报表"""
-        return self.get_campaign_report(account_id, adset_ids, time_range, fields, "adset")
-    
+        return self.get_campaign_report(
+            account_id, adset_ids, time_range, fields, "adset", limit
+        )
+
     def get_ad_report(
         self,
         account_id: str,
         ad_ids: list[str],
-        time_range: dict = None,
+        time_range: Any = None,
         fields: list = None,
-    ) -> dict:
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
         """查询 Ad 级别报表"""
-        return self.get_campaign_report(account_id, ad_ids, time_range, fields, "ad")
+        return self.get_campaign_report(
+            account_id, ad_ids, time_range, fields, "ad", limit
+        )
     
     # ==================== 助推/Spark ====================
     

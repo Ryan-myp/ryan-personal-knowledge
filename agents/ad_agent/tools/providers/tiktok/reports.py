@@ -25,10 +25,14 @@ class TikTokGetReportHandler(ToolHandler):
                 # whenever a comparison supplies campaign IDs.
                 if campaign_ids and hasattr(self.client, "get_campaign_report"):
                     date_range = input_data.get("date_range")
+                    report_options = {}
+                    if "limit" in input_data:
+                        report_options["limit"] = input_data["limit"]
                     report = self.client.get_campaign_report(
                         advertiser_id=account_id,
                         campaign_ids=campaign_ids,
                         time_range=date_range,
+                        **report_options,
                     )
                 else:
                     date_range = input_data.get("date_range")

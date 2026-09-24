@@ -238,8 +238,103 @@ def test_query_evidence_is_separate_from_write_evidence_and_redacted():
         "tool": "meta_list_campaigns",
         "campaign_types": ["TRAFFIC"],
         "outcome": "passed",
+        "result_state": "unmeasured",
         "evidence_level": "provider_e2e",
     }]
+
+
+def test_query_evidence_preserves_empty_results_failures_and_safe_skip_reasons():
+    raw = {
+        "schema_version": "1.0",
+        "generated_at": "2026-09-24",
+        "scope": "provider_query_e2e",
+        "safety": {
+            "test_accounts_only": True,
+            "new_resources_paused": True,
+            "deleted": False,
+            "credentials_included": False,
+            "raw_provider_responses_included": False,
+        },
+        "runs": [{
+            "provider": "meta",
+            "test_account": "test-account",
+            "campaign_type": "READ_ONLY_QUERY",
+            "status": "read_verified",
+            "resources": {},
+            "queries": [
+                {
+                    "resource": "pixel",
+                    "action": "list",
+                    "tool": "meta_list_pixels",
+                    "outcome": "passed",
+                    "row_count": 0,
+                },
+                {
+                    "resource": "catalog",
+                    "action": "list",
+                    "tool": "meta_list_catalogs",
+                    "outcome": "failed",
+                    "failure_category": "provider_permission",
+                },
+                {
+                    "resource": "lead",
+                    "action": "list",
+                    "tool": "meta_list_leads",
+                    "outcome": "skipped",
+                    "skip_reason": "test_scope_unverifiable",
+                },
+            ],
+        }],
+    }
+
+    assert validate_provider_evidence(raw) == []
+    query_evidence = build_provider_evidence_report(raw)["providers"]["meta"][
+        "query_evidence"
+    ]
+    assert query_evidence[0]["row_count"] == 0
+    assert query_evidence[0]["outcome"] == "passed"
+    assert query_evidence[1]["failure_category"] == "provider_permission"
+    assert query_evidence[1]["evidence_level"] == "code_contract"
+    assert query_evidence[2]["skip_reason"] == "test_scope_unverifiable"
+    assert query_evidence[2]["evidence_level"] == "code_contract"
+
+
+def test_query_evidence_rejects_unbounded_error_text_and_invalid_row_counts():
+    raw = {
+        "schema_version": "1.0",
+        "generated_at": "2026-09-24",
+        "scope": "provider_query_e2e",
+        "safety": {
+            "test_accounts_only": True,
+            "new_resources_paused": True,
+            "deleted": False,
+            "credentials_included": False,
+            "raw_provider_responses_included": False,
+        },
+        "runs": [{
+            "provider": "meta",
+            "test_account": "test-account",
+            "campaign_type": "READ_ONLY_QUERY",
+            "status": "read_verified",
+            "resources": {},
+            "queries": [{
+                "resource": "campaign",
+                "action": "list",
+                "tool": "meta_list_campaigns",
+                "outcome": "failed",
+                "failure_category": "provider error with raw response",
+                "error": "access_token=must-not-be-recorded",
+                "row_count": -1,
+            }],
+        }],
+    }
+
+    errors = validate_provider_evidence(raw)
+
+    assert any("failure_category" in error for error in errors)
+    assert any("row_count" in error for error in errors)
+    assert any("contains unsupported fields" in error for error in errors)
+    assert "must-not-be-recorded" not in " ".join(errors)
 
 
 def test_query_only_evidence_does_not_require_a_write_operation():
@@ -329,6 +424,47 @@ def test_provider_e2e_runner_rejects_unsafe_write_request_without_adapter_call()
         operations=("create_campaign",),
         require_paused=True,
         idempotency_key="unsafe-run",
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["blocked_reason"] == "test_account_not_allowlisted"
+
+
+def test_provider_e2e_runner_rejects_read_from_non_test_account():
+    class Adapter:
+        def execute(self, _operation, _payload):
+            raise AssertionError("must not execute")
+
+    runner = ProviderE2ERunner(
+        adapter=Adapter(),
+        allowed_test_accounts={"meta": {"test-account"}},
+    )
+    result = runner.run(ProviderE2ERequest(
+        provider="meta",
+        account_ref="outside-account",
+        campaign_type="READ_ONLY",
+        operations=("list_campaigns",),
+    ))
+
+    assert result["status"] == "blocked"
+    assert result["blocked_reason"] == "test_account_not_allowlisted"
+
+
+def test_provider_e2e_runner_treats_unknown_operation_as_write():
+    class Adapter:
+        def execute(self, _operation, _payload):
+            raise AssertionError("must not execute")
+
+    runner = ProviderE2ERunner(
+        adapter=Adapter(),
+        allowed_test_accounts={"meta": {"test-account"}},
+    )
+    result = runner.run(ProviderE2ERequest(
+        provider="meta",
+        account_ref="test-account",
+        campaign_type="READ_ONLY",
+        operations=("mutate_campaign",),
+        execution_mode="dry_run",
     ))
 
     assert result["status"] == "blocked"

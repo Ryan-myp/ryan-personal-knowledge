@@ -651,7 +651,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not isinstance(experiment, dict):
             experiment = {}
         return {
-            "id": experiment.get("id"),
+            "id": experiment.get(
+                "experimentId", experiment.get("experiment_id")
+            ),
             "resource_name": experiment.get(
                 "resourceName", experiment.get("resource_name")
             ),
@@ -662,12 +664,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "start_date": experiment.get("startDate", experiment.get("start_date")),
             "end_date": experiment.get("endDate", experiment.get("end_date")),
             "suffix": experiment.get("suffix"),
-            "base_campaign": experiment.get(
-                "baseCampaign", experiment.get("base_campaign")
-            ),
-            "experiment_campaign": experiment.get(
-                "experimentCampaign", experiment.get("experiment_campaign")
-            ),
         }
 
     def list_experiments(
@@ -675,10 +671,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> list[dict[str, Any]]:
         """List Google Ads Experiments through the read-only GAQL surface."""
         query = query or (
-            "SELECT experiment.id, experiment.resource_name, experiment.name, "
+            "SELECT experiment.experiment_id, experiment.resource_name, experiment.name, "
             "experiment.description, experiment.status, experiment.type, "
-            "experiment.start_date, experiment.end_date, experiment.suffix, "
-            "experiment.base_campaign, experiment.experiment_campaign "
+            "experiment.start_date, experiment.end_date, experiment.suffix "
             "FROM experiment"
         )
         return [
@@ -691,7 +686,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> list[dict[str, Any]]:
         """List Google Ads Experiment Arms through the read-only GAQL surface."""
         query = query or (
-            "SELECT experiment_arm.id, experiment_arm.resource_name, "
+            "SELECT experiment_arm.resource_name, "
             "experiment_arm.name, experiment_arm.experiment, "
             "experiment_arm.control, experiment_arm.traffic_split "
             "FROM experiment_arm"
@@ -702,11 +697,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
             arm = row.get("experimentArm", row.get("experiment_arm", {}))
             if not isinstance(arm, dict):
                 arm = {}
+            resource_name = arm.get(
+                "resourceName", arm.get("resource_name")
+            )
             normalized.append({
-                "id": arm.get("id"),
-                "resource_name": arm.get(
-                    "resourceName", arm.get("resource_name")
+                "id": (
+                    str(resource_name).rsplit("/", 1)[-1]
+                    if resource_name else None
                 ),
+                "resource_name": resource_name,
                 "name": arm.get("name"),
                 "experiment": arm.get("experiment"),
                 "control": arm.get("control"),
@@ -3383,7 +3382,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """List assets attached to one Campaign through GAQL."""
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
         query = (
-            "SELECT campaign_asset.resource_name, campaign_asset.campaign, "
+            "SELECT campaign.id, campaign_asset.resource_name, campaign_asset.campaign, "
             "campaign_asset.asset, campaign_asset.field_type, campaign_asset.status, "
             "campaign_asset.primary_status, campaign_asset.primary_status_reasons "
             "FROM campaign_asset "
@@ -5156,6 +5155,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         date_from: str = "LAST_30_DAYS",
         date_to: str = "TODAY",
         metrics: list[str] = None,
+        limit: int = 1000,
     ) -> list:
         """
         查询 Campaign 级别报表
@@ -5167,33 +5167,51 @@ class GoogleAdsAPIClient(BasePlatformClient):
         - "LAST_30_DAYS", "YESTERDAY", "TODAY", "THIS_MONTH"
         - 或具体日期: "2024-01-01"
         """
+        if isinstance(limit, bool):
+            raise ValueError("report limit must be between 1 and 10000")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("report limit must be between 1 and 10000") from exc
+        if not 1 <= limit <= 10_000:
+            raise ValueError("report limit must be between 1 and 10000")
+
         default_metrics = [
             'metrics.impressions', 'metrics.clicks', 'metrics.cost_micros',
             'metrics.ctr', 'metrics.average_cpc', 'metrics.conversions',
             'metrics.cost_per_conversion',
         ]
-        
-        campaign_ids = [self._numeric_id(cid, "campaign_id") for cid in (campaign_ids or [])]
-        if not campaign_ids:
-            return []
-        where_clause = " OR ".join([f"campaign.id = {cid}" for cid in campaign_ids])
+        selected_metrics = metrics or default_metrics
+        if not isinstance(selected_metrics, (list, tuple)) or any(
+            not isinstance(metric, str)
+            or not re.fullmatch(r"metrics\.[A-Za-z][A-Za-z0-9_]*", metric)
+            for metric in selected_metrics
+        ):
+            raise ValueError("report metrics must be valid Google Ads metric fields")
+
+        if not isinstance(campaign_ids, (list, tuple)):
+            raise ValueError("campaign_ids must be an array")
+        campaign_ids = [
+            self._numeric_id(cid, "campaign_id") for cid in (campaign_ids or [])
+        ]
+        where_clauses = []
+        if campaign_ids:
+            where_clauses.append(
+                f"campaign.id IN ({', '.join(campaign_ids)})"
+            )
         date_clause = self._date_clause(date_from, date_to)
-        
+        where_clauses.append(date_clause)
+
         query = f"""
             SELECT 
                 campaign.id, campaign.name, campaign.status,
                 segments.date,
-                {', '.join(metrics or default_metrics)}
+                {', '.join(selected_metrics)}
             FROM campaign
-            WHERE {where_clause}
-              AND {date_clause}
+            WHERE {' AND '.join(where_clauses)}
         """
         
-        result = self._search(query)
-        # _search returns the raw transport envelope, while some test/fake
-        # clients return the extracted payload.  Accept both shapes.
-        payload = self._response_payload(result)
-        return payload.get('results', []) if isinstance(payload, dict) else []
+        return self._search_all(query, page_size=limit)
     
     def get_adgroup_report(
         self,
@@ -5201,12 +5219,23 @@ class GoogleAdsAPIClient(BasePlatformClient):
         adgroup_ids: list[str] = None,
         date_from: str = "LAST_30_DAYS",
         date_to: str = "TODAY",
+        limit: int = 1000,
     ) -> list:
         """查询 Ad Group 级别报表"""
+        if isinstance(limit, bool):
+            raise ValueError("report limit must be between 1 and 10000")
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("report limit must be between 1 and 10000") from exc
+        if not 1 <= limit <= 10_000:
+            raise ValueError("report limit must be between 1 and 10000")
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
         date_clause = self._date_clause(date_from, date_to)
         where_clause = f"campaign.id = {campaign_id}"
         if adgroup_ids:
+            if not isinstance(adgroup_ids, (list, tuple)):
+                raise ValueError("adgroup_ids must be an array")
             safe_adgroup_ids = [self._numeric_id(value, "ad_group_id") for value in adgroup_ids]
             where_clause += f" AND ad_group.id IN ({', '.join(safe_adgroup_ids)})"
         
@@ -5222,9 +5251,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
               AND {date_clause}
         """
         
-        result = self._search(query)
-        payload = self._response_payload(result)
-        return payload.get('results', []) if isinstance(payload, dict) else []
+        return self._search_all(query, page_size=limit)
     
     # ==================== 辅助方法 ====================
 
@@ -5490,9 +5517,6 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "category": goal.get("category"),
             "origin": goal.get("origin"),
             "biddable": goal.get("biddable"),
-            "value_settings": goal.get(
-                "valueSettings", goal.get("value_settings")
-            ),
         }
 
     def list_customer_conversion_goals(
@@ -5502,8 +5526,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         rows = self._search_all(
             "SELECT customer_conversion_goal.resource_name, "
             "customer_conversion_goal.category, customer_conversion_goal.origin, "
-            "customer_conversion_goal.biddable, "
-            "customer_conversion_goal.value_settings "
+            "customer_conversion_goal.biddable "
             "FROM customer_conversion_goal",
             page_size=page_size,
         )
@@ -5517,7 +5540,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("category and origin are required")
         if not isinstance(updates, dict) or not updates:
             raise ValueError("conversion goal updates must be a non-empty object")
-        allowed = {"biddable", "value_settings"}
+        allowed = {"biddable"}
         unknown = set(updates) - allowed
         if unknown:
             raise ValueError(
@@ -5542,8 +5565,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         rows = self._search_all(
             "SELECT campaign_conversion_goal.resource_name, "
             "campaign_conversion_goal.category, campaign_conversion_goal.origin, "
-            "campaign_conversion_goal.biddable, "
-            "campaign_conversion_goal.value_settings "
+            "campaign_conversion_goal.biddable "
             f"FROM campaign_conversion_goal WHERE campaign.id = {campaign_id}",
             page_size=page_size,
         )
@@ -5559,7 +5581,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("category and origin are required")
         if not isinstance(updates, dict) or not updates:
             raise ValueError("conversion goal updates must be a non-empty object")
-        allowed = {"biddable", "value_settings"}
+        allowed = {"biddable"}
         unknown = set(updates) - allowed
         if unknown:
             raise ValueError(

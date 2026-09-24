@@ -4,10 +4,10 @@
 
 ## 当前契约（2026-09-24）
 
-- 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 302 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
+- 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 297 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - API readiness 范围已明确：Meta、Google Ads、TikTok 纳入所有已声明查询动作及 Campaign / Ad Group / Ad / Creative 相关创建和更新；其他资源写入不计入该范围，DV360 继续可用但不计入该门禁。当前声明范围已全部接通 Client/Tool 合同；这不是官方 API 全量覆盖或 Provider live 证明。Google Ads v24 Feed/FeedItem 标为 `not_applicable`。
 - Readiness policy 固定要求 Google Ads、Meta、TikTok 全部参与且不允许额外启用渠道；query Provider E2E 与写操作 E2E 分开计分。Query 实测必须按 Tool/action 关联；已声明的查询 Tool/Client 接通不代表 Provider query 已实测。写操作创建需暂停状态，live 需操作级回读。现有记录中缺少 update Tool 归属或 Google Tool 归属的操作仍不计分；质量门禁按最弱渠道评分，避免平均值遮住单渠道缺口。
-- 2026-09-24 验证结果：local readiness 通过；Provider Surface/Client/Tool 合同覆盖 Google Ads 56/56、Meta 47/47、TikTok 71/71，其中查询分别为 35、34、48 项。当前受控证据没有任何逐项 query 记录，故 release query E2E 为 0/117；Campaign 层级写入 E2E/live 覆盖也未达标，且没有生产部署实证，release profile 仍应失败。这些是待补的真实环境证据，不以本地测试代替。
+- 2026-09-24 验证结果：local readiness 通过；Provider Surface/Client/Tool 合同覆盖 Google Ads 56/56、Meta 47/47、TikTok 66/66，其中查询分别为 35、34、43 项。当前受控证据没有任何逐项 query 记录，故 release query E2E 为 0/112；Campaign 层级写入 E2E/live 覆盖也未达标，且没有生产部署实证，release profile 仍应失败。这些是待补的真实环境证据，不以本地测试代替。
 - 通用 Harness 已补齐平台治理参数下沉：默认 execution mode、最大 Tool 数、最大回合数和 Skill 上下文上限会进入真实 Runtime；模型临时失败支持有限重试，Session transcript 有消息数/字符数上限。
 - RunStore 启动/事件/收尾失败、Session lease 丢失和 Tool 审计故障都会返回结构化 `recovery_required`，不再静默当作成功；默认平台审计事件沿通用 Run event stream 持久化。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；live 只在测试账号白名单、显式模式、权限和二次确认同时满足时执行。三渠道指定测试账号的真实验证证据见 `contracts/provider_e2e_evidence.json`，未验证项不推断为成功。

@@ -731,8 +731,17 @@ class MetaToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_list_accounts",
                 description="列出 Meta 可访问的广告账户。", method_name="list_accounts",
-                result_key="accounts", properties={"business_id": {"type": "string"}},
-                argument_builder=lambda _ctx, data: ((data.get("business_id"),), {}),
+                result_key="accounts", properties={
+                    "business_id": {"type": "string"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 1000,
+                        "description": "Maximum total number of ad accounts",
+                    },
+                },
+                argument_builder=lambda _ctx, data: (
+                    (data.get("business_id"),),
+                    {"limit": data.get("limit", 100)},
+                ),
                 action="list", resource_type="account", intent_types=["list_accounts"],
                 traits=["read", "account"],
             ),
@@ -891,13 +900,21 @@ class MetaToolSource(BaseProviderToolSource):
                 description="查询 Meta Ad Set 级报表。", method_name="get_adset_report",
                 result_key="report", properties={
                     "account_id": {"type": "string"},
-                    "adset_ids": {"type": "array", "items": {"type": "string"}},
+                    "adset_ids": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "Optional Ad Set ID filter",
+                    },
                     "date_range": {"type": "object"},
                     "fields": {"type": "array", "items": {"type": "string"}},
-                }, required=["account_id", "adset_ids"], action="report",
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                        "description": "Maximum total report rows",
+                    },
+                }, required=["account_id"], action="report",
                 resource_type="ad_set", intent_types=["get_adset_report"], traits=["read", "report", "ad_set"],
-                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_ids"]), {
-                    "time_range": data.get("date_range"), "fields": data.get("fields")
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data.get("adset_ids", [])), {
+                    "time_range": data.get("date_range"), "fields": data.get("fields"),
+                    **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
             ),
             method_tool(
@@ -905,13 +922,21 @@ class MetaToolSource(BaseProviderToolSource):
                 description="查询 Meta Ad 级报表。", method_name="get_ad_report",
                 result_key="report", properties={
                     "account_id": {"type": "string"},
-                    "ad_ids": {"type": "array", "items": {"type": "string"}},
+                    "ad_ids": {
+                        "type": "array", "items": {"type": "string"},
+                        "description": "Optional Ad ID filter",
+                    },
                     "date_range": {"type": "object"},
                     "fields": {"type": "array", "items": {"type": "string"}},
-                }, required=["account_id", "ad_ids"], action="report",
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                        "description": "Maximum total report rows",
+                    },
+                }, required=["account_id"], action="report",
                 resource_type="ad", intent_types=["get_ad_report"], traits=["read", "report", "ad"],
-                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["ad_ids"]), {
-                    "time_range": data.get("date_range"), "fields": data.get("fields")
+                argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data.get("ad_ids", [])), {
+                    "time_range": data.get("date_range"), "fields": data.get("fields"),
+                    **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
             ),
             method_tool(
@@ -1496,7 +1521,9 @@ class MetaToolSource(BaseProviderToolSource):
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "未指定 campaign_ids 时，自动发现 Campaign 的数量上限",
+                        "minimum": 1,
+                        "maximum": 10000,
+                        "description": "Insights 分页查询的最大总行数",
                     },
                 },
             ),

@@ -1521,6 +1521,10 @@ class GoogleToolSource(BaseProviderToolSource):
                     "campaign_id": {"type": "string"},
                     "adgroup_ids": {"type": "array", "items": {"type": "string"}},
                     "date_from": {"type": "string"}, "date_to": {"type": "string"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                        "description": "Maximum total report rows",
+                    },
                 }, required=["campaign_id"], action="report", resource_type="ad_group",
                 # ``download_report`` is the provider-neutral/account-level
                 # report intent. A child-level report must be selected by its
@@ -1530,6 +1534,7 @@ class GoogleToolSource(BaseProviderToolSource):
                 argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
                     "adgroup_ids": data.get("adgroup_ids"), "date_from": data.get("date_from", "LAST_30_DAYS"),
                     "date_to": data.get("date_to", "TODAY"),
+                    **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
             ),
         ]
@@ -2231,13 +2236,17 @@ class GoogleToolSource(BaseProviderToolSource):
             name="google_get_campaign_report",
             skill="google-ads-api-expert",
             namespace="google-ads",
-            description="查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
+            description="查询 Google Ads Campaign 报表。支持可选 Campaign ID 过滤，默认查询最近30天数据。",
             input_schema=ToolSchema(
                 required=[],
                 properties={
                     "customer_id": {"type": "string", "description": "Google Ads 账户 ID（从上下文自动获取）"},
-                    "campaign_ids": {"type": "array", "items": {"type": "string"}, "description": "要查询的 Campaign ID 列表，不填则默认查前5个"},
+                    "campaign_ids": {"type": "array", "items": {"type": "string"}, "description": "可选 Campaign ID 过滤条件；不填时查询整个账户"},
                     "date_range": {"type": "string", "description": "日期范围，如 LAST_30_DAYS, YESTERDAY, THIS_MONTH"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                        "description": "Maximum total report rows",
+                    },
                 },
             ),
             action="report", resource_type="report",

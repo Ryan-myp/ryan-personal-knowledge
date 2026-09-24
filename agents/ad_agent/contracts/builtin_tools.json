@@ -1,5 +1,5 @@
 {
-  "digest": "ad59fc60955c625ebd2d2d910cc9f1a25297c89cecb204ddba76c5a1d7b1c2c0",
+  "digest": "a6976b2539a88cd18e34982eaa3c4c89be3165e5aef0ec729588c27bc8a452f8",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2444,7 +2444,7 @@
       ]
     },
     "google-ads": {
-      "digest": "85a96cbcd0cb40743591ec7b53bd5090f4a5166350d478806439e7d20cde7da6",
+      "digest": "812dc7d9dbd29dd4c6d8a8e3d1507fa16ecb1f7848d7d535af4d36f0de7a994a",
       "tool_count": 103,
       "tools": [
         {
@@ -12500,7 +12500,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "e39989b83b91dae607745db3ee903bd97cd09f06c554e8c5a6213b4c6c19c975",
+          "contract_hash": "474bdfad23cd9c477e30797015998dd2850de2550f444eed4f3078d28f1c77fe",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Ad Group 级报表。",
           "effect_class": "read",
@@ -12536,6 +12536,12 @@
               },
               "date_to": {
                 "type": "string"
+              },
+              "limit": {
+                "description": "Maximum total report rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
@@ -13244,9 +13250,9 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "a32e4d50412f49a6748b6f1dbe97b829aed2d62fe4b221d69bf6621a26109689",
+          "contract_hash": "8150e78cb438a59ebb3099927ad878fc149fa40ab572fd5cd667878ebaa07065",
           "contract_version": "1.4.0",
-          "description": "查询 Google Ads Campaign 报表。支持按 campaign_ids 过滤，默认查询最近30天数据。",
+          "description": "查询 Google Ads Campaign 报表。支持可选 Campaign ID 过滤，默认查询最近30天数据。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -13255,7 +13261,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_ids": {
-                "description": "要查询的 Campaign ID 列表，不填则默认查前5个",
+                "description": "可选 Campaign ID 过滤条件；不填时查询整个账户",
                 "items": {
                   "type": "string"
                 },
@@ -13268,6 +13274,12 @@
               "date_range": {
                 "description": "日期范围，如 LAST_30_DAYS, YESTERDAY, THIS_MONTH",
                 "type": "string"
+              },
+              "limit": {
+                "description": "Maximum total report rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [],
@@ -14741,7 +14753,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f8290abb707b1eed408ebfc1ddf86938bed98cbcff5bc8666465de97f757a61f",
+          "contract_hash": "930809c692adb7f5f83a784b042ee0eb6a1ac17dea557899a7c047559c09fc0d",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign Conversion Goal 列表。",
           "effect_class": "read",
@@ -14795,11 +14807,6 @@
                   "biddable": {
                     "description": "Whether this goal is biddable",
                     "type": "boolean"
-                  },
-                  "value_settings": {
-                    "additionalProperties": true,
-                    "description": "Conversion value settings",
-                    "type": "object"
                   }
                 },
                 "type": "object"
@@ -15155,7 +15162,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "48103a536317dd779cd6013d69d3961eb623aa7be433007267f36e4cbb51c4bf",
+          "contract_hash": "afe7be042aa42d9246a2e1828d24153c26d7449f874c31fb2ce7dbe40134b792",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Customer Conversion Goal 列表。",
           "effect_class": "read",
@@ -15209,11 +15216,6 @@
                   "biddable": {
                     "description": "Whether this goal is biddable",
                     "type": "boolean"
-                  },
-                  "value_settings": {
-                    "additionalProperties": true,
-                    "description": "Conversion value settings",
-                    "type": "object"
                   }
                 },
                 "type": "object"
@@ -17123,7 +17125,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "89d596e050703ebebb0c0d2158788708b849b28a868ad5e33a6e86e09f53a309",
+          "contract_hash": "7d7f5cc485377d01affb637f0eb046b966c0b4e9bd0fe39f2aad967b20e2dd9a",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Campaign Conversion Goal；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -17177,11 +17179,6 @@
                   "biddable": {
                     "description": "Whether this goal is biddable",
                     "type": "boolean"
-                  },
-                  "value_settings": {
-                    "additionalProperties": true,
-                    "description": "Conversion value settings",
-                    "type": "object"
                   }
                 },
                 "type": "object"
@@ -17548,7 +17545,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "d5792e58a56435a5fad5f87fa041c3a02964bd5d32525f698a7a7e69371bf9f7",
+          "contract_hash": "851ef4928cc802e108ef20e2ef8807517e23a642270e10c0d5cd39a508dc6e35",
           "contract_version": "1.4.0",
           "description": "更新 Google Ads Customer Conversion Goal；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -17602,11 +17599,6 @@
                   "biddable": {
                     "description": "Whether this goal is biddable",
                     "type": "boolean"
-                  },
-                  "value_settings": {
-                    "additionalProperties": true,
-                    "description": "Conversion value settings",
-                    "type": "object"
                   }
                 },
                 "type": "object"
@@ -18307,7 +18299,7 @@
       ]
     },
     "meta": {
-      "digest": "d88c6b2acb60c2cbbdf5d704b935da9cc62e1cc53110efd0bc52f22d2014af11",
+      "digest": "1943e5f5c043328444cd5c32d711e348f12a88e26568a97dfa7f24f1f4172403",
       "tool_count": 78,
       "tools": [
         {
@@ -24224,7 +24216,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f0484aa4063bd4ab10bda5199b42744dc753a5bdbe195724638ebac70e8d7080",
+          "contract_hash": "de42267631a62016b3815e9809e05ad29348da798c887db4ac78a3eb5c7a1ec6",
           "contract_version": "1.4.0",
           "description": "查询 Meta Ad 级报表。",
           "effect_class": "read",
@@ -24238,6 +24230,7 @@
                 "type": "string"
               },
               "ad_ids": {
+                "description": "Optional Ad ID filter",
                 "items": {
                   "type": "string"
                 },
@@ -24251,11 +24244,16 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "limit": {
+                "description": "Maximum total report rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
-              "account_id",
-              "ad_ids"
+              "account_id"
             ],
             "requires": [],
             "requires_any_of": [],
@@ -24408,7 +24406,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "adbb42b67e89d310733a8943b3251b74669e06f70b68a97516bafeb359cc44e3",
+          "contract_hash": "de5696bcb0b091454095d365083d392eea24ac9716b326b36210cc4c8b206fbf",
           "contract_version": "1.4.0",
           "description": "查询 Meta Ad Set 级报表。",
           "effect_class": "read",
@@ -24422,6 +24420,7 @@
                 "type": "string"
               },
               "adset_ids": {
+                "description": "Optional Ad Set ID filter",
                 "items": {
                   "type": "string"
                 },
@@ -24435,11 +24434,16 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "limit": {
+                "description": "Maximum total report rows",
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
-              "account_id",
-              "adset_ids"
+              "account_id"
             ],
             "requires": [],
             "requires_any_of": [],
@@ -24743,7 +24747,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "57604e398efb0842c0f54f7a85b1aaf063b91541a6a61b44e953cf031a80c262",
+          "contract_hash": "7199285520a95ad12036dce354405ec8ed3301f3c11655b8d1c38d74b967119a",
           "contract_version": "1.4.0",
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
@@ -24786,7 +24790,9 @@
                 "type": "string"
               },
               "limit": {
-                "description": "未指定 campaign_ids 时，自动发现 Campaign 的数量上限",
+                "description": "Insights 分页查询的最大总行数",
+                "maximum": 10000,
+                "minimum": 1,
                 "type": "integer"
               }
             },
@@ -25546,7 +25552,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "dc0c1a4888be55e03ddc141f45f6f0da875df321a4ea2e2b6e8e8a61cb91a90f",
+          "contract_hash": "4f50bd2ab4576a2af05a6076b8614344ca53265297776b4fa2a2f52d57e8bbab",
           "contract_version": "1.4.0",
           "description": "列出 Meta 可访问的广告账户。",
           "effect_class": "read",
@@ -25572,6 +25578,12 @@
                   "business_id"
                 ],
                 "type": "string"
+              },
+              "limit": {
+                "description": "Maximum total number of ad accounts",
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [],
@@ -29491,7 +29503,7 @@
       ]
     },
     "tiktok": {
-      "digest": "5f79aa3128094f9c2392bee94b4a6faac0159cb41c35ba4201e86c64ebd7133c",
+      "digest": "504f37ebfda863e2c049fc2a564a211169cafaef6155c9ac37217ef78b8bafad",
       "tool_count": 85,
       "tools": [
         {
@@ -38811,7 +38823,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "a40adb1a1f283f507e600b8a4c286840762037e6893eeed9a3fadeacde42d96c",
+          "contract_hash": "43b1f0715faa48407ebbf1d21d923ff33701189c85b0275dd53367e6225cd47c",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ad Group 级报表。",
           "effect_class": "read",
@@ -38846,6 +38858,11 @@
               },
               "date_range": {
                 "type": "object"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
@@ -39116,7 +39133,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "fc724e26ee876bf9ebd7e7d18be42112426644d5fe887f36a975202e7c641011",
+          "contract_hash": "4a0e16921f0bcebcdaee8adca261e77f802e1b2edf50e42c3dc3e22f66a0266c",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Campaign 报表。",
           "effect_class": "read",
@@ -39137,6 +39154,11 @@
               },
               "date_range": {
                 "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [

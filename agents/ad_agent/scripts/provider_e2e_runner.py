@@ -57,9 +57,8 @@ def _resource_name(operation: str) -> str:
 
 
 def _is_write(operation: str) -> bool:
-    return str(operation or "").strip().lower().startswith((
-        "create_", "update_", "delete_", "enable_", "activate_",
-    ))
+    normalized = str(operation or "").strip().lower()
+    return not normalized.startswith(("read_", "get_", "list_", "query_"))
 
 
 class ProviderE2ERunner:
@@ -107,6 +106,8 @@ class ProviderE2ERunner:
         )
         if not provider or not account_ref or not campaign_type or not operations:
             return self._blocked("invalid_request", request)
+        if account_ref not in self.allowed_test_accounts.get(provider, set()):
+            return self._blocked("test_account_not_allowlisted", request)
         if any(_is_write(operation) for operation in operations):
             if str(request.execution_mode or "").strip().lower() != "live":
                 return self._blocked("live_execution_required", request)
@@ -114,8 +115,6 @@ class ProviderE2ERunner:
                 return self._blocked("explicit_confirmation_required", request)
             if not request.idempotency_key.strip():
                 return self._blocked("idempotency_key_required", request)
-            if account_ref not in self.allowed_test_accounts.get(provider, set()):
-                return self._blocked("test_account_not_allowlisted", request)
         rows: dict[str, dict[str, Any]] = {}
         failures: list[str] = []
         for operation in operations:
