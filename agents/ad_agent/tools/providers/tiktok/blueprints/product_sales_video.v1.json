@@ -1,6 +1,6 @@
 {
   "id": "tiktok.product_sales_video",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "provider": "tiktok",
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok Sales Smart+ 广告",
@@ -32,7 +32,7 @@
     {"path": "ad_group.adgroup_name", "tool_ref": "tiktok_smart_plus_create_adgroup.adgroup_name", "label": "广告组名称", "required": true},
     {"path": "ad_group.promotion_type", "tool_ref": "tiktok_smart_plus_create_adgroup.promotion_type", "label": "推广位置", "required": true, "source": "enum", "options": ["WEBSITE", "CATALOG", "TIKTOK_SHOP", "MINI_APP"]},
     {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["CLICK", "CONVERT", "VALUE", "TRAFFIC_LANDING_PAGE_VIEW"]},
-    {"path": "ad_group.optimization_event", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_event", "label": "转化事件", "required_when": {"field": "ad_group.optimization_goal", "in": ["CONVERT", "VALUE"]}, "source": "lookup", "lookup_tool": "tiktok_list_conversions"},
+    {"path": "ad_group.optimization_event", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_event", "label": "转化事件", "required_when": {"field": "ad_group.optimization_goal", "in": ["CONVERT", "VALUE"]}, "manual_entry": {"title": "转化事件", "instructions": "请从此广告账户的 Events Manager 或 Ads Manager 复制已经配置的 Pixel 事件名称，并确认它属于当前所选 Pixel。", "source": "provider_conversion_event"}},
     {"path": "ad_group.catalog_id", "tool_ref": "tiktok_smart_plus_create_adgroup.catalog_id", "label": "商品目录", "required_when": {"field": "ad_group.promotion_type", "equals": "CATALOG"}, "source": "lookup", "lookup_tool": "tiktok_list_catalogs"},
     {"path": "ad_group.product_set_id", "tool_ref": "tiktok_smart_plus_create_adgroup.product_set_id", "label": "商品集 ID", "required_when": {"field": "ad_group.promotion_type", "equals": "CATALOG"}},
     {"path": "ad_group.pixel_id", "tool_ref": "tiktok_smart_plus_create_adgroup.pixel_id", "label": "Pixel（网站销售必选）", "required_when": {"field": "ad_group.promotion_type", "equals": "WEBSITE"}, "source": "lookup", "lookup_tool": "tiktok_list_pixels"},

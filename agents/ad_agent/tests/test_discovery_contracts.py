@@ -1033,4 +1033,5 @@ def test_tiktok_smart_plus_product_fields_publish_lookup_contracts():
     assert properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
     assert properties["product_set_id"]["lookup_tool"] == "tiktok_list_product_sets"
     assert properties["product_set_id"]["lookup_dependencies"][0]["input_field"] == "catalog_id"
-    assert properties["optimization_event"]["lookup_tool"] == "tiktok_list_conversions"
+    assert "lookup_tool" not in properties["optimization_event"]
+    assert properties["optimization_event"]["manual_entry"]

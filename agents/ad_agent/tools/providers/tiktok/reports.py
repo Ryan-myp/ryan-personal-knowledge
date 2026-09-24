@@ -32,14 +32,26 @@ class TikTokGetReportHandler(ToolHandler):
                     )
                 else:
                     date_range = input_data.get("date_range")
+                    date_preset = input_data.get(
+                        "date_preset", "LAST_7_DAYS"
+                    )
+                    time_range = date_range
+                    if isinstance(date_range, str):
+                        date_preset = date_range
+                        time_range = None
                     report = self.client.get_report(
                         advertiser_id=account_id,
-                        date_preset=(
-                            date_range
-                            if isinstance(date_range, str) and date_range
-                            else "LAST_7_DAYS"
+                        report_type=input_data.get("report_type", "BASIC"),
+                        service_type=input_data.get("service_type", "AUCTION"),
+                        data_level=input_data.get(
+                            "data_level", "AUCTION_CAMPAIGN"
                         ),
-                        time_range=date_range if isinstance(date_range, dict) else None,
+                        dimensions=input_data.get("dimensions"),
+                        metrics=input_data.get("metrics"),
+                        date_preset=date_preset,
+                        time_range=time_range,
+                        filtering=input_data.get("filtering"),
+                        limit=input_data.get("limit", 100),
                     )
                 return ToolResult.ok({"report": report, "data_status": "live"})
             except Exception as e:

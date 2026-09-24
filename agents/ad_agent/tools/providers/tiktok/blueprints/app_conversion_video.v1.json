@@ -1,6 +1,6 @@
 {
   "id": "tiktok.app_conversion_video",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "provider": "tiktok",
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok App Promotion Smart+ 广告",
@@ -32,7 +32,7 @@
     {"path": "ad_group.promotion_type", "tool_ref": "tiktok_smart_plus_create_adgroup.promotion_type", "label": "推广位置", "required": true, "source": "enum", "options": ["APP_ANDROID", "APP_IOS"]},
     {"path": "ad_group.app_id", "tool_ref": "tiktok_smart_plus_create_adgroup.app_id", "label": "推广 App", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_apps"},
     {"path": "ad_group.optimization_goal", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["INSTALL", "IN_APP_EVENT", "VALUE"], "options_from": ["campaign.app_promotion_type"]},
-    {"path": "ad_group.optimization_event", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_event", "label": "应用内事件", "required_when": {"field": "ad_group.optimization_goal", "in": ["IN_APP_EVENT", "VALUE"]}, "source": "lookup", "lookup_tool": "tiktok_list_conversions"},
+    {"path": "ad_group.optimization_event", "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_event", "label": "应用内事件", "required_when": {"field": "ad_group.optimization_goal", "in": ["IN_APP_EVENT", "VALUE"]}, "manual_entry": {"title": "应用内事件", "instructions": "请从此广告账户的 Events Manager 或 Ads Manager 复制已经配置的应用内事件名称，并确认它属于当前所选应用。", "source": "provider_conversion_event"}},
     {"path": "ad_group.app_attribution_source", "tool_ref": "tiktok_smart_plus_create_adgroup.app_attribution_source", "label": "归因来源", "source": "enum", "options": ["MMP", "SAN"]},
     {"path": "ad_group.billing_event", "tool_ref": "tiktok_smart_plus_create_adgroup.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["OCPM"]},
     {"path": "ad_group.bid_type", "tool_ref": "tiktok_smart_plus_create_adgroup.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"]},

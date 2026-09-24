@@ -564,14 +564,14 @@ def test_provider_specific_rate_limiters_use_request_deadline():
             client.acquire_rate_limit(client._rate_limiter)
 
 
-def test_async_report_polling_does_not_outlive_request_deadline():
+def test_report_requests_do_not_outlive_request_deadline():
     client = TikTokAPIClient({})
-    client.set_request_budget(0.001)
+    client.set_request_budget(1e-9)
     with pytest.raises(TemporaryError, match="deadline"):
-        client._poll_report_result("advertiser", "task", max_wait=30)
+        client.get_report("123", date_preset="LAST_7_DAYS")
 
     client = DV360APIClient({})
-    client.set_request_budget(0.001)
+    client.set_request_budget(1e-9)
     client.create_report = lambda _advertiser_id, _report: "report"
     with pytest.raises(TemporaryError, match="deadline"):
         client.get_line_item_report("advertiser", "line-item")

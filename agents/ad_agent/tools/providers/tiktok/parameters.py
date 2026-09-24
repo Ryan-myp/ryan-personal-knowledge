@@ -119,6 +119,25 @@ def _field(
     return value
 
 
+def _manual_conversion_field(
+    field_type: str, description: str, title: str
+) -> dict[str, Any]:
+    return _field(
+        field_type,
+        description,
+        minimum=0 if field_type == "integer" else None,
+        manual_entry={
+            "title": title,
+            "instructions": (
+                "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；"
+                "请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，"
+                "并在提交前核对应用或 Pixel 归属。"
+            ),
+            "source": "provider_conversion_event",
+        },
+    )
+
+
 def _ui_when(field: str, *values: str) -> dict[str, Any]:
     """Declare a provider-field applicability rule for creation cards."""
     return {"ui_visible_when": {"field": field, "in": list(values)}}
@@ -735,20 +754,11 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
                     "LEAD_GENERATION": ["lead generation", "潜在客户", "线索"],
                 },
             ),
-            "conversion_id": _field(
-                "integer", "Conversion event ID returned by TikTok lookup",
-                minimum=0, lookup_tool="tiktok_list_conversions",
-                lookup_result_key="conversions",
-                selection_value_fields=["conversion_id", "id"],
-                selection_label_fields=["conversion_name", "name", "event_name"],
+            "conversion_id": _manual_conversion_field(
+                "integer", "TikTok conversion event ID", "转化事件 ID"
             ),
-            "optimization_event": _field(
-                "string", "Provider conversion event used for optimization",
-                manual_entry={
-                    "title": "优化事件",
-                    "instructions": "请填写 TikTok Pixel/Events API 中已配置的事件名称；如账号支持事件查询，请先从转化列表确认。",
-                    "source": "provider_conversion_event",
-                },
+            "optimization_event": _manual_conversion_field(
+                "string", "Provider conversion event used for optimization", "优化事件"
             ),
             "pixel_id": _field(
                 "string", "TikTok Pixel ID for landing-page tracking",
@@ -846,7 +856,14 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             ),
             "brand_safety_type": _field(
                 "string", "TikTok brand safety type",
-                lookup_tool="tiktok_list_brand_safety", lookup_result_key="brand_safety",
+                manual_entry={
+                    "title": "品牌安全级别",
+                    "instructions": (
+                        "请根据所选广告目标和 TikTok Ads Manager 中可用的品牌安全选项填写；"
+                        "当前没有通用品牌安全类别目录查询。"
+                    ),
+                    "source": "provider_targeting_option",
+                },
             ),
             "brand_safety_partner": _field(
                 "string", "Brand safety verification partner",
@@ -1172,10 +1189,15 @@ def tiktok_targeting_fields() -> dict[str, Any]:
         ),
         "device_ids": _field(
             "array", "Device IDs",
-            items={"type": "string"}, lookup_tool="tiktok_list_devices",
-            lookup_result_key="devices",
-            selection_value_fields=["device_id", "id"],
-            selection_label_fields=["device_name", "name", "id"],
+            items={"type": "string"},
+            manual_entry={
+                "title": "设备 ID",
+                "instructions": (
+                    "当前 TikTok Ads v1.3 没有通用设备 ID 目录；"
+                    "请从 Ads Manager 或已验证的 Provider 配置中复制设备 ID。"
+                ),
+                "source": "provider_targeting_identifier",
+            },
         ),
         "carrier_ids": _field(
             "array", "Carrier IDs",
@@ -1186,10 +1208,15 @@ def tiktok_targeting_fields() -> dict[str, Any]:
         ),
         "browser_ids": _field(
             "array", "Browser IDs",
-            items={"type": "string"}, lookup_tool="tiktok_list_browsers",
-            lookup_result_key="browsers",
-            selection_value_fields=["browser_id", "id"],
-            selection_label_fields=["browser_name", "name", "id"],
+            items={"type": "string"},
+            manual_entry={
+                "title": "浏览器 ID",
+                "instructions": (
+                    "当前 TikTok Ads v1.3 Tool Source 没有浏览器目录查询；"
+                    "请从 Ads Manager 或已验证的 Provider 配置中复制浏览器 ID。"
+                ),
+                "source": "provider_targeting_identifier",
+            },
         ),
     }
 
@@ -1207,11 +1234,8 @@ def tiktok_ad_schema() -> dict[str, Any]:
             "campaign_id": _field("string", "Parent campaign ID"),
             "name": _field("string", "Ad name"),
             "landing_page_url": _field("string", "Landing page URL", minLength=1),
-            "conversion_id": _field(
-                "integer", "Conversion event ID", minimum=0,
-                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
-                selection_value_fields=["conversion_id", "id"],
-                selection_label_fields=["conversion_name", "name", "event_name"],
+            "conversion_id": _manual_conversion_field(
+                "integer", "TikTok conversion event ID", "转化事件 ID"
             ),
             "ad_format": _field("string", "Ad format", enum=TIKTOK_AD_FORMATS),
             # TikTok accepts a single media object in some versions and a
@@ -1561,11 +1585,8 @@ def tiktok_lead_ad_schema() -> dict[str, Any]:
             ),
             "landing_page_url": _field("string", "Optional fallback landing URL"),
             "tracking_url": _field("string", "Tracking URL"),
-            "conversion_id": _field(
-                "integer", "Conversion event ID", minimum=0,
-                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
-                selection_value_fields=["conversion_id", "id"],
-                selection_label_fields=["conversion_name", "name", "event_name"],
+            "conversion_id": _manual_conversion_field(
+                "integer", "TikTok conversion event ID", "转化事件 ID"
             ),
             "media": _tiktok_media_field("Lead ad media assets"),
             "creatives": _tiktok_creatives_field("Lead ad creative list"),
@@ -1618,11 +1639,8 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
             "deep_link": _field("string", "Optional in-app deep link"),
             "landing_page_url": _field("string", "Optional app store fallback URL"),
             "tracking_url": _field("string", "Tracking URL"),
-            "conversion_id": _field(
-                "integer", "In-app conversion event ID", minimum=0,
-                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
-                selection_value_fields=["conversion_id", "id"],
-                selection_label_fields=["conversion_name", "name", "event_name"],
+            "conversion_id": _manual_conversion_field(
+                "integer", "TikTok in-app conversion event ID", "应用内转化事件 ID"
             ),
             "media": _tiktok_media_field("App ad media assets"),
             "creatives": _tiktok_creatives_field("App ad creative list"),
@@ -1989,11 +2007,8 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             "promotion_type": _field("string", "Optimization location", enum=["APP_ANDROID", "APP_IOS", "WEBSITE", "CATALOG", "TIKTOK_SHOP", "MINI_APP", "MINI_GAME", "NATIVE_SERIES", "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE", "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"]),
             "promotion_target_type": _field("string", "Lead optimization location", enum=["INSTANT_PAGE", "EXTERNAL_WEBSITE"]),
             "optimization_goal": _field("string", "Optimization goal", enum=TIKTOK_SMART_PLUS_OPTIMIZATION_GOALS),
-            "optimization_event": _field(
-                "string", "Pixel or app optimization event",
-                lookup_tool="tiktok_list_conversions", lookup_result_key="conversions",
-                selection_value_fields=["conversion_id", "event_id", "id", "event_name"],
-                selection_label_fields=["conversion_name", "event_name", "name", "id"],
+            "optimization_event": _manual_conversion_field(
+                "string", "Pixel or app optimization event", "优化事件"
             ),
             "app_attribution_source": _field("string", "App attribution source", enum=["MMP", "SAN"]),
             "app_data_source": _field("string", "App data source"),

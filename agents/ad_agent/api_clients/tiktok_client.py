@@ -180,7 +180,7 @@ class TikTokAPIClient(BasePlatformClient):
             "ADGROUP_IDS": "adgroup_ids",
             "AD_GROUP_IDS": "adgroup_ids",
             "AD_IDS": "ad_ids",
-            "CREATIVE_IDS": "creative_ids",
+            "CREATIVE_IDS": "ad_ids",
             "VIDEO_IDS": "video_ids",
             "IMAGE_IDS": "image_ids",
             "CONVERSION_IDS": "conversion_ids",
@@ -279,6 +279,16 @@ class TikTokAPIClient(BasePlatformClient):
         if total_limit < 1:
             raise ValueError("limit must be a positive integer")
         return items[:total_limit] if isinstance(items, list) else []
+
+    @staticmethod
+    def _validate_reference_limit(limit: Any, maximum: int = 100) -> int:
+        try:
+            total_limit = int(limit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"limit must be between 1 and {maximum}") from exc
+        if not 1 <= total_limit <= maximum:
+            raise ValueError(f"limit must be between 1 and {maximum}")
+        return total_limit
     
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         is_multipart = bool(kwargs.get('files'))
@@ -585,6 +595,7 @@ class TikTokAPIClient(BasePlatformClient):
         filtering: list = None,
         page_size: int = 20,
         max_results: Optional[int] = None,
+        adgroup_id: Optional[str] = None,
     ) -> list:
         """获取 Ad Group 列表"""
         data = {
@@ -592,29 +603,54 @@ class TikTokAPIClient(BasePlatformClient):
             'campaign_id': str(campaign_id),
             'page_size': page_size,
         }
-        data['filtering'] = self._encode_filtering(
-            filtering or {'campaign_ids': [str(campaign_id)]}
-        )
+        if adgroup_id:
+            query_filter = {
+                "campaign_ids": [str(campaign_id)],
+                "adgroup_ids": [str(adgroup_id)],
+            }
+        else:
+            query_filter = filtering or {'campaign_ids': [str(campaign_id)]}
+        data['filtering'] = self._encode_filtering(query_filter)
         wanted = str(campaign_id)
+        wanted_adgroup = str(adgroup_id) if adgroup_id else None
         return self._list_pages(
             'adgroup/get/',
             data,
-            max_pages=100,
+            max_pages=1 if wanted_adgroup else 100,
             max_items=max_results,
             item_filter=lambda row: (
                 isinstance(row, dict)
                 and str(
                     row.get('campaign_id') or row.get('campaignId') or ''
                 ) == wanted
+                and (
+                    wanted_adgroup is None
+                    or str(
+                        row.get('adgroup_id')
+                        or row.get('ad_group_id')
+                        or row.get('adgroupId')
+                        or ''
+                    ) == wanted_adgroup
+                )
             ),
         )
     
     def get_adgroup(self, advertiser_id: str, campaign_id: str, adgroup_id: str) -> dict:
-        """获取 Ad Group 详情"""
-        # TikTok API 不支持 filtering，直接查询所有 adgroup 并过滤
-        result = self.list_adgroups(advertiser_id, campaign_id)
+        """Get one Ad Group through an exact, bounded provider query."""
+        result = self.list_adgroups(
+            advertiser_id,
+            campaign_id,
+            page_size=1,
+            max_results=1,
+            adgroup_id=adgroup_id,
+        )
         for ag in result:
-            if str(ag.get('adgroup_id')) == str(adgroup_id):
+            if str(
+                ag.get('adgroup_id')
+                or ag.get('ad_group_id')
+                or ag.get('adgroupId')
+                or ''
+            ) == str(adgroup_id):
                 return ag
         raise APIError(f"TikTok ad group {adgroup_id} was not found")
     
@@ -888,23 +924,28 @@ class TikTokAPIClient(BasePlatformClient):
         adgroup_id: str,
         page_size: int = 20,
         max_results: Optional[int] = None,
+        ad_ids: Optional[list[str]] = None,
     ) -> list:
         """获取 Ad 列表"""
+        normalized_ad_ids = [
+            str(value or "").strip() for value in (ad_ids or [])
+        ]
+        if any(not value for value in normalized_ad_ids):
+            raise ValueError("ad_ids must contain non-empty IDs")
+        query_filter = {"adgroup_ids": [str(adgroup_id)]}
+        if normalized_ad_ids:
+            query_filter["ad_ids"] = normalized_ad_ids
         data = {
             'advertiser_id': str(advertiser_id),
-            # TikTok's scoped Ad query uses a JSON ``adgroup_ids`` filter;
-            # ``ad_group_id`` as a top-level query parameter is ignored and
-            # returns an account-wide page.
-            'filtering': json.dumps(
-                {'adgroup_ids': [str(adgroup_id)]}, separators=(',', ':')
-            ),
+            'filtering': json.dumps(query_filter, separators=(',', ':')),
             'page_size': page_size,
         }
         wanted = str(adgroup_id)
+        wanted_ad_ids = set(normalized_ad_ids)
         return self._list_pages(
             'ad/get/',
             data,
-            max_pages=100,
+            max_pages=1 if wanted_ad_ids else 100,
             max_items=max_results,
             item_filter=lambda row: (
                 isinstance(row, dict)
@@ -914,15 +955,25 @@ class TikTokAPIClient(BasePlatformClient):
                     or row.get('adgroupId')
                     or ''
                 ) == wanted
+                and (
+                    not wanted_ad_ids
+                    or str(row.get('ad_id') or row.get('id') or '')
+                    in wanted_ad_ids
+                )
             ),
         )
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
-        """获取 Ad 详情"""
-        # TikTok API 不支持 filtering，直接查询所有 ad 并过滤
-        result = self.list_ads(advertiser_id, adgroup_id)
+        """Get one Ad through an exact, bounded provider query."""
+        result = self.list_ads(
+            advertiser_id,
+            adgroup_id,
+            page_size=1,
+            max_results=1,
+            ad_ids=[ad_id],
+        )
         for ad in result:
-            if str(ad.get('ad_id')) == str(ad_id):
+            if str(ad.get('ad_id') or ad.get('id') or '') == str(ad_id):
                 return ad
         raise APIError(f"TikTok ad {ad_id} was not found")
     
@@ -1995,67 +2046,17 @@ class TikTokAPIClient(BasePlatformClient):
         advertiser_id: str,
         campaign_ids: list[str],
         time_range: Any = None,
-        report_type: str = "CAMPAIGN",
     ) -> list:
-        """
-        查询 Campaign 级别报表
-        
-        report_type: "CAMPAIGN" | "ADGROUP" | "AD"
-        """
-        self.acquire_rate_limit(self._rate_limiter)
-        
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'report_name': f"report_{int(time.time())}",
-            'report_type': report_type,
-            'data_content': {
-                'columns': [
-                    'campaign_group_id', 'campaign_group_name',
-                    'impressions', 'clicks', 'ctr', 'cpc', 'spend',
-                    'conversions', 'conversion_rate', 'cost_per_conversion',
-                ],
-                'time_range': self._normalize_time_range(time_range),
-                'filtering': [
-                    {'field': 'CAMPAIGN_IDS', 'operator': 'IN', 'values': [int(x) for x in campaign_ids]}
-                ],
-            }
-        }
-        # 先创建报表任务
-        create_result = self.request('POST', 'report/task/create/', data=data)
-        create_payload = self._data_section(create_result)
-        task_id = create_payload.get('task_id', '') if isinstance(create_payload, dict) else ''
-        
-        if not task_id:
-            raise APIError("TikTok report task creation returned no task_id")
-        
-        # 轮询获取结果
-        return self._poll_report_result(advertiser_id, task_id)
-    
-    def _poll_report_result(self, advertiser_id: str, task_id: str, max_wait: int = 30) -> list:
-        """轮询报表任务结果"""
-        for i in range(max_wait):
-            self.sleep_with_budget(1)
-            data = {'advertiser_id': str(advertiser_id), 'task_id': task_id}
-            result = self.request('POST', 'report/task/info/get/', data=data)
-            
-            payload = self._data_section(result)
-            if not isinstance(payload, dict):
-                raise APIError("TikTok report task returned an invalid response envelope")
-            status = payload.get("status")
-            if status in (2, "2", "COMPLETED", "SUCCESS"):
-                content = payload.get('content', {})
-                if isinstance(content, list):
-                    return content
-                if isinstance(content, dict):
-                    rows = content.get('data', content.get('list', []))
-                    if isinstance(rows, list):
-                        return rows
-                return []
-            if status in (3, "3", "FAILED", "ERROR"):
-                message = payload.get("message") or payload.get("error_message") or "unknown error"
-                raise APIError(f"TikTok report task failed: {message}")
-        
-        raise APIError("TikTok report task polling timed out")
+        """Query campaign rows through TikTok's synchronous Integrated Report."""
+        campaign_ids = self._normalize_report_ids(campaign_ids, "campaign_ids")
+        payload = self._integrated_report(
+            advertiser_id=advertiser_id,
+            data_level="AUCTION_CAMPAIGN",
+            dimensions=["campaign_id"],
+            time_range=time_range,
+            filtering=self._report_id_filter("campaign_id", campaign_ids),
+        )
+        return self._report_rows(payload)
     
     def get_adgroup_report(
         self,
@@ -2064,30 +2065,130 @@ class TikTokAPIClient(BasePlatformClient):
         adgroup_ids: list[str] = None,
         time_range: dict = None,
     ) -> list:
-        """查询 Ad Group 级别报表"""
-        filtering = []
+        """Query Ad Group rows through TikTok's synchronous Integrated Report."""
+        campaign_ids = self._normalize_report_ids([campaign_id], "campaign_id")
+        filtering = self._report_id_filter("campaign_id", campaign_ids)
         if adgroup_ids:
-            filtering.append({'field': 'ADGROUP_IDS', 'operator': 'IN', 'values': [int(x) for x in adgroup_ids]})
-        
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'campaign_id': int(campaign_id),
-            'report_name': f"adgroup_report_{int(time.time())}",
-            'report_type': "ADGROUP",
-            'data_content': {
-                'columns': ['ad_group_id', 'ad_group_name', 'impressions', 'clicks', 'spend', 'conversions'],
-                'time_range': self._normalize_time_range(
-                    time_range or 'LAST_7_DAYS'
-                ),
-                'filtering': filtering,
-            }
+            adgroup_ids = self._normalize_report_ids(adgroup_ids, "adgroup_ids")
+            filtering.extend(self._report_id_filter("adgroup_id", adgroup_ids))
+        payload = self._integrated_report(
+            advertiser_id=advertiser_id,
+            data_level="AUCTION_ADGROUP",
+            dimensions=["campaign_id", "adgroup_id"],
+            time_range=time_range,
+            filtering=filtering,
+        )
+        return self._report_rows(payload)
+
+    @staticmethod
+    def _normalize_report_ids(values: Any, field_name: str) -> list[str]:
+        if not isinstance(values, (list, tuple)) or not values:
+            raise ValueError(f"{field_name} must be a non-empty array")
+        normalized = [str(value or "").strip() for value in values]
+        if any(not value.isdigit() for value in normalized):
+            raise ValueError(f"{field_name} must contain numeric IDs only")
+        return normalized
+
+    @classmethod
+    def _report_id_filter(cls, field_name: str, values: list[str]) -> list[dict[str, str]]:
+        return [{
+            "field_name": field_name,
+            "filter_type": "IN",
+            "filter_value": json.dumps(values, separators=(",", ":")),
+        }]
+
+    @staticmethod
+    def _report_rows(payload: Any) -> list:
+        if isinstance(payload, list):
+            return payload
+        if isinstance(payload, dict):
+            rows = payload.get("list", payload.get("data", []))
+            return rows if isinstance(rows, list) else []
+        return []
+
+    @staticmethod
+    def _normalize_report_columns(
+        values: Any, field_name: str, maximum: int
+    ) -> list[str]:
+        if not isinstance(values, list) or not 1 <= len(values) <= maximum:
+            raise ValueError(
+                f"{field_name} must contain between 1 and {maximum} values"
+            )
+        normalized = [str(value or "").strip() for value in values]
+        if any(not value for value in normalized):
+            raise ValueError(f"{field_name} must contain non-empty strings")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError(f"{field_name} must not contain duplicates")
+        return normalized
+
+    def _integrated_report(
+        self,
+        advertiser_id: str,
+        data_level: str,
+        dimensions: list[str],
+        time_range: Any = None,
+        report_type: str = "BASIC",
+        service_type: str = "AUCTION",
+        metrics: Optional[list[str]] = None,
+        filtering: Optional[list[dict[str, str]]] = None,
+        limit: int = 100,
+    ) -> dict:
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        report_type = str(report_type or "BASIC").strip().upper()
+        if report_type not in {
+            "AUDIENCE", "BC", "TT_SHOP", "BASIC", "PLAYABLE_MATERIAL", "CATALOG",
+        }:
+            raise ValueError("unsupported TikTok report_type")
+        limit = self._validate_reference_limit(limit)
+        date_range = self._normalize_time_range(time_range)
+        try:
+            start_date = date.fromisoformat(str(date_range.get("start_date") or ""))
+            end_date = date.fromisoformat(str(date_range.get("end_date") or ""))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "TikTok report dates must use YYYY-MM-DD"
+            ) from exc
+        if end_date < start_date:
+            raise ValueError("TikTok report end_date must not precede start_date")
+        dimensions = self._normalize_report_columns(
+            dimensions, "dimensions", maximum=10
+        )
+        metrics = self._normalize_report_columns(
+            ["spend", "impressions", "clicks"] if metrics is None else metrics,
+            "metrics",
+            maximum=20,
+        )
+        if filtering is not None:
+            if not isinstance(filtering, list) or any(
+                not isinstance(item, dict)
+                or not {"field_name", "filter_type", "filter_value"} <= item.keys()
+                for item in filtering
+            ):
+                raise ValueError("filtering must be an array of report filter objects")
+        params: dict[str, Any] = {
+            "advertiser_id": advertiser_id,
+            "report_type": report_type,
+            "service_type": str(service_type or "AUCTION").strip().upper(),
+            "data_level": str(data_level or "AUCTION_CAMPAIGN").strip().upper(),
+            "dimensions": json.dumps(dimensions, separators=(",", ":")),
+            "metrics": json.dumps(metrics, separators=(",", ":")),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "page": 1,
+            "page_size": limit,
         }
-        result = self.request('POST', 'report/task/create/', data=data)
+        if filtering:
+            params["filtering"] = json.dumps(filtering, separators=(",", ":"))
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request(
+            "GET", "report/integrated/get/", params=params
+        )
         payload = self._data_section(result)
-        task_id = payload.get('task_id', '') if isinstance(payload, dict) else ''
-        if not task_id:
-            raise APIError("TikTok ad group report task creation returned no task_id")
-        return self._poll_report_result(advertiser_id, task_id)
+        if isinstance(payload, dict):
+            return payload
+        return {"list": payload} if isinstance(payload, list) else {}
 
     
     # ==================== 人群定向查询 ====================
@@ -2305,6 +2406,8 @@ class TikTokAPIClient(BasePlatformClient):
         placements: list[str] = None,
         special_industries: list[str] = None,
         language: str = "en",
+        limit: int = 100,
+        keyword: str = None,
     ) -> list:
         """获取账户范围内 TikTok v1.3 兴趣类别列表。"""
         advertiser_id = str(advertiser_id or "").strip()
@@ -2324,19 +2427,42 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("unsupported interest category language")
         if placements is not None and (not isinstance(placements, list) or not placements):
             raise ValueError("placements must be a non-empty list when provided")
+        limit = self._validate_reference_limit(limit)
         params: dict[str, Any] = {
             "advertiser_id": advertiser_id, "version": version, "language": language,
         }
         if placements:
-            params["placements"] = placements
+            params["placements"] = json.dumps(placements, separators=(",", ":"))
         if special_industries:
-            params["special_industries"] = special_industries
+            params["special_industries"] = json.dumps(
+                special_industries, separators=(",", ":")
+            )
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("GET", "tool/interest_category/", params=params)
         payload = self._data_section(result)
         if isinstance(payload, list):
-            return payload
-        return payload.get("list", payload.get("interest_categories", [])) if isinstance(payload, dict) else []
+            rows = payload
+        else:
+            rows = (
+                payload.get("list", payload.get("interest_categories", []))
+                if isinstance(payload, dict) else []
+            )
+        keyword = str(keyword or "").strip().casefold()
+        if keyword:
+            rows = [
+                row for row in rows
+                if isinstance(row, dict)
+                and keyword in " ".join(
+                    str(row.get(key) or "")
+                    for key in (
+                        "interest_category_id",
+                        "category_id",
+                        "interest_category_name",
+                        "category_name",
+                    )
+                ).casefold()
+            ]
+        return self._limit_list(rows, limit)
 
     def list_action_categories(
         self, advertiser_id: str, special_industries: list[str] = None
@@ -2371,19 +2497,37 @@ class TikTokAPIClient(BasePlatformClient):
             return payload
         return payload.get("list", payload.get("languages", [])) if isinstance(payload, dict) else []
 
-    def list_device_models(self, advertiser_id: str) -> list:
+    def list_device_models(
+        self, advertiser_id: str, limit: int = 100, keyword: str = None
+    ) -> list:
         """获取 TikTok 官方设备型号定向选项。"""
         advertiser_id = str(advertiser_id or "").strip()
         if not advertiser_id.isdigit():
             raise ValueError("advertiser_id must contain digits only")
+        limit = self._validate_reference_limit(limit)
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request(
             "GET", "tool/device_model/", params={"advertiser_id": advertiser_id}
         )
         payload = self._data_section(result)
         if isinstance(payload, list):
-            return payload
-        return payload.get("list", payload.get("device_models", [])) if isinstance(payload, dict) else []
+            rows = payload
+        else:
+            rows = (
+                payload.get("list", payload.get("device_models", []))
+                if isinstance(payload, dict) else []
+            )
+        keyword = str(keyword or "").strip().casefold()
+        if keyword:
+            rows = [
+                row for row in rows
+                if isinstance(row, dict)
+                and keyword in " ".join(
+                    str(row.get(key) or "")
+                    for key in ("device_model_id", "device_model_name", "os_type")
+                ).casefold()
+            ]
+        return self._limit_list(rows, limit)
 
     def recommend_interest_keywords(
         self,
@@ -2435,34 +2579,91 @@ class TikTokAPIClient(BasePlatformClient):
             return payload
         return payload.get("list", payload.get("keywords", [])) if isinstance(payload, dict) else []
     
-    def get_interest_category(self, category_id: str) -> dict:
-        """获取兴趣类别详情"""
-        data = {'category_id': category_id}
-        result = self.request('GET', 'interest_category/get/', params=data)
-        payload = self._data_section(result)
-        return payload if isinstance(payload, dict) else {}
+    def get_interest_category(
+        self, advertiser_id: str, category_id: str, version: int = 2
+    ) -> dict:
+        """Resolve one category from TikTok's supported category-list endpoint."""
+        category_id = str(category_id or "").strip()
+        if not category_id:
+            raise ValueError("category_id must not be empty")
+        rows = self.list_interest_categories(
+            advertiser_id, version=version, limit=100, keyword=category_id
+        )
+        return next(
+            (
+                dict(row) for row in rows
+                if isinstance(row, dict)
+                and str(
+                    row.get("interest_category_id")
+                    or row.get("category_id")
+                    or row.get("id")
+                    or ""
+                ) == category_id
+            ),
+            {},
+        )
     
     # ==================== 地域定向查询 ====================
     
-    def list_locations(self, location_type: str = None) -> list:
-        """获取地域列表"""
+    def _list_locations(
+        self,
+        advertiser_id: str,
+        language: str = "en",
+        limit: int = 100,
+        keyword: str = None,
+    ) -> list:
+        """List or locally search TikTok's advertiser-scoped region catalog."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        limit = self._validate_reference_limit(limit)
+        language = str(language or "en").strip().lower()
+        if not language:
+            raise ValueError("language must not be empty")
         self.acquire_rate_limit(self._rate_limiter)
-        data = {}
-        if location_type:
-            data['location_type'] = location_type
-        result = self.request('GET', 'location/get/', params=data)
+        result = self.request(
+            "GET",
+            "search/region/",
+            params={"advertiser_id": advertiser_id, "language": language},
+        )
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
-    
-    def search_locations(self, keyword: str, location_type: str = None) -> list:
-        """搜索地域"""
-        self.acquire_rate_limit(self._rate_limiter)
-        data = {'keyword': keyword}
-        if location_type:
-            data['location_type'] = location_type
-        result = self.request('GET', 'location/search/', params=data)
-        payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        rows = (
+            payload.get("region_list", payload.get("list", []))
+            if isinstance(payload, dict)
+            else payload if isinstance(payload, list) else []
+        )
+        keyword = str(keyword or "").strip().casefold()
+        if keyword:
+            rows = [
+                row for row in rows
+                if isinstance(row, dict)
+                and keyword in " ".join(
+                    str(row.get(key) or "")
+                    for key in (
+                        "region_id", "region_name", "parent_region_name",
+                        "country_code", "country_name",
+                    )
+                ).casefold()
+            ]
+        return self._limit_list(rows, limit)
+
+    def search_locations(
+        self,
+        advertiser_id: str,
+        keyword: str,
+        language: str = "en",
+        limit: int = 100,
+    ) -> list:
+        """Search TikTok regions through the supported Search Region API."""
+        keyword = str(keyword or "").strip()
+        if not keyword:
+            raise ValueError("keyword is required")
+        return self._list_locations(
+            advertiser_id,
+            language=language,
+            limit=limit,
+            keyword=keyword,
+        )
 
     def list_regions(
         self,
@@ -2475,6 +2676,7 @@ class TikTokAPIClient(BasePlatformClient):
         brand_safety_partner: str = None,
         level_range: str = None,
         rf_campaign_type: str = None,
+        limit: int = 100,
     ) -> list:
         """Get available regions from TikTok's official Tool Region API.
 
@@ -2487,6 +2689,7 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("advertiser_id must contain digits only")
         if not isinstance(placements, list) or not placements:
             raise ValueError("placements must be a non-empty array")
+        limit = self._validate_reference_limit(limit)
         objective_type = str(objective_type or '').strip()
         if not objective_type:
             raise ValueError("objective_type is required")
@@ -2515,60 +2718,110 @@ class TikTokAPIClient(BasePlatformClient):
         if isinstance(payload, list):
             return payload
         if isinstance(payload, dict):
-            return payload.get(
+            rows = payload.get(
                 'region_info',
                 payload.get('list', payload.get('regions', payload.get('locations', []))),
             )
-        return []
+        else:
+            rows = []
+        return self._limit_list(rows, limit)
     
     # ==================== 设备定向查询 ====================
     
-    def list_devices(self) -> list:
-        """获取设备列表"""
+    def list_os_versions(
+        self, advertiser_id: str, os_type: str, limit: int = 100
+    ) -> list:
+        """List versions for one operating system through TikTok Tool API."""
+        advertiser_id = str(advertiser_id or "").strip()
+        os_type = str(os_type or "").strip().upper()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        if os_type not in {"ANDROID", "IOS"}:
+            raise ValueError("os_type must be ANDROID or IOS")
+        limit = self._validate_reference_limit(limit)
         self.acquire_rate_limit(self._rate_limiter)
-        result = self.request('GET', 'device/get/')
+        result = self.request(
+            "GET",
+            "tool/os_version/",
+            params={"advertiser_id": advertiser_id, "os_type": os_type},
+        )
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
-    
-    def list_operating_systems(self) -> list:
-        """获取操作系统列表"""
+        rows = (
+            payload.get("os_versions", payload.get("list", []))
+            if isinstance(payload, dict)
+            else payload if isinstance(payload, list) else []
+        )
+        return self._limit_list(rows, limit)
+
+    def list_carriers(self, advertiser_id: str, limit: int = 100) -> list:
+        """List carriers grouped by country through TikTok Tool API."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        limit = self._validate_reference_limit(limit)
         self.acquire_rate_limit(self._rate_limiter)
-        result = self.request('GET', 'os/get/')
+        result = self.request(
+            "GET", "tool/carrier/", params={"advertiser_id": advertiser_id}
+        )
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
-    
-    def list_carriers(self) -> list:
-        """获取运营商列表"""
+        countries = (
+            payload.get("countries", []) if isinstance(payload, dict) else []
+        )
+        rows = []
+        for country in countries:
+            if not isinstance(country, dict):
+                continue
+            country_code = country.get("country_code")
+            for carrier in country.get("carriers", []):
+                if not isinstance(carrier, dict):
+                    continue
+                row = dict(carrier)
+                if country_code:
+                    row.setdefault("country_code", country_code)
+                rows.append(row)
+        return self._limit_list(rows, limit)
+
+    def get_brand_safety_partner_status(
+        self, advertiser_id: str, partner: str = "Zefr"
+    ) -> dict:
+        """Get authorization status for a supported TikTok brand safety partner."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        partner = str(partner or "").strip()
+        if partner != "Zefr":
+            raise ValueError("partner must be Zefr")
         self.acquire_rate_limit(self._rate_limiter)
-        result = self.request('GET', 'carrier/get/')
+        result = self.request(
+            "GET",
+            "tool/brand_safety/partner/authorize/status/",
+            params={"advertiser_id": advertiser_id, "partner": partner},
+        )
         payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
-    
-    def list_browsers(self) -> list:
-        """获取浏览器列表"""
-        self.acquire_rate_limit(self._rate_limiter)
-        result = self.request('GET', 'browser/get/')
-        payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
+        return payload if isinstance(payload, dict) else {}
     
     # ==================== 创意素材查询 ====================
     
     def list_creatives(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
-        """获取创意列表"""
+        """List logical creatives from the owning Ads returned by ``ad/get``."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isdigit():
+            raise ValueError("advertiser_id must contain digits only")
+        page_size = self._validate_reference_limit(page_size)
         self.acquire_rate_limit(self._rate_limiter)
         data = {
-            'advertiser_id': str(advertiser_id),
+            'advertiser_id': advertiser_id,
             'page_size': page_size,
         }
         if filtering:
             data['filtering'] = self._encode_filtering(filtering)
-        result = self.request('GET', 'creative/get/', params=data)
+        result = self.request('GET', 'ad/get/', params=data)
         payload = self._data_section(result)
         rows = payload.get('list', []) if isinstance(payload, dict) else []
         return self._limit_list(rows, page_size)
 
     def get_creative(self, advertiser_id: str, creative_id: str) -> dict:
-        """Get one Creative through the existing creative/get endpoint."""
+        """Get an Ad-backed logical Creative through the official Ad Get API."""
         advertiser_id = str(advertiser_id or "").strip()
         creative_id = str(creative_id or "").strip()
         if not advertiser_id or not creative_id:
@@ -2586,7 +2839,12 @@ class TikTokAPIClient(BasePlatformClient):
             (
                 item for item in creatives
                 if isinstance(item, dict)
-                and str(item.get("creative_id") or item.get("id") or "") == creative_id
+                and str(
+                    item.get("creative_id")
+                    or item.get("ad_id")
+                    or item.get("id")
+                    or ""
+                ) == creative_id
             ),
             {},
         )
@@ -2890,28 +3148,6 @@ class TikTokAPIClient(BasePlatformClient):
             raise APIError("TikTok video upload returned no video_id")
         return {"video_id": str(result_video_id), "asset": payload}
     
-    # ==================== 转化追踪查询 ====================
-    
-    def list_conversions(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
-        """获取转化事件列表"""
-        self.acquire_rate_limit(self._rate_limiter)
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'page_size': page_size,
-        }
-        if filtering:
-            data['filtering'] = self._encode_filtering(filtering)
-        result = self.request('GET', 'conversion/get/', params=data)
-        payload = self._data_section(result)
-        rows = payload.get('list', []) if isinstance(payload, dict) else []
-        return self._limit_list(rows, page_size)
-    
-    def get_conversion(self, advertiser_id: str, conversion_id: str) -> dict:
-        """获取转化事件详情"""
-        filtering = [{'field': 'CONVERSION_IDS', 'operator': 'IN', 'values': [int(conversion_id)]}]
-        result = self.list_conversions(advertiser_id, filtering=filtering)
-        return result[0] if result else {}
-
     # ==================== Pixel 管理 ====================
 
     def list_pixels(
@@ -3450,33 +3686,44 @@ class TikTokAPIClient(BasePlatformClient):
             rows = payload
         return self._limit_list(rows, page_size)
     
-    # ==================== 品牌安全查询 ====================
-    
-    def list_brand_safety(self) -> list:
-        """获取品牌安全类别列表"""
-        self.acquire_rate_limit(self._rate_limiter)
-        result = self.request('GET', 'brand_safety/get/')
-        payload = self._data_section(result)
-        return payload.get('list', []) if isinstance(payload, dict) else []
-    
     # ==================== 统计报告查询 ====================
     
-    def get_report(self, advertiser_id: str, report_type: str = 'CAMPAIGN', date_preset: str = 'LAST_7_DAYS', time_range: dict = None) -> dict:
-        """获取统计报告"""
-        self.acquire_rate_limit(self._rate_limiter)
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'report_type': report_type,
-            'date_preset': date_preset,
-        }
-        if time_range:
-            data['time_range'] = self._normalize_time_range(time_range)
-        # BasePlatformClient transports JSON request bodies through ``data``.
-        # Passing ``json=`` here silently produced an empty body in the
-        # provider adapter.
-        result = self.request('POST', 'statistics/get/', data=data)
-        payload = self._data_section(result)
-        return payload if isinstance(payload, dict) else {}
+    def get_report(
+        self,
+        advertiser_id: str,
+        report_type: str = "BASIC",
+        service_type: str = "AUCTION",
+        data_level: str = "AUCTION_CAMPAIGN",
+        dimensions: Optional[list[str]] = None,
+        metrics: Optional[list[str]] = None,
+        date_preset: str = "LAST_7_DAYS",
+        time_range: Any = None,
+        filtering: Optional[list[dict[str, str]]] = None,
+        campaign_ids: Optional[list[str]] = None,
+        limit: int = 100,
+    ) -> dict:
+        """Query a bounded page from TikTok's Integrated Report API."""
+        effective_range = time_range if time_range is not None else date_preset
+        selected_dimensions = ["campaign_id"] if dimensions is None else dimensions
+        report_filtering = list(filtering or [])
+        if campaign_ids:
+            normalized_ids = self._normalize_report_ids(
+                campaign_ids, "campaign_ids"
+            )
+            report_filtering.extend(
+                self._report_id_filter("campaign_id", normalized_ids)
+            )
+        return self._integrated_report(
+            advertiser_id=advertiser_id,
+            report_type=report_type,
+            service_type=service_type,
+            data_level=data_level,
+            dimensions=selected_dimensions,
+            metrics=metrics,
+            time_range=effective_range,
+            filtering=report_filtering,
+            limit=limit,
+        )
 
     @staticmethod
     def _normalize_time_range(time_range: Any) -> dict:

@@ -646,7 +646,7 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
     ) == [{"id": "1"}]
     assert client.list_action_categories("123", ["HOUSING"]) == [{"id": "1"}]
     assert client.list_languages("123") == [{"id": "1"}]
-    assert client.list_device_models("123") == [{"id": "1"}]
+    assert client.list_device_models("123", limit=1) == [{"id": "1"}]
     assert client.recommend_interest_keywords(
         "123", "running shoes", language="en", limit=10,
         mode="SEMANTIC_RECOMMEND", audience_type="PURCHASE_INTENTION",
@@ -654,7 +654,8 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
     assert calls == [
         ("GET", "tool/interest_category/", {"params": {
             "advertiser_id": "123", "version": 2, "language": "zh",
-            "placements": ["PLACEMENT_TIKTOK"], "special_industries": ["HOUSING"],
+            "placements": '["PLACEMENT_TIKTOK"]',
+            "special_industries": '["HOUSING"]',
         }}),
         ("GET", "tool/action_category/", {"params": {
             "advertiser_id": "123", "special_industries": ["HOUSING"],
@@ -678,6 +679,263 @@ def test_tiktok_targeting_reference_lookups_build_official_v13_queries():
     assert definitions["tiktok_list_action_categories"].input_schema.required == ["account_id"]
     assert definitions["tiktok_recommend_interest_keywords"].input_schema.properties["mode"]["enum"] == [
         "FUZZ_MATCH", "SEMANTIC_RECOMMEND",
+    ]
+
+
+def test_tiktok_reference_queries_use_documented_v13_endpoints_and_result_caps():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    responses = {
+        "search/region/": {
+            "region_list": [{"region_id": "1"}, {"region_id": "2"}],
+        },
+        "tool/carrier/": {
+            "countries": [{
+                "country_code": "US",
+                "carriers": [
+                    {"carrier_id": "c1", "carrier_name": "Carrier 1"},
+                    {"carrier_id": "c2", "carrier_name": "Carrier 2"},
+                ],
+            }],
+        },
+        "tool/os_version/": {
+            "os_versions": [
+                {"os_id": "1", "os_type": "ANDROID", "version": "13", "name": "Android 13"},
+                {"os_id": "2", "os_type": "ANDROID", "version": "14", "name": "Android 14"},
+            ],
+        },
+        "tool/device_model/": {
+            "device_models": [
+                {"device_model_id": "d1", "device_model_name": "Phone 1"},
+                {"device_model_id": "d2", "device_model_name": "Phone 2"},
+            ],
+        },
+    }
+
+    def request(method, endpoint, params=None, data=None, **_kwargs):
+        calls.append((method, endpoint, params, data))
+        return responses[endpoint]
+
+    client.request = request
+
+    assert client.search_locations("123", "1", language="zh", limit=1) == [
+        {"region_id": "1"}
+    ]
+    assert client.list_carriers("123", limit=1) == [
+        {"carrier_id": "c1", "carrier_name": "Carrier 1", "country_code": "US"}
+    ]
+    assert client.list_os_versions("123", "ANDROID", limit=1) == [
+        {"os_id": "1", "os_type": "ANDROID", "version": "13", "name": "Android 13"}
+    ]
+    assert client.list_device_models("123", limit=1) == [
+        {"device_model_id": "d1", "device_model_name": "Phone 1"}
+    ]
+    assert calls == [
+        ("GET", "search/region/", {"advertiser_id": "123", "language": "zh"}, None),
+        ("GET", "tool/carrier/", {"advertiser_id": "123"}, None),
+        ("GET", "tool/os_version/", {"advertiser_id": "123", "os_type": "ANDROID"}, None),
+        ("GET", "tool/device_model/", {"advertiser_id": "123"}, None),
+    ]
+
+
+def test_tiktok_location_search_uses_official_targeting_search_body():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        calls.append((method, endpoint, params))
+        or {"region_list": [
+            {"region_id": "1", "region_name": "Jakarta"},
+            {"region_id": "2", "region_name": "Jakarta Selatan"},
+            {"region_id": "3", "region_name": "Bandung"},
+        ]}
+    )
+
+    assert client.search_locations(
+        "123",
+        "Jakarta",
+        language="en",
+        limit=1,
+    ) == [{"region_id": "1", "region_name": "Jakarta"}]
+    assert calls == [(
+        "GET",
+        "search/region/",
+        {
+            "advertiser_id": "123",
+            "language": "en",
+        },
+    )]
+
+
+def test_tiktok_creative_list_reads_ads_instead_of_nonexistent_creative_endpoint():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        calls.append((method, endpoint, params))
+        or {"list": [{"ad_id": "301", "adgroup_id": "201", "creative_list": []}]}
+    )
+
+    assert client.list_creatives(
+        "123",
+        filtering=[{
+            "field": "CREATIVE_IDS", "operator": "IN", "values": ["301"],
+        }],
+        page_size=1,
+    ) == [{"ad_id": "301", "adgroup_id": "201", "creative_list": []}]
+    assert client.get_creative("123", "301")["ad_id"] == "301"
+    assert calls == [
+        ("GET", "ad/get/", {
+            "advertiser_id": "123", "page_size": 1,
+            "filtering": '{"ad_ids":["301"]}',
+        }),
+        ("GET", "ad/get/", {
+            "advertiser_id": "123", "page_size": 1,
+            "filtering": '{"ad_ids":["301"]}',
+        }),
+    ]
+
+
+def test_tiktok_integrated_report_uses_get_contract_and_json_array_parameters():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        calls.append((method, endpoint, params))
+        or {"list": [{"campaign_id": "101"}]}
+    )
+
+    assert client.get_report(
+        "123",
+        report_type="BASIC",
+        service_type="AUCTION",
+        data_level="AUCTION_CAMPAIGN",
+        dimensions=["campaign_id"],
+        metrics=["spend", "impressions"],
+        time_range={"start_date": "2026-09-17", "end_date": "2026-09-24"},
+        limit=5,
+    ) == {"list": [{"campaign_id": "101"}]}
+    method, endpoint, params = calls[0]
+    assert (method, endpoint) == ("GET", "report/integrated/get/")
+    assert params == {
+        "advertiser_id": "123",
+        "report_type": "BASIC",
+        "service_type": "AUCTION",
+        "data_level": "AUCTION_CAMPAIGN",
+        "dimensions": '["campaign_id"]',
+        "metrics": '["spend","impressions"]',
+        "start_date": "2026-09-17",
+        "end_date": "2026-09-24",
+        "page": 1,
+        "page_size": 5,
+    }
+
+
+def test_tiktok_integrated_report_validates_columns_dates_and_campaign_filters():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, params=None, **_kwargs: (
+        calls.append((method, endpoint, params))
+        or {"list": []}
+    )
+    report_range = {"start_date": "2026-09-01", "end_date": "2026-09-24"}
+
+    client.get_report(
+        "123", dimensions=["campaign_id"], campaign_ids=["101", "102"],
+        time_range=report_range,
+    )
+    params = calls[0][2]
+    assert json.loads(params["filtering"]) == [{
+        "field_name": "campaign_id",
+        "filter_type": "IN",
+        "filter_value": '["101","102"]',
+    }]
+
+    with pytest.raises(ValueError, match="dimensions"):
+        client.get_report("123", dimensions=[], time_range=report_range)
+    with pytest.raises(ValueError, match="end_date"):
+        client.get_report(
+            "123",
+            time_range={"start_date": "2026-09-24", "end_date": "2026-09-01"},
+        )
+    with pytest.raises(ValueError, match="campaign_ids"):
+        client.get_report("123", campaign_ids=["not-a-numeric-id"])
+
+
+def test_tiktok_unsupported_query_surfaces_are_not_registered_as_live_tools():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_tool_source().register_tools()
+    }
+
+    assert {
+        "tiktok_list_creatives",
+        "tiktok_search_locations",
+        "tiktok_list_carriers",
+        "tiktok_list_os_versions",
+        "tiktok_get_brand_safety_partner_status",
+    } <= definitions.keys()
+    assert {
+        "tiktok_list_conversions",
+        "tiktok_get_conversion",
+        "tiktok_list_devices",
+        "tiktok_list_browsers",
+        "tiktok_list_operating_systems",
+        "tiktok_list_brand_safety",
+    }.isdisjoint(definitions)
+    assert definitions["tiktok_list_carriers"].input_schema.required == ["account_id"]
+    assert definitions["tiktok_list_os_versions"].input_schema.required == [
+        "account_id", "os_type",
+    ]
+    assert definitions["tiktok_get_brand_safety_partner_status"].input_schema.required == [
+        "account_id", "partner",
+    ]
+
+
+def test_tiktok_download_report_intent_has_one_unambiguous_tool_owner():
+    definitions = [
+        definition
+        for definition, _handler in create_tiktok_tool_source().register_tools()
+        if "download_report" in (definition.intent_types or [])
+    ]
+
+    assert [definition.name for definition in definitions] == ["tiktok_get_report"]
+
+
+def test_tiktok_reference_tools_forward_scoped_arguments_to_their_query_methods():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.list_carriers = lambda advertiser_id, limit=100: (
+        calls.append(("carriers", advertiser_id, limit)) or [{"carrier_id": "1"}]
+    )
+    client.list_os_versions = lambda advertiser_id, os_type, limit=100: (
+        calls.append(("os_versions", advertiser_id, os_type, limit))
+        or [{"version": "17"}]
+    )
+    client.get_brand_safety_partner_status = lambda advertiser_id, partner: (
+        calls.append(("brand_safety", advertiser_id, partner))
+        or {"authorized": True}
+    )
+    handlers = {
+        definition.name: handler
+        for definition, handler in create_tiktok_tool_source(client).register_tools()
+    }
+    context = ToolContext(session_id="s1", user_id="u1", account_id="123")
+
+    carrier_result = handlers["tiktok_list_carriers"].execute(
+        context, {"account_id": "123", "limit": 7},
+    )
+    os_result = handlers["tiktok_list_os_versions"].execute(
+        context, {"account_id": "123", "os_type": "IOS", "limit": 9},
+    )
+    brand_safety_result = handlers[
+        "tiktok_get_brand_safety_partner_status"
+    ].execute(context, {"account_id": "123", "partner": "Zefr"})
+
+    assert carrier_result.data["carriers"] == [{"carrier_id": "1"}]
+    assert os_result.data["os_versions"] == [{"version": "17"}]
+    assert brand_safety_result.data["partner_status"] == {"authorized": True}
+    assert calls == [
+        ("carriers", "123", 7),
+        ("os_versions", "123", "IOS", 9),
+        ("brand_safety", "123", "Zefr"),
     ]
 
 
@@ -3171,6 +3429,72 @@ def test_tiktok_ad_queries_use_scoped_filter_and_create_accepts_ad_ids():
     }, live=True) == "ad-1"
 
 
+def test_tiktok_get_adgroup_uses_exact_bounded_provider_filter():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, params))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {
+                    "list": [{
+                        "adgroup_id": "group-1",
+                        "campaign_id": "campaign-1",
+                    }],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            },
+            "headers": {},
+        }
+    )
+
+    result = client.get_adgroup("123", "campaign-1", "group-1")
+
+    assert result["adgroup_id"] == "group-1"
+    assert len(calls) == 1
+    assert calls[0][0] == "GET"
+    assert calls[0][2]["page_size"] == 1
+    assert json.loads(calls[0][2]["filtering"]) == {
+        "campaign_ids": ["campaign-1"],
+        "adgroup_ids": ["group-1"],
+    }
+
+
+def test_tiktok_get_ad_uses_exact_bounded_provider_filter():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, params))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {
+                    "list": [{
+                        "ad_id": "ad-1",
+                        "adgroup_id": "group-1",
+                    }],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            },
+            "headers": {},
+        }
+    )
+
+    result = client.get_ad("123", "group-1", "ad-1")
+
+    assert result["ad_id"] == "ad-1"
+    assert len(calls) == 1
+    assert calls[0][0] == "GET"
+    assert calls[0][2]["page_size"] == 1
+    assert json.loads(calls[0][2]["filtering"]) == {
+        "adgroup_ids": ["group-1"],
+        "ad_ids": ["ad-1"],
+    }
+
+
 def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []
@@ -3476,9 +3800,8 @@ def test_tiktok_lead_and_app_tools_publish_provider_contracts():
     }
     lead = definitions["tiktok_create_lead_ad"]
     assert lead.input_schema.properties["page_id"]["minLength"] == 1
-    assert lead.input_schema.properties["conversion_id"]["lookup_tool"] == (
-        "tiktok_list_conversions"
-    )
+    assert "lookup_tool" not in lead.input_schema.properties["conversion_id"]
+    assert lead.input_schema.properties["conversion_id"]["manual_entry"]
     assert lead.parent_resource_type == "ad_group"
     assert "form_id" not in lead.input_schema.properties
     app = definitions["tiktok_create_app_ad"]
@@ -3543,11 +3866,13 @@ def test_tiktok_provider_envelope_is_decoded_for_ids_and_lookup_lists():
         "data": {
             "code": 0,
             "message": "OK",
-            "data": {"list": [{"location_id": "US"}]},
+            "data": {"region_list": [{"region_id": "US"}]},
         },
         "headers": {},
     }
-    assert client.list_locations() == [{"location_id": "US"}]
+    assert client.search_locations("123", "US", limit=1) == [
+        {"region_id": "US"}
+    ]
 
 
 def test_tiktok_tool_region_uses_contextual_official_endpoint():
@@ -3588,19 +3913,15 @@ def test_tiktok_tool_region_serializes_placements_and_reads_region_info():
     assert calls[0][2]["placements"] == '["PLACEMENT_TIKTOK"]'
 
 
-def test_tiktok_report_failure_and_missing_task_are_not_silent_successes():
+def test_tiktok_integrated_report_provider_errors_are_not_silent_successes():
     client = TikTokAPIClient({"access_token": "test"})
-    client.request = lambda method, endpoint, data=None, **kwargs: {
-        "task_id": "task-1"
-    } if endpoint == "report/task/create/" else {
-        "status": 3, "message": "invalid report"
-    }
-    with pytest.raises(APIError, match="report task failed"):
-        client.get_campaign_report("t1", ["1"])
 
-    client.request = lambda *args, **kwargs: {}
-    with pytest.raises(APIError, match="no task_id"):
-        client.get_campaign_report("t1", ["1"])
+    def reject_report(*_args, **_kwargs):
+        raise APIError("TikTok report rejected")
+
+    client.request = reject_report
+    with pytest.raises(APIError, match="report rejected"):
+        client.get_campaign_report("123", ["1"])
 
 
 def test_meta_client_does_not_mutate_caller_query_params(monkeypatch):
@@ -3792,7 +4113,6 @@ def test_tiktok_ad_total_limit_applies_after_parent_filter():
     [
         ("list_catalogs", "list"),
         ("list_creatives", "list"),
-        ("list_conversions", "list"),
         ("list_apps", "apps"),
         ("list_identities", "list"),
         ("list_pixels", "pixels"),

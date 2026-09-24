@@ -2604,7 +2604,52 @@ class TestIterationContracts:
         assert result.success is True
         assert client.campaign_report_calls == [("a1", ["t1"], None)]
 
-    def test_tiktok_report_sends_json_body_through_data_argument(self):
+    def test_tiktok_report_handler_forwards_integrated_report_dimensions_and_bounds(self):
+        from agents.ad_agent.tools.providers.tiktok.reports import TikTokGetReportHandler
+
+        class TikTokClient:
+            def __init__(self):
+                self.report_calls = []
+
+            def get_report(self, **kwargs):
+                self.report_calls.append(kwargs)
+                return {"list": []}
+
+        client = TikTokClient()
+        handler = TikTokGetReportHandler(client)
+        result = handler.execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="123"),
+            {
+                "account_id": "123",
+                "data_level": "AUCTION_AD",
+                "dimensions": ["ad_id"],
+                "metrics": ["spend"],
+                "limit": 9,
+                "date_range": {
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-10",
+                },
+            },
+        )
+
+        assert result.success is True
+        assert client.report_calls == [{
+            "advertiser_id": "123",
+            "report_type": "BASIC",
+            "service_type": "AUCTION",
+            "data_level": "AUCTION_AD",
+            "dimensions": ["ad_id"],
+            "metrics": ["spend"],
+            "date_preset": "LAST_7_DAYS",
+            "time_range": {
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-10",
+            },
+            "filtering": None,
+            "limit": 9,
+        }]
+
+    def test_tiktok_report_uses_integrated_report_get_contract(self):
         client = TikTokAPIClient({"access_token": "caller-token"})
         calls = []
 
@@ -2613,14 +2658,22 @@ class TestIterationContracts:
             return {"data": {}}
 
         client.request = fake_request
-        assert client.get_report("a1", date_preset="LAST_30_DAYS") == {}
-        assert calls[0][0:2] == ("POST", "statistics/get/")
-        assert calls[0][2]["data"] == {
-            "advertiser_id": "a1",
-            "report_type": "CAMPAIGN",
-            "date_preset": "LAST_30_DAYS",
+        assert client.get_report("123", date_preset="LAST_30_DAYS") == {}
+        assert calls[0][0:2] == ("GET", "report/integrated/get/")
+        params = calls[0][2]["params"]
+        expected_range = client._normalize_time_range("LAST_30_DAYS")
+        assert params == {
+            "advertiser_id": "123",
+            "report_type": "BASIC",
+            "service_type": "AUCTION",
+            "data_level": "AUCTION_CAMPAIGN",
+            "dimensions": '["campaign_id"]',
+            "metrics": '["spend","impressions","clicks"]',
+            "start_date": expected_range["start_date"],
+            "end_date": expected_range["end_date"],
+            "page": 1,
+            "page_size": 100,
         }
-        assert "json" not in calls[0][2]
 
     def test_tiktok_campaign_report_normalizes_string_date_preset(self):
         client = TikTokAPIClient({"access_token": "caller-token"})

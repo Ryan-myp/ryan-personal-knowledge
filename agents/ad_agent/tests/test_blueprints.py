@@ -54,9 +54,9 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
-    assert versions["tiktok.app_conversion_video"] == "2.0.0"
+    assert versions["tiktok.app_conversion_video"] == "2.0.1"
     assert versions["tiktok.lead_generation"] == "2.0.0"
-    assert versions["tiktok.product_sales_video"] == "2.0.0"
+    assert versions["tiktok.product_sales_video"] == "2.0.1"
     assert versions["tiktok.traffic_video"] == "3.0.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
@@ -1113,6 +1113,9 @@ def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
     assert fields["campaign.objective_type"]["value"] == "APP_PROMOTION"
     assert fields["ad_group.age_groups"]["value"] == ["AGE_18_24", "AGE_25_34"]
     assert fields["ad_group.app_id"]["lookup"]["tool"] == "tiktok_list_apps"
+    assert fields["ad_group.optimization_event"]["manual_entry"]["source"] == (
+        "provider_conversion_event"
+    )
     assert fields["ad_group.optimization_goal"]["options"] == [
         {"value": "INSTALL", "label": "INSTALL"},
         {"value": "IN_APP_EVENT", "label": "IN_APP_EVENT"},

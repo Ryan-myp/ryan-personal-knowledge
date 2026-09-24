@@ -1009,17 +1009,24 @@ def test_provider_budget_aliases_are_normalized_before_api_payload():
 
 def test_tiktok_parent_scoped_reads_filter_provider_broad_pages_locally():
     client = TikTokAPIClient({})
-    client._list_pages = lambda endpoint, params, max_pages=1: (
-        [
-            {"campaign_id": "101", "adgroup_id": "ag-1"},
-            {"campaign_id": "202", "adgroup_id": "ag-2"},
-        ]
-        if endpoint == "adgroup/get/"
-        else [
-            {"adgroup_id": "ag-1", "ad_id": "ad-1"},
-            {"adgroup_id": "ag-2", "ad_id": "ad-2"},
-        ]
-    )
+
+    def broad_page(endpoint, _params, max_pages=1, max_items=None, item_filter=None):
+        rows = (
+            [
+                {"campaign_id": "101", "adgroup_id": "ag-1"},
+                {"campaign_id": "202", "adgroup_id": "ag-2"},
+            ]
+            if endpoint == "adgroup/get/"
+            else [
+                {"adgroup_id": "ag-1", "ad_id": "ad-1"},
+                {"adgroup_id": "ag-2", "ad_id": "ad-2"},
+            ]
+        )
+        if item_filter:
+            rows = [row for row in rows if item_filter(row)]
+        return rows if max_items is None else rows[:max_items]
+
+    client._list_pages = broad_page
 
     assert client.list_adgroups("t1", "101") == [
         {"campaign_id": "101", "adgroup_id": "ag-1"}

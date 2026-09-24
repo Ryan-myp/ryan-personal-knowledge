@@ -1,5 +1,5 @@
 {
-  "digest": "e03998898430ee26ca2e4785f7663f2a9c62ab8f6b086b1d59edc813e81b1128",
+  "digest": "ad59fc60955c625ebd2d2d910cc9f1a25297c89cecb204ddba76c5a1d7b1c2c0",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -29491,8 +29491,8 @@
       ]
     },
     "tiktok": {
-      "digest": "54b290430a314ffc0a58843eb55f20050182afb336fd8d20ff537a8212789723",
-      "tool_count": 90,
+      "digest": "5f79aa3128094f9c2392bee94b4a6faac0159cb41c35ba4201e86c64ebd7133c",
+      "tool_count": 85,
       "tools": [
         {
           "action": "create",
@@ -29564,7 +29564,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "d24d74a02bbc05ebeb68b542ef8a260cf586a710d7976d24c0b03b2ae96500fa",
+          "contract_hash": "874d8256332a9caf626bda2afa0267349d76973a5f7e3da83f980888548651bb",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Ad。",
           "effect_class": "write",
@@ -29667,20 +29667,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creative_type": {
@@ -30243,7 +30236,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "755535b0a93f100d21ff1c04c81df1044e06d3618a756f92cde0d2d21f45e6f9",
+          "contract_hash": "8c55cfde074264282417e6f46a8ed5d4504b6223e277ba517c801a8acd8186e7",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Ad Group。",
           "effect_class": "write",
@@ -30635,8 +30628,11 @@
               },
               "brand_safety_type": {
                 "description": "TikTok brand safety type",
-                "lookup_result_key": "brand_safety",
-                "lookup_tool": "tiktok_list_brand_safety",
+                "manual_entry": {
+                  "instructions": "请根据所选广告目标和 TikTok Ads Manager 中可用的品牌安全选项填写；当前没有通用品牌安全类别目录查询。",
+                  "source": "provider_targeting_option",
+                  "title": "品牌安全级别"
+                },
                 "type": "string"
               },
               "budget": {
@@ -30725,20 +30721,13 @@
                 }
               },
               "conversion_id": {
-                "description": "Conversion event ID returned by TikTok lookup",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "daily_budget": {
@@ -31021,7 +31010,7 @@
               "optimization_event": {
                 "description": "Provider conversion event used for optimization",
                 "manual_entry": {
-                  "instructions": "请填写 TikTok Pixel/Events API 中已配置的事件名称；如账号支持事件查询，请先从转化列表确认。",
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
                   "source": "provider_conversion_event",
                   "title": "优化事件"
                 },
@@ -31378,18 +31367,11 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
-                    "lookup_result_key": "browsers",
-                    "lookup_tool": "tiktok_list_browsers",
-                    "selection_label_fields": [
-                      "browser_name",
-                      "name",
-                      "id"
-                    ],
-                    "selection_value_fields": [
-                      "browser_id",
-                      "id"
-                    ],
+                    "manual_entry": {
+                      "instructions": "当前 TikTok Ads v1.3 Tool Source 没有浏览器目录查询；请从 Ads Manager 或已验证的 Provider 配置中复制浏览器 ID。",
+                      "source": "provider_targeting_identifier",
+                      "title": "浏览器 ID"
+                    },
                     "type": "array"
                   },
                   "carrier_ids": {
@@ -31397,7 +31379,6 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
                     "lookup_result_key": "carriers",
                     "lookup_tool": "tiktok_list_carriers",
                     "selection_label_fields": [
@@ -31416,18 +31397,11 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
-                    "lookup_result_key": "devices",
-                    "lookup_tool": "tiktok_list_devices",
-                    "selection_label_fields": [
-                      "device_name",
-                      "name",
-                      "id"
-                    ],
-                    "selection_value_fields": [
-                      "device_id",
-                      "id"
-                    ],
+                    "manual_entry": {
+                      "instructions": "当前 TikTok Ads v1.3 没有通用设备 ID 目录；请从 Ads Manager 或已验证的 Provider 配置中复制设备 ID。",
+                      "source": "provider_targeting_identifier",
+                      "title": "设备 ID"
+                    },
                     "type": "array"
                   },
                   "excluded_audience_ids": {
@@ -32097,7 +32071,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "5a5631545cadc4ad124c332c3d5f87e89b08bca77fddd430be8dbd028fa2ac69",
+          "contract_hash": "aee10148094c1da863501639b0062591a80b9664344e0508b1546fbb91b8f2fb",
           "contract_version": "1.3.0",
           "description": "创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -32178,20 +32152,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "In-app conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok in-app conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "应用内转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creatives": {
@@ -32956,7 +32923,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "52de1754f76afb30cb03fac2722709a272992ac6381e00ee54a1579034acdc16",
+          "contract_hash": "f893b6653751074efa3b9756d19b5c6f09218db6e647b4e9f267e21c7716a043",
           "contract_version": "1.3.0",
           "description": "创建 TikTok CAROUSEL 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -33056,20 +33023,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creative_type": {
@@ -33592,7 +33552,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "915446a901faf8768444e18fb536ddc3e1e6c5d0e0dceedd32b72246843a63ed",
+          "contract_hash": "3a71a769a6761f80ccdbab353a4f263c1693aef2bc15d4366c0cf3f8652e0a7a",
           "contract_version": "2",
           "description": "创建 TikTok 广告创意；TikTok v1.3 会将创意作为 Ad 的 creatives 载荷创建，需要提供所属 Campaign、Ad Group 和素材/文案，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -33699,20 +33659,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creative_type": {
@@ -34436,7 +34389,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "52f59cf410ba02bbd7c56e2a6c948bee11e1351c2416c265c5c4803bc73afa98",
+          "contract_hash": "0c1f56fc00ae9fcb7898ca5ae9fc13184731430c1ee10bb4b9810debbadac739",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Lead Generation Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -34491,20 +34444,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creatives": {
@@ -34889,7 +34835,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "57932e2ce7ab60bc5f99f2155e260f68e24f5dcf620cb58ad10d500a7547a742",
+          "contract_hash": "8c2653805b77a1234fa23c23b05b7df5312a098f3b76fee72f7f1c613dcc1739",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Product Sales 商品销售广告，支持 Catalog、Shop 商品引用和素材创意；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -35025,20 +34971,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creative_type": {
@@ -35617,7 +35556,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "aa5f766bb826ab3ac5edc4bcfc87d4fe61765473383d3bbc957b4a101f1e4c88",
+          "contract_hash": "7d6c1f903ac24bb2b71f26ec1af48e5b26299197b29f88c09262b5c47c6b59bf",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Product Sales 商品销售广告组，支持 Website、Catalog 和 Shop 商品来源；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -36030,8 +35969,11 @@
               },
               "brand_safety_type": {
                 "description": "TikTok brand safety type",
-                "lookup_result_key": "brand_safety",
-                "lookup_tool": "tiktok_list_brand_safety",
+                "manual_entry": {
+                  "instructions": "请根据所选广告目标和 TikTok Ads Manager 中可用的品牌安全选项填写；当前没有通用品牌安全类别目录查询。",
+                  "source": "provider_targeting_option",
+                  "title": "品牌安全级别"
+                },
                 "type": "string"
               },
               "budget": {
@@ -36120,20 +36062,13 @@
                 }
               },
               "conversion_id": {
-                "description": "Conversion event ID returned by TikTok lookup",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "daily_budget": {
@@ -36416,7 +36351,7 @@
               "optimization_event": {
                 "description": "Provider conversion event used for optimization",
                 "manual_entry": {
-                  "instructions": "请填写 TikTok Pixel/Events API 中已配置的事件名称；如账号支持事件查询，请先从转化列表确认。",
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
                   "source": "provider_conversion_event",
                   "title": "优化事件"
                 },
@@ -36768,18 +36703,11 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
-                    "lookup_result_key": "browsers",
-                    "lookup_tool": "tiktok_list_browsers",
-                    "selection_label_fields": [
-                      "browser_name",
-                      "name",
-                      "id"
-                    ],
-                    "selection_value_fields": [
-                      "browser_id",
-                      "id"
-                    ],
+                    "manual_entry": {
+                      "instructions": "当前 TikTok Ads v1.3 Tool Source 没有浏览器目录查询；请从 Ads Manager 或已验证的 Provider 配置中复制浏览器 ID。",
+                      "source": "provider_targeting_identifier",
+                      "title": "浏览器 ID"
+                    },
                     "type": "array"
                   },
                   "carrier_ids": {
@@ -36787,7 +36715,6 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
                     "lookup_result_key": "carriers",
                     "lookup_tool": "tiktok_list_carriers",
                     "selection_label_fields": [
@@ -36806,18 +36733,11 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
-                    "lookup_result_key": "devices",
-                    "lookup_tool": "tiktok_list_devices",
-                    "selection_label_fields": [
-                      "device_name",
-                      "name",
-                      "id"
-                    ],
-                    "selection_value_fields": [
-                      "device_id",
-                      "id"
-                    ],
+                    "manual_entry": {
+                      "instructions": "当前 TikTok Ads v1.3 没有通用设备 ID 目录；请从 Ads Manager 或已验证的 Provider 配置中复制设备 ID。",
+                      "source": "provider_targeting_identifier",
+                      "title": "设备 ID"
+                    },
                     "type": "array"
                   },
                   "excluded_audience_ids": {
@@ -37030,7 +36950,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "009fa51058a954e5e5227caf05f13923c26f954e71681e64b58a7fcd3ce3f6d7",
+          "contract_hash": "94ffd49a71a0c035f83bbb44f1eb40a5fac57a5b6a2040a1197624ef3b96a5aa",
           "contract_version": "1.3.0",
           "description": "创建 TikTok SINGLE_IMAGE 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -37130,20 +37050,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creative_type": {
@@ -37694,7 +37607,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "2e311c63354752a851526aaae8984e4a7788d94a7e06036b56d767fe91ccf99b",
+          "contract_hash": "707e376b09bce3936314ca092d50767fdcae6a04535026e9166ad2a844003c01",
           "contract_version": "1.3.0",
           "description": "创建 TikTok SINGLE_VIDEO 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -37794,20 +37707,13 @@
                 "type": "string"
               },
               "conversion_id": {
-                "description": "Conversion event ID",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
+                "description": "TikTok conversion event ID",
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "转化事件 ID"
+                },
                 "minimum": 0,
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
                 "type": "integer"
               },
               "creative_type": {
@@ -39065,6 +38971,74 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
+          "contract_hash": "1d46f4b58aa98716bab5e859f46d6d78037e030cefcabf8a7da59cf8d7630990",
+          "contract_version": "1.3.0",
+          "description": "查询 TikTok 品牌安全合作方授权状态。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "partner": {
+                "enum": [
+                  "Zefr"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "account_id",
+              "partner"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v1.3",
+          "intent_aliases": [],
+          "intent_types": [
+            "get_brand_safety_partner_status"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_get_brand_safety_partner_status",
+          "namespace": "tiktok",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "brand_safety_partner",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "tiktok-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "brand_safety",
+            "authorization"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "d389db6521b6b83e899e64d9397dc65ee8df40c6348b6704855e69df8ced0cf8",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Campaign 详情（支持 campaign_id 或 campaign_name）。",
@@ -39179,8 +39153,7 @@
             "查看 TikTok 广告系列表现"
           ],
           "intent_types": [
-            "get_campaign_report",
-            "download_report"
+            "get_campaign_report"
           ],
           "live_permission": null,
           "live_support": true,
@@ -39289,82 +39262,6 @@
           "traits": [
             "read",
             "catalog"
-          ]
-        },
-        {
-          "action": "get",
-          "activation_rules": [],
-          "cancellation_mode": "cooperative",
-          "contract_hash": "84ccfa4eb250ae950f5ba3199b913ea29202dbaecbbade95b475429ba62fafb1",
-          "contract_version": "1.3.0",
-          "description": "获取 TikTok 转化事件详情。",
-          "effect_class": "read",
-          "idempotency_key_field": null,
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "account_id": {
-                "type": "string"
-              },
-              "conversion_id": {
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
-                "selection_label_fields": [
-                  "conversion_name",
-                  "name",
-                  "event_name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "id"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "account_id",
-              "conversion_id"
-            ],
-            "requires": [],
-            "requires_any_of": [],
-            "type": "object"
-          },
-          "integration_api_version": "v1.3",
-          "intent_aliases": [],
-          "intent_types": [
-            "get_conversion"
-          ],
-          "live_permission": null,
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "tiktok_get_conversion",
-          "namespace": "tiktok",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "conversion",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "scope_fields": [],
-          "scope_required": false,
-          "scope_type": null,
-          "skill": "tiktok-ads-api-expert",
-          "skill_refs": [],
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "conversion"
           ]
         },
         {
@@ -39782,7 +39679,7 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "25f92d9b435a90a97ce5ea932658b541e319680116ec85b57b0f64bb69bf432f",
+          "contract_hash": "fbc12f8837c4f2228fdd79449f29714b5c85d3dcbae41e3e67a80cc00fb8bd39",
           "contract_version": "1.3.0",
           "description": "获取 TikTok 兴趣类别详情。",
           "effect_class": "read",
@@ -39792,11 +39689,16 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
+              "account_id": {
+                "type": "string"
+              },
               "category_id": {
+                "minLength": 1,
                 "type": "string"
               }
             },
             "required": [
+              "account_id",
               "category_id"
             ],
             "requires": [],
@@ -40024,7 +39926,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "dc2025d2e01ca65276ef07a754a872b7ad42000a1a544eb9466c83dcd97691e9",
+          "contract_hash": "dbefeefafbe2ed9400158082ec40b18c48e1c7646eecb9cf362bcf24419ffac8",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告报表。",
           "effect_class": "read",
@@ -40037,13 +39939,87 @@
               "account_id": {
                 "type": "string"
               },
+              "campaign_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "data_level": {
+                "default": "AUCTION_CAMPAIGN",
+                "enum": [
+                  "AUCTION_CAMPAIGN",
+                  "AUCTION_ADGROUP",
+                  "AUCTION_AD"
+                ],
+                "type": "string"
+              },
               "date_preset": {
+                "default": "LAST_7_DAYS",
+                "enum": [
+                  "TODAY",
+                  "YESTERDAY",
+                  "THIS_MONTH",
+                  "LAST_7_DAYS",
+                  "LAST_14_DAYS",
+                  "LAST_30_DAYS"
+                ],
                 "type": "string"
               },
               "date_range": {
+                "additionalProperties": false,
+                "properties": {
+                  "end_date": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
                 "type": "object"
               },
+              "dimensions": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "minItems": 1,
+                "type": "array"
+              },
+              "filtering": {
+                "maxItems": 10,
+                "type": "array"
+              },
+              "limit": {
+                "default": 100,
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "metrics": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
               "report_type": {
+                "default": "BASIC",
+                "enum": [
+                  "BASIC"
+                ],
+                "type": "string"
+              },
+              "service_type": {
+                "default": "AUCTION",
+                "enum": [
+                  "AUCTION"
+                ],
                 "type": "string"
               }
             },
@@ -40468,9 +40444,9 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "81e01e1385c666d09bc43bc664f265bdb42b388dd9754f465ba1f247e787ddd3",
+          "contract_hash": "9c731d35e09175905049eff387beea08fba1816b7fefe84b065b0c5c435dfafe",
           "contract_version": "1.3.0",
-          "description": "查询 TikTok apps 参考数据。",
+          "description": "查询当前广告主可用的 TikTok 应用。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -40485,10 +40461,9 @@
                 "type": "array"
               },
               "limit": {
+                "maximum": 100,
+                "minimum": 1,
                 "type": "integer"
-              },
-              "location_type": {
-                "type": "string"
               }
             },
             "required": [],
@@ -40532,7 +40507,7 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "apps"
+            "app"
           ]
         },
         {
@@ -40594,124 +40569,6 @@
           "traits": [
             "read",
             "audience"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "cancellation_mode": "cooperative",
-          "contract_hash": "d1528719787084969ef95007ed9de19b583edc2b39b7b787099930b52dc3ac14",
-          "contract_version": "1.3.0",
-          "description": "查询 TikTok brand_safety 参考数据。",
-          "effect_class": "read",
-          "idempotency_key_field": null,
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "filtering": {
-                "type": "array"
-              },
-              "limit": {
-                "type": "integer"
-              },
-              "location_type": {
-                "type": "string"
-              }
-            },
-            "required": [],
-            "requires": [],
-            "requires_any_of": [],
-            "type": "object"
-          },
-          "integration_api_version": "v1.3",
-          "intent_aliases": [],
-          "intent_types": [
-            "list_brand_safety"
-          ],
-          "live_permission": null,
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "tiktok_list_brand_safety",
-          "namespace": "tiktok",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "brand_safety",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "scope_fields": [],
-          "scope_required": false,
-          "scope_type": null,
-          "skill": "tiktok-ads-api-expert",
-          "skill_refs": [],
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "brand_safety"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "cancellation_mode": "cooperative",
-          "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
-          "contract_version": "1.3.0",
-          "description": "查询 TikTok browser 定向选项。",
-          "effect_class": "read",
-          "idempotency_key_field": null,
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {},
-            "required": [],
-            "requires": [],
-            "requires_any_of": [],
-            "type": "object"
-          },
-          "integration_api_version": "v1.3",
-          "intent_aliases": [],
-          "intent_types": [
-            "list_browsers"
-          ],
-          "live_permission": null,
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "tiktok_list_browsers",
-          "namespace": "tiktok",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "browser",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "scope_fields": [],
-          "scope_required": false,
-          "scope_type": null,
-          "skill": "tiktok-ads-api-expert",
-          "skill_refs": [],
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "targeting"
           ]
         },
         {
@@ -40793,7 +40650,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
+          "contract_hash": "02b6ee704535460624b1e4ec3bb7a4f236004fd8813a6008ea06818d82742ee2",
           "contract_version": "1.3.0",
           "description": "查询 TikTok carrier 定向选项。",
           "effect_class": "read",
@@ -40802,8 +40659,19 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
-            "properties": {},
-            "required": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "account_id"
+            ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
@@ -40840,7 +40708,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "targeting"
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -40918,75 +40787,6 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "427c124c0d0dca996f74f87e824a733e7b6a64b01448b716b3cde9bf7583d077",
-          "contract_version": "1.3.0",
-          "description": "查询 TikTok conversions 参考数据。",
-          "effect_class": "read",
-          "idempotency_key_field": null,
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "account_id": {
-                "type": "string"
-              },
-              "filtering": {
-                "type": "array"
-              },
-              "limit": {
-                "type": "integer"
-              },
-              "location_type": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "account_id"
-            ],
-            "requires": [],
-            "requires_any_of": [],
-            "type": "object"
-          },
-          "integration_api_version": "v1.3",
-          "intent_aliases": [],
-          "intent_types": [
-            "list_conversions"
-          ],
-          "live_permission": null,
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "tiktok_list_conversions",
-          "namespace": "tiktok",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "conversion",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "scope_fields": [],
-          "scope_required": false,
-          "scope_type": null,
-          "skill": "tiktok-ads-api-expert",
-          "skill_refs": [],
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "conversions"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "cancellation_mode": "cooperative",
           "contract_hash": "a1f7077b2569dc0bffafcf6bc6686b151a6640d5e23ddaa25b8f6627eff8e0e9",
           "contract_version": "1.3.0",
           "description": "查询 TikTok creatives 素材库。",
@@ -41054,7 +40854,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "81f5a0e02833f5f6ca1615b06c6486ecbc825e2c6e76de1d294be86d53cbd714",
+          "contract_hash": "1369d20c575e7278b182ec7bbaf64193a26bdf5370a52c1183f7d9a92c60fade",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 官方设备型号定向选项。",
           "effect_class": "read",
@@ -41066,6 +40866,15 @@
             "properties": {
               "account_id": {
                 "type": "string"
+              },
+              "keyword": {
+                "maxLength": 128,
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
@@ -41111,70 +40920,6 @@
             "read",
             "targeting",
             "lookup"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "cancellation_mode": "cooperative",
-          "contract_hash": "d1528719787084969ef95007ed9de19b583edc2b39b7b787099930b52dc3ac14",
-          "contract_version": "1.3.0",
-          "description": "查询 TikTok devices 参考数据。",
-          "effect_class": "read",
-          "idempotency_key_field": null,
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "filtering": {
-                "type": "array"
-              },
-              "limit": {
-                "type": "integer"
-              },
-              "location_type": {
-                "type": "string"
-              }
-            },
-            "required": [],
-            "requires": [],
-            "requires_any_of": [],
-            "type": "object"
-          },
-          "integration_api_version": "v1.3",
-          "intent_aliases": [],
-          "intent_types": [
-            "list_devices"
-          ],
-          "live_permission": null,
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "tiktok_list_devices",
-          "namespace": "tiktok",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "device",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "scope_fields": [],
-          "scope_required": false,
-          "scope_type": null,
-          "skill": "tiktok-ads-api-expert",
-          "skill_refs": [],
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "devices"
           ]
         },
         {
@@ -41349,7 +41094,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "04760f1f229cc06e32d2b0f8cf669bb0b70f34e774871be7cc0b75a09bce8d71",
+          "contract_hash": "77768ae3bf8036429d80551b093cedcf308799b2ff883c3223013b67a2fdd64c",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 兴趣类别。",
           "effect_class": "read",
@@ -41360,6 +41105,10 @@
             "conditional_rules": [],
             "properties": {
               "account_id": {
+                "type": "string"
+              },
+              "keyword": {
+                "maxLength": 128,
                 "type": "string"
               },
               "language": {
@@ -41382,6 +41131,11 @@
                   "ms"
                 ],
                 "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               },
               "placements": {
                 "items": {
@@ -41525,71 +41279,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "d1528719787084969ef95007ed9de19b583edc2b39b7b787099930b52dc3ac14",
-          "contract_version": "1.3.0",
-          "description": "查询 TikTok locations 参考数据。",
-          "effect_class": "read",
-          "idempotency_key_field": null,
-          "input_schema": {
-            "additionalProperties": false,
-            "additional_properties": false,
-            "conditional_rules": [],
-            "properties": {
-              "filtering": {
-                "type": "array"
-              },
-              "limit": {
-                "type": "integer"
-              },
-              "location_type": {
-                "type": "string"
-              }
-            },
-            "required": [],
-            "requires": [],
-            "requires_any_of": [],
-            "type": "object"
-          },
-          "integration_api_version": "v1.3",
-          "intent_aliases": [],
-          "intent_types": [
-            "list_locations"
-          ],
-          "live_permission": null,
-          "live_support": true,
-          "max_output_bytes": 1000000,
-          "name": "tiktok_list_locations",
-          "namespace": "tiktok",
-          "parent_resource_id_field": null,
-          "parent_resource_type": null,
-          "readback_tool": null,
-          "related_resource_id_fields": [],
-          "related_resource_type": null,
-          "replay_policy": "safe",
-          "required_permissions": [
-            "ads.read"
-          ],
-          "resource_id_field": null,
-          "resource_type": "location",
-          "result_id_fields": [],
-          "result_items_key": null,
-          "risk_level": "low",
-          "scope_fields": [],
-          "scope_required": false,
-          "scope_type": null,
-          "skill": "tiktok-ads-api-expert",
-          "skill_refs": [],
-          "timeout_seconds": 30.0,
-          "traits": [
-            "read",
-            "locations"
-          ]
-        },
-        {
-          "action": "list",
-          "activation_rules": [],
-          "cancellation_mode": "cooperative",
-          "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
+          "contract_hash": "7efe2743620de7c5b05e5a501f38fce53e9bf6387c9981cf38f6ec2d9e8e1e4f",
           "contract_version": "1.3.0",
           "description": "查询 TikTok operating_system 定向选项。",
           "effect_class": "read",
@@ -41598,8 +41288,27 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [],
-            "properties": {},
-            "required": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "os_type": {
+                "enum": [
+                  "ANDROID",
+                  "IOS"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "account_id",
+              "os_type"
+            ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
@@ -41612,7 +41321,7 @@
           "live_permission": null,
           "live_support": true,
           "max_output_bytes": 1000000,
-          "name": "tiktok_list_operating_systems",
+          "name": "tiktok_list_os_versions",
           "namespace": "tiktok",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
@@ -41636,7 +41345,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "targeting"
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -41807,7 +41517,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "feefb3ffd7e4308d26587dfedbb59652d23cd9e367f765b9d60e55c6542d9cc6",
+          "contract_hash": "00026db759f9707c3b69968424032421aa82742302a866f9bcb5cc96f9bda9f5",
           "contract_version": "1.3.0",
           "description": "按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
           "effect_class": "read",
@@ -41839,6 +41549,11 @@
                   "TO_DISTRICT"
                 ],
                 "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               },
               "objective_type": {
                 "enum": [
@@ -42450,7 +42165,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "85b1874a605c94db0c8292e8197e52e4b88ffaf6635cee1c789f27c43c44aab7",
+          "contract_hash": "3aafa938e911e6860956de3d130a9fff97b77902921a0816631e5c1ec0482639",
           "contract_version": "1.3.0",
           "description": "按关键词搜索 TikTok 投放地域。",
           "effect_class": "read",
@@ -42460,14 +42175,26 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
-              "keyword": {
+              "account_id": {
                 "type": "string"
               },
-              "location_type": {
+              "keyword": {
+                "maxLength": 128,
+                "minLength": 1,
                 "type": "string"
+              },
+              "language": {
+                "default": "en",
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
               }
             },
             "required": [
+              "account_id",
               "keyword"
             ],
             "requires": [],
@@ -42506,7 +42233,8 @@
           "timeout_seconds": 30.0,
           "traits": [
             "read",
-            "targeting"
+            "targeting",
+            "lookup"
           ]
         },
         {
@@ -43802,7 +43530,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ae2ad06d2753b44db8579d5ff9182f17819ce544c20ab1bcf55d0c69f4704a2e",
+          "contract_hash": "7ac8f6997ad20a316dc2b37dd4488d83107fff3ab403c2d33c088a253de90497",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -44186,20 +43914,11 @@
               },
               "optimization_event": {
                 "description": "Pixel or app optimization event",
-                "lookup_result_key": "conversions",
-                "lookup_tool": "tiktok_list_conversions",
-                "selection_label_fields": [
-                  "conversion_name",
-                  "event_name",
-                  "name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "conversion_id",
-                  "event_id",
-                  "id",
-                  "event_name"
-                ],
+                "manual_entry": {
+                  "instructions": "当前 TikTok Ads v1.3 Tool Source 没有适用于此字段的通用转化事件目录；请从对应广告账户的 Events Manager 或 Ads Manager 复制已配置的事件值，并在提交前核对应用或 Pixel 归属。",
+                  "source": "provider_conversion_event",
+                  "title": "优化事件"
+                },
                 "type": "string"
               },
               "optimization_goal": {
@@ -46086,7 +45805,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "65d138533c458630292ec7237d02bf16bca37d6b6abb0543bd4ebd5475b6a465",
+          "contract_hash": "32db3e48c0308f96353c22fa03d6ec8fb25cf455c73a569da03b98d3432e614d",
           "contract_version": "1.3.0",
           "description": "独立更新 TikTok Ad Group 定向；动态 ID 必须来自对应 lookup Tool，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -46186,18 +45905,11 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
-                    "lookup_result_key": "browsers",
-                    "lookup_tool": "tiktok_list_browsers",
-                    "selection_label_fields": [
-                      "browser_name",
-                      "name",
-                      "id"
-                    ],
-                    "selection_value_fields": [
-                      "browser_id",
-                      "id"
-                    ],
+                    "manual_entry": {
+                      "instructions": "当前 TikTok Ads v1.3 Tool Source 没有浏览器目录查询；请从 Ads Manager 或已验证的 Provider 配置中复制浏览器 ID。",
+                      "source": "provider_targeting_identifier",
+                      "title": "浏览器 ID"
+                    },
                     "type": "array"
                   },
                   "carrier_ids": {
@@ -46205,7 +45917,6 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
                     "lookup_result_key": "carriers",
                     "lookup_tool": "tiktok_list_carriers",
                     "selection_label_fields": [
@@ -46224,18 +45935,11 @@
                     "items": {
                       "type": "string"
                     },
-                    "lookup_account_required": false,
-                    "lookup_result_key": "devices",
-                    "lookup_tool": "tiktok_list_devices",
-                    "selection_label_fields": [
-                      "device_name",
-                      "name",
-                      "id"
-                    ],
-                    "selection_value_fields": [
-                      "device_id",
-                      "id"
-                    ],
+                    "manual_entry": {
+                      "instructions": "当前 TikTok Ads v1.3 没有通用设备 ID 目录；请从 Ads Manager 或已验证的 Provider 配置中复制设备 ID。",
+                      "source": "provider_targeting_identifier",
+                      "title": "设备 ID"
+                    },
                     "type": "array"
                   },
                   "excluded_audience_ids": {
@@ -50620,13 +50324,13 @@
         "action": "list",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "TikTok Ads v1.3 has no verified browser directory endpoint; browser identifiers remain manual input",
         "inventory_scope": "official_open_api_baseline",
-        "method": "list_browsers",
         "provider": "tiktok",
         "resource": "browser",
         "source_url": "https://business-api.tiktok.com/portal/docs",
-        "status": "implemented"
+        "status": "not_applicable"
       },
       {
         "action": "list",
@@ -50644,13 +50348,13 @@
         "action": "list",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "TikTok Ads v1.3 exposes device models rather than a general device directory",
         "inventory_scope": "official_open_api_baseline",
-        "method": "list_devices",
         "provider": "tiktok",
         "resource": "device",
         "source_url": "https://business-api.tiktok.com/portal/docs",
-        "status": "implemented"
+        "status": "not_applicable"
       },
       {
         "action": "list",
@@ -50658,7 +50362,7 @@
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_open_api_baseline",
-        "method": "list_operating_systems",
+        "method": "list_os_versions",
         "provider": "tiktok",
         "resource": "operating_system",
         "source_url": "https://business-api.tiktok.com/portal/docs",
@@ -50685,18 +50389,6 @@
         "method": "recommend_interest_keywords",
         "provider": "tiktok",
         "resource": "interest_keyword",
-        "source_url": "https://business-api.tiktok.com/portal/docs",
-        "status": "implemented"
-      },
-      {
-        "action": "list",
-        "api_version": "v1.3",
-        "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
-        "inventory_scope": "official_open_api_baseline",
-        "method": "list_locations",
-        "provider": "tiktok",
-        "resource": "location",
         "source_url": "https://business-api.tiktok.com/portal/docs",
         "status": "implemented"
       },
@@ -50950,25 +50642,25 @@
         "action": "list",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "No verified generic TikTok Ads v1.3 conversion-event directory endpoint; conversion values are entered from Ads Manager or Events Manager",
         "inventory_scope": "official_open_api_baseline",
-        "method": "list_conversions",
         "provider": "tiktok",
         "resource": "conversion",
         "source_url": "https://business-api.tiktok.com/portal/docs",
-        "status": "implemented"
+        "status": "not_applicable"
       },
       {
         "action": "get",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "No verified generic TikTok Ads v1.3 conversion-event detail endpoint",
         "inventory_scope": "official_open_api_baseline",
-        "method": "get_conversion",
         "provider": "tiktok",
         "resource": "conversion",
         "source_url": "https://business-api.tiktok.com/portal/docs",
-        "status": "implemented"
+        "status": "not_applicable"
       },
       {
         "action": "list",
@@ -51214,11 +50906,23 @@
         "action": "list",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
-        "execution_status": "dry_run_only",
+        "execution_status": "not_supported",
+        "gap": "No verified generic brand-safety category directory endpoint",
         "inventory_scope": "official_open_api_baseline",
-        "method": "list_brand_safety",
         "provider": "tiktok",
         "resource": "brand_safety",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "not_applicable"
+      },
+      {
+        "action": "get",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "get_brand_safety_partner_status",
+        "provider": "tiktok",
+        "resource": "brand_safety_partner",
         "source_url": "https://business-api.tiktok.com/portal/docs",
         "status": "implemented"
       },
@@ -51286,5 +50990,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 302
+  "tool_count": 297
 }

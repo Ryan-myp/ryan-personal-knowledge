@@ -30,12 +30,7 @@ from .creatives import (
     TikTokListImagesHandler,
 )
 from .reference import (
-    TikTokListConversionsHandler,
-    TikTokListLocationsHandler,
-    TikTokListDevicesHandler,
-    TikTokListCatalogsHandler,
     TikTokListAppsHandler,
-    TikTokListBrandSafetyHandler,
 )
 from ....api_clients.tiktok_client import TikTokAPIClient
 from ....domain.ad.blueprint import load_blueprint_file
@@ -134,10 +129,6 @@ TIKTOK_LOOKUP_CONTRACTS = {
             "tiktok_list_apps", "apps", ["app_id", "id"],
             ["app_name", "name", "display_name", "id"], account_required=False,
         ),
-        "conversion_id": _tiktok_lookup(
-            "tiktok_list_conversions", "conversions", ["conversion_id", "id"],
-            ["conversion_name", "name", "event_name", "id"],
-        ),
         "pixel_id": _tiktok_lookup(
             "tiktok_list_pixels", "pixels", ["pixel_id", "id", "code"],
             ["pixel_name", "name", "display_name", "id"],
@@ -178,17 +169,9 @@ TIKTOK_LOOKUP_CONTRACTS = {
             "tiktok_list_device_models", "device_models", ["device_model_id", "id"],
             ["device_model_name", "name", "id"],
         ),
-        "device_ids": _tiktok_lookup(
-            "tiktok_list_devices", "devices", ["device_id", "id"],
-            ["device_name", "name", "id"], account_required=False,
-        ),
         "carrier_ids": _tiktok_lookup(
             "tiktok_list_carriers", "carriers", ["carrier_id", "id"],
-            ["carrier_name", "name", "id"], account_required=False,
-        ),
-        "browser_ids": _tiktok_lookup(
-            "tiktok_list_browsers", "browsers", ["browser_id", "id"],
-            ["browser_name", "name", "id"], account_required=False,
+            ["carrier_name", "name", "id"],
         ),
         "video_id": _tiktok_lookup(
             "tiktok_list_videos", "videos", ["video_id", "id"],
@@ -375,19 +358,18 @@ class TikTokToolSource(BaseProviderToolSource):
         "delete_audience": ["tiktok_delete_audience"],
         "list_interest_categories": ["tiktok_list_interest_categories"],
         "list_action_categories": ["tiktok_list_action_categories"],
-        "get_interest_category": ["tiktok_get_interest_category"], "list_locations": ["tiktok_list_locations"],
+        "get_interest_category": ["tiktok_get_interest_category"],
         "list_languages": ["tiktok_list_languages"],
         "list_device_models": ["tiktok_list_device_models"],
         "recommend_interest_keywords": ["tiktok_recommend_interest_keywords"],
         "search_locations": ["tiktok_search_locations"], "list_regions": ["tiktok_list_regions"],
-        "list_devices": ["tiktok_list_devices"],
-        "list_operating_systems": ["tiktok_list_operating_systems"], "list_carriers": ["tiktok_list_carriers"],
-        "list_browsers": ["tiktok_list_browsers"], "list_creatives": ["tiktok_list_creatives"],
+        "list_os_versions": ["tiktok_list_os_versions"],
+        "list_carriers": ["tiktok_list_carriers"],
+        "list_creatives": ["tiktok_list_creatives"],
         "get_creative": ["tiktok_get_creative"],
         "list_videos": ["tiktok_list_videos"], "get_video": ["tiktok_get_video"],
         "list_images": ["tiktok_list_images"], "get_image": ["tiktok_get_image"],
         "upload_image": ["tiktok_upload_image"], "upload_video": ["tiktok_upload_video"],
-        "list_conversions": ["tiktok_list_conversions"], "get_conversion": ["tiktok_get_conversion"],
         "list_pixels": ["tiktok_list_pixels"], "get_pixel": ["tiktok_get_pixel"],
         "create_pixel": ["tiktok_create_pixel"], "update_pixel": ["tiktok_update_pixel"],
         "send_pixel_event": ["tiktok_send_pixel_event"],
@@ -403,7 +385,10 @@ class TikTokToolSource(BaseProviderToolSource):
         "list_product_sets": ["tiktok_list_product_sets"],
         "get_product_set": ["tiktok_get_product_set"],
         "validate_product_selection": ["tiktok_validate_product_selection"],
-        "list_apps": ["tiktok_list_apps"], "list_brand_safety": ["tiktok_list_brand_safety"],
+        "list_apps": ["tiktok_list_apps"],
+        "get_brand_safety_partner_status": [
+            "tiktok_get_brand_safety_partner_status"
+        ],
         "get_report": ["tiktok_get_report"],
     }
 
@@ -575,6 +560,8 @@ class TikTokToolSource(BaseProviderToolSource):
                     "placements": {"type": "array", "items": {"type": "string", "enum": TIKTOK_PLACEMENTS}},
                     "special_industries": {"type": "array", "items": {"type": "string", "enum": ["HOUSING", "EMPLOYMENT", "CREDIT"]}},
                     "language": {"type": "string", "enum": ["en", "zh", "ja", "de", "es", "fr", "id", "it", "ko", "ru", "th", "tr", "vi", "ar", "pt", "ms"]},
+                    "keyword": {"type": "string", "maxLength": 128},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
                 required=["account_id"], requires=["account_id"],
                 action="list", resource_type="interest_category", intent_types=["list_interests"],
@@ -583,6 +570,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     "version": data.get("version", 2), "placements": data.get("placements"),
                     "special_industries": data.get("special_industries"),
                     "language": data.get("language", "en"),
+                    "keyword": data.get("keyword"), "limit": data.get("limit", 100),
                 }),
             ),
             method_tool(
@@ -603,17 +591,33 @@ class TikTokToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_interest_category",
                 description="获取 TikTok 兴趣类别详情。", method_name="get_interest_category", result_key="interest_category",
-                properties={"category_id": {"type": "string"}}, required=["category_id"], action="get",
+                properties={
+                    "account_id": {"type": "string"},
+                    "category_id": {"type": "string", "minLength": 1},
+                },
+                required=["account_id", "category_id"], action="get",
                 resource_type="interest_category", intent_types=["get_interest_category"], traits=["read", "targeting"],
-                argument_builder=lambda _ctx, data: ((data["category_id"],), {}),
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["category_id"],
+                ), {}),
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_search_locations",
                 description="按关键词搜索 TikTok 投放地域。", method_name="search_locations", result_key="locations",
-                properties={"keyword": {"type": "string"}, "location_type": {"type": "string"}},
-                required=["keyword"], action="list", resource_type="location", intent_types=["search_locations"],
-                traits=["read", "targeting"], argument_builder=lambda _ctx, data: ((data["keyword"],), {
-                    "location_type": data.get("location_type")
+                properties={
+                    "account_id": {"type": "string"},
+                    "keyword": {"type": "string", "minLength": 1, "maxLength": 128},
+                    "language": {"type": "string", "default": "en"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                required=["account_id", "keyword"], action="list",
+                resource_type="location", intent_types=["search_locations"],
+                traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["keyword"],
+                ), {
+                    "language": data.get("language", "en"),
+                    "limit": data.get("limit", 100),
                 }),
             ),
             method_tool(
@@ -630,6 +634,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     "brand_safety_partner": {"type": "string", "enum": ["IAS", "OPEN_SLATE"]},
                     "level_range": {"type": "string", "enum": ["ALL", "TO_COUNTRY", "TO_PROVINCE", "TO_CITY", "TO_DISTRICT"]},
                     "rf_campaign_type": {"type": "string", "enum": ["STANDARD", "PULSE"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
                 required=["account_id", "placements", "objective_type"],
                 action="list", resource_type="region", intent_types=["list_regions"],
@@ -641,20 +646,44 @@ class TikTokToolSource(BaseProviderToolSource):
                     "brand_safety_partner": data.get("brand_safety_partner"),
                     "level_range": data.get("level_range"),
                     "rf_campaign_type": data.get("rf_campaign_type"),
+                    "limit": data.get("limit", 100),
                 }),
             ),
         ]
-        for method_name, result_key, resource_type in (
-            ("list_operating_systems", "operating_systems", "operating_system"),
-            ("list_carriers", "carriers", "carrier"),
-            ("list_browsers", "browsers", "browser"),
+        for method_name, result_key, resource_type, properties, required in (
+            (
+                "list_os_versions", "os_versions", "operating_system",
+                {
+                    "account_id": {"type": "string"},
+                    "os_type": {"type": "string", "enum": ["ANDROID", "IOS"]},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                ["account_id", "os_type"],
+            ),
+            (
+                "list_carriers", "carriers", "carrier",
+                {
+                    "account_id": {"type": "string"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                ["account_id"],
+            ),
         ):
             tools.append(method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name=f"tiktok_{method_name}",
                 description=f"查询 TikTok {resource_type} 定向选项。", method_name=method_name,
-                result_key=result_key, properties={}, action="list", resource_type=resource_type,
-                intent_types=[f"list_{resource_type}s"], traits=["read", "targeting"],
-                argument_builder=lambda _ctx, _data: ((), {}),
+                result_key=result_key, properties=properties, required=required,
+                action="list", resource_type=resource_type,
+                intent_types=[f"list_{resource_type}s"], traits=["read", "targeting", "lookup"],
+                argument_builder=lambda ctx, data, os_method=(
+                    method_name == "list_os_versions"
+                ): (
+                    (account(ctx, data), data["os_type"]),
+                    {"limit": data.get("limit", 100)},
+                ) if os_method else (
+                    (account(ctx, data),),
+                    {"limit": data.get("limit", 100)},
+                ),
             ))
         tools.extend([
             method_tool(
@@ -669,11 +698,18 @@ class TikTokToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_device_models",
                 description="查询 TikTok 官方设备型号定向选项。", method_name="list_device_models",
-                result_key="device_models", properties={"account_id": {"type": "string"}},
+                result_key="device_models", properties={
+                    "account_id": {"type": "string"},
+                    "keyword": {"type": "string", "maxLength": 128},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
                 required=["account_id"], requires=["account_id"],
                 action="list", resource_type="device_model", intent_types=["list_device_models"],
                 traits=["read", "targeting", "lookup"],
-                argument_builder=lambda ctx, data: ((account(ctx, data),), {}),
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "keyword": data.get("keyword"),
+                    "limit": data.get("limit", 100),
+                }),
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_recommend_interest_keywords",
@@ -698,12 +734,24 @@ class TikTokToolSource(BaseProviderToolSource):
         ])
         tools.extend([
             method_tool(
-                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_conversion",
-                description="获取 TikTok 转化事件详情。", method_name="get_conversion", result_key="conversion",
-                properties={"account_id": {"type": "string"}, "conversion_id": {"type": "string"}},
-                required=["account_id", "conversion_id"], action="get", resource_type="conversion",
-                intent_types=["get_conversion"], traits=["read", "conversion"],
-                argument_builder=lambda ctx, data: ((account(ctx, data), data["conversion_id"]), {}),
+                namespace="tiktok",
+                skill="tiktok-ads-api-expert",
+                name="tiktok_get_brand_safety_partner_status",
+                description="查询 TikTok 品牌安全合作方授权状态。",
+                method_name="get_brand_safety_partner_status",
+                result_key="partner_status",
+                properties={
+                    "account_id": {"type": "string"},
+                    "partner": {"type": "string", "enum": ["Zefr"]},
+                },
+                required=["account_id", "partner"],
+                action="get",
+                resource_type="brand_safety_partner",
+                intent_types=["get_brand_safety_partner_status"],
+                traits=["read", "brand_safety", "authorization"],
+                argument_builder=lambda ctx, data: ((
+                    account(ctx, data), data["partner"],
+                ), {}),
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_pixels",
@@ -1001,15 +1049,82 @@ class TikTokToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_report",
                 description="查询 TikTok 广告报表。", method_name="get_report", result_key="report",
-                properties={"account_id": {"type": "string"}, "report_type": {"type": "string"},
-                            "date_preset": {"type": "string"}, "date_range": {"type": "object"}},
+                properties={
+                    "account_id": {"type": "string"},
+                    "campaign_ids": {"type": "array", "items": {"type": "string"}},
+                    "report_type": {
+                        "type": "string",
+                        "enum": ["BASIC"],
+                        "default": "BASIC",
+                    },
+                    "service_type": {
+                        "type": "string",
+                        "enum": ["AUCTION"],
+                        "default": "AUCTION",
+                    },
+                    "data_level": {
+                        "type": "string",
+                        "enum": [
+                            "AUCTION_CAMPAIGN", "AUCTION_ADGROUP", "AUCTION_AD",
+                        ],
+                        "default": "AUCTION_CAMPAIGN",
+                    },
+                    "dimensions": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "minItems": 1,
+                        "maxItems": 10,
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "minItems": 1,
+                        "maxItems": 20,
+                    },
+                    "date_preset": {
+                        "type": "string",
+                        "enum": [
+                            "TODAY", "YESTERDAY", "THIS_MONTH",
+                            "LAST_7_DAYS", "LAST_14_DAYS", "LAST_30_DAYS",
+                        ],
+                        "default": "LAST_7_DAYS",
+                    },
+                    "date_range": {
+                        "type": "object",
+                        "properties": {
+                            "start_date": {
+                                "type": "string",
+                                "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    "filtering": {"type": "array", "maxItems": 10},
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 100,
+                    },
+                },
                 required=["account_id"], action="report", resource_type="report",
                 intent_types=["download_report"], traits=["read", "report"],
                 intent_aliases=["查询 TikTok 广告报表", "查看 TikTok campaign 表现"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
-                    "report_type": data.get("report_type", "CAMPAIGN"),
+                    "report_type": data.get("report_type", "BASIC"),
+                    "service_type": data.get("service_type", "AUCTION"),
+                    "data_level": data.get("data_level", "AUCTION_CAMPAIGN"),
+                    "dimensions": data.get("dimensions"),
+                    "metrics": data.get("metrics"),
                     "date_preset": data.get("date_preset", "LAST_7_DAYS"),
                     "time_range": data.get("date_range"),
+                    "filtering": data.get("filtering"),
+                    "campaign_ids": data.get("campaign_ids"),
+                    "limit": data.get("limit", 100),
                 }),
             ),
         ])
@@ -1456,7 +1571,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 },
             ),
             action="report", resource_type="report",
-            intent_types=["get_campaign_report", "download_report"],
+            intent_types=["get_campaign_report"],
             intent_aliases=[
                 "查询 TikTok 报表", "查询 TikTok campaign 报表",
                 "查看 TikTok 广告系列表现",
@@ -1818,53 +1933,29 @@ class TikTokToolSource(BaseProviderToolSource):
             ), {}),
         ))
 
-        reference_tools = [
-            ("conversions", "account", TikTokListConversionsHandler(api_client)),
-            ("locations", None, TikTokListLocationsHandler(api_client)),
-            ("devices", None, TikTokListDevicesHandler(api_client)),
-            ("apps", None, TikTokListAppsHandler(api_client)),
-            ("brand_safety", None, TikTokListBrandSafetyHandler(api_client)),
-        ]
-        for resource_name, account_scope, handler in reference_tools:
-            properties = {
-                "location_type": {"type": "string"},
-                "filtering": {"type": "array"},
-                "limit": {"type": "integer"},
-            }
-            required = []
-            if account_scope == "account":
-                properties["account_id"] = {"type": "string"}
-                required = ["account_id"]
-            elif resource_name == "apps":
-                # TikTok App discovery can be resolved from the configured
-                # advertiser context; do not make users type an account just
-                # to populate a picker.  When a caller supplies one, Runtime
-                # still validates it against the principal/whitelist.
-                properties["account_id"] = {"type": "string"}
-            tools.append((ToolDefinition(
-                name=f"tiktok_list_{resource_name}",
-                skill="tiktok-ads-api-expert",
-                namespace="tiktok",
-                description=f"查询 TikTok {resource_name} 参考数据。",
-                input_schema=ToolSchema(required=required, properties=properties),
-                action="list", resource_type={
-                    "conversions": "conversion", "locations": "location", "devices": "device",
-                    "apps": "app", "brand_safety": "brand_safety",
-                }[resource_name],
-                intent_types={
-                    "conversions": ["list_conversions"], "locations": ["list_locations"],
-                    "devices": ["list_devices"], "apps": ["list_apps"],
-                    "brand_safety": ["list_brand_safety"],
-                }[resource_name],
-                intent_aliases=(
-                    ["查询 TikTok apps", "查询 TikTok 可用应用列表", "列出 TikTok 应用"]
-                    if resource_name == "apps" else []
-                ),
-                risk_level=RiskLevel.LOW,
-                effect_class=ToolEffect.READ,
-                replay_policy=ReplayPolicy.SAFE,
-                traits=["read", resource_name],
-            ), handler))
+        tools.append((ToolDefinition(
+            name="tiktok_list_apps",
+            skill="tiktok-ads-api-expert",
+            namespace="tiktok",
+            description="查询当前广告主可用的 TikTok 应用。",
+            input_schema=ToolSchema(
+                properties={
+                    "account_id": {"type": "string"},
+                    "filtering": {"type": "array"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+            ),
+            action="list",
+            resource_type="app",
+            intent_types=["list_apps"],
+            intent_aliases=[
+                "查询 TikTok apps", "查询 TikTok 可用应用列表", "列出 TikTok 应用"
+            ],
+            risk_level=RiskLevel.LOW,
+            effect_class=ToolEffect.READ,
+            replay_policy=ReplayPolicy.SAFE,
+            traits=["read", "app"],
+        ), TikTokListAppsHandler(api_client)))
 
         for resource_type, resource_id, tool_suffix in [
             ("campaign", "campaign_id", "campaign"),
