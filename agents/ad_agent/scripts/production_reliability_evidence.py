@@ -237,7 +237,10 @@ def _child_crash_after_claim(database: str, task_id: str) -> int:
 
 
 def _child_run_worker(
-    database: str, task_id: str, timeout_seconds: float,
+    database: str,
+    task_id: str,
+    timeout_seconds: float,
+    hold_before_run_seconds: float = 0.0,
 ) -> int:
     from agents.ad_agent.runtime.ad_application import AdvertisingComposition
 
@@ -252,6 +255,8 @@ def _child_run_worker(
     ) -> Any:
         nonlocal runtime_entry_calls
         runtime_entry_calls += 1
+        if hold_before_run_seconds > 0:
+            time.sleep(hold_before_run_seconds)
         return original_run(runtime_instance, *args, **kwargs)
 
     AdvertisingComposition.run = observed_run
@@ -281,6 +286,7 @@ def _child_run_worker(
                     "turn_id_present": bool(result.get("turn_id")),
                     "run_store_status": getattr(run, "status", None),
                     "tool_result_count": len(result.get("results") or []),
+                    "worker_id": runtime.task_executor.metrics().get("worker_id"),
                 })
                 return 0
             time.sleep(0.02)
@@ -288,6 +294,7 @@ def _child_run_worker(
         _json_line({
             "status": record.status if record is not None else None,
             "runtime_entry_called": runtime_entry_calls > 0,
+            "worker_id": runtime.task_executor.metrics().get("worker_id"),
             "timeout": True,
         })
         return 1
@@ -311,9 +318,12 @@ def _child_command(arguments: list[str]) -> int:
         )
     if command == "crash-after-claim" and len(arguments) == 3:
         return _child_crash_after_claim(arguments[1], arguments[2])
-    if command == "run-worker" and len(arguments) == 4:
+    if command == "run-worker" and len(arguments) in {4, 5}:
         return _child_run_worker(
-            arguments[1], arguments[2], float(arguments[3]),
+            arguments[1],
+            arguments[2],
+            float(arguments[3]),
+            float(arguments[4]) if len(arguments) == 5 else 0.0,
         )
     raise ValueError("unsupported reliability evidence child command")
 
@@ -630,6 +640,103 @@ def _worker_route_evidence(
     }
 
 
+def _worker_liveness_evidence(
+    database: str,
+    store: Any,
+    child_environment: Mapping[str, str],
+    deadline: float,
+) -> dict[str, Any]:
+    task_id = f"evidence-worker-liveness-{uuid.uuid4().hex}"
+    store.create_task(_task(task_id))
+    worker_timeout = _remaining_seconds(deadline, 9.0)
+    process = _child_process(
+        ["run-worker", database, task_id, "8", "5.0"],
+        child_environment,
+    )
+    worker_id = ""
+    first_heartbeat = ""
+    heartbeat_advanced_while_running = False
+    registered_while_running = False
+    record = None
+    process_code = -1
+    payload = None
+    process_error = ""
+    try:
+        observation_deadline = min(
+            deadline,
+            time.monotonic() + worker_timeout,
+        )
+        while time.monotonic() < observation_deadline:
+            record = store.get_task(task_id)
+            task_running = record is not None and record.status == "running"
+            workers = store.list_workers(statuses=["running"], limit=200)
+            current = workers[0] if workers else None
+            if current is not None:
+                worker_id = str(current.get("worker_id") or "")
+                heartbeat = str(current.get("last_heartbeat_at") or "")
+                registered_while_running = registered_while_running or task_running
+                if first_heartbeat and heartbeat != first_heartbeat and task_running:
+                    heartbeat_advanced_while_running = True
+                if not first_heartbeat:
+                    first_heartbeat = heartbeat
+            if (
+                record is not None
+                and record.status in TERMINAL_TASK_STATUSES
+                and heartbeat_advanced_while_running
+            ):
+                break
+            time.sleep(0.05)
+        process_code, payload, process_error = _read_process(
+            process,
+            min(2.0, max(0.01, deadline - time.monotonic() + 0.5)),
+        )
+    finally:
+        if process.poll() is None:
+            _terminate_process(process)
+
+    if not worker_id:
+        worker_id = str((payload or {}).get("worker_id") or "")
+    record = store.get_task(task_id)
+    worker_record = next(
+        (
+            item for item in store.list_workers(limit=200)
+            if str(item.get("worker_id") or "") == worker_id
+        ),
+        None,
+    ) if worker_id else None
+    return {
+        "scenario": "worker_liveness_multi_instance",
+        "passed": bool(
+            process_code == 0
+            and not process_error
+            and record is not None
+            and record.status == "succeeded"
+            and registered_while_running
+            and heartbeat_advanced_while_running
+            and bool((payload or {}).get("runtime_entry_called"))
+            and worker_record is not None
+            and worker_record.get("status") == "stopped"
+            and worker_record.get("lease_expires_at") is None
+        ),
+        "instance_count": 2,
+        "registered_while_running": registered_while_running,
+        "heartbeat_advanced_while_running": heartbeat_advanced_while_running,
+        "shutdown_status": (
+            worker_record.get("status") if worker_record is not None else None
+        ),
+        "lease_cleared": bool(
+            worker_record is not None
+            and worker_record.get("lease_expires_at") is None
+        ),
+        "runtime_entry_called": bool(
+            (payload or {}).get("runtime_entry_called")
+        ),
+        "error_type": "ChildProcessError" if process_error else None,
+        "worker_id_digest": _safe_id(worker_id) if worker_id else None,
+        "task_id_digest": _safe_id(task_id),
+    }
+
+
 def _worker_recovery_evidence(
     database: str,
     store: Any,
@@ -743,6 +850,7 @@ def run_reliability_evidence(
                     _session_lease_evidence,
                     _task_claim_evidence,
                     _worker_route_evidence,
+                    _worker_liveness_evidence,
                     _worker_recovery_evidence,
                 )
                 scenarios: list[dict[str, Any]] = []

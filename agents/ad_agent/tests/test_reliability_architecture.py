@@ -495,7 +495,7 @@ def test_process_reliability_evidence_covers_multi_instance_worker_and_recovery(
     assert report["persistence_backend"] == "sqlite"
     assert report["production_deployment_attested"] is False
     assert report["passed"] is True
-    assert report["scenario_count"] >= 4
+    assert report["scenario_count"] == 5
     assert all(item["passed"] for item in report["scenarios"])
 
     scenarios = {item["scenario"]: item for item in report["scenarios"]}
@@ -504,6 +504,12 @@ def test_process_reliability_evidence_covers_multi_instance_worker_and_recovery(
     assert scenarios["worker_runtime_route"]["terminal_status"] == "succeeded"
     assert scenarios["worker_runtime_route"]["runtime_entry"] == "AdvertisingComposition.run"
     assert scenarios["worker_runtime_route"]["run_store_status"] == "succeeded"
+    worker_liveness = scenarios["worker_liveness_multi_instance"]
+    assert worker_liveness["registered_while_running"] is True
+    assert worker_liveness["heartbeat_advanced_while_running"] is True
+    assert worker_liveness["shutdown_status"] == "stopped"
+    assert worker_liveness["lease_cleared"] is True
+    assert worker_liveness["error_type"] is None
     assert scenarios["worker_crash_recovery"]["recovered_status"] == "recovery_required"
     assert scenarios["worker_crash_recovery"]["final_status"] == "succeeded"
     assert scenarios["worker_crash_recovery"]["restart_run_store_status"] == "succeeded"

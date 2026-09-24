@@ -271,7 +271,8 @@ make ad-agent-reliability-evidence
 
 它会启动独立进程，验证 Session lease 互斥、Task 单次 claim、两个 Worker 竞争同一任务，
 并让获胜 Worker 实际通过 `AdvertisingComposition.run` 进入通用 Agent Runtime；随后核对
-Task 和 RunStore 的持久化终态。另会模拟进程在 claim 后崩溃，验证进入
+Task 和 RunStore 的持久化终态。还会核实 Worker 在运行中有持久化注册和 heartbeat 更新，
+并在优雅关闭后注销、清除 lease。故障场景会模拟进程在 claim 后崩溃，验证进入
 `recovery_required`，只有提供显式回查引用后才能重新排队。默认 SQLite 模式仅验证本地文件
 共享契约，不代表 SQLite 可用于多进程部署。
 

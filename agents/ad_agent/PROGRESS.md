@@ -2,7 +2,7 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
-## 当前契约（2026-09-23）
+## 当前契约（2026-09-24）
 
 - 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 302 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - 通用 Harness 已补齐平台治理参数下沉：默认 execution mode、最大 Tool 数、最大回合数和 Skill 上下文上限会进入真实 Runtime；模型临时失败支持有限重试，Session transcript 有消息数/字符数上限。
@@ -21,11 +21,12 @@
   dry-run；取消/暂停只改变本地调度状态，不表示外部平台回滚。
 - 已增加 `scripts/production_reliability_evidence.py` 进程级实证：独立进程验证 Session
   lease 互斥、Task 单次 claim、真实 Worker 进入 `AdvertisingComposition.run()`、
-  RunStore 终态以及 claim 后进程崩溃的显式恢复；报告带 Run/Task 脱敏摘要。
+  RunStore 终态、Worker 注册/运行中 heartbeat/优雅关闭注销，以及 claim 后进程崩溃的
+  显式恢复；报告带 Run/Task/Worker 脱敏摘要。
   子进程共享单一总时限，超时会终止并回收；Session holder 在失败路径也会释放或清理。
   默认 SQLite 模式和可选本机 MySQL/InnoDB 模式都只证明本地共享持久化进程契约，
   `production_deployment_attested` 固定为 false，不构成生产集群、HA、容量或 Provider
-  live 证据。2026-09-23 本机 SQLite 与 MySQL/InnoDB 各自四项场景均通过、Provider
+  live 证据。2026-09-24 本机 SQLite 与 MySQL/InnoDB 各自五项场景均通过、Provider
   调用数为 0；MySQL 使用随机临时 schema，完成后删除，管理连接中断时会尝试重连清理。
 - 知识库已统一为 Markdown-first LLM Wiki：`core.knowledge.MarkdownWikiKnowledgeProvider`
   是 Runtime 和 Wiki Tool 的唯一数据入口；文档使用 `SCHEMA.md` 的元数据，
