@@ -337,14 +337,20 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 #### 发布就绪门禁与证据分层
 
-现在使用统一的 readiness 报告把四层证据分开，避免把 Tool 数量或本地模拟结果当成线上能力：
+现在使用统一的 readiness 报告分层核验 API 范围、代码契约、本地运行和 Provider 证据，避免把 Tool 数量或本地模拟结果当成线上能力：
 
 | 层级 | 证明什么 | 本地是否可运行 |
 |------|----------|----------------|
 | `code_contract` | Tool Source、Tool schema、权限、版本和 snapshot 一致 | 是 |
 | `dry_run` | Runtime → Tool → Tool Source → Client 的本地调用链和 Skill-up case | 是 |
-| `provider_e2e` | 指定渠道测试账户上的逐接口真实读写证据 | 否（需受控环境） |
-| `live_verified` | 经过 live fuse、白名单、确认和审计的逐接口证据 | 否（需批准环境） |
+| `provider_scope` | Meta、Google Ads、TikTok 已声明的查询接口及 Campaign/Ad Group/Ad/Creative 创建更新接口；DV360 排除 | 是 |
+| `provider_query_e2e` | 每个纳入范围的 query Tool/action 都有受控 Provider 账号实测 | 否（需受控环境） |
+| `provider_e2e` | 目标 Campaign 层级写操作逐接口关联的受控账户实测证据 | 否（需受控环境） |
+| `live_verified` | 目标 Campaign 层级写操作经过 live fuse、白名单、确认和审计的实测证据 | 否（需批准环境） |
+
+`provider_scope` 覆盖率证明当前 API Surface 到 Client/Tool 合同的接通情况，不等于官方 API 全量覆盖。readiness policy 显式要求 Google Ads、Meta、TikTok 三个渠道都存在；某个 Provider 不能通过关闭 readiness 来绕过检查。已废弃或当前 API 版本不再提供的操作应标为 `not_applicable`，不能算作待实现查询缺口。各 Provider 在自己的 `PROVIDER_METADATA` 声明目标写资源；查询动作使用通用 action 分类。
+
+`provider_scope` 只说明已声明 API Surface 接通 Client/Tool 合同，不证明实际 Provider 查询成功。Query 实测必须另有逐项的 `resource`、`action`、Registry `tool` 和 `outcome` 记录；query-only 运行不需要捆绑写操作。审计会要求每个已声明 Surface action 都有明确分类，新增且未分类的 action 会阻断门禁，避免悄悄漏掉查询。Provider 证据校验错误和代码契约错误分开报告。写操作证据也必须精确关联 Tool/action；创建要求成功返回资源 ID 且资源暂停/禁用，`live_verified` 还要求操作级回读成功。update 只有提供 `update_tool` 和独立 `update_readback` 才计分；旧的资源级 update 状态、没有 Tool 归属的记录只展示、不计分。Readiness policy 的必需 Provider 集合必须非空、规范化，并与所有启用渠道精确一致。质量分按纳入渠道的最低覆盖率计算，不用跨渠道平均值掩盖单个渠道缺口。
 
 本地默认门禁：
 
@@ -358,7 +364,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 ./scripts/ad-agent-python agents/ad_agent/scripts/provider_contract_harness.py
 ```
 
-`release` profile 会要求后两层证据；在尚未接入受控 Provider E2E 证据前，失败是预期的，不能通过改 Tool 数量或把本地 stub 标成 live 来绕过：
+`release` profile 还要求所有目标 query 的逐操作 Provider E2E、目标写操作的 Provider E2E/live 证据和 95 分门禁；受控运行记录没有与具体 Tool/action 绑定时只展示、不计分：
 
 ```bash
 ./scripts/ad-agent-python agents/ad_agent/scripts/release_readiness.py --profile release

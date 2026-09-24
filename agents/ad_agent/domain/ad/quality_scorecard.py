@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 
 QUALITY_THRESHOLD = 95
@@ -60,6 +60,8 @@ def build_quality_scorecard(
     *,
     code_contract_ok: bool,
     dry_run_ok: bool,
+    provider_scope_ratio: float,
+    provider_query_e2e_ratio: float,
     generic_platform_ok: bool,
     security_ok: bool,
     provider_e2e_ratio: float,
@@ -123,6 +125,26 @@ def build_quality_scorecard(
             evidence="local Provider contract harness and Skill-up cases",
             blocker="dry-run or Skill-up evidence failed",
         ),
+        QualityDimension(
+            name="provider_scope",
+            score=_ratio(provider_scope_ratio),
+            evidence="all declared query APIs and campaign-hierarchy create/update operations",
+            blockers=(
+                ()
+                if _ratio(provider_scope_ratio) >= QUALITY_THRESHOLD
+                else ("in-scope Provider API contract coverage is below 95%",)
+            ),
+        ),
+        QualityDimension(
+            name="provider_query_e2e",
+            score=_ratio(provider_query_e2e_ratio),
+            evidence="declared query API operations exercised against controlled Provider accounts",
+            blockers=(
+                ()
+                if _ratio(provider_query_e2e_ratio) >= QUALITY_THRESHOLD
+                else ("Provider query E2E coverage is below 95%",)
+            ),
+        ),
         _binary_dimension(
             "generic_platform",
             generic_platform_ok,
@@ -181,23 +203,92 @@ def build_quality_scorecard(
 
 
 def provider_evidence_ratios(
-    inventory_reports: Mapping[str, Any],
+    readiness_scope_reports: Mapping[str, Any],
+    required_providers: Iterable[str] = (),
 ) -> tuple[float, float]:
-    """Calculate E2E/live ratios from operation inventory evidence."""
-    total = 0
-    provider_e2e = 0
-    live_verified = 0
-    for report in inventory_reports.values():
-        if not isinstance(report, Mapping):
+    """Return the weakest provider's E2E and live ratios for managed writes."""
+    provider_ratios: list[tuple[float, float]] = []
+    included_providers: set[str] = set()
+    for provider, report in readiness_scope_reports.items():
+        if not isinstance(report, Mapping) or report.get("included") is False:
             continue
-        total += int(report.get("total", 0) or 0)
-        evidence = report.get("evidence_levels") or {}
-        execution = report.get("execution_statuses") or {}
-        provider_e2e += int(evidence.get("provider_e2e", 0) or 0)
-        live_verified += int(execution.get("live_verified", 0) or 0)
-    if total <= 0:
+        included_providers.add(str(provider))
+        operations = report.get("operations") or []
+        total = 0
+        provider_e2e = 0
+        live_verified = 0
+        for operation in operations:
+            if (
+                not isinstance(operation, Mapping)
+                or operation.get("readiness_category") != "managed_write"
+            ):
+                continue
+            total += 1
+            provider_e2e += int(operation.get("evidence_level") == "provider_e2e")
+            live_verified += int(
+                operation.get("execution_status") == "live_verified"
+            )
+        if total:
+            provider_ratios.append(
+                (provider_e2e / total, live_verified / total)
+            )
+    missing = set(str(provider) for provider in required_providers) - included_providers
+    provider_ratios.extend((0.0, 0.0) for _ in missing)
+    if not provider_ratios:
         return 0.0, 0.0
-    return provider_e2e / total, live_verified / total
+    return (
+        min(ratio[0] for ratio in provider_ratios),
+        min(ratio[1] for ratio in provider_ratios),
+    )
+
+
+def provider_scope_coverage_ratio(
+    readiness_scope_reports: Mapping[str, Any],
+    required_providers: Iterable[str] = (),
+) -> float:
+    """Return the weakest included provider's contract coverage ratio."""
+    ratios: list[float] = []
+    included_providers: set[str] = set()
+    for provider, report in readiness_scope_reports.items():
+        if not isinstance(report, Mapping) or report.get("included") is False:
+            continue
+        included_providers.add(str(provider))
+        total = int(report.get("total", 0) or 0)
+        covered = int(report.get("covered", 0) or 0)
+        ratios.append(covered / total if total else 0.0)
+    missing = set(str(provider) for provider in required_providers) - included_providers
+    ratios.extend(0.0 for _ in missing)
+    return min(ratios) if ratios else 0.0
+
+
+def provider_query_evidence_ratio(
+    readiness_scope_reports: Mapping[str, Any],
+    required_providers: Iterable[str] = (),
+) -> float:
+    """Return the weakest required provider's query E2E coverage."""
+    ratios: list[float] = []
+    included_providers: set[str] = set()
+    for provider, report in readiness_scope_reports.items():
+        if not isinstance(report, Mapping) or report.get("included") is False:
+            continue
+        included_providers.add(str(provider))
+        operations = [
+            operation
+            for operation in (report.get("operations") or [])
+            if isinstance(operation, Mapping)
+            and operation.get("readiness_category") == "query"
+        ]
+        if operations:
+            verified = sum(
+                int(operation.get("evidence_level") == "provider_e2e")
+                for operation in operations
+            )
+            ratios.append(verified / len(operations))
+        else:
+            ratios.append(0.0)
+    missing = set(str(provider) for provider in required_providers) - included_providers
+    ratios.extend(0.0 for _ in missing)
+    return min(ratios) if ratios else 0.0
 
 
 __all__ = [
@@ -205,4 +296,6 @@ __all__ = [
     "QualityDimension",
     "build_quality_scorecard",
     "provider_evidence_ratios",
+    "provider_query_evidence_ratio",
+    "provider_scope_coverage_ratio",
 ]

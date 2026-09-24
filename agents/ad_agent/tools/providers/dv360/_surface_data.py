@@ -6,6 +6,9 @@ PROVIDER_METADATA = {
     "source_url": "https://developers.google.com/display-video/api/reference/rest/v4",
     "inventory_scope": "basic_management_reporting_only",
     "completeness": "scoped_not_exhaustive",
+    "readiness_enabled": False,
+    "managed_write_resources": [],
+    "readiness_exclusion_reason": "DV360 is outside the current campaign-management API readiness target",
 }
 
 # DV360 is deliberately scoped to the already agreed basic layer.  This list

@@ -27,6 +27,38 @@ VALID_EXECUTION_STATUSES = {
     EXECUTION_NOT_SUPPORTED,
 }
 
+READINESS_QUERY_ACTIONS = {
+    "catalog",
+    "get",
+    "list",
+    "list_assignments",
+    "lookup",
+    "preview",
+    "query",
+    "read",
+    "recommend",
+    "report",
+    "search",
+    "validate",
+}
+READINESS_WRITE_ACTIONS = {"create", "crud", "live_create", "mutate", "update"}
+READINESS_OUT_OF_SCOPE_WRITE_ACTIONS = {
+    "boost",
+    "delete",
+    "end",
+    "event",
+    "events_config",
+    "events_test",
+    "graduate",
+    "pause",
+    "promote",
+    "resume",
+    "schedule",
+    "send",
+    "source_upload",
+    "upload",
+}
+
 EVIDENCE_CODE_CONTRACT = "code_contract"
 EVIDENCE_PROVIDER_DOC_SCOPE = "provider_doc_scope"
 EVIDENCE_PROVIDER_E2E = "provider_e2e"
@@ -35,6 +67,95 @@ VALID_EVIDENCE_LEVELS = {
     EVIDENCE_PROVIDER_DOC_SCOPE,
     EVIDENCE_PROVIDER_E2E,
 }
+
+
+def validate_readiness_metadata(metadata: dict[str, Any]) -> list[str]:
+    """Validate the provider-owned release scope declaration."""
+    errors: list[str] = []
+    enabled = metadata.get("readiness_enabled")
+    if not isinstance(enabled, bool):
+        errors.append("readiness_enabled must be a boolean")
+    resources = metadata.get("managed_write_resources")
+    if not isinstance(resources, list) or any(
+        not isinstance(resource, str) or not resource.strip()
+        for resource in resources
+    ):
+        errors.append("managed_write_resources must be an array of non-empty strings")
+    elif enabled and not resources:
+        errors.append("managed_write_resources cannot be empty when readiness is enabled")
+    if enabled is False and not str(metadata.get("readiness_exclusion_reason") or "").strip():
+        errors.append("readiness_exclusion_reason is required when readiness is disabled")
+    return errors
+
+
+def validate_readiness_actions(
+    surface: Iterable[dict[str, Any]],
+    metadata: dict[str, Any],
+) -> list[str]:
+    """Require every enabled Provider surface action to have a known class."""
+    if metadata.get("readiness_enabled") is not True:
+        return []
+
+    errors: list[str] = []
+    for index, entry in enumerate(surface):
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("status") or "").strip() == NOT_APPLICABLE:
+            continue
+        action = str(entry.get("action") or "").strip().lower()
+        classified = (
+            action in READINESS_QUERY_ACTIONS
+            or action in READINESS_WRITE_ACTIONS
+            or action in READINESS_OUT_OF_SCOPE_WRITE_ACTIONS
+            or action.startswith(("create_", "update_"))
+        )
+        if not classified:
+            errors.append(
+                f"surface[{index}].action has no readiness classification: "
+                f"{action!r}"
+            )
+    return errors
+
+
+def select_readiness_surface(
+    surface: Iterable[dict[str, Any]],
+    metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Select all query operations and scoped campaign-hierarchy writes.
+
+    Provider modules own their resource aliases. The shared rule understands
+    only normalized operation kinds and does not contain channel-specific
+    resource names.
+    """
+    if metadata.get("readiness_enabled") is False:
+        return []
+
+    managed_resources = {
+        str(resource).strip()
+        for resource in metadata.get("managed_write_resources", [])
+        if str(resource).strip()
+    }
+    selected: list[dict[str, Any]] = []
+    for raw in surface:
+        entry = dict(raw)
+        if str(entry.get("status") or "").strip() == NOT_APPLICABLE:
+            continue
+        action = str(entry.get("action") or "").strip().lower()
+        resource = str(entry.get("resource") or "").strip()
+        category = ""
+        if action in READINESS_QUERY_ACTIONS:
+            category = "query"
+        elif (
+            resource in managed_resources
+            and (
+                action in READINESS_WRITE_ACTIONS
+                or action.startswith(("create_", "update_"))
+            )
+        ):
+            category = "managed_write"
+        if category:
+            selected.append({**entry, "readiness_category": category})
+    return selected
 
 
 def materialize_surface(
@@ -105,6 +226,8 @@ def validate_inventory(
             errors.append(f"{prefix}.surface_method is required for implemented inventory")
         if not str(entry.get("endpoint") or entry.get("provider_operation") or "").strip():
             errors.append(f"{prefix}.endpoint is required")
+        if status == NOT_APPLICABLE and not str(entry.get("gap") or "").strip():
+            errors.append(f"{prefix}.gap is required for not_applicable inventory")
     return errors
 
 
@@ -123,6 +246,7 @@ def build_inventory_report(
 
     covered: list[dict[str, Any]] = []
     gaps: list[dict[str, Any]] = []
+    not_applicable: list[dict[str, Any]] = []
     for raw in inventory:
         entry = dict(raw)
         key = (str(entry.get("resource")), str(entry.get("action")))
@@ -135,17 +259,26 @@ def build_inventory_report(
             matches = list(surface_by_method.get(method, []))
         else:
             matches = list(surface_by_key.get(key, []))
+        surface_matches = [
+            {
+                "method": item.get("method"),
+                "status": item.get("status"),
+                "execution_status": item.get("execution_status"),
+            }
+            for item in matches
+        ]
+        if entry.get("status") == NOT_APPLICABLE:
+            not_applicable.append({
+                **entry,
+                "surface_matches": surface_matches,
+                "covered": False,
+                "not_applicable": True,
+            })
+            continue
         implemented = [item for item in matches if item.get("status") == IMPLEMENTED]
         item = {
             **entry,
-            "surface_matches": [
-                {
-                    "method": item.get("method"),
-                    "status": item.get("status"),
-                    "execution_status": item.get("execution_status"),
-                }
-                for item in matches
-            ],
+            "surface_matches": surface_matches,
             "covered": bool(implemented),
         }
         if implemented:
@@ -185,6 +318,7 @@ def build_inventory_report(
         "evidence_gaps": evidence_gaps,
         "covered_entries": covered,
         "gaps_entries": gaps,
+        "not_applicable_entries": not_applicable,
     }
 
 
@@ -216,4 +350,6 @@ def validate_surface(entries: Iterable[dict[str, Any]]) -> list[str]:
             errors.append(f"{prefix}.method is required for implemented operation")
         if status == PLANNED and not str(entry.get("gap") or "").strip():
             errors.append(f"{prefix}.gap is required for planned operation")
+        if status == NOT_APPLICABLE and not str(entry.get("gap") or "").strip():
+            errors.append(f"{prefix}.gap is required for not_applicable operation")
     return errors

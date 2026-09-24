@@ -6,6 +6,8 @@ PROVIDER_METADATA = {
     "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
     "inventory_scope": "official_graph_edges_baseline",
     "completeness": "scoped_not_exhaustive",
+    "readiness_enabled": True,
+    "managed_write_resources": ["campaign", "ad_set", "ad", "creative"],
 }
 
 OFFICIAL_INVENTORY = [

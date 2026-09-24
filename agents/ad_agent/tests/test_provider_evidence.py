@@ -33,6 +33,37 @@ def test_checked_in_provider_evidence_is_valid_and_operation_specific():
         "APP", "PERFORMANCE_MAX", "SHOPPING"
     ]
     assert report["providers"]["tiktok"]["operations"]["ad:create"]["provider_rejected"] == 2
+    assert report["providers"]["meta"]["query_evidence"] == []
+    meta_operations = report["providers"]["meta"]["operation_evidence"]
+    attributed_meta_operations = [item for item in meta_operations if item["tool"]]
+    assert len(attributed_meta_operations) == 6
+    assert all(item["action"] == "create" for item in attributed_meta_operations)
+    assert all(
+        item["evidence_level"] == "provider_e2e"
+        for item in attributed_meta_operations
+    )
+    assert all(
+        item["execution_status"] == "live_verified"
+        for item in attributed_meta_operations
+    )
+    assert not any(
+        item["tool"] and item["action"] == "update"
+        for item in meta_operations
+    )
+    tiktok_operations = report["providers"]["tiktok"]["operation_evidence"]
+    assert any(
+        item["tool"] == "tiktok_smart_plus_create_campaign"
+        and item["campaign_types"] == ["LEAD_GENERATION"]
+        and item["execution_status"] == "live_verified"
+        for item in tiktok_operations
+    )
+    google_operations = report["providers"]["google-ads"]["operation_evidence"]
+    assert google_operations
+    assert not any(item["tool"] for item in google_operations)
+    assert not any(
+        item["evidence_level"] == "provider_e2e"
+        for item in google_operations
+    )
 
 
 def test_provider_evidence_rejects_unsafe_or_ambiguous_claims():
@@ -76,6 +107,40 @@ def test_provider_evidence_rejects_unsafe_or_ambiguous_claims():
     assert any("readback is not passed" in error for error in errors)
 
 
+def test_invalid_tool_attribution_is_rejected_without_echoing_its_value():
+    raw = {
+        "schema_version": "1.0",
+        "generated_at": "2026-09-24",
+        "scope": "campaign_and_descendant_create_update",
+        "safety": {
+            "test_accounts_only": True,
+            "new_resources_paused": True,
+            "deleted": False,
+            "credentials_included": False,
+            "raw_provider_responses_included": False,
+        },
+        "runs": [{
+            "provider": "meta",
+            "test_account": "test-account",
+            "campaign_type": "TRAFFIC",
+            "status": "partial_live_verified",
+            "resources": {
+                "campaign": {
+                    "tool": "client_secret=must-not-echo",
+                    "id": "campaign-1",
+                    "status": "PAUSED",
+                    "create": "passed",
+                }
+            },
+        }],
+    }
+
+    errors = validate_provider_evidence(raw)
+
+    assert any("tool must be a valid Tool name" in error for error in errors)
+    assert "must-not-echo" not in " ".join(errors)
+
+
 def test_loader_returns_redacted_summary_and_keeps_raw_ids_out_of_report(tmp_path):
     path = tmp_path / "evidence.json"
     raw = json.loads(EVIDENCE_PATH.read_text(encoding="utf-8"))
@@ -87,6 +152,129 @@ def test_loader_returns_redacted_summary_and_keeps_raw_ids_out_of_report(tmp_pat
     serialized = json.dumps(report, ensure_ascii=False)
     assert "2806375919473667" not in serialized
     assert report["providers"]["meta"]["account_previews"] == ["…3667"]
+    assert "120251262026940251" not in serialized
+
+
+def test_operation_evidence_needs_exact_tool_action_readback_and_paused_status():
+    raw = {
+        "schema_version": "1.0",
+        "generated_at": "2026-09-24",
+        "scope": "campaign_and_descendant_create_update",
+        "safety": {
+            "test_accounts_only": True,
+            "new_resources_paused": True,
+            "deleted": False,
+            "credentials_included": False,
+            "raw_provider_responses_included": False,
+        },
+        "runs": [{
+            "provider": "meta",
+            "test_account": "test-account",
+            "campaign_type": "TRAFFIC",
+            "status": "partial_live_verified",
+            "resources": {
+                "campaign": {
+                    "tool": "meta_create_campaign",
+                    "update_tool": "meta_update_campaign",
+                    "id": "campaign-1",
+                    "status": "PAUSED",
+                    "create": "passed",
+                    "create_readback": "passed",
+                    "update": "passed",
+                    "update_readback": "failed",
+                }
+            },
+        }],
+    }
+
+    operations = build_provider_evidence_report(raw)["providers"]["meta"][
+        "operation_evidence"
+    ]
+    by_action = {item["action"]: item for item in operations}
+
+    assert by_action["create"]["tool"] == "meta_create_campaign"
+    assert by_action["create"]["execution_status"] == "live_verified"
+    assert by_action["update"]["tool"] == "meta_update_campaign"
+    assert by_action["update"]["evidence_level"] == "provider_e2e"
+    assert by_action["update"]["execution_status"] == "dry_run_only"
+
+
+def test_query_evidence_is_separate_from_write_evidence_and_redacted():
+    raw = {
+        "schema_version": "1.0",
+        "generated_at": "2026-09-24",
+        "scope": "campaign_and_descendant_create_update",
+        "safety": {
+            "test_accounts_only": True,
+            "new_resources_paused": True,
+            "deleted": False,
+            "credentials_included": False,
+            "raw_provider_responses_included": False,
+        },
+        "runs": [{
+            "provider": "meta",
+            "test_account": "test-account",
+            "campaign_type": "TRAFFIC",
+            "status": "read_verified",
+            "resources": {},
+            "queries": [{
+                "resource": "campaign",
+                "action": "list",
+                "tool": "meta_list_campaigns",
+                "outcome": "passed",
+            }],
+        }],
+    }
+
+    assert validate_provider_evidence(raw) == []
+    evidence = build_provider_evidence_report(raw)["providers"]["meta"][
+        "query_evidence"
+    ]
+
+    assert evidence == [{
+        "readiness_category": "query",
+        "resource": "campaign",
+        "action": "list",
+        "tool": "meta_list_campaigns",
+        "campaign_types": ["TRAFFIC"],
+        "outcome": "passed",
+        "evidence_level": "provider_e2e",
+    }]
+
+
+def test_query_only_evidence_does_not_require_a_write_operation():
+    raw = {
+        "schema_version": "1.0",
+        "generated_at": "2026-09-24",
+        "scope": "provider_query_e2e",
+        "safety": {
+            "test_accounts_only": True,
+            "new_resources_paused": True,
+            "deleted": False,
+            "credentials_included": False,
+            "raw_provider_responses_included": False,
+        },
+        "runs": [{
+            "provider": "meta",
+            "test_account": "test-account",
+            "campaign_type": "TRAFFIC",
+            "status": "read_verified",
+            "resources": {},
+            "queries": [{
+                "resource": "campaign",
+                "action": "list",
+                "tool": "meta_list_campaigns",
+                "outcome": "passed",
+            }],
+        }],
+    }
+
+    assert validate_provider_evidence(raw) == []
+    report = build_provider_evidence_report(raw)
+    assert report["providers"]["meta"]["operation_evidence"] == []
+    assert report["providers"]["meta"]["query_evidence"][0]["evidence_level"] == (
+        "provider_e2e"
+    )
 
 
 def test_provider_e2e_runner_requires_live_gates_and_redacts_evidence():

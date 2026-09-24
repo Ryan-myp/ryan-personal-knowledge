@@ -46,6 +46,17 @@ def test_tool_source_audit_discovers_all_installed_channels_without_issues():
     )
 
 
+def test_provider_evidence_errors_do_not_pollute_code_contract_issues(tmp_path):
+    evidence_path = tmp_path / "invalid-provider-evidence.json"
+    evidence_path.write_text('{"schema_version":"unsupported"}', encoding="utf-8")
+
+    report = audit_provider_tools(evidence_path)
+
+    assert report["issues"] == []
+    assert report["provider_evidence"]["valid"] is False
+    assert report["provider_evidence_errors"]
+
+
 def test_tool_source_audit_includes_provider_owned_api_surface_and_planned_gaps():
     report = audit_provider_tools()
 
@@ -121,21 +132,30 @@ def test_tool_source_audit_reports_scoped_official_inventory_separately_from_too
         assert len(inventory["evidence_gaps"]) == inventory["total"]
         assert all(
             entry["endpoint"] and entry["source_url"]
-            for entry in inventory["covered_entries"] + inventory["gaps_entries"]
+            for entry in (
+                inventory["covered_entries"]
+                + inventory["gaps_entries"]
+                + inventory["not_applicable_entries"]
+            )
         )
 
-    # Legacy Google Feed/FeedItem resources are intentionally not executable
-    # in v24. They remain visible as an explicit planned gap rather than being
-    # counted as covered because compatibility methods still exist in the
-    # client.
+    # Legacy Google Feed/FeedItem resources no longer exist in v24. Keep the
+    # exclusion visible instead of treating obsolete endpoints as missing work.
     google_inventory = report["platforms"]["google-ads"]["official_inventory"]
     google_covered = google_inventory["covered_entries"]
-    assert any(
-        entry["resource"] == "feed" for entry in google_inventory["gaps_entries"]
+    assert not any(
+        entry["resource"] in {"feed", "feed_item"}
+        for entry in google_inventory["gaps_entries"]
     )
+    assert {
+        entry["resource"]
+        for entry in google_inventory["not_applicable_entries"]
+    } == {"feed", "feed_item"}
+    assert google_inventory["covered"] == google_inventory["total"]
     assert any(
         entry["resource"] == "feed_item"
-        for entry in report["platforms"]["google-ads"]["api_surface_planned"]
+        and entry["status"] == "not_applicable"
+        for entry in report["platforms"]["google-ads"]["api_surface_not_applicable"]
     )
     assert not any(
         definition.name == "google_list_feeds"

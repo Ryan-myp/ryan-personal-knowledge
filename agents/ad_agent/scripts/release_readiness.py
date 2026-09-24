@@ -233,10 +233,13 @@ def build_report(
     provider_evidence_path: Path | None = None,
 ) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
-    provider_evidence, provider_evidence_error = _load_optional_provider_evidence(
-        provider_evidence_path
+    resolved_provider_evidence_path = provider_evidence_path or (
+        ROOT / "agents" / "ad_agent" / "contracts" / "provider_e2e_evidence.json"
     )
-    tool_source_report = audit_provider_tools()
+    provider_evidence, provider_evidence_error = _load_optional_provider_evidence(
+        resolved_provider_evidence_path
+    )
+    tool_source_report = audit_provider_tools(resolved_provider_evidence_path)
     contract_errors = _contract_gate_errors()
     provider_report = run_harness(
         ROOT / "agents" / "ad_agent" / "contracts" / "provider_contract_scenarios.json"
@@ -276,7 +279,7 @@ def build_report(
         "dry_run": dry_run_report,
         "reliability": reliability_report,
         "provider_evidence_source": (
-            str(provider_evidence_path) if provider_evidence_path else None
+            str(resolved_provider_evidence_path)
         ),
         "provider_evidence_load_error": provider_evidence_error,
     }

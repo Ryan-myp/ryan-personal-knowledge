@@ -6,6 +6,17 @@ PROVIDER_METADATA = {
     "source_url": "https://business-api.tiktok.com/portal/docs",
     "inventory_scope": "official_open_api_baseline",
     "completeness": "scoped_not_exhaustive",
+    "readiness_enabled": True,
+    "managed_write_resources": [
+        "campaign",
+        "campaign_bundle",
+        "ad_group",
+        "ad",
+        "creative",
+        "smart_plus_campaign",
+        "smart_plus_ad_group",
+        "smart_plus_ad",
+    ],
 }
 
 OFFICIAL_INVENTORY = [

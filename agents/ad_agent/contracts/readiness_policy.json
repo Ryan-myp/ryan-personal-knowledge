@@ -1,14 +1,24 @@
 {
   "format_version": 1,
   "default_profile": "local",
+  "readiness_scope": {
+    "required_providers": [
+      "google-ads",
+      "meta",
+      "tiktok"
+    ]
+  },
   "profiles": {
     "local": [
       "code_contract",
-      "dry_run"
+      "dry_run",
+      "provider_scope"
     ],
     "release": [
       "code_contract",
       "dry_run",
+      "provider_scope",
+      "provider_query_e2e",
       "provider_e2e",
       "live_verified",
       "quality_95"
@@ -17,6 +27,8 @@
   "evidence_policy": {
     "code_contract": "Registry schema, Tool Source audit and versioned Tool snapshot",
     "dry_run": "Local provider contract harness and Skill-up Runtime cases",
+    "provider_scope": "All declared query APIs and scoped campaign-hierarchy create/update operations, excluding DV360",
+    "provider_query_e2e": "Exact Tool/action evidence that declared query operations were exercised against controlled provider test accounts",
     "provider_e2e": "Operation-specific evidence from a controlled provider test account",
     "live_verified": "Operation-specific evidence with approved live write controls"
   }

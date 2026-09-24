@@ -13,6 +13,7 @@ release gate one conservative interpretation of that file:
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterator, Mapping
@@ -55,6 +56,9 @@ _CREDENTIAL_KEYS = {
     "mcc",
     "password",
 }
+_SAFE_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,127}\Z")
+_SAFE_CAMPAIGN_TYPE = re.compile(r"[A-Za-z0-9_. -]{1,80}\Z")
+_SAFE_OPERATION_LABEL = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 
 
 def _redacted_id(value: Any) -> str:
@@ -157,15 +161,67 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
         campaign_types = _campaign_types(run)
         if not campaign_types:
             errors.append(f"{prefix}.campaign_type(s) is required")
+        for campaign_type in campaign_types:
+            if not _SAFE_CAMPAIGN_TYPE.fullmatch(campaign_type):
+                errors.append(
+                    f"{prefix}.campaign_type(s) contains an invalid value"
+                )
         resources = run.get("resources")
         if not isinstance(resources, Mapping):
             errors.append(f"{prefix}.resources must be an object")
             continue
 
+        query_records = run.get("queries", [])
+        if not isinstance(query_records, list):
+            errors.append(f"{prefix}.queries must be an array")
+            query_records = []
+        for query_index, query in enumerate(query_records):
+            query_prefix = f"{prefix}.queries[{query_index}]"
+            if not isinstance(query, Mapping):
+                errors.append(f"{query_prefix} must be an object")
+                continue
+            if set(query) != {"resource", "action", "tool", "outcome"}:
+                errors.append(
+                    f"{query_prefix} must contain only resource, action, tool, outcome"
+                )
+            for field in ("resource", "action"):
+                value = query.get(field)
+                if not isinstance(value, str) or not _SAFE_OPERATION_LABEL.fullmatch(
+                    value.strip()
+                ):
+                    errors.append(f"{query_prefix}.{field} must be a safe operation label")
+            tool = query.get("tool")
+            if not isinstance(tool, str) or not _SAFE_TOOL_NAME.fullmatch(tool.strip()):
+                errors.append(f"{query_prefix}.tool must be a valid Tool name")
+            outcome = str(query.get("outcome") or "").strip()
+            if outcome not in SUPPORTED_OPERATION_STATES:
+                errors.append(f"{query_prefix}.outcome has unsupported state")
+
         operation_count = 0
         passed_count = 0
         rejected_count = 0
         for resource_path, record in _iter_resource_records(resources):
+            for tool_field in ("tool", "update_tool"):
+                tool = record.get(tool_field)
+                if tool is not None and (
+                    not isinstance(tool, str)
+                    or not _SAFE_TOOL_NAME.fullmatch(tool.strip())
+                ):
+                    errors.append(
+                        f"{prefix}.resources.{resource_path}.{tool_field} "
+                        "must be a valid Tool name"
+                    )
+            for readback_field in (
+                "readback",
+                "create_readback",
+                "update_readback",
+            ):
+                readback = record.get(readback_field)
+                if readback is not None and str(readback).strip() not in SUPPORTED_OPERATION_STATES:
+                    errors.append(
+                        f"{prefix}.resources.{resource_path}.{readback_field} "
+                        "has unsupported state"
+                    )
             for action in ("create", "update"):
                 if action not in record:
                     continue
@@ -204,7 +260,7 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
                         )
                 elif state in {"provider_rejected", "failed", "unknown"}:
                     rejected_count += 1
-        if operation_count == 0:
+        if operation_count == 0 and not query_records:
             errors.append(f"{prefix}.resources must contain create/update outcomes")
         if status == "live_verified" and rejected_count:
             errors.append(
@@ -234,6 +290,83 @@ def _operation_summary(
         key: dict(sorted(counter.items()))
         for key, counter in sorted(counters.items())
     }
+
+
+def _operation_evidence(
+    runs: list[Mapping[str, Any]],
+    *,
+    safety: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Expose redacted, action-level evidence only when a Tool is identified."""
+    rows: list[dict[str, Any]] = []
+    for run in runs:
+        provider = normalize_platform(str(run.get("provider") or ""))
+        campaign_types = _campaign_types(run)
+        resources = run.get("resources")
+        if not isinstance(resources, Mapping):
+            continue
+        for resource_path, record in _iter_resource_records(resources):
+            resource_status = str(record.get("status") or "").strip().upper()
+            paused = (
+                safety.get("new_resources_paused") is True
+                and resource_status in {"PAUSED", "DISABLE", "DISABLED"}
+            )
+            has_id = bool(str(record.get("id") or "").strip())
+            for action in ("create", "update"):
+                outcome = str(record.get(action) or "").strip()
+                if not outcome:
+                    continue
+                tool_field = "tool" if action == "create" else "update_tool"
+                tool = str(record.get(tool_field) or "").strip()
+                readback_field = f"{action}_readback"
+                readback = str(record.get(readback_field) or "").strip()
+                if action == "create" and not readback:
+                    readback = str(record.get("readback") or "").strip()
+                e2e_verified = bool(tool and has_id and paused and outcome == "passed")
+                live_verified = bool(e2e_verified and readback == "passed")
+                rows.append({
+                    "readiness_category": "managed_write",
+                    "provider": provider,
+                    "resource_path": resource_path,
+                    "action": action,
+                    "tool": tool,
+                    "campaign_types": campaign_types,
+                    "outcome": outcome,
+                    "has_resource_id": has_id,
+                    "paused": paused,
+                    "readback": readback or "not_recorded",
+                    "evidence_level": (
+                        "provider_e2e" if e2e_verified else "code_contract"
+                    ),
+                    "execution_status": (
+                        "live_verified" if live_verified else "dry_run_only"
+                    ),
+                })
+    return rows
+
+
+def _query_evidence(runs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Summarize explicitly attributed Provider query outcomes."""
+    rows: list[dict[str, Any]] = []
+    for run in runs:
+        campaign_types = _campaign_types(run)
+        queries = run.get("queries") or []
+        for query in queries:
+            if not isinstance(query, Mapping):
+                continue
+            outcome = str(query.get("outcome") or "").strip()
+            rows.append({
+                "readiness_category": "query",
+                "resource": str(query.get("resource") or "").strip(),
+                "action": str(query.get("action") or "").strip(),
+                "tool": str(query.get("tool") or "").strip(),
+                "campaign_types": campaign_types,
+                "outcome": outcome,
+                "evidence_level": (
+                    "provider_e2e" if outcome == "passed" else "code_contract"
+                ),
+            })
+    return rows
 
 
 def build_provider_evidence_report(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -291,6 +424,11 @@ def build_provider_evidence_report(raw: Mapping[str, Any]) -> dict[str, Any]:
             "limited_campaign_types": limited_types,
             "account_previews": accounts,
             "operations": _operation_summary(runs),
+            "operation_evidence": _operation_evidence(
+                runs,
+                safety=raw["safety"],
+            ),
+            "query_evidence": _query_evidence(runs),
         }
 
     return {

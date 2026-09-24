@@ -1,5 +1,5 @@
 {
-  "digest": "eb8266d300eb771638f0d479834303d49fdf237280604e93252d4d072cf9b48c",
+  "digest": "6eab52864b366423847312994fdf0041adec85319fc3833ae814700fee4334d7",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -48975,7 +48975,7 @@
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "get",
@@ -48988,7 +48988,7 @@
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "create",
@@ -49001,7 +49001,7 @@
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "update",
@@ -49014,7 +49014,7 @@
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "delete",
@@ -49027,7 +49027,7 @@
         "provider": "google-ads",
         "resource": "feed",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "list",
@@ -49040,7 +49040,7 @@
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "get",
@@ -49053,7 +49053,7 @@
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "create",
@@ -49066,7 +49066,7 @@
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "update",
@@ -49079,7 +49079,7 @@
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "delete",
@@ -49092,7 +49092,7 @@
         "provider": "google-ads",
         "resource": "feed_item",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
-        "status": "planned"
+        "status": "not_applicable"
       },
       {
         "action": "list",

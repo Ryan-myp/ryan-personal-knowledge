@@ -26,8 +26,12 @@ if str(ROOT) not in sys.path:
 from agents.ad_agent.tools.providers.source_factory import discover_tool_source_factory  # noqa: E402
 from agents.ad_agent.tools.providers.api_surface import (  # noqa: E402
     IMPLEMENTED,
+    NOT_APPLICABLE,
     build_inventory_report,
+    select_readiness_surface,
     validate_inventory,
+    validate_readiness_actions,
+    validate_readiness_metadata,
     validate_surface,
 )
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
@@ -73,6 +77,61 @@ def _covered_tool_names(coverage: dict[str, Any]) -> set[str]:
     }
 
 
+def _evidence_actions_for_surface(action: str) -> set[str]:
+    """Expand a surface write label to the explicit evidence action labels."""
+    normalized = str(action or "").strip().lower()
+    if normalized == "crud" or normalized == "mutate":
+        return {"create", "update"}
+    if normalized == "live_create" or normalized.startswith("create_"):
+        return {"create"}
+    if normalized.startswith("update_"):
+        return {"update"}
+    return {normalized}
+
+
+def _link_operation_evidence(
+    operation: dict[str, Any],
+    evidence_operations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Link only exact registered Tool names and matching write actions."""
+    category = operation.get("readiness_category")
+    if category == "query":
+        accepted_actions = {str(operation.get("action") or "").strip().lower()}
+        evidence_category = "query"
+    elif category == "managed_write":
+        accepted_actions = _evidence_actions_for_surface(
+            str(operation.get("action") or "")
+        )
+        evidence_category = "managed_write"
+    else:
+        return []
+    registered_tools = set(operation.get("tools") or [])
+    return [
+        evidence
+        for evidence in evidence_operations
+        if evidence.get("readiness_category") == evidence_category
+        and evidence.get("tool") in registered_tools
+        and evidence.get("action") in accepted_actions
+        and (
+            category != "query"
+            or evidence.get("resource") == operation.get("resource")
+        )
+    ]
+
+
+def _evidence_for_readiness_category(
+    readiness_category: str,
+    *,
+    write_evidence: list[dict[str, Any]],
+    query_evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if readiness_category == "query":
+        return query_evidence
+    if readiness_category == "managed_write":
+        return write_evidence
+    return []
+
+
 def _audit_skill_context(report: dict[str, Any]) -> None:
     """Reject credential-shaped assignments in built-in Skill context.
 
@@ -100,7 +159,12 @@ def _audit_skill_context(report: dict[str, Any]) -> None:
 
 def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, Any]:
     """Build a JSON-safe tool_source report without constructing API clients."""
-    report: dict[str, Any] = {"platforms": {}, "issues": []}
+    report: dict[str, Any] = {
+        "platforms": {},
+        "readiness_scope": {},
+        "provider_evidence_errors": [],
+        "issues": [],
+    }
     _audit_skill_context(report)
     resolved_evidence_path = Path(evidence_path) if evidence_path else (
         Path(__file__).resolve().parents[1] / "contracts" / "provider_e2e_evidence.json"
@@ -111,7 +175,7 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
             **evidence,
             "path": str(resolved_evidence_path),
         }
-        report["issues"].extend(
+        report["provider_evidence_errors"].extend(
             f"provider evidence: {error}"
             for error in evidence.get("errors", [])
         )
@@ -124,6 +188,9 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
             "providers": {},
             "path": str(resolved_evidence_path),
         }
+        report["provider_evidence_errors"].append(
+            "provider evidence: 受控 Provider E2E 证据文件不存在"
+        )
     runtime = AdvertisingComposition(offline_mode=True, enforce_account_scope=False)
 
     for slug in discover_platform_slugs():
@@ -162,6 +229,17 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
             report["issues"].extend(f"{slug}: {error}" for error in surface_errors)
             inventory_errors = validate_inventory(inventory, provider_metadata)
             report["issues"].extend(f"{slug}: {error}" for error in inventory_errors)
+            readiness_metadata_errors = validate_readiness_metadata(provider_metadata)
+            report["issues"].extend(
+                f"{slug}: {error}" for error in readiness_metadata_errors
+            )
+            readiness_action_errors = validate_readiness_actions(
+                surface,
+                provider_metadata,
+            )
+            report["issues"].extend(
+                f"{slug}: {error}" for error in readiness_action_errors
+            )
             if not inventory:
                 report["issues"].append(
                     f"{slug}: OFFICIAL_INVENTORY is required for a provider tool_source"
@@ -181,6 +259,7 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
             covered_tool_names = _covered_tool_names(coverage)
             surface_gaps: list[str] = []
             planned_entries: list[dict[str, Any]] = []
+            not_applicable_entries: list[dict[str, Any]] = []
             implemented_surface = 0
             implemented_surface_methods: set[str] = set()
             for entry in surface:
@@ -189,6 +268,8 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
                 if entry.get("status") != IMPLEMENTED:
                     if entry.get("status") == "planned":
                         planned_entries.append(entry)
+                    elif entry.get("status") == NOT_APPLICABLE:
+                        not_applicable_entries.append(entry)
                     continue
                 implemented_surface += 1
                 method_name = str(entry.get("method") or "")
@@ -227,6 +308,137 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
                 )
             report.setdefault("surface_gaps", {})[platform_key] = surface_gaps
             report.setdefault("surface_planned", {})[platform_key] = planned_entries
+            report.setdefault("surface_not_applicable", {})[
+                platform_key
+            ] = not_applicable_entries
+            scoped_entries = select_readiness_surface(surface, provider_metadata)
+            scoped_operations: list[dict[str, Any]] = []
+            provider_evidence = report.get("provider_evidence", {})
+            provider_evidence_details = (
+                provider_evidence.get("providers", {}).get(platform_key, {})
+                if isinstance(provider_evidence, dict)
+                else {}
+            )
+            operation_evidence = provider_evidence_details.get(
+                "operation_evidence", []
+            )
+            if not isinstance(operation_evidence, list):
+                operation_evidence = []
+            query_evidence = provider_evidence_details.get("query_evidence", [])
+            if not isinstance(query_evidence, list):
+                query_evidence = []
+            for entry in scoped_entries:
+                method_name = str(entry.get("method") or "")
+                mapped_tools = coverage.get(method_name, [])
+                if isinstance(mapped_tools, str):
+                    mapped_tools = [mapped_tools]
+                mapped_tools = [str(name) for name in (mapped_tools or [])]
+                method_available = bool(
+                    client_class is not None
+                    and method_name
+                    and callable(getattr(client_class, method_name, None))
+                )
+                contract_covered = bool(
+                    entry.get("status") == IMPLEMENTED
+                    and method_available
+                    and mapped_tools
+                    and set(mapped_tools).issubset(registered_names)
+                )
+                operation = {
+                    "resource": str(entry.get("resource") or ""),
+                    "action": str(entry.get("action") or ""),
+                    "method": method_name,
+                    "status": str(entry.get("status") or ""),
+                    "readiness_category": str(entry["readiness_category"]),
+                    "evidence_level": str(entry.get("evidence_level") or "unknown"),
+                    "execution_status": str(
+                        entry.get("execution_status") or "unknown"
+                    ),
+                    "contract_covered": contract_covered,
+                    "tools": mapped_tools,
+                }
+                linked_evidence = _link_operation_evidence(
+                    operation,
+                    _evidence_for_readiness_category(
+                        str(entry["readiness_category"]),
+                        write_evidence=operation_evidence,
+                        query_evidence=query_evidence,
+                    ),
+                )
+                if any(
+                    item.get("evidence_level") == "provider_e2e"
+                    for item in linked_evidence
+                ):
+                    operation["evidence_level"] = "provider_e2e"
+                if any(
+                    item.get("execution_status") == "live_verified"
+                    for item in linked_evidence
+                ):
+                    operation["execution_status"] = "live_verified"
+                operation["evidence_records"] = [
+                    {
+                        "resource": item.get("resource"),
+                        "action": item.get("action"),
+                        "tool": item.get("tool"),
+                        "campaign_types": list(item.get("campaign_types") or []),
+                        "outcome": item.get("outcome"),
+                        "readback": item.get("readback"),
+                        "evidence_level": item.get("evidence_level"),
+                        "execution_status": item.get("execution_status"),
+                    }
+                    for item in linked_evidence
+                ]
+                scoped_operations.append(operation)
+            query_operations = [
+                item for item in scoped_operations
+                if item["readiness_category"] == "query"
+            ]
+            managed_write_operations = [
+                item for item in scoped_operations
+                if item["readiness_category"] == "managed_write"
+            ]
+            scoped_total = len(scoped_operations)
+            scoped_covered = sum(
+                int(item["contract_covered"]) for item in scoped_operations
+            )
+            readiness_scope_report = {
+                "included": provider_metadata.get("readiness_enabled") is True,
+                "exclusion_reason": str(
+                    provider_metadata.get("readiness_exclusion_reason") or ""
+                ),
+                "scope": "all_queries_and_campaign_hierarchy_create_update",
+                "total": scoped_total,
+                "covered": scoped_covered,
+                "gaps": scoped_total - scoped_covered,
+                "coverage_ratio": (
+                    round(scoped_covered / scoped_total, 4)
+                    if scoped_total
+                    else (1.0 if provider_metadata.get("readiness_enabled") is False else 0.0)
+                ),
+                "query_total": len(query_operations),
+                "query_covered": sum(
+                    int(item["contract_covered"]) for item in query_operations
+                ),
+                "managed_write_total": len(managed_write_operations),
+                "managed_write_covered": sum(
+                    int(item["contract_covered"])
+                    for item in managed_write_operations
+                ),
+                "managed_write_provider_e2e": sum(
+                    int(item["evidence_level"] == "provider_e2e")
+                    for item in managed_write_operations
+                ),
+                "managed_write_live_verified": sum(
+                    int(item["execution_status"] == "live_verified")
+                    for item in managed_write_operations
+                ),
+                "query_provider_e2e": sum(
+                    int(item["evidence_level"] == "provider_e2e")
+                    for item in query_operations
+                ),
+                "operations": scoped_operations,
+            }
+            report.setdefault("readiness_scope", {})[platform_key] = readiness_scope_report
             inventory_report = build_inventory_report(
                 surface, inventory, provider_metadata
             )
@@ -401,7 +613,11 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
             "api_surface": report.get("surface_summary", {}).get(platform, {}),
             "api_surface_gaps": report.get("surface_gaps", {}).get(platform, []),
             "api_surface_planned": report.get("surface_planned", {}).get(platform, []),
+            "api_surface_not_applicable": report.get(
+                "surface_not_applicable", {}
+            ).get(platform, []),
             "official_inventory": report.get("official_inventory", {}).get(platform, {}),
+            "readiness_scope": report.get("readiness_scope", {}).get(platform, {}),
             "provider_method_coverage": report.get(
                 "provider_method_coverage", {}
             ).get(platform, {}),
@@ -446,6 +662,26 @@ def _print_text(report: dict[str, Any]) -> None:
                 f"implemented={surface.get('implemented', 0)}, "
                 f"planned={surface.get('planned', 0)}, total={surface.get('total', 0)}"
             )
+        scope = details.get("readiness_scope", {})
+        if scope:
+            if scope.get("included"):
+                print(
+                    "  readiness scope: "
+                    f"covered={scope.get('covered', 0)}/{scope.get('total', 0)}, "
+                    f"queries={scope.get('query_covered', 0)}/"
+                    f"{scope.get('query_total', 0)}, "
+                    f"campaign writes={scope.get('managed_write_covered', 0)}/"
+                    f"{scope.get('managed_write_total', 0)}"
+                )
+            else:
+                print(
+                    "  readiness scope: excluded"
+                    + (
+                        f" ({scope['exclusion_reason']})"
+                        if scope.get("exclusion_reason")
+                        else ""
+                    )
+                )
         inventory = details.get("official_inventory", {})
         if inventory:
             print(
@@ -476,6 +712,11 @@ def _print_text(report: dict[str, Any]) -> None:
                 print(
                     "  evidence gaps: "
                     f"{len(inventory['evidence_gaps'])} entries need operation-specific source or E2E"
+                )
+            if inventory.get("not_applicable_entries"):
+                print(
+                    "  inventory not applicable: "
+                    f"{len(inventory['not_applicable_entries'])} entries excluded by provider API version"
                 )
             for entry in inventory.get("gaps_entries", []):
                 print(
@@ -510,8 +751,15 @@ def _print_text(report: dict[str, Any]) -> None:
                 f"partial={details.get('partial_runs', 0)}, "
                 f"limited={details.get('limited_runs', 0)}"
             )
+    for error in report.get("provider_evidence_errors", []):
+        print(f"  EVIDENCE ISSUE: {error}")
     if report["issues"]:
         print(f"\nFAILED: {len(report['issues'])} issue(s)")
+    elif report.get("provider_evidence_errors"):
+        print(
+            f"\nFAILED: {len(report['provider_evidence_errors'])} "
+            "Provider evidence issue(s)"
+        )
     else:
         print("\nOK: no tool_source contract issues")
 
@@ -529,7 +777,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         _print_text(report)
-    return 1 if report["issues"] else 0
+    return 1 if report["issues"] or report.get("provider_evidence_errors") else 0
 
 
 if __name__ == "__main__":
