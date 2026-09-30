@@ -30,6 +30,7 @@ from .quality_scorecard import (
 EVIDENCE_STAGES = (
     "code_contract",
     "dry_run",
+    "security",
     "provider_scope",
     "provider_query_e2e",
     "provider_e2e",
@@ -175,6 +176,7 @@ def build_readiness_report(
     tool_source_report: Mapping[str, Any],
     contract_gate_errors: list[str] | tuple[str, ...] = (),
     dry_run_report: Mapping[str, Any] | None = None,
+    security_report: Mapping[str, Any] | None = None,
     provider_evidence: Mapping[str, Any] | None = None,
     policy: ReadinessPolicy,
     profile: str | None = None,
@@ -191,6 +193,17 @@ def build_readiness_report(
     contract_errors = [str(item) for item in contract_gate_errors]
     dry_run = dict(dry_run_report or {})
     dry_run_failures = int(dry_run.get("failed", 0) or 0)
+    security = dict(security_report or {})
+    security_scenario_count = int(security.get("scenario_count", 0) or 0)
+    security_scope = str(security.get("scope") or "").strip()
+    security_errors = [str(item) for item in (security.get("errors") or [])]
+    security_ok = (
+        security.get("executed") is True
+        and security.get("passed") is True
+        and security_scenario_count >= 4
+        and bool(security_scope)
+        and not security_errors
+    )
     controlled_evidence = build_provider_evidence_report(provider_evidence) if provider_evidence else {
         "format_version": 1,
         "valid": False,
@@ -277,7 +290,12 @@ def build_readiness_report(
         provider_scope_ratio=provider_scope_ratio,
         provider_query_e2e_ratio=provider_query_e2e_ratio,
         generic_platform_ok=bool(dry_run.get("generic_platform_evidence", False)),
-        security_ok=code_contract_ok,
+        security_ok=security_ok,
+        security_evidence=(
+            f"{security_scope}; {security_scenario_count} local contract scenarios"
+            if security_scope
+            else "dedicated local security contract evidence missing"
+        ),
         provider_e2e_ratio=provider_e2e_ratio,
         live_verified_ratio=live_verified_ratio,
         production_evidence_ok=bool(
@@ -332,6 +350,18 @@ def build_readiness_report(
             "status": "passed" if code_contract_ok else "failed",
             "evidence": "tool_source audit and executable Tool contract gate",
             "errors": tool_source_issues + contract_errors,
+        },
+        "security": {
+            "status": "passed" if security_ok else "failed",
+            "evidence": security_scope or "dedicated local security contracts",
+            "scenario_count": security_scenario_count,
+            "errors": (
+                security_errors
+                if security_errors
+                else []
+                if security_ok
+                else ["dedicated security contract evidence is missing or incomplete"]
+            ),
         },
         "dry_run": {
             "status": "passed" if dry_run_ok else "failed",

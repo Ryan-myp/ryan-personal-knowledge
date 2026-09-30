@@ -70,6 +70,52 @@ def test_runtime_registry_cannot_bypass_execution_boundary():
     ).success is False
 
 
+def test_account_scoped_child_read_does_not_require_parent_input_mapping():
+    read_tool = ToolDefinition(
+        name="account_scoped_creative_get",
+        skill="test",
+        namespace="tiktok",
+        description="Read a creative by account and creative ID",
+        input_schema=ToolSchema(
+            required=["account_id", "creative_id"],
+            properties={
+                "account_id": {"type": "string"},
+                "creative_id": {"type": "string"},
+            },
+        ),
+        action="get",
+        resource_type="creative",
+        resource_id_field="creative_id",
+        parent_resource_type="ad_group",
+        intent_types=["get_creative"],
+        effect_class=ToolEffect.READ,
+    )
+
+    assert read_tool.routing_metadata_errors() == []
+
+    write_tool = ToolDefinition(
+        name="parent_scoped_creative_create",
+        skill="test",
+        namespace="tiktok",
+        description="Create a creative under an ad group",
+        input_schema=ToolSchema(
+            required=["account_id", "creative_id"],
+            properties={
+                "account_id": {"type": "string"},
+                "creative_id": {"type": "string"},
+            },
+        ),
+        action="create",
+        resource_type="creative",
+        resource_id_field="creative_id",
+        parent_resource_type="ad_group",
+        intent_types=["create_creative"],
+        effect_class=ToolEffect.WRITE,
+    )
+
+    assert "parent_resource_id_field" in write_tool.routing_metadata_errors()
+
+
 def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     class Handler:
         def execute(self, _ctx, _input_data):

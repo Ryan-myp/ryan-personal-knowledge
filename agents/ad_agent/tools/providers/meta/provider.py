@@ -1229,7 +1229,7 @@ class MetaToolSource(BaseProviderToolSource):
             method_name="get_creative", result_key="creatives", properties={
                 key: creative_properties[key]
                 for key in ("account_id", "creative_id", "fields")
-            }, required=["account_id", "creative_id"], action="list",
+            }, required=["account_id", "creative_id"], action="get",
             resource_type="creative", resource_id_field="creative_id",
             intent_types=["lookup_creative"], traits=["read", "creative", "lookup"],
             argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"]), {
@@ -1389,7 +1389,7 @@ class MetaToolSource(BaseProviderToolSource):
                 "account_id": {"type": "string"},
                 "adset_id": {"type": "string", "minLength": 1},
                 "fields": {"type": "array", "items": {"type": "string", "minLength": 1}},
-            }, required=["account_id", "adset_id"], action="list",
+            }, required=["account_id", "adset_id"], action="get",
             resource_type="ad_set", resource_id_field="adset_id",
             intent_types=["lookup_adset"], traits=["read", "ad_set", "lookup"],
             argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"]), {
@@ -1527,7 +1527,7 @@ class MetaToolSource(BaseProviderToolSource):
                     },
                 },
             ),
-            action="report", resource_type="report",
+            action="report", resource_type="campaign",
             intent_types=["get_campaign_report", "download_report"],
             intent_aliases=[
                 "查询 Meta 报表", "查询 Meta campaign 报表",

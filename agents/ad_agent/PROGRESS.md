@@ -2,12 +2,14 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
-## 当前契约（2026-09-24）
+## 当前契约（2026-09-30）
 
 - 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 297 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。
 - API readiness 范围已明确：Meta、Google Ads、TikTok 纳入所有已声明查询动作及 Campaign / Ad Group / Ad / Creative 相关创建和更新；其他资源写入不计入该范围，DV360 继续可用但不计入该门禁。当前声明范围已全部接通 Client/Tool 合同；这不是官方 API 全量覆盖或 Provider live 证明。Google Ads v24 Feed/FeedItem 标为 `not_applicable`。
 - Readiness policy 固定要求 Google Ads、Meta、TikTok 全部参与且不允许额外启用渠道；query Provider E2E 与写操作 E2E 分开计分。Query 实测必须按 Tool/action 关联；已声明的查询 Tool/Client 接通不代表 Provider query 已实测。写操作创建需暂停状态，live 需操作级回读。现有记录中缺少 update Tool 归属或 Google Tool 归属的操作仍不计分；质量门禁按最弱渠道评分，避免平均值遮住单渠道缺口。
-- 2026-09-24 验证结果：local readiness 通过；Provider Surface/Client/Tool 合同覆盖 Google Ads 56/56、Meta 47/47、TikTok 66/66，其中查询分别为 35、34、43 项。当前受控证据没有任何逐项 query 记录，故 release query E2E 为 0/112；Campaign 层级写入 E2E/live 覆盖也未达标，且没有生产部署实证，release profile 仍应失败。这些是待补的真实环境证据，不以本地测试代替。
+- 2026-09-30 最新三测试账号只读 Provider E2E：Google Ads 35 项（30 通过、5 安全跳过）、Meta 35 项（23 通过、2 权限失败、10 安全跳过）、TikTok 43 项（33 通过、10 安全跳过），Tool 口径合计 86 通过、2 失败、25 跳过。Meta 两个 lookup alias 与 Surface operation 重合，去重后的 API operation 实测为 Google Ads 30/35、Meta 21/34、TikTok 33/43，合计 84/112；最低渠道 Meta 为 61.8%，release 的 95% query 门禁仍未达标。失败为 `meta_get_pixel` 缺少 `ads_read`/`ads_management` 授权，`meta_list_lead_forms` 缺少 Page Access Token；跳过原因为 11 项敏感数据、11 项无可验证父级资源、4 项无法验证测试账号范围。TikTok Creative 详情按测试账号列表返回的 Ad ID 完成单条回读。最新完整脱敏记录见 `contracts/provider_query_e2e_evidence.json`；Campaign 层级写入 E2E/live 覆盖与生产部署实证仍不足。
+- Meta 客户端现在可从仅服务端凭证 `page_access_tokens`（Page ID 到 Page Access Token 的映射）为 Page-owned Lead Form 查询选择正确凭证；当前测试账号未配置该映射，故对应真实查询仍如实失败。`access_token` 不能被请求参数覆盖，Page token 不进入 Tool schema、结果或 evidence。
+- MCP trust 由宿主配置而非远端 `readOnlyHint` 决定；未信任读取不可调用，写入默认不出网。Generic MCP live-write 注册必须声明 Schema 中必填的字符串幂等字段，写入结果仍依赖统一 Runtime 的 live 审批、确认、审计和持久化幂等门禁。
 - 通用 Harness 已补齐平台治理参数下沉：默认 execution mode、最大 Tool 数、最大回合数和 Skill 上下文上限会进入真实 Runtime；模型临时失败支持有限重试，Session transcript 有消息数/字符数上限。
 - RunStore 启动/事件/收尾失败、Session lease 丢失和 Tool 审计故障都会返回结构化 `recovery_required`，不再静默当作成功；默认平台审计事件沿通用 Run event stream 持久化。
 - 所有 Campaign 及下级资源创建/更新默认 dry-run；live 只在测试账号白名单、显式模式、权限和二次确认同时满足时执行。三渠道指定测试账号的真实验证证据见 `contracts/provider_e2e_evidence.json`，未验证项不推断为成功。

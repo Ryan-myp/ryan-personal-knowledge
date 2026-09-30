@@ -173,6 +173,8 @@ class MCPToolMetadataPatchRequest(BaseModel):
     idempotency_key_field: Optional[str] = Field(default=None, max_length=128)
     required_permissions: Optional[list[str]] = Field(default=None, max_length=16)
     traits: Optional[list[str]] = Field(default=None, max_length=32)
+    trusted_read: Optional[bool] = None
+    live_write_enabled: Optional[bool] = None
 
 
 class BlueprintEvaluationRequest(BaseModel):

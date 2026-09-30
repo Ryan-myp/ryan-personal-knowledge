@@ -68,6 +68,7 @@ def build_quality_scorecard(
     live_verified_ratio: float,
     production_evidence_ok: bool,
     max_runtime_module_lines: int | None,
+    security_evidence: str = "dedicated local security contract evidence",
     maintainability_target_lines: int = 400,
 ) -> dict[str, Any]:
     """Build the hard 95-point release scorecard.
@@ -154,8 +155,8 @@ def build_quality_scorecard(
         _binary_dimension(
             "security",
             security_ok,
-            evidence="schema, permission, scope, redline, idempotency and audit gates",
-            blocker="security audit evidence is incomplete",
+            evidence=str(security_evidence),
+            blocker="dedicated security contract checks failed or are missing",
         ),
         QualityDimension(
             name="provider_e2e",

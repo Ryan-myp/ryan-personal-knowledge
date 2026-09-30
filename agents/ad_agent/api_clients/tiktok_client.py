@@ -944,25 +944,30 @@ class TikTokAPIClient(BasePlatformClient):
         }
         wanted = str(adgroup_id)
         wanted_ad_ids = set(normalized_ad_ids)
+
+        def matches_requested_ad(row: Any) -> bool:
+            if not isinstance(row, dict):
+                return False
+            returned_adgroup = str(
+                row.get('adgroup_id')
+                or row.get('ad_group_id')
+                or row.get('adgroupId')
+                or ''
+            ).strip()
+            if returned_adgroup and returned_adgroup != wanted:
+                return False
+            return (
+                not wanted_ad_ids
+                or str(row.get('ad_id') or row.get('id') or '')
+                in wanted_ad_ids
+            )
+
         return self._list_pages(
             'ad/get/',
             data,
             max_pages=1 if wanted_ad_ids else 100,
             max_items=max_results,
-            item_filter=lambda row: (
-                isinstance(row, dict)
-                and str(
-                    row.get('adgroup_id')
-                    or row.get('ad_group_id')
-                    or row.get('adgroupId')
-                    or ''
-                ) == wanted
-                and (
-                    not wanted_ad_ids
-                    or str(row.get('ad_id') or row.get('id') or '')
-                    in wanted_ad_ids
-                )
-            ),
+            item_filter=matches_requested_ad,
         )
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:

@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 from agents.agent_harness import (
     AgentApplication,
     BoundedContextProvider,
@@ -219,6 +221,196 @@ def test_generic_mcp_source_exposes_remote_tools_as_normal_bindings():
         {"id": "r-1"},
     )
     assert result["structured_content"] == {"id": "r-1"}
+
+
+def test_generic_mcp_source_does_not_trust_remote_read_only_hint():
+    class Client:
+        def list_tools(self):
+            return [{
+                "name": "publish",
+                "inputSchema": {"type": "object", "properties": {}},
+                "annotations": {"readOnlyHint": True},
+            }]
+
+        def call_tool(self, _name, _arguments):
+            pytest.fail("remote readOnlyHint must not authorize a call")
+
+    binding = MCPToolSource("mcp:untrusted", Client()).list_bindings()[0]
+
+    assert binding.definition["effect_class"] == "external_write"
+    assert binding.definition["replay_policy"] == "unsafe"
+    assert binding.definition["live_support"] is False
+
+
+def test_generic_mcp_write_is_not_called_in_default_dry_run():
+    calls = []
+
+    class Client:
+        def call_tool(self, name, arguments):
+            calls.append((name, arguments))
+            return {"structuredContent": {"published": True}}
+
+    request = TurnRequest(
+        user_input="publish",
+        tenant_id="tenant-a",
+        execution_mode="dry_run",
+    )
+    result = MCPToolExecutor(
+        Client(),
+        "publish",
+        tenant_id="tenant-a",
+        write_effect=True,
+        live_write_allowed=True,
+    ).execute(
+        type("Context", (), {"request": request})(),
+        {"record_id": "r-1"},
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["executed"] is False
+    assert result["execution_status"] == "dry_run_only"
+    assert result["effect_state"] == "not_started"
+
+
+def test_generic_mcp_reads_require_host_trust_and_keep_tenant_scope():
+    calls = []
+
+    class Client:
+        def list_tools(self):
+            return [{
+                "name": "lookup",
+                "inputSchema": {"type": "object", "properties": {}},
+                "annotations": {"readOnlyHint": False},
+            }]
+
+        def call_tool(self, name, arguments):
+            calls.append((name, arguments))
+            return {"structuredContent": {"ok": True}}
+
+    source = MCPToolSource(
+        "mcp:trusted",
+        Client(),
+        tenant_id="tenant-a",
+        trusted_read_tools={"lookup"},
+    )
+    binding = source.list_bindings()[0]
+    assert binding.definition["effect_class"] == "read"
+
+    denied = binding.executor.execute(
+        type(
+            "Context",
+            (),
+            {"request": TurnRequest(user_input="", tenant_id="tenant-b")},
+        )(),
+        {},
+    )
+    assert denied["success"] is False
+    assert calls == []
+
+    allowed = binding.executor.execute(
+        type(
+            "Context",
+            (),
+            {"request": TurnRequest(user_input="", tenant_id="tenant-a")},
+        )(),
+        {},
+    )
+    assert allowed["success"] is True
+    assert calls == [("lookup", {})]
+
+
+def test_generic_mcp_live_write_requires_explicit_host_allowlist():
+    calls = []
+
+    class Client:
+        def call_tool(self, name, arguments):
+            calls.append((name, arguments))
+            return {"structuredContent": {"ok": True}}
+
+    context = type(
+        "Context",
+        (),
+        {
+            "request": TurnRequest(
+                user_input="publish",
+                tenant_id="tenant-a",
+                execution_mode="live",
+            ),
+        },
+    )()
+    denied = MCPToolExecutor(
+        Client(),
+        "publish",
+        tenant_id="tenant-a",
+        write_effect=True,
+    ).execute(context, {})
+    assert denied["success"] is False
+    assert denied["execution_status"] == "blocked_untrusted_write"
+    assert calls == []
+
+    allowed = MCPToolExecutor(
+        Client(),
+        "publish",
+        tenant_id="tenant-a",
+        write_effect=True,
+        live_write_allowed=True,
+        idempotency_key_field="request_id",
+    ).execute(context, {"request_id": "publish-1"})
+    assert allowed["success"] is True
+    assert calls == [("publish", {"request_id": "publish-1"})]
+
+
+def test_generic_mcp_live_write_requires_a_host_declared_schema_key():
+    class Client:
+        def list_tools(self):
+            return [{
+                "name": "publish",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["request_id"],
+                    "properties": {"request_id": {"type": "string"}},
+                },
+            }]
+
+        def call_tool(self, _name, _arguments):
+            pytest.fail("this test must not call the remote tool")
+
+    with pytest.raises(ValueError, match="idempotency field"):
+        MCPToolSource(
+            "mcp:missing-key",
+            Client(),
+            live_write_tools={"publish"},
+        )
+
+    with pytest.raises(ValueError, match="host-declared string idempotency field"):
+        MCPToolSource(
+            "mcp:optional-key",
+            type(
+                "OptionalKeyClient",
+                (),
+                {
+                    "list_tools": lambda self: [{
+                        "name": "publish",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"request_id": {"type": "string"}},
+                        },
+                    }],
+                },
+            )(),
+            live_write_tools={"publish"},
+            idempotency_key_fields={"publish": "request_id"},
+        ).list_bindings()
+
+    source = MCPToolSource(
+        "mcp:declared-key",
+        Client(),
+        live_write_tools={"publish"},
+        idempotency_key_fields={"publish": "request_id"},
+    )
+    binding = source.list_bindings()[0]
+    assert binding.definition["idempotency_key_field"] == "request_id"
 
 
 def test_agent_persists_turn_checkpoints_and_clears_successful_run():

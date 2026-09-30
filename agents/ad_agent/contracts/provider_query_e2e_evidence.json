@@ -1,0 +1,832 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-09-30",
+  "scope": "provider_query_e2e",
+  "safety": {
+    "test_accounts_only": true,
+    "new_resources_paused": true,
+    "deleted": false,
+    "credentials_included": false,
+    "raw_provider_responses_included": false
+  },
+  "runs": [
+    {
+      "provider": "google-ads",
+      "test_account": "test-account-7554",
+      "campaign_type": "READ_ONLY_QUERY",
+      "status": "provider_limited",
+      "resources": {},
+      "queries": [
+        {
+          "resource": "campaign",
+          "action": "list",
+          "tool": "google_list_campaigns",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "ad_group",
+          "action": "list",
+          "tool": "google_list_ad_groups",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad",
+          "action": "list",
+          "tool": "google_list_ads",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "campaign",
+          "action": "report",
+          "tool": "google_get_campaign_report",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "ad",
+          "action": "get",
+          "tool": "google_get_ad",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad_group",
+          "action": "get",
+          "tool": "google_get_ad_group",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad_group",
+          "action": "report",
+          "tool": "google_get_adgroup_report",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "asset_group",
+          "action": "get",
+          "tool": "google_get_asset_group",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "campaign",
+          "action": "get",
+          "tool": "google_get_campaign",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "product_group",
+          "action": "get",
+          "tool": "google_get_product_group",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "user_list",
+          "action": "get",
+          "tool": "google_get_user_list",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "asset_group_asset",
+          "action": "list",
+          "tool": "google_list_asset_group_assets",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "listing_group_filter",
+          "action": "list",
+          "tool": "google_list_asset_group_listing_group_filters",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "asset_group",
+          "action": "list",
+          "tool": "google_list_asset_groups",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "asset",
+          "action": "list",
+          "tool": "google_list_assets",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "bidding_strategy",
+          "action": "list",
+          "tool": "google_list_bidding_strategies",
+          "outcome": "passed",
+          "row_count": 2
+        },
+        {
+          "resource": "campaign_asset",
+          "action": "list",
+          "tool": "google_list_campaign_assets",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "campaign_budget",
+          "action": "list",
+          "tool": "google_list_campaign_budgets",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "campaign_conversion_goal",
+          "action": "list",
+          "tool": "google_list_campaign_conversion_goals",
+          "outcome": "passed",
+          "row_count": 8
+        },
+        {
+          "resource": "campaign_criterion",
+          "action": "list",
+          "tool": "google_list_campaign_criteria",
+          "outcome": "passed",
+          "row_count": 4
+        },
+        {
+          "resource": "conversion_action",
+          "action": "list",
+          "tool": "google_list_conversion_actions",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "customer_client",
+          "action": "list",
+          "tool": "google_list_customer_clients",
+          "outcome": "skipped",
+          "skip_reason": "test_scope_unverifiable"
+        },
+        {
+          "resource": "customer_conversion_goal",
+          "action": "list",
+          "tool": "google_list_customer_conversion_goals",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "experiment_arm",
+          "action": "list",
+          "tool": "google_list_experiment_arms",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "experiment",
+          "action": "list",
+          "tool": "google_list_experiments",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "keyword",
+          "action": "list",
+          "tool": "google_list_keywords",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "product_group",
+          "action": "list",
+          "tool": "google_list_product_groups",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "user_list",
+          "action": "list",
+          "tool": "google_list_user_lists",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "asset",
+          "action": "get",
+          "tool": "google_get_asset",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "bidding_strategy",
+          "action": "get",
+          "tool": "google_get_bidding_strategy",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "campaign_budget",
+          "action": "get",
+          "tool": "google_get_campaign_budget",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "campaign_criterion",
+          "action": "get",
+          "tool": "google_get_campaign_criterion",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "conversion_action",
+          "action": "get",
+          "tool": "google_get_conversion_action",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "listing_group_filter",
+          "action": "get",
+          "tool": "google_get_asset_group_listing_group_filter",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "experiment",
+          "action": "get",
+          "tool": "google_get_experiment",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        }
+      ]
+    },
+    {
+      "provider": "meta",
+      "test_account": "test-account-3667",
+      "campaign_type": "READ_ONLY_QUERY",
+      "status": "provider_limited",
+      "resources": {},
+      "queries": [
+        {
+          "resource": "account",
+          "action": "get",
+          "tool": "meta_get_account",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "campaign",
+          "action": "list",
+          "tool": "meta_list_campaigns",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "creative",
+          "action": "list",
+          "tool": "meta_list_creatives",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "ad_set",
+          "action": "list",
+          "tool": "meta_list_ad_sets",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad",
+          "action": "list",
+          "tool": "meta_list_ads",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "campaign",
+          "action": "report",
+          "tool": "meta_get_campaign_report",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "ad",
+          "action": "get",
+          "tool": "meta_get_ad",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad",
+          "action": "report",
+          "tool": "meta_get_ad_report",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "ad_set",
+          "action": "get",
+          "tool": "meta_get_adset",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad_set",
+          "action": "report",
+          "tool": "meta_get_adset_report",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "audience",
+          "action": "get",
+          "tool": "meta_get_audience",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "business",
+          "action": "get",
+          "tool": "meta_get_business",
+          "outcome": "skipped",
+          "skip_reason": "test_scope_unverifiable"
+        },
+        {
+          "resource": "campaign",
+          "action": "get",
+          "tool": "meta_get_campaign",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "creative",
+          "action": "get",
+          "tool": "meta_get_creative",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "lead",
+          "action": "get",
+          "tool": "meta_get_lead",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "account",
+          "action": "list",
+          "tool": "meta_list_accounts",
+          "outcome": "skipped",
+          "skip_reason": "test_scope_unverifiable"
+        },
+        {
+          "resource": "audience",
+          "action": "list",
+          "tool": "meta_list_audiences",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "business",
+          "action": "list",
+          "tool": "meta_list_businesses",
+          "outcome": "skipped",
+          "skip_reason": "test_scope_unverifiable"
+        },
+        {
+          "resource": "catalog",
+          "action": "list",
+          "tool": "meta_list_catalogs",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "custom_conversion",
+          "action": "list",
+          "tool": "meta_list_custom_conversions",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "image_asset",
+          "action": "list",
+          "tool": "meta_list_image_assets",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "lead",
+          "action": "list",
+          "tool": "meta_list_leads",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "page",
+          "action": "list",
+          "tool": "meta_list_pages",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "pixel",
+          "action": "list",
+          "tool": "meta_list_pixels",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "product_set",
+          "action": "list",
+          "tool": "meta_list_product_sets",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "video_asset",
+          "action": "list",
+          "tool": "meta_list_video_assets",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "ad_set",
+          "action": "get",
+          "tool": "meta_lookup_adset",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "creative",
+          "action": "get",
+          "tool": "meta_lookup_creative",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "targeting_option",
+          "action": "search",
+          "tool": "meta_search_targeting_options",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "catalog",
+          "action": "get",
+          "tool": "meta_get_catalog",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "pixel",
+          "action": "get",
+          "tool": "meta_get_pixel",
+          "outcome": "failed",
+          "failure_category": "provider_permission"
+        },
+        {
+          "resource": "lead_form",
+          "action": "list",
+          "tool": "meta_list_lead_forms",
+          "outcome": "failed",
+          "failure_category": "credential_error"
+        },
+        {
+          "resource": "custom_conversion",
+          "action": "get",
+          "tool": "meta_get_custom_conversion",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "lead_form",
+          "action": "get",
+          "tool": "meta_get_lead_form",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "product_set",
+          "action": "get",
+          "tool": "meta_get_product_set",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        }
+      ]
+    },
+    {
+      "provider": "tiktok",
+      "test_account": "test-account-5329",
+      "campaign_type": "READ_ONLY_QUERY",
+      "status": "provider_limited",
+      "resources": {},
+      "queries": [
+        {
+          "resource": "account",
+          "action": "get",
+          "tool": "tiktok_get_account",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "campaign",
+          "action": "list",
+          "tool": "tiktok_list_campaigns",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "ad_group",
+          "action": "list",
+          "tool": "tiktok_list_adgroups",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad",
+          "action": "list",
+          "tool": "tiktok_list_ads",
+          "outcome": "passed",
+          "row_count": 2
+        },
+        {
+          "resource": "campaign",
+          "action": "report",
+          "tool": "tiktok_get_campaign_report",
+          "outcome": "passed",
+          "row_count": 3
+        },
+        {
+          "resource": "ad",
+          "action": "get",
+          "tool": "tiktok_get_ad",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad_group",
+          "action": "get",
+          "tool": "tiktok_get_adgroup",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "ad_group",
+          "action": "report",
+          "tool": "tiktok_get_adgroup_report",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "audience",
+          "action": "get",
+          "tool": "tiktok_get_audience",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "brand_safety_partner",
+          "action": "get",
+          "tool": "tiktok_get_brand_safety_partner_status",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "campaign",
+          "action": "get",
+          "tool": "tiktok_get_campaign",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "identity",
+          "action": "get",
+          "tool": "tiktok_get_identity",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "identity_video",
+          "action": "get",
+          "tool": "tiktok_get_identity_video_info",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "report",
+          "action": "get",
+          "tool": "tiktok_get_report",
+          "outcome": "passed",
+          "row_count": 3
+        },
+        {
+          "resource": "account",
+          "action": "list",
+          "tool": "tiktok_list_accounts",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "action_category",
+          "action": "list",
+          "tool": "tiktok_list_action_categories",
+          "outcome": "passed",
+          "row_count": 200
+        },
+        {
+          "resource": "app",
+          "action": "list",
+          "tool": "tiktok_list_apps",
+          "outcome": "passed",
+          "row_count": 5
+        },
+        {
+          "resource": "audience",
+          "action": "list",
+          "tool": "tiktok_list_audiences",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "carrier",
+          "action": "list",
+          "tool": "tiktok_list_carriers",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "catalog",
+          "action": "list",
+          "tool": "tiktok_list_catalogs",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "creative",
+          "action": "list",
+          "tool": "tiktok_list_creatives",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "device_model",
+          "action": "list",
+          "tool": "tiktok_list_device_models",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "identity",
+          "action": "list",
+          "tool": "tiktok_list_identities",
+          "outcome": "skipped",
+          "skip_reason": "sensitive_data"
+        },
+        {
+          "resource": "image",
+          "action": "list",
+          "tool": "tiktok_list_images",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "interest_category",
+          "action": "list",
+          "tool": "tiktok_list_interest_categories",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "language",
+          "action": "list",
+          "tool": "tiktok_list_languages",
+          "outcome": "passed",
+          "row_count": 42
+        },
+        {
+          "resource": "operating_system",
+          "action": "list",
+          "tool": "tiktok_list_os_versions",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "pixel",
+          "action": "list",
+          "tool": "tiktok_list_pixels",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "product_set",
+          "action": "list",
+          "tool": "tiktok_list_product_sets",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "region",
+          "action": "list",
+          "tool": "tiktok_list_regions",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "video",
+          "action": "list",
+          "tool": "tiktok_list_videos",
+          "outcome": "passed",
+          "row_count": 10
+        },
+        {
+          "resource": "interest_keyword",
+          "action": "recommend",
+          "tool": "tiktok_recommend_interest_keywords",
+          "outcome": "passed",
+          "row_count": 0
+        },
+        {
+          "resource": "location",
+          "action": "search",
+          "tool": "tiktok_search_locations",
+          "outcome": "passed",
+          "row_count": 4
+        },
+        {
+          "resource": "catalog",
+          "action": "get",
+          "tool": "tiktok_get_catalog",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "creative",
+          "action": "get",
+          "tool": "tiktok_get_creative",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "image",
+          "action": "get",
+          "tool": "tiktok_get_image",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "interest_category",
+          "action": "get",
+          "tool": "tiktok_get_interest_category",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "video",
+          "action": "get",
+          "tool": "tiktok_get_video",
+          "outcome": "passed",
+          "row_count": 1
+        },
+        {
+          "resource": "creative_portfolio",
+          "action": "get",
+          "tool": "tiktok_get_creative_portfolio",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "pixel",
+          "action": "get",
+          "tool": "tiktok_get_pixel",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "product_set",
+          "action": "get",
+          "tool": "tiktok_get_product_set",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "creative_portfolio",
+          "action": "preview",
+          "tool": "tiktok_preview_creative_portfolio",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        },
+        {
+          "resource": "product_selection",
+          "action": "validate",
+          "tool": "tiktok_validate_product_selection",
+          "outcome": "skipped",
+          "skip_reason": "missing_parent_resource"
+        }
+      ]
+    }
+  ]
+}

@@ -1937,8 +1937,9 @@ class GoogleToolSource(BaseProviderToolSource):
         bound_tools = []
         for tool in tools:
             definition, handler = bind_provider_method(tool, client)
-            handler.client_resolver = lambda ctx, data, base=client: for_customer(
-                base, ctx.account_id or data.get("customer_id")
+            handler.client_resolver = lambda ctx, data, source_client=None: for_customer(
+                source_client if source_client is not None else client,
+                ctx.account_id or data.get("customer_id"),
             )
             bound_tools.append((definition, handler))
         return bound_tools
@@ -2249,7 +2250,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     },
                 },
             ),
-            action="report", resource_type="report",
+            action="report", resource_type="campaign",
             intent_types=["get_campaign_report", "download_report"],
             intent_aliases=[
                 "查询 Google Ads 报表", "查询 Google campaign 报表",

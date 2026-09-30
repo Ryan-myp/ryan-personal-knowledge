@@ -16,7 +16,7 @@ import json
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterator, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 from ...core.namespace import normalize_namespace as normalize_platform
 
@@ -581,17 +581,100 @@ def build_provider_evidence_report(raw: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def load_provider_evidence(path: str | Path) -> dict[str, Any]:
-    """Load and summarize a JSON evidence file without returning raw payloads."""
-    evidence_path = Path(path)
-    try:
-        raw = json.loads(evidence_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+def merge_provider_evidence_files(paths: Iterable[str | Path]) -> dict[str, Any]:
+    """Validate and merge separate controlled evidence artifacts.
+
+    Every source is validated before any runs are combined. A duplicate path or
+    one invalid source invalidates the complete bundle so callers cannot
+    accidentally release-gate on a partial subset.
+    """
+    if isinstance(paths, (str, Path)):
+        paths = (paths,)
+    source_paths: list[Path] = []
+    errors: list[str] = []
+    seen: set[Path] = set()
+    for raw_path in paths:
+        path = Path(raw_path).expanduser().resolve()
+        if path in seen:
+            errors.append(f"{path.name}: duplicate evidence source")
+            continue
+        seen.add(path)
+        source_paths.append(path)
+    if not source_paths:
+        errors.append("at least one provider evidence source is required")
+
+    documents: list[Mapping[str, Any]] = []
+    for path in source_paths:
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            errors.append(
+                f"{path.name}: unable to load provider evidence "
+                f"({type(exc).__name__})"
+            )
+            continue
+        if not isinstance(raw, Mapping):
+            errors.append(f"{path.name}: provider evidence must be an object")
+            continue
+        document_errors = validate_provider_evidence(raw)
+        if document_errors:
+            errors.extend(f"{path.name}: {error}" for error in document_errors)
+            continue
+        documents.append(raw)
+
+    sources = [str(path) for path in source_paths]
+    if errors or len(documents) != len(source_paths):
         return {
-            "format_version": 1,
             "valid": False,
-            "errors": [f"unable to load provider evidence: {type(exc).__name__}"],
-            "run_count": 0,
-            "providers": {},
+            "sources": sources,
+            "errors": list(dict.fromkeys(errors)),
+            "evidence": None,
+            "report": {
+                "format_version": 1,
+                "valid": False,
+                "errors": list(dict.fromkeys(errors)),
+                "run_count": 0,
+                "providers": {},
+            },
         }
-    return build_provider_evidence_report(raw)
+
+    merged = {
+        "schema_version": "1.0",
+        "generated_at": max(str(item.get("generated_at") or "") for item in documents),
+        "scope": "combined_controlled_provider_evidence",
+        "safety": dict(documents[0]["safety"]),
+        "runs": [
+            run
+            for document in documents
+            for run in document["runs"]
+        ],
+    }
+    merged_errors = validate_provider_evidence(merged)
+    if merged_errors:
+        return {
+            "valid": False,
+            "sources": sources,
+            "errors": merged_errors,
+            "evidence": None,
+            "report": {
+                "format_version": 1,
+                "valid": False,
+                "errors": merged_errors,
+                "run_count": 0,
+                "providers": {},
+            },
+        }
+    report = build_provider_evidence_report(merged)
+    report["sources"] = sources
+    return {
+        "valid": report["valid"],
+        "sources": sources,
+        "errors": list(report.get("errors") or []),
+        "evidence": merged,
+        "report": report,
+    }
+
+
+def load_provider_evidence(path: str | Path) -> dict[str, Any]:
+    """Load a single JSON evidence source without returning raw payloads."""
+    return merge_provider_evidence_files([path])["report"]

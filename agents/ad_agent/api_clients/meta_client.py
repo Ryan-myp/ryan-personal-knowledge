@@ -14,6 +14,7 @@ import logging
 import re
 import time
 import threading
+from collections.abc import Mapping
 from typing import Any, Optional
 from urllib.parse import urlparse
 import requests
@@ -21,6 +22,12 @@ import requests
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
 
 logger = logging.getLogger(__name__)
+
+_META_INSIGHTS_DATE_PRESET_ALIASES = {
+    "last_7_days": "last_7d",
+    "last_14_days": "last_14d",
+    "last_30_days": "last_30d",
+}
 
 
 class MetaAPIClient(BasePlatformClient):
@@ -50,6 +57,15 @@ class MetaAPIClient(BasePlatformClient):
         )
         self.base_url = f"https://graph.facebook.com/{self.api_version}"
         self.access_token = self.credentials.get('access_token', '')
+        raw_page_tokens = self.credentials.get("page_access_tokens") or {}
+        if not isinstance(raw_page_tokens, Mapping):
+            raise ValueError("Meta page_access_tokens must be a Page ID-to-token mapping")
+        self._page_access_tokens: dict[str, str] = {}
+        for raw_page_id, raw_token in raw_page_tokens.items():
+            page_id = self._clean_meta_id(raw_page_id, "page_id")
+            if not isinstance(raw_token, str) or not raw_token.strip():
+                raise ValueError("Meta page_access_tokens contains an invalid token")
+            self._page_access_tokens[page_id] = raw_token.strip()
         # App 级限流器: 2000次/小时
         self._app_rate_limiter = RateLimiter(max_requests=2000, period=3600)
         # 账户级限流器: 50次/10秒
@@ -81,12 +97,15 @@ class MetaAPIClient(BasePlatformClient):
     def _do_request(self, method: str, url: str, **kwargs) -> dict:
         """发送 HTTP 请求"""
         params = dict(kwargs.get('params') or {})
-        params['access_token'] = self.access_token
-        
+        access_token = str(
+            kwargs.get("_access_token_override") or self.access_token or ""
+        )
+        params["access_token"] = access_token
+
         headers = kwargs.get('headers', {})
-        
-        # 合并 params
-        final_params = {**params, **kwargs.get('extra_params', {})}
+        extra_params = dict(kwargs.get("extra_params") or {})
+        extra_params.pop("access_token", None)
+        final_params = {**params, **extra_params, "access_token": access_token}
         
         try:
             if method == 'GET':
@@ -313,6 +332,7 @@ class MetaAPIClient(BasePlatformClient):
     def _list_graph_pages(
         self, account_id: str, endpoint: str, params: dict,
         item_key: str = "data", max_pages: int = 100,
+        *, access_token: Optional[str] = None,
     ) -> list:
         """Consume Graph API cursor pages without leaking paging envelopes."""
         items: list = []
@@ -340,7 +360,10 @@ class MetaAPIClient(BasePlatformClient):
             if after:
                 page_params["after"] = after
             self.acquire_rate_limit(self._get_account_limiter(account_id))
-            result = self.request("GET", endpoint, extra_params=page_params)
+            request_kwargs: dict[str, Any] = {"extra_params": page_params}
+            if access_token:
+                request_kwargs["_access_token_override"] = access_token
+            result = self.request("GET", endpoint, **request_kwargs)
             if isinstance(result, dict) and isinstance(result.get(item_key), list):
                 page_items = result[item_key]
             elif isinstance(result, list):
@@ -1108,6 +1131,7 @@ class MetaAPIClient(BasePlatformClient):
             page_id,
             f"/{page_id}/leadgen_forms",
             {"limit": limit, "fields": "id,name,status,created_time,updated_time"},
+            access_token=self._page_access_tokens.get(page_id),
         )
 
     def get_lead_form(self, page_id: str, form_id: str, fields: list = None) -> dict:
@@ -1128,8 +1152,12 @@ class MetaAPIClient(BasePlatformClient):
                 "privacy_policy_url,follow_up_action"
             )
         }
+        request_kwargs: dict[str, Any] = {"extra_params": params}
+        page_access_token = self._page_access_tokens.get(page_id)
+        if page_access_token:
+            request_kwargs["_access_token_override"] = page_access_token
         return self.require_resource_object(
-            self.request("GET", f"/{form_id}", extra_params=params),
+            self.request("GET", f"/{form_id}", **request_kwargs),
             "Meta lead form get",
         )
 
@@ -1153,6 +1181,7 @@ class MetaAPIClient(BasePlatformClient):
             form_id,
             f"/{form_id}/leads",
             {"limit": limit, "fields": selected_fields},
+            access_token=self._page_access_tokens.get(page_id),
         )
 
     def get_lead(
@@ -2280,7 +2309,10 @@ class MetaAPIClient(BasePlatformClient):
                 separators=(",", ":"),
             )
         else:
-            params["date_preset"] = str(time_range or "last_7d").strip().lower()
+            preset = str(time_range or "last_7d").strip().lower()
+            params["date_preset"] = _META_INSIGHTS_DATE_PRESET_ALIASES.get(
+                preset, preset
+            )
 
         return self._list_graph_pages(
             account_id,

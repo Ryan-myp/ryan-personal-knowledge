@@ -588,8 +588,10 @@
                         <div class="mcp-test-panel" role="dialog" aria-modal="true" aria-labelledby="mcpExternalSelectedName" onclick="event.stopPropagation()">
                         <div class="mcp-panel-heading"><div><span class="mcp-section-kicker">TOOL TEST CONSOLE</span><h3 id="mcpExternalSelectedName">选择一个 Tool</h3></div><div class="mcp-test-heading-actions"><span class="mcp-panel-note">只读 Tool 可直接测试 · 写 Tool 遵守当前模式与确认链路</span><button class="icon-btn mcp-test-close" type="button" onclick="hideMCPToolTestPanel()" aria-label="关闭 Tool 测试">×</button></div></div>
                         <section class="mcp-tool-metadata-editor" id="mcpToolMetadataEditor" hidden>
-                            <div class="mcp-parameter-heading"><div><strong>能力契约</strong><span>把远端 Tool 映射到 Agent 的意图、Skill 上下文和资源语义</span></div><span class="mcp-required-note">仅修改声明，不修改远端 Schema</span></div>
+                            <div class="mcp-parameter-heading"><div><strong>能力契约</strong><span>把远端 Tool 映射到 Agent 的意图、Skill 上下文和资源语义</span></div><span class="mcp-required-note">远端注解不会授予读取或写入权限</span></div>
                             <div class="mcp-metadata-grid">
+                                <label class="mcp-checkbox"><input id="mcpTrustedReadInput" type="checkbox"><span>宿主信任为只读</span></label>
+                                <label class="mcp-checkbox" title="仍需部署 live 开关、Tool 审批、用户确认和持久化幂等门禁"><input id="mcpLiveWriteInput" type="checkbox"><span>允许纳入 live 写入审批</span></label>
                                 <label><span>意图类型</span><input id="mcpIntentTypesInput" placeholder="例如 campaign_report,performance_analysis"></label>
                                 <label><span>自然语言别名</span><input id="mcpIntentAliasesInput" placeholder="用逗号分隔，例如分析投放效果"></label>
                                 <label><span>绑定 Skill</span><input id="mcpSkillRefsInput" placeholder="Skill 名称或版本，用逗号分隔"></label>

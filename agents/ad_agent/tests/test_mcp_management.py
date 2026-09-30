@@ -8,7 +8,11 @@ import pytest
 
 from agents.ad_agent.core.interfaces import ToolContext
 from agents.ad_agent.domain.ad.auth import RequestPrincipal
-from agents.ad_agent.mcp_management import MCPManagementError, MCPServerManager
+from agents.ad_agent.mcp_management import (
+    MCPManagementError,
+    MCPServerManager,
+    MCPToolHandler,
+)
 from agents.ad_agent.persistence.mysql_store import _mysql_schema
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AdvertisingComposition
@@ -78,6 +82,7 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
         assert validated["timeout_seconds"] == 20.0
         assert len(validated["tools"]) == 1
         assert validated["tools"][0]["enabled"] is False
+        assert validated["tools"][0]["trusted_read"] is False
 
         manager.enable_server("tenant-a", created["server_id"], runtime)
         assert not any(item.name.startswith("mcp__") for item in runtime.registry.list_all())
@@ -94,10 +99,12 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
                 "action": "query",
                 "resource_type": "campaign_report",
                 "required_permissions": ["ads.read"],
+                "trusted_read": True,
             }, runtime,
         )
         assert configured["tools"][0]["intent_types"] == ["campaign_report"]
         assert configured["tools"][0]["skill_refs"] == ["reporting-sop"]
+        assert configured["tools"][0]["trusted_read"] is True
         tool = next(item for item in runtime.registry.list_all() if item.name.startswith("mcp__"))
         assert tool.intent_types == ["campaign_report"]
         assert tool.skill_refs == ["reporting-sop"]
@@ -125,6 +132,199 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_mcp_handler_never_calls_remote_write_in_dry_run():
+    calls = []
+
+    class Client:
+        def call_tool(self, name, arguments):
+            calls.append((name, arguments))
+            return {"structuredContent": {"created": True}}
+
+    result = MCPToolHandler(
+        Client(),
+        "server-a",
+        "tenant-a",
+        "create_record",
+        write_effect=True,
+    ).execute(
+        ToolContext(
+            session_id="session",
+            user_id="user",
+            metadata={"tenant_id": "tenant-a", "execution_mode": "dry_run"},
+        ),
+        {"name": "record"},
+    )
+
+    assert calls == []
+    assert result.success is True
+    assert result.data["executed"] is False
+    assert result.data["execution_status"] == "dry_run_only"
+    assert result.data["effect_state"] == "not_started"
+
+
+def test_mcp_handler_fails_closed_for_live_write_without_host_trust_or_idempotency():
+    calls = []
+
+    class Client:
+        def call_tool(self, name, arguments):
+            calls.append((name, arguments))
+            return {"structuredContent": {"created": True}}
+
+    context = ToolContext(
+        session_id="session",
+        user_id="user",
+        metadata={"tenant_id": "tenant-a", "execution_mode": "live"},
+    )
+    untrusted = MCPToolHandler(
+        Client(),
+        "server-a",
+        "tenant-a",
+        "create_record",
+        write_effect=True,
+    ).execute(context, {"request_id": "request-1"})
+    missing_key = MCPToolHandler(
+        Client(),
+        "server-a",
+        "tenant-a",
+        "create_record",
+        write_effect=True,
+        live_write_allowed=True,
+        idempotency_key_field="request_id",
+    ).execute(context, {})
+
+    assert untrusted.success is False
+    assert untrusted.data["execution_status"] == "blocked_untrusted_write"
+    assert missing_key.success is False
+    assert missing_key.data["execution_status"] == "blocked_missing_idempotency_key"
+    assert calls == []
+
+
+def test_mcp_remote_annotation_cannot_be_used_as_host_read_trust():
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        persistence_store=store,
+        features=[],
+    )
+    manager = MCPServerManager(store)
+    try:
+        created = manager.create_server(
+            "tenant-a",
+            {
+                "name": "test-server",
+                "endpoint": "http://127.0.0.1:8765/mcp",
+                "auth_type": "none",
+            },
+            "operator",
+        )
+        tool = store.upsert_mcp_tool({
+            "tool_id": "tool-a",
+            "server_id": created["server_id"],
+            "tenant_id": "tenant-a",
+            "remote_name": "lookup_report",
+            "input_schema": {"type": "object", "properties": {}},
+            "annotations": {"readOnlyHint": True},
+            "validation_status": "passed",
+        })
+        with pytest.raises(MCPManagementError, match="mcp:trusted_read"):
+            manager.update_tool_metadata(
+                "tenant-a",
+                created["server_id"],
+                tool["tool_id"],
+                {
+                    "intent_types": ["lookup_report"],
+                    "traits": ["mcp:trusted_read"],
+                },
+                runtime,
+            )
+    finally:
+        runtime.close(wait=True)
+        store.close()
+
+
+def test_mcp_live_create_requires_schema_idempotency_but_not_input_resource_id():
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        persistence_store=store,
+        features=[],
+    )
+    manager = MCPServerManager(store)
+    try:
+        created = manager.create_server(
+            "tenant-a",
+            {
+                "name": "test-server",
+                "endpoint": "http://127.0.0.1:8765/mcp",
+                "auth_type": "none",
+            },
+            "operator",
+        )
+        tool = store.upsert_mcp_tool({
+            "tool_id": "create-record",
+            "server_id": created["server_id"],
+            "tenant_id": "tenant-a",
+            "remote_name": "create_record",
+            "input_schema": {
+                "type": "object",
+                "required": ["name", "request_id"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "request_id": {"type": "string"},
+                },
+            },
+            "validation_status": "passed",
+        })
+
+        with pytest.raises(MCPManagementError, match="idempotency_key_field"):
+            manager.update_tool_metadata(
+                "tenant-a",
+                created["server_id"],
+                tool["tool_id"],
+                {
+                    "intent_types": ["create_record"],
+                    "action": "create",
+                    "live_write_enabled": True,
+                },
+                runtime,
+            )
+        with pytest.raises(MCPManagementError, match="可信只读"):
+            manager.update_tool_metadata(
+                "tenant-a",
+                created["server_id"],
+                tool["tool_id"],
+                {
+                    "intent_types": ["create_record"],
+                    "action": "create",
+                    "trusted_read": True,
+                },
+                runtime,
+            )
+
+        result = manager.update_tool_metadata(
+            "tenant-a",
+            created["server_id"],
+            tool["tool_id"],
+            {
+                "intent_types": ["create_record"],
+                "action": "create",
+                "idempotency_key_field": "request_id",
+                "live_write_enabled": True,
+            },
+            runtime,
+        )
+        saved = next(
+            item for item in result["tools"]
+            if item["tool_id"] == tool["tool_id"]
+        )
+        assert saved["live_write_enabled"] is True
+        assert saved["idempotency_key_field"] == "request_id"
+        assert saved["resource_id_field"] is None
+    finally:
+        runtime.close(wait=True)
+        store.close()
 
 
 def test_mysql_schema_preserves_mcp_payload_capacity():

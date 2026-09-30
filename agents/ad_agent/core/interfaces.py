@@ -300,7 +300,15 @@ class ToolDefinition:
             errors.append("intent_types")
         if self.action in {"create", "update", "delete", "pause", "resume", "enable", "disable"} and not self.resource_id_field:
             errors.append("resource_id_field")
-        if self.parent_resource_type and not self.parent_resource_id_field:
+        if (
+            self.parent_resource_type
+            and not self.parent_resource_id_field
+            and (
+                self.is_write_tool
+                or self.action
+                in {"create", "update", "delete", "pause", "resume", "enable", "disable"}
+            )
+        ):
             errors.append("parent_resource_id_field")
         return errors
 

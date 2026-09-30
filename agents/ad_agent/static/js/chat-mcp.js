@@ -241,6 +241,18 @@
             }
         }
 
+        function mcpToolIsReadOnly(tool) {
+            return tool?.trusted_read === true || tool?.read_only === true;
+        }
+
+        function mcpToolHasRemoteReadHint(tool) {
+            if (typeof tool?.remote_read_only_hint === 'boolean') {
+                return tool.remote_read_only_hint;
+            }
+            return tool?.annotations?.readOnlyHint === true
+                && tool?.annotations?.destructiveHint !== true;
+        }
+
         function renderMCPTools(server) {
             const list = document.getElementById('mcpToolList');
             if (!list) return;
@@ -266,20 +278,24 @@
             list.replaceChildren();
             for (const tool of filteredTools) {
                 const row = document.createElement('div');
-                const readOnly = tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true;
+                const readOnly = mcpToolIsReadOnly(tool);
+                const remoteReadHint = mcpToolHasRemoteReadHint(tool);
                 row.className = `mcp-tool-row ${tool.enabled ? 'enabled' : ''}`;
                 const testAction = managed && tool.enabled
                     ? '<button class="btn btn-secondary mcp-tool-test-button" type="button">点击运行</button>'
                     : readOnly && tool.enabled
                     ? '<button class="btn btn-secondary mcp-tool-test-button" type="button">点击运行</button>'
-                    : readOnly ? '<span class="mcp-tool-test-note">启用后可测试</span>' : '<span class="mcp-tool-test-note">写入不可直测</span>';
+                    : readOnly
+                    ? '<span class="mcp-tool-test-note">启用后可测试</span>'
+                    : `<span class="mcp-tool-test-note">${remoteReadHint ? '远端声明只读，尚未获宿主信任' : '写入不可直测'}</span>`;
                 const toggleAction = managed
                     ? '<span class="mcp-tool-test-note">Registry 已启用</span>'
                     : `<button class="btn ${tool.enabled ? 'btn-secondary' : 'btn-primary'} mcp-tool-toggle-button" type="button">${tool.enabled ? '停用' : '启用'}</button>`;
                 const metadataAction = !managed
                     ? '<button class="btn btn-secondary mcp-tool-metadata-button" type="button">配置契约</button>'
                     : '';
-                row.innerHTML = `<div class="mcp-tool-copy"><div><strong>${escapeHtml(tool.title || tool.remote_name)}</strong><span class="mcp-tool-risk ${readOnly ? 'read' : 'write'}">${readOnly ? '只读' : '写入 · 高风险'}</span></div><small>${escapeHtml(tool.description || tool.remote_name)}</small><code>${escapeHtml(tool.remote_name)}</code></div><div class="mcp-tool-actions">${metadataAction}${testAction}${toggleAction}</div>`;
+                const riskLabel = readOnly ? '宿主信任只读' : '写入 · 高风险';
+                row.innerHTML = `<div class="mcp-tool-copy"><div><strong>${escapeHtml(tool.title || tool.remote_name)}</strong><span class="mcp-tool-risk ${readOnly ? 'read' : 'write'}">${riskLabel}</span></div><small>${escapeHtml(tool.description || tool.remote_name)}</small><code>${escapeHtml(tool.remote_name)}</code></div><div class="mcp-tool-actions">${metadataAction}${testAction}${toggleAction}</div>`;
                 row.querySelector('.mcp-tool-metadata-button')?.addEventListener('click', (event) => {
                     event.stopPropagation();
                     openMCPToolMetadataEditor(server.server_id, tool.tool_id);
@@ -506,7 +522,7 @@
             const server = mcpState.servers.find(item => String(item.server_id) === String(serverId));
             const tool = server?.tools?.find(item => String(item.tool_id) === String(toolId));
             if (!server || !tool) return;
-            const readOnly = tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true;
+            const readOnly = mcpToolIsReadOnly(tool);
             const managed = server.source === 'runtime_registry';
             const executionMode = mcpExecutionMode(server);
             if (!tool.enabled) {
@@ -525,7 +541,7 @@
             document.getElementById('mcpExternalSelectedName').textContent = tool.title || tool.remote_name;
             document.getElementById('mcpExternalSelectedDescription').textContent = managed && !readOnly
                 ? `${tool.description || tool.remote_name}；当前模式为 ${executionMode === 'live' ? 'live' : 'dry-run'}。写 Tool 不能在管理台绕过确认直接调用，请通过 Agent 的确认链路执行。`
-                : `${tool.description || tool.remote_name}；当前模式为 ${executionMode === 'live' ? 'live' : 'dry-run'}，这是只读测试，会沿用 Schema、权限和审计。`;
+                : `${tool.description || tool.remote_name}；当前模式为 ${executionMode === 'live' ? 'live' : 'dry-run'}，这是宿主信任的只读测试，会沿用 Schema、权限和审计。`;
             renderMCPParameterForm(tool);
             document.getElementById('mcpExternalAccountInput').value = '';
             const advancedInput = document.getElementById('mcpExternalInput');
@@ -550,6 +566,8 @@
             const editor = document.getElementById('mcpToolMetadataEditor');
             if (editor) editor.hidden = false;
             const values = {
+                mcpTrustedReadInput: Boolean(tool.trusted_read),
+                mcpLiveWriteInput: Boolean(tool.live_write_enabled),
                 mcpIntentTypesInput: (tool.intent_types || [tool.remote_name]).join(', '),
                 mcpIntentAliasesInput: (tool.intent_aliases || [tool.title]).filter(Boolean).join(', '),
                 mcpSkillRefsInput: (tool.skill_refs || []).join(', '),
@@ -562,7 +580,19 @@
             };
             for (const [id, value] of Object.entries(values)) {
                 const field = document.getElementById(id);
-                if (field) field.value = value;
+                if (!field) continue;
+                if (field.type === 'checkbox') field.checked = value;
+                else field.value = value;
+            }
+            const trustedReadInput = document.getElementById('mcpTrustedReadInput');
+            const liveWriteInput = document.getElementById('mcpLiveWriteInput');
+            if (trustedReadInput && liveWriteInput) {
+                trustedReadInput.onchange = () => {
+                    if (trustedReadInput.checked) liveWriteInput.checked = false;
+                };
+                liveWriteInput.onchange = () => {
+                    if (liveWriteInput.checked) trustedReadInput.checked = false;
+                };
             }
             document.getElementById('mcpMetadataStatus').textContent = '';
             document.getElementById('mcpExternalResult').textContent = '能力契约尚未保存';
@@ -573,6 +603,8 @@
             if (!selected || selected.managed) return;
             const list = (id) => document.getElementById(id)?.value.split(',').map(item => item.trim()).filter(Boolean) || [];
             const payload = {
+                trusted_read: Boolean(document.getElementById('mcpTrustedReadInput')?.checked),
+                live_write_enabled: Boolean(document.getElementById('mcpLiveWriteInput')?.checked),
                 intent_types: list('mcpIntentTypesInput'),
                 intent_aliases: list('mcpIntentAliasesInput'),
                 skill_refs: list('mcpSkillRefsInput'),
@@ -628,9 +660,9 @@
                 document.getElementById('mcpExternalResult').textContent = JSON.stringify(result, null, 2);
                 status.textContent = result.success ? '运行成功' : '运行完成但 Tool 返回失败';
                 showMCPTestNotice(result.success
-                    ? (selected.managed && selected.tool.annotations?.readOnlyHint !== true
+                    ? (selected.managed && !mcpToolIsReadOnly(selected.tool)
                         ? `Runtime MCP Tool ${result.mode === 'live' ? 'live' : 'dry-run'} 已完成。`
-                        : 'MCP Tool 只读运行已完成。')
+                        : '宿主信任的 MCP Tool 只读运行已完成。')
                     : (result.error || 'Tool 返回失败。'), !result.success);
             } catch (error) {
                 document.getElementById('mcpExternalResult').textContent = error.message || 'Tool 测试失败';

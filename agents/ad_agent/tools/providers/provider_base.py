@@ -637,7 +637,9 @@ class ProviderMethodHandler(ToolHandler):
         self.offline_value = offline_value
         # Provider Tool Sources may resolve an account-scoped client view
         # without making Runtime know provider-specific client semantics.
-        self.client_resolver: Optional[Callable[[ToolContext, dict[str, Any]], Any]] = None
+        self.client_resolver: Optional[
+            Callable[[ToolContext, dict[str, Any], Any], Any]
+        ] = None
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         if self.client is None:
@@ -652,7 +654,7 @@ class ProviderMethodHandler(ToolHandler):
         try:
             client = self.client
             if self.client_resolver is not None:
-                client = self.client_resolver(ctx, input_data)
+                client = self.client_resolver(ctx, input_data, client)
             method = getattr(client, self.method_name, None)
             if not callable(method):
                 return ToolResult.error(

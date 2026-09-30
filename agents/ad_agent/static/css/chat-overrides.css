@@ -4139,8 +4139,10 @@
         .mcp-tool-metadata-editor { margin: 14px 0 18px; padding: 14px; background: #f5faf9; border: 1px solid #cfe4e0; border-radius: 12px; }
         .mcp-metadata-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
         .mcp-metadata-grid label { display: grid; gap: 5px; color: #41636a; font-size: 10px; font-weight: 700; }
+        .mcp-metadata-grid label.mcp-checkbox { display: flex; align-items: center; gap: 8px; min-height: 34px; }
         .mcp-metadata-grid label.wide { grid-column: 1 / -1; }
         .mcp-metadata-grid input { width: 100%; box-sizing: border-box; padding: 8px 9px; color: #294b55; background: #fff; border: 1px solid #b8ced1; border-radius: 7px; outline: none; font: 11px/1.3 system-ui, -apple-system, sans-serif; }
+        .mcp-metadata-grid label.mcp-checkbox input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: #0b9f91; }
         .mcp-metadata-grid input:focus { border-color: #0b9f91; box-shadow: 0 0 0 3px rgba(11,159,145,.1); }
         .mcp-empty { padding: 20px 8px; color: #78939a; font-size: 12px; line-height: 1.6; }
         .mcp-test-overlay { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; overflow: auto; padding: 28px; background: rgba(8,29,38,.56); backdrop-filter: blur(4px); }

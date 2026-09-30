@@ -226,6 +226,7 @@ class RuntimeMCPServers:
                 "readOnlyHint": item["effect_class"] == "read",
                 "destructiveHint": item["effect_class"] != "read",
             },
+            "read_only": item["effect_class"] == "read",
             "enabled": True,
             "validation_status": "passed",
         }

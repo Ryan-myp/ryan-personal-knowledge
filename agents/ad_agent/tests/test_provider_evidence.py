@@ -3,6 +3,7 @@ from pathlib import Path
 
 from agents.ad_agent.domain.ad.provider_evidence import (
     build_provider_evidence_report,
+    merge_provider_evidence_files,
     load_provider_evidence,
     validate_provider_evidence,
 )
@@ -153,6 +154,43 @@ def test_loader_returns_redacted_summary_and_keeps_raw_ids_out_of_report(tmp_pat
     assert "2806375919473667" not in serialized
     assert report["providers"]["meta"]["account_previews"] == ["…3667"]
     assert "120251262026940251" not in serialized
+
+
+def test_provider_evidence_merges_write_and_query_sources_without_losing_provenance(
+    tmp_path,
+):
+    query_path = Path(
+        "agents/ad_agent/contracts/provider_query_e2e_evidence.json"
+    )
+    write_path = EVIDENCE_PATH
+
+    merged = merge_provider_evidence_files([write_path, query_path])
+
+    assert merged["valid"] is True
+    assert merged["report"]["run_count"] == 12
+    assert merged["sources"] == [
+        str(write_path.resolve()),
+        str(query_path.resolve()),
+    ]
+    providers = merged["report"]["providers"]
+    assert providers["meta"]["fully_verified_runs"] == 2
+    assert providers["google-ads"]["query_summary"]["total"] == 35
+    assert providers["tiktok"]["query_summary"]["total"] == 43
+    assert "2806375919473667" not in json.dumps(merged["report"])
+
+
+def test_provider_evidence_merge_rejects_duplicate_or_invalid_sources(tmp_path):
+    invalid_path = tmp_path / "invalid.json"
+    invalid_path.write_text('{"schema_version":"2"}', encoding="utf-8")
+
+    duplicate = merge_provider_evidence_files([EVIDENCE_PATH, EVIDENCE_PATH])
+    invalid = merge_provider_evidence_files([EVIDENCE_PATH, invalid_path])
+
+    assert duplicate["valid"] is False
+    assert any("duplicate evidence source" in error for error in duplicate["errors"])
+    assert invalid["valid"] is False
+    assert any("invalid.json" in error for error in invalid["errors"])
+    assert invalid["report"]["run_count"] == 0
 
 
 def test_operation_evidence_needs_exact_tool_action_readback_and_paused_status():

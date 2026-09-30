@@ -610,7 +610,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     "language": {"type": "string", "default": "en"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
-                required=["account_id", "keyword"], action="list",
+                required=["account_id", "keyword"], action="search",
                 resource_type="location", intent_types=["search_locations"],
                 traits=["read", "targeting", "lookup"],
                 argument_builder=lambda ctx, data: ((
@@ -1113,7 +1113,7 @@ class TikTokToolSource(BaseProviderToolSource):
                         "default": 100,
                     },
                 },
-                required=["account_id"], action="report", resource_type="report",
+                required=["account_id"], action="get", resource_type="report",
                 intent_types=["download_report"], traits=["read", "report"],
                 intent_aliases=["查询 TikTok 广告报表", "查看 TikTok campaign 表现"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
@@ -1573,7 +1573,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
             ),
-            action="report", resource_type="report",
+            action="report", resource_type="campaign",
             intent_types=["get_campaign_report"],
             intent_aliases=[
                 "查询 TikTok 报表", "查询 TikTok campaign 报表",
@@ -1790,17 +1790,13 @@ class TikTokToolSource(BaseProviderToolSource):
             method_name="get_creative", result_key="creative",
             properties={
                 "account_id": {"type": "string"},
-                # TikTok's Creative read endpoint is account-scoped, but a
-                # logical Creative Tool is backed by an Ad and therefore
-                # needs its owning Ad Group for an unambiguous live write
-                # read-back contract.
-                "adgroup_id": {"type": "string", "minLength": 1},
                 "creative_id": {"type": "string", "minLength": 1},
             },
-            required=["account_id", "adgroup_id", "creative_id"],
+            required=["account_id", "creative_id"],
+            # Preserve the logical resource hierarchy without inventing a
+            # parent parameter for TikTok's account-scoped Ad Get endpoint.
             action="get", resource_type="creative", parent_resource_type="ad_group",
             resource_id_field="creative_id",
-            parent_resource_id_field="adgroup_id",
             intent_types=["get_creative"], traits=["read", "creative"],
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["creative_id"]

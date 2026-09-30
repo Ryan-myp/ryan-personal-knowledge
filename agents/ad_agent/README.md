@@ -173,6 +173,10 @@ import json
 with open("credentials.json") as f:
     credentials = json.load(f)
 
+# Page-owned Meta Lead Form 查询可选配置服务端 Page token。
+# Page ID 映射到凭证，不会暴露给 Tool 输入或结果。
+# credentials["meta"]["page_access_tokens"] = {"<page_id>": "<page_access_token>"}
+
 # 传入真实客户端；Runtime 仍默认为 dry-run
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.tools.providers.meta import create_meta_tool_source
@@ -344,7 +348,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 | `code_contract` | Tool Source、Tool schema、权限、版本和 snapshot 一致 | 是 |
 | `dry_run` | Runtime → Tool → Tool Source → Client 的本地调用链和 Skill-up case | 是 |
 | `provider_scope` | Meta、Google Ads、TikTok 已声明的查询接口及 Campaign/Ad Group/Ad/Creative 创建更新接口；DV360 排除 | 是 |
-| `provider_query_e2e` | 每个纳入范围的 query Tool/action 都有受控 Provider 账号实测 | 否（需受控环境） |
+| `provider_query_e2e` | 每个纳入范围的 query Tool/action 都有受控 Provider 账号实测 | 是（2026-09-30 实测 86/113 个 Tool 有成功响应；Meta alias 去重后 API operation 为 84/112，最低渠道 Meta 21/34；另有 2 项权限失败、25 项安全跳过，未达发布门槛） |
 | `provider_e2e` | 目标 Campaign 层级写操作逐接口关联的受控账户实测证据 | 否（需受控环境） |
 | `live_verified` | 目标 Campaign 层级写操作经过 live fuse、白名单、确认和审计的实测证据 | 否（需批准环境） |
 

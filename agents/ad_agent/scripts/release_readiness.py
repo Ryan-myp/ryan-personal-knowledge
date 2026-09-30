@@ -15,7 +15,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -25,6 +25,9 @@ if str(ROOT) not in sys.path:
 from agents.ad_agent.domain.ad.release_readiness import (  # noqa: E402
     ReadinessPolicy,
     build_readiness_report,
+)
+from agents.ad_agent.domain.ad.provider_evidence import (  # noqa: E402
+    merge_provider_evidence_files,
 )
 from agents.ad_agent.scripts.audit_provider_tools import audit_provider_tools  # noqa: E402
 from agents.ad_agent.scripts.provider_contract_harness import run_harness  # noqa: E402
@@ -45,13 +48,23 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _load_optional_provider_evidence(path: Path | None) -> tuple[dict[str, Any] | None, str | None]:
-    if path is None:
-        return None, None
-    try:
-        return _load_json(path), None
-    except (OSError, json.JSONDecodeError, ValueError) as error:
-        return None, f"{type(error).__name__}: {error}"
+def _default_provider_evidence_paths() -> list[Path]:
+    contracts = ROOT / "agents" / "ad_agent" / "contracts"
+    return [
+        contracts / "provider_e2e_evidence.json",
+        contracts / "provider_query_e2e_evidence.json",
+    ]
+
+
+def _load_provider_evidence(
+    paths: Iterable[Path],
+) -> tuple[dict[str, Any] | None, list[str], list[str]]:
+    bundle = merge_provider_evidence_files(paths)
+    return (
+        bundle.get("evidence") if bundle.get("valid") is True else None,
+        list(bundle.get("errors") or []),
+        list(bundle.get("sources") or []),
+    )
 
 
 def _run_skill_up_cases() -> dict[str, Any]:
@@ -164,26 +177,67 @@ def _application_service_module_lines() -> int | None:
 
 
 def _run_generic_platform_smoke() -> dict[str, Any]:
-    """Exercise the business-neutral six-layer reference application."""
+    """Exercise deterministic Tool routing, not real-LLM decision quality."""
     try:
+        from agents.agent_harness import ModelTurn, ToolCall
         from agents.agent_platform.examples import create_ticket_support_application
 
+        class SmokeModel:
+            def __init__(self) -> None:
+                self.turn = 0
+
+            def complete(self, messages, tools, _request):
+                self.turn += 1
+                if self.turn == 1:
+                    names = [item.get("name") for item in tools]
+                    if names != ["lookup_ticket"]:
+                        return ModelTurn(content="unexpected tool catalog")
+                    return ModelTurn(tool_calls=(
+                        ToolCall(
+                            "ticket-lookup-1",
+                            "lookup_ticket",
+                            {"ticket_id": "T-42"},
+                        ),
+                    ))
+                saw_ticket_result = any(
+                    "T-42" in json.dumps(message, ensure_ascii=False, default=str)
+                    for message in messages
+                )
+                return ModelTurn(
+                    content="Ticket T-42 status is open"
+                    if saw_ticket_result
+                    else "ticket lookup result missing"
+                )
+
+        model = SmokeModel()
         application = create_ticket_support_application(
-            model=lambda _messages, tools, _request: tools[0]["name"],
+            model=model,
         )
         try:
-            response = application.prompt("Find ticket status")
+            response = application.prompt("Find ticket status for T-42")
             layers = tuple(application.layer_snapshot())
+            tool_results = list(response.data.get("tool_results") or [])
+            tool_executed = any(
+                item.get("name") == "lookup_ticket" for item in tool_results
+            )
             passed = (
                 application.scenario.scenario_id == "ticket-support"
                 and [item["name"] for item in application.list_tools()]
                 == ["lookup_ticket"]
-                and response.reply == "lookup_ticket"
+                and response.reply == "Ticket T-42 status is open"
+                and tool_executed
+                and model.turn == 2
                 and len(layers) == 6
             )
             return {
                 "passed": passed,
                 "evidence": "ticket_support_reference_application_smoke",
+                "scope": (
+                    "synthetic deterministic Tool selection and execution; "
+                    "not an LLM quality benchmark"
+                ),
+                "tool_executed": tool_executed,
+                "model_turns": model.turn,
                 "layers": list(layers),
             }
         finally:
@@ -194,6 +248,130 @@ def _run_generic_platform_smoke() -> dict[str, Any]:
             "evidence": "ticket_support_reference_application_smoke",
             "error": f"{type(exc).__name__}: {exc}",
         }
+
+
+def _run_security_contracts() -> dict[str, Any]:
+    """Exercise local MCP trust and dry-run boundaries without network calls."""
+    from agents.agent_harness import MCPToolExecutor, MCPToolSource, TurnRequest
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, Any]]] = []
+
+        def list_tools(self):
+            return [
+                {
+                    "name": "lookup",
+                    "inputSchema": {"type": "object", "properties": {}},
+                    "annotations": {"readOnlyHint": False},
+                },
+                {
+                    "name": "publish",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["request_id"],
+                        "properties": {"request_id": {"type": "string"}},
+                    },
+                    "annotations": {"readOnlyHint": True},
+                },
+            ]
+
+        def call_tool(self, name, arguments):
+            self.calls.append((name, dict(arguments)))
+            return {"structuredContent": {"ok": True}}
+
+    checks: list[bool] = []
+    client = FakeClient()
+    untrusted_source = MCPToolSource("mcp:untrusted", client)
+    untrusted = {
+        item.definition["name"]: item
+        for item in untrusted_source.list_bindings()
+    }
+    checks.append(
+        untrusted["publish"].definition["effect_class"] == "external_write"
+    )
+    dry_result = untrusted["publish"].executor.execute(
+        type(
+            "Context",
+            (),
+            {
+                "request": TurnRequest(
+                    user_input="publish",
+                    tenant_id="default",
+                    execution_mode="dry_run",
+                ),
+            },
+        )(),
+        {},
+    )
+    checks.append(
+        dry_result.get("execution_status") == "dry_run_only"
+        and not client.calls
+    )
+
+    trusted_source = MCPToolSource(
+        "mcp:trusted",
+        client,
+        trusted_read_tools={"lookup"},
+        live_write_tools={"publish"},
+        idempotency_key_fields={"publish": "request_id"},
+    )
+    trusted = {
+        item.definition["name"]: item
+        for item in trusted_source.list_bindings()
+    }
+    checks.append(trusted["lookup"].definition["effect_class"] == "read")
+    cross_tenant = trusted["lookup"].executor.execute(
+        type(
+            "Context",
+            (),
+            {
+                "request": TurnRequest(
+                    user_input="lookup",
+                    tenant_id="other",
+                    execution_mode="dry_run",
+                ),
+            },
+        )(),
+        {},
+    )
+    checks.append(
+        cross_tenant.get("success") is False
+        and not client.calls
+    )
+
+    live_write = trusted["publish"].executor.execute(
+        type(
+            "Context",
+            (),
+            {
+                "request": TurnRequest(
+                    user_input="publish",
+                    tenant_id="default",
+                    execution_mode="live",
+                ),
+            },
+        )(),
+        {"record_id": "r-1", "request_id": "publish-smoke-1"},
+    )
+    checks.append(
+        live_write.get("success") is True
+        and client.calls == [(
+            "publish",
+            {"record_id": "r-1", "request_id": "publish-smoke-1"},
+        )]
+    )
+    return {
+        "executed": True,
+        "passed": all(checks),
+        "scenario_count": len(checks),
+        "scope": "local MCP executor trust, tenant and dry-run contracts only",
+        "errors": [
+            f"security contract {index + 1} failed"
+            for index, passed in enumerate(checks)
+            if not passed
+        ],
+    }
 
 
 def _run_reliability_evidence() -> dict[str, Any]:
@@ -230,22 +408,23 @@ def _run_reliability_evidence() -> dict[str, Any]:
 def build_report(
     profile: str,
     policy_path: Path,
-    provider_evidence_path: Path | None = None,
+    provider_evidence_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
-    resolved_provider_evidence_path = provider_evidence_path or (
-        ROOT / "agents" / "ad_agent" / "contracts" / "provider_e2e_evidence.json"
+    resolved_provider_evidence_paths = (
+        provider_evidence_paths or _default_provider_evidence_paths()
     )
-    provider_evidence, provider_evidence_error = _load_optional_provider_evidence(
-        resolved_provider_evidence_path
+    provider_evidence, provider_evidence_errors, provider_evidence_sources = (
+        _load_provider_evidence(resolved_provider_evidence_paths)
     )
-    tool_source_report = audit_provider_tools(resolved_provider_evidence_path)
+    tool_source_report = audit_provider_tools(resolved_provider_evidence_paths)
     contract_errors = _contract_gate_errors()
     provider_report = run_harness(
         ROOT / "agents" / "ad_agent" / "contracts" / "provider_contract_scenarios.json"
     )
     skill_report = _run_skill_up_cases()
     generic_platform_report = _run_generic_platform_smoke()
+    security_report = _run_security_contracts()
     reliability_report = _run_reliability_evidence()
     dry_run_report = {
         "executed": bool(provider_report.get("executed") and skill_report.get("executed")),
@@ -255,6 +434,7 @@ def build_report(
         "skill_up": skill_report,
         "generic_platform_evidence": bool(generic_platform_report.get("passed")),
         "generic_platform": generic_platform_report,
+        "security": security_report,
         "reliability_evidence": bool(reliability_report.get("passed")),
         "reliability": reliability_report,
         "max_runtime_module_lines": _application_service_module_lines(),
@@ -267,6 +447,7 @@ def build_report(
         tool_source_report=tool_source_report,
         contract_gate_errors=contract_errors,
         dry_run_report=dry_run_report,
+        security_report=security_report,
         provider_evidence=provider_evidence,
         policy=policy,
         profile=profile,
@@ -277,11 +458,10 @@ def build_report(
         "tool_source_audit": tool_source_report,
         "contract_snapshot_errors": contract_errors,
         "dry_run": dry_run_report,
+        "security": security_report,
         "reliability": reliability_report,
-        "provider_evidence_source": (
-            str(resolved_provider_evidence_path)
-        ),
-        "provider_evidence_load_error": provider_evidence_error,
+        "provider_evidence_sources": provider_evidence_sources,
+        "provider_evidence_load_errors": provider_evidence_errors,
     }
     return report
 
@@ -297,15 +477,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--provider-evidence",
+        action="append",
         type=Path,
-        help="Optional controlled Provider E2E evidence JSON; never inferred from local tests.",
+        help=(
+            "Controlled Provider evidence JSON (repeatable). When omitted, "
+            "loads both checked-in write and query evidence sources."
+        ),
     )
     args = parser.parse_args(argv)
     try:
         report = build_report(
             args.profile,
             args.policy,
-            provider_evidence_path=args.provider_evidence,
+            provider_evidence_paths=args.provider_evidence,
         )
     except Exception as exc:
         report = {

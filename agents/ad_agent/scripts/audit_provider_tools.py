@@ -16,7 +16,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -36,7 +36,9 @@ from agents.ad_agent.tools.providers.api_surface import (  # noqa: E402
 )
 from agents.ad_agent.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
 from agents.ad_agent.domain.ad.contracts import AdFormatCoverage  # noqa: E402
-from agents.ad_agent.domain.ad.provider_evidence import load_provider_evidence  # noqa: E402
+from agents.ad_agent.domain.ad.provider_evidence import (  # noqa: E402
+    merge_provider_evidence_files,
+)
 from agents.ad_agent.runtime.runtime import AdvertisingComposition  # noqa: E402
 from agents.ad_agent.skill_management import (  # noqa: E402
     SkillPackageError,
@@ -157,7 +159,17 @@ def _audit_skill_context(report: dict[str, Any]) -> None:
     report["issues"].extend(f"skill context: {issue}" for issue in skill_issues)
 
 
-def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, Any]:
+def _default_provider_evidence_paths() -> list[Path]:
+    contracts = Path(__file__).resolve().parents[1] / "contracts"
+    return [
+        contracts / "provider_e2e_evidence.json",
+        contracts / "provider_query_e2e_evidence.json",
+    ]
+
+
+def audit_provider_tools(
+    evidence_paths: str | Path | Iterable[str | Path] | None = None,
+) -> dict[str, Any]:
     """Build a JSON-safe tool_source report without constructing API clients."""
     report: dict[str, Any] = {
         "platforms": {},
@@ -166,30 +178,27 @@ def audit_provider_tools(evidence_path: str | Path | None = None) -> dict[str, A
         "issues": [],
     }
     _audit_skill_context(report)
-    resolved_evidence_path = Path(evidence_path) if evidence_path else (
-        Path(__file__).resolve().parents[1] / "contracts" / "provider_e2e_evidence.json"
+    selected_evidence_paths = (
+        _default_provider_evidence_paths()
+        if evidence_paths is None
+        else [evidence_paths]
+        if isinstance(evidence_paths, (str, Path))
+        else list(evidence_paths)
     )
-    if resolved_evidence_path.is_file():
-        evidence = load_provider_evidence(resolved_evidence_path)
-        report["provider_evidence"] = {
-            **evidence,
-            "path": str(resolved_evidence_path),
-        }
-        report["provider_evidence_errors"].extend(
-            f"provider evidence: {error}"
-            for error in evidence.get("errors", [])
-        )
-    else:
-        report["provider_evidence"] = {
-            "format_version": 1,
-            "valid": False,
-            "errors": ["受控 Provider E2E 证据文件不存在"],
-            "run_count": 0,
-            "providers": {},
-            "path": str(resolved_evidence_path),
-        }
+    evidence_bundle = merge_provider_evidence_files(selected_evidence_paths)
+    report["provider_evidence"] = {
+        **evidence_bundle["report"],
+        "sources": evidence_bundle["sources"],
+    }
+    if len(evidence_bundle["sources"]) == 1:
+        report["provider_evidence"]["path"] = evidence_bundle["sources"][0]
+    report["provider_evidence_errors"].extend(
+        f"provider evidence: {error}"
+        for error in evidence_bundle["errors"]
+    )
+    if not evidence_bundle["valid"]:
         report["provider_evidence_errors"].append(
-            "provider evidence: 受控 Provider E2E 证据文件不存在"
+            "provider evidence bundle is incomplete or invalid"
         )
     runtime = AdvertisingComposition(offline_mode=True, enforce_account_scope=False)
 
@@ -739,11 +748,12 @@ def _print_text(report: dict[str, Any]) -> None:
             print(f"  ISSUE: {issue}")
     evidence = report.get("provider_evidence") or {}
     if evidence:
+        source_text = ", ".join(evidence.get("sources") or []) or "-"
         print(
             "\nprovider evidence: "
             f"valid={evidence.get('valid', False)}, "
             f"runs={evidence.get('run_count', 0)}, "
-            f"path={evidence.get('path', '-')}"
+            f"sources={source_text}"
         )
         for provider, details in (evidence.get("providers") or {}).items():
             print(
@@ -769,6 +779,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="emit JSON instead of text")
     parser.add_argument(
         "--evidence",
+        action="append",
+        type=Path,
         help="path to a controlled Provider E2E evidence JSON file",
     )
     args = parser.parse_args(argv)

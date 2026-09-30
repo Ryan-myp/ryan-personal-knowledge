@@ -1105,6 +1105,28 @@ def test_meta_insights_account_report_omits_resource_filter_when_ids_not_given()
     assert "filtering" not in calls[0]
 
 
+@pytest.mark.parametrize(
+    ("preset", "expected"),
+    [
+        ("LAST_7_DAYS", "last_7d"),
+        ("LAST_14_DAYS", "last_14d"),
+        ("LAST_30_DAYS", "last_30d"),
+        ("last_7d", "last_7d"),
+    ],
+)
+def test_meta_insights_normalizes_supported_date_presets(preset, expected):
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda _method, _endpoint, extra_params=None, **_kwargs: (
+        calls.append(dict(extra_params or {}))
+        or {"data": [], "paging": {}}
+    )
+
+    client.get_campaign_report("act_123", [], time_range=preset, limit=3)
+
+    assert calls[0]["date_preset"] == expected
+
+
 def test_meta_insights_rejects_boolean_limit():
     client = MetaAPIClient({"access_token": "test"})
     client.request = lambda *_args, **_kwargs: pytest.fail(
@@ -3853,6 +3875,34 @@ def test_tiktok_get_ad_uses_exact_bounded_provider_filter():
     }
 
 
+def test_tiktok_get_ad_accepts_exactly_filtered_row_without_parent_echo():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, params))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {
+                    "list": [{"ad_id": "ad-1"}],
+                    "page_info": {"page": 1, "total_page": 1},
+                },
+            },
+            "headers": {},
+        }
+    )
+
+    result = client.get_ad("123", "group-1", "ad-1")
+
+    assert result == {"ad_id": "ad-1"}
+    assert len(calls) == 1
+    assert json.loads(calls[0][2]["filtering"]) == {
+        "adgroup_ids": ["group-1"],
+        "ad_ids": ["ad-1"],
+    }
+
+
 def test_tiktok_targeting_update_validates_dimensions_and_builds_scoped_payload():
     client = TikTokAPIClient({"access_token": "test"})
     payloads = []
@@ -4339,7 +4389,9 @@ def test_meta_creation_dependency_lookups_cover_pages_pixels_and_lead_forms():
     client = MetaAPIClient({"access_token": "test"})
     calls = []
 
-    def fake_pages(account_id, endpoint, params, item_key="data", max_pages=100):
+    def fake_pages(
+        account_id, endpoint, params, item_key="data", max_pages=100, **_kwargs,
+    ):
         calls.append((account_id, endpoint, params))
         return [{"id": "resource-1"}]
 
@@ -4354,6 +4406,75 @@ def test_meta_creation_dependency_lookups_cover_pages_pixels_and_lead_forms():
             "limit": 25, "fields": "id,name,status,created_time,updated_time"
         }),
     ]
+
+
+def test_meta_lead_form_queries_use_page_scoped_server_credentials():
+    client = MetaAPIClient({
+        "access_token": "user-token",
+        "page_access_tokens": {"12345": "page-token"},
+    })
+    calls = []
+
+    def list_graph_pages(
+        account_id, endpoint, params, item_key="data", max_pages=100,
+        *, access_token=None,
+    ):
+        calls.append((account_id, endpoint, dict(params), access_token))
+        return [{"id": "form-1", "name": "Lead form"}]
+
+    client._list_graph_pages = list_graph_pages
+    result = client.list_lead_forms("12345", limit=2)
+
+    assert result == [{"id": "form-1", "name": "Lead form"}]
+    assert calls[0][1] == "/12345/leadgen_forms"
+    assert calls[0][3] == "page-token"
+    assert "page-token" not in json.dumps(result)
+
+
+def test_meta_get_lead_form_uses_page_token_only_for_server_request():
+    client = MetaAPIClient({
+        "access_token": "user-token",
+        "page_access_tokens": {"12345": "page-token"},
+    })
+    client.list_lead_forms = lambda _page_id, limit=25: [{"id": "form-1"}]
+    calls = []
+    client.request = lambda method, endpoint, extra_params=None, **kwargs: (
+        calls.append((method, endpoint, kwargs.get("_access_token_override")))
+        or {"id": "form-1", "name": "Lead form"}
+    )
+
+    result = client.get_lead_form("12345", "form-1")
+
+    assert result["id"] == "form-1"
+    assert calls == [("GET", "/form-1", "page-token")]
+
+
+def test_meta_credentials_cannot_be_overridden_by_extra_query_parameters(monkeypatch):
+    client = MetaAPIClient({"access_token": "host-token"})
+    captured = {}
+
+    class Response:
+        status_code = 200
+        content = b"{}"
+        headers = {}
+
+        @staticmethod
+        def json():
+            return {}
+
+    def fake_get(_url, params=None, headers=None, timeout=None):
+        captured.update(params or {})
+        return Response()
+
+    monkeypatch.setattr("agents.ad_agent.api_clients.meta_client.requests.get", fake_get)
+    client._do_request(
+        "GET",
+        "https://example.test",
+        extra_params={"access_token": "untrusted-token"},
+        _access_token_override="page-token",
+    )
+
+    assert captured["access_token"] == "page-token"
 
 
 def test_tiktok_campaign_lookup_by_name_uses_list_result():
@@ -4985,7 +5106,7 @@ def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
         "meta_update_creative", "meta_delete_creative",
     } <= set(definitions)
     lookup = definitions["meta_lookup_creative"]
-    assert lookup.action == "list"
+    assert lookup.action == "get"
     assert lookup.input_schema.required == ["account_id", "creative_id"]
     assert lookup.input_schema.properties["creative_id"]["lookup_tool"] == (
         "meta_list_creatives"
@@ -6398,6 +6519,41 @@ def test_google_extended_provider_tools_resolve_customer_scoped_client():
     assert seen == [("customer-2", "7")]
 
 
+def test_google_provider_resolver_uses_client_injected_after_tool_registration():
+    seen = []
+
+    class InjectedGoogleClient:
+        customer_id = "base"
+
+        def for_customer(self, customer_id):
+            import copy
+
+            scoped = copy.copy(self)
+            scoped.customer_id = customer_id
+            return scoped
+
+        def list_assets(self, customer_id, page_size=100):
+            seen.append((self.customer_id, customer_id, page_size))
+            return [{"id": "asset-1"}]
+
+    tool_source = create_google_tool_source()
+    handlers = {
+        definition.name: handler
+        for definition, handler in tool_source.register_tools()
+    }
+    handler = handlers["google_list_assets"]
+    handler.client = InjectedGoogleClient()
+
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="customer-2"),
+        {"customer_id": "customer-2", "limit": 5},
+    )
+
+    assert result.success
+    assert result.data["assets"] == [{"id": "asset-1"}]
+    assert seen == [("customer-2", "customer-2", 5)]
+
+
 def test_google_feed_and_conversion_goal_methods_build_explicit_operations():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     client._search_all = lambda query, page_size=100: [{
@@ -6524,6 +6680,15 @@ def test_tiktok_get_creative_reuses_the_scoped_creative_list_contract():
         }],
         1,
     )]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_tool_source(client).register_tools()
+    }
+    get_tool = definitions["tiktok_get_creative"]
+    assert get_tool.input_schema.required == ["account_id", "creative_id"]
+    assert get_tool.parent_resource_type == "ad_group"
+    assert get_tool.parent_resource_id_field is None
 
 
 def test_tiktok_single_resource_readers_reuse_existing_list_endpoints():

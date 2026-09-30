@@ -28,10 +28,11 @@ def _policy() -> ReadinessPolicy:
         "default_profile": "local",
         "readiness_scope": {"required_providers": ["meta"]},
         "profiles": {
-            "local": ["code_contract", "dry_run", "provider_scope"],
+            "local": ["code_contract", "dry_run", "security", "provider_scope"],
             "release": [
                 "code_contract",
                 "dry_run",
+                "security",
                 "provider_scope",
                 "provider_query_e2e",
                 "provider_e2e",
@@ -80,6 +81,15 @@ def _readiness_scope() -> dict:
     }
 
 
+def _security_report(passed: bool = True) -> dict:
+    return {
+        "executed": True,
+        "passed": passed,
+        "scenario_count": 4,
+        "scope": "local MCP executor security contracts only",
+    }
+
+
 def test_local_profile_does_not_promote_local_stub_to_provider_e2e():
     report = build_readiness_report(
         tool_source_report={
@@ -96,6 +106,7 @@ def test_local_profile_does_not_promote_local_stub_to_provider_e2e():
             },
         },
         dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
         policy=_policy(),
         profile="local",
     )
@@ -114,6 +125,7 @@ def test_release_profile_blocks_without_operation_specific_evidence():
             "official_inventory": {},
         },
         dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
         policy=_policy(),
         profile="release",
     )
@@ -164,6 +176,7 @@ def test_release_report_exposes_controlled_evidence_without_promoting_partial_ru
             },
         },
         dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
         provider_evidence={
             "schema_version": "1.0",
             "generated_at": "2026-09-18",
@@ -280,6 +293,7 @@ def test_release_readiness_uses_scoped_provider_operations_not_full_api_inventor
             },
         },
         dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
         policy=_policy(),
         profile="release",
     )
@@ -313,6 +327,7 @@ def test_readiness_requires_every_provider_declared_in_policy():
             "readiness_scope": _readiness_scope(),
         },
         dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
         policy=policy,
         profile="local",
     )
@@ -361,6 +376,7 @@ def test_readiness_rejects_unexpected_enabled_provider():
     report = build_readiness_report(
         tool_source_report={"issues": [], "readiness_scope": scopes},
         dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
         policy=_policy(),
         profile="local",
     )
@@ -583,7 +599,7 @@ def test_provider_audit_links_only_operation_specific_provider_evidence():
     assert meta_campaign_update["execution_status"] != "live_verified"
     assert tiktok_lead_campaign["execution_status"] == "live_verified"
     assert report["readiness_scope"]["google-ads"]["managed_write_live_verified"] == 0
-    assert report["readiness_scope"]["google-ads"]["query_provider_e2e"] == 0
+    assert report["readiness_scope"]["google-ads"]["query_provider_e2e"] > 0
 
 
 def test_provider_audit_links_query_evidence_only_to_exact_query_tool(tmp_path):
@@ -631,20 +647,108 @@ def test_provider_audit_links_query_evidence_only_to_exact_query_tool(tmp_path):
     assert campaign_list["evidence_records"][0]["tool"] == "meta_list_campaigns"
 
 
+def test_query_tool_contract_labels_match_provider_api_surface():
+    from agents.ad_agent.tools.providers.source_factory import create_tool_source
+
+    expected = {
+        "google-ads": {
+            "google_get_campaign_report": ("campaign", "report"),
+        },
+        "meta": {
+            "meta_get_campaign_report": ("campaign", "report"),
+            "meta_lookup_adset": ("ad_set", "get"),
+            "meta_lookup_creative": ("creative", "get"),
+        },
+        "tiktok": {
+            "tiktok_get_campaign_report": ("campaign", "report"),
+            "tiktok_get_report": ("report", "get"),
+            "tiktok_search_locations": ("location", "search"),
+        },
+    }
+
+    for provider, tools in expected.items():
+        tool_source = create_tool_source(provider)
+        definitions = {
+            definition.name: definition
+            for definition, _handler in tool_source.register_tools()
+        }
+        for name, (resource, action) in tools.items():
+            definition = definitions[name]
+            assert (definition.resource_type, definition.action) == (
+                resource,
+                action,
+            ), name
+
+
+def test_checked_in_query_evidence_uses_registered_tool_labels():
+    import json
+
+    from agents.ad_agent.tools.providers.source_factory import create_tool_source
+
+    definitions = {}
+    for provider in ("google-ads", "meta", "tiktok"):
+        for definition, _handler in create_tool_source(provider).register_tools():
+            definitions[definition.name] = definition
+
+    raw = json.loads(
+        Path(
+            "agents/ad_agent/contracts/provider_query_e2e_evidence.json"
+        ).read_text(encoding="utf-8")
+    )
+    mismatches = []
+    for run in raw["runs"]:
+        for query in run.get("queries", []):
+            definition = definitions[query["tool"]]
+            actual = (query["resource"], query["action"])
+            expected = (definition.resource_type, definition.action)
+            if actual != expected:
+                mismatches.append((query["tool"], actual, expected))
+
+    assert mismatches == []
+
+
+def test_security_score_is_independent_from_code_contract_score():
+    scorecard = build_quality_scorecard(
+        code_contract_ok=True,
+        dry_run_ok=True,
+        provider_scope_ratio=1.0,
+        provider_query_e2e_ratio=1.0,
+        generic_platform_ok=True,
+        security_ok=False,
+        security_evidence="local security contract checks failed",
+        provider_e2e_ratio=1.0,
+        live_verified_ratio=1.0,
+        production_evidence_ok=True,
+        max_runtime_module_lines=300,
+    )
+
+    security = next(
+        item for item in scorecard["dimensions"] if item["name"] == "security"
+    )
+    assert security["score"] == 0
+    assert security["passed"] is False
+    assert security["evidence"] == "local security contract checks failed"
+
+
 def test_release_readiness_uses_default_controlled_provider_evidence(monkeypatch):
     from agents.ad_agent.scripts import release_readiness
 
-    expected_evidence_path = (
+    expected_evidence_paths = [
         release_readiness.ROOT
         / "agents"
         / "ad_agent"
         / "contracts"
-        / "provider_e2e_evidence.json"
-    )
+        / "provider_e2e_evidence.json",
+        release_readiness.ROOT
+        / "agents"
+        / "ad_agent"
+        / "contracts"
+        / "provider_query_e2e_evidence.json",
+    ]
     audit_arguments = {}
 
-    def fake_audit_provider_tools(evidence_path=None):
-        audit_arguments["evidence_path"] = evidence_path
+    def fake_audit_provider_tools(evidence_paths=None):
+        audit_arguments["evidence_paths"] = evidence_paths
         return {"issues": [], "official_inventory": {}}
 
     monkeypatch.setattr(
@@ -668,6 +772,16 @@ def test_release_readiness_uses_default_controlled_provider_evidence(monkeypatch
     )
     monkeypatch.setattr(
         release_readiness,
+        "_run_security_contracts",
+        lambda: {
+            "executed": True,
+            "passed": True,
+            "scenario_count": 4,
+            "scope": "local MCP executor security contracts only",
+        },
+    )
+    monkeypatch.setattr(
+        release_readiness,
         "_run_reliability_evidence",
         lambda: {"executed": True, "passed": True},
     )
@@ -684,6 +798,73 @@ def test_release_readiness_uses_default_controlled_provider_evidence(monkeypatch
         / "readiness_policy.json",
     )
 
-    assert audit_arguments["evidence_path"] == expected_evidence_path
-    assert report["controlled_evidence"]["run_count"] == 9
+    assert audit_arguments["evidence_paths"] == expected_evidence_paths
+    assert report["controlled_evidence"]["run_count"] == 12
+    assert report["evidence"]["provider_evidence_sources"] == [
+        str(path) for path in expected_evidence_paths
+    ]
+
+
+def test_readiness_does_not_infer_security_success_from_code_contract(monkeypatch):
+    from agents.ad_agent.scripts import release_readiness
+
+    monkeypatch.setattr(
+        release_readiness,
+        "audit_provider_tools",
+        lambda _paths=None: {
+            "issues": [],
+            "readiness_scope": _readiness_scope(),
+            "official_inventory": {},
+        },
+    )
+    monkeypatch.setattr(release_readiness, "_contract_gate_errors", lambda: [])
+    monkeypatch.setattr(
+        release_readiness,
+        "run_harness",
+        lambda *_args: {"executed": True, "failed": 0},
+    )
+    monkeypatch.setattr(
+        release_readiness,
+        "_run_skill_up_cases",
+        lambda: {"executed": True, "failed": 0},
+    )
+    monkeypatch.setattr(
+        release_readiness, "_run_generic_platform_smoke", lambda: {"passed": True}
+    )
+    monkeypatch.setattr(
+        release_readiness,
+        "_run_security_contracts",
+        lambda: {
+            "executed": True,
+            "passed": False,
+            "scenario_count": 4,
+            "scope": "local MCP executor security contracts only",
+            "errors": ["write escaped dry-run"],
+        },
+    )
+    monkeypatch.setattr(
+        release_readiness,
+        "_run_reliability_evidence",
+        lambda: {"executed": True, "passed": True},
+    )
+    monkeypatch.setattr(
+        release_readiness, "_application_service_module_lines", lambda: 300
+    )
+
+    report = release_readiness.build_report(
+        "local",
+        release_readiness.ROOT
+        / "agents"
+        / "ad_agent"
+        / "contracts"
+        / "readiness_policy.json",
+    )
+
+    security = next(
+        item
+        for item in report["stage_results"]["quality_95"]["scorecard"]["dimensions"]
+        if item["name"] == "security"
+    )
+    assert report["stage_results"]["code_contract"]["status"] == "passed"
+    assert security["passed"] is False
     assert report["controlled_evidence"]["valid"] is True

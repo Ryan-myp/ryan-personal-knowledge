@@ -1,5 +1,5 @@
 {
-  "digest": "a6976b2539a88cd18e34982eaa3c4c89be3165e5aef0ec729588c27bc8a452f8",
+  "digest": "a99a3093f457d63a8c0ccc9ec460eebbb5e5ba5e23946998e053afdfa0382100",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2444,7 +2444,7 @@
       ]
     },
     "google-ads": {
-      "digest": "812dc7d9dbd29dd4c6d8a8e3d1507fa16ecb1f7848d7d535af4d36f0de7a994a",
+      "digest": "5646dd2f40b9a830ea4084f6fa14a43ffedd482f6b2539d34d2b5f529e123052",
       "tool_count": 103,
       "tools": [
         {
@@ -13315,7 +13315,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "report",
+          "resource_type": "campaign",
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
@@ -18299,7 +18299,7 @@
       ]
     },
     "meta": {
-      "digest": "1943e5f5c043328444cd5c32d711e348f12a88e26568a97dfa7f24f1f4172403",
+      "digest": "0a20ebdb42fc9ed3dd21d5d6a66bb3e6a638f748386c1e9075b4d3a42a16d44f",
       "tool_count": 78,
       "tools": [
         {
@@ -24829,7 +24829,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "report",
+          "resource_type": "campaign",
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
@@ -26774,7 +26774,7 @@
           ]
         },
         {
-          "action": "list",
+          "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "8e3038cf6855d93780eb926d396df0111bb0a001879049a032510bf2013cd081",
@@ -26869,7 +26869,7 @@
           ]
         },
         {
-          "action": "list",
+          "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "0c62eed4da2f1142f4ca4e3ec68225f8f9156380af30a2b83f3a507250c8c669",
@@ -29503,7 +29503,7 @@
       ]
     },
     "tiktok": {
-      "digest": "504f37ebfda863e2c049fc2a564a211169cafaef6155c9ac37217ef78b8bafad",
+      "digest": "a356980cfb632b4f6978470e70fa22b29ac0afb850609d9bd5190558d99e4697",
       "tool_count": 85,
       "tools": [
         {
@@ -39195,7 +39195,7 @@
             "ads.read"
           ],
           "resource_id_field": null,
-          "resource_type": "report",
+          "resource_type": "campaign",
           "result_id_fields": [],
           "result_items_key": null,
           "risk_level": "low",
@@ -39290,7 +39290,7 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ed362feebc0364934deaefeb691c5bb8f3ffdfd59f90590c5afd86fc502d8dba",
+          "contract_hash": "d1220d2d36397c1b79eb06741bf670414dc0a23fa25577e916dfe5bb9dc61c24",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Creative 详情。",
           "effect_class": "read",
@@ -39303,31 +39303,6 @@
               "account_id": {
                 "type": "string"
               },
-              "adgroup_id": {
-                "lookup_dependencies": [
-                  {
-                    "input_field": "campaign_id",
-                    "label": "所属 Campaign",
-                    "required": true,
-                    "value_path": "campaign_id"
-                  }
-                ],
-                "lookup_result_key": "adgroups",
-                "lookup_tool": "tiktok_list_adgroups",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "adgroup_name",
-                  "ad_group_name",
-                  "name",
-                  "id"
-                ],
-                "selection_value_fields": [
-                  "adgroup_id",
-                  "ad_group_id",
-                  "id"
-                ],
-                "type": "string"
-              },
               "creative_id": {
                 "minLength": 1,
                 "type": "string"
@@ -39335,7 +39310,6 @@
             },
             "required": [
               "account_id",
-              "adgroup_id",
               "creative_id"
             ],
             "requires": [],
@@ -39352,7 +39326,7 @@
           "max_output_bytes": 1000000,
           "name": "tiktok_get_creative",
           "namespace": "tiktok",
-          "parent_resource_id_field": "adgroup_id",
+          "parent_resource_id_field": null,
           "parent_resource_type": "ad_group",
           "readback_tool": null,
           "related_resource_id_fields": [],
@@ -39945,7 +39919,7 @@
           ]
         },
         {
-          "action": "report",
+          "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "dbefeefafbe2ed9400158082ec40b18c48e1c7646eecb9cf362bcf24419ffac8",
@@ -42184,7 +42158,7 @@
           ]
         },
         {
-          "action": "list",
+          "action": "search",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "3aafa938e911e6860956de3d130a9fff97b77902921a0816631e5c1ec0482639",

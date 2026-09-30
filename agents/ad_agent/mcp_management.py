@@ -55,6 +55,14 @@ _MAX_RESPONSE_BYTES = 1_000_000
 _FIELD_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 _ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,63}$")
 _PERMISSION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{0,127}$")
+_HOST_TRUSTED_READ_TRAIT = "mcp:trusted_read"
+_HOST_LIVE_WRITE_TRAIT = "mcp:live_write"
+_MUTATING_ACTIONS = {
+    "create", "update", "delete", "pause", "resume", "enable", "disable",
+}
+_RESOURCE_TARGET_ACTIONS = {
+    "update", "delete", "pause", "resume", "enable", "disable",
+}
 
 
 class MCPManagementError(ValueError):
@@ -200,14 +208,18 @@ def _normalise_remote_tool(raw: Mapping[str, Any]) -> dict[str, Any]:
         if key in {"readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"}
         and isinstance(value, bool)
     }
-    read_only = annotations.get("readOnlyHint") is True and annotations.get("destructiveHint") is not True
+    remote_read_only_hint = (
+        annotations.get("readOnlyHint") is True
+        and annotations.get("destructiveHint") is not True
+    )
     return {
         "remote_name": remote_name,
         "title": str(raw.get("title") or "").strip()[:200],
         "description": description,
         "input_schema": public_schema,
         "annotations": annotations,
-        "read_only": read_only,
+        "remote_read_only_hint": remote_read_only_hint,
+        "trusted_read": False,
         "schema": schema,
     }
 
@@ -379,17 +391,65 @@ class MCPToolHandler:
     def __init__(
         self, client: MCPHTTPClient, server_id: str, tenant_id: str,
         remote_name: str, *, write_effect: bool = False,
+        live_write_allowed: bool = False,
+        idempotency_key_field: Optional[str] = None,
     ):
         self.client = client
         self.server_id = server_id
         self.tenant_id = tenant_id
         self.remote_name = remote_name
         self.write_effect = bool(write_effect)
+        self.live_write_allowed = bool(live_write_allowed)
+        self.idempotency_key_field = (
+            str(idempotency_key_field or "").strip() or None
+        )
 
     def execute(self, ctx: Any, input_data: dict[str, Any]) -> ToolResult:
         context_tenant = str((getattr(ctx, "metadata", {}) or {}).get("tenant_id") or "default")
         if context_tenant != self.tenant_id:
             return ToolResult.error("MCP Tool 不属于当前租户")
+        if self.write_effect:
+            execution_mode = str(
+                (getattr(ctx, "metadata", {}) or {}).get(
+                    "execution_mode", "dry_run"
+                )
+                or "dry_run"
+            ).strip().lower()
+            if execution_mode == "dry_run":
+                return ToolResult.ok({
+                    "mcp_server_id": self.server_id,
+                    "mcp_tool": self.remote_name,
+                    "executed": False,
+                    "execution_status": "dry_run_only",
+                    "effect_state": "not_started",
+                })
+            if execution_mode != "live" or not self.live_write_allowed:
+                return ToolResult(
+                    success=False,
+                    data={
+                        "mcp_server_id": self.server_id,
+                        "mcp_tool": self.remote_name,
+                        "executed": False,
+                        "execution_status": "blocked_untrusted_write",
+                        "effect_state": "not_started",
+                    },
+                    error="MCP live write is not trusted by the host",
+                )
+            if (
+                not self.idempotency_key_field
+                or input_data.get(self.idempotency_key_field) in (None, "")
+            ):
+                return ToolResult(
+                    success=False,
+                    data={
+                        "mcp_server_id": self.server_id,
+                        "mcp_tool": self.remote_name,
+                        "executed": False,
+                        "execution_status": "blocked_missing_idempotency_key",
+                        "effect_state": "not_started",
+                    },
+                    error="MCP live write requires its declared idempotency key",
+                )
         try:
             result = self.client.call_tool(self.remote_name, input_data)
         except Exception as exc:
@@ -465,17 +525,23 @@ class MCPServerManager:
             value["intent_aliases"] = [str(value.get("title"))]
         if not value.get("traits"):
             value["traits"] = ["external", "mcp"]
-        read_only = (
+        traits = set(value.get("traits") or [])
+        read_only = _HOST_TRUSTED_READ_TRAIT in traits
+        if not value.get("required_permissions"):
+            value["required_permissions"] = ["mcp.read" if read_only else "mcp.write"]
+        value["trusted_read"] = read_only
+        value["live_write_enabled"] = _HOST_LIVE_WRITE_TRAIT in traits
+        value["remote_read_only_hint"] = (
             (value.get("annotations") or {}).get("readOnlyHint") is True
             and (value.get("annotations") or {}).get("destructiveHint") is not True
         )
-        if not value.get("required_permissions"):
-            value["required_permissions"] = ["mcp.read" if read_only else "mcp.write"]
+        value["read_only"] = read_only
         return {key: value.get(key) for key in (
             "tool_id", "server_id", "tenant_id", "remote_name", "title", "description",
             "input_schema", "annotations", "intent_types", "intent_aliases", "skill_refs",
             "action", "resource_type", "resource_id_field", "readback_tool",
             "idempotency_key_field", "required_permissions", "traits",
+            "trusted_read", "live_write_enabled", "remote_read_only_hint", "read_only",
             "status", "enabled", "validation_status",
             "last_error", "created_at", "updated_at",
         )}
@@ -603,11 +669,21 @@ class MCPServerManager:
                     report["checks"][check] = {"status": "passed" if not errors else "failed", "valid_tools": valid_count, "errors": errors[:20]}
                 elif check == "policy":
                     tools = discovered or self.store.list_mcp_tools(server_id, tenant_id)
-                    write_count = sum(1 for tool in tools if not bool((tool.get("annotations") or {}).get("readOnlyHint")))
+                    read_count = sum(
+                        int(
+                            _HOST_TRUSTED_READ_TRAIT
+                            in set(tool.get("traits") or [])
+                        )
+                        for tool in tools
+                    )
+                    write_count = len(tools) - read_count
                     report["checks"][check] = {
                         "status": "passed", "write_tools_require_confirmation": write_count,
-                        "read_tools": max(0, len(tools) - write_count),
-                        "note": "非只读 Tool 默认按 external_write/high/unsafe 处理",
+                        "read_tools": read_count,
+                        "note": (
+                            "远端只读注解不授予读取权限；MCP Tool 默认按 "
+                            "external_write/high/unsafe 处理"
+                        ),
                     }
             except Exception as exc:
                 report["checks"][check] = {"status": "failed", "error": _safe_error(exc)}
@@ -726,6 +802,7 @@ class MCPServerManager:
             "intent_types", "intent_aliases", "skill_refs", "action",
             "resource_type", "resource_id_field", "readback_tool",
             "idempotency_key_field", "required_permissions", "traits",
+            "trusted_read", "live_write_enabled",
         }
         unknown = sorted(set(updates) - allowed)
         if unknown:
@@ -756,11 +833,54 @@ class MCPServerManager:
         permissions = string_list("required_permissions")
         if any(not _PERMISSION_RE.fullmatch(item) for item in permissions):
             raise MCPManagementError("required_permissions 含有非法权限名")
-        traits = string_list("traits")
+        current_traits = set(tool.get("traits") or [])
+        trusted_read = updates.get(
+            "trusted_read",
+            _HOST_TRUSTED_READ_TRAIT in current_traits,
+        )
+        live_write_enabled = updates.get(
+            "live_write_enabled",
+            _HOST_LIVE_WRITE_TRAIT in current_traits,
+        )
+        if not isinstance(trusted_read, bool):
+            raise MCPManagementError("trusted_read 必须是 boolean")
+        if not isinstance(live_write_enabled, bool):
+            raise MCPManagementError("live_write_enabled 必须是 boolean")
+        if trusted_read and live_write_enabled:
+            raise MCPManagementError(
+                "MCP Tool 不能同时标记为可信只读和 live 写能力"
+            )
+        traits = (
+            string_list("traits")
+            if "traits" in updates
+            else [
+                str(item)
+                for item in current_traits
+                if item not in {
+                    _HOST_TRUSTED_READ_TRAIT,
+                    _HOST_LIVE_WRITE_TRAIT,
+                }
+            ]
+        )
+        if any(
+            marker in traits
+            for marker in (
+                _HOST_TRUSTED_READ_TRAIT,
+                _HOST_LIVE_WRITE_TRAIT,
+            )
+        ):
+            raise MCPManagementError(
+                "mcp:trusted_read 和 mcp:live_write 是宿主保留标记，"
+                "请使用对应的信任开关"
+            )
         if "mcp" not in traits:
             traits.append("mcp")
         if "external" not in traits:
             traits.append("external")
+        if trusted_read:
+            traits.append(_HOST_TRUSTED_READ_TRAIT)
+        if live_write_enabled:
+            traits.append(_HOST_LIVE_WRITE_TRAIT)
 
         action = str(updates.get("action", tool.get("action") or "invoke")).strip().lower()
         resource_type = str(
@@ -784,8 +904,42 @@ class MCPServerManager:
         resource_id_field = optional_field("resource_id_field")
         readback_tool = optional_field("readback_tool")
         idempotency_key_field = optional_field("idempotency_key_field")
-        if action in {"create", "update", "delete", "pause", "resume", "enable", "disable"} and not resource_id_field:
-            raise MCPManagementError("可变更动作必须声明 resource_id_field；不能使用内部请求 ID 冒充远端资源 ID")
+        if trusted_read and action in _MUTATING_ACTIONS:
+            raise MCPManagementError(
+                "已声明为可信只读的 MCP Tool 不能使用可变更动作"
+            )
+        if action in _RESOURCE_TARGET_ACTIONS and not resource_id_field:
+            raise MCPManagementError(
+                "更新或删除已有资源的动作必须声明 resource_id_field"
+            )
+        if resource_id_field:
+            input_schema = tool.get("input_schema") or {}
+            properties = input_schema.get("properties") or {}
+            required_fields = set(input_schema.get("required") or [])
+            if (
+                resource_id_field not in properties
+                or resource_id_field not in required_fields
+            ):
+                raise MCPManagementError(
+                    "resource_id_field 必须是 MCP Tool Schema 中的必填字段"
+                )
+        if live_write_enabled:
+            if not idempotency_key_field:
+                raise MCPManagementError(
+                    "启用 MCP live 写必须声明 idempotency_key_field"
+                )
+            input_schema = tool.get("input_schema") or {}
+            properties = input_schema.get("properties") or {}
+            required_fields = set(input_schema.get("required") or [])
+            if (
+                idempotency_key_field not in properties
+                or idempotency_key_field not in required_fields
+                or not isinstance(properties[idempotency_key_field], Mapping)
+                or properties[idempotency_key_field].get("type") != "string"
+            ):
+                raise MCPManagementError(
+                    "idempotency_key_field 必须是 MCP Tool Schema 中的必填字符串字段"
+                )
 
         metadata = {
             "intent_types": intent_types,
@@ -832,11 +986,10 @@ class MCPServerManager:
             raise MCPManagementError("请先启用 MCP Server")
         if not tool.get("enabled") or tool.get("validation_status") != "passed":
             raise MCPManagementError("请先启用并完成校验该 MCP Tool")
-        annotations = tool.get("annotations") or {}
-        read_only = annotations.get("readOnlyHint") is True and annotations.get("destructiveHint") is not True
+        read_only = _HOST_TRUSTED_READ_TRAIT in set(tool.get("traits") or [])
         if not read_only:
             raise MCPManagementError(
-                "外部 MCP 写 Tool 不支持管理台直测；请通过 Agent 的确认、幂等和 live 执行链路调用"
+                "仅宿主显式信任为只读的 MCP Tool 可以在管理台直测"
             )
         public_name = _runtime_tool_name(str(server_id), str(tool.get("remote_name")))
         definition, _handler = runtime._get_registered_tool(public_name)
@@ -983,7 +1136,9 @@ class MCPServerManager:
                 continue
             try:
                 schema, _ = _validate_schema(tool.get("input_schema") or {})
-                read_only = bool((tool.get("annotations") or {}).get("readOnlyHint") is True and (tool.get("annotations") or {}).get("destructiveHint") is not True)
+                traits = set(tool.get("traits") or [])
+                read_only = _HOST_TRUSTED_READ_TRAIT in traits
+                live_write_enabled = _HOST_LIVE_WRITE_TRAIT in traits
                 public_name = _runtime_tool_name(server_id, str(tool["remote_name"]))
                 required_permissions = list(dict.fromkeys(
                     ["mcp.read" if read_only else "mcp.write"]
@@ -1001,7 +1156,8 @@ class MCPServerManager:
                     risk_level=RiskLevel.LOW if read_only else RiskLevel.HIGH,
                     effect_class=ToolEffect.READ if read_only else ToolEffect.EXTERNAL_WRITE,
                     replay_policy=ReplayPolicy.SAFE if read_only else ReplayPolicy.UNSAFE,
-                    traits=["external", "mcp"], live_support=read_only,
+                    traits=["external", "mcp"],
+                    live_support=read_only or live_write_enabled,
                     timeout_seconds=min(float(record.get("timeout_seconds") or 20.0), 120.0),
                     max_output_bytes=1_000_000,
                     required_permissions=required_permissions,
@@ -1018,6 +1174,8 @@ class MCPServerManager:
                         MCPToolHandler(
                             client, server_id, tenant_id, str(tool["remote_name"]),
                             write_effect=not read_only,
+                            live_write_allowed=live_write_enabled,
+                            idempotency_key_field=tool.get("idempotency_key_field"),
                         ),
                     )
                 )

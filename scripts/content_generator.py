@@ -1,51 +1,28 @@
 """
 知识库内容生成器 - 自动识别薄弱领域并生成高质量文档
 """
-import os
 import json
 from datetime import datetime
+from pathlib import Path
+from string import Template
 
-def load_stats():
-    try:
-        with open('/tmp/quality_stats.json', 'r') as f:
-            return json.load(f)
-    except:
-        return {}
 
-def get_weak_domains(stats, top_n=3):
-    """获取最薄弱的领域"""
-    domains = stats.get('domains', {})
-    sorted_domains = sorted(domains.items(), key=lambda x: x[1].get('avg_score', 0))
-    return sorted_domains[:top_n]
-
-def generate_document(domain, topic):
-    """生成文档内容"""
-    timestamp = datetime.now().strftime('%Y-%m-%d')
-    filename = f"{topic}-deep.md"
-    path = f"knowledge/{domain}/{filename}"
-    
-    # 检查是否已存在
-    if os.path.exists(path):
-        return None
-    
-    # 创建目录
-    os.makedirs(f"knowledge/{domain}", exist_ok=True)
-    
-    content = f"""---
-title: {topic.replace('-', ' ').title()}
-date: {timestamp}
+DOCUMENT_TEMPLATE = Template(
+    """---
+title: $topic_title
+date: $timestamp
 status: production
-tags: [{domain}, 深度实现]
-domain: {domain}
+tags: [$domain, 深度实现]
+domain: $domain
 ---
 
-# {topic.replace('-', ' ').title()}
+# $topic_title
 
 ## 一、架构概览
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    {topic.replace('-', ' ').upper()}                    │
+│                    $topic_upper                    │
 ├─────────────────────────────────────────────────────────────────┤
 │  Component A ──▶ Component B ──▶ Component C                   │
 │       │              │              │                           │
@@ -61,17 +38,17 @@ domain: {domain}
 ```python
 class ComponentOne:
     \"\"\"组件一核心实现\"\"\"
-    
+
     def __init__(self, config: dict):
         self.config = config
         self.state = None
-    
+
     def process(self, data: any) -> any:
         \"\"\"处理逻辑\"\"\"
         # 核心算法实现
         result = self._transform(data)
         return result
-    
+
     def _transform(self, data: any) -> any:
         \"\"\"转换逻辑\"\"\"
         return data
@@ -82,16 +59,16 @@ class ComponentOne:
 ```python
 class ComponentTwo:
     \"\"\"组件二核心实现\"\"\"
-    
+
     def __init__(self):
         self.cache = {}
-    
+
     def query(self, key: str) -> any:
         \"\"\"查询逻辑\"\"\"
         if key in self.cache:
             return self.cache[key]
         return self._fetch(key)
-    
+
     def _fetch(self, key: str) -> any:
         \"\"\"获取数据\"\"\"
         return None
@@ -140,42 +117,119 @@ def diagnose_issue(error: Exception) -> str:
 
 ---
 
-**关键词**: {topic}, 生产实践, 源码实现
+**关键词**: $topic, 生产实践, 源码实现
 
-**参考**: 
+**参考**:
 - [相关论文或文档]
 - [官方文档链接]
-"""
-    
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(content)
-    
-    return path
+    """
+)
+DOMAIN_TOPICS = {
+    "前沿": [
+        "agent-memory-architecture",
+        "rag-4.0-production",
+        "mcp-protocol-deep",
+        "llm-compression-techniques",
+        "quantum-ml-2026",
+    ],
+    "interview": [
+        "go-concurrency-patterns",
+        "distributed-system-design",
+        "system-design-hard",
+        "ml-interview-advanced",
+        "llm-interview-2026",
+    ],
+    "agent-ai": [
+        "agent-planning-algorithms",
+        "agent-tool-calling",
+        "agent-multi-modal",
+        "agent-self-improve",
+        "agent-cost-optimization",
+    ],
+    "advertising": [
+        "ad-fraud-detection",
+        "ad-creative-optimization",
+        "ad-bidding-strategies",
+        "ad-attribution-model",
+        "ad-targeting-tech",
+    ],
+    "fullstack": [
+        "go-microservice-patterns",
+        "kafka-production-deep",
+        "redis-advanced-features",
+        "grpc-optimization",
+        "elasticsearch-tuning",
+    ],
+}
+
+def load_stats():
+    try:
+        with open("/tmp/quality_stats.json", encoding="utf-8") as stats_file:
+            return json.load(stats_file)
+    except FileNotFoundError:
+        return {}
+
+
+def get_weak_domains(stats, top_n=3):
+    """获取最薄弱的领域"""
+    domains = stats.get("domains", {})
+    sorted_domains = sorted(
+        domains.items(),
+        key=lambda item: item[1].get("avg_score", 0),
+    )
+    return sorted_domains[:top_n]
+
+
+def _validate_path_segment(value, name):
+    path = Path(value) if isinstance(value, str) else None
+    if (
+        path is None
+        or value in {"", ".", ".."}
+        or path.is_absolute()
+        or len(path.parts) != 1
+        or "/" in value
+        or "\\" in value
+    ):
+        raise ValueError(f"{name} must be a single path segment")
+
+
+def generate_document(domain, topic):
+    """生成文档内容"""
+    _validate_path_segment(domain, "domain")
+    _validate_path_segment(topic, "topic")
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    output_path = Path("knowledge") / domain / f"{topic}-deep.md"
+
+    # 检查是否已存在
+    if output_path.exists():
+        return None
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    topic_title = topic.replace("-", " ").title()
+    content = DOCUMENT_TEMPLATE.substitute(
+        topic=topic,
+        topic_title=topic_title,
+        topic_upper=topic.replace("-", " ").upper(),
+        timestamp=timestamp,
+        domain=domain,
+    )
+    output_path.write_text(content, encoding="utf-8")
+    return output_path.as_posix()
 
 def main():
     stats = load_stats()
     weak_domains = get_weak_domains(stats, top_n=3)
-    
+
     print("薄弱领域:", [d[0] for d in weak_domains])
-    
-    # 定义待生成的主题
-    topics = {
-        '前沿': ['agent-memory-architecture', 'rag-4.0-production', 'mcp-protocol-deep', 'llm-compression-techniques', 'quantum-ml-2026'],
-        'interview': ['go-concurrency-patterns', 'distributed-system-design', 'system-design-hard', 'ml-interview-advanced', 'llm-interview-2026'],
-        'agent-ai': ['agent-planning-algorithms', 'agent-tool-calling', 'agent-multi-modal', 'agent-self-improve', 'agent-cost-optimization'],
-        'advertising': ['ad-fraud-detection', 'ad-creative-optimization', 'ad-bidding-strategies', 'ad-attribution-model', 'ad-targeting-tech'],
-        'fullstack': ['go-microservice-patterns', 'kafka-production-deep', 'redis-advanced-features', 'grpc-optimization', 'elasticsearch-tuning']
-    }
-    
+
     generated = []
     for domain, _ in weak_domains:
-        domain_topics = topics.get(domain, [])
+        domain_topics = DOMAIN_TOPICS.get(domain, [])
         for topic in domain_topics[:2]:  # 每个薄弱领域生成2个文档
             path = generate_document(domain, topic)
             if path:
                 generated.append(path)
                 print(f"✅ 生成: {path}")
-    
+
     print(f"\n本次生成: {len(generated)}篇文档")
     return generated
 
