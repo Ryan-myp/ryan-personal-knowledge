@@ -315,6 +315,33 @@ def test_model_budget_is_enforced_from_provider_usage():
         app.close()
 
 
+def test_harness_aggregates_provider_cache_usage_separately_from_turn_calls():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(
+                content="ok",
+                usage={
+                    "input_tokens": 100,
+                    "output_tokens": 10,
+                    "total_tokens": 110,
+                    "cache_read_input_tokens": 60,
+                    "cache_write_input_tokens": 5,
+                    "llm_requests": 2,
+                },
+            )
+
+    app = AgentApplication.create(model=Model())
+    try:
+        result = app.prompt("usage")
+        assert result.data["usage"]["input_tokens"] == 100
+        assert result.data["usage"]["cache_read_input_tokens"] == 60
+        assert result.data["usage"]["cache_write_input_tokens"] == 5
+        assert result.data["usage"]["llm_requests"] == 2
+        assert result.data["usage"]["adapter_turns"] == 1
+    finally:
+        app.close()
+
+
 def test_model_timeout_and_retryable_fallback_are_explicit():
     class Slow:
         def complete(self, _messages, _tools, _request):

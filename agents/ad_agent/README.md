@@ -159,10 +159,28 @@ Wiki 目录生成 entity/concept/comparison/query draft，并记录
 历史 Markdown 页可用 `scripts/normalize_knowledge_metadata.py --write` 补齐 provenance
 字段，该工具只改 frontmatter，不改正文、版本或发布状态。
 
-Memory 与 Wiki、Session、Tool Audit 分离。只有显式的“记住/保存”请求才会创建长期
-Memory；Runtime 仅在同一 `tenant_id + user_id` 范围内做有界召回，Memory 不能创建
-Tool、权限、账户范围或凭证。SQLite 的 `memories` 表通过 `PersistenceBackend` 访问，
-未来替换 MySQL/PostgreSQL 不需要修改 Runtime。
+Memory 与 Wiki、Session、Tool Audit 分离。用户明确的“记住/保存”请求可以创建长期
+事实或流程；Runtime 另会把 allowlist 中的结果类别记录为短期 episodic Memory，但只针对
+已通过统一门禁的、非模拟 live 写操作。普通查询、dry-run、待确认操作和原始 Provider
+错误/响应不会自动进入 Memory；运行事件只保留 Tool、渠道、成功状态或稳定错误码，默认
+90 天过期并按 `run_id + Tool` 幂等。Runtime 仅在同一 `tenant_id + user_id` 范围内做有界
+召回，Memory 不能创建 Tool、权限、账户范围或凭证。SQLite 的 `memories` 表通过
+`PersistenceBackend` 访问，未来替换 MySQL/PostgreSQL 不需要修改 Runtime。
+
+广告查询分析支持受限的结果驱动补充取证。意图模型只有在 `metadata.planning_mode` 明确为
+`investigate` 时才进入该阶段；初始计划必须全部为只读 Tool，后续最多两轮、每轮一个 Tool，
+候选仅来自当前注册表及本次请求已选 namespace。账户/凭证字段不提供给规划模型，追加参数
+先与 Tool schema 校验，执行仍完全经过通用 Harness 的 principal、scope、权限、timeout 和
+审计门禁。Planner 无可用模型、输出无效或运行异常时，会收敛回已有结果，不阻断主查询。
+创建、更新、删除等写计划永远不触发该机制。`planning_mode` 不是授权凭据，也不会创建新
+Tool 或扩大账户范围。
+
+LLM 用量从 OpenAI-compatible Provider 响应读取并聚合到 Run usage：`input_tokens`、
+`output_tokens`、`total_tokens`、`cache_read_input_tokens`、`cache_write_input_tokens`、
+`llm_requests` 与 `adapter_turns`。缓存 token 只在模型后端明确回报时计数，不根据
+Prompt 长度估算；未回报的 token 数保持为 0。知识审计会独立检查内容编辑日期和官方/代码来源
+的 `last_verified_at`；Skill 的 `references/` 只按请求做词法相关性排序和有界摘录，不会
+全量塞入模型上下文，也不会自动改写或发布 Skill。
 
 ## 使用真实 API（仅测试账号）
 

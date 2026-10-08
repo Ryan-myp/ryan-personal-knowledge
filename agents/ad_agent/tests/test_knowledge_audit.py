@@ -141,3 +141,53 @@ status: published
     assert 'authority: "operator"' in updated
     assert 'evidence_level: "provisional"' in updated
     assert 'last_verified_at: "2026-09-18"' in updated
+
+
+def test_audit_checks_source_verification_independently_from_edit_date(tmp_path):
+    _page(
+        tmp_path,
+        "entities/provider.md",
+        """---
+id: provider
+title: Provider API
+layer: platform
+knowledge_type: api
+platform: meta
+source_ref: https://example.invalid/docs
+source_kind: official
+version: "1.0.0"
+confidence: 0.9
+updated_at: "2026-10-08"
+last_verified_at: "2025-01-01"
+status: published
+wiki_type: entity
+---
+Provider notes.
+""",
+    )
+    _page(
+        tmp_path,
+        "concepts/internal.md",
+        """---
+id: internal
+title: Internal note
+layer: business
+knowledge_type: workflow
+platform: all
+source_ref: internal://notes/workflow
+source_kind: code
+version: "1.0.0"
+confidence: 0.8
+updated_at: "2026-10-08"
+status: published
+wiki_type: concept
+---
+Internal notes.
+""",
+    )
+
+    report = audit_knowledge_base(tmp_path, today=date(2026, 10, 8), stale_days=180)
+
+    issues = {(item["code"], item["path"]) for item in report["issues"]}
+    assert ("stale_source_verification", "entities/provider.md") in issues
+    assert ("source_verification_missing", "concepts/internal.md") in issues

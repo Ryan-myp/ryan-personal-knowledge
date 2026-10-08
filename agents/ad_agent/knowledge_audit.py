@@ -261,6 +261,30 @@ def audit_knowledge_base(
         elif today and (today - updated).days > stale_days:
             issues.append(_issue("warning", "stale_document", f"文档已超过 {stale_days} 天未更新", page))
 
+        source_kind = str(
+            metadata.get("source_kind")
+            or infer_source_kind(
+                str(metadata.get("source_ref") or ""),
+                str(metadata.get("source") or ""),
+            )
+        ).strip().lower()
+        if source_kind in {"official", "code"}:
+            verified = _parse_date(metadata.get("last_verified_at"))
+            if not verified:
+                issues.append(_issue(
+                    "warning",
+                    "source_verification_missing",
+                    "官方或代码来源页面缺少有效的 last_verified_at",
+                    page,
+                ))
+            elif today and (today - verified).days > stale_days:
+                issues.append(_issue(
+                    "warning",
+                    "stale_source_verification",
+                    f"来源已超过 {stale_days} 天未重新核验",
+                    page,
+                ))
+
         expected_type = WIKI_DIR_TYPES.get(page.path.parts[0])
         if expected_type and page.wiki_type != expected_type:
             issues.append(_issue(

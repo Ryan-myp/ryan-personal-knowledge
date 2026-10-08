@@ -909,12 +909,32 @@ class Agent:
         total_tokens = self._usage_number(usage, "total_tokens", "total")
         if not total_tokens:
             total_tokens = input_tokens + output_tokens
-        for key, value in (
+        cache_read_tokens = self._usage_number(
+            usage,
+            "cache_read_input_tokens",
+            "cached_input_tokens",
+            "cache_read_tokens",
+        )
+        cache_write_tokens = self._usage_number(
+            usage,
+            "cache_write_input_tokens",
+            "cache_creation_input_tokens",
+        )
+        llm_requests = self._usage_number(
+            usage, "llm_requests", "api_requests",
+        )
+        if not llm_requests and (input_tokens or output_tokens):
+            llm_requests = 1
+        counters = (
             ("input_tokens", input_tokens),
             ("output_tokens", output_tokens),
             ("total_tokens", total_tokens),
-            ("model_calls", 1),
-        ):
+            ("cache_read_input_tokens", cache_read_tokens),
+            ("cache_write_input_tokens", cache_write_tokens),
+            ("llm_requests", llm_requests),
+            ("adapter_turns", 1),
+        )
+        for key, value in counters:
             state.usage[key] = int(state.usage.get(key, 0)) + int(value)
         if usage or any(
             limit is not None for limit in (

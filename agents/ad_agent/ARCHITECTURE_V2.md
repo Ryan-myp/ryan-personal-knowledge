@@ -512,12 +512,28 @@ Memory 与 Wiki、Session 和 Tool Audit 的边界如下：
 | SessionContext | 当前对话和跨 Tool 临时引用 | 否 |
 | Tool Audit | 调用审计和恢复证据 | 否 |
 | Markdown Wiki | 团队共享的稳定知识 | 否 |
-| MemoryRecord | 用户/租户明确保存的事实和经验 | 仅显式写入 |
+| MemoryRecord | 用户/租户明确保存的事实和经验，以及受限 live 写事件 | 显式写入或 allowlist 自动写入 |
 
 `MemoryManager` 提供写入、召回和删除策略，`MemoryStore` 是后端接口，当前由
 `AdAgentStore`/`MySQLStore` 的 `memories` 表实现。召回先做租户/用户/会话范围过滤，再做
 确定性词法排序；过期记录和删除墓碑不返回。召回内容只作为受限 LLM 上下文，不能改变
 Tool Registry、权限、账户范围或执行计划。
+
+自动 episodic 写入只对已完成且非模拟的 live 写 Tool 结果生效；dry-run、普通查询、待确认
+操作以及没有稳定错误分类的失败不入库。摘要不保留原始 Tool 输入/输出、资源 ID 或 Provider
+错误文本，按 Run/Tool 幂等并带 TTL。它用于后续上下文召回，不会自动修订 Skill 或 Wiki。
+
+分析类意图可在解析元数据中声明 `planning_mode=investigate`。`AdvertisingModelAdapter` 在
+初始计划完全只读时，最多根据上一轮结果请求两次补充证据，每次只发出一个 ToolCall；候选由
+当前 Registry、原请求 namespace 和只读 Effect 共同约束。模型不能指定账户、凭证或权限，参数
+仍由可信输入组装器与闭合 Tool schema 校验，再交给同一 Harness Executor。规划失败会回落为
+当前证据的正常回复；它不重试写操作，也不创建第二套 Tool 门禁。
+
+`LLMClient.call_with_usage()` 解析模型后端实际回报的输入/输出与缓存 token，并通过
+context-local collector 汇总同一 Harness Run 中的解析、补充取证和回复合成调用。`adapter_turns`
+统计 Harness Adapter 回合数，`llm_requests` 统计模型请求次数；缓存未命中数据时
+不会推算缓存收益。知识审计分别根据 `updated_at` 与官方/代码来源 `last_verified_at` 给出陈旧
+警告，Skill references 则按请求相关性选择少量段落，仍作为 advisory context。
 
 ## 七、关键文件索引
 

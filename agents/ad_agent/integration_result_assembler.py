@@ -8,9 +8,24 @@ finishes any already-created workflow, and exports safe ``application_data``.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 from agents.agent_harness import AgentMessage, ModelTurn
+
+
+logger = logging.getLogger(__name__)
+
+_MEMORY_ERROR_CODES = frozenset({
+    "AUTH_EXPIRED",
+    "TIMEOUT",
+    "RATE_LIMIT",
+    "PROVIDER_RESULT_UNKNOWN",
+    "PROVIDER_TEMPORARY_ERROR",
+    "PROVIDER_5XX",
+    "INVALID_REQUEST",
+    "TOOL_EXECUTION_ERROR",
+})
 
 
 class AdvertisingResultAssembler:
@@ -90,61 +105,11 @@ class AdvertisingResultAssembler:
         intent = state.get("intent")
         results = self._results_from_messages(tool_messages)
         self.decorate_results(results)
-
-        feature = (
-            self.owner._feature_for_intent(intent)
-            if intent is not None else None
-        )
-        analysis: dict[str, Any] = {}
-        if (
-            feature is not None
-            and callable(getattr(feature, "handles_analysis", None))
-            and feature.handles_analysis(intent)
-        ):
-            try:
-                feature.collect_metrics(
-                    services=self.owner.services,
-                    intent=intent,
-                    tool_plan={
-                        platform: [
-                            self.owner.registry.get(name)[0]
-                            for name in names
-                        ]
-                        for platform, names in self.tool_plan_names(results).items()
-                    },
-                    results=results,
-                    session=state.get("session"),
-                    turn_id=str(request.turn_id or ""),
-                    request_clients=self.owner._build_request_clients(
-                        (
-                            request.context.get("credentials")
-                            if isinstance(request.context, Mapping) else None
-                        )
-                    ),
-                    account_scope=getattr(
-                        request.principal, "account_scope", None
-                    ),
-                    granted_permissions=self.owner._granted_permissions,
-                )
-                analysis = feature.analyze(intent, results)
-                self.decorate_results(results)
-                state["tool_plan"] = self.tool_plan_names(results)
-            except Exception:
-                analysis = {}
-
+        analysis = self._analyze_results(state, request, intent, results)
         state.update(analysis)
-        if intent is None:
-            reply = "工具执行完成，但无法生成结构化业务回复。"
-            response_source = "renderer"
-        else:
-            reply, response_source = self.owner._render_response(
-                request.user_input,
-                intent,
-                results,
-                any(item.get("requires_confirmation") for item in results),
-                analysis=analysis,
-                session=state.get("session"),
-            )
+        reply, response_source = self._render_reply(
+            state, request, intent, results, analysis,
+        )
         state["last_results"] = results
         state["last_reply"] = reply
         state["response_source"] = response_source
@@ -155,12 +120,173 @@ class AdvertisingResultAssembler:
         state.setdefault("ui", {})
         state.setdefault("workflow_id", None)
         self.finish_workflow(state, results, intent)
+        self._remember_runtime_events(request, results)
         run_id = str(request.run_id or "")
         self.completed[run_id] = dict(state)
         self.turns.pop(run_id, None)
         return ModelTurn(
             content=reply,
             stop_reason="awaiting_input" if state["needs_input"] else "stop",
+        )
+
+    def _analyze_results(
+        self,
+        state: dict[str, Any],
+        request: Any,
+        intent: Any,
+        results: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        feature = self.owner._feature_for_intent(intent) if intent is not None else None
+        handles_analysis = getattr(feature, "handles_analysis", None)
+        if not callable(handles_analysis):
+            return {}
+        try:
+            if not handles_analysis(intent):
+                return {}
+            feature.collect_metrics(
+                services=self.owner.services,
+                intent=intent,
+                tool_plan={
+                    platform: [
+                        self.owner.registry.get(name)[0]
+                        for name in names
+                    ]
+                    for platform, names in self.tool_plan_names(results).items()
+                },
+                results=results,
+                session=state.get("session"),
+                turn_id=str(request.turn_id or ""),
+                request_clients=self.owner._build_request_clients(
+                    request.context.get("credentials")
+                    if isinstance(request.context, Mapping) else None
+                ),
+                account_scope=getattr(request.principal, "account_scope", None),
+                granted_permissions=self.owner._granted_permissions,
+            )
+            analysis = feature.analyze(intent, results)
+            self.decorate_results(results)
+            state["tool_plan"] = self.tool_plan_names(results)
+            return analysis if isinstance(analysis, dict) else {}
+        except Exception as error:
+            logger.debug("业务分析阶段失败: %s", type(error).__name__)
+            return {}
+
+    def _render_reply(
+        self,
+        state: Mapping[str, Any],
+        request: Any,
+        intent: Any,
+        results: list[dict[str, Any]],
+        analysis: dict[str, Any],
+    ) -> tuple[str, str]:
+        if intent is None:
+            return "工具执行完成，但无法生成结构化业务回复。", "renderer"
+        return self.owner._render_response(
+            request.user_input,
+            intent,
+            results,
+            any(item.get("requires_confirmation") for item in results),
+            analysis=analysis,
+            session=state.get("session"),
+        )
+
+    def _remember_runtime_events(
+        self,
+        request: Any,
+        results: list[Mapping[str, Any]],
+    ) -> None:
+        """Persist only concise outcomes from non-simulated live write Tools."""
+        manager = getattr(self.owner, "_memory_manager", None)
+        remember = getattr(manager, "remember_runtime_event", None)
+        mode = getattr(request, "execution_mode", "")
+        mode = str(getattr(mode, "value", mode) or "").strip().lower()
+        if not callable(remember) or mode != "live":
+            return
+        tenant_id = str(getattr(request, "tenant_id", "default") or "default")
+        user_id = str(getattr(request, "user_id", "anonymous") or "anonymous")
+        session_id = str(getattr(request, "session_id", "") or "")
+        run_id = str(getattr(request, "run_id", "") or "")
+        if not session_id or not run_id:
+            return
+        for index, result in enumerate(results):
+            self._remember_one_runtime_event(
+                remember,
+                request,
+                result,
+                index=index,
+            )
+
+    def _remember_one_runtime_event(
+        self,
+        remember: Any,
+        request: Any,
+        result: Mapping[str, Any],
+        *,
+        index: int,
+    ) -> None:
+        tenant_id = str(getattr(request, "tenant_id", "default") or "default")
+        user_id = str(getattr(request, "user_id", "anonymous") or "anonymous")
+        session_id = str(getattr(request, "session_id", "") or "")
+        run_id = str(getattr(request, "run_id", "") or "")
+        name = str(result.get("tool") or "").strip()
+        if not name:
+            return
+        try:
+            definition, _handler = self.owner.registry.get(name)
+        except (KeyError, AttributeError):
+            return
+        if not getattr(definition, "is_write_tool", False):
+            return
+        event = self._runtime_event_summary(definition, result)
+        if event is None:
+            return
+        event_type, summary, outcome = event
+        try:
+            remember(
+                summary,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                session_id=session_id,
+                event_type=event_type,
+                dedupe_key=f"{run_id}:{name}:{index}",
+                outcome=outcome,
+                tags=[f"tool:{name}", f"channel:{definition.namespace}"],
+            )
+        except Exception as error:
+            logger.debug("运行事件记忆写入失败: %s", type(error).__name__)
+
+    @staticmethod
+    def _runtime_event_summary(
+        definition: Any,
+        result: Mapping[str, Any],
+    ) -> tuple[str, str, str] | None:
+        data = result.get("data")
+        data = data if isinstance(data, Mapping) else {}
+        if (
+            result.get("simulated")
+            or data.get("simulated")
+            or str(data.get("mode") or "").strip().lower() == "dry_run"
+            or result.get("requires_confirmation")
+            or result.get("needs_confirmation")
+            or result.get("needs_input")
+        ):
+            return None
+        name = str(definition.name)
+        namespace = str(definition.namespace)
+        if result.get("success"):
+            return (
+                "operation_succeeded",
+                f"Live write succeeded: {name} on {namespace}.",
+                "succeeded",
+            )
+        detail = result.get("error_detail")
+        code = str(detail.get("code") or "") if isinstance(detail, Mapping) else ""
+        if code not in _MEMORY_ERROR_CODES:
+            return None
+        return (
+            "operation_failed",
+            f"Live write failed: {name} on {namespace}; code={code}.",
+            code,
         )
 
     def finish_policy_blocked_run(
@@ -240,9 +366,10 @@ class AdvertisingResultAssembler:
                 intent=intent,
                 session=state.get("session"),
             )
-        except Exception:
+        except Exception as error:
             # Workflow completion is durable best effort here; the Run
             # lifecycle remains authoritative and recovery can reconcile it.
+            logger.debug("Workflow finalization deferred: %s", type(error).__name__)
             return
 
     def decorate_results(self, results: list[dict[str, Any]]) -> None:

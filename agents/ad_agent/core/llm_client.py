@@ -6,9 +6,55 @@ core/llm_client.py - LLM 客户端封装
 import os
 import json
 import logging
+import threading
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+
+class LLMUsageCollector:
+    """Collect backend-reported usage for one context-local application turn."""
+
+    _COUNTERS = (
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "cache_read_input_tokens",
+        "cache_write_input_tokens",
+        "llm_requests",
+    )
+
+    def __init__(self) -> None:
+        self._usage = {key: 0 for key in self._COUNTERS}
+        self._lock = threading.Lock()
+
+    def add(self, usage: Dict[str, int]) -> None:
+        with self._lock:
+            for key in self._COUNTERS:
+                self._usage[key] += max(0, int(usage.get(key, 0) or 0))
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._usage)
+
+
+_ACTIVE_USAGE_COLLECTOR: ContextVar[LLMUsageCollector | None] = ContextVar(
+    "ad_agent_llm_usage_collector",
+    default=None,
+)
+
+
+@contextmanager
+def capture_llm_usage():
+    """Collect usage from nested LLMClient calls without shared-client races."""
+    collector = LLMUsageCollector()
+    token = _ACTIVE_USAGE_COLLECTOR.set(collector)
+    try:
+        yield collector
+    finally:
+        _ACTIVE_USAGE_COLLECTOR.reset(token)
 
 
 class LLMStructuredOutputError(ValueError):
@@ -78,20 +124,92 @@ class LLMClient:
         Returns:
             LLM 响应文本
         """
+        text, _usage = self.call_with_usage(messages, temperature)
+        return text
+
+    def call_with_usage(
+        self, messages: list[dict], temperature: float = 0.1,
+    ) -> tuple[str, dict[str, int]]:
+        """Call the configured model backend and return text plus token counters."""
         try:
             client = self._get_client()
+            collector = _ACTIVE_USAGE_COLLECTOR.get()
+            if collector is not None:
+                collector.add({"llm_requests": 1})
             response = client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
             )
-            return response.choices[0].message.content or ""
+            text = response.choices[0].message.content or ""
+            usage = self._normalize_usage(getattr(response, "usage", None))
+            if collector is not None:
+                usage["llm_requests"] = 0
+                collector.add(usage)
+            return text, usage
         except Exception as e:
             # External exception text can contain request URLs or headers.
             # Keep logs useful without copying model/transport payloads into
             # the application log stream.
             logger.error("LLM 调用失败: %s", type(e).__name__)
             raise
+
+    @staticmethod
+    def _usage_value(value: Any, key: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(key)
+        return getattr(value, key, None)
+
+    @classmethod
+    def _first_usage_number(cls, value: Any, *paths: tuple[str, ...]) -> int:
+        for path in paths:
+            current = value
+            for key in path:
+                current = cls._usage_value(current, key)
+                if current is None:
+                    break
+            if isinstance(current, (int, float)) and not isinstance(current, bool):
+                return max(0, int(current))
+        return 0
+
+    @classmethod
+    def _normalize_usage(cls, usage: Any) -> dict[str, int]:
+        """Normalize common OpenAI-compatible token/cache usage shapes."""
+        input_tokens = cls._first_usage_number(
+            usage, ("prompt_tokens",), ("input_tokens",),
+        )
+        output_tokens = cls._first_usage_number(
+            usage, ("completion_tokens",), ("output_tokens",),
+        )
+        total_tokens = cls._first_usage_number(
+            usage, ("total_tokens",),
+        ) or input_tokens + output_tokens
+        cache_read = cls._first_usage_number(
+            usage,
+            ("prompt_tokens_details", "cached_tokens"),
+            ("input_tokens_details", "cached_tokens"),
+            ("input_tokens_details", "cache_read_tokens"),
+            ("cache_read_input_tokens",),
+            ("cached_input_tokens",),
+        )
+        cache_write = cls._first_usage_number(
+            usage,
+            ("prompt_tokens_details", "cache_write_tokens"),
+            ("input_tokens_details", "cache_creation_tokens"),
+            ("cache_creation_input_tokens",),
+            ("cache_write_input_tokens",),
+        )
+        if input_tokens:
+            cache_read = min(cache_read, input_tokens)
+            cache_write = min(cache_write, input_tokens)
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": total_tokens,
+            "cache_read_input_tokens": cache_read,
+            "cache_write_input_tokens": cache_write,
+            "llm_requests": 1,
+        }
     
     def call_json(self, messages: list[dict], temperature: float = 0.1) -> dict:
         """

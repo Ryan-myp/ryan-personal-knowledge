@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Mapping
 
 from agents.agent_harness import (
@@ -14,12 +15,17 @@ from agents.agent_harness import (
     ToolCatalog,
     ToolBinding,
 )
+from .core.llm_client import capture_llm_usage
 from .core.interfaces import ParsedIntent, ToolContext, ToolResult
 from .domain.ad.auth import RequestPrincipal
 from .core.execution_plan import ExecutionPlan
 from .runtime.ad_turn_context import AdTurnContextService
 from .integration_result_assembler import AdvertisingResultAssembler
+from .integration_investigation import ReadOnlyInvestigationPlanner
 from .integration_turn_planner import AdvertisingTurnPlanner
+
+
+logger = logging.getLogger(__name__)
 
 
 class _ContextTrace:
@@ -381,8 +387,34 @@ class AdvertisingModelAdapter:
             max_completed=self._max_completed,
         )
         self._planner = AdvertisingTurnPlanner(owner)
+        self._investigator = ReadOnlyInvestigationPlanner(
+            owner,
+            turn_planner=self._planner,
+        )
 
     def complete(
+        self,
+        messages: list[AgentMessage],
+        _tools: list[Any],
+        request: Any,
+    ) -> ModelTurn:
+        with capture_llm_usage() as usage_collector:
+            result = self._complete(messages, _tools, request)
+        usage = dict(result.usage or {})
+        for key, value in usage_collector.snapshot().items():
+            if value:
+                usage[key] = int(usage.get(key, 0) or 0) + int(value)
+        if not usage:
+            return result
+        return ModelTurn(
+            content=result.content,
+            tool_calls=result.tool_calls,
+            stop_reason=result.stop_reason,
+            usage=usage,
+            context_updates=result.context_updates,
+        )
+
+    def _complete(
         self,
         messages: list[AgentMessage],
         _tools: list[Any],
@@ -415,7 +447,77 @@ class AdvertisingModelAdapter:
                 tool_calls=(call,),
                 stop_reason="tool_call",
             )
+        follow_up_turn = self._continue_with_investigation(
+            state,
+            calls,
+            next_index,
+            tool_messages,
+        )
+        if follow_up_turn is not None:
+            return follow_up_turn
         return self._results.finish_turn(state, request, tool_messages)
+
+    def _continue_with_investigation(
+        self,
+        state: dict[str, Any],
+        calls: tuple[ToolCall, ...],
+        next_index: int,
+        tool_messages: list[AgentMessage],
+    ) -> ModelTurn | None:
+        if not state.get("investigation_enabled") or not tool_messages:
+            return None
+        steps = int(state.get("investigation_steps", 0))
+        if steps >= self._investigator.MAX_STEPS:
+            state["investigation_enabled"] = False
+            return None
+        try:
+            follow_up = self._investigator.plan(
+                intent=state.get("intent"),
+                session_context=getattr(state.get("session"), "ctx", None),
+                prior_results=self._results._results_from_messages(tool_messages),
+                already_called={
+                    str(item.name or "")
+                    for item in tool_messages
+                    if item.name
+                },
+            )
+        except Exception as error:
+            logger.debug(
+                "只读补充取证失败，采用当前证据: %s",
+                type(error).__name__,
+            )
+            follow_up = []
+        state["investigation_steps"] = steps + 1
+        if not follow_up:
+            state["investigation_enabled"] = False
+            return None
+        return self._append_follow_up_call(
+            state,
+            calls,
+            next_index,
+            tool_messages,
+            follow_up[0],
+        )
+
+    def _append_follow_up_call(
+        self,
+        state: dict[str, Any],
+        calls: tuple[ToolCall, ...],
+        next_index: int,
+        tool_messages: list[AgentMessage],
+        planned_call: ToolCall,
+    ) -> ModelTurn | None:
+        try:
+            definition, _handler = self.owner.registry.get(planned_call.name)
+        except KeyError:
+            state["investigation_enabled"] = False
+            return None
+        call = self._hydrate_dependency_call(planned_call, tool_messages)
+        state["calls"] = tuple(calls) + (call,)
+        state["next_index"] = next_index + 1
+        namespace = str(definition.namespace)
+        state.setdefault("tool_plan", {}).setdefault(namespace, []).append(call.name)
+        return ModelTurn(tool_calls=(call,), stop_reason="tool_call")
 
     def _start_turn(self, state: dict[str, Any], request: Any) -> ModelTurn:
         run_id = str(request.run_id or "")
@@ -1024,6 +1126,10 @@ class AdvertisingModelAdapter:
                     for platform, names in turn_plan.tool_plan.items()
                 },
                 "execution_plan": {},
+                "investigation_enabled": self._investigator.eligible(
+                    intent, calls,
+                ),
+                "investigation_steps": 0,
             })
             if (
                 routed

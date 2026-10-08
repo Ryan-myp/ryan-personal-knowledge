@@ -61,8 +61,14 @@ class LLMIntentParser(IntentParser):
   "namespaces": ["<当前已注册的命名空间>"],
   "attributes": {"<publisher_defined_attribute>": "<value>"},
   "parameters": {"<field>": "<value>"},
-  "scoped_parameters": {"<namespace>": {"<declared_field>": "<value>"}}
+  "scoped_parameters": {"<namespace>": {"<declared_field>": "<value>"}},
+  "metadata": {"planning_mode": "direct|investigate"}
 }
+
+只有用户明确要求分析、诊断、解释原因、比较或趋势判断，且需要根据查询结果再决定
+是否补充只读证据时，planning_mode 才选择 investigate；其他请求选择 direct。
+planning_mode 不是权限：应用只可能基于当前请求 namespace 追加最多两次只读 Tool 查询。
+创建、更新、暂停、恢复、删除等任何写操作都必须选择 direct。
 
 安全与契约边界：scoped_parameters 只能放当前已注册 Tool schema 声明的字段，不能放
 action、operation、resource_type、tool、skill、note 或解释文字。不要猜测动态资源 ID；
