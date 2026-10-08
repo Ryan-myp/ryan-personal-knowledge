@@ -13,6 +13,19 @@
   └── Tool Executors：Local Handler、SDK/HTTP Connector、MCP Client
 ```
 
+## 目录职责
+
+- `agents/agent_harness/`：业务无关的 Agent loop、Run Kernel、Turn Pipeline、Tool/Skill contracts。
+- `agents/agent_platform/`：Agent/Scenario registry、API、governance、data、integrations、management 和 durable infrastructure。
+- `agents/tools/<domain>/`：结构化 Tool contracts、固定 executors、Provider clients 与业务能力实现。
+- `agents/skills/<domain>/`、`agents/knowledge/<domain>/`：自然语言技能包与 advisory 知识源。
+- `agents/scenarios/`：只声明如何选择已注册 Agent、Tools、Skills 和 Knowledge。
+- `agents/deployments/<scenario>/`：HTTP/CLI hosting、配置加载和部署静态资源。
+- `agents/ad_agent/`：广告应用组合入口和广告配置；不得再容纳 Runtime、API server、Provider、持久化或业务路由实现。仓库 packaging metadata 位于根目录 `setup.py`、`requirements.txt`。
+- `scripts/advertising/`：审计、评测、发布检查和运营命令，不作为 Runtime 能力加载。
+
+包迁移完成后统一改用新路径，不保留旧 import shim 或双份执行入口。
+
 - `SKILL.md` 是 Skill 的自然语言入口，不是 Tool 注册表，也不承担凭证或执行权限。
 - 外部 API 的唯一执行底座是已注册的 Tool contract/executor。任何 Skill、LLM 或管理上传包都不能直接调用 Provider client。
 - 通用 Run Kernel 为每次 `run()` 生成并贯穿唯一的 `run_id`、`turn_id`；应用 pipeline 可以记录和返回它们，但不能另起一套生命周期。
@@ -46,7 +59,7 @@
 
 ## 评测与交付
 
-- Runtime/Tool Source dry-run 场景使用 `agents/ad_agent/evals/skill-up/skill_up_engine.py`。
+- Runtime/Tool Source dry-run 场景使用 `agents/evals/advertising/skill_up_engine.py`；Provider/Knowledge 审计与发布命令位于 `scripts/advertising/`。
 - 通用自然语言 Skill 效果可以使用平台托管的 `claude_sdk` Engine 或 skill-up 内置 Engine；Claude SDK 适配器只提供 Skill、Tool 描述和只读文件上下文，不执行广告 Tool。
 - 评测配置必须是声明式、可审计、可复现的；用户包不能自定义执行命令、MCP server 或 judge script。
 - 代码变更至少运行编译、相关单测、全量 Agent 测试、能力审计和 `git diff --check`；Provider contract 变化必须补充回归用例。

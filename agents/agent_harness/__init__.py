@@ -22,7 +22,7 @@ from .agent import (
 )
 from .agent_runtime import AgentRuntime
 from .context import BoundedContextProvider, ContextProvider
-from .messages import AgentMessage, ModelTurn, ToolCall
+from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
 from .observability import (
     AlertSink,
     CredentialProvider,
@@ -109,6 +109,7 @@ __all__ = [
     "StaticToolSource",
     "ToolBinding",
     "ToolCall",
+    "ToolArgumentBinding",
     "ToolCallContext",
     "ModelBudgetExceededError",
     "ModelTimeoutError",

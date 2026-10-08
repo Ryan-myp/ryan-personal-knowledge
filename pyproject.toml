@@ -1,9 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [tool.ad_agent]
 # Keep the interpreter contract discoverable to editors and local tooling.
 # The executable enforcement lives in scripts/ad-agent-python and setup.py.
 python_version = "3.13"
 
 [tool.pytest.ini_options]
-testpaths = ["agents/ad_agent/tests"]
+testpaths = ["agents/tests"]
 python_files = ["test_*.py"]
 addopts = "-ra"

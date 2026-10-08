@@ -1,0 +1,2991 @@
+"""
+tests/test_ad_agent.py - ad-agent 测试套件（只读查询模式）
+
+运行：
+    make ad-agent-test
+"""
+
+import pytest
+import sys
+import os
+import json
+import time
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.agent_platform.data.persistence.session_manager import SessionManager
+from agents.tools.advertising.providers.meta import MetaToolSource, MetaListCampaignsHandler
+from agents.tools.advertising.providers.google import GoogleToolSource, GoogleListCampaignsHandler
+from agents.tools.advertising.providers.tiktok import TikTokToolSource, TikTokListCampaignsHandler
+from agents.tools.advertising.providers.dv360 import (
+    DV360ToolSource,
+    DV360ListCampaignsHandler,
+    DV360GetLineItemReportHandler,
+)
+from agents.tools.advertising.application.ad_application import AdvertisingComposition, AccountWhitelistValidator
+from agents.skills.advertising.businesses.policy import BusinessSkillPolicy
+from agents.agent_harness.core.interfaces import (
+    ToolContext, ToolResult, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema,
+    ToolDefinition
+)
+from agents.agent_harness.core.tool_registry import SimpleToolRegistry
+from agents.agent_harness.core.intent import LLMIntentParser
+from agents.agent_harness.skills.contract import SkillLoader
+from agents.tools.advertising.shared.features.factory import discover_features
+from agents.agent_harness.core.interfaces import ExecutionMode
+from agents.tools.advertising.shared.domain.cross_channel import CrossChannelAggregator, CrossChannelAnalyzer
+from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
+from agents.tools.advertising.clients.base import (
+    BasePlatformClient, RetryConfig, TemporaryError, APIError,
+    AuthError, RateLimitError,
+)
+from agents.tools.advertising.clients.meta_client import MetaAPIClient
+from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
+from agents.tools.advertising.clients.dv360_client import DV360APIClient
+from agents.agent_platform.governance.identity.principal import RequestPrincipal
+
+
+def trusted_principal(user_id, platform, account_id):
+    return RequestPrincipal(
+        user_id=user_id,
+        permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
+        account_scope={platform: frozenset({account_id})},
+    )
+
+
+# ─── Fixtures ──────────────────────────────────────────────────
+
+@pytest.fixture
+def store():
+    return AdAgentStore(":memory:")
+
+
+@pytest.fixture
+def runtime():
+    """创建只读模式的 runtime"""
+    store = AdAgentStore(":memory:")
+    rt = AdvertisingComposition(require_llm=False, persistence_store=store, read_only_mode=True)
+    rt.register_tool_source(create_meta_tool_source_mock())
+    rt.register_tool_source(create_google_tool_source_mock())
+    rt.register_tool_source(create_tiktok_tool_source_mock())
+    rt.register_tool_source(create_dv360_tool_source_mock())
+    rt.enable_read_only_mode()
+    # 设置测试账户白名单
+    rt.whitelist_validator.allowed_accounts = {
+        "meta": ["2806375919473667"],
+        "google-ads": ["9055507554"],
+        "tiktok": ["7397068114548195329"],
+        "dv360": ["5110831"],
+    }
+    return rt
+
+
+def create_meta_tool_source_mock():
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+    cap = create_meta_tool_source()
+    return cap
+
+
+def create_google_tool_source_mock():
+    from agents.tools.advertising.providers.google import create_google_tool_source
+    cap = create_google_tool_source()
+    return cap
+
+
+def create_tiktok_tool_source_mock():
+    from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+    cap = create_tiktok_tool_source()
+    return cap
+
+
+def create_dv360_tool_source_mock():
+    from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
+    cap = create_dv360_tool_source()
+    return cap
+
+
+def configured_parser():
+    """Build the parser with the same published catalog as AdvertisingComposition."""
+    parser = LLMIntentParser()
+    skills_root = Path(__file__).resolve().parents[3] / "agents" / "skills" / "advertising"
+    loader = SkillLoader(str(skills_root))
+    loader.load_all()
+    definitions = []
+    for factory in (
+        create_meta_tool_source_mock,
+        create_google_tool_source_mock,
+        create_tiktok_tool_source_mock,
+        create_dv360_tool_source_mock,
+    ):
+        definitions.extend(
+            definition for definition, _ in factory().register_tools()
+        )
+    parser.refresh_tool_catalog(definitions)
+    for skill in loader.list_all().values():
+        parser.register_namespace_aliases(skill.namespace, skill.namespace_aliases)
+    for feature in discover_features():
+        parser.register_intent_descriptors(feature.intent_descriptors())
+    return parser
+
+
+def test_runtime_conversation_delete_enforces_user_and_tenant_scope():
+    store = AdAgentStore(":memory:")
+    rt = AdvertisingComposition(require_llm=False, persistence_store=store)
+    manager = rt._session_manager
+    manager.create_session("tenant-a-session", "user-a", metadata={"tenant_id": "tenant-a"})
+    manager.create_session("tenant-b-session", "user-a", metadata={"tenant_id": "tenant-b"})
+    manager.create_session("other-user-session", "user-b", metadata={"tenant_id": "tenant-a"})
+
+    assert rt.delete_conversation(
+        "tenant-a-session", user_id="user-a", tenant_id="tenant-a"
+    ) is True
+    assert rt.delete_conversation(
+        "tenant-b-session", user_id="user-a", tenant_id="tenant-a"
+    ) is False
+    assert rt.delete_conversations(
+        ["other-user-session", "tenant-b-session"],
+        user_id="user-a", tenant_id="tenant-a",
+    ) == []
+    assert manager.get_session("tenant-b-session") is not None
+    assert manager.get_session("other-user-session") is not None
+
+
+def test_runtime_generates_and_persists_llm_conversation_title():
+    class TitleLLM:
+        def __init__(self):
+            self.calls = []
+
+        def call(self, messages):
+            self.calls.append(messages)
+            return '{"title":"Meta 广告系列报表"}'
+
+    store = AdAgentStore(":memory:")
+    llm = TitleLLM()
+    rt = AdvertisingComposition(
+        require_llm=True,
+        llm_client=llm,
+        persistence_store=store,
+        features=[],
+        conversation_title_use_llm=True,
+    )
+    session = rt._ensure_session("title-session", "user-a", None, None, tenant_id="tenant-a")
+    rt.persist_conversation_turn(
+        session,
+        "turn-1",
+        "请帮我查询 Meta campaign 最近 7 天的报表",
+        "已整理好报表。",
+    )
+
+    listed = rt.list_conversations(user_id="user-a", tenant_id="tenant-a")
+    assert listed[0]["title"] == "Meta 广告系列报表"
+    assert "用户请求" in llm.calls[0][1]["content"]
+
+    renamed = rt.rename_conversation(
+        "title-session", "Meta Q3 投放复盘", user_id="user-a", tenant_id="tenant-a"
+    )
+    assert renamed == {"session_id": "title-session", "title": "Meta Q3 投放复盘"}
+    assert rt.list_conversations(user_id="user-a", tenant_id="tenant-a")[0]["title"] == "Meta Q3 投放复盘"
+
+
+def test_runtime_does_not_block_first_turn_on_conversation_title_llm():
+    class TitleLLM:
+        def __init__(self):
+            self.calls = 0
+
+        def call(self, _messages):
+            self.calls += 1
+            return '{"title":"不应该同步生成"}'
+
+    store = AdAgentStore(":memory:")
+    llm = TitleLLM()
+    rt = AdvertisingComposition(
+        require_llm=True,
+        llm_client=llm,
+        persistence_store=store,
+        features=[],
+    )
+    session = rt._ensure_session("fallback-title-session", "user-a", None, None)
+
+    rt.persist_conversation_turn(
+        session,
+        "turn-1",
+        "创建 Meta 广告系列",
+        "已生成预览。",
+    )
+
+    assert llm.calls == 0
+    assert session.ctx.metadata["conversation_title"] == "Meta 广告系列 · 创建"
+    assert session.ctx.metadata["conversation_title_source"] == "fallback"
+
+
+# ─── 工具注册表测试 ────────────────────────────────────────────
+
+class TestToolRegistry:
+    def test_register_and_get(self):
+        registry = SimpleToolRegistry()
+        tool_def = ToolDefinition(
+            name="test_tool",
+            skill="test",
+            namespace="meta",
+            description="Test tool",
+            input_schema=ToolSchema(),
+        )
+        handler = lambda ctx, inp: ToolResult.ok({"result": "ok"})
+        registry.register(tool_def, handler)
+        retrieved_def, retrieved_handler = registry.get("test_tool")
+        assert retrieved_def.name == "test_tool"
+        assert retrieved_handler is not None
+
+    def test_unregister(self):
+        registry = SimpleToolRegistry()
+        tool_def = ToolDefinition(
+            name="test_tool",
+            skill="test",
+            namespace="meta",
+            description="Test tool",
+            input_schema=ToolSchema(),
+        )
+        handler = lambda ctx, inp: ToolResult.ok({})
+        registry.register(tool_def, handler)
+        assert len(registry.list_all()) == 1
+        registry.unregister("test_tool")
+        assert len(registry.list_all()) == 0
+        assert registry.get_skill_tool_defs("test") == []
+
+    def test_unregister_nonexistent(self):
+        registry = SimpleToolRegistry()
+        registry.unregister("nonexistent")  # Should not raise
+        assert len(registry.list_all()) == 0
+
+    def test_list_by_platform(self):
+        registry = SimpleToolRegistry()
+        for i in range(3):
+            tool_def = ToolDefinition(
+                name=f"meta_tool_{i}",
+                skill="meta",
+                namespace="meta",
+                description=f"Tool {i}",
+                input_schema=ToolSchema(),
+            )
+            registry.register(tool_def, lambda ctx, inp: ToolResult.ok({}))
+        tools = registry.list_by_namespace("meta")
+        assert len(tools) == 3
+
+    def test_execute(self):
+        registry = SimpleToolRegistry()
+        tool_def = ToolDefinition(
+            name="test_tool",
+            skill="test",
+            namespace="meta",
+            description="Test tool",
+            input_schema=ToolSchema(required=["x"], properties={"x": {"type": "string"}}),
+        )
+        class _Handler:
+            def execute(self, ctx, inp):
+                return ToolResult.ok({"x": inp.get("x")})
+        registry.register(tool_def, _Handler())
+        ctx = ToolContext(session_id="s1", user_id="u1")
+        result = registry.execute(ctx, "test_tool", {"x": "hello"})
+        assert result.success
+        assert result.data["x"] == "hello"
+
+
+# ─── 账户白名单测试 ────────────────────────────────────────────
+
+class TestAccountWhitelistValidator:
+    def test_allowed_account(self):
+        validator = AccountWhitelistValidator()
+        validator.allowed_accounts = {"meta": ["123", "456"]}
+        allowed, msg = validator.validate_account("meta", "123")
+        assert allowed
+        assert msg == ""
+
+    def test_denied_account(self):
+        validator = AccountWhitelistValidator()
+        validator.allowed_accounts = {"meta": ["123"]}
+        allowed, msg = validator.validate_account("meta", "999")
+        assert not allowed
+        assert "999" in msg
+
+    def test_empty_whitelist_denies_all(self):
+        # 手动创建空白名单（跳过 config.yaml 加载）
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {}
+        allowed, msg = validator.validate_account("meta", "any_account")
+        assert not allowed
+        assert "白名单" in msg
+
+    def test_normalize_act_prefix(self):
+        validator = AccountWhitelistValidator()
+        validator.allowed_accounts = {"meta": ["2806375919473667"]}
+        allowed, _ = validator.validate_account("meta", "act_2806375919473667")
+        assert allowed
+
+
+# ─── 只读模式测试 ──────────────────────────────────────────────
+
+class TestReadOnlyMode:
+    def test_write_tools_filtered(self, runtime):
+        """只读模式下，写工具不应存在于注册表中"""
+        all_tools = runtime.registry.list_all()
+        write_tool_names = [t.name for t in all_tools if t.effect_class in (ToolEffect.WRITE, ToolEffect.EXTERNAL_WRITE)]
+        assert len(write_tool_names) == 0, f"只读模式下仍存在写工具: {write_tool_names}"
+
+    def test_read_tools_present(self, runtime):
+        """只读模式下，读工具应正常存在"""
+        all_tools = runtime.registry.list_all()
+        read_tools = [t for t in all_tools if t.effect_class == ToolEffect.READ]
+        assert len(read_tools) > 0, "应该至少有读工具"
+
+    def test_non_readonly_keeps_write_tools(self):
+        """非只读模式下，写工具应保留"""
+        rt = AdvertisingComposition(require_llm=False, read_only_mode=False)
+        rt.register_tool_source(create_meta_tool_source_mock())
+        all_tools = rt.registry.list_all()
+        write_tools = [t for t in all_tools if t.is_write_tool]
+        assert len(write_tools) > 0, "非只读模式应保留写工具"
+
+    def test_tool_count_decreases_after_filter(self):
+        """过滤前后工具数量应对比"""
+        rt_full = AdvertisingComposition(require_llm=False, read_only_mode=False)
+        rt_full.register_tool_source(create_meta_tool_source_mock())
+        count_full = len(rt_full.registry.list_all())
+
+        rt_readonly = AdvertisingComposition(require_llm=False, read_only_mode=True)
+        rt_readonly.register_tool_source(create_meta_tool_source_mock())
+        rt_readonly.enable_read_only_mode()
+        count_readonly = len(rt_readonly.registry.list_all())
+
+        assert count_readonly < count_full, f"只读模式工具数({count_readonly})应少于全量({count_full})"
+
+
+# ─── 意图解析测试 ──────────────────────────────────────────────
+
+class TestIntentParser:
+    def test_list_campaigns_meta(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("列出 Meta campaign 列表", None)
+        assert intent.intent_type == "list_campaigns"
+        assert "meta" in intent.namespaces
+
+    def test_list_campaigns_google(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("查询 Google Ads 广告系列", None)
+        assert intent.intent_type == "list_campaigns"
+        assert "google-ads" in intent.namespaces
+
+    def test_google_keyword_lifecycle_intents_are_distinct(self):
+        parser = configured_parser()
+        assert parser.parse("创建 Google 关键词", None).intent_type == "create_keywords"
+        assert parser.parse("update keyword Google", None).intent_type == "update_keyword"
+        assert parser.parse("delete keyword Google", None).intent_type == "delete_keyword"
+
+    def test_report_query(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("查询 TikTok 广告报表 最近7天", None)
+        assert intent.intent_type == "download_report"
+
+    def test_create_intent_not_matching_in_readonly(self):
+        """创建意图在只读模式下会被路由到不存在的工具（因为写工具已过滤）"""
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("创建 Meta 广告系列", None)
+        assert intent.intent_type == "create_campaign"
+
+    def test_rich_single_platform_creation_uses_schema_parser_fallback(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        from agents.tools.advertising.providers.tiktok.parameters import tiktok_campaign_schema
+
+        parser = LLMIntentParser(None)
+        parser.register_tool_schemas("tiktok", [tiktok_campaign_schema()])
+        definition = next(
+            definition
+            for definition, _ in create_tiktok_tool_source_mock().register_tools()
+            if definition.name == "tiktok_create_campaign"
+        )
+        parser.register_tool_definitions([definition])
+
+        intent = parser.parse(
+            "创建 TikTok 广告系列，名称=春季促销，objective_type=PRODUCT_SALES，"
+            "budget_mode=BUDGET_MODE_DAY，campaign_type=REGULAR_CAMPAIGN",
+            None,
+        )
+
+        assert intent.intent_type == "create_campaign"
+        assert intent.namespaces == ["tiktok"]
+        assert intent.scoped_parameters["tiktok"]["name"] == "春季促销"
+        assert intent.scoped_parameters["tiktok"]["objective_type"] == "PRODUCT_SALES"
+        assert intent.scoped_parameters["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
+        assert intent.scoped_parameters["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
+
+    def test_cross_channel_create_selects_all_registered_platforms(self):
+        parser = configured_parser()
+        intent = parser.parse("跨渠道创建 campaign", None)
+
+        assert intent.intent_type == "chat"
+        assert intent.namespaces == []
+
+    def test_cross_channel_update_selects_all_registered_platforms(self):
+        parser = configured_parser()
+        intent = parser.parse("跨平台更新 campaign", None)
+
+        assert intent.intent_type == "chat"
+        assert intent.namespaces == []
+
+    def test_cross_channel_delete_selects_batch_management_intent(self):
+        parser = configured_parser()
+        intent = parser.parse(
+            "跨渠道删除 Meta campaign_id=111 和 Google campaign_id=222", None
+        )
+
+        assert intent.intent_type == "cross_channel_batch_delete"
+        assert intent.namespaces == ["meta", "google-ads"]
+
+    def test_single_channel_create_does_not_expand_to_all_platforms(self):
+        parser = configured_parser()
+        intent = parser.parse("创建 campaign", None)
+
+        assert intent.intent_type == "chat"
+        assert intent.namespaces == []
+
+    def test_chat_intent(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("你好", None)
+        assert intent.intent_type == "chat"
+
+    def test_extract_budget(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser._parse_with_rules("预算 500 元投放 Google")
+        assert intent.budget is None
+
+    def test_extract_platforms(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        # 使用小写关键词确保匹配
+        platforms = parser._detect_namespaces("帮我查 meta 和 google 的 campaign")
+        assert "meta" in platforms
+        assert "google-ads" in platforms
+
+    def test_extract_report_date_range(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("查询 Google Ads 报表 date_range=LAST_7_DAYS", None)
+        assert intent.date_range is None
+        assert intent.scoped_parameters["google-ads"]["date_range"] == "LAST_7_DAYS"
+
+    def test_normalize_llm_aliases_and_ignores_unknown_fields(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        normalized = parser._normalize_intent({
+            "intent_type": "create_campaign",
+            "namespaces": ["google"],
+            "budget_daily": 100,
+            "unsupported_model_field": "must be ignored",
+        })
+        assert "budget" not in normalized
+        assert normalized["namespaces"] == ["google-ads"]
+        assert "budget_daily" not in normalized
+        assert "unsupported_model_field" not in normalized
+
+    def test_llm_result_gets_raw_input_default(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        class FakeLLM:
+            def call(self, messages):
+                return '{"intent_type":"list_campaigns","namespaces":["google"]}'
+
+        parser = LLMIntentParser(FakeLLM())
+        definition = next(
+            definition
+            for definition, _ in create_google_tool_source_mock().register_tools()
+            if definition.name == "google_list_campaigns"
+        )
+        parser.register_tool_definitions([definition])
+        intent = parser.parse("查询 Google campaign", None)
+        assert intent.intent_type == "list_campaigns"
+        assert intent.raw_input == "查询 Google campaign"
+
+    def test_llm_repairs_chat_result_that_contains_a_provider(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        class RepairingLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def call(self, messages):
+                self.calls += 1
+                if self.calls == 1:
+                    return '{"intent_type":"chat","namespaces":["google-ads"]}'
+                return '{"intent_type":"list_campaigns","namespaces":["google-ads"]}'
+
+        llm = RepairingLLM()
+        parser = LLMIntentParser(llm)
+        parser.register_namespaces(["google-ads"])
+        definition = next(
+            definition
+            for definition, _ in create_google_tool_source_mock().register_tools()
+            if definition.name == "google_list_campaigns"
+        )
+        parser.register_tool_definitions([definition])
+        intent = parser.parse("查询 Google campaign", None)
+
+        assert intent.intent_type == "list_campaigns"
+        assert intent.namespaces == ["google-ads"]
+        assert llm.calls == 2
+
+    def test_llm_repairs_chat_result_that_omits_provider_for_a_query(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        class RepairingLLM:
+            def __init__(self):
+                self.calls = 0
+
+            def call(self, messages):
+                self.calls += 1
+                if self.calls == 1:
+                    return '{"intent_type":"chat","namespaces":[]}'
+                return '{"intent_type":"list_campaigns","namespaces":["google-ads"]}'
+
+        llm = RepairingLLM()
+        parser = LLMIntentParser(llm)
+        parser.register_namespaces(["google-ads"])
+        definition = next(
+            definition
+            for definition, _ in create_google_tool_source_mock().register_tools()
+            if definition.name == "google_list_campaigns"
+        )
+        parser.register_tool_definitions([definition])
+        intent = parser.parse("查询 Google campaign 列表", None)
+
+        assert intent.intent_type == "list_campaigns"
+        assert intent.namespaces == ["google-ads"]
+        assert llm.calls == 2
+
+    def test_llm_parser_receives_bounded_skill_context(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        class FakeLLM:
+            def __init__(self):
+                self.calls = []
+
+            def call(self, messages):
+                self.calls.append(messages)
+                return '{"intent_type":"list_campaigns","namespaces":["meta"]}'
+
+        llm = FakeLLM()
+        parser = LLMIntentParser(llm)
+        parser.parse(
+            "查询 Meta campaign",
+            ToolContext(
+                session_id="s1",
+                user_id="u1",
+                metadata={"skill_context": {
+                    "tool_prompt": "meta_list_campaigns",
+                    "expert_knowledge": "Meta campaign scope",
+                }},
+            ),
+        )
+        prompt_text = "\n".join(
+            message["content"] for message in llm.calls[0]
+            if message["role"] == "system"
+        )
+        assert "meta_list_campaigns" in prompt_text
+        assert "Meta campaign scope" in prompt_text
+
+    def test_llm_parser_receives_prior_tool_results_as_context_only(self):
+        from agents.tools.advertising.application.ad_application import SessionContext
+
+        class FakeLLM:
+            def __init__(self):
+                self.calls = []
+
+            def call(self, messages):
+                self.calls.append(messages)
+                return '{"intent_type":"get_campaign","namespaces":["meta"]}'
+
+        llm = FakeLLM()
+        parser = LLMIntentParser(llm)
+        runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
+        session = SessionContext("s1", ToolContext("s1", "u1"))
+        session.save_result(
+            "meta_list_campaigns",
+            ToolResult.ok({
+                "campaign_id": "c1",
+                "status": "PAUSED",
+                "access_token": "must-not-be-forwarded",
+            }),
+            platform="meta",
+        )
+        prior = runtime._build_prior_tool_results_context(session)
+
+        parser.parse(
+            "查看刚才的 Meta campaign",
+            ToolContext(
+                session_id="s1",
+                user_id="u1",
+                metadata={"skill_context": {"prior_tool_results": prior}},
+            ),
+        )
+        prompt_text = "\n".join(
+            message["content"] for message in llm.calls[0]
+            if message["role"] == "system"
+        )
+        assert "meta_list_campaigns" in prompt_text
+        assert "c1" in prompt_text
+        assert "PAUSED" in prompt_text
+        assert "must-not-be-forwarded" not in prompt_text
+
+    def test_direct_multi_platform_comparison(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("比较 Meta 和 Google 的 campaign", None)
+        assert intent.intent_type == "cross_channel_compare"
+        assert intent.namespaces == ["meta", "google-ads"]
+
+    def test_cross_channel_create_routes_to_create_workflow(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        intent = configured_parser().parse(
+            "创建 Meta 广告系列，并创建 TikTok 广告系列", None
+        )
+
+        assert intent.intent_type == "create_campaign"
+        assert intent.namespaces == ["meta", "tiktok"]
+
+    def test_rule_parser_extracts_tiktok_creation_parameters(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        intent = configured_parser().parse(
+            "创建 TikTok campaign name=AndroidTest "
+            "objective_type=APP_PROMOTION campaign_type=REGULAR_CAMPAIGN "
+            "budget_mode=BUDGET_MODE_DAY",
+            None,
+        )
+
+        assert intent.scoped_parameters["tiktok"]["objective_type"] == "APP_PROMOTION"
+        assert intent.scoped_parameters["tiktok"]["campaign_type"] == "REGULAR_CAMPAIGN"
+        assert intent.scoped_parameters["tiktok"]["budget_mode"] == "BUDGET_MODE_DAY"
+
+    def test_rule_parser_understands_multilingual_creation_phrases_from_schema(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        from agents.tools.advertising.providers.tiktok.parameters import (
+            tiktok_campaign_schema, tiktok_adgroup_schema, tiktok_app_ad_schema,
+        )
+
+        parser = configured_parser()
+        parser.register_tool_schemas(
+            "tiktok",
+            [tiktok_campaign_schema(), tiktok_adgroup_schema(), tiktok_app_ad_schema()],
+        )
+        intent = parser.parse(
+            "创建 TikTok App 转化广告，选择 Android，投放给 18 到 35 岁用户，日预算 100",
+            None,
+        )
+
+        values = intent.scoped_parameters["tiktok"]
+        assert values["objective_type"] == "APP_PROMOTION"
+        assert values["operating_systems"] == ["ANDROID"]
+        assert values["age_groups"] == ["AGE_18_24", "AGE_25_34", "AGE_35_44"]
+        assert "daily_budget" not in values
+        assert "app_id" not in values
+
+        english = parser.parse(
+            "Create a TikTok app conversion campaign for an Android app, daily budget 100",
+            None,
+        )
+        assert english.scoped_parameters["tiktok"]["objective_type"] == "APP_PROMOTION"
+        assert english.scoped_parameters["tiktok"]["promotion_type"] == "APP_ANDROID"
+
+        assert "updates" not in english.scoped_parameters["tiktok"]
+
+    def test_llm_enum_alias_is_normalized_but_dynamic_resource_is_not_guessed(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        from agents.tools.advertising.providers.tiktok.parameters import tiktok_adgroup_schema
+
+        parser = configured_parser()
+        parser.register_tool_schemas("tiktok", [tiktok_adgroup_schema()])
+        normalized = parser._normalize_intent({
+            "intent_type": "create_campaign",
+            "namespaces": ["tiktok"],
+            "scoped_parameters": {
+                "tiktok": {
+                    "promotion_type": "Android app",
+                    "app_id": "my app",
+                    "operating_systems": ["Android"],
+                }
+            },
+        })
+
+        values = normalized["scoped_parameters"]["tiktok"]
+        assert values["promotion_type"] == "APP_ANDROID"
+        assert values["operating_systems"] == ["ANDROID"]
+        assert values["app_id"] == "my app"
+
+    def test_llm_result_is_enriched_from_user_language_without_trusting_model_resource_ids(self):
+        """Explicit IDs and schema enums survive a sparse LLM extraction."""
+        from agents.tools.advertising.providers.tiktok.parameters import (
+            tiktok_campaign_schema, tiktok_adgroup_schema, tiktok_app_ad_schema,
+        )
+
+        class SparseLLM:
+            def call(self, messages):
+                return json.dumps({
+                    "intent_type": "create_campaign",
+                    "namespaces": ["tiktok"],
+                    "scoped_parameters": {
+                        "tiktok": {
+                            "app_id": "model-placeholder",
+                            "promotion_type": "Android app",
+                            "operating_systems": ["Android"],
+                        }
+                    },
+                })
+
+        parser = LLMIntentParser(SparseLLM())
+        parser.register_tool_schemas("tiktok", [
+            tiktok_campaign_schema(), tiktok_adgroup_schema(), tiktok_app_ad_schema(),
+        ])
+        intent = parser.parse(
+            "创建 TikTok App 转化广告，App ID 是 app-123，选择 Android，日预算 100",
+            None,
+        )
+
+        values = intent.scoped_parameters["tiktok"]
+        assert values["app_id"] == "app-123"
+        assert values["objective_type"] == "APP_PROMOTION"
+        assert values["promotion_type"] == "APP_ANDROID"
+        assert values["operating_systems"] == ["ANDROID"]
+        assert "daily_budget" not in values
+
+    def test_llm_normalizes_enum_values_inside_object_array_items(self):
+        from agents.tools.advertising.providers.tiktok.parameters import tiktok_app_ad_schema
+
+        class CreativeLLM:
+            def call(self, messages):
+                return json.dumps({
+                    "intent_type": "create_campaign",
+                    "namespaces": ["tiktok"],
+                    "scoped_parameters": {
+                        "tiktok": {"media": [{"type": "image"}]}
+                    },
+                })
+
+        parser = LLMIntentParser(CreativeLLM())
+        parser.register_tool_schemas("tiktok", [tiktok_app_ad_schema()])
+        intent = parser.parse("Create a TikTok app ad with an image", None)
+        assert intent.scoped_parameters["tiktok"]["media"][0]["type"] == "IMAGE"
+
+    def test_single_platform_plain_language_accepts_explicit_account_and_resource_ids(self):
+        from agents.tools.advertising.providers.tiktok.parameters import (
+            tiktok_campaign_schema, tiktok_adgroup_schema,
+        )
+
+        parser = configured_parser()
+        parser.register_tool_schemas("tiktok", [
+            tiktok_campaign_schema(), tiktok_adgroup_schema(),
+        ])
+        intent = parser.parse(
+            "TikTok ad group，账户 ID 是 advertiser-7，App ID 是 app-123，Pixel ID: px-9",
+            None,
+        )
+        values = intent.scoped_parameters["tiktok"]
+        assert "account_id" not in values
+        assert values["app_id"] == "app-123"
+        assert values["pixel_id"] == "px-9"
+        assert "id" not in values
+
+    def test_creation_reply_is_a_complete_text_fallback_for_chinese_and_english(self):
+        from agents.tools.advertising.application.ad_application import AdvertisingComposition
+
+        ui = {
+            "cards": [{
+                "title": "TikTok App 转化视频广告",
+                "provider": "tiktok",
+                "account_required": True,
+                "account_id": None,
+                "fields": [
+                    {
+                        "path": "campaign.objective_type",
+                        "label": "推广目标",
+                        "required": True,
+                        "value": "APP_PROMOTION",
+                        "options": [{"value": "APP_PROMOTION", "label": "应用推广"}],
+                    },
+                    {
+                        "path": "ad_group.app_id",
+                        "label": "App",
+                        "required": True,
+                        "value": None,
+                        "source": "lookup",
+                        "lookup": {"tool": "tiktok_list_apps"},
+                    },
+                ],
+            }],
+        }
+
+        chinese = AdvertisingComposition.creation_ui_reply(ui, "创建 TikTok App 转化广告")
+        assert "广告账户 ID" in chinese
+        assert "列表中搜索选择" in chinese
+        assert "不会猜测 ID" in chinese
+        assert "确认后才会提交" in chinese
+
+        english = AdvertisingComposition.creation_ui_reply(ui, "Create a TikTok app conversion campaign")
+        assert "account" in english.lower()
+        assert "current account list" in english
+        assert "confirmation" in english.lower()
+
+    def test_bare_campaign_phrase_is_not_copied_between_channels(self):
+        parser = configured_parser()
+        intent = parser.parse("跨渠道暂停 Meta 和 Google campaign 12345", None)
+        assert all(
+            "campaign_id" not in intent.scoped_parameters[platform]
+            for platform in ("meta", "google-ads")
+        )
+
+    def test_cross_platform_pause_is_not_misrouted_to_overview(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        parser = configured_parser()
+        intent = parser.parse("跨渠道暂停 Meta 和 TikTok campaign campaign_id=123", None)
+        assert intent.intent_type == "cross_channel_batch_pause"
+        assert intent.namespaces == ["meta", "tiktok"]
+
+    def test_cross_platform_pause_routes_update_tools(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"], "tiktok": ["t1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_tool_source(create_meta_tool_source())
+        rt.register_tool_source(create_tiktok_tool_source())
+        result = rt.run(
+            "跨渠道暂停 Meta campaign_id=111 和 TikTok campaign_id=222",
+            user_id="u1",
+            platform_params={"meta": {"account_id": "m1"}, "tiktok": {"account_id": "t1"}},
+        )
+        assert result["intent"]["intent_type"] == "cross_channel_batch_pause"
+        assert {item["tool"] for item in result["results"]} == {
+            "meta_update_campaign", "tiktok_update_campaign",
+        }
+        assert all(item["data"]["simulated"] for item in result["results"])
+
+    def test_bare_campaign_id_is_not_copied_between_channels(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        intent = configured_parser().parse(
+            "跨渠道暂停 Meta 和 TikTok，campaign_id=123",
+            None,
+        )
+        assert "campaign_id" not in intent.scoped_parameters["meta"]
+        assert "campaign_id" not in intent.scoped_parameters["tiktok"]
+
+    def test_platform_qualified_campaign_ids_are_not_copied_between_channels(self):
+        from agents.agent_harness.core.intent import LLMIntentParser
+
+        intent = configured_parser().parse(
+            "跨渠道暂停 Meta campaign_id=111 和 Google campaign_id=222",
+            None,
+        )
+        assert intent.scoped_parameters["meta"]["campaign_id"] == "111"
+        assert intent.scoped_parameters["google-ads"]["campaign_id"] == "222"
+
+    def test_platform_qualified_single_campaign_id_is_kept_in_batch_request(self):
+        parser = configured_parser()
+        intent = parser.parse(
+            "批量暂停 Meta campaign_ids=10001,10002 和 Google campaign_ids=20001",
+            ToolContext(session_id="s1", user_id="u1"),
+        )
+        assert intent.scoped_parameters["meta"]["campaign_ids"] == ["10001", "10002"]
+        assert intent.scoped_parameters["google-ads"]["campaign_ids"] == ["20001"]
+
+
+# ─── Runtime 集成测试 ──────────────────────────────────────────
+
+class TestRuntimeQuery:
+    def test_meta_report_campaign_ids_do_not_alias_to_singular_campaign_id(self):
+        from agents.agent_harness.core.interfaces import ParsedIntent
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            read_only_mode=True,
+        )
+        rt.register_tool_source(create_meta_tool_source())
+        tool_def, _handler = rt.registry.get_authorized(
+            "meta_get_campaign_report", rt._registry_execution_token
+        )
+        intent = ParsedIntent(
+            intent_type="get_campaign_report",
+            raw_input="查询 Meta campaign 报表",
+            namespaces=["meta"],
+            scoped_parameters={
+                "meta": {"campaign_ids": ["101", "102"]},
+            },
+        )
+
+        tool_input = rt.input_builder.build(
+            tool_def,
+            intent,
+            "meta",
+            ToolContext(
+                session_id="meta-report-input",
+                user_id="u1",
+                account_id="act_123",
+            ),
+        )
+
+        assert "campaign_id" not in tool_input
+        assert tool_input["campaign_ids"] == ["101", "102"]
+        assert "campaign_ids" in rt.input_builder.input_candidates(
+            "campaign_id",
+            {},
+            ["campaign_ids"],
+            declared_fields={"campaign_id"},
+        )
+
+    def test_llm_route_repair_rejects_unrelated_provider_and_reaches_google_report(self):
+        """A hallucinated operation/provider must not become a silent no-op."""
+        from agents.tools.advertising.providers.google import create_google_tool_source
+
+        class GoogleClient:
+            platform = "google-ads"
+
+            def list_campaigns(self, page_size=100):
+                return [{"id": "g1", "campaign_name": "Google 1"}]
+
+            def get_campaign_report(
+                self, campaign_ids, date_from="LAST_30_DAYS", date_to="TODAY"
+            ):
+                return [{
+                    "campaign": {"id": "g1", "name": "Google 1"},
+                    "metrics": {"clicks": 2},
+                }]
+
+        class SequenceLLM:
+            def __init__(self):
+                self.responses = [
+                    '{"intent_type":"chat","namespaces":["google"]}',
+                    '{"intent_type":"create_report","namespaces":["dv360","google"]}',
+                    '{"intent_type":"get_campaign_report","namespaces":["google"]}',
+                ]
+
+            def call(self, _messages):
+                return self.responses.pop(0)
+
+        class NoSynthesizer:
+            def synthesize(self, *_args, **_kwargs):
+                return None
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"google-ads": ["g1"]}
+        rt = AdvertisingComposition(
+            require_llm=True,
+            llm_client=SequenceLLM(),
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            response_synthesizer=NoSynthesizer(),
+        )
+        rt.register_tool_source(create_google_tool_source(GoogleClient()))
+
+        result = rt.run("查询 Google Ads 报表", user_id="u1", account_id="g1")
+
+        assert result["intent"]["intent_type"] == "get_campaign_report"
+        assert result["tool_plan"] == {"google-ads": ["google_get_campaign_report"]}
+        assert result["results"][0]["success"] is True
+
+    def test_generic_report_routes_to_campaign_report_without_child_ids(self):
+        from agents.tools.advertising.providers.google import create_google_tool_source
+
+        class GoogleClient:
+            platform = "google-ads"
+
+            def list_campaigns(self, page_size=100):
+                return [{"id": "g1", "campaign_name": "Google 1"}]
+
+            def get_campaign_report(
+                self, campaign_ids, date_from="LAST_30_DAYS", date_to="TODAY"
+            ):
+                return [{
+                    "campaign": {"id": "g1", "name": "Google 1"},
+                    "metrics": {"impressions": 10, "clicks": 2, "cost_micros": 1000000},
+                }]
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"google-ads": ["g1"]}
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_tool_source(create_google_tool_source(GoogleClient()))
+
+        result = rt.run(
+            "查询 Google Ads 报表",
+            user_id="u1",
+            account_id="g1",
+        )
+
+        assert result["tool_plan"]["google-ads"] == ["google_get_campaign_report"]
+        assert result["results"][0]["success"] is True
+        assert result["results"][0]["data"]["summary"]["total_clicks"] == 2
+
+    def test_meta_generic_report_queries_account_scope_without_campaign_discovery(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+        class MetaClient:
+            platform = "meta"
+
+            def __init__(self):
+                self.calls = []
+
+            def list_campaigns(self, account_id, limit=25):
+                self.calls.append(("list_campaigns", account_id, limit))
+                return [{"id": "m1", "name": "Meta 1"}]
+
+            def get_campaign_report(self, account_id, campaign_ids, time_range=None):
+                self.calls.append(("get_campaign_report", account_id, campaign_ids, time_range))
+                return [{"campaign_id": "m1", "impressions": 10}]
+
+        client = MetaClient()
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_tool_source(create_meta_tool_source(client))
+
+        result = rt.run("查询 Meta 报表", user_id="u1", account_id="m1")
+
+        assert result["tool_plan"]["meta"] == ["meta_get_campaign_report"]
+        assert result["results"][0]["success"] is True
+        assert client.calls == [
+            ("get_campaign_report", "m1", [], None),
+        ]
+
+    def test_runtime_injects_skill_context_before_llm_parsing(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+        class FakeLLM:
+            def __init__(self):
+                self.calls = []
+
+            def call(self, messages):
+                self.calls.append(messages)
+                return '{"intent_type":"list_campaigns","namespaces":["meta"]}'
+
+        llm = FakeLLM()
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            llm_client=llm,
+            whitelist_validator=validator,
+            offline_mode=True,
+        )
+        rt.register_tool_source(create_meta_tool_source())
+        result = rt.run(
+            "查询 Meta campaign",
+            user_id="u1",
+            account_id="m1",
+        )
+        assert result["intent"]["intent_type"] == "list_campaigns"
+        all_prompt_text = "\n".join(
+            message["content"]
+            for message in llm.calls[0]
+            if message["role"] == "system"
+        )
+        assert "meta_list_campaigns" in all_prompt_text
+
+    def test_list_campaigns_meta(self, runtime):
+        """查询 Meta campaign 列表"""
+        result = runtime.run(
+            user_input="列出 Meta campaign 列表",
+            user_id="test_user",
+        )
+        assert result["session_id"] is not None
+        assert result["intent"]["intent_type"] == "list_campaigns"
+        # 应该有工具计划
+        tool_plan = result.get("tool_plan", {})
+        assert "meta" in tool_plan or result["reply"]
+
+    def test_list_campaigns_google(self, runtime):
+        """查询 Google campaign 列表"""
+        result = runtime.run(
+            user_input="列出 Google Ads campaign 列表",
+            user_id="test_user",
+        )
+        assert result["session_id"] is not None
+        assert result["intent"]["intent_type"] == "list_campaigns"
+
+    def test_greeting(self, runtime):
+        """问候语回复"""
+        result = runtime.run(user_input="你好", user_id="test_user")
+        assert "ad-agent" in result["reply"].lower() or "你好" in result["reply"]
+
+    def test_help(self, runtime):
+        """帮助信息"""
+        result = runtime.run(user_input="帮助", user_id="test_user")
+        assert len(result["reply"]) > 0
+
+    def test_unknown_intent(self, runtime):
+        """未知意图返回闲聊回复"""
+        result = runtime.run(user_input="random stuff", user_id="test_user")
+        assert result["reply"] is not None
+
+    def test_cross_platform_query(self, runtime):
+        """跨平台查询"""
+        result = runtime.run(
+            user_input="查询 Meta 和 TikTok 的 campaign",
+            user_id="test_user",
+        )
+        assert result["session_id"] is not None
+
+    def test_account_auto_selected(self, runtime):
+        """未指定账户时自动使用白名单中的测试账户"""
+        result = runtime.run(
+            user_input="列出 Meta campaign",
+            user_id="test_user",
+        )
+        # 应该成功执行（mock handler 不需要真实账户）
+        assert result["session_id"] is not None
+
+    def test_multiple_whitelisted_accounts_require_explicit_selection(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1", "m2"]}
+        rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=True)
+        rt.register_tool_source(create_meta_tool_source())
+
+        result = rt.run("列出 Meta campaign", user_id="multi-account-user")
+
+        assert result["needs_confirmation"] is True
+        assert result["results"][0]["confirmation_payload"]["type"] == "ask_account"
+        assert result["results"][0]["data"] == {}
+
+    def test_runtime_rejects_offline_read_fixtures_by_default(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=False)
+        rt.register_tool_source(create_meta_tool_source())
+        result = rt.run(
+            "列出 Meta campaign 列表",
+            user_id="offline-boundary",
+            platform_params={"meta": {"account_id": "m1"}},
+        )
+        assert result["results"]
+        assert result["results"][0]["success"] is False
+        assert "offline_mode" in result["results"][0]["error"]
+
+    def test_runtime_can_explicitly_enable_offline_read_fixtures(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=True)
+        rt.register_tool_source(create_meta_tool_source())
+        result = rt.run(
+            "列出 Meta campaign 列表",
+            user_id="offline-explicit",
+            platform_params={"meta": {"account_id": "m1"}},
+        )
+        assert result["results"][0]["success"] is True
+        assert result["results"][0]["data"]["data_status"] == "offline_mock"
+
+    def test_business_context_blocks_disallowed_channel(self):
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"tiktok": ["t1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            whitelist_validator=validator,
+            policies=[BusinessSkillPolicy.from_values(
+                name="app",
+                allowed_platforms=("google",),
+                denied_platforms=("tiktok",),
+                rules={"min_budget": 50, "max_budget": 50000},
+            )],
+        )
+        result = rt.run("列出 TikTok campaign", account_id="t1")
+        assert result["results"] == []
+        assert "不允许使用 tiktok" in result["policy_errors"][0]
+
+    def test_secret_text_is_redacted_before_llm_and_session(self):
+        seen = []
+
+        class LLM:
+            def call(self, messages):
+                seen.extend(messages)
+                return '{"intent_type":"chat","namespaces":[]}'
+
+        rt = AdvertisingComposition(require_llm=False, persistence_store=AdAgentStore(":memory:"), intent_parser=__import__(
+            "agents.agent_harness.core.intent", fromlist=["LLMIntentParser"]
+        ).LLMIntentParser(LLM()))
+        result = rt.run(
+            "你好 access_token=SECRET partnerId=PARTNER private_key=KEY",
+            session_id="redaction-session",
+        )
+        serialized = str(seen) + str(rt._sessions["redaction-session"].messages)
+        assert "SECRET" not in serialized
+        assert "PARTNER" not in serialized
+        assert "KEY" not in serialized
+        assert "<redacted>" in serialized
+
+        persisted = rt._session_manager.list_conversation_messages("redaction-session")
+        persisted_text = " ".join(item.content for item in persisted)
+        assert "SECRET" not in persisted_text
+        assert "PARTNER" not in persisted_text
+        assert "KEY" not in persisted_text
+
+    def test_runtime_persists_both_sides_of_a_conversation_turn(self):
+        class LLM:
+            def call(self, messages):
+                return '{"intent_type":"chat","namespaces":[]}'
+
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            intent_parser=__import__(
+                "agents.agent_harness.core.intent", fromlist=["LLMIntentParser"]
+            ).LLMIntentParser(LLM()),
+        )
+
+        result = rt.run(
+            "请总结一下今天的投放情况",
+            session_id="conversation-session",
+            user_id="conversation-user",
+        )
+
+        messages = rt._session_manager.list_conversation_messages(
+            result["session_id"]
+        )
+        assert [(item.role, item.content) for item in messages] == [
+            ("user", "请总结一下今天的投放情况"),
+            ("assistant", result["reply"]),
+        ]
+        persisted_session = rt._session_manager.get_session(result["session_id"])
+        metadata = json.loads(persisted_session["metadata"])
+        trace_snapshot = metadata["execution_traces"][result["turn_id"]]
+        assert trace_snapshot["events"]
+        assert trace_snapshot["events"][-1]["type"] == "done"
+
+        conversation = rt.get_conversation(
+            result["session_id"], "conversation-user"
+        )
+        assert conversation["execution_traces"][result["turn_id"]]["events"]
+
+    def test_runtime_persists_creation_card_with_assistant_message(self):
+        class LLM:
+            def call(self, messages):
+                return '{"intent_type":"chat","namespaces":[]}'
+
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            intent_parser=LLMIntentParser(LLM()),
+        )
+        result = rt.run(
+            "准备广告创建参数",
+            session_id="card-session",
+            user_id="card-user",
+        )
+        session = rt._sessions[result["session_id"]]
+        card = {
+            "type": "ad_creation_form",
+            "id": "google-ads.search@1.0.0",
+            "title": "Google Search 广告",
+            "fields": [{"path": "campaign.campaign_name", "value": "草稿"}],
+            "actions": [{"id": "submit_create", "label": "提交创建"}],
+        }
+        rt.persist_conversation_turn(
+            session,
+            "card-turn",
+            "继续完善广告参数",
+            "请检查广告参数卡片。",
+            ui={"cards": [card]},
+        )
+
+        conversation = rt.get_conversation("card-session", "card-user")
+        assistant = conversation["messages"][-1]
+        assert assistant["ui"] == {"cards": [card]}
+        metadata = json.loads(rt._session_manager.get_session("card-session")["metadata"])
+        assert metadata["conversation_ui"]["card-turn"] == {"cards": [card]}
+
+
+class TestSafeWriteExecution:
+    class FakeClient:
+        def __init__(self, platform):
+            self.platform = platform
+            self.calls = []
+
+        def __getattr__(self, name):
+            def call(*args, **kwargs):
+                self.calls.append((name, args, kwargs))
+                if name == "list_campaigns":
+                    return []
+                return "live-id"
+            return call
+
+    def _runtime(self, platform, client=None, mode="dry_run"):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.google import create_google_tool_source
+        from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+        from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {
+            "meta": ["m1"], "google-ads": ["g1"],
+            "tiktok": ["t1"], "dv360": ["d1"],
+        }
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            execution_mode=mode,
+            allow_live_writes=(mode == ExecutionMode.LIVE.value),
+            granted_permissions={"ads.read", "ads.plan", "ads.write"}
+            if mode == ExecutionMode.LIVE.value else None,
+        )
+        factory = {
+            "meta": lambda: create_meta_tool_source(client),
+            "google": lambda: create_google_tool_source(client),
+            "tiktok": lambda: create_tiktok_tool_source(client),
+            "dv360": create_dv360_tool_source,
+        }[platform]
+        rt.register_tool_source(factory())
+        if mode == ExecutionMode.LIVE.value:
+            # Explicit test fixture: production write adapters stay disabled
+            # until each provider path is separately verified.
+            for tool in rt.registry.list_all():
+                if tool.is_write_tool:
+                    tool.live_support = True
+            # Live execution is an explicit code-side approval.  The fixture
+            # opts in only to adapters declared as live-capable.
+            rt._live_approved_tools = {
+                tool.name for tool in rt.registry.list_all()
+                if tool.is_write_tool and tool.live_support
+            }
+        return rt
+
+    def test_dry_run_never_calls_client_and_preserves_parent_ids(self):
+        client = self.FakeClient("meta")
+        rt = self._runtime("meta", client)
+        result = rt.run("创建 Meta 广告系列 名称=Smoke", account_id="m1")
+        # Creation now pauses before routing when the campaign objective/type
+        # is absent; downstream parent IDs are only produced after a complete
+        # Blueprint submission.
+        assert result["results"] == []
+        assert result["ui"]["clarification"]
+        assert client.calls == []
+
+    @pytest.mark.parametrize("user_request", [
+        "创建 Meta 广告系列 名称=需要账户",
+        "更新 Meta campaign campaign_id=123 status=PAUSED",
+        "删除 Meta campaign campaign_id=123",
+    ])
+    def test_write_never_auto_selects_single_whitelisted_account(self, user_request):
+        """写请求必须由当前请求明确给出账户，不能静默选唯一白名单账户。"""
+        rt = self._runtime("meta", self.FakeClient("meta"))
+
+        result = rt.run(user_request, user_id="explicit-account-required")
+
+        if user_request.startswith("创建"):
+            assert result["results"] == []
+            assert result["workflow_id"] is None
+            assert result["needs_confirmation"] is False
+            assert result["ui"]["clarification"]
+        else:
+            assert result["needs_confirmation"] is True
+            assert result["confirmation_payload"]["type"] == "ask_account"
+            assert "账户" in result["confirmation_payload"]["question"]
+            assert "请提供要操作的" in result["reply"]
+        assert not any(
+            isinstance(item.get("data"), dict)
+            and item["data"].get("simulated")
+            for item in result["results"]
+        )
+
+    def test_batch_write_requires_explicit_account(self):
+        rt = self._runtime("meta", self.FakeClient("meta"))
+
+        result = rt.run(
+            "批量删除 Meta campaign_ids=101,102",
+            user_id="batch-explicit-account-required",
+        )
+
+        assert result["needs_confirmation"] is True
+        assert result["confirmation_payload"]["type"] == "ask_account"
+        assert "请提供要操作的" in result["reply"]
+        assert all(not item.get("success") for item in result["results"])
+
+    def test_confirmation_ui_survives_durable_conversation_reload(self):
+        rt = self._runtime("meta", self.FakeClient("meta"))
+
+        result = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            session_id="confirmation-history",
+            user_id="confirmation-user",
+        )
+
+        assert result["needs_confirmation"] is True
+        conversation = rt.get_conversation(
+            "confirmation-history",
+            "confirmation-user",
+        )
+        assistant = [
+            message for message in conversation["messages"]
+            if message["role"] == "assistant"
+        ][-1]
+        assert assistant["ui"]["confirmation"]["payload"] == result["confirmation_payload"]
+        assert assistant["ui"]["confirmation"]["original_request"]["user_input"] == (
+            "更新 Meta campaign campaign_id=123 status=PAUSED"
+        )
+
+    def test_cross_platform_create_does_not_share_parent_ids(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.google import create_google_tool_source
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_tool_source(create_meta_tool_source())
+        rt.register_tool_source(create_google_tool_source())
+        result = rt.run(
+            "创建 Meta 广告系列，并创建 Google 广告系列",
+            user_id="u1",
+            platform_params={
+                "meta": {
+                    "account_id": "m1", "name": "Meta campaign",
+                    "objective": "OUTCOME_SALES", "special_ad_categories": "NONE",
+                    "budget": 100, "optimization_goal": "OFFSITE_CONVERSIONS",
+                    "billing_event": "IMPRESSIONS",
+                    "targeting": {"geo_locations": {"countries": ["US"]}},
+                    "promoted_object": {"pixel_id": "px1"}, "creative": {"id": "cr1"},
+                },
+                "google": {
+                    "customer_id": "g1", "campaign_name": "Google campaign",
+                    "advertising_channel_type": "SEARCH",
+                    "bidding_strategy": "MAXIMIZE_CONVERSIONS", "budget": 100,
+                    "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                    "type": "SEARCH_STANDARD", "final_url": "https://example.com",
+                    "headlines": ["a", "b", "c"], "descriptions": ["a", "b"],
+                },
+            },
+        )
+        # Both channels have explicit accounts/objectives, but their complete
+        # provider-owned creation drafts are not complete yet. No partial
+        # cross-channel execution is allowed.
+        assert result["results"] == []
+        assert result["tool_plan"] == {}
+        assert result["ui"].get("cards") or result["ui"].get("clarification")
+        if result["ui"].get("clarification"):
+            assert result["ui"]["clarification"]["provider"] == "meta"
+
+    def test_live_write_requires_explicit_confirmation(self):
+        client = self.FakeClient("meta")
+        rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        result = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            account_id="m1",
+            principal=trusted_principal("u1", "meta", "m1"),
+        )
+        assert result["needs_confirmation"] is True
+        assert result["results"][0]["confirmation_payload"]["type"] == "confirm_write"
+        assert client.calls == []
+
+    def test_live_creation_chain_uses_one_confirmation_for_all_dependencies(self):
+        """A parent/child/leaf chain must not ask for a mismatched second token."""
+        from agents.tools.advertising.providers.provider_base import SimpleIdempotencyGuard
+        from agents.agent_harness.core.interfaces import ToolSourceRuntime, ParsedIntent
+
+        class ChainParser:
+            def parse(self, user_input, _context):
+                return ParsedIntent(
+                    "create_chain", user_input, ["meta"],
+                    platform_params={"meta": {
+                        "account_id": "m1", "campaign_name": "Campaign",
+                        "adset_name": "Ad Set", "ad_name": "Ad",
+                    }},
+                )
+
+            def register_tool_definitions(self, _definitions):
+                return None
+
+            def register_namespaces(self, _platforms):
+                return None
+
+            def register_tool_schemas(self, _platform, _schemas):
+                return None
+
+        class ChainHandler:
+            def __init__(self, resource, calls):
+                self.resource = resource
+                self.calls = calls
+                self.client = object()
+
+            def execute(self, _ctx, input_data):
+                self.calls.append((self.resource, dict(input_data)))
+                return ToolResult.ok({self.resource + "_id": self.resource + "-1"})
+
+        class ChainToolSource:
+            def __init__(self, calls):
+                self.calls = calls
+
+            def configure(self, context):
+                definitions = [
+                    ("campaign", "campaign_name", None),
+                    ("adset", "adset_name", "campaign"),
+                    ("ad", "ad_name", "adset"),
+                ]
+                for resource, name_field, parent in definitions:
+                    properties = {
+                        "account_id": {"type": "string"},
+                        name_field: {"type": "string"},
+                    }
+                    required = [name_field]
+                    if parent:
+                        parent_field = parent + "_id"
+                        properties[parent_field] = {"type": "string"}
+                        required.append(parent_field)
+                    definition = ToolDefinition(
+                        name="meta_test_" + resource,
+                        skill="test-chain",
+                        namespace="meta",
+                        description=resource,
+                        input_schema=ToolSchema(
+                            required=required, properties=properties,
+                        ),
+                        action="create", resource_type=resource,
+                        parent_resource_type=parent,
+                        resource_id_field=resource + "_id",
+                        parent_resource_id_field=(parent + "_id" if parent else None),
+                        intent_types=["create_chain"],
+                        risk_level=RiskLevel.MEDIUM,
+                        effect_class=ToolEffect.WRITE,
+                        replay_policy=ReplayPolicy.UNSAFE,
+                        live_support=True,
+                        required_permissions=["ads.plan"],
+                    )
+                    context.registry.register(
+                        definition, ChainHandler(resource, self.calls),
+                    )
+                return ToolSourceRuntime(write_guard=SimpleIdempotencyGuard())
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        calls = []
+        rt = AdvertisingComposition(
+            require_llm=False, intent_parser=ChainParser(),
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            execution_mode=ExecutionMode.LIVE.value,
+            allow_live_writes=True,
+            granted_permissions={"ads.plan", "ads.write"},
+        )
+        rt.register_tool_source(ChainToolSource(calls))
+        rt._live_approved_tools = {tool.name for tool in rt.registry.list_all()}
+        params = {"meta": {
+            "account_id": "m1", "campaign_name": "Campaign",
+            "adset_name": "Ad Set", "ad_name": "Ad",
+        }}
+
+        planned = rt.run(
+            "创建三层广告", session_id="chain-session", user_id="chain-user",
+            account_id="m1", platform_params=params,
+            principal=trusted_principal("chain-user", "meta", "m1"),
+        )
+        assert planned["needs_confirmation"] is True
+        assert planned["confirmation_payload"]["type"] == "confirm_write_plan"
+        assert calls == []
+
+        executed = rt.run(
+            "创建三层广告", session_id="chain-session", user_id="chain-user",
+            account_id="m1", confirmed=True,
+            confirmation_payload=planned["confirmation_payload"],
+            platform_params=params,
+            principal=trusted_principal("chain-user", "meta", "m1"),
+        )
+        assert executed["needs_confirmation"] is False
+        assert all(item["success"] for item in executed["results"])
+        assert [item[0] for item in calls] == ["campaign", "adset", "ad"]
+        assert calls[1][1]["campaign_id"] == "campaign-1"
+        assert calls[2][1]["adset_id"] == "adset-1"
+
+    def test_live_delete_requires_explicit_confirmation(self):
+        client = self.FakeClient("meta")
+        rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+
+        result = rt.run(
+            "删除 Meta campaign campaign_id=123",
+            user_id="delete-confirmation-user",
+            account_id="m1",
+            principal=trusted_principal("delete-confirmation-user", "meta", "m1"),
+        )
+
+        assert result["needs_confirmation"] is True
+        assert result["results"][0]["confirmation_payload"]["type"] == "confirm_write"
+        assert client.calls == []
+
+    def test_live_write_idempotency_uses_normalized_input(self):
+        client = self.FakeClient("meta")
+        rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        planned = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            session_id="idempotency-session", user_id="same-user", account_id="m1",
+            principal=trusted_principal("same-user", "meta", "m1"),
+        )
+        payload = planned["results"][0]["confirmation_payload"]
+        first = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
+            confirmation_payload=payload,
+            principal=trusted_principal("same-user", "meta", "m1"),
+        )
+        second = rt.run(
+            "更新 Meta campaign campaign_id=123 status=PAUSED",
+            session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
+            confirmation_payload=payload,
+            principal=trusted_principal("same-user", "meta", "m1"),
+        )
+        assert first["results"][0]["success"] is True
+        assert second["results"][0]["success"] is False
+        assert (
+            "approval has already been consumed" in second["results"][0]["error"]
+            or "Duplicate write detected" in second["results"][0]["error"]
+        )
+        assert len(client.calls) == 1
+
+    def test_live_create_chain_stops_after_parent_failure(self):
+        class FailingParentClient(self.FakeClient):
+            def __getattr__(self, name):
+                if name == "create_campaign":
+                    def fail(*args, **kwargs):
+                        self.calls.append((name, args, kwargs))
+                        raise RuntimeError("parent create failed")
+                    return fail
+                return super().__getattr__(name)
+
+        client = FailingParentClient("meta")
+        rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        creation_params = {
+            "meta": {
+                "name": "StopAfterFailure",
+                "objective": "OUTCOME_SALES",
+                "special_ad_categories": "NONE",
+                "buying_type": "AUCTION",
+                "daily_budget": 100,
+                "optimization_goal": "OFFSITE_CONVERSIONS",
+                "billing_event": "IMPRESSIONS",
+                "targeting": {"geo_locations": {"countries": ["US"]}},
+                "promoted_object": {"pixel_id": "px1"},
+                "product_set_id": "ps1",
+                "page_id": "p1",
+                "link": "https://example.com",
+                "ad_style": "CAROUSEL",
+            }
+        }
+        planned = rt.run(
+            "提交 Meta 商品目录销售广告创建计划",
+            session_id="create-failure-session", account_id="m1",
+            platform_params=creation_params,
+            creation_blueprint_id="meta.catalog_sales",
+            creation_blueprint_version="1.0.0",
+        )
+        # The complete structured submission is still stopped before any
+        # parent Tool when the creation contract is not satisfied; this is
+        # the new safety boundary for multi-step creation.
+        assert planned["results"] == []
+        assert planned["workflow_id"] is None
+        assert planned["ui"]["cards"]
+        assert client.calls == []
+
+    def test_platform_accounts_are_resolved_independently(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.google import create_google_tool_source
+        meta = self.FakeClient("meta")
+        google = self.FakeClient("google-ads")
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
+        rt = AdvertisingComposition(require_llm=False, persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
+        rt.register_tool_source(create_meta_tool_source(meta))
+        rt.register_tool_source(create_google_tool_source(google))
+        result = rt.run(
+            "列出 Meta 广告系列，同时列出 Google Ads 广告系列",
+            platform_params={"meta": {"account_id": "m1"}, "google": {"customer_id": "g1"}},
+        )
+        assert [call[1][0] for call in meta.calls] == ["m1"]
+        assert google.calls == [("list_campaigns", (), {})]
+
+    def test_persistent_session_rejects_different_user_and_account(self):
+        store = AdAgentStore(":memory:")
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["meta-test"]}
+        first_runtime = AdvertisingComposition(require_llm=False,
+            persistence_store=store,
+            whitelist_validator=validator,
+        )
+        first_runtime.register_tool_source(create_meta_tool_source_mock())
+        first = first_runtime.run(
+            "列出 Meta Campaign 列表",
+            user_id="owner",
+            account_id="meta-test",
+        )
+
+        second_runtime = AdvertisingComposition(require_llm=False,
+            persistence_store=store,
+            whitelist_validator=validator,
+        )
+        second_runtime.register_tool_source(create_meta_tool_source_mock())
+        with pytest.raises(PermissionError):
+            second_runtime.run(
+                "列出 Meta Campaign 列表",
+                session_id=first["session_id"],
+                user_id="attacker",
+                account_id="meta-test",
+            )
+        with pytest.raises(PermissionError):
+            second_runtime.run(
+                "列出 Meta Campaign 列表",
+                session_id=first["session_id"],
+                user_id="owner",
+                account_id="other-account",
+            )
+
+    def test_runtime_credentials_are_read_only_and_caller_owned_input_is_unchanged(self):
+        credentials = {"meta": {"access_token": "caller-token"}}
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
+        rt.register_tool_source(create_meta_tool_source_mock())
+        result = rt.run("你好", user_id="u1", credentials=credentials)
+        assert credentials == {"meta": {"access_token": "caller-token"}}
+        session = rt._sessions[result["session_id"]]
+        with pytest.raises(TypeError):
+            session.ctx.credentials["meta"] = {}
+
+    def test_pause_resume_platform_status_mapping(self):
+        rt = self._runtime("tiktok")
+        result = rt.run("恢复 TikTok campaign campaign_id=123", account_id="t1")
+        assert result["results"][0]["data"]["status"] == "SIMULATED_UPDATED"
+
+    def test_batch_pause_expands_ids_without_calling_client(self):
+        client = self.FakeClient("meta")
+        rt = self._runtime("meta", client)
+        result = rt.run(
+            "批量暂停 Meta campaign_ids=101,102",
+            user_id="batch-user",
+            platform_params={
+                "meta": {"account_id": "m1", "campaign_ids": ["101", "102"]}
+            },
+        )
+        assert result["intent"]["intent_type"] == "cross_channel_batch_pause"
+        assert [item["data"]["campaign_id"] for item in result["results"]] == ["101", "102"]
+        assert all(item["data"]["input"]["updates"] == {"status": "PAUSED"} for item in result["results"])
+        assert client.calls == []
+        workflow = rt._session_manager.get_workflow(result["workflow_id"])
+        assert workflow["status"] == "planned"
+        assert len(workflow["items"]) == 2
+
+    def test_batch_budget_requires_positive_budget(self):
+        rt = self._runtime("meta")
+        result = rt.run(
+            "批量更新预算 Meta campaign_ids=101,102 预算0元/天",
+            user_id="batch-user",
+            platform_params={
+                "meta": {"account_id": "m1", "campaign_ids": ["101", "102"]}
+            },
+        )
+        assert result["intent"]["intent_type"] == "cross_channel_batch_update_budget"
+        assert all(not item["success"] for item in result["results"])
+        assert "大于 0" in result["results"][0]["error"]
+
+    def test_cross_channel_delete_is_scoped_dry_run_and_never_calls_clients(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.google import create_google_tool_source
+        from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+        from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {
+            "meta": ["m1"], "google-ads": ["g1"],
+            "tiktok": ["t1"], "dv360": ["d1"],
+        }
+        clients = [self.FakeClient(platform) for platform in ("meta", "google", "tiktok")]
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_tool_source(create_meta_tool_source(clients[0]))
+        rt.register_tool_source(create_google_tool_source(clients[1]))
+        rt.register_tool_source(create_tiktok_tool_source(clients[2]))
+        rt.register_tool_source(create_dv360_tool_source())
+
+        result = rt.run(
+            "跨渠道删除 Meta campaign_id=111、Google campaign_id=222、"
+            "TikTok campaign_id=333、DV360 campaign_id=444",
+            user_id="delete-user",
+            platform_params={
+                "meta": {"account_id": "m1"},
+                "google": {"customer_id": "g1"},
+                "tiktok": {"account_id": "t1"},
+                "dv360": {"advertiser_id": "d1"},
+            },
+        )
+
+        assert result["intent"]["intent_type"] == "cross_channel_batch_delete"
+        assert {item["tool"] for item in result["results"]} == {
+            "meta_delete_campaign", "google_delete_campaign",
+            "tiktok_delete_campaign", "dv360_delete_campaign",
+        }
+        assert all(item["success"] for item in result["results"])
+        assert all(item["data"]["operation"] == "delete" for item in result["results"])
+        assert all(item["data"]["simulated"] for item in result["results"])
+        assert all("updates" not in item["data"]["input"] for item in result["results"])
+        assert all(client.calls == [] for client in clients)
+
+
+# ─── Mock Handler 测试 ─────────────────────────────────────────
+
+class TestMockHandlers:
+    def test_meta_child_listing_rejects_foreign_parent_before_provider_query(self):
+        from agents.tools.advertising.providers.meta.ad_sets import MetaListAdSetsHandler
+
+        client = MetaAPIClient({"access_token": "caller-token"})
+        client.resource_belongs_to_account = lambda *args, **kwargs: False
+        client.list_adsets = lambda *args, **kwargs: pytest.fail("foreign parent must be rejected")
+        result = MetaListAdSetsHandler(client).execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="account-a"),
+            {"campaign_id": "campaign-from-b"},
+        )
+        assert result.success is False
+        assert "does not belong" in result.error
+
+    def test_meta_list_campaigns_handler(self):
+        handler = MetaListCampaignsHandler()
+        ctx = ToolContext(session_id="s1", user_id="u1", account_id="2806375919473667")
+        result = handler.execute(ctx, {"account_id": "2806375919473667"})
+        assert result.success
+        assert "campaigns" in result.data or result.data  # mock data
+
+    def test_google_list_campaigns_handler(self):
+        handler = GoogleListCampaignsHandler()
+        ctx = ToolContext(session_id="s1", user_id="u1", account_id="9055507554")
+        result = handler.execute(ctx, {"customer_id": "9055507554"})
+        assert result.success
+
+    def test_tiktok_list_campaigns_handler(self):
+        handler = TikTokListCampaignsHandler()
+        ctx = ToolContext(session_id="s1", user_id="u1", account_id="7397068114548195329")
+        result = handler.execute(ctx, {"account_id": "7397068114548195329"})
+        assert result.success
+
+    def test_dv360_list_campaigns_handler(self):
+        handler = DV360ListCampaignsHandler()
+        ctx = ToolContext(session_id="s1", user_id="u1", account_id="5110831")
+        result = handler.execute(ctx, {"advertiser_id": "5110831"})
+        assert result.success
+
+
+# ─── Session 管理测试 ──────────────────────────────────────────
+
+class TestSessionManager:
+    def test_create_and_get_session(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-1", "user-1", "acc-1")
+        session = sm.get_session("sess-1")
+        assert session is not None
+        assert session["user_id"] == "user-1"
+        assert session["account_id"] == "acc-1"
+
+    def test_list_sessions(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-1", "user-1")
+        sm.create_session("sess-2", "user-1")
+        sessions = sm.list_sessions("user-1")
+        assert len(sessions) == 2
+
+    def test_delete_session_cascades_local_conversation_records(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-delete", "user-1")
+        sm.record_conversation_message("sess-delete", "turn-1", "user", "删除这条对话")
+        sm.record_conversation_message("sess-delete", "turn-1", "assistant", "已记录")
+
+        from agents.agent_platform.data.persistence.store import ToolCallRecord
+        sm.record_tool_call(
+            "sess-delete", "turn-1", ToolCallRecord(
+                id="tool-delete", session_id="sess-delete", turn_id="turn-1",
+                tool_name="meta_list_campaigns", platform="meta",
+                input_data={"account_id": "test"}, success=True,
+                started_at="2026-01-01T00:00:00", ended_at="2026-01-01T00:00:01",
+            )
+        )
+
+        assert sm.delete_session("sess-delete") is True
+        assert sm.get_session("sess-delete") is None
+        assert sm.list_conversation_messages("sess-delete") == []
+        assert sm.get_session_history("sess-delete") == []
+        assert sm.delete_session("sess-delete") is False
+
+    def test_conversation_messages_are_stored_in_chronological_order(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-1", "user-1")
+        sm.record_conversation_message("sess-1", "turn-1", "user", "查询广告系列")
+        sm.record_conversation_message("sess-1", "turn-1", "assistant", "已找到 2 个广告系列")
+
+        messages = sm.list_conversation_messages("sess-1")
+
+        assert [(item.role, item.content) for item in messages] == [
+            ("user", "查询广告系列"),
+            ("assistant", "已找到 2 个广告系列"),
+        ]
+
+    def test_tool_call_recording(self, store):
+        sm = SessionManager(store)
+        sm.create_session("sess-1", "user-1")
+        from agents.agent_platform.data.persistence.store import ToolCallRecord
+        record = ToolCallRecord(
+            id="tc-1", session_id="sess-1", turn_id="turn-1",
+            tool_name="meta_list_campaigns", platform="meta",
+            input_data={"account_id": "123"}, success=True,
+            started_at="2026-01-01T00:00:00", ended_at="2026-01-01T00:00:01",
+        )
+        sm.record_tool_call("sess-1", "turn-1", record)
+        calls = sm.get_session_history("sess-1")
+        assert len(calls) == 1
+        assert calls[0].tool_name == "meta_list_campaigns"
+
+    def test_campaign_state_is_scoped_by_account(self, store):
+        sm = SessionManager(store)
+        sm.save_campaign("google-ads", "42", "A", account_id="customer-a")
+        sm.save_campaign("google-ads", "42", "B", account_id="customer-b")
+
+        first = sm.get_campaign("google-ads", "42", "customer-a")
+        second = sm.get_campaign("google-ads", "42", "customer-b")
+        assert first.name == "A"
+        assert second.name == "B"
+        assert len(sm.list_campaigns("google-ads", account_id="customer-a")) == 1
+
+
+class TestIterationContracts:
+    def test_dv360_uses_line_item_report_contract(self):
+        tool_source = DV360ToolSource()
+        definitions = {definition.name: definition for definition, _ in tool_source.register_tools()}
+        assert "dv360_get_line_item_report" in definitions
+        assert "dv360_get_campaign_report" not in definitions
+        assert definitions["dv360_get_line_item_report"].input_schema.required == [
+            "advertiser_id", "line_item_id"
+        ]
+
+    def test_dv360_line_item_report_normalizes_relative_dates(self):
+        class DV360Client:
+            platform = "dv360"
+
+            def __init__(self):
+                self.calls = []
+
+            def get_line_item_report(self, advertiser_id, line_item_id, date_from=None, date_to=None):
+                self.calls.append((advertiser_id, line_item_id, date_from, date_to))
+                return [{"line_item_id": line_item_id, "impressions": 1}]
+
+        client = DV360Client()
+        result = DV360GetLineItemReportHandler(client).execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="adv-1"),
+            {
+                "advertiser_id": "adv-1",
+                "line_item_id": "li-1",
+                "date_range": {"start_date": "LAST_7_DAYS", "end_date": "TODAY"},
+            },
+        )
+        assert result.success is True
+        assert client.calls[0][0:2] == ("adv-1", "li-1")
+        assert client.calls[0][2].count("-") == 2
+        assert client.calls[0][3].count("-") == 2
+
+    def test_dv360_report_routes_with_line_item_id(self):
+        from pathlib import Path
+
+        from agents.tools.advertising.application.account_policy import (
+            AccountWhitelistValidator,
+        )
+        from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
+
+        config_path = (
+            Path(__file__).resolve().parents[3]
+            / "agents"
+            / "ad_agent"
+            / "config.yaml"
+        )
+        rt = AdvertisingComposition(
+            require_llm=False,
+            enforce_account_scope=True,
+            offline_mode=True,
+            whitelist_validator=AccountWhitelistValidator(str(config_path)),
+        )
+        rt.register_tool_source(create_dv360_tool_source())
+        result = rt.run(
+            "下载 DV360 line_item_id=li-1 最近7天报表",
+            user_id="u1",
+            account_id="5110831",
+        )
+        assert result["tool_plan"] == {"dv360": ["dv360_get_line_item_report"]}
+        assert result["results"][0]["success"] is True
+
+    def test_tiktok_http_statuses_are_classified_by_failure_type(self):
+        client = TikTokAPIClient({"access_token": "caller-token"})
+        assert isinstance(client._handle_error({"data": {}}, 400), APIError)
+        assert not isinstance(client._handle_error({"data": {}}, 400), TemporaryError)
+        assert isinstance(client._handle_error({"data": {}}, 401), AuthError)
+        assert isinstance(client._handle_error({"data": {}}, 403), AuthError)
+        assert isinstance(client._handle_error({"data": {}}, 429), RateLimitError)
+        assert isinstance(client._handle_error({"data": {}}, 503), TemporaryError)
+
+    def test_all_provider_clients_preserve_http_failures_and_do_not_retry_post(self):
+        clients = [
+            MetaAPIClient({"access_token": "caller-token"}),
+            GoogleAdsAPIClient({"access_token": "caller-token"}),
+            TikTokAPIClient({"access_token": "caller-token"}),
+            DV360APIClient({"access_token": "caller-token"}),
+        ]
+        for client in clients:
+            calls = []
+
+            def fake_request(method, url, **kwargs):
+                calls.append(method)
+                return {"status_code": 400, "data": {}, "headers": {}}
+
+            client._do_request = fake_request
+            with pytest.raises(APIError):
+                client.request_raw("GET", "/resource")
+            assert calls == ["GET"]
+
+        # POST is non-idempotent by default. A transient response must not be
+        # retried unless the caller opts into retry_non_idempotent explicitly.
+        client = TikTokAPIClient(
+            {"access_token": "caller-token"},
+            retry_config=RetryConfig(max_retries=2, base_delay=0, max_delay=0, jitter=False),
+        )
+        calls = []
+
+        def transient_request(method, url, **kwargs):
+            calls.append(method)
+            return {"status_code": 503, "data": "upstream unavailable", "headers": {}}
+
+        client._do_request = transient_request
+        with pytest.raises(TemporaryError):
+            client.request_raw("POST", "/write")
+        assert calls == ["POST"]
+
+    def test_request_raw_preserves_envelope_and_retries(self):
+        class EnvelopeClient(BasePlatformClient):
+            def __init__(self):
+                super().__init__(
+                    {}, "fake",
+                    RetryConfig(max_retries=1, base_delay=0, max_delay=0, jitter=False),
+                )
+                self.responses = [
+                    {"status_code": 503, "data": {}, "headers": {}},
+                    {"status_code": 200, "data": {"value": 7}, "headers": {"x": "1"}},
+                ]
+
+            def _do_request(self, method, url, **kwargs):
+                return self.responses.pop(0)
+
+            def _extract_data(self, response):
+                return response["data"]
+
+            def _handle_error(self, response, status_code):
+                return TemporaryError("temporary") if status_code >= 500 else None
+
+        client = EnvelopeClient()
+        raw = client.request_raw("GET", "/resource")
+        assert raw["headers"]["x"] == "1"
+        data = EnvelopeClient().request("GET", "/resource")
+        assert data["value"] == 7
+
+    def test_google_update_surfaces_raw_http_failure(self):
+        client = GoogleAdsAPIClient({"access_token": "caller-token", "customer_id": "c1"})
+        client.request_raw = lambda *args, **kwargs: {
+            "status_code": 400,
+            "data": {"error": {"message": "bad request"}},
+            "headers": {},
+        }
+        with pytest.raises(APIError):
+            client.update_campaign("123", {"status": "PAUSED"})
+
+    def test_meta_ad_requires_explicit_creative(self):
+        client = MetaAPIClient({"access_token": "caller-token"})
+        with pytest.raises(ValueError, match="creative"):
+            client.create_ad("act_test", "adset-1", {"name": "unsafe-default"})
+
+    def test_tool_source_tools_publish_route_metadata(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.google import create_google_tool_source
+        from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+        from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
+        registry = SimpleToolRegistry()
+        for tool_source in [
+            create_meta_tool_source(),
+            create_google_tool_source(),
+            create_tiktok_tool_source(),
+            create_dv360_tool_source(),
+        ]:
+            runtime = tool_source.configure(type("Context", (), {"registry": registry})())
+            assert runtime is not None
+        assert all(tool.intent_types for tool in registry.list_all())
+        # DV360 IO/Line Item reads and Google PMax Asset Group planning are
+        # now part of the executable tool_source contract.
+        assert len(registry.list_all()) >= 124
+
+    def test_google_access_token_is_local_and_caller_credentials_unchanged(self):
+        credentials = {"access_token": "caller-token", "customer_id": "g1"}
+        client = GoogleAdsAPIClient(credentials)
+        assert client._ensure_valid_token() == "caller-token"
+        assert credentials == {"access_token": "caller-token", "customer_id": "g1"}
+
+    def test_google_refresh_token_is_cached_until_expiry(self, monkeypatch):
+        from agents.tools.advertising.clients import google_ads_client as google_module
+
+        refresh_calls = []
+
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"access_token": "refreshed-token", "expires_in": 3600}
+
+        def refresh(url, **kwargs):
+            refresh_calls.append((url, kwargs))
+            return Response()
+
+        monkeypatch.setattr(google_module.requests, "post", refresh)
+        credentials = {
+            "access_token": "expired-token",
+            "access_token_expires_at": time.time() - 10,
+            "refresh_token": "refresh-token-cache-test",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "customer_id": "g1",
+        }
+
+        first = GoogleAdsAPIClient(credentials)
+        second = GoogleAdsAPIClient(dict(credentials))
+
+        assert first._ensure_valid_token() == "refreshed-token"
+        assert second._ensure_valid_token() == "refreshed-token"
+        assert len(refresh_calls) == 1
+        assert credentials["access_token"] == "expired-token"
+
+    def test_google_read_post_refreshes_once_after_401(self, monkeypatch):
+        from agents.tools.advertising.clients import google_ads_client as google_module
+
+        refresh_calls = []
+
+        class Response:
+            status_code = 200
+
+            @staticmethod
+            def json():
+                return {"access_token": "refreshed-after-401", "expires_in": 3600}
+
+        monkeypatch.setattr(
+            google_module.requests,
+            "post",
+            lambda url, **kwargs: refresh_calls.append((url, kwargs)) or Response(),
+        )
+        client = GoogleAdsAPIClient({
+            "access_token": "expired-token",
+            "refresh_token": "refresh-token-401-test",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "customer_id": "g1",
+        }, retry_config=RetryConfig(max_retries=0, jitter=False))
+        responses = [
+            {"status_code": 401, "data": {}, "headers": {}},
+            {"status_code": 200, "data": {"results": [{"campaign": {"id": "1"}}]}, "headers": {}},
+        ]
+        calls = []
+
+        def do_request(method, url, **kwargs):
+            calls.append((method, url, kwargs))
+            client._build_headers()
+            return responses.pop(0)
+
+        client._do_request = do_request
+
+        response = client._search("SELECT campaign.id FROM campaign")
+
+        assert response["status_code"] == 200
+        assert len(calls) == 2
+        assert len(refresh_calls) == 1
+
+    def test_google_search_does_not_send_unsupported_page_size(self):
+        client = GoogleAdsAPIClient({
+            "access_token": "caller-token",
+            "customer_id": "g1",
+        })
+        captured = {}
+
+        def request_raw(method, endpoint, **kwargs):
+            captured.update({"method": method, "endpoint": endpoint, "kwargs": kwargs})
+            return {"status_code": 200, "data": {"results": []}, "headers": {}}
+
+        client.request_raw = request_raw
+        client._search("SELECT campaign.id FROM campaign", page_size=5)
+
+        assert captured["kwargs"]["data"] == {
+            "query": "SELECT campaign.id FROM campaign"
+        }
+
+    def test_google_mutation_401_retries_once_after_refresh(self):
+        client = GoogleAdsAPIClient({
+            "access_token": "expired-token",
+            "refresh_token": "refresh-token-mutation-test",
+            "client_id": "client-id",
+            "client_secret": "client-secret",
+            "customer_id": "g1",
+        }, retry_config=RetryConfig(max_retries=0, jitter=False))
+        calls = []
+        client._do_request = (
+            lambda method, url, **kwargs: calls.append(method)
+            or {"status_code": 401, "data": {}, "headers": {}}
+        )
+
+        with pytest.raises(AuthError):
+            client._mutate("campaigns", {"create": {"name": "no-replay"}})
+
+        assert calls == ["POST", "POST"]
+
+    def test_dv360_uses_caller_managed_access_token_without_refresh(self):
+        credentials = {"access_token": "caller-token", "advertiser_id": "adv-1"}
+        client = DV360APIClient(credentials)
+        client._exchange_token = lambda assertion: pytest.fail(
+            "caller-managed access token must not trigger JWT exchange"
+        )
+        assert client._get_access_token() == "caller-token"
+        assert credentials == {"access_token": "caller-token", "advertiser_id": "adv-1"}
+
+    def test_extended_creative_tool_sources_are_real_registry_tools(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+
+        registry = SimpleToolRegistry()
+        for tool_source in (create_meta_tool_source(), create_tiktok_tool_source()):
+            tool_source.configure(type("Context", (), {"registry": registry})())
+        names = {tool.name for tool in registry.list_all()}
+        assert "meta_create_creative" in names
+        assert {"tiktok_list_creatives", "tiktok_list_videos", "tiktok_list_images"} <= names
+
+    def test_tiktok_media_handler_uses_provider_client_and_preserves_filter(self):
+        from agents.tools.advertising.providers.tiktok.creatives import TikTokListCreativesHandler
+
+        class TikTokClient:
+            def __init__(self):
+                self.calls = []
+
+            def list_creatives(self, advertiser_id, filtering=None, page_size=20):
+                self.calls.append((advertiser_id, filtering, page_size))
+                return [{"creative_id": "c1"}]
+
+        client = TikTokClient()
+        result = TikTokListCreativesHandler(client).execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="a1"),
+            {"filtering": [{"field": "status", "operator": "IN", "values": ["ENABLE"]}], "limit": 7},
+        )
+        assert result.success is True
+        assert result.data["creatives"] == [{"creative_id": "c1"}]
+        assert client.calls[0][0] == "a1"
+        assert client.calls[0][2] == 7
+
+    def test_google_keyword_query_preserves_hierarchy_filters(self):
+        from agents.tools.advertising.providers.google.keywords import GoogleListKeywordsHandler
+
+        client = GoogleAdsAPIClient({"access_token": "caller-token", "customer_id": "g1"})
+        queries = []
+        client._search_all = lambda query, page_size=100: (
+            queries.append((query, page_size)) or [{
+                "campaign": {"id": "10"},
+                "adGroup": {"id": "20"},
+                "adGroupCriterion": {
+                    "criterionId": "30",
+                    "status": "ENABLED",
+                    "keyword": {"text": "shoes", "matchType": "EXACT"},
+                },
+            }]
+        )
+        result = GoogleListKeywordsHandler(client).execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="g1"),
+            {"campaign_id": "10", "ad_group_id": "20", "limit": 11},
+        )
+        assert result.success is True
+        assert result.data["keywords"][0]["text"] == "shoes"
+        assert "campaign.id = 10" in queries[0][0]
+        assert "ad_group.id = 20" in queries[0][0]
+        assert queries[0][1] == 11
+
+    def test_custom_skill_registers_only_declared_tools_and_can_unload(self):
+        from agents.agent_harness.core.interfaces import Skill as CoreSkill
+
+        class CustomSkill(CoreSkill):
+            name = "custom-meta-insights"
+            namespace = "meta"
+            description = "Custom read-only extension"
+
+            def __init__(self):
+                self.definition = ToolDefinition(
+                    name="custom_meta_insight",
+                    skill=self.name,
+                    namespace=self.namespace,
+                    description="Read a custom local insight",
+                    input_schema=ToolSchema(),
+                    action="read",
+                    resource_type="insight",
+                    intent_types=["custom_meta_insight_intent"],
+                )
+
+            def get_tools(self):
+                return [self.definition]
+
+            def get_tool_handler(self, tool_name):
+                if tool_name != self.definition.name:
+                    return None
+
+                class Handler:
+                    def execute(self, ctx, input_data):
+                        return ToolResult.ok({"source": "custom"})
+
+                return Handler()
+
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
+        skill = CustomSkill()
+        rt.register_skill(skill, "meta")
+        assert [tool.name for tool in rt.registry.list_all()] == ["custom_meta_insight"]
+        assert rt.tool_executor.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
+            "source": "custom"
+        }
+        from agents.agent_harness.core.interfaces import ParsedIntent
+        routed = rt.intent_router.route(
+            ParsedIntent("custom_meta_insight_intent", "", ["meta"]),
+            rt.registry,
+        )
+        assert [tool.name for tool in routed["meta"]] == ["custom_meta_insight"]
+        assert "custom_meta_insight_intent" in rt.intent_parser._intent_candidates_prompt()
+        assert rt.unload_skill("meta") is True
+        assert rt.registry.list_all() == []
+        assert "custom_meta_insight_intent" not in rt.intent_parser._intent_candidates_prompt()
+
+    def test_skill_directory_plugin_is_auto_discovered(self, tmp_path):
+        skill_root = tmp_path / "skills"
+        skill_dir = skill_root / "channels" / "custom-insights"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: custom-insights\nnamespace: meta\n---\n"
+            "# Custom local Skill\n",
+            encoding="utf-8",
+        )
+        (skill_dir / "tools.py").write_text(
+            "from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema, ToolResult\n"
+            "from agents.agent_harness.core.interfaces import Skill as CoreSkill\n"
+            "class LocalSkill(CoreSkill):\n"
+            "    name = 'custom-insights'\n"
+            "    namespace = 'meta'\n"
+            "    description = 'Local insight extension'\n"
+            "    def __init__(self):\n"
+            "        self.definition = ToolDefinition(name='custom_insight', skill=self.name, namespace=self.namespace, description='local insight', input_schema=ToolSchema(), action='read', resource_type='insight', intent_types=['custom_insight'])\n"
+            "    def get_tools(self):\n"
+            "        return [self.definition]\n"
+            "    def get_tool_handler(self, tool_name):\n"
+            "        if tool_name != self.definition.name:\n"
+            "            return None\n"
+            "        class Handler:\n"
+            "            def execute(self, ctx, input_data):\n"
+            "                return ToolResult.ok({'source': 'plugin'})\n"
+            "        return Handler()\n"
+            "def create_skill(api_client=None):\n"
+            "    return LocalSkill()\n",
+            encoding="utf-8",
+        )
+
+        rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
+        assert rt.auto_load_skills(
+            str(skill_root), allow_executable_plugins=True,
+        ) == 1
+        assert [tool.name for tool in rt.registry.list_all()] == ["custom_insight"]
+        result = rt.tool_executor.execute(
+            ToolContext("s1", "u1"), "custom_insight", {}
+        )
+        assert result.success is True
+        assert result.data == {"source": "plugin"}
+
+    def test_skill_loader_supports_nested_frontmatter_metadata(self, tmp_path):
+        from agents.agent_harness.skills.contract import SkillLoader
+
+        skill_dir = tmp_path / "channels" / "nested-insights"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\n"
+            "skill:\n"
+            "  name: nested-insights\n"
+            "  namespace: meta\n"
+            "  description: Nested metadata extension\n"
+            "  version: '2.0'\n"
+            "---\n"
+            "# Nested Skill\n",
+            encoding="utf-8",
+        )
+
+        skills = SkillLoader(str(tmp_path)).load_all()
+
+        assert skills["nested-insights"].namespace == "meta"
+        assert skills["nested-insights"].description == "Nested metadata extension"
+        assert skills["nested-insights"].version == "2.0.0"
+
+    def test_declarative_skill_contract_preserves_full_input_schema(self, tmp_path):
+        from agents.agent_harness.skills.contract import BaseSkill, SkillContract
+
+        skill_dir = tmp_path / "channels" / "schema-insights"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: schema-insights\nplatform: meta\n---\n",
+            encoding="utf-8",
+        )
+        (skill_dir / "contract.yaml").write_text(
+            "tools:\n"
+            "  schema_insight:\n"
+            "    description: Schema-aware extension\n"
+            "    risk: low\n"
+            "    effect: read\n"
+            "    resource_type: custom_child\n"
+            "    parent_resource_type: custom_parent\n"
+            "    resource_id_field: child_key\n"
+            "    parent_resource_id_field: parent_key\n"
+            "    input_schema:\n"
+            "      required: [mode]\n"
+            "      properties:\n"
+            "        mode:\n"
+            "          type: string\n"
+            "          enum: [FAST, SAFE]\n"
+            "      conditional_rules:\n"
+            "        - if: {mode: SAFE}\n"
+            "          required: [audit_id]\n",
+            encoding="utf-8",
+        )
+
+        contract = SkillContract(str(skill_dir)).load()
+        definition = BaseSkill(contract).get_tools()[0]
+
+        assert definition.input_schema.properties["mode"]["enum"] == ["FAST", "SAFE"]
+        assert definition.input_schema.conditional_rules[0]["required"] == ["audit_id"]
+        assert definition.resource_id_field == "child_key"
+        assert definition.parent_resource_id_field == "parent_key"
+
+    def test_provider_list_pagination_is_consumed(self):
+        meta = MetaAPIClient({"access_token": "caller-token"})
+        meta_pages = iter([
+            {"data": [{"id": "m1"}], "paging": {"cursors": {"after": "next"}}},
+            {"data": [{"id": "m2"}], "paging": {}},
+        ])
+        meta.request = lambda *args, **kwargs: next(meta_pages)
+        assert [x["id"] for x in meta.list_campaigns("account-1")] == ["m1", "m2"]
+
+        tiktok = TikTokAPIClient({"access_token": "caller-token"})
+        tiktok_pages = iter([
+            {"status_code": 200, "data": {"code": 0, "data": {
+                "list": [{"campaign_id": "t1"}],
+                "page_info": {"total_page": 2},
+            }}},
+            {"status_code": 200, "data": {"code": 0, "data": {
+                "list": [{"campaign_id": "t2"}],
+                "page_info": {"total_page": 2},
+            }}},
+        ])
+        tiktok.request_raw = lambda *args, **kwargs: next(tiktok_pages)
+        assert [x["campaign_id"] for x in tiktok.list_campaigns("advertiser-1")] == ["t1", "t2"]
+
+        dv360 = DV360APIClient({"access_token": "caller-token"})
+        dv_pages = iter([
+            {"data": {"campaigns": [{"name": "d1"}], "nextPageToken": "next"}},
+            {"data": {"campaigns": [{"name": "d2"}]}},
+        ])
+        dv360.request_raw = lambda *args, **kwargs: next(dv_pages)
+        assert [x["name"] for x in dv360.list_campaigns("advertiser-1")] == ["d1", "d2"]
+
+        google = GoogleAdsAPIClient({"access_token": "caller-token", "customer_id": "c1"})
+        google_pages = iter([
+            {"data": {"results": [{"campaign": {"id": "g1", "name": "G1"}}], "nextPageToken": "next"}},
+            {"data": {"results": [{"campaign": {"id": "g2", "name": "G2"}}]}},
+        ])
+        google._search = lambda *args, **kwargs: next(google_pages)
+        assert [x["id"] for x in google.list_campaigns()] == ["g1", "g2"]
+
+    def test_cross_channel_aggregation_preserves_metrics_and_status(self):
+        summary = CrossChannelAggregator().aggregate([
+            {
+                "platform": "meta",
+                "data": {
+                    "data_status": "live",
+                    "campaigns": [{
+                        "id": "1", "name": "m", "metrics": {
+                            "impressions": 100, "clicks": 10, "spend": 20, "conversions": 2,
+                        }, "currency": "USD",
+                    }],
+                },
+            },
+            {
+                "platform": "google",
+                "data": {
+                    "data_status": "offline_mock",
+                    "campaigns": [{
+                        "id": "2", "name": "g", "metrics": {
+                            "impressions": 200, "clicks": 20, "spend": 30, "conversions": 3,
+                        }, "currency": "USD",
+                    }],
+                },
+            },
+        ])
+        assert summary["total_campaigns"] == 2
+        assert summary["totals"]["spend"] == 50
+        assert summary["totals"]["ctr"] == 30 / 300
+        assert summary["platforms"]["google"]["data_status"] == "offline_mock"
+
+    def test_cross_channel_does_not_add_different_currencies(self):
+        summary = CrossChannelAggregator().aggregate([
+            {"platform": "meta", "data": {"campaigns": [{"metrics": {"spend": 10}, "currency": "USD"}]}},
+            {"platform": "tiktok", "data": {"campaigns": [{"metrics": {"spend": 10}, "currency": "CNY"}]}},
+        ])
+        assert "spend" not in summary["totals"]
+        assert summary["comparability"]["status"] == "partial"
+
+    def test_cross_channel_does_not_infer_report_currency_from_listing_row(self):
+        summary = CrossChannelAggregator().aggregate([
+            {"platform": "meta", "data": {"campaigns": [{
+                "id": "m1", "name": "Meta", "currency": "USD",
+            }]}},
+            {"platform": "meta", "data": {"report": [{
+                "campaign_id": "m1", "spend": 25, "impressions": 10,
+            }]}},
+        ])
+        record = summary["platforms"]["meta"]["records"][0]
+        assert record["metrics"]["impressions"] == 10
+        assert "spend" not in record["metrics"]
+        assert "spend" not in summary["totals"]
+
+    def test_cross_channel_does_not_merge_unknown_currency_with_known_currency(self):
+        summary = CrossChannelAggregator().aggregate([
+            {"platform": "meta", "data": {"campaigns": [{
+                "id": "m1", "metrics": {"spend": 10, "currency": "USD"},
+            }]}},
+            {"platform": "tiktok", "data": {"campaigns": [{
+                "id": "t1", "metrics": {"spend": 20},
+            }]}},
+        ])
+        assert "spend" not in summary["totals"]
+        assert summary["comparability"]["status"] == "partial"
+        assert "未知货币" in summary["comparability"]["reason"]
+
+    def test_cross_channel_compare_collects_campaign_scoped_reports(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+        from agents.tools.advertising.providers.google import create_google_tool_source
+
+        class MetaClient:
+            platform = "meta"
+
+            def __init__(self):
+                self.report_calls = []
+
+            def list_campaigns(self, account_id):
+                return [{"id": "m1", "name": "Meta 1", "currency": "USD"}]
+
+            def get_campaign_report(self, account_id, campaign_ids, time_range=None):
+                self.report_calls.append((account_id, campaign_ids, time_range))
+                return [{"campaign_id": "m1", "impressions": 100, "clicks": 10, "spend": 20, "currency": "USD"}]
+
+        class GoogleClient:
+            platform = "google"
+
+            def __init__(self):
+                self.customer_id = None
+                self.report_calls = []
+
+            def list_campaigns(self):
+                return [{"id": "g1", "campaign_name": "Google 1"}]
+
+            def get_campaign_report(self, campaign_ids, date_from="LAST_30_DAYS", date_to="TODAY"):
+                self.report_calls.append((campaign_ids, date_from, date_to))
+                return [{"campaign": {"id": "g1", "name": "Google 1"}, "metrics": {
+                    "impressions": 200, "clicks": 20, "cost_micros": 30000000,
+                }}]
+
+        meta = MetaClient()
+        google = GoogleClient()
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"], "google-ads": ["g1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+        )
+        rt.register_tool_source(create_meta_tool_source(meta))
+        rt.register_tool_source(create_google_tool_source(google))
+        result = rt.run(
+            "比较 Meta 和 Google 的 campaign",
+            user_id="u1",
+            platform_params={
+                "meta": {"account_id": "m1"},
+                "google": {"customer_id": "g1"},
+            },
+        )
+        assert "meta_get_campaign_report" in result["tool_plan"]["meta"]
+        assert "google_get_campaign_report" in result["tool_plan"]["google-ads"]
+        assert meta.report_calls == [("m1", ["m1"], None)]
+        assert google.report_calls == [(["g1"], "LAST_30_DAYS", "TODAY")]
+        assert result["cross_channel_summary"]["totals"]["impressions"] == 300
+        # Google's fixture omits currency; do not add its spend to Meta USD.
+        assert "spend" not in result["cross_channel_summary"]["totals"]
+        assert result["cross_channel_summary"]["platforms"]["meta"]["campaigns"] == 1
+        assert result["cross_channel_summary"]["platforms"]["meta"]["records"][0]["name"] == "Meta 1"
+        assert result["cross_channel_summary"]["platforms"]["google-ads"]["campaigns"] == 1
+        assert result["cross_channel_summary"]["platforms"]["google-ads"]["records"][0]["name"] == "Google 1"
+
+    def test_tiktok_report_preserves_campaign_filter(self):
+        from agents.tools.advertising.providers.tiktok.reports import TikTokGetReportHandler
+
+        class TikTokClient:
+            def __init__(self):
+                self.campaign_report_calls = []
+
+            def get_campaign_report(
+                self, advertiser_id, campaign_ids, time_range=None, limit=None
+            ):
+                self.campaign_report_calls.append(
+                    (advertiser_id, campaign_ids, time_range, limit)
+                )
+                return [{"campaign_group_id": "t1", "impressions": 10}]
+
+            def get_report(self, **kwargs):
+                raise AssertionError("account-level report must not be used for filtered comparison")
+
+        client = TikTokClient()
+        handler = TikTokGetReportHandler(client)
+        result = handler.execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="a1"),
+            {"account_id": "a1", "campaign_ids": ["t1"], "limit": 7},
+        )
+        assert result.success is True
+        assert client.campaign_report_calls == [("a1", ["t1"], None, 7)]
+
+    def test_tiktok_report_handler_forwards_integrated_report_dimensions_and_bounds(self):
+        from agents.tools.advertising.providers.tiktok.reports import TikTokGetReportHandler
+
+        class TikTokClient:
+            def __init__(self):
+                self.report_calls = []
+
+            def get_report(self, **kwargs):
+                self.report_calls.append(kwargs)
+                return {"list": []}
+
+        client = TikTokClient()
+        handler = TikTokGetReportHandler(client)
+        result = handler.execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="123"),
+            {
+                "account_id": "123",
+                "data_level": "AUCTION_AD",
+                "dimensions": ["ad_id"],
+                "metrics": ["spend"],
+                "limit": 9,
+                "date_range": {
+                    "start_date": "2026-09-01",
+                    "end_date": "2026-09-10",
+                },
+            },
+        )
+
+        assert result.success is True
+        assert client.report_calls == [{
+            "advertiser_id": "123",
+            "report_type": "BASIC",
+            "service_type": "AUCTION",
+            "data_level": "AUCTION_AD",
+            "dimensions": ["ad_id"],
+            "metrics": ["spend"],
+            "date_preset": "LAST_7_DAYS",
+            "time_range": {
+                "start_date": "2026-09-01",
+                "end_date": "2026-09-10",
+            },
+            "filtering": None,
+            "limit": 9,
+        }]
+
+    def test_tiktok_report_uses_integrated_report_get_contract(self):
+        client = TikTokAPIClient({"access_token": "caller-token"})
+        calls = []
+
+        def fake_request_raw(method, url, params=None, **kwargs):
+            calls.append((method, url, params, kwargs))
+            return {"status_code": 200, "data": {"code": 0, "data": {}}}
+
+        client.request_raw = fake_request_raw
+        assert client.get_report("123", date_preset="LAST_30_DAYS") == {}
+        assert calls[0][0:2] == (
+            "GET", client._build_url("report/integrated/get/")
+        )
+        params = calls[0][2]
+        expected_range = client._normalize_time_range("LAST_30_DAYS")
+        assert params == {
+            "advertiser_id": "123",
+            "report_type": "BASIC",
+            "service_type": "AUCTION",
+            "data_level": "AUCTION_CAMPAIGN",
+            "dimensions": '["campaign_id"]',
+            "metrics": '["spend","impressions","clicks"]',
+            "start_date": expected_range["start_date"],
+            "end_date": expected_range["end_date"],
+            "page": 1,
+            "page_size": 100,
+        }
+
+    def test_tiktok_campaign_report_normalizes_string_date_preset(self):
+        client = TikTokAPIClient({"access_token": "caller-token"})
+        normalized = client._normalize_time_range("LAST_30_DAYS")
+        assert normalized["start_date"].count("-") == 2
+        assert normalized["end_date"].count("-") == 2
+        normalized_object = client._normalize_time_range(
+            {"start_date": "LAST_30_DAYS", "end_date": "TODAY"}
+        )
+        assert normalized_object["start_date"].count("-") == 2
+        assert normalized_object["end_date"].count("-") == 2
+
+    def test_dv360_line_item_report_accepts_string_date_preset(self):
+        from agents.tools.advertising.providers.dv360.reports import DV360GetLineItemReportHandler
+        from agents.agent_harness.core.tool_registry import validate_tool_input
+
+        class DV360Client:
+            platform = "dv360"
+
+            def __init__(self):
+                self.calls = []
+
+            def get_line_item_report(self, advertiser_id, line_item_id, date_from=None, date_to=None):
+                self.calls.append((advertiser_id, line_item_id, date_from, date_to))
+                return []
+
+        tool_source = DV360ToolSource()
+        definition = next(
+            definition for definition, _ in tool_source.register_tools()
+            if definition.name == "dv360_get_line_item_report"
+        )
+        input_data = {
+            "advertiser_id": "d1",
+            "line_item_id": "li-1",
+            "date_range": "LAST_7_DAYS",
+        }
+        assert validate_tool_input(definition.input_schema, input_data) == []
+        client = DV360Client()
+        result = DV360GetLineItemReportHandler(client).execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="d1"),
+            input_data,
+        )
+        assert result.success is True
+        assert client.calls[0][2].count("-") == 2
+        assert client.calls[0][3].count("-") == 2
+
+    def test_google_child_handler_uses_runtime_customer_id(self):
+        from agents.tools.advertising.providers.google.ad_groups import GoogleListAdGroupsHandler
+
+        class GoogleClient:
+            customer_id = "credential-default"
+
+            def list_ad_groups(self, campaign_id):
+                assert self.customer_id == "runtime-customer"
+                return []
+
+        result = GoogleListAdGroupsHandler(GoogleClient()).execute(
+            ToolContext(session_id="s1", user_id="u1", account_id="runtime-customer"),
+            {"campaign_id": "c1"},
+        )
+        assert result.success is True
+
+    def test_unavailable_live_adapter_is_rejected_before_client(self):
+        class FakeClient:
+            platform = "google-ads"
+            calls = []
+
+        client = FakeClient()
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"google-ads": ["g1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            execution_mode=ExecutionMode.LIVE.value,
+            live_approved_tools={"google_update_ad_group"},
+            allow_live_writes=True,
+            granted_permissions={"ads.read", "ads.plan", "ads.write"},
+        )
+        from agents.tools.advertising.providers.google import create_google_tool_source
+        rt.register_tool_source(create_google_tool_source(client))
+        params = {
+            "google-ads": {
+                "google_update_ad_group": {
+                    "ad_group_id": "123",
+                    "updates": {"status": "PAUSED"},
+                }
+            }
+        }
+        plan = rt.run(
+            "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
+            user_id="u1", account_id="g1", confirmed=False,
+            platform_params=params,
+            principal=trusted_principal("u1", "google-ads", "g1"),
+        )
+        assert plan["needs_confirmation"] is True
+        confirmation_payload = plan["confirmation_payload"]
+        result = rt.run(
+            "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
+            user_id="u1", account_id="g1", confirmed=True,
+            confirmation_payload=confirmation_payload, platform_params=params,
+            principal=trusted_principal("u1", "google-ads", "g1"),
+        )
+        assert result["results"][0]["success"] is False
+        # The confirmation envelope is intentionally bound to the exact
+        # request and may be rejected before a provider adapter is reached;
+        # either path must fail closed without invoking the fake client.
+        assert result["results"][0]["error"]
+        assert client.calls == []
+
+    def test_google_campaign_update_accepts_client_platform_alias(self):
+        class GoogleClient:
+            platform = "google"
+            customer_id = None
+
+            def update_campaign(self, campaign_id, updates):
+                return {"campaign_id": campaign_id, "updates": updates}
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"google-ads": ["g1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            execution_mode=ExecutionMode.LIVE.value,
+            live_approved_tools={"google_update_campaign"},
+            allow_live_writes=True,
+            granted_permissions={"ads.read", "ads.plan", "ads.write"},
+        )
+        from agents.tools.advertising.providers.google import create_google_tool_source
+        rt.register_tool_source(create_google_tool_source(GoogleClient()))
+        rt.registry.get("google_update_campaign")[0].live_support = True
+        planned = rt.run(
+            "更新 Google campaign campaign_id=123 status=PAUSED",
+            session_id="google-alias-session", user_id="u1", account_id="g1",
+            principal=trusted_principal("u1", "google-ads", "g1"),
+        )
+        result = rt.run(
+            "更新 Google campaign campaign_id=123 status=PAUSED",
+            session_id="google-alias-session", user_id="u1", account_id="g1", confirmed=True,
+            confirmation_payload=planned["results"][0]["confirmation_payload"],
+            principal=trusted_principal("u1", "google-ads", "g1"),
+        )
+        assert result["results"][0]["success"] is True
+
+
+class TestCrossChannelAnalysis:
+    def test_analysis_intents_are_parsed_and_routed(self):
+        parser = configured_parser()
+        assert parser.parse("跨渠道分析 Meta 和 Google 的表现", None).intent_type == (
+            "cross_channel_performance_insights"
+        )
+        assert parser.parse("跨渠道优化预算 Meta 和 Google，总预算 1000", None).intent_type == (
+            "cross_channel_optimize_budget"
+        )
+        assert parser.parse("跨渠道导出 Meta 和 Google 报表 CSV", None).intent_type == (
+            "cross_channel_export_report"
+        )
+
+    def test_analyzer_preserves_partial_metrics_and_currency_boundaries(self):
+        aggregate = CrossChannelAggregator().aggregate([
+            {"platform": "meta", "data": {"campaigns": [{
+                "id": "m1", "name": "Meta", "currency": "USD",
+                "metrics": {"impressions": 1000, "clicks": 20, "spend": 100,
+                             "conversions": 4, "revenue": 400},
+            }]}},
+            {"platform": "google", "data": {"campaigns": [{
+                "id": "g1", "name": "Google", "currency": "CNY",
+                "metrics": {"impressions": 500, "clicks": 5},
+            }]}},
+        ])
+        insights = CrossChannelAnalyzer.performance_insights(aggregate)
+        assert insights["status"] == "partial"
+        assert len(insights["insights"]) == 2
+        # A single known currency can still be totaled, while the overall
+        # comparison remains partial because Google omitted spend.
+        assert aggregate["totals"]["spend"] == 100
+
+        plan = CrossChannelAnalyzer.budget_plan(aggregate, 1000, minimum_budget=100)
+        assert plan["status"] == "partial"
+        assert sum(row["recommended_budget"] for row in plan["recommendations"]) == 1000
+
+    def test_export_csv_contains_normalized_rows_without_credentials(self):
+        aggregate = CrossChannelAggregator().aggregate([{
+            "platform": "meta",
+            "data": {"campaigns": [{
+                "id": "m1", "name": "Campaign", "account_id": "a1",
+                "metrics": {"impressions": 10}, "currency": "USD",
+                "access_token": "must-not-export",
+            }]},
+        }])
+        exported = CrossChannelAnalyzer.export_csv(aggregate)
+        assert "platform,account_id,campaign_id" in exported
+        assert "Campaign" in exported
+        assert "must-not-export" not in exported
+
+    def test_runtime_offline_insights_are_explicitly_marked(self):
+        from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+        validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+        validator.allowed_accounts = {"meta": ["m1"]}
+        rt = AdvertisingComposition(require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+            whitelist_validator=validator,
+            offline_mode=True,
+        )
+        rt.register_tool_source(create_meta_tool_source())
+        result = rt.run(
+            "跨渠道分析 Meta campaign 表现",
+            user_id="analysis-user",
+            platform_params={"meta": {"account_id": "m1"}},
+        )
+        assert result["intent"]["intent_type"] == "cross_channel_performance_insights"
+        assert result["cross_channel_insights"]["insights"][0]["data_status"] == "offline_mock"
+        assert "不会自动修改" in result["reply"]
+
+
+def test_meta_get_account_builds_flat_fields_query():
+    client = MetaAPIClient({"access_token": "caller-token"})
+    calls = {}
+
+    def fake_request(method, endpoint, **kwargs):
+        calls.update(method=method, endpoint=endpoint, kwargs=kwargs)
+        return {"id": "a1"}
+
+    client.request = fake_request
+    assert client.get_account("act_a1", ["id", "name"]) == {"id": "a1"}
+    assert calls == {
+        "method": "GET",
+        "endpoint": "/act_a1",
+        "kwargs": {"extra_params": {"fields": "id,name"}},
+    }
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

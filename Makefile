@@ -7,32 +7,32 @@ ad-agent-python-version:
 	@$(AD_AGENT_PYTHON) --version
 
 ad-agent-install:
-	@$(AD_AGENT_PYTHON) -m pip install -r agents/ad_agent/requirements.txt
+	@$(AD_AGENT_PYTHON) -m pip install -r requirements.txt
 
 ad-agent-run:
-	@$(AD_AGENT_PYTHON) -m uvicorn agents.ad_agent.api_server:app --host 127.0.0.1 --port 8765
+	@$(AD_AGENT_PYTHON) -m uvicorn agents.deployments.advertising.api_server:app --host 127.0.0.1 --port 8765
 
 ad-agent-test:
-	@$(AD_AGENT_TEST_ENV) $(AD_AGENT_PYTHON) -m pytest agents/ad_agent/tests -q
+	@$(AD_AGENT_TEST_ENV) $(AD_AGENT_PYTHON) -m pytest agents/tests -q
 
 ad-agent-compile:
-	@$(AD_AGENT_PYTHON) -m compileall -q agents/ad_agent
+	@$(AD_AGENT_PYTHON) -m compileall -q agents scripts/advertising
 
 ad-agent-audit:
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/audit_provider_tools.py
+	@$(AD_AGENT_PYTHON) scripts/advertising/audit_provider_tools.py
 
 ad-agent-validate:
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/validate_contracts.py --check-snapshot agents/ad_agent/contracts/builtin_tools.json
+	@$(AD_AGENT_PYTHON) scripts/advertising/validate_contracts.py --check-snapshot agents/tools/advertising/contracts/builtin_tools.json
 
 ad-agent-knowledge-check:
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/validate_knowledge_quality.py
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/audit_knowledge_base.py
+	@$(AD_AGENT_PYTHON) scripts/advertising/validate_knowledge_quality.py
+	@$(AD_AGENT_PYTHON) scripts/advertising/audit_knowledge_base.py
 
 ad-agent-reliability-evidence:
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/production_reliability_evidence.py
+	@$(AD_AGENT_PYTHON) scripts/advertising/production_reliability_evidence.py
 
 ad-agent-reliability-evidence-mysql:
-	@$(AD_AGENT_PYTHON) agents/ad_agent/scripts/production_reliability_evidence.py --backend mysql
+	@$(AD_AGENT_PYTHON) scripts/advertising/production_reliability_evidence.py --backend mysql
 
 ad-agent-check: ad-agent-python-version ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-test
 	@git diff --check

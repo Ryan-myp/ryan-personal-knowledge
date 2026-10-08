@@ -28,12 +28,12 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 执行模式和取消/租约丢失信号。应用只向 Harness 注入通用 Turn Handler；广告不再
 拥有自己的 Pipeline、Stages 或第二套回合状态机。
 
-- 业务 Skill 不得直接 import `api_clients/`、持有渠道凭证或自己发 HTTP 请求。
-- `runtime/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。
-- `core/` 只依赖统一的 Tool/Executor 契约；渠道特有字段、枚举和条件规则放在对应 Tool schema。
-- 所有可部署扩展必须通过 `core.plugins.PluginManifest` 和 `PluginRegistry` 声明唯一 ID、版本、贡献类型、依赖、来源和可信级别；Tool Source、Feature、Renderer、受信任 Skill 扩展与托管 Skill 不得各自定义一套生命周期。
+- 业务 Skill 不得直接 import `agents/tools/advertising/clients/`、持有渠道凭证或自己发 HTTP 请求。
+- `agents/agent_harness/` 不得为单个业务流程硬编码 Google、Meta、TikTok 或 DV360 的分支。
+- `agents/agent_harness/` 只依赖统一的 Tool/Executor 契约；渠道特有字段、枚举和条件规则放在对应 Provider Tool schema。
+- 所有可部署扩展必须通过 `agents.agent_harness.core.plugins.PluginManifest` 和 `PluginRegistry` 声明唯一 ID、版本、贡献类型、依赖、来源和可信级别；Tool Source、Feature、Renderer、受信任 Skill 扩展与托管 Skill 不得各自定义一套生命周期。
 - 可部署插件包使用根目录 `plugin.manifest.json`；Loader 必须校验文件清单、摘要和可选签名，禁止仅凭 `entrypoint` 自动导入。托管 Skill 不要求该文件，也不能借此获得代码执行权限。
-- `user_skills/` 和管理上传的 Skill 只能提供上下文；不能借助 `tools.py`、`scripts/` 或 `workflow.yaml` 绕过 registry。
+- `agents/skills/advertising/` 和管理上传的 Skill 只能提供上下文；不能借助包内 `scripts/` 或 `workflow.yaml` 绕过 registry。
 - LLM Parser 的意图目录由 Registry 中已注册 Tool 的 `intent_types`、description、action 和 resource 元数据生成；新增自定义意图必须随 Tool 声明，禁止在中心 Parser 增加意图分支。
 
 ## 新增能力的落点
@@ -42,7 +42,7 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 
 1. 在对应 Provider Module/Connector 包中增加 Tool 定义和固定 Executor；方法名不能由用户输入决定。
 2. 补齐输入 schema、枚举/条件依赖、权限、effect、风险、重放策略、超时、输出上限、契约版本和 Provider API 版本。
-3. 在必要时扩展 `api_clients/<provider>/` 的版本化适配器；升级 API 时保留兼容 contract 或明确升级 contract version。
+3. 在必要时扩展 `agents/tools/advertising/clients/<provider>/` 的版本化适配器；升级 API 时更新其 Tool contract version。
 4. 通过 Tool Source/Registry 注册；广告内置渠道可以继续由 Tool Source factory 兼容发现，不在上层 Skill 或 Router 新增渠道硬编码引用。
 5. 补充 provider payload、权限/账户范围、dry-run、幂等、失败恢复和审计测试，并运行 `scripts/audit_provider_tools.py`。
 
@@ -61,7 +61,7 @@ Skill 描述如何理解和编排业务；Tool 描述一个可校验、可授权
 - 管理 API 接受完整标准 Skill 目录快照，保留 `SKILL.md`、`references/`、`scripts/`、`assets/`、`evals/` 等文件并做路径、大小、编码和 digest 校验。
 - 版本发布只激活不可变快照；Runtime 加载的是 advisory context，不会将用户包转换成 Tool。
 - 托管 Skill 只能登记为不可执行的 advisory Plugin；只有经过部署审核的 trusted source Plugin 才能携带生命周期对象，且其 Tool 仍必须经过 Runtime 的统一执行门禁。
-- Skill-up 的 `ad-agent-runtime` Engine 测试真实 Runtime/Tool Source dry-run 路由。
+- Skill-up 的 `ad-agent-runtime` Engine 使用 `agents/evals/advertising/skill_up_engine.py` 测试真实 Platform/Harness 与 Tool Source 的 dry-run 路由。
 - `claude_sdk` Engine 使用 Anthropic Python SDK 测试自然语言 Skill 效果。它可以读取 Skill 文本、受控只读文件和可信 Tool 描述，但不执行 Tool、不连接 MCP、不接收广告凭证。
 - Skill-up adapter 由平台生成，用户只能选择受控 Engine 和参数；不得把任意命令、judge script 或环境变量变成管理 API 能力。
 
@@ -82,4 +82,4 @@ make ad-agent-check
 git diff --check
 ```
 
-涉及 Skill-up 时再运行 `agents/ad_agent/evals/skill-up/run.sh`；涉及 API/存储时必须覆盖租户隔离、版本不可变性和失败恢复测试。
+涉及 Skill-up 时再运行 `agents/evals/advertising/skill-up/run.sh`；涉及 API/存储时必须覆盖租户隔离、版本不可变性和失败恢复测试。

@@ -1,0 +1,17 @@
+recursive-include agents/tools/advertising *.json *.yaml *.yml *.md
+recursive-include agents/skills *.md *.yaml *.yml *.json *.py *.sh *.txt *.png *.jpg *.svg
+recursive-include agents/knowledge *.md *.json *.yaml *.yml
+recursive-include agents/deployments/advertising/static *.css *.js
+recursive-include agents/deployments/advertising/templates *.html
+include agents/ad_agent/config.yaml
+include agents/ad_agent/.env.example
+include agents/docs/advertising/README.md
+include requirements.txt
+include setup.py
+include pyproject.toml
+include MANIFEST.in
+prune agents/tests
+prune agents/agent_harness/build
+prune agents/ad_agent/.pytest_cache
+global-exclude __pycache__ *.py[cod]
+global-exclude *.db *.db-shm *.db-wal *.sqlite *.sqlite3

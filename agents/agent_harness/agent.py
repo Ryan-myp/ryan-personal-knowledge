@@ -16,7 +16,7 @@ import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
-from .messages import AgentMessage, ModelTurn, ToolCall
+from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
 from .persistence import TranscriptStore
 from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
@@ -470,6 +470,11 @@ class Agent:
                         name=str(item.get("name") or ""),
                         arguments=dict(item.get("arguments") or item.get("args") or {}),
                         depends_on=tuple(item.get("depends_on") or ()),
+                        argument_bindings=tuple(
+                            ToolArgumentBinding(**binding)
+                            for binding in item.get("argument_bindings") or ()
+                            if isinstance(binding, Mapping)
+                        ),
                     ))
             return ModelTurn(
                 content=value.get("content", value.get("reply", "")),
@@ -1174,10 +1179,13 @@ class Agent:
         return checkpoint_id
 
     def run(self, request: TurnRequest) -> RunResult:
+        if not isinstance(request.context, Mapping):
+            raise TypeError("TurnRequest.context must be a mapping")
         request = replace(
             request,
             run_id=str(request.run_id or uuid.uuid4()),
             turn_id=str(request.turn_id or uuid.uuid4()),
+            context=dict(request.context),
         )
         state = self._state_for(
             request.session_id, request.user_id, request.tenant_id,

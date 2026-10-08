@@ -73,6 +73,29 @@ class AgentMessage:
 
 
 @dataclass(frozen=True)
+class ToolArgumentBinding:
+    """Copy one value from a completed Tool dependency into a Tool input."""
+
+    target_field: str
+    source_call_id: str
+    source_path: str
+
+    def __post_init__(self) -> None:
+        for name in ("target_field", "source_call_id", "source_path"):
+            value = str(getattr(self, name) or "").strip()
+            if not value or any(not part for part in value.split(".")):
+                raise ValueError(f"{name} must be a non-empty field path")
+            object.__setattr__(self, name, value)
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "target_field": self.target_field,
+            "source_call_id": self.source_call_id,
+            "source_path": self.source_path,
+        }
+
+
+@dataclass(frozen=True)
 class ToolCall:
     """A model-requested tool invocation."""
 
@@ -80,6 +103,7 @@ class ToolCall:
     name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
     depends_on: Sequence[str] = field(default_factory=tuple)
+    argument_bindings: Sequence[ToolArgumentBinding] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -91,6 +115,15 @@ class ToolCall:
                 if str(item).strip()
             ),
         )
+        bindings = tuple(
+            item if isinstance(item, ToolArgumentBinding)
+            else ToolArgumentBinding(**dict(item))
+            for item in (self.argument_bindings or ())
+        )
+        dependencies = set(self.depends_on)
+        if any(item.source_call_id not in dependencies for item in bindings):
+            raise ValueError("argument binding source must be a declared dependency")
+        object.__setattr__(self, "argument_bindings", bindings)
 
     def to_dict(self) -> dict[str, Any]:
         value = {
@@ -100,6 +133,10 @@ class ToolCall:
         }
         if self.depends_on:
             value["depends_on"] = list(self.depends_on)
+        if self.argument_bindings:
+            value["argument_bindings"] = [
+                item.to_dict() for item in self.argument_bindings
+            ]
         return value
 
 
@@ -120,4 +157,10 @@ class ModelTurn:
         )
 
 
-__all__ = ["AgentMessage", "MessageRole", "ModelTurn", "ToolCall"]
+__all__ = [
+    "AgentMessage",
+    "MessageRole",
+    "ModelTurn",
+    "ToolArgumentBinding",
+    "ToolCall",
+]

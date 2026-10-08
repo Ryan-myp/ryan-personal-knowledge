@@ -8,7 +8,7 @@
 
 ## Implementation evidence
 
-- Implementation: `/Users/yanping.ma/ryan-personal-knowledge/agents/ad_agent/templates/chat.html`
+- Implementation: `/Users/yanping.ma/ryan-personal-knowledge/agents/deployments/advertising/templates/chat.html`
 - Screenshot: `/Users/yanping.ma/ryan-personal-knowledge/implementation-execution-trace.png`
 - Selected-node screenshot: `/Users/yanping.ma/ryan-personal-knowledge/implementation-execution-trace-selected-node.png`
 - Viewport: `1487 x 1058` CSS pixels, browser device scale factor `1`; source and implementation compared at the same pixel dimensions.

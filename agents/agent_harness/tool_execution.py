@@ -576,6 +576,84 @@ class ToolExecutionCoordinator:
             is_error=bool(result.get("is_error")),
         )
 
+    @staticmethod
+    def _schema_properties(schema: Any) -> Mapping[str, Any]:
+        if isinstance(schema, Mapping):
+            properties = schema.get("properties")
+        else:
+            properties = getattr(schema, "properties", None)
+        return properties if isinstance(properties, Mapping) else {}
+
+    @classmethod
+    def _declares_input_path(cls, definition: Any, path: str) -> bool:
+        schema = cls._tool_value(definition, "input_schema", None)
+        parts = path.split(".")
+        for index, part in enumerate(parts):
+            spec = cls._schema_properties(schema).get(part)
+            if spec is None:
+                return False
+            if index < len(parts) - 1:
+                schema = spec
+        return True
+
+    @staticmethod
+    def _value_at_path(value: Any, path: str) -> Any:
+        current = value
+        for part in path.split("."):
+            if not isinstance(current, Mapping) or part not in current:
+                return None
+            current = current[part]
+        return current
+
+    @staticmethod
+    def _set_input_path(
+        target: dict[str, Any], path: str, value: Any,
+    ) -> None:
+        parts = path.split(".")
+        current = target
+        for part in parts[:-1]:
+            child = current.get(part)
+            if not isinstance(child, Mapping):
+                child = {}
+            else:
+                child = dict(child)
+            current[part] = child
+            current = child
+        current[parts[-1]] = value
+
+    def _resolve_argument_bindings(
+        self,
+        call: ToolCall,
+        completed: Mapping[str, Mapping[str, Any]],
+    ) -> tuple[ToolCall | None, str | None]:
+        if not call.argument_bindings:
+            return call, None
+        try:
+            binding = self.tool_catalog.get_binding(call.name)
+        except (AttributeError, KeyError, TypeError):
+            return None, "target Tool contract is unavailable"
+        definition = getattr(binding, "definition", None)
+        arguments = dict(call.arguments)
+        for reference in call.argument_bindings:
+            if not self._declares_input_path(definition, reference.target_field):
+                return None, "target input field is not declared by the Tool"
+            source = completed.get(reference.source_call_id)
+            if not isinstance(source, Mapping):
+                return None, "dependency result is unavailable"
+            value = self._value_at_path(
+                source.get("content"), reference.source_path,
+            )
+            if value in (None, ""):
+                return None, "dependency result did not contain the bound value"
+            self._set_input_path(arguments, reference.target_field, value)
+        return ToolCall(
+            id=call.id,
+            name=call.name,
+            arguments=arguments,
+            depends_on=call.depends_on,
+            argument_bindings=call.argument_bindings,
+        ), None
+
     def execute_tools(
         self,
         request: TurnRequest,
@@ -618,19 +696,44 @@ class ToolExecutionCoordinator:
                     if completed[str(dep)].get("is_error")
                 ]
                 if failed:
+                    terminal_dependency = any(
+                        item.get("terminate") for item in failed
+                    )
                     result = {
                         "tool_call_id": str(call.id),
                         "name": call.name,
                         "content": "dependency failed; Tool was not executed",
                         "is_error": True,
-                        "terminate": False,
+                        "terminate": terminal_dependency,
                         "runtime_signals": {"tool_dependency_failed": True},
                     }
                     completed[str(call.id)] = result
                     results[str(call.id)] = result
                 else:
                     runnable.append(call)
+            resolved_calls: list[ToolCall] = []
+            binding_errors: dict[str, dict[str, Any]] = {}
             for call in runnable:
+                resolved, error = self._resolve_argument_bindings(
+                    call, completed,
+                )
+                if error:
+                    binding_errors[str(call.id)] = {
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": "Tool dependency argument could not be resolved",
+                        "is_error": True,
+                        "terminate": False,
+                        "runtime_signals": {
+                            "tool_argument_binding_error": True,
+                        },
+                    }
+                elif resolved is not None:
+                    resolved_calls.append(resolved)
+            for call in (*resolved_calls, *(
+                item for item in runnable
+                if str(item.id) in binding_errors
+            )):
                 self.emit(
                     "tool_execution_start",
                     request,
@@ -638,27 +741,47 @@ class ToolExecutionCoordinator:
                     tool_name=call.name,
                     arguments=dict(call.arguments),
                 )
-            if self.tool_execution == "sequential" or len(runnable) <= 1:
+            if self.tool_execution == "sequential" or len(resolved_calls) <= 1:
                 batch = [
                     self.execute_one(request, assistant, call, state)
-                    for call in runnable
+                    for call in resolved_calls
                 ]
-            else:
+            elif resolved_calls:
                 pool = ThreadPoolExecutor(
-                    max_workers=min(self.max_parallel_tools, len(runnable)),
+                    max_workers=min(self.max_parallel_tools, len(resolved_calls)),
                     thread_name_prefix="agent-tool",
                 )
                 futures = [
                     pool.submit(
                         self.execute_one, request, assistant, call, state,
                     )
-                    for call in runnable
+                    for call in resolved_calls
                 ]
                 try:
                     batch = [future.result() for future in futures]
                 finally:
                     pool.shutdown(wait=False, cancel_futures=True)
-            for call, result in zip(runnable, batch):
+            else:
+                batch = []
+            batch_by_id = {
+                str(call.id): result
+                for call, result in zip(resolved_calls, batch)
+            }
+            for call in runnable:
+                result = binding_errors.get(str(call.id)) or batch_by_id.get(
+                    str(call.id),
+                )
+                if result is None:
+                    result = {
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": "Tool dependency argument could not be resolved",
+                        "is_error": True,
+                        "terminate": False,
+                        "runtime_signals": {
+                            "tool_argument_binding_error": True,
+                        },
+                    }
                 self._emit_tool_end(request, call, result)
                 completed[str(call.id)] = result
                 results[str(call.id)] = result

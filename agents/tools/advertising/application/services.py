@@ -1,0 +1,232 @@
+"""Runtime service port adapter for domain Features."""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from agents.agent_harness.core.features import RuntimeExecutionServices
+from agents.agent_harness.core.tool_registry import validate_tool_input as validate_registered_tool_input
+
+
+class _ScopedSelectionSigner:
+    """Expose selection proofs through a domain-neutral scope contract."""
+
+    def __init__(self, signer: Any):
+        self._signer = signer
+
+    def issue(self, *, scope_key: str, **kwargs: Any):
+        return self._signer.issue(account_id=scope_key, **kwargs)
+
+    def verify(self, token: str, *, scope_key: str, **kwargs: Any):
+        return self._signer.verify(token, account_id=scope_key, **kwargs)
+
+
+class AdRuntimeServices(RuntimeExecutionServices):
+    """Advertising application's adapter over the generic execution port.
+
+    The extra account, scheduling and Blueprint accessors below are owned by
+    the advertising composition root.  They are deliberately not part of the
+    Core ``RuntimeExecutionServices`` contract.
+    """
+
+    def __init__(self, runtime: Any):
+        self._runtime = runtime
+        self._scheduling = None
+        self._selection_signer = _ScopedSelectionSigner(
+            runtime._parameter_selection_signer
+        )
+
+    def bind_scheduling(self, service: Any) -> None:
+        """Bind the generic schedule control-plane after Runtime composition."""
+        self._scheduling = service
+
+    @property
+    def registry(self):
+        return self._runtime.registry
+
+    @property
+    def plugin_registry(self):
+        """Expose lifecycle metadata to trusted Runtime extensions."""
+        return self._runtime.plugin_registry
+
+    @property
+    def security(self):
+        return self._runtime.security
+
+    @property
+    def selection_signer(self):
+        return self._selection_signer
+
+    @property
+    def input_builder(self):
+        return self._runtime.input_builder
+
+    @property
+    def account_resolver(self):
+        return self._runtime.account_resolver
+
+    @property
+    def session_manager(self):
+        return self._runtime._session_manager
+
+    @property
+    def response_renderer(self):
+        return self._runtime.response_renderer
+
+    @property
+    def execution_mode(self) -> str:
+        return self._runtime.execution_mode
+
+    @property
+    def max_tool_calls(self) -> int:
+        return self._runtime.max_tool_calls
+
+    @property
+    def allow_live_writes(self) -> bool:
+        return self._runtime.allow_live_writes
+
+    @property
+    def live_approved_tools(self) -> set[str]:
+        return self._runtime._live_approved_tools
+
+    @property
+    def write_guard(self):
+        return self._runtime.write_guard
+
+    @property
+    def read_only_mode(self) -> bool:
+        return self._runtime._read_only_mode
+
+    @property
+    def offline_mode(self) -> bool:
+        return self._runtime.offline_mode
+
+    @property
+    def scheduling(self):
+        return self._scheduling
+
+    @property
+    def creation_blueprints(self):
+        """Expose declarative creation metadata to trusted Runtime features."""
+        return self._runtime.creation_blueprints
+
+    @property
+    def blueprint_cascade(self):
+        return self._runtime.blueprint_cascade
+
+    def canonical_platform(self, platform: str) -> str:
+        return self._runtime._resolve_platform_identifier(platform)
+
+    def normalize_namespace(self, value: str) -> str:
+        """Normalize an extension namespace without Core knowing its domain."""
+        return self._runtime._resolve_platform_identifier(value)
+
+    def get_registered_tool(self, tool_name: str) -> tuple[Any, Any]:
+        return self._runtime._get_registered_tool(tool_name)
+
+    def resolve_account(
+        self, intent: Any, platform: str, tools: list[Any],
+        fallback_account: Optional[str],
+    ) -> Optional[str]:
+        return self.account_resolver.resolve(intent, platform, tools, fallback_account)
+
+    def resolve_scope(
+        self, request: Any, tools: list[Any], fallback: Optional[str] = None,
+    ) -> Any:
+        """Expose the provider-neutral scope port to trusted extensions."""
+        return self.account_resolver.resolve_scope(request, tools, fallback)
+
+    def available_accounts(self, platform: str, account_scope: Any) -> list[str]:
+        return self._runtime._available_accounts_for_request(platform, account_scope)
+
+    def validate_account(
+        self, platform: str, account_id: str, is_write: bool, account_scope: Any,
+    ) -> tuple[bool, str]:
+        return self._runtime._validate_account_with_principal(
+            platform, account_id, is_write, account_scope
+        )
+
+    def check_tool_permissions(self, tool: Any, permissions: Any) -> Optional[str]:
+        return self._runtime._check_tool_permissions(tool, permissions)
+
+    def validate_input_redline(self, value: Any) -> list[str]:
+        return self._runtime.security.validate_input_redline(value)
+
+    def validate_tool_input(
+        self,
+        tool: Any,
+        value: dict[str, Any],
+        include_tool_requirements: bool = False,
+    ) -> list[str]:
+        schema = getattr(tool, "input_schema", None)
+        if schema is None:
+            return []
+        return validate_registered_tool_input(
+            schema,
+            value,
+            include_tool_requirements=include_tool_requirements,
+        )
+
+    def resource_id_field(self, tool: Any) -> str | None:
+        return self._runtime._resource_id_field_for_tool(tool)
+
+    def parent_resource_id_field(self, tool: Any) -> Optional[str]:
+        return self._runtime._parent_resource_id_field_for_tool(tool)
+
+    def heartbeat(self, workflow_id: Optional[str]) -> bool:
+        return self._runtime.workflow.heartbeat(workflow_id)
+
+    def simulate_write(self, tool: Any, value: dict[str, Any], platform: str) -> Any:
+        return self._runtime._simulate_write(tool, value, platform)
+
+    def redact(self, value: Any) -> Any:
+        return self._runtime._redact_for_persistence(value)
+
+    def persist_conversation_turn(
+        self, session: Any, turn_id: str, user_input: str, reply: str,
+    ) -> None:
+        self._runtime.persist_conversation_turn(session, turn_id, user_input, reply)
+
+    def finish_workflow(
+        self, workflow_id: Optional[str], tool_plan: dict[str, list[Any]],
+        results: list[dict[str, Any]], workflow_inputs: dict[int, dict],
+        planning_errors: list[str] | None = None,
+        *, intent: Any = None, session: Any = None,
+    ) -> None:
+        self._runtime.workflow.finish(
+            workflow_id, tool_plan, results, workflow_inputs, planning_errors,
+            intent=intent, session=session,
+        )
+
+    def build_resource_results(self, results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return self._runtime._build_resource_results(results)
+
+    def execute_tool(
+        self, ctx: Any, tool_name: str, value: dict[str, Any],
+        request_clients: dict[str, Any] | None = None,
+    ) -> Any:
+        return self._runtime.tool_executor.execute(
+            ctx, tool_name, value, request_clients
+        )
+
+    def persist_tool_result(
+        self, session: Any, turn_id: str, tool: Any, platform: str,
+        input_data: dict[str, Any], result: Any,
+        *, started_at: Optional[str] = None, ended_at: Optional[str] = None,
+    ) -> None:
+        self._runtime._persist_tool_result(
+            session, turn_id, tool, platform, input_data, result,
+            started_at=started_at, ended_at=ended_at,
+        )
+
+    def is_dry_run(self) -> bool:
+        return self._runtime.is_dry_run
+
+    def workflow_lease_owner(self) -> str:
+        return self._runtime._workflow_lease_owner
+
+    def workflow_stale_after_seconds(self) -> float:
+        return self._runtime.workflow_stale_after_seconds
+
+    def preflight_scheduled_prompt(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
+        return self._runtime.preflight_scheduled_prompt(prompt, **kwargs)

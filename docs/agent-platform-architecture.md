@@ -1,5 +1,8 @@
 # Agent 中台六层架构
 
+> 当前仓库目录、职责边界和迁移状态以
+> [`agents/ARCHITECTURE.md`](../agents/ARCHITECTURE.md) 为准。本文说明六层逻辑模型。
+
 本仓库采用标准的通用 Agent Platform 形态。平台只有一个通用 Agent；广告不是
 Runtime 特例，而是一个应用场景。其他业务使用同一套 Harness、Tools、Skills、
 数据 Port 和集成 Port 接入。
@@ -85,7 +88,7 @@ agents/
     └── runtime/                    # 广告场景的 Tool/数据/基础设施装配
 ```
 
-`agents/ad_agent/runtime/` 只负责广告场景的 Tool、数据和基础设施装配，不是平台核心
+`agents/tools/advertising/application/` 只负责广告场景的 Tool、数据和基础设施装配，不是平台核心
 Run Kernel。通用身份、Session 并发、Run 生命周期、Turn Handler 和 Tool Source
 生命周期只归 `agents/agent_harness/`；场景层不能再创建第二套 Kernel、Pipeline、
 Router 或 Tool 门禁。
@@ -116,10 +119,8 @@ Provider Client，不定义权限，也不创建新的 Runtime。
 ## 4. 广告如何接入
 
 ```python
-from agents.ad_agent import (
-    advertising_agent_definition,
-    create_meta_tool_source,
-)
+from agents.scenarios.advertising import advertising_agent_definition
+from agents.tools.advertising.providers.meta import create_meta_tool_source
 from agents.agent_platform import AgentPlatform, ScenarioDefinition
 
 platform = AgentPlatform()
@@ -147,9 +148,9 @@ Tool Executor/Connector 实现。
 广告 Tools/Skills 可以被知识问答、数据分析或其他应用场景复用；复用只发生在
 Source 装配层，不把广告渠道、账户字段或 Provider API 带进中台核心。
 
-## 5. 当前实现的简化点
+## 5. 当前实现边界
 
-当前只实现平台最小闭环：标准 Harness、Agent/Scenario catalog、六层 Port、治理
-策略和广告产品声明。知识中心、记忆中心、任务调度、模型中心、统一通信协议的具体
-生产实现继续由现有产品组合根注入；这保持了层级完整，同时避免在 SQLite 之外提前
-绑定某个基础设施供应商。
+平台已实现通用 Harness、Agent/Scenario catalog、Knowledge/Memory、MCP、持久化 Port、
+任务调度、治理策略和统一 Tool 执行门禁。广告通过 Tool Sources、Skills 和 Knowledge
+接入；广告组合代码仍有明显瘦身空间，但复用同一个 PlatformApplication 与 Run Kernel，
+后续改进应把确定性动作下沉到注册 Tool、把指导性流程放入 Skill，而不是新增广告 Runtime。

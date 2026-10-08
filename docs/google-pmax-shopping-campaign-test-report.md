@@ -97,7 +97,7 @@ customer_id = "8844208336"  # 例如：SPay- VN
 
 ## 知识库更新
 
-已更新 `agents/ad_agent/knowledge_base/google/workflows.json`:
+已更新 `agents/knowledge/advertising/wiki/platforms/google/workflows.md`:
 
 - ✅ `google_pmax_campaign_workflow` - 添加错误分析和解决方案
 - ✅ `google_shopping_campaign_workflow` - 添加必需字段说明
