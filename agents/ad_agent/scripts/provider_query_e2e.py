@@ -258,6 +258,9 @@ RESOURCE_INPUT_TYPES = {
     "category_id": "interest_category",
     "creative_portfolio_id": "creative_portfolio",
 }
+RESOURCE_INPUT_TYPE_FALLBACKS = {
+    ("tiktok", "creative_id"): ("ad",),
+}
 SENSITIVE_QUERY_TOOLS = {
     "google_list_user_lists",
     "google_get_user_list",
@@ -883,11 +886,14 @@ class ReadOnlyQueryRun:
             return {"ok": False, "data": {}}
 
         print(f"query-start {provider} {tool}", flush=True)
+        query_count = len(self.queries[provider])
+        started = time.perf_counter()
         result = self.runtime.tool_executor.execute(
             self._context(account_id, provider),
             tool,
             input_data,
         )
+        latency_ms = round((time.perf_counter() - started) * 1000, 3)
         recorded = self._record_result(
             provider,
             definition,
@@ -895,6 +901,8 @@ class ReadOnlyQueryRun:
             result_key,
             input_data,
         )
+        if len(self.queries[provider]) > query_count:
+            self.queries[provider][-1]["latency_ms"] = latency_ms
         outcome = "passed" if recorded["ok"] else "failed"
         print(f"query-result {provider} {tool} {outcome}", flush=True)
         return recorded
@@ -950,7 +958,13 @@ def _resource_pool_for_input(
     resource_type = RESOURCE_INPUT_TYPES.get(field)
     if not resource_type:
         return []
-    return list(dict.fromkeys(suite.resource_pools[provider].get(resource_type, [])))
+    fallback_types = RESOURCE_INPUT_TYPE_FALLBACKS.get((provider, field), ())
+    values = [
+        value
+        for candidate_type in (resource_type, *fallback_types)
+        for value in suite.resource_pools[provider].get(candidate_type, [])
+    ]
+    return list(dict.fromkeys(values))
 
 
 def _select_resource_parent_pair(
@@ -1191,28 +1205,16 @@ def _run_google(suite: ReadOnlyQueryRun) -> None:
         _resource_ids(campaigns["data"], "campaigns", ("id", "campaign_id"))
         if campaigns["ok"] else []
     )
-    groups = (
+    if campaign_ids:
         suite.execute(
             provider,
             "google_list_ad_groups",
             {"campaign_id": campaign_ids[0], "limit": 10},
             "ad_groups",
         )
-        if campaign_ids else None
-    )
-    group_ids = (
-        _resource_ids(groups["data"], "ad_groups", ("id", "ad_group_id"))
-        if groups and groups["ok"] else []
-    )
-    if group_ids:
-        suite.execute(
-            provider,
-            "google_list_ads",
-            {"ad_group_id": group_ids[0], "limit": 10},
-            "ads",
-        )
     else:
-        suite.record_skip(provider, "google_list_ads")
+        suite.record_skip(provider, "google_list_ad_groups")
+    suite.execute(provider, "google_list_ads", {"limit": 10}, "ads")
     suite.execute(
         provider,
         "google_get_campaign_report",

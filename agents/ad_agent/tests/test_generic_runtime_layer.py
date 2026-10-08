@@ -1,5 +1,6 @@
 from contextvars import ContextVar
 import threading
+from types import SimpleNamespace
 
 from agents.agent_harness.agent_runtime import AgentRuntime
 from agents.ad_agent.core.interfaces import (
@@ -308,6 +309,7 @@ def test_policy_engine_keeps_dry_run_planning_separate_from_live_execution():
         PolicyRequest(
             tool=tool,
             execution_mode=ExecutionMode.LIVE.value,
+            principal=SimpleNamespace(tenant_id="tenant-1", user_id="user-1"),
             granted_permissions={"docs.plan", "docs.publish"},
             allow_live_writes=True,
             live_approved_tools={"publish_docs"},

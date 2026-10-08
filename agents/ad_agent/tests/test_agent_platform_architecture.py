@@ -3,6 +3,7 @@
 import ast
 import inspect
 from pathlib import Path
+from types import SimpleNamespace
 from typing import get_type_hints
 
 import pytest
@@ -952,7 +953,10 @@ def test_platform_tool_policy_blocks_live_write_before_executor():
         },
     )
     try:
-        result = application.prompt("delete", execution_mode="live")
+        result = application.prompt(
+            "delete", execution_mode="live",
+            principal=SimpleNamespace(tenant_id="tenant-1", user_id="user-1"),
+        )
         assert result.data["tool_results"][0]["is_error"] is True
         assert calls == []
         assert any(event["reason_code"] == "live_disabled" for event in audits)
@@ -1116,6 +1120,7 @@ def test_tool_policy_scopes_idempotency_to_run_and_releases_failed_reservations(
     def context(run_id, turn_id, call_id="call-1"):
         request = TurnRequest(
             user_input="update",
+            principal=SimpleNamespace(tenant_id="tenant-1", user_id="user-1"),
             run_id=run_id,
             turn_id=turn_id,
             execution_mode="live",

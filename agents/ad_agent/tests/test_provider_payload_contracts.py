@@ -592,19 +592,27 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
     }
 
     assert client.create_creative("123", "101", "201", creative, live=True) == "301"
-    assert client.update_creative("123", "201", "301", {"name": "Updated creative"}, live=True) == {
+    assert client.update_creative(
+        "123", "201", "301", {"ad_name": "Updated creative"}, live=True
+    ) == {
         "data": {"ad_id": "301"}
     }
+    client.update_ad("123", "201", "302", {"status": 0}, live=True)
     assert client.delete_creative("123", "301") == {"data": {"ad_id": "301"}}
     assert [endpoint for _method, endpoint, _data in calls] == [
-        "ad/create/", "ad/update/", "ad/delete/"
+        "ad/create/", "ad/update/", "ad/status/update/", "ad/delete/"
     ]
     assert calls[0][2]["creatives"][0]["ad_name"] == "Install creative"
     assert calls[1][2] == {
-        "advertiser_id": "123", "ad_group_id": 201, "ad_id": 301,
-        "ad": {"name": "Updated creative"},
+        "advertiser_id": "123",
+        "adgroup_id": "201",
+        "creatives": [{"ad_id": "301", "ad_name": "Updated creative"}],
+        "patch_update": True,
     }
-    assert calls[2][2] == {"advertiser_id": "123", "ad_ids": [301]}
+    assert calls[2][2] == {
+        "advertiser_id": "123", "ad_ids": ["302"], "operation_status": "DISABLE",
+    }
+    assert calls[3][2] == {"advertiser_id": "123", "ad_ids": [301]}
 
     definitions = {
         definition.name: definition
@@ -621,6 +629,13 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
     assert definitions["tiktok_update_creative"].input_schema.required == [
         "account_id", "adgroup_id", "creative_id", "updates"
     ]
+    assert definitions["tiktok_update_ad"].input_schema.properties["updates"]["properties"].keys() == {
+        "status"
+    }
+    assert set(
+        definitions["tiktok_update_creative"]
+        .input_schema.properties["updates"]["properties"]
+    ) == {"ad_name", "ad_text", "landing_page_url", "call_to_action_id"}
     assert validate_tool_input(
         definitions["tiktok_create_creative"].input_schema,
         {
@@ -633,10 +648,29 @@ def test_tiktok_creative_crud_uses_ad_endpoints_and_publishes_ad_backed_contract
         definitions["tiktok_update_creative"].input_schema,
         {
             "account_id": "123", "adgroup_id": "201", "creative_id": "301",
-            "updates": {"name": "Updated creative"},
+            "updates": {"ad_name": "Updated creative"},
         },
         include_tool_requirements=True,
     ) == []
+
+
+def test_tiktok_standard_ad_update_dry_run_never_calls_provider():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: pytest.fail(
+        "TikTok Ad status dry-run must not call the provider"
+    )
+
+    result = client.update_ad("123", "201", "301", {"status": 0})
+
+    assert result["mode"] == "dry_run"
+    assert result["execution_status"] == "planned"
+    assert result["operation"] == {
+        "ad/status/update/": {
+            "advertiser_id": "123",
+            "ad_ids": ["301"],
+            "operation_status": "DISABLE",
+        }
+    }
 
 
 def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints():
@@ -2930,6 +2964,22 @@ def test_google_app_live_chain_uses_inline_text_and_provider_valid_ad_status():
     ]
 
 
+def test_google_specialized_ad_live_creation_rejects_enabled_status():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._mutate = lambda resource, operation: (
+        calls.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/adGroupAds/77~88"}]}
+    )
+
+    with pytest.raises(ValueError, match="only allows PAUSED"):
+        client.create_hotel_ad(
+            "77", "Hotel ad", status="ENABLED", live=True
+        )
+
+    assert calls == []
+
+
 def test_google_app_ad_group_omits_inapplicable_type_and_cpc_fields():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
@@ -3681,6 +3731,31 @@ def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools()
     assert definitions["tiktok_smart_plus_update_campaign"].input_schema.properties["updates"]["additionalProperties"] is False
     assert definitions["tiktok_smart_plus_update_adgroup"].readback_tool == "tiktok_get_adgroup"
     assert definitions["tiktok_smart_plus_update_ad"].readback_tool == "tiktok_get_ad"
+    campaign_update = definitions["tiktok_smart_plus_update_campaign"]
+    assert validate_tool_input(
+        campaign_update.input_schema,
+        {
+            "account_id": "t1", "campaign_id": "c1",
+            "updates": {"status": "PAUSED"},
+        },
+        include_tool_requirements=True,
+    ) == []
+    mixed_update_errors = validate_tool_input(
+        campaign_update.input_schema,
+        {
+            "account_id": "t1", "campaign_id": "c1",
+            "updates": {"status": "PAUSED", "budget": 50},
+        },
+        include_tool_requirements=True,
+    )
+    assert any("separately from content fields" in error for error in mixed_update_errors)
+    ad_update_properties = definitions[
+        "tiktok_smart_plus_update_ad"
+    ].input_schema.properties["updates"]["properties"]
+    assert {
+        "status", "operation_status", "name", "ad_text_list", "creative_list",
+        "landing_page_url_list", "call_to_action_list",
+    } <= set(ad_update_properties)
 
 
 def test_tiktok_smart_plus_update_payloads_use_parent_ids_and_normalize_status():
@@ -3690,20 +3765,113 @@ def test_tiktok_smart_plus_update_payloads_use_parent_ids_and_normalize_status()
         seen.append((method, endpoint, data)) or {"code": 0, "data": {"updated": True}}
     )
 
-    client.update_smart_plus_campaign("t1", "c1", {"name": "renamed", "status": "PAUSED"})
-    client.update_smart_plus_adgroup("t1", "c1", "g1", {"budget": 50})
-    client.update_smart_plus_ad("t1", "g1", "a1", {"operation_status": "DISABLE"})
+    client.update_smart_plus_campaign(
+        "t1", "c1", {"name": "renamed"}, live=True
+    )
+    client.update_smart_plus_campaign(
+        "t1", "c1", {"status": "PAUSED"}, live=True
+    )
+    client.update_smart_plus_adgroup(
+        "t1", "c1", "g1", {"budget": 50}, live=True
+    )
+    client.update_smart_plus_adgroup(
+        "t1", "c1", "g1", {"status": "PAUSED"}, live=True
+    )
+    client.update_smart_plus_ad(
+        "t1", "g1", "a1", {"ad_text_list": [{"ad_text": "New copy"}]}, live=True
+    )
+    client.update_smart_plus_ad(
+        "t1", "g1", "a1", {"status": "PAUSED"}, live=True
+    )
 
     assert [item[1] for item in seen] == [
-        "smart_plus/campaign/update/", "smart_plus/adgroup/update/", "smart_plus/ad/update/",
+        "smart_plus/campaign/update/",
+        "smart_plus/campaign/status/update/",
+        "smart_plus/adgroup/update/",
+        "smart_plus/adgroup/status/update/",
+        "smart_plus/ad/update/",
+        "smart_plus/ad/status/update/",
     ]
-    assert seen[0][2]["campaign_id"] == "c1"
-    assert seen[0][2]["campaign"]["operation_status"] == "DISABLE"
-    assert seen[1][2]["campaign_id"] == "c1"
-    assert seen[1][2]["adgroup_id"] == "g1"
-    assert seen[1][2]["adgroup"]["budget"] == 50
-    assert seen[2][2]["adgroup_id"] == "g1"
-    assert seen[2][2]["ad_id"] == "a1"
+    assert seen[0][2] == {
+        "advertiser_id": "t1", "campaign_id": "c1", "campaign_name": "renamed",
+    }
+    assert seen[1][2] == {
+        "advertiser_id": "t1", "campaign_ids": ["c1"],
+        "operation_status": "DISABLE",
+    }
+    assert seen[2][2] == {
+        "advertiser_id": "t1", "adgroup_id": "g1", "budget": 50,
+    }
+    assert seen[3][2] == {
+        "advertiser_id": "t1", "adgroup_ids": ["g1"],
+        "operation_status": "DISABLE",
+    }
+    assert seen[4][2] == {
+        "advertiser_id": "t1", "smart_plus_ad_id": "a1",
+        "ad_text_list": [{"ad_text": "New copy"}],
+    }
+    assert seen[5][2] == {
+        "advertiser_id": "t1", "smart_plus_ad_ids": ["a1"],
+        "operation_status": "DISABLE",
+    }
+
+    before = len(seen)
+    with pytest.raises(ValueError, match="separately from content"):
+        client.update_smart_plus_campaign(
+            "t1", "c1", {"budget": 50, "status": "PAUSED"}, live=True
+        )
+    assert len(seen) == before
+
+
+def test_tiktok_smart_plus_updates_default_to_dry_run():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: pytest.fail(
+        "Smart+ update dry-run must not call the provider"
+    )
+
+    result = client.update_smart_plus_ad(
+        "t1", "g1", "a1", {"ad_text_list": [{"ad_text": "New copy"}]}
+    )
+
+    assert result["mode"] == "dry_run"
+    assert result["operation"] == {
+        "smart_plus/ad/update/": {
+            "advertiser_id": "t1", "smart_plus_ad_id": "a1",
+            "ad_text_list": [{"ad_text": "New copy"}],
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("resource", "updates", "error"),
+    [
+        ("campaign", {"unexpected": "x"}, "Unsupported"),
+        ("campaign", {"name": None}, "non-null"),
+        ("campaign", {"status": "RUNNING"}, "operation_status"),
+        (
+            "campaign",
+            {"status": "PAUSED", "operation_status": "ENABLE"},
+            "conflict",
+        ),
+        (
+            "campaign",
+            {"status": "PAUSED", "budget": 50},
+            "separately from content",
+        ),
+    ],
+)
+def test_tiktok_smart_plus_invalid_updates_fail_before_provider_request(
+    resource, updates, error
+):
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: pytest.fail(
+        "Invalid Smart+ update must not call the provider"
+    )
+
+    with pytest.raises(ValueError, match=error):
+        client._update_smart_plus(
+            resource, "t1", "c1", updates, live=True
+        )
 
 
 def test_tiktok_app_lookup_uses_advertiser_scoped_app_list_endpoint():
@@ -6413,8 +6581,12 @@ def test_meta_and_tiktok_client_writes_are_dry_run_by_default():
 def test_google_and_dv360_existing_update_adapters_build_provider_mutations():
     google = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
+    google_operations = []
     google._mutate = lambda resource, operation: (
         operations.append((resource, operation)) or {"results": [{}]}
+    )
+    google._mutate_google_operations = lambda values: (
+        google_operations.append(values) or {"data": {"mutateOperationResponses": [{}]}}
     )
     assert google.update_ad_group("42", {"cpc_bid": 1.25})["success"] is True
     resource, operation = operations[-1]
@@ -6424,8 +6596,7 @@ def test_google_and_dv360_existing_update_adapters_build_provider_mutations():
     assert operation["updateMask"] == {"paths": ["cpcBidMicros"]}
 
     assert google.update_ad("42~43", {"status": "PAUSED"})["success"] is True
-    assert operations[-1][0] == "adGroupAds"
-    assert operations[-1][1]["update"]["resourceName"] == (
+    assert google_operations[-1][0]["adGroupAdOperation"]["update"]["resourceName"] == (
         "customers/123/adGroupAds/42~43"
     )
     assert google.update_asset_group("44", {"name": "Assets"})["success"] is True
@@ -6448,6 +6619,178 @@ def test_google_and_dv360_existing_update_adapters_build_provider_mutations():
         "budget": 20, "status": "PAUSED", "targeting": {"country": "US"}
     }
     assert kwargs["params"]["updateMask"] == "budget,status,targeting"
+
+
+def test_google_list_ads_supports_account_scope_and_returns_parent_ids():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, page_size=100: (
+        queries.append(query)
+        or [{
+            "campaign": {"id": "101"},
+            "adGroup": {"id": "202"},
+            "adGroupAd": {
+                "ad": {
+                    "id": "303",
+                    "resourceName": "customers/123/ads/303",
+                    "name": "Search ad",
+                },
+                "resourceName": "customers/123/adGroupAds/202~303",
+                "status": "PAUSED",
+            },
+        }]
+    )
+
+    ads = client.list_ads(page_size=10)
+
+    assert ads == [{
+        "id": "202~303",
+        "campaign_id": "101",
+        "ad_group_id": "202",
+        "resource_name": "customers/123/adGroupAds/202~303",
+        "name": "Search ad",
+        "status": "PAUSED",
+    }]
+    assert "FROM ad_group_ad" in queries[0]
+    assert "campaign.id" in queries[0]
+    assert "ad_group.id" in queries[0]
+    assert "WHERE" not in queries[0].upper()
+
+
+def test_google_list_ads_applies_optional_campaign_and_ad_group_filters():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, page_size=100: (
+        queries.append(query) or []
+    )
+
+    client.list_ads(ad_group_id="202", campaign_id="101", page_size=25)
+
+    assert "WHERE campaign.id = 101 AND ad_group.id = 202" in queries[0]
+    assert "LIMIT 25" in queries[0]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_tool_source(client).register_tools()
+    }
+    list_ads = definitions["google_list_ads"].input_schema
+    assert list_ads.required == []
+    assert set(list_ads.properties) == {
+        "ad_group_id", "campaign_id", "limit",
+    }
+
+
+def test_google_update_ad_uses_atomic_ad_and_ad_group_ad_mutations():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    searches = []
+    operations = []
+    client._search = lambda query: (
+        searches.append(query)
+        or {"results": [{"adGroupAd": {"ad": {"type": "RESPONSIVE_SEARCH_AD"}}}]}
+    )
+    client._mutate_google_operations = lambda values: (
+        operations.append(values) or {"data": {"mutateOperationResponses": [{}, {}]}}
+    )
+
+    result = _google_update_adapter(
+        client,
+        ToolContext(session_id="s1", user_id="u1", account_id="123"),
+        "ad",
+        "88",
+        "77",
+        {
+            "headlines": [
+                "Updated headline one", "Updated headline two",
+                "Updated headline three",
+            ],
+            "descriptions": [
+                "Updated description one", "Updated description two",
+            ],
+            "final_url": "https://example.test/new",
+            "path1": "new",
+            "status": "PAUSED",
+        },
+    )
+
+    assert result["success"] is True
+    assert len(searches) == 1
+    assert len(operations) == 1
+    assert operations[0] == [
+        {
+            "adOperation": {
+                "update": {
+                    "resourceName": "customers/123/ads/88",
+                    "responsiveSearchAd": {
+                        "headlines": [
+                            {"text": "Updated headline one"},
+                            {"text": "Updated headline two"},
+                            {"text": "Updated headline three"},
+                        ],
+                        "descriptions": [
+                            {"text": "Updated description one"},
+                            {"text": "Updated description two"},
+                        ],
+                        "path1": "new",
+                    },
+                    "finalUrls": ["https://example.test/new"],
+                },
+                "updateMask": {
+                    "paths": [
+                        "responsiveSearchAd.headlines",
+                        "responsiveSearchAd.descriptions",
+                        "finalUrls",
+                        "responsiveSearchAd.path1",
+                    ]
+                },
+            }
+        },
+        {
+            "adGroupAdOperation": {
+                "update": {
+                    "resourceName": "customers/123/adGroupAds/77~88",
+                    "status": "PAUSED",
+                },
+                "updateMask": {"paths": ["status"]},
+            }
+        },
+    ]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_tool_source(client).register_tools()
+    }
+    updates = definitions["google_update_ad"].input_schema.properties["updates"]
+    assert set(updates["properties"]) == {
+        "status", "headlines", "descriptions", "final_url", "path1", "path2",
+    }
+    assert updates["additionalProperties"] is False
+
+
+def test_google_update_ad_rejects_creative_mutation_for_non_responsive_search_ads():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    calls = []
+    client._search = lambda _query: {
+        "results": [{"adGroupAd": {"ad": {"type": "APP_AD"}}}]
+    }
+    client._mutate_google_operations = lambda operations: (
+        calls.append(operations) or {}
+    )
+
+    with pytest.raises(ValueError, match="RESPONSIVE_SEARCH_AD"):
+        client.update_ad("77~88", {
+            "headlines": ["Headline one", "Headline two", "Headline three"],
+        })
+
+    assert calls == []
+
+
+def test_google_ad_content_field_maps_final_url_without_status_context():
+    assert GoogleAdsAPIClient._google_ad_content_field(
+        "final_url", " https://example.test/path "
+    ) == ({"finalUrls": ["https://example.test/path"]}, "finalUrls")
+
+    with pytest.raises(ValueError, match="final_url"):
+        GoogleAdsAPIClient._google_ad_content_field("final_url", "")
 
 
 def test_google_campaign_budget_tools_cover_gaql_and_mutations():

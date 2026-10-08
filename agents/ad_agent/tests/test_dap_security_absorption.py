@@ -10,7 +10,7 @@ from agents.ad_agent.core.interfaces import (
 from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.persistence.models import OutboxEvent
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.outbox import OutboxConsumer
+from agents.agent_platform.infrastructure.durable import OutboxConsumer
 from agents.ad_agent.runtime.runtime import AdvertisingComposition
 from agents.ad_agent.runtime.security import RuntimeSecurity
 from agents.ad_agent.runtime.tool_executor import classify_error

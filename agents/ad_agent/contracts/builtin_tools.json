@@ -1,5 +1,5 @@
 {
-  "digest": "a99a3093f457d63a8c0ccc9ec460eebbb5e5ba5e23946998e053afdfa0382100",
+  "digest": "828ce8a5cc9b4f4b32e934e79e36cdd3b9614c7b2d77592fee1264f588c0d562",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2444,7 +2444,7 @@
       ]
     },
     "google-ads": {
-      "digest": "5646dd2f40b9a830ea4084f6fa14a43ffedd482f6b2539d34d2b5f529e123052",
+      "digest": "bab578c7289095b5451903d668bcd5a9b33950cd7137e7f7e3db6dcad032e3fc",
       "tool_count": 103,
       "tools": [
         {
@@ -13971,9 +13971,9 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "31ac7b4f94035cc98ad914cb3c86159b2058f9b39571e479cd0f8b60069b1dad",
+          "contract_hash": "ebb2e9b85e643c093cc31c2e3144562f02be97dd22ec5c4a2d0951f670f9603c",
           "contract_version": "1.4.0",
-          "description": "查询 Google Ads Ad 列表。",
+          "description": "查询 Google Ads Ad 列表；可选按 Campaign 或 Ad Group 筛选，缺省查询当前账户。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -13992,6 +13992,7 @@
                 ],
                 "lookup_result_key": "ad_groups",
                 "lookup_tool": "google_list_ad_groups",
+                "minLength": 1,
                 "selection_label_fields": [
                   "name",
                   "ad_group_name",
@@ -14004,13 +14005,29 @@
                 ],
                 "type": "string"
               },
+              "campaign_id": {
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "google_list_campaigns",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
               "limit": {
+                "maximum": 1000,
+                "minimum": 1,
                 "type": "integer"
               }
             },
-            "required": [
-              "ad_group_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
@@ -15975,9 +15992,9 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "a197852b9a9b6e3fa02b04fa56b724222302a8c7e66e5753e56a6118a295fc4c",
-          "contract_version": "1.4.0",
-          "description": "更新 Google Ads ad，默认仅生成 dry-run 计划。",
+          "contract_hash": "99fed1fd68b12fd8810ba859dd0614b00bdf9be8e3031dd87102f7e53a4b0c93",
+          "contract_version": "2",
+          "description": "更新 Google Ad 状态；Responsive Search Ad 另支持标题、描述、最终网址和展示路径修改，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -16050,33 +16067,40 @@
                 },
                 "properties": {
                   "descriptions": {
-                    "description": "Descriptions",
+                    "description": "Replace all Responsive Search Ad descriptions",
                     "items": {
+                      "maxLength": 90,
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "maxItems": 4,
+                    "minItems": 2,
                     "type": "array"
                   },
                   "final_url": {
-                    "description": "Final URL",
+                    "description": "Responsive Search Ad final URL",
+                    "minLength": 1,
                     "type": "string"
                   },
                   "headlines": {
-                    "description": "Headlines",
+                    "description": "Replace all Responsive Search Ad headlines",
                     "items": {
+                      "maxLength": 30,
+                      "minLength": 1,
                       "type": "string"
                     },
+                    "maxItems": 15,
+                    "minItems": 3,
                     "type": "array"
                   },
-                  "name": {
-                    "description": "Resource name",
-                    "type": "string"
-                  },
                   "path1": {
-                    "description": "Display path 1",
+                    "description": "Responsive Search Ad display path 1",
+                    "maxLength": 15,
                     "type": "string"
                   },
                   "path2": {
-                    "description": "Display path 2",
+                    "description": "Responsive Search Ad display path 2",
+                    "maxLength": 15,
                     "type": "string"
                   },
                   "status": {
@@ -29503,7 +29527,7 @@
       ]
     },
     "tiktok": {
-      "digest": "a356980cfb632b4f6978470e70fa22b29ac0afb850609d9bd5190558d99e4697",
+      "digest": "b590b57a4710bea34a40583ee319f9a0415ea70524b842476813939bfbc06425",
       "tool_count": 85,
       "tools": [
         {
@@ -44636,15 +44660,52 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "78634ca77e0c81f65112ba39d224ea6c64543fe19b32d2a5e92494e144fdf2f5",
-          "contract_version": "1.3.0",
+          "contract_hash": "bbc915803129f4ab244028e78359684b37d51bdcf60053be4778b67a55c7516d",
+          "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "forbidden": [
+                  "updates.name",
+                  "updates.ad_text_list",
+                  "updates.landing_page_url_list",
+                  "updates.call_to_action_list",
+                  "updates.deeplink_list",
+                  "updates.page_list",
+                  "updates.creative_list",
+                  "updates.ad_configuration"
+                ],
+                "if": {
+                  "updates.status": {
+                    "exists": true
+                  }
+                },
+                "message": "Smart+ delivery status must be updated separately from content fields"
+              },
+              {
+                "forbidden": [
+                  "updates.name",
+                  "updates.ad_text_list",
+                  "updates.landing_page_url_list",
+                  "updates.call_to_action_list",
+                  "updates.deeplink_list",
+                  "updates.page_list",
+                  "updates.creative_list",
+                  "updates.ad_configuration"
+                ],
+                "if": {
+                  "updates.operation_status": {
+                    "exists": true
+                  }
+                },
+                "message": "Smart+ delivery status must be updated separately from content fields"
+              }
+            ],
             "properties": {
               "account_id": {
                 "minLength": 1,
@@ -44713,41 +44774,425 @@
                 "additionalProperties": false,
                 "description": "Allowed TikTok Smart+ ad update fields",
                 "properties": {
-                  "ad_text": {
-                    "description": "Primary ad text",
-                    "type": "string"
-                  },
-                  "call_to_action_id": {
-                    "description": "Call to action ID",
-                    "manual_entry": {
-                      "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
-                      "source": "external_provider_identifier",
-                      "title": "TikTok 行动号召 ID"
+                  "ad_configuration": {
+                    "additionalProperties": false,
+                    "description": "TikTok Smart+ CTA and tracking configuration",
+                    "properties": {
+                      "call_to_action_id": {
+                        "description": "TikTok CTA ID",
+                        "manual_entry": {
+                          "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
+                          "source": "external_provider_identifier",
+                          "title": "TikTok 行动号召 ID"
+                        },
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "catalog_creative_info": {
+                        "additionalProperties": false,
+                        "description": "Optional catalog creative configuration",
+                        "type": "object"
+                      },
+                      "product_info": {
+                        "additionalProperties": false,
+                        "description": "Optional product information",
+                        "type": "object"
+                      },
+                      "tracking_info": {
+                        "additionalProperties": false,
+                        "description": "Tracking configuration",
+                        "properties": {
+                          "click_tracking_url": {
+                            "description": "Click tracking URL",
+                            "manual_entry": {
+                              "instructions": "请输入已备案且可访问的点击追踪 URL。",
+                              "source": "provider_tracking_url",
+                              "title": "点击追踪链接"
+                            },
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "impression_tracking_url": {
+                            "description": "Impression tracking URL",
+                            "manual_entry": {
+                              "instructions": "请输入已备案且可访问的展示追踪 URL。",
+                              "source": "provider_tracking_url",
+                              "title": "展示追踪链接"
+                            },
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "tracking_app_id": {
+                            "description": "Tracking app ID",
+                            "lookup_result_key": "apps",
+                            "lookup_tool": "tiktok_list_apps",
+                            "minLength": 1,
+                            "selection_label_fields": [
+                              "app_name",
+                              "name",
+                              "display_name",
+                              "id"
+                            ],
+                            "selection_value_fields": [
+                              "app_id",
+                              "id"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      }
                     },
-                    "type": "string"
+                    "type": "object"
                   },
-                  "dark_post_status": {
-                    "description": "Dark post status",
-                    "type": "string"
+                  "ad_text_list": {
+                    "description": "Smart+ ad text list",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ad_text": {
+                          "description": "Ad text",
+                          "maxLength": 100,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ad_text"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
                   },
-                  "landing_page_url": {
-                    "description": "Landing page URL",
-                    "type": "string"
+                  "call_to_action_list": {
+                    "description": "Smart+ CTA list",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "call_to_action": {
+                          "description": "CTA enum value",
+                          "enum": [
+                            "APPLY_NOW",
+                            "BOOK_NOW",
+                            "CALL_NOW",
+                            "CHECK_AVAILABILITY",
+                            "CONTACT_US",
+                            "DOWNLOAD_NOW",
+                            "EXPERIENCE_NOW",
+                            "GET_QUOTE",
+                            "GET_SHOWTIMES",
+                            "GET_TICKETS_NOW",
+                            "INSTALL_NOW",
+                            "INTERESTED",
+                            "JOIN_THIS_HASHTAG",
+                            "LEARN_MORE",
+                            "LISTEN_NOW",
+                            "ORDER_NOW",
+                            "PLAY_GAME",
+                            "PREORDER_NOW",
+                            "READ_MORE",
+                            "SEND_MESSAGE",
+                            "SHOOT_WITH_THIS_EFFECT",
+                            "SHOP_NOW",
+                            "SIGN_UP",
+                            "SUBSCRIBE",
+                            "VIEW_NOW",
+                            "VIEW_PROFILE",
+                            "VIEW_VIDEO_WITH_THIS_EFFECT",
+                            "VISIT_STORE",
+                            "WATCH_LIVE",
+                            "WATCH_NOW"
+                          ],
+                          "option_aliases": {
+                            "INSTALL_NOW": [
+                              "install",
+                              "安装",
+                              "安装应用"
+                            ]
+                          },
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "call_to_action"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "creative_list": {
+                    "description": "TikTok Smart+ creative list; each item contains creative_info",
+                    "items": {
+                      "properties": {
+                        "creative_info": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "ad_format": {
+                              "description": "Creative format",
+                              "type": "string"
+                            },
+                            "ad_text": {
+                              "description": "Primary ad text",
+                              "type": "string"
+                            },
+                            "call_to_action_id": {
+                              "description": "TikTok CTA ID",
+                              "manual_entry": {
+                                "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
+                                "source": "external_provider_identifier",
+                                "title": "TikTok 行动号召 ID"
+                              },
+                              "type": "string"
+                            },
+                            "identity_authorized_bc_id": {
+                              "description": "Authorized Business Center ID",
+                              "lookup_result_key": "identities",
+                              "lookup_tool": "tiktok_list_identities",
+                              "selection_label_fields": [
+                                "business_center_name",
+                                "display_name",
+                                "name",
+                                "authorized_bc_id"
+                              ],
+                              "selection_value_fields": [
+                                "authorized_bc_id",
+                                "bc_id",
+                                "id"
+                              ],
+                              "type": "string"
+                            },
+                            "identity_id": {
+                              "description": "Identity ID",
+                              "lookup_result_key": "identities",
+                              "lookup_tool": "tiktok_list_identities",
+                              "selection_label_fields": [
+                                "display_name",
+                                "name",
+                                "id"
+                              ],
+                              "selection_value_fields": [
+                                "identity_id",
+                                "id"
+                              ],
+                              "type": "string"
+                            },
+                            "identity_type": {
+                              "description": "Identity type",
+                              "type": "string"
+                            },
+                            "image_ids": {
+                              "description": "Uploaded image IDs",
+                              "items": {
+                                "type": "string"
+                              },
+                              "lookup_result_key": "images",
+                              "lookup_tool": "tiktok_list_images",
+                              "selection_label_fields": [
+                                "file_name",
+                                "image_name",
+                                "name",
+                                "id"
+                              ],
+                              "selection_value_fields": [
+                                "image_id",
+                                "id"
+                              ],
+                              "type": "array"
+                            },
+                            "image_info": {
+                              "description": "Provider image_info",
+                              "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "web_uri": {
+                                    "description": "Image web URI",
+                                    "minLength": 1,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "web_uri"
+                                ],
+                                "type": "object"
+                              },
+                              "minItems": 1,
+                              "type": "array"
+                            },
+                            "image_web_uris": {
+                              "description": "Image web URIs",
+                              "items": {
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "type": "array"
+                            },
+                            "landing_page_url": {
+                              "description": "Landing page URL",
+                              "type": "string"
+                            },
+                            "material_name": {
+                              "description": "Creative material name",
+                              "type": "string"
+                            },
+                            "music_info": {
+                              "additionalProperties": false,
+                              "description": "TikTok music configuration",
+                              "type": "object"
+                            },
+                            "tiktok_item_id": {
+                              "description": "Authorized TikTok post ID",
+                              "manual_entry": {
+                                "instructions": "请从 TikTok Ads Manager 或已授权身份的帖子信息中复制帖子 ID；当前没有稳定的帖子目录接口，系统不会根据名称猜测。",
+                                "source": "external_provider_identifier",
+                                "title": "TikTok 帖子 ID"
+                              },
+                              "type": "string"
+                            },
+                            "video_id": {
+                              "description": "Uploaded video ID",
+                              "lookup_result_key": "videos",
+                              "lookup_tool": "tiktok_list_videos",
+                              "selection_label_fields": [
+                                "file_name",
+                                "video_name",
+                                "name",
+                                "id"
+                              ],
+                              "selection_value_fields": [
+                                "video_id",
+                                "id"
+                              ],
+                              "type": "string"
+                            },
+                            "video_info": {
+                              "additionalProperties": false,
+                              "description": "Provider video_info",
+                              "properties": {
+                                "file_name": {
+                                  "description": "Video file name",
+                                  "type": "string"
+                                },
+                                "video_id": {
+                                  "description": "Uploaded video ID",
+                                  "lookup_result_key": "videos",
+                                  "lookup_tool": "tiktok_list_videos",
+                                  "minLength": 1,
+                                  "selection_label_fields": [
+                                    "file_name",
+                                    "video_name",
+                                    "name",
+                                    "id"
+                                  ],
+                                  "selection_value_fields": [
+                                    "video_id",
+                                    "id"
+                                  ],
+                                  "type": "string"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "creative_info"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "deeplink_list": {
+                    "description": "Optional Smart+ deeplinks",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "deeplink": {
+                          "description": "Deeplink",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "deeplink_type": {
+                          "description": "Deeplink type",
+                          "enum": [
+                            "NORMAL",
+                            "DEFERRED"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "deeplink"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "landing_page_url_list": {
+                    "description": "Smart+ landing page URL list",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "landing_page_url": {
+                          "description": "Landing page URL",
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "landing_page_url"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 1,
+                    "minItems": 1,
+                    "type": "array"
                   },
                   "name": {
                     "description": "Resource name",
                     "type": "string"
                   },
                   "operation_status": {
-                    "description": "Smart+ delivery status",
+                    "description": "Delivery status; updated through the Smart+ status endpoint",
                     "enum": [
                       "DISABLE",
                       "ENABLE"
                     ],
                     "type": "string"
                   },
+                  "page_list": {
+                    "description": "Instant Page IDs for lead generation",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "page_id": {
+                          "description": "TikTok Instant Page ID",
+                          "manual_entry": {
+                            "instructions": "当前能力未接入页面目录查询，请粘贴 TikTok Ads Manager 中的页面/表单 ID。",
+                            "source": "external_provider_identifier",
+                            "title": "TikTok 页面或表单 ID"
+                          },
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "page_id"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 3,
+                    "minItems": 1,
+                    "type": "array"
+                  },
                   "status": {
-                    "description": "Compatibility status; normalized to operation_status",
+                    "description": "Delivery status; updated through the Smart+ status endpoint",
                     "enum": [
                       "ACTIVE",
                       "ENABLED",
@@ -44814,15 +45259,70 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "09b07a37de30dc5d8ef96bf7272f067ff602f6a4c8c51cfb8c167cac9e2600a8",
-          "contract_version": "1.3.0",
+          "contract_hash": "914c1c8ed6aae3dc04cab5d0fdf7fcfac736b19684fb0cafce8f2a3d84f31503",
+          "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ ad_group；仅允许在测试账号和确认后执行。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "forbidden": [
+                  "updates.name",
+                  "updates.bid_price",
+                  "updates.budget",
+                  "updates.comment_disabled",
+                  "updates.conversion_bid_price",
+                  "updates.dayparting",
+                  "updates.min_budget",
+                  "updates.movie_premiere_date",
+                  "updates.pacing",
+                  "updates.roas_bid",
+                  "updates.schedule_start_time",
+                  "updates.schedule_end_time",
+                  "updates.schedule_type",
+                  "updates.share_disabled",
+                  "updates.suggestion_audience_enabled",
+                  "updates.targeting_optimization_mode",
+                  "updates.targeting_spec"
+                ],
+                "if": {
+                  "updates.status": {
+                    "exists": true
+                  }
+                },
+                "message": "Smart+ delivery status must be updated separately from content fields"
+              },
+              {
+                "forbidden": [
+                  "updates.name",
+                  "updates.bid_price",
+                  "updates.budget",
+                  "updates.comment_disabled",
+                  "updates.conversion_bid_price",
+                  "updates.dayparting",
+                  "updates.min_budget",
+                  "updates.movie_premiere_date",
+                  "updates.pacing",
+                  "updates.roas_bid",
+                  "updates.schedule_start_time",
+                  "updates.schedule_end_time",
+                  "updates.schedule_type",
+                  "updates.share_disabled",
+                  "updates.suggestion_audience_enabled",
+                  "updates.targeting_optimization_mode",
+                  "updates.targeting_spec"
+                ],
+                "if": {
+                  "updates.operation_status": {
+                    "exists": true
+                  }
+                },
+                "message": "Smart+ delivery status must be updated separately from content fields"
+              }
+            ],
             "properties": {
               "account_id": {
                 "minLength": 1,
@@ -44888,92 +45388,53 @@
                     "minimum": 0,
                     "type": "number"
                   },
-                  "bid_type": {
-                    "description": "Bid mode",
-                    "type": "string"
-                  },
-                  "billing_event": {
-                    "description": "Billing event",
-                    "type": "string"
-                  },
                   "budget": {
                     "description": "Ad group budget",
                     "minimum": 0,
                     "type": "number"
                   },
-                  "budget_mode": {
-                    "description": "Ad group budget mode",
-                    "type": "string"
+                  "comment_disabled": {
+                    "description": "Disable comments",
+                    "type": "boolean"
                   },
                   "conversion_bid_price": {
                     "description": "Conversion bid price",
                     "minimum": 0,
                     "type": "number"
                   },
-                  "location_ids": {
-                    "description": "Target locations",
-                    "items": {
-                      "type": "string"
-                    },
-                    "lookup_defaults": {
-                      "level_range": "TO_COUNTRY",
-                      "placements": [
-                        "PLACEMENT_TIKTOK"
-                      ]
-                    },
-                    "lookup_dependencies": [
-                      {
-                        "input_field": "placements",
-                        "label": "投放版位",
-                        "required": true,
-                        "value_path": "placements"
-                      },
-                      {
-                        "input_field": "objective_type",
-                        "label": "推广目标",
-                        "required": true,
-                        "value_path": "objective_type"
-                      }
-                    ],
-                    "lookup_result_key": "regions",
-                    "lookup_tool": "tiktok_list_regions",
-                    "selection_label_fields": [
-                      "location_name",
-                      "name",
-                      "country_name",
-                      "country_code"
-                    ],
-                    "selection_value_fields": [
-                      "location_id",
-                      "id",
-                      "country_code",
-                      "code"
-                    ],
-                    "type": "array"
+                  "dayparting": {
+                    "description": "Ad delivery dayparting schedule",
+                    "type": "string"
+                  },
+                  "min_budget": {
+                    "description": "Minimum budget",
+                    "minimum": 0,
+                    "type": "number"
+                  },
+                  "movie_premiere_date": {
+                    "description": "Movie premiere date",
+                    "type": "string"
                   },
                   "name": {
                     "description": "Resource name",
                     "type": "string"
                   },
                   "operation_status": {
-                    "description": "Smart+ delivery status",
+                    "description": "Delivery status; updated through the Smart+ status endpoint",
                     "enum": [
                       "DISABLE",
                       "ENABLE"
                     ],
                     "type": "string"
                   },
-                  "optimization_goal": {
-                    "description": "Optimization goal",
+                  "pacing": {
+                    "description": "Budget pacing",
                     "type": "string"
                   },
-                  "promotion_type": {
-                    "description": "Optimization location",
-                    "type": "string"
-                  },
-                  "saved_audience_id": {
-                    "description": "Saved audience ID",
-                    "type": "string"
+                  "roas_bid": {
+                    "description": "Return-on-ad-spend bid",
+                    "minimum": 0,
+                    "type": "number"
                   },
                   "schedule_end_time": {
                     "description": "Schedule end time",
@@ -44983,8 +45444,16 @@
                     "description": "Schedule start time",
                     "type": "string"
                   },
+                  "schedule_type": {
+                    "description": "Schedule type",
+                    "type": "string"
+                  },
+                  "share_disabled": {
+                    "description": "Disable sharing",
+                    "type": "boolean"
+                  },
                   "status": {
-                    "description": "Compatibility status; normalized to operation_status",
+                    "description": "Delivery status; updated through the Smart+ status endpoint",
                     "enum": [
                       "ACTIVE",
                       "ENABLED",
@@ -44993,6 +45462,80 @@
                       "ENABLE"
                     ],
                     "type": "string"
+                  },
+                  "suggestion_audience_enabled": {
+                    "description": "Enable suggested audience",
+                    "type": "boolean"
+                  },
+                  "targeting_optimization_mode": {
+                    "description": "Targeting optimization mode",
+                    "type": "string"
+                  },
+                  "targeting_spec": {
+                    "additionalProperties": false,
+                    "description": "TikTok Smart+ targeting specification",
+                    "properties": {
+                      "age_groups": {
+                        "description": "Age groups",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "gender": {
+                        "description": "Gender",
+                        "type": "string"
+                      },
+                      "location_ids": {
+                        "description": "Location IDs",
+                        "items": {
+                          "type": "string"
+                        },
+                        "lookup_defaults": {
+                          "level_range": "TO_COUNTRY",
+                          "placements": [
+                            "PLACEMENT_TIKTOK"
+                          ]
+                        },
+                        "lookup_dependencies": [
+                          {
+                            "input_field": "placements",
+                            "label": "投放版位",
+                            "required": true,
+                            "value_path": "placements"
+                          },
+                          {
+                            "input_field": "objective_type",
+                            "label": "推广目标",
+                            "required": true,
+                            "value_path": "objective_type"
+                          }
+                        ],
+                        "lookup_result_key": "regions",
+                        "lookup_tool": "tiktok_list_regions",
+                        "selection_label_fields": [
+                          "location_name",
+                          "name",
+                          "country_name",
+                          "country_code"
+                        ],
+                        "selection_value_fields": [
+                          "location_id",
+                          "id",
+                          "country_code",
+                          "code"
+                        ],
+                        "type": "array"
+                      },
+                      "operating_systems": {
+                        "description": "Operating systems",
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
                   }
                 },
                 "type": "object"
@@ -45051,15 +45594,42 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "c94a5449a32d6090f1b4b586cbafc00d8b6298174e077067cdb079b00f431884",
-          "contract_version": "1.3.0",
+          "contract_hash": "de480bad841c32b2d19496a7ed816846475e019e5d69cfad72d9212ffb36fe42",
+          "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ campaign；仅允许在测试账号和确认后执行。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "forbidden": [
+                  "updates.name",
+                  "updates.budget",
+                  "updates.po_number"
+                ],
+                "if": {
+                  "updates.status": {
+                    "exists": true
+                  }
+                },
+                "message": "Smart+ delivery status must be updated separately from content fields"
+              },
+              {
+                "forbidden": [
+                  "updates.name",
+                  "updates.budget",
+                  "updates.po_number"
+                ],
+                "if": {
+                  "updates.operation_status": {
+                    "exists": true
+                  }
+                },
+                "message": "Smart+ delivery status must be updated separately from content fields"
+              }
+            ],
             "properties": {
               "account_id": {
                 "minLength": 1,
@@ -45100,28 +45670,24 @@
                     "minimum": 0,
                     "type": "number"
                   },
-                  "budget_auto_adjust_strategy": {
-                    "description": "Automatic budget adjustment",
-                    "type": "string"
-                  },
-                  "budget_mode": {
-                    "description": "Campaign budget mode",
-                    "type": "string"
-                  },
                   "name": {
                     "description": "Resource name",
                     "type": "string"
                   },
                   "operation_status": {
-                    "description": "Smart+ delivery status",
+                    "description": "Delivery status; updated through the Smart+ status endpoint",
                     "enum": [
                       "DISABLE",
                       "ENABLE"
                     ],
                     "type": "string"
                   },
+                  "po_number": {
+                    "description": "Purchase order number",
+                    "type": "string"
+                  },
                   "status": {
-                    "description": "Compatibility status; normalized to operation_status",
+                    "description": "Delivery status; updated through the Smart+ status endpoint",
                     "enum": [
                       "ACTIVE",
                       "ENABLED",
@@ -45346,8 +45912,8 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "c281ecff4c3024372444c58e063605c889233f9803d2ae894466ddcd5a229ccb",
-          "contract_version": "1.3.0",
+          "contract_hash": "2f74164a81c5040d3ccad62e46f107293a5991574d2a25b061afe9afcfcfee8d",
+          "contract_version": "2",
           "description": "更新 TikTok Ads ad，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -45404,41 +45970,21 @@
               },
               "updates": {
                 "additionalProperties": false,
-                "description": "Allowed TikTok ad update fields",
-                "intent_defaults": {
-                  "cross_channel_batch_pause": {
-                    "status": "PAUSED"
-                  },
-                  "cross_channel_batch_resume": {
-                    "status": "ACTIVE"
-                  },
-                  "pause_campaign": {
-                    "status": "PAUSED"
-                  },
-                  "resume_campaign": {
-                    "status": "ACTIVE"
-                  }
-                },
+                "description": "TikTok Ad status update fields",
                 "properties": {
-                  "landing_page_url": {
-                    "description": "Landing page URL",
-                    "type": "string"
-                  },
-                  "name": {
-                    "description": "Resource name",
-                    "type": "string"
-                  },
                   "status": {
-                    "description": "Ad status",
+                    "description": "Ad delivery status",
                     "enum": [
                       0,
                       1
                     ],
+                    "intent_status_field": "status",
+                    "intent_status_map": {
+                      "ACTIVE": 1,
+                      "ENABLED": 1,
+                      "PAUSED": 0
+                    },
                     "type": "integer"
-                  },
-                  "text": {
-                    "description": "Ad text payload",
-                    "type": "object"
                   }
                 },
                 "type": "object"
@@ -46388,8 +46934,8 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "fd868eb9d1f6aa2c80c796951a245c1b2c889e58f93248453ae0adb22ebe301f",
-          "contract_version": "2",
+          "contract_hash": "c8d08f52f7b9c5c292c660b4769392ca39a92b9d72bbab6e932e1764d80131a8",
+          "contract_version": "3",
           "description": "更新 TikTok 广告创意；实际通过所属 Ad 的 ad/update 接口修改创意字段，需要明确提供 Ad Group ID 和 Creative（对应 Ad）ID，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -46433,41 +46979,34 @@
               },
               "updates": {
                 "additionalProperties": false,
-                "description": "Allowed TikTok ad update fields",
-                "intent_defaults": {
-                  "cross_channel_batch_pause": {
-                    "status": "PAUSED"
-                  },
-                  "cross_channel_batch_resume": {
-                    "status": "ACTIVE"
-                  },
-                  "pause_campaign": {
-                    "status": "PAUSED"
-                  },
-                  "resume_campaign": {
-                    "status": "ACTIVE"
-                  }
-                },
+                "description": "TikTok Ad creative fields updated through ad/update",
                 "properties": {
+                  "ad_name": {
+                    "description": "Updated Ad name",
+                    "maxLength": 512,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "ad_text": {
+                    "description": "Updated primary ad text",
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "call_to_action_id": {
+                    "description": "TikTok call-to-action ID",
+                    "manual_entry": {
+                      "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
+                      "source": "external_provider_identifier",
+                      "title": "TikTok 行动号召 ID"
+                    },
+                    "minLength": 1,
+                    "type": "string"
+                  },
                   "landing_page_url": {
-                    "description": "Landing page URL",
+                    "description": "Updated landing page URL",
+                    "minLength": 1,
                     "type": "string"
-                  },
-                  "name": {
-                    "description": "Resource name",
-                    "type": "string"
-                  },
-                  "status": {
-                    "description": "Ad status",
-                    "enum": [
-                      0,
-                      1
-                    ],
-                    "type": "integer"
-                  },
-                  "text": {
-                    "description": "Ad text payload",
-                    "type": "object"
                   }
                 },
                 "type": "object"

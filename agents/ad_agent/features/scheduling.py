@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
 from ..core.interfaces import ParsedIntent
-from ..runtime.scheduler import CronExpression, next_run_at, validate_timezone
+from agents.agent_platform.infrastructure.durable import CronExpression, next_run_at, validate_timezone
 
 
 class SchedulingFeature:

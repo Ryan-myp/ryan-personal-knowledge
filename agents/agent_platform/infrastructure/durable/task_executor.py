@@ -17,9 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
-from ..core.durable_ports import TaskQueueStore
-
-from ..core.task import TaskSubmission
+from .ports import TaskQueueStore
+from .task import TaskSubmission
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +145,7 @@ class TaskExecutor:
         self._task_record_factory = task_record_factory or TaskSubmission
         self._capacity = threading.BoundedSemaphore(self.max_workers + self.max_queue)
         self._pool = ThreadPoolExecutor(
-            max_workers=self.max_workers, thread_name_prefix="ad-agent-task"
+            max_workers=self.max_workers, thread_name_prefix="agent-platform-task"
         )
         self._handlers: dict[str, Callable[[TaskExecutionContext], Any]] = {}
         self._before_execute = before_execute
@@ -331,7 +330,7 @@ class TaskExecutor:
                 self._start_worker_heartbeat()
             recovered = self.store.recover_stale_tasks(self.lease_seconds)
             if recovered:
-                logger.warning("marked %s stale Agent tasks for recovery", recovered)
+                logger.warning("marked %s stale tasks for recovery", recovered)
             scheduled = self._refill_queue()
             self._start_queue_poller()
             return scheduled
@@ -400,7 +399,7 @@ class TaskExecutor:
             self._queue_poller_wakeup.clear()
             self._queue_poller_thread = threading.Thread(
                 target=self._poll_durable_queue,
-                name="ad-agent-task-queue-poller",
+                name="agent-platform-task-queue-poller",
                 daemon=True,
             )
             self._queue_poller_thread.start()
@@ -422,7 +421,7 @@ class TaskExecutor:
             return
         self._worker_heartbeat_stop.clear()
         self._worker_heartbeat_thread = threading.Thread(
-            target=self._heartbeat_worker, name="ad-agent-worker-heartbeat", daemon=True,
+            target=self._heartbeat_worker, name="agent-platform-worker-heartbeat", daemon=True,
         )
         self._worker_heartbeat_thread.start()
 
@@ -568,7 +567,7 @@ class TaskExecutor:
                         return
 
             heartbeat_thread = threading.Thread(
-                target=heartbeat, name="ad-agent-task-heartbeat", daemon=True
+                target=heartbeat, name="agent-platform-task-heartbeat", daemon=True
             )
             heartbeat_thread.start()
             try:

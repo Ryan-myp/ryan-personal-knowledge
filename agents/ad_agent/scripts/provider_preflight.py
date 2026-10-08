@@ -17,12 +17,18 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight  # noqa: E402
+from agents.ad_agent.core.namespace import normalize_namespace  # noqa: E402
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator  # noqa: E402
 from agents.ad_agent.runtime.runtime import AdvertisingComposition  # noqa: E402
 from agents.ad_agent.tools.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
-    normalize_platform,
 )
+
+CREDENTIAL_PLATFORM_ALIASES = {
+    "google-ads": {"google", "google-ads"},
+    "meta": {"meta"},
+    "tiktok": {"tiktok"},
+}
 
 
 def _load_mapping(path: Path) -> dict[str, Any]:
@@ -41,8 +47,14 @@ def _credential_configured(path: Path, platform: str) -> bool:
         return False
     if not isinstance(value, dict):
         return False
-    wanted = normalize_platform(platform)
-    return any(normalize_platform(str(key)) == wanted and isinstance(item, dict) and bool(item) for key, item in value.items())
+    canonical = normalize_namespace(platform)
+    wanted = CREDENTIAL_PLATFORM_ALIASES.get(canonical, {canonical})
+    return any(
+        normalize_namespace(str(key)) in wanted
+        and isinstance(item, dict)
+        and bool(item)
+        for key, item in value.items()
+    )
 
 
 def build_runtime(config_path: Path) -> AdvertisingComposition:

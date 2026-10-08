@@ -16,7 +16,7 @@ from typing import Any, Mapping, Optional
 
 from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 from .ad_conversation_services import AdConversationServices
-from .task_executor import TaskExecutionContext
+from agents.agent_platform.infrastructure.durable import TaskExecutionContext
 
 
 class AdTaskRuntimeFacade:

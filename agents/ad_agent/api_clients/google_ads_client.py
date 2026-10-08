@@ -106,11 +106,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
     AD_GROUP_UPDATE_FIELDS = {
         "name", "status", "type", "cpc_bid", "cpc_bid_micros",
     }
-    # Google Ads treats most ad payload fields as immutable after creation.
-    # Keep the live adapter deliberately narrow; the ToolSchema can still
-    # preview richer creative changes until a dedicated asset mutation is
-    # verified.
-    AD_UPDATE_FIELDS = {"status"}
+    RESPONSIVE_SEARCH_AD_UPDATE_FIELDS = {
+        "headlines", "descriptions", "final_url", "path1", "path2",
+    }
+    AD_UPDATE_FIELDS = {"status", *RESPONSIVE_SEARCH_AD_UPDATE_FIELDS}
     ASSET_GROUP_UPDATE_FIELDS = {"name", "status"}
     CAMPAIGN_BUDGET_UPDATE_FIELDS = {
         "name", "daily_budget", "budget", "delivery_method", "explicitly_shared",
@@ -1803,42 +1802,59 @@ class GoogleAdsAPIClient(BasePlatformClient):
             }
         raise APIError(f"Google ad group {ad_group_id} was not found")
     
-    def list_ads(self, ad_group_id: str, page_size: int = 100) -> list:
-        """获取 Ad 列表"""
-        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+    def list_ads(
+        self,
+        ad_group_id: str | None = None,
+        page_size: int = 100,
+        *,
+        campaign_id: str | None = None,
+    ) -> list:
+        """List customer Ads, optionally scoped to a Campaign or Ad Group."""
+        conditions = []
+        if campaign_id is not None:
+            campaign_id = self._numeric_id(campaign_id, "campaign_id")
+            conditions.append(f"campaign.id = {campaign_id}")
+        if ad_group_id is not None:
+            ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+            conditions.append(f"ad_group.id = {ad_group_id}")
         try:
             page_size = max(1, min(int(page_size), 1000))
         except (TypeError, ValueError):
             page_size = 100
-        # Ads are exposed through the ``ad_group_ad`` association resource.
-        # ``ad.ad_group`` and ``ad.status`` are not valid v24 GAQL fields;
-        # the former implementation therefore failed against the real API.
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         query = f"""
-            SELECT ad_group_ad.ad.id, ad_group_ad.ad.resource_name,
-                   ad_group_ad.ad.name, ad_group_ad.status
+            SELECT campaign.id, ad_group.id, ad_group_ad.ad.id,
+                   ad_group_ad.ad.resource_name, ad_group_ad.ad.name,
+                   ad_group_ad.status
             FROM ad_group_ad
-            WHERE ad_group.id = {ad_group_id}
+            {where}
             LIMIT {page_size}
         """
         results = self._search_all(query, page_size=page_size)
-        # 解析嵌套结构：result['data']['results'][i]['ad']
-        ads = []
-        for r in results:
-            association = r.get('adGroupAd', r.get('ad_group_ad', {})) or {}
-            ad = association.get('ad', {}) or {}
-            ad_id = ad.get('id')
-            ads.append({
-                # The mutable Google resource is AdGroupAd, not Ad. Return
-                # its composite key so later get/update calls can address
-                # the same resource without guessing the parent group.
-                'id': f"{ad_group_id}~{ad_id}" if ad_id else None,
-                'resource_name': association.get(
-                    'resourceName', ad.get('resourceName')
-                ),
-                'name': ad.get('name'),
-                'status': association.get('status'),
-            })
-        return ads
+        return [self._normalize_listed_ad(row) for row in results]
+
+    @staticmethod
+    def _normalize_listed_ad(row: dict) -> dict:
+        association = row.get('adGroupAd', row.get('ad_group_ad', {})) or {}
+        ad = association.get('ad', {}) or {}
+        campaign = row.get('campaign', {}) or {}
+        ad_group = row.get('adGroup', row.get('ad_group', {})) or {}
+        ad_id = ad.get('id')
+        group_id = ad_group.get('id')
+        return {
+            'id': f"{group_id}~{ad_id}" if group_id and ad_id else None,
+            'campaign_id': (
+                str(campaign["id"]) if campaign.get("id") is not None else None
+            ),
+            'ad_group_id': (
+                str(group_id) if group_id is not None else None
+            ),
+            'resource_name': association.get(
+                'resourceName', ad.get('resourceName')
+            ),
+            'name': ad.get('name'),
+            'status': association.get('status'),
+        }
 
     def list_keywords(
         self,
@@ -4150,12 +4166,147 @@ class GoogleAdsAPIClient(BasePlatformClient):
         self._mutate("adGroups", {"remove": resource_name})
         return {"success": True, "ad_group_id": ad_group_id}
 
+    @classmethod
+    def _normalize_ad_update(cls, updates: dict) -> tuple[str | None, dict]:
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - cls.AD_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported Google ad update fields: {sorted(unknown)}")
+        normalized = {
+            key: value for key, value in updates.items() if value is not None
+        }
+        if not normalized:
+            raise ValueError("updates must contain a supported non-null field")
+
+        status = normalized.pop("status", None)
+        if status is not None:
+            status = str(status).upper()
+            if status not in {"ENABLED", "PAUSED", "REMOVED"}:
+                raise ValueError(
+                    "Google Ad status must be ENABLED, PAUSED or REMOVED"
+                )
+        if not normalized and status is None:
+            raise ValueError("updates must contain a supported non-null field")
+        return status, normalized
+
+    def _verify_responsive_search_ad(
+        self, ad_group_id: str, numeric_ad_id: str
+    ) -> None:
+        query = f"""
+            SELECT ad_group_ad.ad.id, ad_group_ad.ad.type
+            FROM ad_group_ad
+            WHERE ad_group.id = {ad_group_id}
+              AND ad_group_ad.ad.id = {numeric_ad_id}
+            LIMIT 1
+        """
+        rows = self._response_payload(self._search(query)).get("results", [])
+        association = (
+            rows[0].get("adGroupAd", rows[0].get("ad_group_ad", {}))
+            if rows else {}
+        ) or {}
+        ad = association.get("ad", {}) or {}
+        ad_type = str(ad.get("type") or "").upper()
+        if not ad_type:
+            raise APIError(
+                f"Google Ads type for ad {numeric_ad_id} could not be verified"
+            )
+        if ad_type != "RESPONSIVE_SEARCH_AD":
+            raise ValueError(
+                "Google Ads content updates currently support "
+                "RESPONSIVE_SEARCH_AD only"
+            )
+
+    @staticmethod
+    def _google_ad_content_field(
+        field: str, value: Any
+    ) -> tuple[dict[str, Any], str]:
+        text_fields = {"headlines": (3, 15, 30), "descriptions": (2, 4, 90)}
+        if field in text_fields:
+            minimum, maximum, max_length = text_fields[field]
+            if not isinstance(value, list) or not minimum <= len(value) <= maximum:
+                raise ValueError(
+                    f"{field} must contain between {minimum} and {maximum} values"
+                )
+            if any(
+                not isinstance(text, str)
+                or not text.strip()
+                or len(text) > max_length
+                for text in value
+            ):
+                raise ValueError(
+                    f"{field} values must be non-empty strings of at most "
+                    f"{max_length} characters"
+                )
+            return (
+                {"responsiveSearchAd": {field: [{"text": text} for text in value]}},
+                f"responsiveSearchAd.{field}",
+            )
+        if field == "final_url":
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("final_url must be a non-empty URL")
+            return {"finalUrls": [value.strip()]}, "finalUrls"
+        if not isinstance(value, str) or len(value) > 15:
+            raise ValueError(f"{field} must be a string of at most 15 characters")
+        return {"responsiveSearchAd": {field: value}}, f"responsiveSearchAd.{field}"
+
+    def _build_google_ad_content_operation(
+        self, numeric_ad_id: str, updates: dict[str, Any]
+    ) -> dict[str, Any]:
+        ad_patch: dict[str, Any] = {
+            "resourceName": f"customers/{self.customer_id}/ads/{numeric_ad_id}"
+        }
+        field_paths = []
+        for field, value in updates.items():
+            fragment, field_path = self._google_ad_content_field(field, value)
+            nested_rsa = fragment.get("responsiveSearchAd")
+            if isinstance(nested_rsa, dict):
+                ad_patch.setdefault("responsiveSearchAd", {}).update(nested_rsa)
+            else:
+                ad_patch.update(fragment)
+            field_paths.append(field_path)
+        return {
+            "adOperation": {
+                "update": ad_patch,
+                "updateMask": {"paths": field_paths},
+            }
+        }
+
     def update_ad(self, ad_id: str, updates: dict) -> dict:
-        """Update mutable Google Ads AdGroupAd fields."""
-        return self._update_resource(
-            "adGroupAds", ad_id, updates,
-            self.AD_UPDATE_FIELDS, "ad_id",
-        )
+        """Atomically update AdGroupAd delivery and supported RSA content."""
+        ad_key = str(ad_id or "").strip()
+        match = re.fullmatch(r"(\d+)~(\d+)", ad_key)
+        if not match:
+            raise ValueError(
+                "ad_id must be a Google AdGroupAd key in the form "
+                "{ad_group_id}~{ad_id}"
+            )
+        status, content_updates = self._normalize_ad_update(updates)
+        ad_group_id, numeric_ad_id = match.groups()
+        if content_updates:
+            self._verify_responsive_search_ad(ad_group_id, numeric_ad_id)
+        operations = []
+        if content_updates:
+            operations.append(
+                self._build_google_ad_content_operation(
+                    numeric_ad_id, content_updates
+                )
+            )
+        if status is not None:
+            operations.append({
+                "adGroupAdOperation": {
+                    "update": {
+                        "resourceName": (
+                            f"customers/{self.customer_id}/adGroupAds/{ad_key}"
+                        ),
+                        "status": status,
+                    },
+                    "updateMask": {"paths": ["status"]},
+                }
+            })
+
+        self._mutate_google_operations(operations)
+        return {"success": True, "ad_id": ad_key}
 
     def delete_ad(self, ad_group_id: str, ad_id: str) -> dict:
         """Remove an AdGroupAd using Google's composite resource name."""
@@ -4273,6 +4424,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status = str(status or "PAUSED").upper()
         if status not in {"PAUSED", "ENABLED"}:
             raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError("Google live ad creation only allows PAUSED Ads")
         customer = str(self.customer_id or "").strip()
         if not re.fullmatch(r"\d+", customer):
             raise ValueError("customer_id must contain digits only")

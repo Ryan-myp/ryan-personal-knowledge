@@ -1,4 +1,4 @@
-"""Durable, provider-neutral repair loop for execution run events."""
+"""Application-neutral repair loop for execution run events."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class ExecutionEventRepairConsumer:
             )
         self._stop.clear()
         self._thread = threading.Thread(
-            target=self._run, name="ad-agent-event-repair", daemon=True,
+            target=self._run, name="agent-platform-event-repair", daemon=True,
         )
         self._thread.start()
 

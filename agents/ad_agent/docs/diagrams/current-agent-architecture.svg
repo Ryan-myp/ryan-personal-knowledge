@@ -1,0 +1,231 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1280" width="1920" height="1280">
+  <style>
+    text {
+      font-family: Arial, "PingFang SC", "Microsoft YaHei", "Microsoft JhengHei", sans-serif;
+      letter-spacing: 0;
+    }
+    .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 1.2px; }
+    .title { font-size: 48px; font-weight: 700; }
+    .subtitle { font-size: 19px; font-weight: 400; }
+    .layer-number { font-size: 16px; font-weight: 700; }
+    .layer-title { font-size: 20px; font-weight: 700; }
+    .layer-en { font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+    .item-title { font-size: 18px; font-weight: 700; }
+    .item-copy { font-size: 14px; font-weight: 400; }
+    .item-small { font-size: 12px; font-weight: 400; }
+    .core-title { font-size: 18px; font-weight: 700; }
+    .core-copy { font-size: 13px; font-weight: 400; }
+    .note { font-size: 13px; font-weight: 400; }
+  </style>
+  <defs>
+    <marker id="arrow-soft" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L8 3 L0 6 Z" fill="#85918f"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L8 3 L0 6 Z" fill="#49b99a"/>
+    </marker>
+    <marker id="arrow-coral" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L8 3 L0 6 Z" fill="#e58a68"/>
+    </marker>
+    <marker id="arrow-state" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse">
+      <path d="M0 0 L8 3 L0 6 Z" fill="#85918f"/>
+    </marker>
+  </defs>
+
+  <rect width="1920" height="1280" fill="#f5f7f6"/>
+
+  <text x="112" y="74" class="eyebrow" fill="#31816f">AD AGENT / SYSTEM ARCHITECTURE</text>
+  <text x="112" y="136" class="title" fill="#182726">一个 Agent，六层能力</text>
+  <text x="112" y="177" class="subtitle" fill="#5f6f6d">Skills 提供上下文；所有可执行 Tool 都由同一 Harness 统一授权与执行。</text>
+
+  <g>
+    <rect x="1452" y="70" width="356" height="88" rx="8" fill="#ffffff" stroke="#dce3e1"/>
+    <circle cx="1480" cy="101" r="5" fill="#279b7e"/>
+    <text x="1497" y="106" class="eyebrow" fill="#243331">SINGLE AGENT</text>
+    <text x="1480" y="134" class="item-small" fill="#687876">One shared Run Kernel · domain-neutral core</text>
+  </g>
+
+  <g>
+    <line x1="112" y1="210" x2="150" y2="210" stroke="#49b99a" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+    <text x="162" y="215" class="item-small" fill="#63716f">运行调用</text>
+    <line x1="310" y1="210" x2="348" y2="210" stroke="#e58a68" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow-coral)"/>
+    <text x="360" y="215" class="item-small" fill="#63716f">能力注册</text>
+    <line x1="510" y1="210" x2="548" y2="210" stroke="#85918f" stroke-width="1.4" marker-start="url(#arrow-state)" marker-end="url(#arrow-state)"/>
+    <text x="560" y="215" class="item-small" fill="#63716f">状态读写</text>
+    <text x="820" y="215" class="item-small" fill="#899592">04 数据与 05 集成是并列依赖，不是串行步骤</text>
+  </g>
+
+  <g>
+    <text x="132" y="268" class="layer-number" fill="#31937d">01</text>
+    <text x="184" y="268" class="layer-title" fill="#1c2928">场景应用</text>
+    <text x="184" y="290" class="layer-en" fill="#899592">APPLICATION</text>
+
+    <line x1="744" y1="246" x2="744" y2="322" stroke="#dfe5e3"/>
+    <line x1="1190" y1="246" x2="1190" y2="322" stroke="#dfe5e3"/>
+
+    <text x="420" y="263" class="item-title" fill="#243331">广告管理场景</text>
+    <text x="420" y="289" class="item-copy" fill="#63716f">查询 · 创建 · 更新 · 报表</text>
+
+    <text x="784" y="263" class="item-title" fill="#243331">访问入口</text>
+    <text x="784" y="289" class="item-copy" fill="#63716f">Web UI · FastAPI · /chat · SSE</text>
+
+    <text x="1230" y="263" class="item-title" fill="#243331">创建体验</text>
+    <text x="1230" y="289" class="item-copy" fill="#63716f">账户 → 广告类型 → Blueprint / 模板</text>
+  </g>
+
+  <line x1="112" y1="342" x2="1808" y2="342" stroke="#dce3e1"/>
+  <line x1="1072" y1="342" x2="1072" y2="357" stroke="#49b99a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <g>
+    <text x="132" y="397" class="layer-number" fill="#31937d">02</text>
+    <text x="184" y="397" class="layer-title" fill="#1c2928">Agent 层</text>
+    <text x="184" y="419" class="layer-en" fill="#899592">AGENT</text>
+
+    <line x1="744" y1="368" x2="744" y2="446" stroke="#dfe5e3"/>
+    <line x1="1190" y1="368" x2="1190" y2="446" stroke="#dfe5e3"/>
+
+    <text x="420" y="394" class="item-title" fill="#243331">Skills</text>
+    <text x="420" y="421" class="item-copy" fill="#63716f">SOP · 规则 · advisory context</text>
+
+    <text x="784" y="394" font-size="24" font-weight="700" fill="#20312f">Advertising Agent</text>
+    <text x="784" y="421" class="item-copy" fill="#63716f">一个模型循环 · 一个共享 Run 生命周期</text>
+
+    <text x="1230" y="394" class="item-title" fill="#243331">Tools</text>
+    <text x="1230" y="421" class="item-copy" fill="#63716f">结构化动作 · 必须经过 Harness 执行</text>
+  </g>
+
+  <line x1="112" y1="462" x2="1808" y2="462" stroke="#dce3e1"/>
+  <line x1="1072" y1="462" x2="1072" y2="478" stroke="#49b99a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <g>
+    <rect x="96" y="480" width="1728" height="278" rx="10" fill="#183536"/>
+    <rect x="96" y="480" width="5" height="278" rx="2" fill="#49b99a"/>
+
+    <text x="132" y="523" class="layer-number" fill="#74ceb5">03</text>
+    <text x="184" y="523" class="layer-title" fill="#f4f8f7">通用 Harness</text>
+    <text x="184" y="547" class="layer-en" fill="#9ab0ad">AGENT RUNTIME</text>
+    <text x="132" y="603" class="core-copy" fill="#b6c8c5">共享运行主轴</text>
+    <text x="132" y="626" class="core-copy" fill="#b6c8c5">所有 Skills / Tools</text>
+    <text x="132" y="647" class="core-copy" fill="#b6c8c5">经过同一生命周期</text>
+
+    <text x="420" y="519" class="eyebrow" fill="#74ceb5">ONE EXECUTION SPINE</text>
+    <text x="1510" y="519" class="eyebrow" fill="#adc1be">DOMAIN-NEUTRAL CORE</text>
+
+    <line x1="748" y1="546" x2="748" y2="694" stroke="#3a5554"/>
+    <line x1="1018" y1="546" x2="1018" y2="694" stroke="#3a5554"/>
+    <line x1="1352" y1="546" x2="1352" y2="694" stroke="#3a5554"/>
+
+    <line x1="716" y1="576" x2="738" y2="576" stroke="#49b99a" stroke-width="1.4" marker-end="url(#arrow-green)"/>
+    <line x1="988" y1="576" x2="1008" y2="576" stroke="#49b99a" stroke-width="1.4" marker-end="url(#arrow-green)"/>
+    <line x1="1320" y1="576" x2="1342" y2="576" stroke="#49b99a" stroke-width="1.4" marker-end="url(#arrow-green)"/>
+
+    <text x="420" y="582" class="core-title" fill="#f5f8f7">Run Kernel</text>
+    <text x="420" y="612" class="core-copy" fill="#bacbc8">principal · session lease</text>
+    <text x="420" y="634" class="core-copy" fill="#bacbc8">run_id · turn_id · mode</text>
+
+    <text x="778" y="582" class="core-title" fill="#f5f8f7">Agent Loop</text>
+    <text x="778" y="612" class="core-copy" fill="#bacbc8">LLM turn · bounded context</text>
+    <text x="778" y="634" class="core-copy" fill="#bacbc8">Tool results return to loop</text>
+
+    <text x="1048" y="582" class="core-title" fill="#f5f8f7">Tool Coordinator</text>
+    <text x="1048" y="612" class="core-copy" fill="#bacbc8">Tool catalog · schema</text>
+    <text x="1048" y="634" class="core-copy" fill="#bacbc8">dependency plan · timeout</text>
+
+    <rect x="1377" y="548" width="407" height="138" rx="6" fill="#204443"/>
+    <rect x="1377" y="548" width="3" height="138" rx="1.5" fill="#49b99a"/>
+    <text x="1400" y="582" class="core-title" fill="#f5f8f7">Unified Tool Gates</text>
+    <text x="1400" y="612" class="core-copy" fill="#c1d2cf">permissions · account scope</text>
+    <text x="1400" y="634" class="core-copy" fill="#c1d2cf">dry_run / live · approval</text>
+    <text x="1400" y="656" class="core-copy" fill="#c1d2cf">idempotency · audit</text>
+    <line x1="1048" y1="674" x2="1000" y2="674" stroke="#85918f" stroke-width="1.3" marker-end="url(#arrow-soft)"/>
+    <text x="1010" y="666" class="item-small" fill="#9fb2af">result</text>
+
+    <line x1="420" y1="710" x2="1784" y2="710" stroke="#3a5554"/>
+    <circle cx="430" cy="733" r="4" fill="#49b99a"/>
+    <text x="445" y="738" class="core-copy" fill="#c1d2cf">One lifecycle</text>
+    <circle cx="587" cy="733" r="4" fill="#e58a68"/>
+    <text x="602" y="738" class="core-copy" fill="#c1d2cf">One execution boundary</text>
+    <circle cx="817" cy="733" r="4" fill="#b3c4c2"/>
+    <text x="832" y="738" class="core-copy" fill="#c1d2cf">One audit trail</text>
+  </g>
+
+  <g>
+    <rect x="112" y="804" width="1696" height="230" fill="#ffffff" stroke="#dce3e1"/>
+    <line x1="960" y1="804" x2="960" y2="1034" stroke="#dce3e1"/>
+    <path d="M640 758 V824" fill="none" stroke="#85918f" stroke-width="1.4" marker-start="url(#arrow-state)" marker-end="url(#arrow-state)"/>
+    <text x="658" y="790" class="item-small" fill="#778481">state read / write</text>
+    <path d="M1450 758 V898" fill="none" stroke="#49b99a" stroke-width="1.6" marker-end="url(#arrow-green)"/>
+    <text x="1464" y="885" class="item-small" fill="#63716f">authorized call</text>
+    <path d="M1174 986 H1262 V694" fill="none" stroke="#e58a68" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrow-coral)"/>
+    <circle cx="1174" cy="986" r="3" fill="#e58a68"/>
+    <text x="1276" y="699" class="item-small" fill="#e3a187">Tool Catalog</text>
+
+    <text x="140" y="843" class="layer-number" fill="#31937d">04</text>
+    <text x="192" y="843" class="layer-title" fill="#1c2928">数据与记忆</text>
+    <text x="376" y="842" class="layer-en" fill="#899592">DATA &amp; MEMORY</text>
+    <text x="140" y="868" class="item-small" fill="#778481">有限检索 · 有界上下文 · 可恢复状态</text>
+
+    <line x1="408" y1="888" x2="408" y2="1008" stroke="#e4e9e7"/>
+    <line x1="680" y1="888" x2="680" y2="1008" stroke="#e4e9e7"/>
+
+    <text x="140" y="919" class="item-title" fill="#243331">Knowledge Wiki</text>
+    <text x="140" y="946" class="item-copy" fill="#63716f">raw source → ingest</text>
+    <text x="140" y="969" class="item-copy" fill="#63716f">reviewed / published docs</text>
+
+    <text x="436" y="919" class="item-title" fill="#243331">Agent Memory</text>
+    <text x="436" y="946" class="item-copy" fill="#63716f">Memory · transcript</text>
+    <text x="436" y="969" class="item-copy" fill="#63716f">tenant / user / session scoped</text>
+
+    <text x="708" y="919" class="item-title" fill="#243331">Run State &amp; Tasks</text>
+    <text x="708" y="946" class="item-copy" fill="#63716f">events · checkpoints · leases</text>
+    <text x="708" y="969" class="item-copy" fill="#63716f">idempotency · recovery</text>
+
+    <text x="992" y="843" class="layer-number" fill="#c27458">05</text>
+    <text x="1044" y="843" class="layer-title" fill="#1c2928">工具与渠道集成</text>
+    <text x="1274" y="842" class="layer-en" fill="#899592">TOOL EXECUTION</text>
+    <text x="992" y="868" class="item-small" fill="#778481">Source 注册契约；Gate 授权后调用 Executor</text>
+
+    <line x1="1258" y1="912" x2="1258" y2="1008" stroke="#e4e9e7"/>
+    <line x1="1532" y1="912" x2="1532" y2="1008" stroke="#e4e9e7"/>
+    <line x1="1500" y1="899" x2="1550" y2="899" stroke="#49b99a" stroke-width="1.4" marker-end="url(#arrow-green)"/>
+
+    <text x="992" y="919" class="item-title" fill="#243331">Provider Tool Sources</text>
+    <text x="992" y="946" class="item-copy" fill="#63716f">schema · fixed handlers</text>
+    <text x="992" y="969" class="item-copy" fill="#63716f">provider-owned versions</text>
+
+    <text x="1286" y="919" class="item-title" fill="#243331">Tool Executors</text>
+    <text x="1286" y="946" class="item-copy" fill="#63716f">Local · SDK / HTTP</text>
+    <text x="1286" y="969" class="item-copy" fill="#63716f">MCP Client</text>
+
+    <text x="1560" y="919" class="item-title" fill="#243331">Provider API Clients</text>
+    <text x="1560" y="946" class="item-copy" fill="#63716f">Meta · Google Ads · TikTok</text>
+    <text x="1560" y="969" class="item-copy" fill="#63716f">DV360*</text>
+
+    <text x="820" y="795" class="item-small" fill="#899592">04 / 05 · 并列 Runtime 依赖</text>
+  </g>
+
+  <g>
+    <rect x="112" y="1060" width="1696" height="108" rx="4" fill="#e9efed"/>
+    <text x="140" y="1101" class="layer-number" fill="#6c7a77">06</text>
+    <text x="192" y="1101" class="layer-title" fill="#1c2928">基础设施</text>
+    <text x="192" y="1124" class="layer-en" fill="#899592">FOUNDATION</text>
+    <text x="192" y="1147" class="item-small" fill="#778481">为上层提供运行、存储与模型服务</text>
+
+    <line x1="408" y1="1080" x2="408" y2="1148" stroke="#d1dbd8"/>
+    <line x1="868" y1="1080" x2="868" y2="1148" stroke="#d1dbd8"/>
+    <line x1="1328" y1="1080" x2="1328" y2="1148" stroke="#d1dbd8"/>
+
+    <text x="440" y="1099" class="item-title" fill="#243331">Service Runtime</text>
+    <text x="440" y="1126" class="item-copy" fill="#63716f">FastAPI · lifecycle-managed workers</text>
+
+    <text x="900" y="1099" class="item-title" fill="#243331">PersistenceBackend</text>
+    <text x="900" y="1126" class="item-copy" fill="#63716f">SQLite default · MySQL adapter · store ports</text>
+
+    <text x="1360" y="1099" class="item-title" fill="#243331">External Services</text>
+    <text x="1360" y="1126" class="item-copy" fill="#63716f">LLM API · MetricsSink · Trace / Alert ports</text>
+  </g>
+
+  <line x1="112" y1="1192" x2="1808" y2="1192" stroke="#dce3e1"/>
+  <text x="112" y="1221" class="note" fill="#657370">* DV360 代码仍保留，但不在当前 Google Ads / Meta / TikTok 查询 E2E 核验范围内。</text>
+  <text x="112" y="1245" class="note" fill="#657370">本图呈现代码架构边界，不代表 Provider live 能力或生产部署已经全部验证。</text>
+</svg>

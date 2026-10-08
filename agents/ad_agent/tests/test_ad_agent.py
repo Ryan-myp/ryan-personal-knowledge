@@ -43,6 +43,15 @@ from agents.ad_agent.api_clients.base import (
 from agents.ad_agent.api_clients.meta_client import MetaAPIClient
 from agents.ad_agent.api_clients.tiktok_client import TikTokAPIClient
 from agents.ad_agent.api_clients.dv360_client import DV360APIClient
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
+
+
+def trusted_principal(user_id, platform, account_id):
+    return RequestPrincipal(
+        user_id=user_id,
+        permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
+        account_scope={platform: frozenset({account_id})},
+    )
 
 
 # ─── Fixtures ──────────────────────────────────────────────────
@@ -1487,6 +1496,7 @@ class TestSafeWriteExecution:
         result = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             account_id="m1",
+            principal=trusted_principal("u1", "meta", "m1"),
         )
         assert result["needs_confirmation"] is True
         assert result["results"][0]["confirmation_payload"]["type"] == "confirm_write"
@@ -1591,6 +1601,7 @@ class TestSafeWriteExecution:
         planned = rt.run(
             "创建三层广告", session_id="chain-session", user_id="chain-user",
             account_id="m1", platform_params=params,
+            principal=trusted_principal("chain-user", "meta", "m1"),
         )
         assert planned["needs_confirmation"] is True
         assert planned["confirmation_payload"]["type"] == "confirm_write_plan"
@@ -1601,6 +1612,7 @@ class TestSafeWriteExecution:
             account_id="m1", confirmed=True,
             confirmation_payload=planned["confirmation_payload"],
             platform_params=params,
+            principal=trusted_principal("chain-user", "meta", "m1"),
         )
         assert executed["needs_confirmation"] is False
         assert all(item["success"] for item in executed["results"])
@@ -1616,6 +1628,7 @@ class TestSafeWriteExecution:
             "删除 Meta campaign campaign_id=123",
             user_id="delete-confirmation-user",
             account_id="m1",
+            principal=trusted_principal("delete-confirmation-user", "meta", "m1"),
         )
 
         assert result["needs_confirmation"] is True
@@ -1628,17 +1641,20 @@ class TestSafeWriteExecution:
         planned = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="idempotency-session", user_id="same-user", account_id="m1",
+            principal=trusted_principal("same-user", "meta", "m1"),
         )
         payload = planned["results"][0]["confirmation_payload"]
         first = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
             confirmation_payload=payload,
+            principal=trusted_principal("same-user", "meta", "m1"),
         )
         second = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
             confirmation_payload=payload,
+            principal=trusted_principal("same-user", "meta", "m1"),
         )
         assert first["results"][0]["success"] is True
         assert second["results"][0]["success"] is False
@@ -2813,6 +2829,7 @@ class TestIterationContracts:
             "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
             user_id="u1", account_id="g1", confirmed=False,
             platform_params=params,
+            principal=trusted_principal("u1", "google-ads", "g1"),
         )
         assert plan["needs_confirmation"] is True
         confirmation_payload = plan["confirmation_payload"]
@@ -2820,6 +2837,7 @@ class TestIterationContracts:
             "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
             user_id="u1", account_id="g1", confirmed=True,
             confirmation_payload=confirmation_payload, platform_params=params,
+            principal=trusted_principal("u1", "google-ads", "g1"),
         )
         assert result["results"][0]["success"] is False
         # The confirmation envelope is intentionally bound to the exact
@@ -2852,11 +2870,13 @@ class TestIterationContracts:
         planned = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
             session_id="google-alias-session", user_id="u1", account_id="g1",
+            principal=trusted_principal("u1", "google-ads", "g1"),
         )
         result = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
             session_id="google-alias-session", user_id="u1", account_id="g1", confirmed=True,
             confirmation_payload=planned["results"][0]["confirmation_payload"],
+            principal=trusted_principal("u1", "google-ads", "g1"),
         )
         assert result["results"][0]["success"] is True
 

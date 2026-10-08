@@ -56,6 +56,10 @@ class ModelTimeoutError(TimeoutError):
     """The provider did not produce a result within the configured deadline."""
 
 
+class ModelCapacityError(RuntimeError):
+    """Too many model calls remain in flight, including timed-out calls."""
+
+
 class ModelBudgetExceededError(RuntimeError):
     """The provider returned usage beyond the configured Run budget."""
 
@@ -98,6 +102,7 @@ class Agent:
         max_turns: int = 12,
         tool_execution: str = "parallel",
         max_parallel_tools: int = 8,
+        max_inflight_tool_invocations: int = 64,
         max_tools: int = 128,
         tool_selector: Optional[
             Callable[[TurnRequest, Sequence[Any]], Sequence[Any]]
@@ -116,6 +121,7 @@ class Agent:
         session_ttl_seconds: float = 3600.0,
         max_sessions: int = 1000,
         model_timeout_seconds: float | None = None,
+        max_inflight_model_invocations: int = 32,
         model_fallbacks: Sequence[Any] = (),
         max_input_tokens: int | None = None,
         max_output_tokens: int | None = None,
@@ -135,6 +141,8 @@ class Agent:
             raise ValueError("tool_execution must be sequential or parallel")
         if max_parallel_tools <= 0:
             raise ValueError("max_parallel_tools must be positive")
+        if max_inflight_tool_invocations <= 0:
+            raise ValueError("max_inflight_tool_invocations must be positive")
         if max_tools <= 0:
             raise ValueError("max_tools must be positive")
         if model_max_retries < 0:
@@ -151,6 +159,8 @@ class Agent:
             raise ValueError("max_sessions must be positive")
         if model_timeout_seconds is not None and model_timeout_seconds <= 0:
             raise ValueError("model_timeout_seconds must be positive")
+        if max_inflight_model_invocations <= 0:
+            raise ValueError("max_inflight_model_invocations must be positive")
         for name, value in (
             ("max_input_tokens", max_input_tokens),
             ("max_output_tokens", max_output_tokens),
@@ -187,6 +197,9 @@ class Agent:
         self.model_timeout_seconds = (
             float(model_timeout_seconds)
             if model_timeout_seconds is not None else None
+        )
+        self._model_slots = threading.BoundedSemaphore(
+            int(max_inflight_model_invocations)
         )
         self.model_fallbacks = tuple(model_fallbacks or ())
         self.max_input_tokens = max_input_tokens
@@ -231,6 +244,7 @@ class Agent:
             after_tool_call=self.after_tool_call,
             tool_execution=self.tool_execution,
             max_parallel_tools=self.max_parallel_tools,
+            max_inflight_tool_invocations=max_inflight_tool_invocations,
             tool_timeout_seconds=self.tool_timeout_seconds,
             tool_max_retries=self.tool_max_retries,
             tool_retry_delay_seconds=self.tool_retry_delay_seconds,
@@ -600,8 +614,18 @@ class Agent:
     ) -> Any:
         if self.model_timeout_seconds is None:
             return invoke()
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-model")
-        future = executor.submit(invoke)
+        if not self._model_slots.acquire(blocking=False):
+            raise ModelCapacityError("model execution capacity exhausted")
+        executor = None
+        try:
+            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-model")
+            future = executor.submit(invoke)
+        except Exception:
+            self._model_slots.release()
+            if executor is not None:
+                executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        future.add_done_callback(lambda _completed: self._model_slots.release())
         try:
             return future.result(timeout=self.model_timeout_seconds)
         except FutureTimeoutError as error:

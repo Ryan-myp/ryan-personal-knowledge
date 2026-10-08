@@ -4,6 +4,7 @@ tools/providers/google/provider.py - Google Tool Source 定义
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional
 from ....core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
@@ -221,7 +222,7 @@ GOOGLE_LOOKUP_CONTRACTS = {
 }
 
 
-def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, updates):
+def _google_update_adapter(client, ctx, resource_type, resource_id, parent_id, updates):
     """Adapt Google Ads' customer-scoped resource update methods."""
     method_name = {
         "campaign": "update_campaign",
@@ -238,6 +239,15 @@ def _google_update_adapter(client, ctx, resource_type, resource_id, _parent_id, 
     method = getattr(scoped_client, method_name, None)
     if not callable(method):
         raise AttributeError(f"Google {resource_type} update adapter is unavailable")
+    if resource_type == "ad":
+        resource_id = str(resource_id or "").strip()
+        parent_id = str(parent_id or "").strip()
+        composite = re.fullmatch(r"(\d+)~(\d+)", resource_id)
+        if composite:
+            if parent_id and composite.group(1) != parent_id:
+                raise ValueError("ad_group_id does not match the Google Ad resource key")
+        elif parent_id:
+            resource_id = f"{parent_id}~{resource_id}"
     return method(resource_id, updates)
 
 
@@ -2110,10 +2120,14 @@ class GoogleToolSource(BaseProviderToolSource):
             name="google_list_ads",
             skill="google-ads-api-expert",
             namespace="google-ads",
-            description="查询 Google Ads Ad 列表。",
+            description="查询 Google Ads Ad 列表；可选按 Campaign 或 Ad Group 筛选，缺省查询当前账户。",
             input_schema=ToolSchema(
-                required=["ad_group_id"],
-                properties={"ad_group_id": {"type": "string"}, "limit": {"type": "integer"}},
+                required=[],
+                properties={
+                    "campaign_id": {"type": "string", "minLength": 1},
+                    "ad_group_id": {"type": "string", "minLength": 1},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                },
             ),
             action="list", resource_type="ad", parent_resource_type="ad_group",
             parent_resource_id_field="ad_group_id",
@@ -2294,7 +2308,12 @@ class GoogleToolSource(BaseProviderToolSource):
                 name=f"google_update_{resource_type}",
                 skill="google-ads-api-expert",
                 namespace="google-ads",
-                description=f"更新 Google Ads {resource_type}，默认仅生成 dry-run 计划。",
+                description=(
+                    "更新 Google Ad 状态；Responsive Search Ad 另支持标题、描述、"
+                    "最终网址和展示路径修改，默认仅生成 dry-run 计划。"
+                    if resource_type == "ad" else
+                    f"更新 Google Ads {resource_type}，默认仅生成 dry-run 计划。"
+                ),
                 input_schema=ToolSchema(
                     required=[resource_id, "updates"],
                     properties={
@@ -2346,6 +2365,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     "ad_group": "campaign_id", "ad": "ad_group_id",
                     "asset_group": "campaign_id",
                 }.get(resource_type),
+                contract_version="2" if resource_type == "ad" else "1",
             ), CampaignUpdateHandler(
                 api_client, resource_type, _google_update_adapter,
                 resource_id_field=resource_id,

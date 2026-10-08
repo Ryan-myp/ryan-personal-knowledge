@@ -27,7 +27,7 @@ from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.skill import BaseSkill, SkillContract, SkillLoader
 from agents.ad_agent.core.tool_registry import validate_tool_input
 from agents.ad_agent.domain.ad.cross_channel import CampaignRef, BatchOperation
-from agents.ad_agent.domain.ad.auth import normalize_account_id
+from agents.ad_agent.domain.ad.auth import RequestPrincipal, normalize_account_id
 from agents.ad_agent.core.namespace import normalize_namespace as normalize_platform
 from agents.ad_agent.core.intent import LLMIntentParser
 from agents.ad_agent.core.tool_selector import DynamicToolSelector
@@ -37,6 +37,14 @@ def whitelist(**accounts):
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = accounts
     return validator
+
+
+def meta_principal():
+    return RequestPrincipal(
+        user_id="u1",
+        permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
+        account_scope={"meta": frozenset({"m1"})},
+    )
 
 
 def test_live_write_support_is_opt_in_for_new_tools():
@@ -807,6 +815,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
         session_id="confirm-session",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
     )
     payload = planned["results"][0]["confirmation_payload"]
     accepted = runtime.run(
@@ -814,6 +823,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
         session_id="confirm-session",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
         confirmed=True,
         confirmation_payload=payload,
     )
@@ -825,6 +835,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
         session_id="confirm-session",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
         confirmed=True,
         confirmation_payload=payload,
     )
@@ -1747,6 +1758,7 @@ def test_write_reservation_survives_runtime_restart():
         session_id="persistent-confirm",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
     )
     payload = planned["results"][0]["confirmation_payload"]
     executed = first_runtime.run(
@@ -1754,6 +1766,7 @@ def test_write_reservation_survives_runtime_restart():
         session_id="persistent-confirm",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
         confirmed=True,
         confirmation_payload=payload,
     )
@@ -1775,6 +1788,7 @@ def test_write_reservation_survives_runtime_restart():
         session_id="persistent-confirm",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
         confirmed=True,
         confirmation_payload=payload,
     )
@@ -1805,6 +1819,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         session_id="uncertain-write",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
     )
     payload = planned["results"][0]["confirmation_payload"]
     uncertain = first_runtime.run(
@@ -1812,6 +1827,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         session_id="uncertain-write",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
         confirmed=True,
         confirmation_payload=payload,
     )
@@ -1840,6 +1856,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         session_id="uncertain-write",
         user_id="u1",
         account_id="m1",
+        principal=meta_principal(),
         confirmed=True,
         confirmation_payload=payload,
     )

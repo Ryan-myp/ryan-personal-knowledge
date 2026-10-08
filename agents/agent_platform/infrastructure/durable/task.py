@@ -1,4 +1,4 @@
-"""Business-neutral durable task submission value."""
+"""Application-neutral durable task submission value."""
 
 from __future__ import annotations
 

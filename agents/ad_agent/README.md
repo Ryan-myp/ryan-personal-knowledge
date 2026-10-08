@@ -348,7 +348,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 | `code_contract` | Tool Source、Tool schema、权限、版本和 snapshot 一致 | 是 |
 | `dry_run` | Runtime → Tool → Tool Source → Client 的本地调用链和 Skill-up case | 是 |
 | `provider_scope` | Meta、Google Ads、TikTok 已声明的查询接口及 Campaign/Ad Group/Ad/Creative 创建更新接口；DV360 排除 | 是 |
-| `provider_query_e2e` | 每个纳入范围的 query Tool/action 都有受控 Provider 账号实测 | 是（2026-09-30 实测 86/113 个 Tool 有成功响应；Meta alias 去重后 API operation 为 84/112，最低渠道 Meta 21/34；另有 2 项权限失败、25 项安全跳过，未达发布门槛） |
+| `provider_query_e2e` | 每个纳入范围的 query Tool/action 都有受控 Provider 账号实测 | 是（2026-10-08 只读测试账号复测：83/113 个 Tool 成功，5 项失败、25 项安全跳过；未达发布门槛。逐项 `latency_ms` 已记录在 canonical 证据文件） |
 | `provider_e2e` | 目标 Campaign 层级写操作逐接口关联的受控账户实测证据 | 否（需受控环境） |
 | `live_verified` | 目标 Campaign 层级写操作经过 live fuse、白名单、确认和审计的实测证据 | 否（需批准环境） |
 
@@ -416,7 +416,7 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 广告 `AdvertisingComposition` 是应用组合根：它把广告 Skill、Provider Module、Feature、
 Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
 通用队列、租约或 Provider 分支。通用执行壳是 `agents/agent_harness/`，队列/Outbox/
-Schedule 生命周期由 `runtime/supervisor.py` 管理；新增广告业务应优先落到 Skill、Tool、
+Schedule 生命周期由 `agents/agent_platform/infrastructure/durable/` 管理；新增广告业务应优先落到 Skill、Tool、
 Tool Source/Executor 或独立 Feature。
 
 当前装配图已经收敛到 `runtime/ad_application_assembly.py`：`AdvertisingComposition` 负责广告应用
@@ -587,9 +587,8 @@ ad_agent/
 │   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
 │   ├── ad_application.py    # 广告应用组合根
 │   ├── ad_application_assembly.py # AgentPlatform 场景装配
-│   ├── task_executor.py     # 通用异步 Task 队列与租约
-│   ├── scheduler.py         # 通用定时任务调度
-│   ├── supervisor.py        # 后台 worker 生命周期
+│   ├── ad_task_services.py  # 广告任务提交、权限与结果适配
+│   ├── scheduling_service.py # 广告定时任务服务
 │   └── skill.py             # Skill 加载
 ├── tools/providers/
 │   ├── base.py              # 能力基类

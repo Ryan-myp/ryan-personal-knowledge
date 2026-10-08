@@ -19,6 +19,31 @@ from agents.ad_agent.api.context import ApiContext
 from agents.ad_agent.api.models import ChatRequest, ChatStreamRequest
 
 
+def _confirmation_payload_for_response(context: ApiContext, value: Any) -> Any:
+    """Expose the one-time confirmation credential only in the API response."""
+    if not isinstance(value, dict):
+        return context.redact(value)
+    safe_payload = context.redact(value)
+    if not isinstance(safe_payload, dict):
+        return safe_payload
+    token = value.get("confirmation_token")
+    if isinstance(token, str) and token:
+        safe_payload["confirmation_token"] = token
+    return safe_payload
+
+
+def _chat_result_for_response(context: ApiContext, result: Any) -> Any:
+    """Redact a Run result while preserving its top-level confirmation token."""
+    safe_result = context.redact(result)
+    if not isinstance(result, dict) or not isinstance(safe_result, dict):
+        return safe_result
+    if isinstance(result.get("confirmation_payload"), dict):
+        safe_result["confirmation_payload"] = _confirmation_payload_for_response(
+            context, result["confirmation_payload"],
+        )
+    return safe_result
+
+
 def create_chat_router(context: ApiContext) -> APIRouter:
     """Build the chat route group against application-owned callbacks."""
     router = APIRouter()
@@ -59,7 +84,9 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 execution_mode=request.execution_mode,
                 principal=principal,
             )
-            return JSONResponse(content=result)
+            return JSONResponse(
+                content=_chat_result_for_response(context, result)
+            )
         except HTTPException:
             raise
         except PermissionError as error:
@@ -233,8 +260,8 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                     "needs_confirmation": bool(
                         result.get("needs_confirmation")
                     ),
-                    "confirmation_payload": context.redact(
-                        result.get("confirmation_payload")
+                    "confirmation_payload": _confirmation_payload_for_response(
+                        context, result.get("confirmation_payload"),
                     ),
                     "results": safe_results,
                     "ui": context.redact(result.get("ui") or {}),

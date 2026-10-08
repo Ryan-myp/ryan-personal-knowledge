@@ -326,10 +326,25 @@ class ToolInputBuilder:
                 continue
             if target_field and field_name != target_field:
                 continue
-            field_type = field_schema.get("type")
-            item_schema = field_schema.get("items") if field_type == "array" else None
-            if field_type not in {"string", "number", "integer", "array"}:
+            raw_field_type = field_schema.get("type")
+            field_types = (
+                raw_field_type
+                if isinstance(raw_field_type, (list, tuple, set, frozenset))
+                else (raw_field_type,)
+            )
+            supported_types = {
+                item
+                for item in field_types
+                if isinstance(item, str)
+                and item in {"string", "number", "integer", "array"}
+            }
+            if not supported_types:
                 continue
+            item_schema = (
+                field_schema.get("items")
+                if "array" in supported_types
+                else None
+            )
             values = result.data.get(
                 self._lookup_result_key(tool_def.name, field_schema)
             )

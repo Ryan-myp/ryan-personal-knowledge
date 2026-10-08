@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
-from ..core.durable_ports import OutboxStore
+from .ports import OutboxStore
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +121,11 @@ class OutboxConsumer:
                     )
                     registered = True
                 self._heartbeat_thread = threading.Thread(
-                    target=self._heartbeat, name="ad-agent-outbox-heartbeat", daemon=True,
+                    target=self._heartbeat, name="agent-platform-outbox-heartbeat", daemon=True,
                 )
                 self._heartbeat_thread.start()
                 self._thread = threading.Thread(
-                    target=self._run, name="ad-agent-outbox", daemon=True
+                    target=self._run, name="agent-platform-outbox", daemon=True
                 )
                 self._thread.start()
             except Exception:

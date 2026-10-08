@@ -14,7 +14,7 @@ from agents.ad_agent.core.tool_registry import SimpleToolRegistry
 from agents.ad_agent.persistence.models import ScheduledTaskRecord
 from agents.ad_agent.persistence.store import AdAgentStore
 from agents.ad_agent.runtime.runtime import AdvertisingComposition
-from agents.ad_agent.runtime.scheduler import CronExpression, CronExpressionError, next_run_at
+from agents.agent_platform.infrastructure.durable import CronExpression, CronExpressionError, next_run_at
 
 
 class _NoopReportHandler(ToolHandler):

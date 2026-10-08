@@ -60,6 +60,9 @@ live 开关、跨进程 SQL 幂等和审计门禁。`GovernancePolicy` 的默认
 最大回合数、Skill 上下文上限、Tool 超时、只读重试和熔断参数会真实下沉到 Harness，
 而不是只停留在架构元数据。Tool Call 依赖由 Harness 按拓扑批次执行；写操作不会自动
 重试，超时写入会进入未知效果恢复态。
+通用 Policy 的 live 写操作还要求请求携带非空 tenant/user principal；请求文本或
+`TurnRequest.user_id` 不能替代认证。principal 必须由可信入口或 Worker 身份解析器
+构造，平台对象本身不负责验证外部身份令牌。
 
 Knowledge 与 Memory 通过 Harness 的 `BoundedContextProvider` 作为有界 advisory
 context 注入。它们可以提供检索证据和用户偏好，但不能提供身份、权限、账户范围或
@@ -78,3 +81,35 @@ Run、Session、Tool、Skill、审计和权限边界始终由中台契约统一�
 仓库内的 `agents.agent_platform.examples.ticket_support` 是一个不依赖广告包的参考
 应用。它只注册一个 Skill Source 和一个 Tool Source，使用同一个
 `AgentPlatform`、`PlatformApplication` 和 Harness，可作为新业务接入的最小起点。
+
+## 持久任务与负载基线
+
+`infrastructure/durable/` 包含应用无关的 TaskExecutor、Task Store 协议、
+Scheduler、Outbox、事件修复和 RuntimeSupervisor；广告只注入自己的 SQL Store
+与可信 task handler。新业务可以用 `DurableAgentService` 把可信主体的请求排队，
+由 Worker 重新解析主体并进入同一 `PlatformApplication.run()`。任务 payload 只
+保存输入和 session ID；读取任务必须提供可信 principal，Worker 重新解析出的
+租户和用户必须与持久记录一致。应用仍须提供符合端口的持久 Store、RunStore 和
+可信身份解析器。平台提供 `SQLiteTaskQueueStore` 和 `SQLiteRunStore` 作为本地实现；
+Run 事件在入库前做凭证字段脱敏，并支持按主体读取持久轨迹。SQLite 适用于单主机
+部署和开发验证，不构成多主机生产数据库。业务可替换持久化 adapter，而不改
+TaskExecutor、DurableAgentService 或 Agent Run；RunStore 通过 `DataLayer` 注入。
+`DurableAgentService.close()` 只停止它自己的 Worker；共享
+`PlatformApplication` 由应用组合根关闭。
+
+`DurableAgentService` 暴露的提交、读取、列表、暂停、恢复和取消操作都需要可信
+principal，并按 tenant/user 过滤。重复幂等键只有在任务类型和请求 payload 相同时
+才返回既有任务；键被用于不同请求时明确报冲突。对 `recovery_required` 任务，恢复
+前必须由调用方完成外部状态核对，并使用独立的 recovery reference 操作持久 Store。
+提交入口默认限制输入为 100,000 字符，session ID 和幂等键各限制为 255 字符。
+
+通用 Run 的无网络并发基线：
+
+```bash
+PYTHONPATH=. ./scripts/ad-agent-python -m agents.agent_platform.benchmarks.runtime_load \
+  --iterations 200 --concurrency 8
+```
+
+它测量本机 Harness 调度开销，不调用真实模型或 Provider，不能用来宣称生产吞吐。
+广告只读测试账号查询脚本会为每个实际 Provider Tool 调用保存 `latency_ms`；
+只有完成受控实测后才能汇总 Provider 延迟，跳过和模拟结果不计入。

@@ -72,7 +72,11 @@ from .parameters import (
     TIKTOK_INTEREST_KEYWORD_MODES,
     TIKTOK_INTEREST_AUDIENCE_TYPES,
 )
-from ..update_contracts import tiktok_updates, tiktok_smart_plus_updates
+from ..update_contracts import (
+    tiktok_creative_updates,
+    tiktok_smart_plus_updates,
+    tiktok_updates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1835,7 +1839,7 @@ class TikTokToolSource(BaseProviderToolSource):
             ), {}),
         ))
 
-        creative_update_schema = tiktok_updates("ad")
+        creative_update_schema = tiktok_creative_updates()
         tools.append(method_tool(
             namespace="tiktok", skill="tiktok-ads-api-expert",
             name="tiktok_update_creative",
@@ -1855,7 +1859,7 @@ class TikTokToolSource(BaseProviderToolSource):
             action="update", resource_type="creative", parent_resource_type="ad_group",
             resource_id_field="creative_id", parent_resource_id_field="adgroup_id",
             intent_types=["update_creative"], traits=["write", "creative", "ad_backed"],
-            write=True, live_support=True, contract_version="2", integration_api_version="v1.3",
+            write=True, live_support=True, contract_version="3", integration_api_version="v1.3",
             required_permissions=["ads.plan"], readback_tool="tiktok_get_creative",
             argument_builder=lambda ctx, data: ((
                 account(ctx, data), data["adgroup_id"], data["creative_id"], data["updates"]
@@ -2004,6 +2008,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 integration_api_version="v1.3",
                 resource_id_field=resource_id,
                 parent_resource_id_field=parent_field,
+                contract_version="2" if resource_type == "ad" else "1",
             ), CampaignUpdateHandler(
                 api_client, resource_type, _tiktok_update_adapter,
                 resource_id_field=resource_id,
@@ -2017,7 +2022,26 @@ class TikTokToolSource(BaseProviderToolSource):
         ]
         for resource_type, resource_id, method_name, tool_name, parent_field in smart_update_specs:
             provider_resource = "adgroup" if resource_type == "ad_group" else resource_type
-            update_schema = tiktok_smart_plus_updates(provider_resource)
+            update_schema = tiktok_smart_plus_updates(
+                provider_resource,
+                ad_schema=smart_plus_ad if resource_type == "ad" else None,
+            )
+            content_fields = [
+                f"updates.{field}"
+                for field in update_schema["properties"]
+                if field not in {"status", "operation_status"}
+            ]
+            status_exclusion_rules = [
+                {
+                    "if": {f"updates.{field}": {"exists": True}},
+                    "forbidden": content_fields,
+                    "message": (
+                        "Smart+ delivery status must be updated separately "
+                        "from content fields"
+                    ),
+                }
+                for field in ("status", "operation_status")
+            ]
             properties = {
                 "account_id": {"type": "string", "minLength": 1},
                 resource_id: {"type": "string", "minLength": 1},
@@ -2052,8 +2076,9 @@ class TikTokToolSource(BaseProviderToolSource):
                 resource_id_field=resource_id, parent_resource_id_field=parent_field,
                 intent_types=[method_name],
                 traits=["write", resource_type, "smart_plus"], write=True,
-                live_support=True, integration_api_version="v1.3",
+                live_support=True, contract_version="2", integration_api_version="v1.3",
                 required_permissions=["ads.plan"],
+                conditional_rules=status_exclusion_rules,
                 readback_tool={
                     "campaign": "tiktok_get_campaign",
                     "ad_group": "tiktok_get_adgroup",

@@ -42,6 +42,7 @@ load_default_local_env()
 from agents.ad_agent import AdvertisingApplication, create_advertising_application
 from agents.agent_harness.redaction import redact_for_persistence
 from agents.ad_agent.domain.ad.auth import RequestPrincipal
+from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.mcp_management import MCPServerManager
 from agents.ad_agent.runtime_mcp import RuntimeMCPServers
 from agents.ad_agent.skill_management import (
@@ -80,6 +81,14 @@ runtime_status = {
     "state": "not_initialized",
     "error": None,
 }
+
+
+def _configured_config_path() -> Path:
+    """Resolve a process-scoped config path for isolated local deployments."""
+    configured = os.environ.get("AD_AGENT_CONFIG_PATH")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return CONFIG_PATH.expanduser().resolve()
 
 
 def _database_path() -> Path:
@@ -182,7 +191,7 @@ def _init_runtime():
         # server remains dry-run by default; switching to live additionally
         # requires AD_AGENT_ENABLE_LIVE=1 and a non-empty code/config allowlist.
         import yaml
-        config_path = Path(__file__).parent / "config.yaml"
+        config_path = _configured_config_path()
         config = {}
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
@@ -204,6 +213,7 @@ def _init_runtime():
         )
         runtime = create_advertising_application(
             persistence_store=store,
+            whitelist_validator=AccountWhitelistValidator(str(config_path)),
             read_only_mode=read_only_mode,
             execution_mode=execution_mode,
             live_approved_tools=set(config.get("live_approved_tools", []) or []),

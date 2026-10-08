@@ -41,6 +41,13 @@ def _permissions(request: Any) -> frozenset[str]:
     return frozenset(str(item).strip() for item in (values or ()) if str(item).strip())
 
 
+def _has_principal(principal: Any) -> bool:
+    return bool(
+        str(getattr(principal, "tenant_id", "") or "").strip()
+        and str(getattr(principal, "user_id", "") or "").strip()
+    )
+
+
 def _confirmed(request: Any) -> bool:
     context = getattr(request, "context", {})
     return bool(context.get("confirmed")) if isinstance(context, Mapping) else False
@@ -344,6 +351,12 @@ class ToolExecutionPolicy:
                 metadata=metadata,
             )
         if _is_write(definition) and mode == "live":
+            if not _has_principal(request.principal):
+                return PolicyDecision(
+                    allowed=False,
+                    errors=("live writes require an authenticated principal",),
+                    metadata=metadata,
+                )
             if not request.allow_live_writes:
                 return PolicyDecision(
                     allowed=False,
@@ -449,6 +462,11 @@ class ToolExecutionPolicy:
 
         mode = _mode(request)
         if _is_write(definition) and mode == "live":
+            if not _has_principal(getattr(request, "principal", None)):
+                return (
+                    "principal_required",
+                    "live writes require an authenticated principal",
+                )
             if not self.allow_live_writes:
                 return (
                     "live_disabled",

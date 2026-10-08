@@ -57,11 +57,11 @@ from ..integration import (
 )
 from .ad_workflow_services import AdWorkflowServices
 from .input_builder import ToolInputBuilder
-from .outbox import OutboxPublisher
+from agents.agent_platform.infrastructure.durable import OutboxPublisher
 from .scheduling_service import SchedulingService
 from .security import RuntimeSecurity
 from .services import AdRuntimeServices
-from .supervisor import RuntimeSupervisor
+from agents.agent_platform.infrastructure.durable import RuntimeSupervisor
 from .tool_executor import ToolExecutor
 from .workflow import WorkflowCoordinator
 

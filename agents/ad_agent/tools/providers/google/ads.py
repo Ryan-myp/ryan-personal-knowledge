@@ -9,7 +9,6 @@ from ....core.interfaces import (
 )
 from ....api_clients.google_ads_client import GoogleAdsAPIClient
 from ._utils import for_customer
-from ..provider_base import call_with_optional_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -20,14 +19,14 @@ class GoogleListAdsHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         ad_group_id = input_data.get("ad_group_id")
-        if self.client and ctx.account_id and ad_group_id:
+        campaign_id = input_data.get("campaign_id")
+        if self.client and ctx.account_id:
             try:
                 client = for_customer(self.client, ctx.account_id)
-                ads = call_with_optional_page_size(
-                    client.list_ads,
-                    ad_group_id,
-                    limit=input_data.get("limit", 100),
-                    parameter_names=("page_size", "limit"),
+                ads = client.list_ads(
+                    ad_group_id=ad_group_id,
+                    campaign_id=campaign_id,
+                    page_size=input_data.get("limit", 100),
                 )
                 return ToolResult.ok({"ads": ads, "data_status": "live"})
             except Exception as e:

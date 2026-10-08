@@ -48,6 +48,11 @@ use a bounded timeout. Automatic retry is limited to explicitly read/none
 effects with a safe or idempotent replay policy; writes are never retried by
 the Harness. Repeated failures open a per-Tool circuit breaker, and a timed
 out write returns an unknown effect with `recovery_required`.
+Timed-out model and Tool calls keep their in-flight capacity slot until the
+underlying thread actually exits. `AgentApplication.create` exposes
+`max_inflight_model_invocations` and `max_inflight_tool_invocations` for this
+cross-Run bound; a full pool fails explicitly instead of creating unbounded
+threads. These timeouts do not forcibly interrupt a provider network call.
 
 Applications inject:
 

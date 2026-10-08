@@ -689,6 +689,35 @@ def test_tiktok_creative_detail_query_uses_account_scoped_resource_id():
     }
 
 
+def test_tiktok_creative_detail_can_use_the_ad_id_from_the_ad_list():
+    from agents.ad_agent.tools.providers.source_factory import create_tool_source
+
+    source = create_tool_source("tiktok")
+    definition = next(
+        definition
+        for definition, _handler in source.register_tools()
+        if definition.name == "tiktok_get_creative"
+    )
+    suite = SimpleNamespace(
+        accounts={"tiktok": "test-advertiser"},
+        resource_pools={"tiktok": {"ad": ["ad-from-list"]}},
+        resource_relationships={"tiktok": {"creative": []}},
+    )
+
+    values, reason = _build_safe_query_input(
+        suite,
+        "tiktok",
+        "tiktok_get_creative",
+        definition,
+    )
+
+    assert reason is None
+    assert values == {
+        "account_id": "test-advertiser",
+        "creative_id": "ad-from-list",
+    }
+
+
 def test_safe_query_input_skips_resource_detail_without_a_returned_id():
     suite = SimpleNamespace(
         accounts={"meta": "test-account"},
@@ -825,7 +854,6 @@ def test_runner_requires_explicit_confirmation_before_any_io(capsys):
             ],
             [
                 ("google_list_ad_groups", "campaign_id", "returned-campaign"),
-                ("google_list_ads", "ad_group_id", "returned-child"),
             ],
         ),
         (
@@ -892,3 +920,5 @@ def test_query_suite_uses_returned_parent_ids_without_external_calls(
     assert all(tool in called for tool in expected_tools)
     for tool, field, expected in parent_inputs:
         assert called[tool][field] == expected
+    if provider == "google-ads":
+        assert called["google_list_ads"] == {"limit": 10}

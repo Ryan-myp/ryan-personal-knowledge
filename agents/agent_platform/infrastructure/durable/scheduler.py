@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..core.durable_ports import ScheduleStore
+from .ports import ScheduleStore
 
 logger = logging.getLogger(__name__)
 
@@ -185,11 +185,11 @@ class SchedulerService:
                     )
                     registered = True
                     self._heartbeat_thread = threading.Thread(
-                        target=self._heartbeat, name="ad-agent-scheduler-heartbeat", daemon=True,
+                        target=self._heartbeat, name="agent-platform-scheduler-heartbeat", daemon=True,
                     )
                     self._heartbeat_thread.start()
                 self._thread = threading.Thread(
-                    target=self._run, name="ad-agent-scheduler", daemon=True
+                    target=self._run, name="agent-platform-scheduler", daemon=True
                 )
                 self._thread.start()
             except Exception:

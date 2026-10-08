@@ -6,7 +6,7 @@ from contextvars import ContextVar
 from datetime import datetime, timedelta
 
 from agents.agent_harness import AgentRuntimeKernel, TurnRequest
-from agents.ad_agent.runtime.task_executor import task_outcome_status
+from agents.agent_platform.infrastructure.durable import task_outcome_status
 from agents.ad_agent.persistence.models import ToolCallRecord
 from agents.ad_agent.persistence.store import AdAgentStore
 
@@ -334,8 +334,8 @@ def test_generic_worker_modules_do_not_import_application_models_or_principal():
     """Queue/schedule infrastructure must remain reusable outside ad-agent."""
     import pathlib
 
-    root = pathlib.Path("agents/ad_agent/runtime")
-    for name in ("task_executor.py", "outbox.py", "scheduler.py", "scheduling_service.py"):
+    root = pathlib.Path("agents/agent_platform/infrastructure/durable")
+    for name in ("task_executor.py", "outbox.py", "scheduler.py"):
         source = (root / name).read_text(encoding="utf-8")
         assert "persistence.models" not in source
         assert "domain.ad" not in source
@@ -344,7 +344,10 @@ def test_generic_worker_modules_do_not_import_application_models_or_principal():
 
 def test_supervisor_receives_task_kinds_from_the_application_composition_root():
     """The generic worker lifecycle must not own an application task name."""
-    source = open("agents/ad_agent/runtime/supervisor.py", encoding="utf-8").read()
+    source = open(
+        "agents/agent_platform/infrastructure/durable/supervisor.py",
+        encoding="utf-8",
+    ).read()
     assert 'register_handler("agent.turn"' not in source
     assert "task_handlers" in source
 

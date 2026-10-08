@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
 
-from .scheduler import CronExpression, next_run_at, validate_timezone
+from agents.agent_platform.infrastructure.durable import CronExpression, next_run_at, validate_timezone
 
 
 class SchedulingService:

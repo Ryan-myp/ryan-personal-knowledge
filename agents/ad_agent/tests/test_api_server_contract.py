@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -61,6 +62,61 @@ def test_local_env_file_is_loaded_without_overriding_process_environment(tmp_pat
     assert api_server.os.environ["TEST_AD_AGENT_LOCAL"] == "from-file"
     assert api_server.os.environ["TEST_AD_AGENT_QUOTED"] == "quoted value"
     assert api_server.os.environ["TEST_AD_AGENT_EXISTING"] == "from-process"
+
+
+def test_service_config_path_can_be_overridden_for_isolated_local_runs(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "isolated-config.yaml"
+    monkeypatch.setenv("AD_AGENT_CONFIG_PATH", str(config_path))
+
+    assert api_server._configured_config_path() == config_path.resolve()
+
+
+def test_service_config_path_defaults_to_checked_in_safe_config(monkeypatch):
+    monkeypatch.delenv("AD_AGENT_CONFIG_PATH", raising=False)
+
+    assert api_server._configured_config_path() == api_server.CONFIG_PATH.resolve()
+
+
+def test_runtime_initialization_uses_isolated_config_account_allowlist(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "isolated-config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "allowed_accounts": {"meta": ["isolated-test-account"]},
+                "execution_mode": "dry_run",
+                "allow_live_writes": False,
+                "live_approved_tools": [],
+                "granted_permissions": ["ads.read", "ads.plan"],
+                "models": {"default": "agnes-2.5-flash"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AD_AGENT_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "isolated.db"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-llm-key")
+    monkeypatch.setattr(api_server, "runtime", None)
+    monkeypatch.setattr(
+        api_server,
+        "runtime_status",
+        {"state": "not_initialized", "error": None},
+    )
+
+    runtime = api_server._init_runtime()
+    try:
+        assert runtime is not None
+        assert runtime.whitelist_validator.get_allowed_accounts("meta") == [
+            "isolated-test-account"
+        ]
+        assert runtime.whitelist_validator.get_allowed_accounts("google-ads") == []
+        assert runtime.whitelist_validator.get_allowed_accounts("tiktok") == []
+    finally:
+        if runtime is not None:
+            runtime.close(wait=True)
 
 
 def test_chat_routes_are_owned_by_a_dedicated_route_module():
@@ -1045,6 +1101,97 @@ def test_confirmed_chat_requires_confirmation_payload(fake_server):
         )
     assert response.status_code == 400
     assert fake_server.calls == []
+
+
+def test_chat_returns_only_the_top_level_confirmation_token_unredacted(fake_server):
+    confirmation_payload = {
+        "type": "confirm_write",
+        "confirmation_token": "one-time-confirmation-token",
+        "account_id": "test-account",
+    }
+    fake_server.run = lambda **_kwargs: {
+        "success": True,
+        "needs_confirmation": True,
+        "confirmation_payload": confirmation_payload,
+        "results": [{
+            "needs_confirmation": True,
+            "confirmation_payload": confirmation_payload,
+            "data": {"access_token": "provider-token"},
+        }],
+        "messages": [{
+            "metadata": {"confirmation_payload": confirmation_payload},
+        }],
+    }
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "create test campaign"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert (
+        payload["confirmation_payload"]["confirmation_token"]
+        == "one-time-confirmation-token"
+    )
+    assert response.text.count("one-time-confirmation-token") == 1
+    assert (
+        api_server.redact_for_persistence(confirmation_payload)
+        ["confirmation_token"] == "<redacted>"
+    )
+    assert (
+        payload["results"][0]["confirmation_payload"]["confirmation_token"]
+        == "<redacted>"
+    )
+    assert payload["results"][0]["data"]["access_token"] == "<redacted>"
+    assert (
+        payload["messages"][0]["metadata"]["confirmation_payload"]
+        ["confirmation_token"] == "<redacted>"
+    )
+
+
+def test_chat_stream_returns_confirmation_token_only_in_confirmation_field(
+    fake_server,
+):
+    confirmation_payload = {
+        "type": "confirm_write",
+        "confirmation_token": "one-time-stream-confirmation-token",
+        "account_id": "test-account",
+    }
+    fake_server.run = lambda **_kwargs: {
+        "success": True,
+        "needs_confirmation": True,
+        "confirmation_payload": confirmation_payload,
+        "reply": "Waiting for confirmation",
+        "results": [{
+            "tool": "test_create_campaign",
+            "needs_confirmation": True,
+            "confirmation_payload": confirmation_payload,
+        }],
+    }
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "create test campaign"},
+        )
+
+    assert response.status_code == 200
+    reply = next(
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+        and '"type": "reply"' in line
+    )
+    assert (
+        reply["confirmation_payload"]["confirmation_token"]
+        == "one-time-stream-confirmation-token"
+    )
+    assert response.text.count("one-time-stream-confirmation-token") == 1
+    assert "confirmation_payload" not in reply["results"][0]
 
 
 def test_chat_stream_returns_sse_lifecycle_events(fake_server):

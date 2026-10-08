@@ -13,6 +13,7 @@ release gate one conservative interpretation of that file:
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -205,6 +206,7 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
                 "tool",
                 "outcome",
                 "row_count",
+                "latency_ms",
                 "failure_category",
                 "skip_reason",
             }
@@ -236,6 +238,14 @@ def validate_provider_evidence(raw: Mapping[str, Any]) -> list[str]:
                 or row_count < 0
             ):
                 errors.append(f"{query_prefix}.row_count must be a non-negative integer")
+            latency_ms = query.get("latency_ms")
+            if latency_ms is not None and (
+                isinstance(latency_ms, bool)
+                or not isinstance(latency_ms, (int, float))
+                or not math.isfinite(latency_ms)
+                or latency_ms < 0
+            ):
+                errors.append(f"{query_prefix}.latency_ms must be finite and non-negative")
             failure_category = query.get("failure_category")
             if failure_category is not None and (
                 not isinstance(failure_category, str)

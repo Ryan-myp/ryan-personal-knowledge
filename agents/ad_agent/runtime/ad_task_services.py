@@ -11,7 +11,7 @@ from ..knowledge_ingest import KnowledgeIngestService
 from ..knowledge_management import ManagedKnowledgeManager
 from ..persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
 from .ad_task_operational_services import AdTaskOperationalServicesMixin
-from .task_executor import TaskExecutionContext
+from agents.agent_platform.infrastructure.durable import TaskExecutionContext
 
 
 class AdTaskServices(AdTaskOperationalServicesMixin):

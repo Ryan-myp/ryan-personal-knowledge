@@ -1,5 +1,7 @@
+import json
 import threading
 import time
+from types import SimpleNamespace
 
 from agents.agent_harness import (
     AgentApplication,
@@ -108,6 +110,7 @@ def test_tool_policy_uses_durable_idempotency_across_runs(tmp_path):
                 user_input="update",
                 user_id="user-1",
                 tenant_id="tenant-1",
+                principal=SimpleNamespace(tenant_id="tenant-1", user_id="user-1"),
                 run_id=run_id,
                 turn_id=turn_id,
                 execution_mode="live",
@@ -143,6 +146,7 @@ def test_live_write_fails_closed_without_durable_idempotency_store():
         request=TurnRequest(
             user_input="update",
             execution_mode="live",
+            principal=SimpleNamespace(tenant_id="tenant-1", user_id="user-1"),
             context={
                 "confirmed": True,
                 "confirmation_payload": {"plan": "current"},
@@ -524,5 +528,100 @@ def test_tool_output_is_bounded_before_it_enters_the_next_model_turn():
         assert len(seen_tool_content) == 1
         assert len(seen_tool_content[0]) <= 32
         assert "truncated" in seen_tool_content[0]
+    finally:
+        app.close()
+
+
+def test_large_structured_tool_output_stays_successful_and_marked_truncated():
+    seen_tool_content = []
+
+    class Model:
+        def complete(self, messages, _tools, _request):
+            tool_messages = [message for message in messages if message.role == "tool"]
+            if tool_messages:
+                seen_tool_content.append(tool_messages[-1].content)
+                return "done"
+            return ModelTurn(
+                content="",
+                tool_calls=(ToolCall("call-1", "large_query", {}),),
+            )
+
+    class Tool:
+        def execute(self, _context, _arguments):
+            return {
+                "success": True,
+                "data": {
+                    "data_status": "live",
+                    "total_count": 24,
+                    "campaigns": [
+                        {"campaign_id": f"campaign-{index}", "name": "x" * 80}
+                        for index in range(24)
+                    ],
+                },
+            }
+
+    from agents.agent_harness import StaticToolSource, ToolBinding
+
+    app = AgentApplication.create(model=Model(), max_tool_result_chars=240)
+    app.register_tool_source(StaticToolSource(
+        "test",
+        [ToolBinding({"name": "large_query"}, Tool())],
+    ))
+    try:
+        result = app.prompt("list campaigns")
+        tool_result = result.data["tool_results"][0]
+
+        assert result.status.value == "succeeded"
+        assert tool_result["is_error"] is False
+        assert isinstance(tool_result["content"], dict)
+        assert tool_result["content"]["success"] is True
+        assert tool_result["content"]["output_truncated"] is True
+        assert any(
+            path.startswith("data.campaigns")
+            for path in tool_result["content"]["truncated_fields"]
+        )
+        assert isinstance(tool_result["data"], dict)
+        assert isinstance(seen_tool_content[0], dict)
+        assert seen_tool_content[0]["success"] is True
+        assert len(json.dumps(
+            seen_tool_content[0], ensure_ascii=False, sort_keys=True,
+        )) <= 240
+    finally:
+        app.close()
+
+
+def test_large_top_level_list_is_wrapped_within_the_output_limit():
+    class Model:
+        def complete(self, messages, _tools, _request):
+            if any(message.role == "tool" for message in messages):
+                return "done"
+            return ModelTurn(
+                content="",
+                tool_calls=(ToolCall("call-1", "large_list", {}),),
+            )
+
+    class Tool:
+        def execute(self, _context, _arguments):
+            return [
+                {"item_id": index, "payload": "x" * 60}
+                for index in range(20)
+            ]
+
+    from agents.agent_harness import StaticToolSource, ToolBinding
+
+    app = AgentApplication.create(model=Model(), max_tool_result_chars=240)
+    app.register_tool_source(StaticToolSource(
+        "test",
+        [ToolBinding({"name": "large_list"}, Tool())],
+    ))
+    try:
+        result = app.prompt("list items")
+        content = result.data["tool_results"][0]["content"]
+
+        assert result.status.value == "succeeded"
+        assert isinstance(content, dict)
+        assert content["output_truncated"] is True
+        assert isinstance(content["items"], list)
+        assert len(json.dumps(content, ensure_ascii=False, sort_keys=True)) <= 240
     finally:
         app.close()

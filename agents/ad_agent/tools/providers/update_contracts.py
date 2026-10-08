@@ -88,16 +88,16 @@ def meta_updates(resource_type: str) -> dict[str, Any]:
 
 
 def google_updates(resource_type: str) -> dict[str, Any]:
-    common = {
-        "name": _field("string", "Resource name"),
-        "status": _field(
-            "string", "Resource status", enum=["ENABLED", "PAUSED", "REMOVED"],
-            intent_status_field="status",
-            intent_status_map={
-                "ACTIVE": "ENABLED", "ENABLED": "ENABLED", "PAUSED": "PAUSED",
-            },
-        ),
-    }
+    common = {}
+    if resource_type != "ad":
+        common["name"] = _field("string", "Resource name")
+    common["status"] = _field(
+        "string", "Resource status", enum=["ENABLED", "PAUSED", "REMOVED"],
+        intent_status_field="status",
+        intent_status_map={
+            "ACTIVE": "ENABLED", "ENABLED": "ENABLED", "PAUSED": "PAUSED",
+        },
+    )
     if resource_type == "campaign":
         common.update({
             "daily_budget": _field("number", "Daily budget", minimum=0),
@@ -112,11 +112,17 @@ def google_updates(resource_type: str) -> dict[str, Any]:
         })
     elif resource_type == "ad":
         common.update({
-            "headlines": _field("array", "Headlines", items={"type": "string"}),
-            "descriptions": _field("array", "Descriptions", items={"type": "string"}),
-            "final_url": _field("string", "Final URL"),
-            "path1": _field("string", "Display path 1"),
-            "path2": _field("string", "Display path 2"),
+            "headlines": _field(
+                "array", "Replace all Responsive Search Ad headlines",
+                minItems=3, maxItems=15, items={"type": "string", "minLength": 1, "maxLength": 30},
+            ),
+            "descriptions": _field(
+                "array", "Replace all Responsive Search Ad descriptions",
+                minItems=2, maxItems=4, items={"type": "string", "minLength": 1, "maxLength": 90},
+            ),
+            "final_url": _field("string", "Responsive Search Ad final URL", minLength=1),
+            "path1": _field("string", "Responsive Search Ad display path 1", maxLength=15),
+            "path2": _field("string", "Responsive Search Ad display path 2", maxLength=15),
         })
     elif resource_type == "asset_group":
         common.update({
@@ -131,10 +137,18 @@ def google_updates(resource_type: str) -> dict[str, Any]:
 
 
 def tiktok_updates(resource_type: str) -> dict[str, Any]:
+    if resource_type == "ad":
+        return _object({
+            "status": _field(
+                "integer", "Ad delivery status", enum=[0, 1],
+                intent_status_field="status",
+                intent_status_map={"ACTIVE": 1, "ENABLED": 1, "PAUSED": 0},
+            ),
+        }, "TikTok Ad status update fields")
+
     status_field = {
         "campaign": "campaign_group_status",
         "adgroup": "ad_group_status",
-        "ad": "status",
     }.get(resource_type, "status")
     common = {
         "name": _field("string", "Resource name"),
@@ -190,54 +204,83 @@ def tiktok_updates(resource_type: str) -> dict[str, Any]:
             "gender": _field("string", "Gender", enum=["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]),
             "auto_targeting_enabled": _field("boolean", "Automatic targeting"),
         })
-    elif resource_type == "ad":
-        common.update({
-            "landing_page_url": _field("string", "Landing page URL"),
-            "text": _field("object", "Ad text payload"),
-            "status": _field("integer", "Ad status", enum=[0, 1]),
-        })
     return _with_lifecycle_defaults(
         _object(common, f"Allowed TikTok {resource_type} update fields")
     )
 
 
-def tiktok_smart_plus_updates(resource_type: str) -> dict[str, Any]:
+def tiktok_creative_updates() -> dict[str, Any]:
+    """Fields accepted by the regular TikTok Ad update creative payload."""
+    return _object({
+        "ad_name": _field("string", "Updated Ad name", minLength=1, maxLength=512),
+        "ad_text": _field("string", "Updated primary ad text", minLength=1, maxLength=100),
+        "landing_page_url": _field("string", "Updated landing page URL", minLength=1),
+        "call_to_action_id": _field("string", "TikTok call-to-action ID", minLength=1),
+    }, "TikTok Ad creative fields updated through ad/update")
+
+
+def tiktok_smart_plus_updates(
+    resource_type: str, *, ad_schema: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Closed update contract for TikTok's current Upgraded Smart+ API."""
     common = {
         "name": _field("string", "Resource name"),
-        "status": _field("string", "Compatibility status; normalized to operation_status", enum=["ACTIVE", "ENABLED", "PAUSED", "DISABLE", "ENABLE"]),
+        "status": _field(
+            "string", "Delivery status; updated through the Smart+ status endpoint",
+            enum=["ACTIVE", "ENABLED", "PAUSED", "DISABLE", "ENABLE"],
+        ),
         "operation_status": _field(
-            "string", "Smart+ delivery status", enum=["DISABLE", "ENABLE"],
+            "string", "Delivery status; updated through the Smart+ status endpoint",
+            enum=["DISABLE", "ENABLE"],
         ),
     }
     if resource_type == "campaign":
         common.update({
-            "budget_mode": _field("string", "Campaign budget mode"),
             "budget": _field("number", "Campaign budget", minimum=0),
-            "budget_auto_adjust_strategy": _field("string", "Automatic budget adjustment"),
+            "po_number": _field("string", "Purchase order number"),
         })
     elif resource_type == "adgroup":
         common.update({
-            "promotion_type": _field("string", "Optimization location"),
-            "optimization_goal": _field("string", "Optimization goal"),
-            "bid_type": _field("string", "Bid mode"),
             "bid_price": _field("number", "Bid price", minimum=0),
-            "conversion_bid_price": _field("number", "Conversion bid price", minimum=0),
-            "billing_event": _field("string", "Billing event"),
-            "budget_mode": _field("string", "Ad group budget mode"),
             "budget": _field("number", "Ad group budget", minimum=0),
+            "comment_disabled": _field("boolean", "Disable comments"),
+            "conversion_bid_price": _field("number", "Conversion bid price", minimum=0),
+            "dayparting": _field("string", "Ad delivery dayparting schedule"),
+            "min_budget": _field("number", "Minimum budget", minimum=0),
+            "movie_premiere_date": _field("string", "Movie premiere date"),
+            "pacing": _field("string", "Budget pacing"),
+            "roas_bid": _field("number", "Return-on-ad-spend bid", minimum=0),
             "schedule_start_time": _field("string", "Schedule start time"),
             "schedule_end_time": _field("string", "Schedule end time"),
-            "location_ids": _field("array", "Target locations", items={"type": "string"}),
-            "saved_audience_id": _field("string", "Saved audience ID"),
+            "schedule_type": _field("string", "Schedule type"),
+            "share_disabled": _field("boolean", "Disable sharing"),
+            "suggestion_audience_enabled": _field("boolean", "Enable suggested audience"),
+            "targeting_optimization_mode": _field("string", "Targeting optimization mode"),
+            "targeting_spec": _field(
+                "object", "TikTok Smart+ targeting specification",
+                properties={
+                    "age_groups": _field("array", "Age groups", items={"type": "string"}),
+                    "gender": _field("string", "Gender"),
+                    "location_ids": _field("array", "Location IDs", items={"type": "string"}),
+                    "operating_systems": _field("array", "Operating systems", items={"type": "string"}),
+                },
+                additionalProperties=False,
+            ),
         })
     elif resource_type == "ad":
-        common.update({
-            "ad_text": _field("string", "Primary ad text"),
-            "landing_page_url": _field("string", "Landing page URL"),
-            "call_to_action_id": _field("string", "Call to action ID"),
-            "dark_post_status": _field("string", "Dark post status"),
-        })
+        if not isinstance(ad_schema, dict) or not isinstance(
+            ad_schema.get("properties"), dict
+        ):
+            raise ValueError("Smart+ ad updates require the provider-owned Ad schema")
+        creative_fields = (
+            "ad_text_list", "landing_page_url_list", "call_to_action_list",
+            "deeplink_list", "page_list", "creative_list", "ad_configuration",
+        )
+        for field in creative_fields:
+            property_schema = ad_schema["properties"].get(field)
+            if not isinstance(property_schema, dict):
+                raise ValueError(f"Smart+ Ad schema is missing update field: {field}")
+            common[field] = property_schema
     else:
         raise ValueError(f"Unsupported Smart+ update resource: {resource_type}")
     return _object(common, f"Allowed TikTok Smart+ {resource_type} update fields")

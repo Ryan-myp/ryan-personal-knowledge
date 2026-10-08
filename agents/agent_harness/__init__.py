@@ -15,6 +15,7 @@ from .agent import (
     ToolCallContext,
     ModelBudgetExceededError,
     ModelTimeoutError,
+    ModelCapacityError,
     TranscriptPersistenceError,
     AgentCancelledError,
     AgentLeaseLostError,
@@ -59,7 +60,7 @@ from .runtime_kernel import (
 )
 from .tool_sources import StaticToolSource, ToolBinding, ToolExecutor, ToolSource
 from .tool_catalog import InMemoryToolCatalog, ToolCatalog
-from .tool_execution import ToolExecutionCoordinator
+from .tool_execution import ToolCapacityError, ToolExecutionCoordinator
 from .turn_pipeline import (
     CallableTurnPipeline,
     SequentialTurnPipeline,
@@ -111,6 +112,7 @@ __all__ = [
     "ToolCallContext",
     "ModelBudgetExceededError",
     "ModelTimeoutError",
+    "ModelCapacityError",
     "TranscriptPersistenceError",
     "AgentCancelledError",
     "AgentLeaseLostError",
@@ -118,6 +120,7 @@ __all__ = [
     "ToolExecutor",
     "ToolSource",
     "ToolExecutionCoordinator",
+    "ToolCapacityError",
     "TraceSink",
     "TurnExecutionContext",
     "TurnPipeline",

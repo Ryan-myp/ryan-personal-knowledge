@@ -43,7 +43,7 @@ from agents.agent_harness import (
 from .integration import advertising_skill_source, advertising_tool_source
 from .agent_definition import advertising_agent_definition
 from .plugin_management import PluginPackageManager
-from .runtime.task_executor import (
+from agents.agent_platform.infrastructure.durable import (
     TaskCapacityError, TaskExecutionContext, TaskExecutor, TaskExecutorError,
     UnknownTaskKind,
 )

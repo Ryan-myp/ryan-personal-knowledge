@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-09-30",
+  "generated_at": "2026-10-08",
   "scope": "provider_query_e2e",
   "safety": {
     "test_accounts_only": true,
@@ -22,70 +22,80 @@
           "action": "list",
           "tool": "google_list_campaigns",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 2088.832
         },
         {
           "resource": "ad_group",
           "action": "list",
           "tool": "google_list_ad_groups",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 629.983
         },
         {
           "resource": "ad",
           "action": "list",
           "tool": "google_list_ads",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 10,
+          "latency_ms": 1331.296
         },
         {
           "resource": "campaign",
           "action": "report",
           "tool": "google_get_campaign_report",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 1217.347
         },
         {
           "resource": "ad",
           "action": "get",
           "tool": "google_get_ad",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 833.122
         },
         {
           "resource": "ad_group",
           "action": "get",
           "tool": "google_get_ad_group",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 939.039
         },
         {
           "resource": "ad_group",
           "action": "report",
           "tool": "google_get_adgroup_report",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 1043.252
         },
         {
           "resource": "asset_group",
           "action": "get",
           "tool": "google_get_asset_group",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 691.613
         },
         {
           "resource": "campaign",
           "action": "get",
           "tool": "google_get_campaign",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1139.925
         },
         {
           "resource": "product_group",
           "action": "get",
           "tool": "google_get_product_group",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1334.904
         },
         {
           "resource": "user_list",
@@ -99,70 +109,80 @@
           "action": "list",
           "tool": "google_list_asset_group_assets",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 800.157
         },
         {
           "resource": "listing_group_filter",
           "action": "list",
           "tool": "google_list_asset_group_listing_group_filters",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 797.583
         },
         {
           "resource": "asset_group",
           "action": "list",
           "tool": "google_list_asset_groups",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1066.561
         },
         {
           "resource": "asset",
           "action": "list",
           "tool": "google_list_assets",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 806.352
         },
         {
           "resource": "bidding_strategy",
           "action": "list",
           "tool": "google_list_bidding_strategies",
           "outcome": "passed",
-          "row_count": 2
+          "row_count": 2,
+          "latency_ms": 1308.218
         },
         {
           "resource": "campaign_asset",
           "action": "list",
           "tool": "google_list_campaign_assets",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 812.253
         },
         {
           "resource": "campaign_budget",
           "action": "list",
           "tool": "google_list_campaign_budgets",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 799.981
         },
         {
           "resource": "campaign_conversion_goal",
           "action": "list",
           "tool": "google_list_campaign_conversion_goals",
           "outcome": "passed",
-          "row_count": 8
+          "row_count": 8,
+          "latency_ms": 1598.761
         },
         {
           "resource": "campaign_criterion",
           "action": "list",
           "tool": "google_list_campaign_criteria",
           "outcome": "passed",
-          "row_count": 4
+          "row_count": 4,
+          "latency_ms": 1046.385
         },
         {
           "resource": "conversion_action",
           "action": "list",
           "tool": "google_list_conversion_actions",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 2279.093
         },
         {
           "resource": "customer_client",
@@ -176,35 +196,40 @@
           "action": "list",
           "tool": "google_list_customer_conversion_goals",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 2796.87
         },
         {
           "resource": "experiment_arm",
           "action": "list",
           "tool": "google_list_experiment_arms",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 8160.375
         },
         {
           "resource": "experiment",
           "action": "list",
           "tool": "google_list_experiments",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 1180.932
         },
         {
           "resource": "keyword",
           "action": "list",
           "tool": "google_list_keywords",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 615.795
         },
         {
           "resource": "product_group",
           "action": "list",
           "tool": "google_list_product_groups",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1152.67
         },
         {
           "resource": "user_list",
@@ -218,35 +243,40 @@
           "action": "get",
           "tool": "google_get_asset",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 826.896
         },
         {
           "resource": "bidding_strategy",
           "action": "get",
           "tool": "google_get_bidding_strategy",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 813.279
         },
         {
           "resource": "campaign_budget",
           "action": "get",
           "tool": "google_get_campaign_budget",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 622.454
         },
         {
           "resource": "campaign_criterion",
           "action": "get",
           "tool": "google_get_campaign_criterion",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 793.22
         },
         {
           "resource": "conversion_action",
           "action": "get",
           "tool": "google_get_conversion_action",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1215.965
         },
         {
           "resource": "listing_group_filter",
@@ -276,70 +306,80 @@
           "action": "get",
           "tool": "meta_get_account",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 762.215
         },
         {
           "resource": "campaign",
           "action": "list",
           "tool": "meta_list_campaigns",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 866.479
         },
         {
           "resource": "creative",
           "action": "list",
           "tool": "meta_list_creatives",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 5097.052
         },
         {
           "resource": "ad_set",
           "action": "list",
           "tool": "meta_list_ad_sets",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 19353.385
         },
         {
           "resource": "ad",
           "action": "list",
           "tool": "meta_list_ads",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 17211.887
         },
         {
           "resource": "campaign",
           "action": "report",
           "tool": "meta_get_campaign_report",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 916.994
         },
         {
           "resource": "ad",
           "action": "get",
           "tool": "meta_get_ad",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 10985.749
         },
         {
           "resource": "ad",
           "action": "report",
           "tool": "meta_get_ad_report",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 1129.126
         },
         {
           "resource": "ad_set",
           "action": "get",
           "tool": "meta_get_adset",
-          "outcome": "passed",
-          "row_count": 1
+          "outcome": "failed",
+          "failure_category": "provider_timeout",
+          "latency_ms": 30004.153
         },
         {
           "resource": "ad_set",
           "action": "report",
           "tool": "meta_get_adset_report",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 5753.081
         },
         {
           "resource": "audience",
@@ -360,14 +400,16 @@
           "action": "get",
           "tool": "meta_get_campaign",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 14979.02
         },
         {
           "resource": "creative",
           "action": "get",
           "tool": "meta_get_creative",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1753.196
         },
         {
           "resource": "lead",
@@ -402,21 +444,24 @@
           "action": "list",
           "tool": "meta_list_catalogs",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 1151.044
         },
         {
           "resource": "custom_conversion",
           "action": "list",
           "tool": "meta_list_custom_conversions",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 1396.023
         },
         {
           "resource": "image_asset",
           "action": "list",
           "tool": "meta_list_image_assets",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 1024.642
         },
         {
           "resource": "lead",
@@ -430,70 +475,80 @@
           "action": "list",
           "tool": "meta_list_pages",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 2393.534
         },
         {
           "resource": "pixel",
           "action": "list",
           "tool": "meta_list_pixels",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 958.413
         },
         {
           "resource": "product_set",
           "action": "list",
           "tool": "meta_list_product_sets",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 16671.584
         },
         {
           "resource": "video_asset",
           "action": "list",
           "tool": "meta_list_video_assets",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 896.488
         },
         {
           "resource": "ad_set",
           "action": "get",
           "tool": "meta_lookup_adset",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 17700.618
         },
         {
           "resource": "creative",
           "action": "get",
           "tool": "meta_lookup_creative",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1152.785
         },
         {
           "resource": "targeting_option",
           "action": "search",
           "tool": "meta_search_targeting_options",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 780.177
         },
         {
           "resource": "catalog",
           "action": "get",
           "tool": "meta_get_catalog",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 17905.477
         },
         {
           "resource": "pixel",
           "action": "get",
           "tool": "meta_get_pixel",
           "outcome": "failed",
-          "failure_category": "provider_permission"
+          "failure_category": "provider_permission",
+          "latency_ms": 3245.935
         },
         {
           "resource": "lead_form",
           "action": "list",
           "tool": "meta_list_lead_forms",
           "outcome": "failed",
-          "failure_category": "credential_error"
+          "failure_category": "credential_error",
+          "latency_ms": 547.33
         },
         {
           "resource": "custom_conversion",
@@ -530,56 +585,64 @@
           "action": "get",
           "tool": "tiktok_get_account",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 5615.861
         },
         {
           "resource": "campaign",
           "action": "list",
           "tool": "tiktok_list_campaigns",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 2927.006
         },
         {
           "resource": "ad_group",
           "action": "list",
           "tool": "tiktok_list_adgroups",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 3342.129
         },
         {
           "resource": "ad",
           "action": "list",
           "tool": "tiktok_list_ads",
           "outcome": "passed",
-          "row_count": 2
+          "row_count": 2,
+          "latency_ms": 4417.814
         },
         {
           "resource": "campaign",
           "action": "report",
           "tool": "tiktok_get_campaign_report",
           "outcome": "passed",
-          "row_count": 3
+          "row_count": 3,
+          "latency_ms": 2363.717
         },
         {
           "resource": "ad",
           "action": "get",
           "tool": "tiktok_get_ad",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1544.496
         },
         {
           "resource": "ad_group",
           "action": "get",
           "tool": "tiktok_get_adgroup",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 7026.257
         },
         {
           "resource": "ad_group",
           "action": "report",
           "tool": "tiktok_get_adgroup_report",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 1220.486
         },
         {
           "resource": "audience",
@@ -593,14 +656,24 @@
           "action": "get",
           "tool": "tiktok_get_brand_safety_partner_status",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 8616.984
         },
         {
           "resource": "campaign",
           "action": "get",
           "tool": "tiktok_get_campaign",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 5279.632
+        },
+        {
+          "resource": "creative",
+          "action": "get",
+          "tool": "tiktok_get_creative",
+          "outcome": "passed",
+          "row_count": 1,
+          "latency_ms": 958.697
         },
         {
           "resource": "identity",
@@ -621,28 +694,32 @@
           "action": "get",
           "tool": "tiktok_get_report",
           "outcome": "passed",
-          "row_count": 3
+          "row_count": 3,
+          "latency_ms": 858.222
         },
         {
           "resource": "account",
           "action": "list",
           "tool": "tiktok_list_accounts",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 5107.521
         },
         {
           "resource": "action_category",
           "action": "list",
           "tool": "tiktok_list_action_categories",
           "outcome": "passed",
-          "row_count": 200
+          "row_count": 200,
+          "latency_ms": 883.173
         },
         {
           "resource": "app",
           "action": "list",
           "tool": "tiktok_list_apps",
           "outcome": "passed",
-          "row_count": 5
+          "row_count": 5,
+          "latency_ms": 395.529
         },
         {
           "resource": "audience",
@@ -656,28 +733,32 @@
           "action": "list",
           "tool": "tiktok_list_carriers",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 469.321
         },
         {
           "resource": "catalog",
           "action": "list",
           "tool": "tiktok_list_catalogs",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 679.414
         },
         {
           "resource": "creative",
           "action": "list",
           "tool": "tiktok_list_creatives",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 1540.228
         },
         {
           "resource": "device_model",
           "action": "list",
           "tool": "tiktok_list_device_models",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 4761.541
         },
         {
           "resource": "identity",
@@ -691,105 +772,112 @@
           "action": "list",
           "tool": "tiktok_list_images",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 2599.562
         },
         {
           "resource": "interest_category",
           "action": "list",
           "tool": "tiktok_list_interest_categories",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 1505.85
         },
         {
           "resource": "language",
           "action": "list",
           "tool": "tiktok_list_languages",
           "outcome": "passed",
-          "row_count": 42
+          "row_count": 42,
+          "latency_ms": 428.681
         },
         {
           "resource": "operating_system",
           "action": "list",
           "tool": "tiktok_list_os_versions",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 862.598
         },
         {
           "resource": "pixel",
           "action": "list",
           "tool": "tiktok_list_pixels",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 507.494
         },
         {
           "resource": "product_set",
           "action": "list",
           "tool": "tiktok_list_product_sets",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 1401.297
         },
         {
           "resource": "region",
           "action": "list",
           "tool": "tiktok_list_regions",
-          "outcome": "passed",
-          "row_count": 10
+          "outcome": "failed",
+          "failure_category": "provider_timeout",
+          "latency_ms": 15000.912
         },
         {
           "resource": "video",
           "action": "list",
           "tool": "tiktok_list_videos",
           "outcome": "passed",
-          "row_count": 10
+          "row_count": 10,
+          "latency_ms": 1630.684
         },
         {
           "resource": "interest_keyword",
           "action": "recommend",
           "tool": "tiktok_recommend_interest_keywords",
           "outcome": "passed",
-          "row_count": 0
+          "row_count": 0,
+          "latency_ms": 8425.71
         },
         {
           "resource": "location",
           "action": "search",
           "tool": "tiktok_search_locations",
           "outcome": "passed",
-          "row_count": 4
+          "row_count": 4,
+          "latency_ms": 8367.929
         },
         {
           "resource": "catalog",
           "action": "get",
           "tool": "tiktok_get_catalog",
           "outcome": "passed",
-          "row_count": 1
-        },
-        {
-          "resource": "creative",
-          "action": "get",
-          "tool": "tiktok_get_creative",
-          "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 4977.649
         },
         {
           "resource": "image",
           "action": "get",
           "tool": "tiktok_get_image",
-          "outcome": "passed",
-          "row_count": 1
+          "outcome": "failed",
+          "failure_category": "provider_error",
+          "latency_ms": 5061.805
         },
         {
           "resource": "interest_category",
           "action": "get",
           "tool": "tiktok_get_interest_category",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 9471.139
         },
         {
           "resource": "video",
           "action": "get",
           "tool": "tiktok_get_video",
           "outcome": "passed",
-          "row_count": 1
+          "row_count": 1,
+          "latency_ms": 7136.898
         },
         {
           "resource": "creative_portfolio",

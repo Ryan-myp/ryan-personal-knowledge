@@ -82,19 +82,24 @@ class TikTokAPIClient(BasePlatformClient):
     SMART_PLUS_MIN_BUDGET = 20.0
     SMART_PLUS_UPDATE_FIELDS = {
         "campaign": {
-            "name", "status", "operation_status", "budget_mode", "budget",
-            "budget_auto_adjust_strategy",
+            "name", "budget", "po_number",
         },
         "adgroup": {
-            "name", "status", "operation_status", "promotion_type", "optimization_goal",
-            "bid_type", "bid_price", "conversion_bid_price", "billing_event",
-            "budget_mode", "budget", "schedule_start_time", "schedule_end_time",
-            "location_ids", "saved_audience_id",
+            "name", "bid_price", "budget", "comment_disabled",
+            "conversion_bid_price", "dayparting", "min_budget",
+            "movie_premiere_date", "pacing", "roas_bid", "schedule_end_time",
+            "schedule_start_time", "schedule_type", "share_disabled",
+            "suggestion_audience_enabled", "targeting_optimization_mode",
+            "targeting_spec",
         },
         "ad": {
-            "name", "status", "operation_status", "ad_text", "landing_page_url",
-            "call_to_action_id", "dark_post_status",
+            "name", "ad_text_list", "landing_page_url_list",
+            "call_to_action_list", "deeplink_list", "page_list",
+            "creative_list", "ad_configuration",
         },
+    }
+    TIKTOK_CREATIVE_UPDATE_FIELDS = {
+        "ad_name", "ad_text", "landing_page_url", "call_to_action_id",
     }
     
     def __init__(
@@ -884,26 +889,38 @@ class TikTokAPIClient(BasePlatformClient):
         self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict,
         live: bool = False,
     ) -> dict:
-        """Update an Ad using TikTok's advertiser/ad-group scoped endpoint."""
-        normalized_updates = {
-            key: value for key, value in updates.items() if value is not None
-        }
-        if "status" in normalized_updates and "ad_status" not in normalized_updates:
-            normalized_updates["ad_status"] = normalized_updates.pop("status")
+        """Update delivery status through TikTok's dedicated Ad status API."""
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - {"status"}
+        if unknown:
+            raise ValueError(f"Unsupported TikTok Ad status fields: {sorted(unknown)}")
+        status = updates.get("status")
+        if isinstance(status, bool):
+            raise ValueError("TikTok Ad status must be 0/1 or ENABLE/DISABLE")
+        if status in (0, "0", "PAUSED", "DISABLE", "DISABLED"):
+            operation_status = "DISABLE"
+        elif status in (1, "1", "ACTIVE", "ENABLED", "ENABLE"):
+            operation_status = "ENABLE"
+        else:
+            raise ValueError("TikTok Ad status must be 0/1 or ENABLE/DISABLE")
+        advertiser_id = str(advertiser_id or "").strip()
+        ad_id = str(ad_id or "").strip()
+        if not advertiser_id or not ad_id:
+            raise ValueError("advertiser_id and ad_id must not be empty")
         data = {
-            "advertiser_id": str(advertiser_id),
-            "ad_group_id": int(adgroup_id),
-            "ad_id": int(ad_id),
-            "ad": normalized_updates,
+            "advertiser_id": advertiser_id,
+            "ad_ids": [ad_id],
+            "operation_status": operation_status,
         }
         if not live:
             return {
                 "mode": "dry_run", "execution_status": "planned", "live_support": True,
-                "ad_id": str(ad_id), "advertiser_id": str(advertiser_id),
-                "adgroup_id": str(adgroup_id), "operation": {"ad/update/": data},
+                "ad_id": ad_id, "advertiser_id": advertiser_id,
+                "operation": {"ad/status/update/": data},
             }
         self.acquire_rate_limit(self._rate_limiter)
-        return self.request("POST", "ad/update/", data=data)
+        return self.request("POST", "ad/status/update/", data=data)
 
     def delete_ad(self, advertiser_id: str, ad_id: str) -> dict:
         """Delete an Ad through TikTok's advertiser-scoped endpoint."""
@@ -1269,6 +1286,87 @@ class TikTokAPIClient(BasePlatformClient):
         if value in (1, "1", "ACTIVE", "ENABLE", "ENABLED"):
             return "ENABLE"
         raise ValueError("TikTok Smart+ operation_status must be ENABLE or DISABLE")
+
+    def _normalize_smart_plus_updates(
+        self, resource: str, updates: dict[str, Any]
+    ) -> tuple[bool, dict[str, Any]]:
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("Smart+ updates must be a non-empty object")
+        if resource not in self.SMART_PLUS_UPDATE_FIELDS:
+            raise ValueError(f"Unsupported TikTok Smart+ update resource: {resource}")
+
+        normalized = {
+            key: value for key, value in updates.items() if value is not None
+        }
+        status_fields = set(normalized) & {"status", "operation_status"}
+        if status_fields and set(normalized) - status_fields:
+            raise ValueError(
+                "Smart+ delivery status must be updated separately from content fields"
+            )
+        if status_fields:
+            if len(status_fields) == 2 and (
+                self._smart_plus_status({"status": normalized["status"]})
+                != self._smart_plus_status({
+                    "operation_status": normalized["operation_status"]
+                })
+            ):
+                raise ValueError("status and operation_status values conflict")
+            return True, {
+                "operation_status": self._smart_plus_status(normalized),
+            }
+
+        allowed = self.SMART_PLUS_UPDATE_FIELDS[resource]
+        unknown = set(normalized) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unsupported TikTok Smart+ {resource} update fields: "
+                f"{sorted(unknown)}"
+            )
+        if not normalized:
+            raise ValueError("updates must contain a supported non-null field")
+        return False, normalized
+
+    @staticmethod
+    def _build_smart_plus_update_request(
+        resource: str,
+        advertiser_id: str,
+        resource_id: str,
+        normalized: dict[str, Any],
+        *,
+        status_update: bool,
+    ) -> tuple[str, dict[str, Any]]:
+        if status_update:
+            plural_id_field = {
+                "campaign": "campaign_ids",
+                "adgroup": "adgroup_ids",
+                "ad": "smart_plus_ad_ids",
+            }[resource]
+            endpoint = f"smart_plus/{resource}/status/update/"
+            return endpoint, {
+                "advertiser_id": advertiser_id,
+                plural_id_field: [resource_id],
+                "operation_status": normalized["operation_status"],
+            }
+
+        id_field = {
+            "campaign": "campaign_id",
+            "adgroup": "adgroup_id",
+            "ad": "smart_plus_ad_id",
+        }[resource]
+        name_field = {
+            "campaign": "campaign_name",
+            "adgroup": "adgroup_name",
+            "ad": "ad_name",
+        }[resource]
+        content = dict(normalized)
+        if "name" in content:
+            content[name_field] = content.pop("name")
+        endpoint = f"smart_plus/{resource}/update/"
+        return endpoint, {
+            "advertiser_id": advertiser_id,
+            id_field: resource_id,
+            **content,
+        }
 
     def _smart_plus_objective(self, value: Any) -> tuple[str, str]:
         public = str(value or "").strip().upper()
@@ -1839,50 +1937,61 @@ class TikTokAPIClient(BasePlatformClient):
 
     def _update_smart_plus(
         self, resource: str, advertiser_id: str, resource_id: str, updates: dict[str, Any],
-        *, parent_id: str | None = None,
+        *, parent_id: str | None = None, live: bool = False,
     ) -> dict[str, Any]:
-        """Call the versioned Smart+ update endpoint with a closed payload."""
-        if not isinstance(updates, dict) or not updates:
-            raise ValueError("Smart+ updates must be a non-empty object")
-        allowed = self.SMART_PLUS_UPDATE_FIELDS[resource]
-        unknown = set(updates) - allowed
-        if unknown:
-            raise ValueError(
-                f"Unsupported TikTok Smart+ {resource} update fields: {sorted(unknown)}"
-            )
-        normalized = dict(updates)
-        if "status" in normalized and "operation_status" not in normalized:
-            normalized["operation_status"] = normalized.pop("status")
-        if "operation_status" in normalized:
-            normalized["operation_status"] = self._smart_plus_status(normalized)
-        data = {"advertiser_id": str(advertiser_id)}
-        id_field = "adgroup_id" if resource == "adgroup" else f"{resource}_id"
-        data[id_field] = str(resource_id)
-        if parent_id:
-            data["campaign_id" if resource == "adgroup" else "adgroup_id"] = str(parent_id)
-        data[resource] = normalized
+        """Route Smart+ content and status changes through their distinct APIs."""
+        advertiser_id = str(advertiser_id or "").strip()
+        resource_id = str(resource_id or "").strip()
+        parent_id = str(parent_id or "").strip() or None
+        if not advertiser_id or not resource_id:
+            raise ValueError("advertiser_id and resource_id must not be empty")
+        status_update, normalized = self._normalize_smart_plus_updates(
+            resource, updates
+        )
+        endpoint, data = self._build_smart_plus_update_request(
+            resource, advertiser_id, resource_id, normalized,
+            status_update=status_update,
+        )
+
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "advertiser_id": advertiser_id,
+                "resource_id": resource_id,
+                "parent_id": parent_id,
+                "operation": {endpoint: data},
+            }
         self.acquire_rate_limit(self._rate_limiter)
-        result = self.request("POST", f"smart_plus/{resource}/update/", data=data)
+        result = self.request("POST", endpoint, data=data)
         payload = self._data_section(result)
         return payload if isinstance(payload, dict) else {"result": payload}
 
     def update_smart_plus_campaign(
-        self, advertiser_id: str, campaign_id: str, updates: dict[str, Any]
-    ) -> dict[str, Any]:
-        return self._update_smart_plus("campaign", advertiser_id, campaign_id, updates)
-
-    def update_smart_plus_adgroup(
-        self, advertiser_id: str, campaign_id: str, adgroup_id: str, updates: dict[str, Any]
+        self, advertiser_id: str, campaign_id: str, updates: dict[str, Any],
+        live: bool = False,
     ) -> dict[str, Any]:
         return self._update_smart_plus(
-            "adgroup", advertiser_id, adgroup_id, updates, parent_id=campaign_id
+            "campaign", advertiser_id, campaign_id, updates, live=live
+        )
+
+    def update_smart_plus_adgroup(
+        self, advertiser_id: str, campaign_id: str, adgroup_id: str,
+        updates: dict[str, Any], live: bool = False,
+    ) -> dict[str, Any]:
+        return self._update_smart_plus(
+            "adgroup", advertiser_id, adgroup_id, updates,
+            parent_id=campaign_id, live=live,
         )
 
     def update_smart_plus_ad(
-        self, advertiser_id: str, adgroup_id: str, ad_id: str, updates: dict[str, Any]
+        self, advertiser_id: str, adgroup_id: str, ad_id: str,
+        updates: dict[str, Any], live: bool = False,
     ) -> dict[str, Any]:
         return self._update_smart_plus(
-            "ad", advertiser_id, ad_id, updates, parent_id=adgroup_id
+            "ad", advertiser_id, ad_id, updates,
+            parent_id=adgroup_id, live=live,
         )
 
     def create_all_in_one_spark_ad(
@@ -2934,10 +3043,40 @@ class TikTokAPIClient(BasePlatformClient):
         self, advertiser_id: str, adgroup_id: str, creative_id: str, updates: dict,
         live: bool = False,
     ) -> dict:
-        """Update a logical Creative through TikTok's ``ad/update`` endpoint."""
-        return self.update_ad(
-            advertiser_id, adgroup_id, creative_id, updates, live=live
-        )
+        """Update an Ad-backed Creative through TikTok's patch-update body."""
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("updates must be a non-empty object")
+        unknown = set(updates) - self.TIKTOK_CREATIVE_UPDATE_FIELDS
+        if unknown:
+            raise ValueError(
+                f"Unsupported TikTok Ad creative update fields: {sorted(unknown)}"
+            )
+        creative = {
+            key: value for key, value in updates.items() if value is not None
+        }
+        if not creative:
+            raise ValueError("updates must contain a supported non-null field")
+        advertiser_id = str(advertiser_id or "").strip()
+        adgroup_id = str(adgroup_id or "").strip()
+        creative_id = str(creative_id or "").strip()
+        if not advertiser_id or not adgroup_id or not creative_id:
+            raise ValueError(
+                "advertiser_id, adgroup_id and creative_id must not be empty"
+            )
+        data = {
+            "advertiser_id": advertiser_id,
+            "adgroup_id": adgroup_id,
+            "creatives": [{"ad_id": creative_id, **creative}],
+            "patch_update": True,
+        }
+        if not live:
+            return {
+                "mode": "dry_run", "execution_status": "planned", "live_support": True,
+                "creative_id": creative_id, "advertiser_id": advertiser_id,
+                "adgroup_id": adgroup_id, "operation": {"ad/update/": data},
+            }
+        self.acquire_rate_limit(self._rate_limiter)
+        return self.request("POST", "ad/update/", data=data)
 
     def delete_creative(self, advertiser_id: str, creative_id: str) -> dict:
         """Delete a logical Creative through TikTok's ``ad/delete`` endpoint."""

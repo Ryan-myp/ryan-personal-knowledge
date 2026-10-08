@@ -1,4 +1,4 @@
-"""Generic lifecycle supervisor for Runtime-owned durable workers."""
+"""Lifecycle supervisor for application-owned durable workers."""
 
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ import pytest
 from agents.ad_agent.domain.ad.auth import RequestPrincipal
 from agents.ad_agent.persistence.models import TaskRecord
 from agents.ad_agent.persistence.store import AdAgentStore
-from agents.ad_agent.runtime.task_executor import TaskExecutor, TaskCapacityError
+from agents.agent_platform.infrastructure.durable import TaskExecutor, TaskCapacityError
 
 
 def _wait_for(executor, task_id, statuses, timeout=2.0):

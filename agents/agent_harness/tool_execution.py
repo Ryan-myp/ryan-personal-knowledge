@@ -8,6 +8,7 @@ retries, circuit breaking, cancellation and model-facing output limits.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any, Callable, Mapping, Optional, Sequence
@@ -23,6 +24,10 @@ TOOL_CANCELLATION_MODES = frozenset({
     "interruptible",
     "not_interruptible",
 })
+
+
+class ToolCapacityError(RuntimeError):
+    """The bounded Tool invocation pool has no free execution slot."""
 
 
 class ToolCallContext:
@@ -47,6 +52,22 @@ class ToolCallContext:
 class ToolExecutionCoordinator:
     """Execute a model Tool plan without embedding business knowledge."""
 
+    _TRUNCATION_PRIORITY = {
+        "success": 0,
+        "error": 1,
+        "data_status": 2,
+        "execution_status": 3,
+        "effect_state": 4,
+        "requires_reconciliation": 5,
+        "total_count": 6,
+        "total": 7,
+        "count": 8,
+        "has_more": 9,
+        "next_page": 10,
+        "page_info": 11,
+        "data": 12,
+    }
+
     def __init__(
         self,
         *,
@@ -58,6 +79,7 @@ class ToolExecutionCoordinator:
         after_tool_call: Optional[Callable[[ToolCallContext, Any], Any]] = None,
         tool_execution: str = "parallel",
         max_parallel_tools: int = 8,
+        max_inflight_tool_invocations: int = 64,
         tool_timeout_seconds: float | None = None,
         tool_max_retries: int = 0,
         tool_retry_delay_seconds: float = 0.0,
@@ -68,6 +90,8 @@ class ToolExecutionCoordinator:
             raise ValueError("tool_execution must be sequential or parallel")
         if max_parallel_tools <= 0:
             raise ValueError("max_parallel_tools must be positive")
+        if max_inflight_tool_invocations <= 0:
+            raise ValueError("max_inflight_tool_invocations must be positive")
         if tool_timeout_seconds is not None and tool_timeout_seconds <= 0:
             raise ValueError("tool_timeout_seconds must be positive")
         if tool_max_retries < 0:
@@ -84,6 +108,9 @@ class ToolExecutionCoordinator:
         self.after_tool_call = after_tool_call
         self.tool_execution = tool_execution
         self.max_parallel_tools = int(max_parallel_tools)
+        self._inflight_tool_slots = threading.BoundedSemaphore(
+            int(max_inflight_tool_invocations)
+        )
         self.tool_timeout_seconds = tool_timeout_seconds
         self.tool_max_retries = int(tool_max_retries)
         self.tool_retry_delay_seconds = float(tool_retry_delay_seconds)
@@ -128,21 +155,132 @@ class ToolExecutionCoordinator:
         effect = getattr(effect, "value", effect)
         return str(effect or "").strip().lower() in {"write", "external_write"}
 
-    def _bound_tool_value(self, value: Any) -> Any:
+    @staticmethod
+    def _serialized_tool_value(value: Any) -> str:
+        try:
+            return json.dumps(
+                value, ensure_ascii=False, sort_keys=True, default=str,
+            )
+        except (TypeError, ValueError):
+            return json.dumps(str(value), ensure_ascii=False)
+
+    def _truncate_tool_text(self, value: str, budget: int) -> str:
+        marker = "\n...[tool output truncated]"
+        low, high = 0, len(value)
+        best = ""
+        while low <= high:
+            middle = (low + high) // 2
+            suffix = marker if middle < len(value) else ""
+            candidate = value[:middle] + suffix
+            if len(self._serialized_tool_value(candidate)) <= budget:
+                best = candidate
+                low = middle + 1
+            else:
+                high = middle - 1
+        return best
+
+    def _compact_tool_value(
+        self,
+        value: Any,
+        budget: int,
+        path: str,
+    ) -> tuple[Any, list[str]]:
+        if len(self._serialized_tool_value(value)) <= budget:
+            return value, []
         if isinstance(value, str):
-            text = value
-        else:
-            try:
-                text = json.dumps(
-                    value, ensure_ascii=False, sort_keys=True, default=str,
+            return self._truncate_tool_text(value, budget), [path or "$"]
+        if isinstance(value, Mapping):
+            result: dict[str, Any] = {}
+            truncated: list[str] = []
+            current_size = 2
+            keys = sorted(
+                value,
+                key=lambda key: (
+                    self._TRUNCATION_PRIORITY.get(str(key).lower(), 100),
+                    str(key).lower(),
+                ),
+            )
+            for key in keys:
+                field = str(key)
+                field_path = f"{path}.{field}" if path else field
+                key_size = len(self._serialized_tool_value(field))
+                field_overhead = key_size + 2 + (2 if result else 0)
+                child_budget = budget - current_size - field_overhead
+                if child_budget < 2:
+                    truncated.append(field_path)
+                    continue
+                child, child_truncated = self._compact_tool_value(
+                    value[key], child_budget, field_path,
                 )
-            except (TypeError, ValueError):
-                text = str(value)
+                child_size = len(self._serialized_tool_value(child))
+                if current_size + field_overhead + child_size > budget:
+                    truncated.append(field_path)
+                    continue
+                result[field] = child
+                current_size += field_overhead + child_size
+                truncated.extend(child_truncated)
+            return result, truncated
+        if isinstance(value, (list, tuple)):
+            result = []
+            truncated: list[str] = []
+            current_size = 2
+            for index, child_value in enumerate(value):
+                child_path = f"{path}[{index}]" if path else f"[{index}]"
+                child_budget = budget - current_size - (2 if result else 0)
+                if child_budget < 2:
+                    truncated.append(path or "$")
+                    break
+                child, child_truncated = self._compact_tool_value(
+                    child_value, child_budget, child_path,
+                )
+                child_size = len(self._serialized_tool_value(child))
+                extra_size = child_size + (2 if result else 0)
+                if current_size + extra_size > budget:
+                    truncated.append(path or "$")
+                    break
+                result.append(child)
+                current_size += extra_size
+                truncated.extend(child_truncated)
+            if len(result) < len(value) and (path or "$") not in truncated:
+                truncated.append(path or "$")
+            return result, truncated
+        return self._truncate_tool_text(str(value), budget), [path or "$"]
+
+    def _bound_tool_value(self, value: Any) -> Any:
+        text = (
+            value
+            if isinstance(value, str)
+            else self._serialized_tool_value(value)
+        )
         if len(text) <= self.max_tool_result_chars:
             return value
-        marker = "\n...[tool output truncated]"
-        limit = max(0, self.max_tool_result_chars - len(marker))
-        return text[:limit] + marker
+        if isinstance(value, str):
+            return self._truncate_tool_text(value, self.max_tool_result_chars)
+
+        max_paths = 1 if self.max_tool_result_chars < 512 else 8
+        max_path_chars = 32 if self.max_tool_result_chars < 512 else 96
+        marker_reserve = len(self._serialized_tool_value({
+            "output_truncated": True,
+            "truncated_fields": ["x" * max_path_chars] * max_paths,
+        }))
+        content_budget = max(2, self.max_tool_result_chars - marker_reserve)
+        bounded, truncated = self._compact_tool_value(
+            value, content_budget, "",
+        )
+        paths = list(dict.fromkeys(truncated))[:max_paths]
+        paths = [path[:max_path_chars] for path in paths] or ["$"]
+        if isinstance(bounded, Mapping):
+            result = dict(bounded)
+            result["output_truncated"] = True
+            result["truncated_fields"] = paths
+            return result
+        if isinstance(value, (list, tuple)):
+            return {
+                "items": bounded,
+                "output_truncated": True,
+                "truncated_fields": paths,
+            }
+        return bounded
 
     def _invoke_tool(
         self,
@@ -164,11 +302,23 @@ class ToolExecutionCoordinator:
                 if self.tool_timeout_seconds is None:
                     output = execute(context, dict(call.arguments))
                 else:
-                    pool = ThreadPoolExecutor(
-                        max_workers=1, thread_name_prefix="agent-tool-call",
-                    )
-                    future: Future[Any] = pool.submit(
-                        execute, context, dict(call.arguments),
+                    if not self._inflight_tool_slots.acquire(blocking=False):
+                        raise ToolCapacityError("Tool execution capacity exhausted")
+                    pool = None
+                    try:
+                        pool = ThreadPoolExecutor(
+                            max_workers=1, thread_name_prefix="agent-tool-call",
+                        )
+                        future: Future[Any] = pool.submit(
+                            execute, context, dict(call.arguments),
+                        )
+                    except Exception:
+                        self._inflight_tool_slots.release()
+                        if pool is not None:
+                            pool.shutdown(wait=False, cancel_futures=True)
+                        raise
+                    future.add_done_callback(
+                        lambda _completed: self._inflight_tool_slots.release()
                     )
                     try:
                         output = future.result(timeout=self.tool_timeout_seconds)
@@ -365,7 +515,8 @@ class ToolExecutionCoordinator:
                     "runtime_signals": {"session_lease_lost": True},
                 })
         except Exception as error:
-            self.tool_circuit.record_failure(call.name)
+            if not isinstance(error, ToolCapacityError):
+                self.tool_circuit.record_failure(call.name)
             effect_unknown = (
                 self._tool_is_write(getattr(binding, "definition", None))
                 and isinstance(error, (TimeoutError, FutureTimeoutError))
@@ -387,6 +538,8 @@ class ToolExecutionCoordinator:
                         "effect_state": "unknown",
                     },
                 })
+            elif isinstance(error, ToolCapacityError):
+                result["runtime_signals"] = {"tool_capacity_exhausted": True}
         if callable(self.after_tool_call):
             try:
                 override = self.after_tool_call(context, result)

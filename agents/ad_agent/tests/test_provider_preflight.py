@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from agents.ad_agent.core.interfaces import (
     ReplayPolicy,
     RiskLevel,
@@ -10,6 +13,10 @@ from agents.ad_agent.core.interfaces import (
 from agents.ad_agent.domain.ad.provider_preflight import build_provider_preflight
 from agents.ad_agent.runtime.account_policy import AccountWhitelistValidator
 from agents.ad_agent.runtime.runtime import AdvertisingComposition
+from agents.ad_agent.scripts.provider_preflight import (
+    _credential_configured,
+    build_runtime,
+)
 
 
 class _Noop(ToolHandler):
@@ -105,3 +112,25 @@ def test_live_write_preflight_requires_explicit_compatible_readback():
         runtime.close(wait=True)
     assert report["status"] == "blocked"
     assert any("回查" in item for item in report["issues"])
+
+
+def test_provider_preflight_runtime_registers_provider_tools_without_network():
+    runtime = build_runtime(
+        Path(__file__).resolve().parents[3] / "agents" / "ad_agent" / "config.yaml"
+    )
+    try:
+        assert runtime._get_registered_tool("google_list_campaigns")[0].namespace == "google-ads"
+        assert runtime._get_registered_tool("meta_list_campaigns")[0].namespace == "meta"
+        assert runtime._get_registered_tool("tiktok_list_campaigns")[0].namespace == "tiktok"
+    finally:
+        runtime.close(wait=True)
+
+
+def test_credential_preflight_recognizes_google_ads_credential_alias(tmp_path):
+    credentials_path = tmp_path / "credentials.json"
+    credentials_path.write_text(
+        json.dumps({"google": {"access_token": "configured"}}),
+        encoding="utf-8",
+    )
+
+    assert _credential_configured(credentials_path, "google-ads") is True

@@ -1,10 +1,9 @@
 """Small durable-store ports used by reusable Runtime infrastructure.
 
-The application persistence facade intentionally has a larger contract because
-it serves the advertising control plane.  Queue, schedule and outbox workers
-must not depend on that facade wholesale: each worker only needs the narrow
-durable operations below.  Structural typing keeps SQLite/MySQL adapters
-interchangeable without importing either backend into Core.
+Application persistence facades can expose a larger contract. Queue, schedule
+and outbox workers depend only on the narrow durable operations below.
+Structural typing keeps SQL adapters interchangeable without importing a
+specific backend into the platform.
 """
 
 from __future__ import annotations

@@ -26,6 +26,7 @@ from agents.ad_agent.runtime.runtime import AdvertisingComposition, AccountWhite
 from agents.ad_agent.runtime.skill import SkillContract
 from agents.ad_agent.tools.providers.source_factory import create_tool_source, discover_tool_source_factory
 from agents.ad_agent.api_clients.factory import create_platform_client
+from agents.ad_agent.domain.ad.auth import RequestPrincipal
 
 
 def test_existing_channel_tools_publish_routing_metadata():
@@ -990,6 +991,10 @@ def test_live_mode_alone_cannot_enable_provider_writes():
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         user_id="u1", account_id="m1",
+        principal=RequestPrincipal(
+            user_id="u1", permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
+            account_scope={"meta": frozenset({"m1"})},
+        ),
     )
     assert result["results"][0]["success"] is False
     assert "allow_live_writes" in result["results"][0]["error"]
