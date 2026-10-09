@@ -1510,9 +1510,10 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
 
 def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeypatch, tmp_path):
     from agents.tools.advertising.application.ad_application import AdvertisingComposition
-    from agents.agent_harness.core.interfaces import ParsedIntent
+    from agents.agent_harness.messages import ModelTurn
     from agents.agent_platform.data.persistence.store import AdAgentStore
     from agents.agent_platform.management.skill_management import ManagedSkillManager
+    from agents.tests.advertising.harness_models import ScriptedHarnessModel
 
     store = AdAgentStore(str(tmp_path / "multi-tenant-skills.db"))
     managed_runtime = AdvertisingComposition(
@@ -1533,16 +1534,8 @@ def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeyp
     )
     manager.publish("tenant-b", "tenant-guidance", "1.0.0")
 
-    class Parser:
-        def __init__(self):
-            self.context = None
-
-        def parse(self, _text, context):
-            self.context = context.metadata.get("skill_context", {})
-            return ParsedIntent("chat", "查询广告", [])
-
-    parser = Parser()
-    managed_runtime.intent_parser = parser
+    model = ScriptedHarnessModel(ModelTurn(content="我会遵循当前租户的 Skill 指引。"))
+    managed_runtime.platform_application.agent.model = model
     monkeypatch.setattr(api_server, "runtime", managed_runtime)
     monkeypatch.setattr(api_server, "API_KEY", "tenant-key")
     monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
@@ -1565,8 +1558,10 @@ def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeyp
         )
 
     assert response.status_code == 200
-    assert parser.context is not None
-    assert "tenant-guidance" in parser.context.get("expert_knowledge", "")
+    assert model.messages
+    assert "tenant-guidance" in "\n".join(
+        str(message.content) for message in model.messages[0]
+    )
     assert "tenant-guidance" in managed_runtime.get_managed_skills("tenant-b")
     assert manager.activate_published("tenant-b", managed_runtime) == 0
     store.close()

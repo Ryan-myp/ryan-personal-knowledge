@@ -45,6 +45,8 @@ from agents.tools.advertising.clients.meta_client import MetaAPIClient
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
+from agents.agent_harness.messages import ModelTurn
+from agents.tests.advertising.harness_models import ScriptedHarnessModel, call, install
 
 
 def trusted_principal(user_id, platform, account_id):
@@ -67,6 +69,7 @@ def runtime():
     """创建只读模式的 runtime"""
     store = AdAgentStore(":memory:")
     rt = AdvertisingComposition(require_llm=False, persistence_store=store, read_only_mode=True)
+    install(rt, ModelTurn(content="你好，我是 ad-agent，可以帮助查询广告数据。"))
     rt.register_tool_source(create_meta_tool_source_mock())
     rt.register_tool_source(create_google_tool_source_mock())
     rt.register_tool_source(create_tiktok_tool_source_mock())
@@ -437,14 +440,19 @@ class TestIntentParser:
         assert intent.intent_type == "chat"
         assert intent.namespaces == []
 
-    def test_cross_channel_delete_selects_batch_management_intent(self):
-        parser = configured_parser()
-        intent = parser.parse(
-            "跨渠道删除 Meta campaign_id=111 和 Google campaign_id=222", None
-        )
+    def test_cross_channel_delete_is_expressed_as_provider_tool_calls(self):
+        definitions = {
+            definition.name: definition
+            for factory in (
+                create_meta_tool_source_mock,
+                create_google_tool_source_mock,
+            )
+            for definition, _handler in factory().register_tools()
+        }
 
-        assert intent.intent_type == "cross_channel_batch_delete"
-        assert intent.namespaces == ["meta", "google-ads"]
+        assert {"meta_delete_campaign", "google_delete_campaign"} <= set(definitions)
+        assert definitions["meta_delete_campaign"].action == "delete"
+        assert definitions["google_delete_campaign"].action == "delete"
 
     def test_single_channel_create_does_not_expand_to_all_platforms(self):
         parser = configured_parser()
@@ -642,12 +650,18 @@ class TestIntentParser:
         assert "PAUSED" in prompt_text
         assert "must-not-be-forwarded" not in prompt_text
 
-    def test_direct_multi_platform_comparison(self):
-        from agents.agent_harness.core.intent import LLMIntentParser
-        parser = configured_parser()
-        intent = parser.parse("比较 Meta 和 Google 的 campaign", None)
-        assert intent.intent_type == "cross_channel_compare"
-        assert intent.namespaces == ["meta", "google-ads"]
+    def test_cross_channel_comparison_has_registered_report_tools(self):
+        definitions = {
+            definition.name: definition
+            for factory in (
+                create_meta_tool_source_mock,
+                create_google_tool_source_mock,
+            )
+            for definition, _handler in factory().register_tools()
+        }
+
+        assert definitions["meta_get_campaign_report"].action == "report"
+        assert definitions["google_get_campaign_report"].action == "report"
 
     def test_cross_channel_create_routes_to_create_workflow(self):
         from agents.agent_harness.core.intent import LLMIntentParser
@@ -849,12 +863,19 @@ class TestIntentParser:
             for platform in ("meta", "google-ads")
         )
 
-    def test_cross_platform_pause_is_not_misrouted_to_overview(self):
-        from agents.agent_harness.core.intent import LLMIntentParser
-        parser = configured_parser()
-        intent = parser.parse("跨渠道暂停 Meta 和 TikTok campaign campaign_id=123", None)
-        assert intent.intent_type == "cross_channel_batch_pause"
-        assert intent.namespaces == ["meta", "tiktok"]
+    def test_cross_channel_pause_uses_registered_update_tools(self):
+        definitions = {
+            definition.name: definition
+            for factory in (
+                create_meta_tool_source_mock,
+                create_tiktok_tool_source_mock,
+            )
+            for definition, _handler in factory().register_tools()
+        }
+
+        assert {"meta_update_campaign", "tiktok_update_campaign"} <= set(definitions)
+        assert definitions["meta_update_campaign"].action == "update"
+        assert definitions["tiktok_update_campaign"].action == "update"
 
     def test_cross_platform_pause_routes_update_tools(self):
         from agents.agent_harness.core.intent import LLMIntentParser
@@ -869,12 +890,37 @@ class TestIntentParser:
         )
         rt.register_tool_source(create_meta_tool_source())
         rt.register_tool_source(create_tiktok_tool_source())
+        install(
+            rt,
+            ModelTurn(tool_calls=(
+                call(
+                    "meta_update_campaign",
+                    {"campaign_id": "111", "updates": {"status": "PAUSED"}},
+                    call_id="pause-meta",
+                ),
+                call(
+                    "tiktok_update_campaign",
+                    {"campaign_id": "222", "updates": {"status": 0}},
+                    call_id="pause-tiktok",
+                ),
+            )),
+            ModelTurn(content="已分别提交 Meta 与 TikTok 的暂停计划。"),
+        )
+        principal = RequestPrincipal(
+            user_id="u1",
+            permissions=frozenset({"ads.read", "ads.plan"}),
+            account_scope={
+                "meta": frozenset({"m1"}),
+                "tiktok": frozenset({"t1"}),
+            },
+        )
         result = rt.run(
             "跨渠道暂停 Meta campaign_id=111 和 TikTok campaign_id=222",
             user_id="u1",
             platform_params={"meta": {"account_id": "m1"}, "tiktok": {"account_id": "t1"}},
+            principal=principal,
         )
-        assert result["intent"]["intent_type"] == "cross_channel_batch_pause"
+        assert result["intent"]["intent_type"] == "update_campaign"
         assert {item["tool"] for item in result["results"]} == {
             "meta_update_campaign", "tiktok_update_campaign",
         }
@@ -973,26 +1019,21 @@ class TestRuntimeQuery:
                     "metrics": {"clicks": 2},
                 }]
 
-        class SequenceLLM:
-            def __init__(self):
-                self.responses = [
-                    '{"intent_type":"chat","namespaces":["google"]}',
-                    '{"intent_type":"create_report","namespaces":["dv360","google"]}',
-                    '{"intent_type":"get_campaign_report","namespaces":["google"]}',
-                ]
-
-            def call(self, _messages):
-                return self.responses.pop(0)
-
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
         rt = AdvertisingComposition(
-            require_llm=True,
-            llm_client=SequenceLLM(),
+            require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
         )
         rt.register_tool_source(create_google_tool_source(GoogleClient()))
+        install(rt,
+            ModelTurn(tool_calls=(call(
+                "google_get_campaign_report",
+                {"customer_id": "g1", "campaign_ids": []},
+            ),)),
+            ModelTurn(content="已查询 Google Ads 报表。"),
+        )
 
         result = rt.run("查询 Google Ads 报表", user_id="u1", account_id="g1")
 
@@ -1025,6 +1066,13 @@ class TestRuntimeQuery:
             whitelist_validator=validator,
         )
         rt.register_tool_source(create_google_tool_source(GoogleClient()))
+        install(rt,
+            ModelTurn(tool_calls=(call(
+                "google_get_campaign_report",
+                {"customer_id": "g1", "campaign_ids": []},
+            ),)),
+            ModelTurn(content="已查询 Google Ads 报表。"),
+        )
 
         result = rt.run(
             "查询 Google Ads 报表",
@@ -1062,6 +1110,13 @@ class TestRuntimeQuery:
             whitelist_validator=validator,
         )
         rt.register_tool_source(create_meta_tool_source(client))
+        install(rt,
+            ModelTurn(tool_calls=(call(
+                "meta_get_campaign_report",
+                {"campaign_ids": []},
+            ),)),
+            ModelTurn(content="已查询 Meta 报表。"),
+        )
 
         result = rt.run("查询 Meta 报表", user_id="u1", account_id="m1")
 
@@ -1074,38 +1129,34 @@ class TestRuntimeQuery:
     def test_runtime_injects_skill_context_before_llm_parsing(self):
         from agents.tools.advertising.providers.meta import create_meta_tool_source
 
-        class FakeLLM:
-            def __init__(self):
-                self.calls = []
-
-            def call(self, messages):
-                self.calls.append(messages)
-                return '{"intent_type":"list_campaigns","namespaces":["meta"]}'
-
-        llm = FakeLLM()
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
         rt = AdvertisingComposition(require_llm=False,
-            llm_client=llm,
             whitelist_validator=validator,
             offline_mode=True,
         )
         rt.register_tool_source(create_meta_tool_source())
+        model = install(rt,
+            ModelTurn(tool_calls=(call(
+                "meta_list_campaigns", {"account_id": "m1"},
+            ),)),
+            ModelTurn(content="已查询 Meta campaign。"),
+        )
         result = rt.run(
             "查询 Meta campaign",
             user_id="u1",
             account_id="m1",
         )
-        assert result["intent"]["intent_type"] == "list_campaigns"
-        all_prompt_text = "\n".join(
-            message["content"]
-            for message in llm.calls[0]
-            if message["role"] == "system"
-        )
-        assert "meta_list_campaigns" in all_prompt_text
+        assert "meta_list_campaigns" in model.tool_names[0]
 
     def test_list_campaigns_meta(self, runtime):
         """查询 Meta campaign 列表"""
+        install(runtime,
+            ModelTurn(tool_calls=(call("meta_list_campaigns", {
+                "account_id": "2806375919473667",
+            }),)),
+            ModelTurn(content="已列出 Meta campaign。"),
+        )
         result = runtime.run(
             user_input="列出 Meta campaign 列表",
             user_id="test_user",
@@ -1118,6 +1169,12 @@ class TestRuntimeQuery:
 
     def test_list_campaigns_google(self, runtime):
         """查询 Google campaign 列表"""
+        install(runtime,
+            ModelTurn(tool_calls=(call("google_list_campaigns", {
+                "customer_id": "9055507554",
+            }),)),
+            ModelTurn(content="已列出 Google Ads campaign。"),
+        )
         result = runtime.run(
             user_input="列出 Google Ads campaign 列表",
             user_id="test_user",
@@ -1142,6 +1199,13 @@ class TestRuntimeQuery:
 
     def test_cross_platform_query(self, runtime):
         """跨平台查询"""
+        install(runtime,
+            ModelTurn(tool_calls=(
+                call("meta_list_campaigns", {"account_id": "2806375919473667"}, call_id="meta-query"),
+                call("tiktok_list_campaigns", {"account_id": "7397068114548195329"}, call_id="tiktok-query"),
+            )),
+            ModelTurn(content="已查询 Meta 和 TikTok campaign。"),
+        )
         result = runtime.run(
             user_input="查询 Meta 和 TikTok 的 campaign",
             user_id="test_user",
@@ -1150,6 +1214,12 @@ class TestRuntimeQuery:
 
     def test_account_auto_selected(self, runtime):
         """未指定账户时自动使用白名单中的测试账户"""
+        install(runtime,
+            ModelTurn(tool_calls=(call("meta_list_campaigns", {
+                "account_id": "2806375919473667",
+            }),)),
+            ModelTurn(content="已查询 Meta campaign。"),
+        )
         result = runtime.run(
             user_input="列出 Meta campaign",
             user_id="test_user",
@@ -1163,12 +1233,15 @@ class TestRuntimeQuery:
         validator.allowed_accounts = {"meta": ["m1", "m2"]}
         rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=True)
         rt.register_tool_source(create_meta_tool_source())
+        model = install(rt, ModelTurn(tool_calls=(call("meta_list_campaigns"),)))
 
         result = rt.run("列出 Meta campaign", user_id="multi-account-user")
 
-        assert result["needs_confirmation"] is True
-        assert result["results"][0]["confirmation_payload"]["type"] == "ask_account"
-        assert result["results"][0]["data"] == {}
+        assert result["needs_input"] is True
+        interaction = result["tool_results"][0]["interaction"]
+        assert interaction["type"] == "account_selection"
+        assert len(interaction["payload"]["account_options"]) == 2
+        assert "meta_list_campaigns" in model.tool_names[0]
 
     def test_runtime_rejects_offline_read_fixtures_by_default(self):
         from agents.tools.advertising.providers.meta import create_meta_tool_source
@@ -1176,6 +1249,10 @@ class TestRuntimeQuery:
         validator.allowed_accounts = {"meta": ["m1"]}
         rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=False)
         rt.register_tool_source(create_meta_tool_source())
+        install(rt,
+            ModelTurn(tool_calls=(call("meta_list_campaigns", {"account_id": "m1"}),)),
+            ModelTurn(content="无法查询：当前未启用 offline provider fixture。"),
+        )
         result = rt.run(
             "列出 Meta campaign 列表",
             user_id="offline-boundary",
@@ -1191,6 +1268,10 @@ class TestRuntimeQuery:
         validator.allowed_accounts = {"meta": ["m1"]}
         rt = AdvertisingComposition(require_llm=False, whitelist_validator=validator, offline_mode=True)
         rt.register_tool_source(create_meta_tool_source())
+        install(rt,
+            ModelTurn(tool_calls=(call("meta_list_campaigns", {"account_id": "m1"}),)),
+            ModelTurn(content="已读取 offline campaign fixture。"),
+        )
         result = rt.run(
             "列出 Meta campaign 列表",
             user_id="offline-explicit",
@@ -1211,26 +1292,24 @@ class TestRuntimeQuery:
                 rules={"min_budget": 50, "max_budget": 50000},
             )],
         )
+        model = install(rt, ModelTurn(content="当前业务策略未开放 TikTok 查询。"))
         result = rt.run("列出 TikTok campaign", account_id="t1")
         assert result["results"] == []
-        assert "不允许使用 tiktok" in result["policy_errors"][0]
+        assert result["tool_results"] == []
+        assert model.tool_names[0] == ()
 
     def test_secret_text_is_redacted_before_llm_and_session(self):
-        seen = []
-
-        class LLM:
-            def call(self, messages):
-                seen.extend(messages)
-                return '{"intent_type":"chat","namespaces":[]}'
-
-        rt = AdvertisingComposition(require_llm=False, persistence_store=AdAgentStore(":memory:"), intent_parser=__import__(
-            "agents.agent_harness.core.intent", fromlist=["LLMIntentParser"]
-        ).LLMIntentParser(LLM()))
+        model = ScriptedHarnessModel(ModelTurn(content="收到。"))
+        rt = AdvertisingComposition(
+            require_llm=False,
+            persistence_store=AdAgentStore(":memory:"),
+        )
+        rt.platform_application.agent.model = model
         result = rt.run(
             "你好 access_token=SECRET partnerId=PARTNER private_key=KEY",
             session_id="redaction-session",
         )
-        serialized = str(seen) + str(rt._sessions["redaction-session"].messages)
+        serialized = str(model.messages) + str(rt._sessions["redaction-session"].messages)
         assert "SECRET" not in serialized
         assert "PARTNER" not in serialized
         assert "KEY" not in serialized
@@ -1243,16 +1322,12 @@ class TestRuntimeQuery:
         assert "KEY" not in persisted_text
 
     def test_runtime_persists_both_sides_of_a_conversation_turn(self):
-        class LLM:
-            def call(self, messages):
-                return '{"intent_type":"chat","namespaces":[]}'
-
         rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
-            intent_parser=__import__(
-                "agents.agent_harness.core.intent", fromlist=["LLMIntentParser"]
-            ).LLMIntentParser(LLM()),
+        )
+        rt.platform_application.agent.model = ScriptedHarnessModel(
+            ModelTurn(content="这是今天投放情况的总结。")
         )
 
         result = rt.run(
@@ -1280,14 +1355,12 @@ class TestRuntimeQuery:
         assert conversation["execution_traces"][result["turn_id"]]["events"]
 
     def test_runtime_persists_creation_card_with_assistant_message(self):
-        class LLM:
-            def call(self, messages):
-                return '{"intent_type":"chat","namespaces":[]}'
-
         rt = AdvertisingComposition(
             require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
-            intent_parser=LLMIntentParser(LLM()),
+        )
+        rt.platform_application.agent.model = ScriptedHarnessModel(
+            ModelTurn(content="请补充广告创建参数。")
         )
         result = rt.run(
             "准备广告创建参数",
@@ -1373,12 +1446,13 @@ class TestSafeWriteExecution:
     def test_dry_run_never_calls_client_and_preserves_parent_ids(self):
         client = self.FakeClient("meta")
         rt = self._runtime("meta", client)
+        install(rt, ModelTurn(tool_calls=(call("meta_create_campaign"),)))
         result = rt.run("创建 Meta 广告系列 名称=Smoke", account_id="m1")
         # Creation now pauses before routing when the campaign objective/type
         # is absent; downstream parent IDs are only produced after a complete
         # Blueprint submission.
         assert result["results"] == []
-        assert result["ui"]["clarification"]
+        assert result["ui"]["cards"]
         assert client.calls == []
 
     @pytest.mark.parametrize("user_request", [
@@ -1389,19 +1463,24 @@ class TestSafeWriteExecution:
     def test_write_never_auto_selects_single_whitelisted_account(self, user_request):
         """写请求必须由当前请求明确给出账户，不能静默选唯一白名单账户。"""
         rt = self._runtime("meta", self.FakeClient("meta"))
+        if user_request.startswith("创建"):
+            turn = ModelTurn(tool_calls=(call("meta_create_campaign", {"name": "需要账户"}),))
+        elif user_request.startswith("更新"):
+            turn = ModelTurn(tool_calls=(call(
+                "meta_update_campaign",
+                {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+            ),))
+        else:
+            turn = ModelTurn(tool_calls=(call(
+                "meta_delete_campaign", {"campaign_id": "123"},
+            ),))
+        install(rt, turn)
 
         result = rt.run(user_request, user_id="explicit-account-required")
 
-        if user_request.startswith("创建"):
-            assert result["results"] == []
-            assert result["workflow_id"] is None
-            assert result["needs_confirmation"] is False
-            assert result["ui"]["clarification"]
-        else:
-            assert result["needs_confirmation"] is True
-            assert result["confirmation_payload"]["type"] == "ask_account"
-            assert "账户" in result["confirmation_payload"]["question"]
-            assert "请提供要操作的" in result["reply"]
+        assert result["needs_input"] is True
+        assert result["results"] == []
+        assert not any(item.get("success") for item in result["tool_results"])
         assert not any(
             isinstance(item.get("data"), dict)
             and item["data"].get("simulated")
@@ -1410,24 +1489,35 @@ class TestSafeWriteExecution:
 
     def test_batch_write_requires_explicit_account(self):
         rt = self._runtime("meta", self.FakeClient("meta"))
+        install(rt, ModelTurn(tool_calls=(
+            call("meta_delete_campaign", {"campaign_id": "101"}, call_id="delete-101"),
+            call("meta_delete_campaign", {"campaign_id": "102"}, call_id="delete-102"),
+        )))
 
         result = rt.run(
             "批量删除 Meta campaign_ids=101,102",
             user_id="batch-explicit-account-required",
         )
 
-        assert result["needs_confirmation"] is True
-        assert result["confirmation_payload"]["type"] == "ask_account"
-        assert "请提供要操作的" in result["reply"]
-        assert all(not item.get("success") for item in result["results"])
+        assert result["needs_input"] is True
+        assert result["results"] == []
+        assert all(item.get("needs_input") for item in result["tool_results"])
 
     def test_confirmation_ui_survives_durable_conversation_reload(self):
-        rt = self._runtime("meta", self.FakeClient("meta"))
+        rt = self._runtime(
+            "meta", self.FakeClient("meta"), mode=ExecutionMode.LIVE.value,
+        )
+        install(rt, ModelTurn(tool_calls=(call(
+            "meta_update_campaign",
+            {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        ),)))
 
         result = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="confirmation-history",
             user_id="confirmation-user",
+            account_id="m1",
+            principal=trusted_principal("confirmation-user", "meta", "m1"),
         )
 
         assert result["needs_confirmation"] is True
@@ -1439,7 +1529,11 @@ class TestSafeWriteExecution:
             message for message in conversation["messages"]
             if message["role"] == "assistant"
         ][-1]
-        assert assistant["ui"]["confirmation"]["payload"] == result["confirmation_payload"]
+        persisted_confirmation = assistant["ui"]["confirmation"]["payload"]
+        expected_confirmation = dict(result["confirmation_payload"])
+        assert persisted_confirmation["confirmation_token"] == "<redacted>"
+        expected_confirmation["confirmation_token"] = "<redacted>"
+        assert persisted_confirmation == expected_confirmation
         assert assistant["ui"]["confirmation"]["original_request"]["user_input"] == (
             "更新 Meta campaign campaign_id=123 status=PAUSED"
         )
@@ -1456,6 +1550,7 @@ class TestSafeWriteExecution:
         )
         rt.register_tool_source(create_meta_tool_source())
         rt.register_tool_source(create_google_tool_source())
+        install(rt, ModelTurn(tool_calls=(call("meta_create_campaign"),)))
         result = rt.run(
             "创建 Meta 广告系列，并创建 Google 广告系列",
             user_id="u1",
@@ -1490,6 +1585,10 @@ class TestSafeWriteExecution:
     def test_live_write_requires_explicit_confirmation(self):
         client = self.FakeClient("meta")
         rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        install(rt, ModelTurn(tool_calls=(call(
+            "meta_update_campaign",
+            {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        ),)))
         result = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             account_id="m1",
@@ -1500,28 +1599,10 @@ class TestSafeWriteExecution:
         assert client.calls == []
 
     def test_live_creation_chain_uses_one_confirmation_for_all_dependencies(self):
-        """A parent/child/leaf chain must not ask for a mismatched second token."""
+        """Harness ToolCalls declare dependencies and share one live approval."""
         from agents.tools.advertising.providers.provider_base import SimpleIdempotencyGuard
-        from agents.agent_harness.core.interfaces import ToolSourceRuntime, ParsedIntent
-
-        class ChainParser:
-            def parse(self, user_input, _context):
-                return ParsedIntent(
-                    "create_chain", user_input, ["meta"],
-                    platform_params={"meta": {
-                        "account_id": "m1", "campaign_name": "Campaign",
-                        "adset_name": "Ad Set", "ad_name": "Ad",
-                    }},
-                )
-
-            def register_tool_definitions(self, _definitions):
-                return None
-
-            def register_namespaces(self, _platforms):
-                return None
-
-            def register_tool_schemas(self, _platform, _schemas):
-                return None
+        from agents.agent_harness.core.interfaces import ToolSourceRuntime
+        from agents.agent_harness.messages import ToolArgumentBinding, ToolCall
 
         class ChainHandler:
             def __init__(self, resource, calls):
@@ -1581,7 +1662,7 @@ class TestSafeWriteExecution:
         validator.allowed_accounts = {"meta": ["m1"]}
         calls = []
         rt = AdvertisingComposition(
-            require_llm=False, intent_parser=ChainParser(),
+            require_llm=False,
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
             execution_mode=ExecutionMode.LIVE.value,
@@ -1589,11 +1670,42 @@ class TestSafeWriteExecution:
             granted_permissions={"ads.plan", "ads.write"},
         )
         rt.register_tool_source(ChainToolSource(calls))
+        rt.platform_application.agent.tool_selector = (
+            lambda _request, tools: list(tools)
+        )
         rt._live_approved_tools = {tool.name for tool in rt.registry.list_all()}
         params = {"meta": {
             "account_id": "m1", "campaign_name": "Campaign",
             "adset_name": "Ad Set", "ad_name": "Ad",
         }}
+        create_calls = (
+            ToolCall(
+                "campaign", "meta_test_campaign",
+                {"account_id": "m1", "campaign_name": "Campaign"},
+            ),
+            ToolCall(
+                "adset", "meta_test_adset",
+                {"account_id": "m1", "adset_name": "Ad Set"},
+                depends_on=("campaign",),
+                argument_bindings=(ToolArgumentBinding(
+                    "campaign_id", "campaign", "data.campaign_id",
+                ),),
+            ),
+            ToolCall(
+                "ad", "meta_test_ad",
+                {"account_id": "m1", "ad_name": "Ad"},
+                depends_on=("adset",),
+                argument_bindings=(ToolArgumentBinding(
+                    "adset_id", "adset", "data.adset_id",
+                ),),
+            ),
+        )
+        install(
+            rt,
+            ModelTurn(tool_calls=(create_calls[0],)),
+            ModelTurn(tool_calls=create_calls),
+            ModelTurn(content="Campaign、Ad Set 和 Ad 均已处理。"),
+        )
 
         planned = rt.run(
             "创建三层广告", session_id="chain-session", user_id="chain-user",
@@ -1620,6 +1732,10 @@ class TestSafeWriteExecution:
     def test_live_delete_requires_explicit_confirmation(self):
         client = self.FakeClient("meta")
         rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        install(rt, ModelTurn(tool_calls=(call(
+            "meta_delete_campaign",
+            {"account_id": "m1", "campaign_id": "123"},
+        ),)))
 
         result = rt.run(
             "删除 Meta campaign campaign_id=123",
@@ -1635,18 +1751,28 @@ class TestSafeWriteExecution:
     def test_live_write_idempotency_uses_normalized_input(self):
         client = self.FakeClient("meta")
         rt = self._runtime("meta", client, mode=ExecutionMode.LIVE.value)
+        update = call(
+            "meta_update_campaign",
+            {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        )
+        install(rt, ModelTurn(tool_calls=(update,)))
         planned = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="idempotency-session", user_id="same-user", account_id="m1",
             principal=trusted_principal("same-user", "meta", "m1"),
         )
         payload = planned["results"][0]["confirmation_payload"]
+        install(rt,
+            ModelTurn(tool_calls=(update,)),
+            ModelTurn(content="Campaign 已更新。"),
+        )
         first = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
             confirmation_payload=payload,
             principal=trusted_principal("same-user", "meta", "m1"),
         )
+        install(rt, ModelTurn(tool_calls=(update,)))
         second = rt.run(
             "更新 Meta campaign campaign_id=123 status=PAUSED",
             session_id="idempotency-session", user_id="same-user", account_id="m1", confirmed=True,
@@ -1690,6 +1816,7 @@ class TestSafeWriteExecution:
                 "ad_style": "CAROUSEL",
             }
         }
+        install(rt, ModelTurn(tool_calls=(call("meta_create_campaign"),)))
         planned = rt.run(
             "提交 Meta 商品目录销售广告创建计划",
             session_id="create-failure-session", account_id="m1",
@@ -1715,6 +1842,13 @@ class TestSafeWriteExecution:
         rt = AdvertisingComposition(require_llm=False, persistence_store=AdAgentStore(":memory:"), whitelist_validator=validator)
         rt.register_tool_source(create_meta_tool_source(meta))
         rt.register_tool_source(create_google_tool_source(google))
+        install(rt,
+            ModelTurn(tool_calls=(
+                call("meta_list_campaigns", {"account_id": "m1"}, call_id="meta-list"),
+                call("google_list_campaigns", {"customer_id": "g1"}, call_id="google-list"),
+            )),
+            ModelTurn(content="已查询两个平台的 campaign。"),
+        )
         result = rt.run(
             "列出 Meta 广告系列，同时列出 Google Ads 广告系列",
             platform_params={"meta": {"account_id": "m1"}, "google": {"customer_id": "g1"}},
@@ -1731,6 +1865,10 @@ class TestSafeWriteExecution:
             whitelist_validator=validator,
         )
         first_runtime.register_tool_source(create_meta_tool_source_mock())
+        install(first_runtime,
+            ModelTurn(tool_calls=(call("meta_list_campaigns", {"account_id": "meta-test"}),)),
+            ModelTurn(content="已列出 campaign。"),
+        )
         first = first_runtime.run(
             "列出 Meta Campaign 列表",
             user_id="owner",
@@ -1761,6 +1899,7 @@ class TestSafeWriteExecution:
         credentials = {"meta": {"access_token": "caller-token"}}
         rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
         rt.register_tool_source(create_meta_tool_source_mock())
+        install(rt, ModelTurn(content="你好。"))
         result = rt.run("你好", user_id="u1", credentials=credentials)
         assert credentials == {"meta": {"access_token": "caller-token"}}
         session = rt._sessions[result["session_id"]]
@@ -1769,12 +1908,25 @@ class TestSafeWriteExecution:
 
     def test_pause_resume_platform_status_mapping(self):
         rt = self._runtime("tiktok")
+        install(rt,
+            ModelTurn(tool_calls=(call("tiktok_resume_campaign", {
+                "account_id": "t1", "campaign_id": "123",
+            }),)),
+            ModelTurn(content="TikTok campaign 已恢复。"),
+        )
         result = rt.run("恢复 TikTok campaign campaign_id=123", account_id="t1")
         assert result["results"][0]["data"]["status"] == "SIMULATED_UPDATED"
 
-    def test_batch_pause_expands_ids_without_calling_client(self):
+    def test_multiple_pause_tool_calls_use_generic_harness_without_workflow(self):
         client = self.FakeClient("meta")
         rt = self._runtime("meta", client)
+        install(rt,
+            ModelTurn(tool_calls=(
+                call("meta_pause_campaign", {"campaign_id": "101"}, call_id="pause-101"),
+                call("meta_pause_campaign", {"campaign_id": "102"}, call_id="pause-102"),
+            )),
+            ModelTurn(content="两个 campaign 均已生成暂停计划。"),
+        )
         result = rt.run(
             "批量暂停 Meta campaign_ids=101,102",
             user_id="batch-user",
@@ -1782,16 +1934,17 @@ class TestSafeWriteExecution:
                 "meta": {"account_id": "m1", "campaign_ids": ["101", "102"]}
             },
         )
-        assert result["intent"]["intent_type"] == "cross_channel_batch_pause"
         assert [item["data"]["campaign_id"] for item in result["results"]] == ["101", "102"]
-        assert all(item["data"]["input"]["updates"] == {"status": "PAUSED"} for item in result["results"])
+        assert all(item["data"]["status"] == "SIMULATED_UPDATED" for item in result["results"])
         assert client.calls == []
-        workflow = rt._session_manager.get_workflow(result["workflow_id"])
-        assert workflow["status"] == "planned"
-        assert len(workflow["items"]) == 2
+        assert result["workflow_id"] is None
 
-    def test_batch_budget_requires_positive_budget(self):
+    def test_negative_campaign_budget_is_rejected_by_tool_schema(self):
         rt = self._runtime("meta")
+        install(rt, ModelTurn(tool_calls=(call(
+            "meta_update_campaign",
+            {"campaign_id": "101", "updates": {"daily_budget": -1}},
+        ),)))
         result = rt.run(
             "批量更新预算 Meta campaign_ids=101,102 预算0元/天",
             user_id="batch-user",
@@ -1799,9 +1952,10 @@ class TestSafeWriteExecution:
                 "meta": {"account_id": "m1", "campaign_ids": ["101", "102"]}
             },
         )
-        assert result["intent"]["intent_type"] == "cross_channel_batch_update_budget"
-        assert all(not item["success"] for item in result["results"])
-        assert "大于 0" in result["results"][0]["error"]
+        assert result["needs_input"] is True
+        assert result["results"] == []
+        assert result["tool_results"][0]["is_error"] is True
+        assert ">= 0" in result["tool_results"][0]["content"]
 
     def test_cross_channel_delete_is_scoped_dry_run_and_never_calls_clients(self):
         from agents.tools.advertising.providers.meta import create_meta_tool_source
@@ -1824,6 +1978,15 @@ class TestSafeWriteExecution:
         rt.register_tool_source(create_google_tool_source(clients[1]))
         rt.register_tool_source(create_tiktok_tool_source(clients[2]))
         rt.register_tool_source(create_dv360_tool_source())
+        install(rt,
+            ModelTurn(tool_calls=(
+                call("meta_delete_campaign", {"account_id": "m1", "campaign_id": "111"}, call_id="meta-delete"),
+                call("google_delete_campaign", {"campaign_id": "222"}, call_id="google-delete"),
+                call("tiktok_delete_campaign", {"account_id": "t1", "campaign_id": "333"}, call_id="tiktok-delete"),
+                call("dv360_delete_campaign", {"advertiser_id": "d1", "campaign_id": "444"}, call_id="dv360-delete"),
+            )),
+            ModelTurn(content="已准备好四个平台的 dry-run 删除计划。"),
+        )
 
         result = rt.run(
             "跨渠道删除 Meta campaign_id=111、Google campaign_id=222、"
@@ -1837,7 +2000,6 @@ class TestSafeWriteExecution:
             },
         )
 
-        assert result["intent"]["intent_type"] == "cross_channel_batch_delete"
         assert {item["tool"] for item in result["results"]} == {
             "meta_delete_campaign", "google_delete_campaign",
             "tiktok_delete_campaign", "dv360_delete_campaign",
@@ -2027,10 +2189,23 @@ class TestIterationContracts:
             whitelist_validator=AccountWhitelistValidator(str(config_path)),
         )
         rt.register_tool_source(create_dv360_tool_source())
+        install(
+            rt,
+            ModelTurn(tool_calls=(call(
+                "dv360_get_line_item_report",
+                {
+                    "advertiser_id": "5110831",
+                    "line_item_id": "li-1",
+                    "date_range": "LAST_7_DAYS",
+                },
+            ),)),
+            ModelTurn(content="DV360 line item 报表已读取。"),
+        )
         result = rt.run(
             "下载 DV360 line_item_id=li-1 最近7天报表",
             user_id="u1",
             account_id="5110831",
+            principal=trusted_principal("u1", "dv360", "5110831"),
         )
         assert result["tool_plan"] == {"dv360": ["dv360_get_line_item_report"]}
         assert result["results"][0]["success"] is True
@@ -2369,15 +2544,16 @@ class TestIterationContracts:
             "source": "custom"
         }
         from agents.agent_harness.core.interfaces import ParsedIntent
-        routed = rt.intent_router.route(
+        from agents.agent_harness.core.intent import SimpleIntentRouter
+        routed = SimpleIntentRouter().route(
             ParsedIntent("custom_meta_insight_intent", "", ["meta"]),
             rt.registry,
         )
         assert [tool.name for tool in routed["meta"]] == ["custom_meta_insight"]
-        assert "custom_meta_insight_intent" in rt.intent_parser._intent_candidates_prompt()
+        assert not hasattr(rt, "intent_parser")
         assert rt.unload_skill("meta") is True
         assert rt.registry.list_all() == []
-        assert "custom_meta_insight_intent" not in rt.intent_parser._intent_candidates_prompt()
+        assert not hasattr(rt, "intent_router")
 
     def test_skill_directory_plugin_is_auto_discovered(self, tmp_path):
         skill_root = tmp_path / "skills"
@@ -2631,6 +2807,36 @@ class TestIterationContracts:
         )
         rt.register_tool_source(create_meta_tool_source(meta))
         rt.register_tool_source(create_google_tool_source(google))
+        install(
+            rt,
+            ModelTurn(tool_calls=(
+                call("meta_list_campaigns", {"account_id": "m1"}, call_id="meta-list"),
+                call("google_list_campaigns", {"customer_id": "g1"}, call_id="google-list"),
+            )),
+            ModelTurn(tool_calls=(
+                call(
+                    "meta_get_campaign_report",
+                    {"campaign_ids": ["m1"]},
+                    call_id="meta-report",
+                ),
+                call(
+                    "google_get_campaign_report",
+                    {"campaign_ids": ["g1"], "date_range": "LAST_30_DAYS"},
+                    call_id="google-report",
+                ),
+            )),
+            ModelTurn(content=(
+                "Meta 與 Google 共獲得 300 次展示；Google 缺少幣種資訊，花費不合併。"
+            )),
+        )
+        principal = RequestPrincipal(
+            user_id="u1",
+            permissions=frozenset({"ads.read"}),
+            account_scope={
+                "meta": frozenset({"m1"}),
+                "google-ads": frozenset({"g1"}),
+            },
+        )
         result = rt.run(
             "比较 Meta 和 Google 的 campaign",
             user_id="u1",
@@ -2638,18 +2844,16 @@ class TestIterationContracts:
                 "meta": {"account_id": "m1"},
                 "google": {"customer_id": "g1"},
             },
+            principal=principal,
         )
         assert "meta_get_campaign_report" in result["tool_plan"]["meta"]
         assert "google_get_campaign_report" in result["tool_plan"]["google-ads"]
         assert meta.report_calls == [("m1", ["m1"], None)]
         assert google.report_calls == [(["g1"], "LAST_30_DAYS", "TODAY")]
-        assert result["cross_channel_summary"]["totals"]["impressions"] == 300
-        # Google's fixture omits currency; do not add its spend to Meta USD.
-        assert "spend" not in result["cross_channel_summary"]["totals"]
-        assert result["cross_channel_summary"]["platforms"]["meta"]["campaigns"] == 1
-        assert result["cross_channel_summary"]["platforms"]["meta"]["records"][0]["name"] == "Meta 1"
-        assert result["cross_channel_summary"]["platforms"]["google-ads"]["campaigns"] == 1
-        assert result["cross_channel_summary"]["platforms"]["google-ads"]["records"][0]["name"] == "Google 1"
+        assert len(result["results"]) == 4
+        assert all(item["success"] for item in result["results"])
+        assert "300 次展示" in result["reply"]
+        assert "cross_channel_summary" not in result
 
     def test_tiktok_report_preserves_campaign_filter(self):
         from agents.tools.advertising.providers.tiktok.reports import TikTokGetReportHandler
@@ -2830,6 +3034,16 @@ class TestIterationContracts:
         )
         from agents.tools.advertising.providers.google import create_google_tool_source
         rt.register_tool_source(create_google_tool_source(client))
+        update_call = call(
+            "google_update_ad_group",
+            {"ad_group_id": "123", "campaign_id": "456", "updates": {"status": "PAUSED"}},
+            call_id="unavailable-update",
+        )
+        install(
+            rt,
+            ModelTurn(tool_calls=(update_call,)),
+            ModelTurn(content="Google ad group 修改未执行。"),
+        )
         params = {
             "google-ads": {
                 "google_update_ad_group": {
@@ -2846,6 +3060,11 @@ class TestIterationContracts:
         )
         assert plan["needs_confirmation"] is True
         confirmation_payload = plan["confirmation_payload"]
+        install(
+            rt,
+            ModelTurn(tool_calls=(update_call,)),
+            ModelTurn(content="Google ad group 修改未执行。"),
+        )
         result = rt.run(
             "更新 Google ad group ad_group_id=123 campaign_id=456 status=PAUSED",
             user_id="u1", account_id="g1", confirmed=True,
@@ -2880,10 +3099,25 @@ class TestIterationContracts:
         from agents.tools.advertising.providers.google import create_google_tool_source
         rt.register_tool_source(create_google_tool_source(GoogleClient()))
         rt.registry.get("google_update_campaign")[0].live_support = True
+        update_call = call(
+            "google_update_campaign",
+            {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+            call_id="google-campaign-update",
+        )
+        install(
+            rt,
+            ModelTurn(tool_calls=(update_call,)),
+            ModelTurn(content="已生成更新确认。"),
+        )
         planned = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
             session_id="google-alias-session", user_id="u1", account_id="g1",
             principal=trusted_principal("u1", "google-ads", "g1"),
+        )
+        install(
+            rt,
+            ModelTurn(tool_calls=(update_call,)),
+            ModelTurn(content="Campaign 已更新。"),
         )
         result = rt.run(
             "更新 Google campaign campaign_id=123 status=PAUSED",
@@ -2895,16 +3129,29 @@ class TestIterationContracts:
 
 
 class TestCrossChannelAnalysis:
-    def test_analysis_intents_are_parsed_and_routed(self):
-        parser = configured_parser()
-        assert parser.parse("跨渠道分析 Meta 和 Google 的表现", None).intent_type == (
-            "cross_channel_performance_insights"
-        )
-        assert parser.parse("跨渠道优化预算 Meta 和 Google，总预算 1000", None).intent_type == (
-            "cross_channel_optimize_budget"
-        )
-        assert parser.parse("跨渠道导出 Meta 和 Google 报表 CSV", None).intent_type == (
-            "cross_channel_export_report"
+    def test_analysis_capabilities_are_provider_tool_contracts(self):
+        definitions = {
+            definition.name: definition
+            for factory in (
+                create_meta_tool_source_mock,
+                create_google_tool_source_mock,
+                create_tiktok_tool_source_mock,
+            )
+            for definition, _handler in factory().register_tools()
+        }
+
+        assert {
+            "meta_get_campaign_report",
+            "google_get_campaign_report",
+            "tiktok_get_report",
+        } <= set(definitions)
+        assert all(
+            definitions[name].effect_class == ToolEffect.READ
+            for name in (
+                "meta_get_campaign_report",
+                "google_get_campaign_report",
+                "tiktok_get_report",
+            )
         )
 
     def test_analyzer_preserves_partial_metrics_and_currency_boundaries(self):
@@ -2944,7 +3191,7 @@ class TestCrossChannelAnalysis:
         assert "Campaign" in exported
         assert "must-not-export" not in exported
 
-    def test_runtime_offline_insights_are_explicitly_marked(self):
+    def test_runtime_offline_report_result_is_explicitly_marked(self):
         from agents.tools.advertising.providers.meta import create_meta_tool_source
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -2955,13 +3202,24 @@ class TestCrossChannelAnalysis:
             offline_mode=True,
         )
         rt.register_tool_source(create_meta_tool_source())
+        install(
+            rt,
+            ModelTurn(tool_calls=(call(
+                "meta_get_campaign_report",
+                {"campaign_ids": ["m1"], "date_preset": "LAST_7_DAYS"},
+            ),)),
+            ModelTurn(content="这份离线样例报表不会自动修改广告。"),
+        )
         result = rt.run(
             "跨渠道分析 Meta campaign 表现",
             user_id="analysis-user",
             platform_params={"meta": {"account_id": "m1"}},
+            principal=trusted_principal("analysis-user", "meta", "m1"),
         )
-        assert result["intent"]["intent_type"] == "cross_channel_performance_insights"
-        assert result["cross_channel_insights"]["insights"][0]["data_status"] == "offline_mock"
+        assert result["intent"]["intent_type"] == "get_campaign_report"
+        assert result["results"][0]["success"] is True
+        assert result["results"][0]["data"]["data_status"] == "offline_mock"
+        assert result["results"][0]["data"]["simulated"] is True
         assert "不会自动修改" in result["reply"]
 
 

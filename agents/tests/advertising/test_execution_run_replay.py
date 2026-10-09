@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+from agents.agent_harness.messages import ModelTurn
 from agents.agent_platform.data.persistence.models import ExecutionRunRecord
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
@@ -42,9 +43,14 @@ def test_stale_execution_run_becomes_recovery_required_with_event():
 
 
 def test_runtime_exposes_durable_latest_run_after_async_free_turn():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(content="你好")
+
     store = AdAgentStore(":memory:")
     runtime = AdvertisingComposition(
         require_llm=False,
+        llm_client=Model(),
         persistence_store=store,
         offline_mode=True,
         enforce_account_scope=False,
@@ -61,15 +67,15 @@ def test_runtime_exposes_durable_latest_run_after_async_free_turn():
         runtime.close(wait=True)
 
 
-def test_parser_failure_closes_durable_run_instead_of_leaving_it_running():
-    class BrokenParser:
-        def parse(self, _user_input, _context):
+def test_model_failure_closes_durable_run_instead_of_leaving_it_running():
+    class BrokenModel:
+        def complete(self, _messages, _tools, _request):
             raise RuntimeError("model transport failed")
 
     store = AdAgentStore(":memory:")
     runtime = AdvertisingComposition(
         require_llm=False,
-        intent_parser=BrokenParser(),
+        llm_client=BrokenModel(),
         persistence_store=store,
         offline_mode=True,
         enforce_account_scope=False,
@@ -80,9 +86,8 @@ def test_parser_failure_closes_durable_run_instead_of_leaving_it_running():
         latest = runtime.get_latest_run(
             result["session_id"], user_id="user-1", tenant_id="tenant-1"
         )
-        assert result["reply"] == "暂时无法完成请求理解，请稍后重试。"
+        assert result["status"] == "failed"
         assert latest["status"] == "failed"
-        assert latest["metadata"]["reason"] == "turn_preparation_failed"
         assert any(
             event.get("type") == "agent_end"
             and event.get("status") == "failed"

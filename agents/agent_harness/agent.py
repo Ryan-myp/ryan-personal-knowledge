@@ -64,6 +64,10 @@ class ModelBudgetExceededError(RuntimeError):
     """The provider returned usage beyond the configured Run budget."""
 
 
+class ModelUnavailableError(RuntimeError):
+    """No model adapter is configured for a Run."""
+
+
 class TranscriptPersistenceError(RuntimeError):
     """The durable transcript could not be loaded or appended safely."""
 
@@ -527,10 +531,28 @@ class Agent:
                 question = str(payload.get("question") or "").strip()
                 if question:
                     return question
+            interaction = item.get("interaction")
+            if isinstance(interaction, Mapping):
+                question = str(
+                    interaction.get("question") or interaction.get("prompt") or ""
+                ).strip()
+                if question:
+                    return question
             content = item.get("content")
             if isinstance(content, str) and content.strip():
                 return content.strip()
         return str(fallback or "")
+
+    @staticmethod
+    def _run_interactions(
+        tool_results: Sequence[Mapping[str, Any]],
+    ) -> tuple[Mapping[str, Any], ...]:
+        return tuple(
+            dict(interaction)
+            for item in tool_results
+            if isinstance(item, Mapping)
+            and isinstance((interaction := item.get("interaction")), Mapping)
+        )
 
     def _notify_model_run_cleanup(
         self, request: TurnRequest, state: AgentState,
@@ -615,6 +637,7 @@ class Agent:
         ):
             if value is not None:
                 context[name] = value
+        context = redact_for_persistence(context)
         if context != dict(model_request.context or {}):
             model_request = replace(model_request, context=context)
         return messages, tools, model_request
@@ -841,7 +864,13 @@ class Agent:
         abort_event: Optional[threading.Event] = None,
     ) -> ModelTurn:
         messages, tools, model_request = self._model_inputs(request, state)
-        providers = (self.model, *self.model_fallbacks)
+        providers = tuple(
+            provider
+            for provider in (self.model, *self.model_fallbacks)
+            if provider is not None
+        )
+        if not providers:
+            raise ModelUnavailableError("No model adapter is configured")
         last_error: Optional[Exception] = None
         for provider_index, provider in enumerate(providers):
             complete = getattr(provider, "complete", None)
@@ -1452,6 +1481,7 @@ class Agent:
                         status=terminal_status,
                         reply=terminal_reply,
                         needs_input=awaiting_input,
+                        effect_state="unknown" if tool_recovery else "none",
                         recovery_required=tool_recovery or not checkpoint_ok,
                         runtime_signals=runtime_signals,
                         data={
@@ -1466,6 +1496,7 @@ class Agent:
                             "usage": dict(state.usage),
                         },
                         application_data=application_data,
+                        interactions=self._run_interactions(all_tool_results),
                     )
                     if result.status not in {
                         RunStatus.RECOVERY_REQUIRED,
@@ -1498,6 +1529,7 @@ class Agent:
                     "usage": dict(state.usage),
                 },
                 application_data=application_data,
+                interactions=self._run_interactions(all_tool_results),
             )
             self._emit("agent_end", request, status=result.status.value)
             return result
@@ -1515,6 +1547,21 @@ class Agent:
                 data={
                     "messages": [item.to_dict() for item in state.messages],
                     "error": "transcript_persistence_failed",
+                    "usage": dict(state.usage),
+                },
+            )
+            self._emit("agent_end", request, status=result.status.value)
+            return result
+        except ModelUnavailableError:
+            state.error_message = "ModelUnavailableError"
+            result = RunResult(
+                run_id=str(request.run_id or ""),
+                turn_id=str(request.turn_id or ""),
+                status=RunStatus.FAILED,
+                reply="此 Run 未配置模型服务，无法理解或执行请求。",
+                data={
+                    "messages": [item.to_dict() for item in state.messages],
+                    "error": "model_not_configured",
                     "usage": dict(state.usage),
                 },
             )

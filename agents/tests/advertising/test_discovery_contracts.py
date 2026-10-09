@@ -2,6 +2,7 @@
 
 import pytest
 import os
+from agents.agent_harness.messages import ModelTurn
 
 from agents.agent_harness.core.interfaces import (
     IntentParser,
@@ -27,6 +28,7 @@ from agents.agent_harness.skills.contract import SkillContract
 from agents.tools.advertising.providers.source_factory import create_tool_source, discover_tool_source_factory
 from agents.tools.advertising.clients.factory import create_platform_client
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
+from agents.tests.advertising.harness_models import call, install
 
 
 def test_existing_channel_tools_publish_routing_metadata():
@@ -136,7 +138,7 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
 ):
     runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_google_tool_source())
-    routed = runtime.intent_router.route(
+    routed = SimpleIntentRouter().route(
         ParsedIntent(
             "create_campaign", "create", ["google-ads"],
             scoped_parameters={
@@ -152,7 +154,7 @@ def test_google_campaign_route_selects_type_specific_creation_chain(
 def test_google_app_campaign_route_selects_app_hierarchy_chain():
     runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_google_tool_source())
-    routed = runtime.intent_router.route(
+    routed = SimpleIntentRouter().route(
         ParsedIntent(
             "create_campaign", "create", ["google-ads"],
             scoped_parameters={
@@ -180,6 +182,10 @@ def test_google_app_campaign_requires_declared_parameters_before_execution():
     validator.allowed_accounts = {"google-ads": ["123"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "google_create_campaign",
+        {"customer_id": "123"},
+    ),)))
 
     result = runtime.run(
         "创建 Google App 广告 名称=app-dry-run",
@@ -210,8 +216,10 @@ def test_google_app_campaign_requires_declared_parameters_before_execution():
     assert result["needs_input"] is True
     assert result["ui"]["cards"]
     assert result["tool_plan"] == {}
-    assert result["ui"]["cards"][0]["ready"] is False
-    assert result["ui"]["cards"][0]["missing_fields"]
+    assert any(
+        field.get("state") == "missing"
+        for field in result["ui"]["cards"][0]["fields"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -294,7 +302,7 @@ def test_meta_and_tiktok_campaign_routes_select_specialized_ad_chain(
     runtime = AdvertisingComposition(require_llm=False)
     factory = create_meta_tool_source if platform == "meta" else create_tiktok_tool_source
     runtime.register_tool_source(factory())
-    routed = runtime.intent_router.route(
+    routed = SimpleIntentRouter().route(
         ParsedIntent(
             "create_campaign", "create", [platform], scoped_parameters={platform: params},
         ),
@@ -308,7 +316,7 @@ def test_tiktok_legacy_app_and_product_tools_are_explicit_only():
     runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_tiktok_tool_source())
 
-    app_route = runtime.intent_router.route(
+    app_route = SimpleIntentRouter().route(
         ParsedIntent("create_app_ad", "create app ad", ["tiktok"]),
         runtime.registry,
     )
@@ -316,7 +324,7 @@ def test_tiktok_legacy_app_and_product_tools_are_explicit_only():
         "tiktok_create_app_ad",
     ]
 
-    product_route = runtime.intent_router.route(
+    product_route = SimpleIntentRouter().route(
         ParsedIntent("create_product_sales_ad", "create product sales ad", ["tiktok"]),
         runtime.registry,
     )
@@ -337,7 +345,7 @@ def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
 ):
     runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_tiktok_tool_source())
-    routed = runtime.intent_router.route(
+    routed = SimpleIntentRouter().route(
         ParsedIntent(
             intent_type,
             "create TikTok Traffic child resource",
@@ -352,7 +360,7 @@ def test_tiktok_smart_plus_objective_narrows_generic_child_routes(
 def test_meta_campaign_only_route_does_not_expand_hierarchy():
     runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_meta_tool_source())
-    routed = runtime.intent_router.route(
+    routed = SimpleIntentRouter().route(
         ParsedIntent(
             "create_campaign_only", "create campaign only", ["meta"],
             scoped_parameters={"meta": {
@@ -391,7 +399,7 @@ def test_campaign_only_routes_are_provider_declared_and_do_not_expand_hierarchy(
             "create_campaign_only", "create campaign only", [platform],
             scoped_parameters={platform: params},
         )
-        routed = runtime.intent_router.route(intent, runtime.registry)
+        routed = SimpleIntentRouter().route(intent, runtime.registry)
         assert [definition.name for definition in routed[platform]] == [expected_tool]
         assert runtime._is_campaign_only_plan(routed, intent)
 
@@ -987,6 +995,13 @@ def test_live_mode_alone_cannot_enable_provider_writes():
         whitelist_validator=validator,
     )
     runtime.register_tool_source(create_meta_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "meta_update_campaign",
+        {
+            "campaign_id": "123",
+            "updates": {"status": "PAUSED"},
+        },
+    ),)))
 
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -1016,7 +1031,7 @@ def test_tiktok_all_in_one_spark_contract_is_the_only_brand_objective_chain():
     ]
 
     for objective in ("REACH", "VIDEO_VIEWS", "ENGAGEMENT"):
-        routed = runtime.intent_router.route(
+        routed = SimpleIntentRouter().route(
             ParsedIntent(
                 "create_campaign", "create", ["tiktok"],
                 scoped_parameters={"tiktok": {"objective_type": objective}},

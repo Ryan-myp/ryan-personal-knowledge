@@ -8,6 +8,7 @@ from pathlib import Path
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
+from agents.agent_harness.messages import ModelTurn
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.agent_platform.management.skill_management import (
     BuiltinSkillCatalog,
@@ -15,6 +16,7 @@ from agents.agent_platform.management.skill_management import (
     SkillPackageError,
     _safe_evaluation_payload,
 )
+from agents.tests.advertising.harness_models import ScriptedHarnessModel
 
 
 def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
@@ -293,7 +295,8 @@ def test_managed_skills_are_isolated_by_tenant_on_shared_runtime():
     assert set(runtime.get_managed_skills("tenant-b")) == {"second-skill"}
     assert runtime.skill_loader.get("first-skill") is None
     assert runtime.skill_loader.get("second-skill") is None
-    assert "tenant-a-only" not in getattr(runtime.intent_parser, "_platform_aliases", {})
+    assert not hasattr(runtime, "intent_parser")
+    assert "tenant-a-only" not in tenant_b_context["expert_knowledge"]
 
 
 def test_separate_in_memory_stores_do_not_share_materialized_skill_cache():
@@ -663,11 +666,16 @@ def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
         str(Path(__file__).resolve().parents[2] / "skills" / "advertising"),
     )
 
-    result = skill_up_engine.run({
-        "case_id": "managed-plugin-boundary",
-        "prompt": "规划一个跨渠道投放",
-        "workspace": str(tmp_path / "workspace"),
-    })
+    result = skill_up_engine.run(
+        {
+            "case_id": "managed-plugin-boundary",
+            "prompt": "规划一个跨渠道投放",
+            "workspace": str(tmp_path / "workspace"),
+        },
+        model_adapter=ScriptedHarnessModel(
+            ModelTurn(content="只使用平台注册的 Tools；当前没有提交执行计划。")
+        ),
+    )
 
     assert result["metadata"]["runtime_execution_mode"] == "dry_run"
     assert not marker.exists()
@@ -682,27 +690,18 @@ def test_runtime_turn_uses_request_tenant_managed_context():
     manager.create_version("tenant-a", "tenant-skill", "1.0.0", _files("tenant-skill"), "u1")
     manager.publish("tenant-a", "tenant-skill", "1.0.0", runtime=runtime)
 
-    class Parser:
-        def __init__(self):
-            self.contexts = []
-
-        def parse(self, _text, context):
-            self.contexts.append(context.metadata.get("skill_context", {}))
-            from agents.agent_harness.core.interfaces import ParsedIntent
-            return ParsedIntent("chat", "查询 Meta campaign", [])
-
-    parser = Parser()
-    runtime.intent_parser = parser
+    model = ScriptedHarnessModel(ModelTurn(content="查询范围未包含已发布的其他租户 Skill。"))
+    runtime.platform_application.agent.model = model
     runtime.run(
         "查询 Meta campaign",
         principal=RequestPrincipal(
             user_id="u2",
             tenant_id="tenant-b",
             permissions=frozenset({"ads.read"}),
-        )
+        ),
     )
-    assert parser.contexts
-    assert "tenant-skill" not in parser.contexts[0].get("expert_knowledge", "")
+    assert model.messages
+    assert "tenant-skill" not in str(model.messages[0])
 
 
 @pytest.mark.parametrize("permissions", ["ads.read", {"ads.read": True}, ["ads.read", 1]])

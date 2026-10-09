@@ -2,11 +2,15 @@
 
 import json
 
+import pytest
+
+from agents.agent_harness.messages import ModelTurn
 from agents.evals.advertising.skill_up_engine import (
     _runtime_prompt,
     _structured_evidence,
     run,
 )
+from agents.tests.advertising.harness_models import ScriptedHarnessModel, call
 from agents.evals.advertising.claude_sdk_engine import (
     _anthropic_messages,
     run as run_claude_sdk,
@@ -58,9 +62,18 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
                 "app_promotion_type=APP_INSTALL; app_id=app-1"
             ),
         }],
-    })
+    }, model_adapter=ScriptedHarnessModel(ModelTurn(tool_calls=(call(
+        "tiktok_smart_plus_create_campaign",
+        {
+            "account_id": "7397068114548195329",
+            "campaign_name": "adapter-test",
+            "objective_type": "APP_PROMOTION",
+            "app_promotion_type": "APP_INSTALL",
+        },
+    ),))))
 
     assert result["exit_code"] == 0
+    assert result["model"] == "trusted-injected-model-adapter"
     assert "tiktok_smart_plus_create_campaign" in result["final_message"]
     assert '"needs_input": true' in result["final_message"]
     assert (tmp_path / "outputs" / "ad-agent-runtime-result.json").exists()
@@ -68,7 +81,17 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
         (tmp_path / "outputs" / "ad-agent-runtime-result.json").read_text()
     )
     assert persisted["results"] == []
-    assert persisted["ui"]["needs_input"] is True
+    assert persisted["needs_input"] is True
+    assert persisted["ui"]["cards"]
+
+
+def test_runtime_skill_up_fails_closed_when_no_model_is_configured(tmp_path):
+    with pytest.raises(RuntimeError, match="LLM client is required"):
+        run({
+            "case_id": "model-required",
+            "workspace": str(tmp_path),
+            "messages": [{"role": "user", "content": "查询 TikTok 应用"}],
+        })
 
 
 def test_skill_up_read_uses_injected_test_scope_and_offline_provider(tmp_path):
@@ -79,7 +102,13 @@ def test_skill_up_read_uses_injected_test_scope_and_offline_provider(tmp_path):
             "role": "user",
             "content": "查询 TikTok 可用应用列表",
         }],
-    })
+    }, model_adapter=ScriptedHarnessModel(
+        ModelTurn(tool_calls=(call(
+            "tiktok_list_apps",
+            {"account_id": "7397068114548195329"},
+        ),)),
+        ModelTurn(content="已查询 TikTok 可用应用。"),
+    ))
 
     evidence = result["metadata"]["runtime_result"]
     assert evidence["tool_plan"] == {"tiktok": ["tiktok_list_apps"]}
@@ -111,17 +140,33 @@ def test_skill_up_app_creation_keeps_dynamic_app_id_unresolved(tmp_path):
             "role": "user",
             "content": "创建一个 TikTok App 转化广告，使用我的 App，投放给 18 到 35 岁用户。",
         }],
-    })
+    }, model_adapter=ScriptedHarnessModel(ModelTurn(tool_calls=(call(
+        "tiktok_smart_plus_create_campaign",
+        {
+            "account_id": "7397068114548195329",
+            "campaign_name": "skill-up-app",
+            "objective_type": "APP_PROMOTION",
+            "app_promotion_type": "APP_INSTALL",
+        },
+    ),))))
 
     evidence = result["metadata"]["runtime_result"]
-    assert evidence["intent"]["intent_type"] == "create_campaign"
+    assert evidence["intent"]["intent_type"] == "create_smart_plus_campaign"
     assert evidence["intent"]["namespaces"] == ["tiktok"]
     assert evidence["needs_input"] is True
     # A creation card is an input-collection state. Confirmation is emitted
     # only after the provider-neutral form is complete and ready to submit.
     assert evidence["needs_confirmation"] is False
     assert evidence["results"] == []
-    assert "app_id" not in evidence["intent"]["scoped_parameters"]["tiktok"]
+    persisted = json.loads(
+        (tmp_path / "outputs" / "ad-agent-runtime-result.json").read_text()
+    )
+    app_id = next(
+        item for item in persisted["ui"]["cards"][0]["fields"]
+        if item["path"] == "campaign.app_id"
+    )
+    assert app_id["state"] == "missing"
+    assert app_id["value"] is None
 
 
 def test_skill_up_adapter_does_not_accept_credentials_from_case_kwargs(tmp_path):
@@ -130,7 +175,13 @@ def test_skill_up_adapter_does_not_accept_credentials_from_case_kwargs(tmp_path)
         "workspace": str(tmp_path),
         "kwargs": {"access_token": "should-never-be-used"},
         "messages": [{"role": "user", "content": "查询 TikTok 可用应用列表"}],
-    })
+    }, model_adapter=ScriptedHarnessModel(
+        ModelTurn(tool_calls=(call(
+            "tiktok_list_apps",
+            {"account_id": "7397068114548195329"},
+        ),)),
+        ModelTurn(content="已查询 TikTok 可用应用。"),
+    ))
 
     assert result["exit_code"] == 0
     assert "should-never-be-used" not in result["final_message"]

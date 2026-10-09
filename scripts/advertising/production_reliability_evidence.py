@@ -32,6 +32,7 @@ if str(ROOT) not in sys.path:
 from agents.agent_platform.data.persistence.models import TaskRecord  # noqa: E402
 from agents.agent_platform.data.persistence.mysql_store import MySQLStore  # noqa: E402
 from agents.agent_platform.data.persistence.store import AdAgentStore  # noqa: E402
+from agents.agent_harness.messages import ModelTurn  # noqa: E402
 
 
 FORMAT_VERSION = 2
@@ -236,6 +237,13 @@ def _child_crash_after_claim(database: str, task_id: str) -> int:
     os._exit(0)
 
 
+class _ReliabilityModel:
+    """Deterministic local model for proving worker-to-Harness completion."""
+
+    def complete(self, _messages: Any, _tools: Any, _request: Any) -> ModelTurn:
+        return ModelTurn(content="Reliability probe completed.")
+
+
 def _child_run_worker(
     database: str,
     task_id: str,
@@ -264,6 +272,7 @@ def _child_run_worker(
     try:
         runtime = AdvertisingComposition(
             require_llm=False,
+            llm_client=_ReliabilityModel(),
             persistence_store=store,
             features=[],
             enforce_account_scope=False,

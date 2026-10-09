@@ -111,8 +111,8 @@ class AdApplicationHooksMixin:
             self.catalog_service = service
         return service
 
-    def _refresh_parser_catalog(self) -> None:
-        return self._catalog_service().refresh_parser_catalog()
+    def _refresh_tool_catalog(self) -> None:
+        return self._catalog_service().refresh_tool_catalog()
 
     def _on_generic_tool_catalog_changed(self) -> None:
         return self._catalog_service().on_tool_catalog_changed()

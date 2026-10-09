@@ -8,7 +8,6 @@ Tool plan.
 
 from agents.agent_harness.core.interfaces import ToolContext
 from agents.agent_harness.core.intent import LLMIntentParser
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
 from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
 
@@ -23,13 +22,12 @@ class _SequenceLLM:
 
 
 def _parser_with_tiktok(llm):
-    runtime = AdvertisingComposition(
-        require_llm=True,
-        llm_client=llm,
-        enforce_account_scope=False,
-    )
-    runtime.register_tool_source(create_tiktok_tool_source())
-    return runtime, runtime.intent_parser
+    parser = LLMIntentParser(llm, allow_rule_fallback=False)
+    parser.refresh_tool_catalog(list(
+        definition
+        for definition, _executor in create_tiktok_tool_source().register_tools()
+    ))
+    return parser
 
 
 def test_model_generated_resource_ids_are_removed_until_explicitly_selected():
@@ -39,11 +37,8 @@ def test_model_generated_resource_ids_are_removed_until_explicitly_selected():
         '"account_id":"my-account","app_id":"my-app",'
         '"pixel_id":"pixel-placeholder","audience_id":"audience-placeholder"}}}'
     )
-    runtime, parser = _parser_with_tiktok(llm)
-    try:
-        intent = parser.parse("创建 TikTok App 转化广告，使用我的 App", ToolContext("s1", "u1"))
-    finally:
-        runtime.close(wait=True)
+    parser = _parser_with_tiktok(llm)
+    intent = parser.parse("创建 TikTok App 转化广告，使用我的 App", ToolContext("s1", "u1"))
 
     params = intent.scoped_parameters["tiktok"]
     assert "account_id" not in params
@@ -58,14 +53,11 @@ def test_explicit_resource_ids_override_model_placeholders():
         '"scoped_parameters":{"tiktok":{'
         '"account_id":"model-account","app_id":"model-app"}}}'
     )
-    runtime, parser = _parser_with_tiktok(llm)
-    try:
-        intent = parser.parse(
-            "创建 TikTok App 广告，account_id=7397068114548195329，app_id=app-123",
-            ToolContext("s1", "u1"),
-        )
-    finally:
-        runtime.close(wait=True)
+    parser = _parser_with_tiktok(llm)
+    intent = parser.parse(
+        "创建 TikTok App 广告，account_id=7397068114548195329，app_id=app-123",
+        ToolContext("s1", "u1"),
+    )
 
     params = intent.scoped_parameters["tiktok"]
     assert params["account_id"] == "7397068114548195329"
@@ -77,11 +69,8 @@ def test_unknown_model_intent_is_repaired_against_active_registry():
         '{"intent_type":"invented_operation","namespaces":["tiktok"]}',
         '{"intent_type":"list_campaigns","namespaces":["tiktok"]}',
     )
-    runtime, parser = _parser_with_tiktok(llm)
-    try:
-        intent = parser.parse("查询 TikTok campaign 列表", ToolContext("s1", "u1"))
-    finally:
-        runtime.close(wait=True)
+    parser = _parser_with_tiktok(llm)
+    intent = parser.parse("查询 TikTok campaign 列表", ToolContext("s1", "u1"))
 
     assert intent.intent_type == "list_campaigns"
     assert intent.namespaces == ["tiktok"]
@@ -94,11 +83,8 @@ def test_repaired_model_output_cannot_reintroduce_a_guessed_resource_id():
         '{"intent_type":"create_campaign","namespaces":["tiktok"],'
         '"scoped_parameters":{"tiktok":{"app_id":"repair-placeholder"}}}',
     )
-    runtime, parser = _parser_with_tiktok(llm)
-    try:
-        intent = parser.parse("创建 TikTok App 转化广告，使用我的 App", ToolContext("s1", "u1"))
-    finally:
-        runtime.close(wait=True)
+    parser = _parser_with_tiktok(llm)
+    intent = parser.parse("创建 TikTok App 转化广告，使用我的 App", ToolContext("s1", "u1"))
 
     assert intent.intent_type == "create_campaign"
     assert "app_id" not in intent.scoped_parameters["tiktok"]

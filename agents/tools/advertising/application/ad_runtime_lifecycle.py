@@ -96,7 +96,7 @@ class AdvertisingLifecycleService:
                     skill,
                     tenant_id=tenant_id,
                 )
-            runtime._refresh_parser_catalog()
+            runtime._refresh_tool_catalog()
         return True
 
     def unload_managed_skill(
@@ -126,7 +126,7 @@ class AdvertisingLifecycleService:
             )
             if not tenant_skills:
                 runtime._managed_context_skills.pop(tenant_id, None)
-            runtime._refresh_parser_catalog()
+            runtime._refresh_tool_catalog()
             return True
 
     def get_managed_skills(

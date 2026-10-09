@@ -133,9 +133,6 @@ class AdSkillLifecycleMixin:
             logger.warning("⚠️ Skill '%s' 没有实际注册任何工具", skill_key)
             return False
         self._validate_parameter_lookup_contract()
-        register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
-        if callable(register_tools):
-            register_tools(self.registry.list_all())
         self._skill_tool_names[skill_key] = [
             tool_def.name for tool_def, _ in tools
         ]
@@ -144,7 +141,7 @@ class AdSkillLifecycleMixin:
         keys = self._skill_keys_by_platform.setdefault(canonical_namespace, [])
         if skill_key not in keys:
             keys.append(skill_key)
-        self._refresh_parser_catalog()
+        self._refresh_tool_catalog()
         self._register_builtin_plugin(
             f"skill:{skill_key}",
             skill,
@@ -233,7 +230,7 @@ class AdSkillLifecycleMixin:
             else:
                 self._skill_keys_by_platform.pop(canonical_namespace, None)
                 self.creation_blueprints.remove_owner(canonical_namespace)
-            self._refresh_parser_catalog()
+            self._refresh_tool_catalog()
             self.plugin_registry.unregister(f"skill:{target_key}")
             logger.info(
                 "✅ 已卸载 Skill '%s' (platform=%s)，移除 %s 个工具",
@@ -261,7 +258,7 @@ class AdSkillLifecycleMixin:
                         context_service = getattr(self, "_context_service", None)
                         if callable(context_service):
                             context_service().restore(context_snapshot)
-                    self._refresh_parser_catalog()
+                    self._refresh_tool_catalog()
             except Exception:
                 logger.exception(
                     "❌ Skill '%s' 卸载回滚失败，Runtime 需要重新加载",

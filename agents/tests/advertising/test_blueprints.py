@@ -20,6 +20,10 @@ from agents.agent_harness.core.interfaces import ParsedIntent, ToolDefinition, T
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
 from agents.tools.advertising.application.account_policy import AccountWhitelistValidator
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.agent_harness.messages import ModelTurn, ToolCall
+from agents.agent_harness import TurnRequest
+from agents.agent_platform.governance.identity.principal import RequestPrincipal
+from agents.tests.advertising.harness_models import call, install
 
 
 BLUEPRINT_PATH = (
@@ -727,6 +731,7 @@ def test_blueprint_submission_composes_declared_parent_child_tools():
 def test_incomplete_creation_returns_card_without_failed_tool_result():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call("google_create_campaign"),)))
 
     result = runtime.run(
         "创建 Google App 广告",
@@ -734,39 +739,37 @@ def test_incomplete_creation_returns_card_without_failed_tool_result():
         user_id="test-user",
     )
 
+    assert result["status"] == "awaiting_input"
     assert result["results"] == []
-    assert result["ui"]["needs_input"] is True
-    assert result["response_source"] == "creation_card"
+    assert result["needs_input"] is True
+    assert result["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
+    assert result["tool_results"][0]["is_error"] is True
     assert result.get("workflow_id") is None
-    assert "选择" in result["reply"]
+    assert "账户" in result["reply"]
 
 
 def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
     events = []
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.whitelist_validator.allowed_accounts = {"tiktok": ["test-account"]}
     runtime.register_tool_source(create_tiktok_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "tiktok_smart_plus_create_campaign",
+        {"account_id": "test-account"},
+    ),)))
 
     result = runtime.run(
         "创建 TikTok 广告系列",
         session_id="ambiguous-tiktok-creation",
         user_id="test-user",
+        account_id="test-account",
         event_callback=events.append,
     )
 
-    assert result["results"] == []
-    # A lightweight composition has no durable account/template context, so
-    # the generic text clarification remains the appropriate surface.
-    assert result["response_source"] == "creation_clarification"
-    assert result["ui"]["cards"] == []
-    assert result["ui"]["clarification"]["kind"] == "creation_clarification"
-    assert {item["label"] for item in result["ui"]["clarification"]["options"]} >= {
-        "流量", "应用推广", "潜在客户"
-    }
-    assert result["tool_plan"] == {}
-    assert result["execution_plan"] == {}
-    assert not any(
-        event.get("type") == "plan" for event in events
-    )
+    assert result["status"] == "awaiting_input"
+    assert result["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
+    assert result["ui"]["cards"][0]["type"] == "ad_creation_selector"
+    assert result["ui"]["cards"][0]["fields"][0]["provider_field"] == "objective_type"
     assert not any(
         event.get("type") in {"node_started", "node_status", "confirmation"}
         for event in events
@@ -775,30 +778,56 @@ def test_ambiguous_creation_asks_for_blueprint_choice_before_routing_tools():
 
 def test_creation_follow_up_adopts_persisted_selector_and_then_shows_full_form():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.whitelist_validator.allowed_accounts = {"tiktok": ["test-account"]}
     runtime.register_tool_source(create_tiktok_tool_source())
+    install(
+        runtime,
+        ModelTurn(tool_calls=(call(
+            "tiktok_smart_plus_create_campaign",
+            {"account_id": "test-account"},
+            call_id="selector-call",
+        ),)),
+        ModelTurn(tool_calls=(call(
+            "tiktok_smart_plus_create_campaign",
+            {"account_id": "test-account", "objective_type": "TRAFFIC"},
+            call_id="form-call",
+        ),)),
+    )
     session_id = "follow-up-tiktok-creation"
 
     first = runtime.run(
-        "创建 TikTok 广告系列", session_id=session_id, user_id="test-user"
+        "创建 TikTok 广告系列",
+        session_id=session_id,
+        user_id="test-user",
+        account_id="test-account",
     )
     second = runtime.run(
-        "流量广告", session_id=session_id, user_id="test-user"
+        "TikTok 流量广告",
+        session_id=session_id,
+        user_id="test-user",
+        account_id="test-account",
+        creation_blueprint_id="tiktok.traffic_video",
+        creation_blueprint_version="3.0.0",
     )
 
-    assert first["ui"]["cards"] == []
-    assert second["intent"]["intent_type"] == "create_campaign"
+    assert first["ui"]["cards"][0]["type"] == "ad_creation_selector"
+    definition, _handler = runtime.registry.get(
+        "tiktok_smart_plus_create_campaign"
+    )
+    assert second["intent"]["intent_type"] in definition.intent_types
     assert second["intent"]["namespaces"] == ["tiktok"]
-    assert second["intent"]["scoped_parameters"]["tiktok"]["objective_type"] == "TRAFFIC"
-    assert second["response_source"] == "creation_card"
+    assert second["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
     assert second["ui"]["cards"][0]["blueprint_id"] == "tiktok.traffic_video"
-    assert second["tool_plan"] == {}
-    assert second["execution_plan"] == {}
 
 
 def test_incomplete_update_asks_for_resource_before_materializing_tool_plan():
     events = []
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.whitelist_validator.allowed_accounts = {"meta": ["meta-test-account"]}
     runtime.register_tool_source(create_meta_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "meta_update_campaign", {"status": "PAUSED"},
+    ),)))
 
     result = runtime.run(
         "更新 Meta campaign 状态为暂停",
@@ -808,18 +837,15 @@ def test_incomplete_update_asks_for_resource_before_materializing_tool_plan():
         event_callback=events.append,
     )
 
-    assert result["response_source"] == "action_clarification"
-    assert result["results"] == []
-    assert result["tool_plan"] == {}
-    assert result["execution_plan"] == {}
-    assert result["workflow_id"] is None
-    assert result["ui"]["clarification"]["kind"] == "action_clarification"
-    assert any(item["path"] == "campaign_id" for item in result["ui"]["clarification"]["fields"])
+    assert result["status"] == "awaiting_input"
+    interaction = result["tool_results"][0]["interaction"]
+    assert interaction["type"] == "action_clarification"
+    assert any(item["path"] == "campaign_id" for item in interaction["payload"]["fields"])
     assert not any(event.get("type") == "plan" for event in events)
     assert not any(event.get("type") in {"node_started", "node_status", "confirmation"} for event in events)
 
 
-def test_action_clarification_draft_survives_restart_and_merges_short_follow_up():
+def test_action_clarification_survives_restart_and_model_resolves_follow_up():
     from agents.agent_platform.data.persistence.store import AdAgentStore
 
     store = AdAgentStore(":memory:")
@@ -832,13 +858,25 @@ def test_action_clarification_draft_survives_restart_and_merges_short_follow_up(
         whitelist_validator=validator,
     )
     runtime.register_tool_source(create_meta_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "meta_delete_campaign", {"account_id": "meta-test-account"},
+    ),)))
     first = runtime.run(
         "删除 Meta campaign",
         session_id="restart-action-draft",
         user_id="test-user",
         account_id="meta-test-account",
     )
+    assert first["tool_results"][0]["interaction"]["type"] == "action_clarification"
     assert first["ui"]["clarification"]["kind"] == "action_clarification"
+    conversation = runtime.get_conversation(
+        "restart-action-draft", "test-user",
+    )
+    assistant_message = [
+        message for message in conversation["messages"]
+        if message["role"] == "assistant"
+    ][-1]
+    assert assistant_message["ui"] == first["ui"]
 
     restarted = AdvertisingComposition(
         require_llm=False,
@@ -847,15 +885,31 @@ def test_action_clarification_draft_survives_restart_and_merges_short_follow_up(
         whitelist_validator=validator,
     )
     restarted.register_tool_source(create_meta_tool_source())
+    resumed_model = install(
+        restarted,
+        ModelTurn(tool_calls=(call(
+            "meta_delete_campaign",
+            {
+                "account_id": "meta-test-account",
+                "campaign_id": "campaign-123",
+            },
+        ),)),
+        ModelTurn(content="已生成 campaign 删除计划。"),
+    )
     second = restarted.run(
-        "campaign_id=campaign-123",
+        "删除 Meta campaign campaign_id=campaign-123",
         session_id="restart-action-draft",
         user_id="test-user",
         account_id="meta-test-account",
     )
 
     assert second["intent"]["intent_type"] == "delete_campaign"
-    assert second["intent"]["scoped_parameters"]["meta"]["campaign_id"] == "campaign-123"
+    assert any(
+        message.role == "user" and message.content == "删除 Meta campaign"
+        for message in resumed_model.messages[0]
+    )
+    assert second["tool_results"][0]["is_error"] is False
+    assert not second["tool_results"][0].get("interaction")
     assert second["response_source"] != "action_clarification"
 
 
@@ -864,6 +918,9 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
     validator.allowed_accounts = {"google-ads": ["123"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "google_create_campaign", {"campaign_name": "App"},
+    ),)))
 
     result = runtime.run(
         "创建 Google App campaign",
@@ -875,8 +932,9 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
 
     assert result["results"] == []
     assert result["workflow_id"] is None
-    assert result["ui"]["needs_input"] is True
-    assert result["response_source"] == "creation_card"
+    assert result["status"] == "awaiting_input"
+    assert result["ui"]["cards"]
+    assert result["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
 
 
 def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
@@ -884,6 +942,15 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
     validator.allowed_accounts = {"google-ads": ["123"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "google_create_app_ad",
+        {
+            "ad_group_id": "ad-group-1",
+            "name": "App ad",
+            "headlines": ["Only one headline"],
+            "descriptions": ["Only one description"],
+        },
+    ),)))
 
     result = runtime.run(
         "创建 Google App 广告",
@@ -931,10 +998,10 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
 
     assert result["results"] == []
     assert result["workflow_id"] is None
-    assert result["response_source"] == "creation_validation"
-    assert "标题素材（每行一条）至少需要 2 项" in result["reply"]
-    assert "描述素材（每行一条）至少需要 2 项" in result["reply"]
-    assert result["creation_validation"]["status"] == "blocked"
+    assert result["status"] == "awaiting_input"
+    assert result["tool_results"][0]["is_error"] is True
+    assert "at least 2" in result["tool_results"][0]["content"]
+    assert result["ui"]["cards"]
 
 
 def test_creation_cards_expose_account_boundary_and_friendly_asset_controls():
@@ -1255,15 +1322,25 @@ def test_creation_run_gates_known_type_on_account_before_showing_full_form():
         "tiktok": ["7397068114548195329"],
     }
     runtime.register_tool_source(create_tiktok_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "tiktok_smart_plus_create_campaign", {"objective_type": "TRAFFIC"},
+    ),)))
+    principal = RequestPrincipal(
+        user_id="template-user",
+        tenant_id="default",
+        permissions=frozenset({"ads.read", "ads.plan"}),
+        account_scope={"tiktok": frozenset({"7397068114548195329"})},
+    )
 
     result = runtime.run(
         "创建 TikTok 流量广告",
         session_id="account-first-creation",
         user_id="template-user",
+        principal=principal,
     )
 
     card = result["ui"]["cards"][0]
-    assert result["response_source"] == "creation_card"
+    assert result["status"] == "awaiting_input"
     assert card["type"] == "ad_creation_selector"
     assert card["blueprint_id"] == "tiktok.traffic_video"
     assert card["account_id"] is None
@@ -1282,11 +1359,21 @@ def test_creation_card_ui_survives_durable_conversation_reload():
         "tiktok": ["7397068114548195329"],
     }
     runtime.register_tool_source(create_tiktok_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "tiktok_smart_plus_create_campaign", {"objective_type": "TRAFFIC"},
+    ),)))
+    principal = RequestPrincipal(
+        user_id="history-user",
+        tenant_id="default",
+        permissions=frozenset({"ads.read", "ads.plan"}),
+        account_scope={"tiktok": frozenset({"7397068114548195329"})},
+    )
 
     result = runtime.run(
         "创建 TikTok 流量广告",
         session_id="durable-card-history",
         user_id="history-user",
+        principal=principal,
     )
 
     assert result["ui"]["cards"]
@@ -1311,6 +1398,129 @@ def test_creation_card_ui_survives_durable_conversation_reload():
     assert persisted_assistant[-1].metadata["ui"] == result["ui"]
 
 
+def test_harness_interaction_projects_to_advertising_ui_without_turn_handler():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    card = {"type": "ad_creation_form", "blueprint_id": "tiktok.app_install"}
+    try:
+        state = runtime.run_service._application_state_from_run(
+            runtime,
+            {
+                "tool_results": [{
+                    "name": "tiktok_smart_plus_create_campaign",
+                    "content": {"success": True, "data": {}},
+                    "interaction": {
+                        "type": "ad_creation_form",
+                        "payload": card,
+                    },
+                }],
+            },
+            "interaction-projection-session",
+            "创建 TikTok App Install campaign",
+        )
+
+        assert state["ui"] == {
+            "cards": [card],
+            "schema_version": "1.0",
+        }
+        assert state["needs_input"] is True
+    finally:
+        runtime.close(wait=True)
+
+
+def test_structured_creation_submission_reaches_model_context_without_credentials():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        start_background_workers=False,
+    )
+    request = TurnRequest(
+        user_input="提交 Google App campaign 表单",
+        session_id="structured-form-context",
+        user_id="operator",
+        tenant_id="tenant-a",
+        context={
+            "account_id": "customer-123",
+            "platform_params": {
+                "google-ads": {
+                    "campaign_name": "App install draft",
+                    "daily_budget": 75,
+                },
+            },
+            "credentials": {"access_token": "must-not-enter-model-context"},
+        },
+        principal=RequestPrincipal(
+            user_id="operator",
+            tenant_id="tenant-a",
+            permissions=frozenset({"ads.read", "ads.plan"}),
+            account_scope={"google-ads": frozenset({"customer-123"})},
+        ),
+    )
+    provider = runtime.platform_application.agent.context_provider
+    try:
+        context = provider.build_context(request, [])
+
+        assert context["structured_input"]["account_id"] == "customer-123"
+        assert context["structured_input"]["platform_params"]["google-ads"][
+            "campaign_name"
+        ] == "App install draft"
+        assert "App install draft" in context["prompt"]
+        assert "customer-123" in context["prompt"]
+        assert "must-not-enter-model-context" not in context["prompt"]
+        assert "access_token" not in context["prompt"]
+    finally:
+        provider.cleanup(request)
+        runtime.close(wait=True)
+
+
+def test_incomplete_harness_create_returns_blueprint_interaction_before_execution():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(ToolCall(
+                "create-call",
+                "tiktok_smart_plus_create_campaign",
+                {},
+            ),))
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        llm_client=Model(),
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    runtime.whitelist_validator.allowed_accounts = {"tiktok": ["test-account"]}
+    runtime.register_tool_source(create_tiktok_tool_source())
+    principal = RequestPrincipal(
+        user_id="operator",
+        tenant_id="tenant-a",
+        permissions=frozenset({"ads.read", "ads.plan"}),
+        account_scope={"tiktok": frozenset({"test-account"})},
+    )
+    try:
+        result = runtime.run(
+            "Create TikTok Smart Plus app install campaign",
+            session_id="incomplete-create-run",
+            user_id="operator",
+            tenant_id="tenant-a",
+            account_id="test-account",
+            principal=principal,
+        )
+
+        assert result["status"] == "awaiting_input"
+        assert result["needs_input"] is True
+        assert "interaction" in result["tool_results"][0], result["tool_results"][0]
+        assert result["ui"].get("cards"), result["tool_results"][0].get("interaction")
+        assert result["ui"]["cards"][0]["type"] in {
+            "ad_creation_form", "ad_creation_account_selector",
+        }
+        assert result["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
+        assert result["tool_results"][0]["is_error"] is True
+    finally:
+        runtime.close(wait=True)
+
+
 def test_template_selection_is_applied_to_creation_draft_without_execution():
     from agents.agent_platform.data.persistence.store import AdAgentStore
 
@@ -1323,6 +1533,10 @@ def test_template_selection_is_applied_to_creation_draft_without_execution():
         "tiktok": ["7397068114548195329"],
     }
     runtime.register_tool_source(create_tiktok_tool_source())
+    install(runtime, ModelTurn(tool_calls=(call(
+        "tiktok_smart_plus_create_campaign",
+        {"account_id": "7397068114548195329", "objective_type": "TRAFFIC"},
+    ),)))
     template = next(
         item for item in runtime.list_creation_templates(
             provider="tiktok",
@@ -1356,6 +1570,7 @@ def test_template_selection_is_applied_to_creation_draft_without_execution():
     )
     selected_card = result["ui"]["cards"][0]
     assert result["results"] == []
+    assert result["needs_input"] is True
     assert selected_card["type"] == "ad_creation_form"
     assert selected_card["blueprint_id"] == "tiktok.traffic_video"
     assert selected_card["account_id"] == "7397068114548195329"

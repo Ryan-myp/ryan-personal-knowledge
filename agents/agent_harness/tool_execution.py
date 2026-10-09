@@ -53,6 +53,14 @@ class ToolExecutionCoordinator:
     """Execute a model Tool plan without embedding business knowledge."""
 
     _TRUNCATION_PRIORITY = {
+        "type": 0,
+        "kind": 1,
+        "question": 2,
+        "prompt": 3,
+        "needs_input": 4,
+        "needs_confirmation": 5,
+        "confirmation_payload": 6,
+        "payload": 7,
         "success": 0,
         "error": 1,
         "data_status": 2,
@@ -422,11 +430,15 @@ class ToolExecutionCoordinator:
                 }
                 for key in (
                     "needs_input", "needs_confirmation", "confirmation_payload",
-                    "runtime_signals", "recovery_required", "success",
-                    "effect_state", "data", "execution_status",
+                    "interaction", "runtime_signals", "recovery_required",
+                    "success", "effect_state", "data", "execution_status",
                 ):
                     if key in decision:
-                        result[key] = decision[key]
+                        result[key] = (
+                            self._bound_tool_value(decision[key])
+                            if key == "interaction"
+                            else decision[key]
+                        )
                 return result
         try:
             if self.tool_catalog is None:
@@ -480,15 +492,29 @@ class ToolExecutionCoordinator:
             if isinstance(safe_output, Mapping):
                 for key in (
                     "needs_input", "needs_confirmation", "confirmation_payload",
+                    "requires_confirmation", "interaction", "card_payload",
                     "runtime_signals", "recovery_required", "success",
                     "effect_state", "data", "execution_status",
                 ):
                     if key in safe_output:
                         result[key] = (
                             self._bound_tool_value(safe_output[key])
-                            if key == "data"
+                            if key in {"data", "interaction", "card_payload"}
                             else safe_output[key]
                         )
+                if result.get("requires_confirmation"):
+                    result["needs_confirmation"] = True
+            if uncertain_effect:
+                result.update({
+                    "terminate": True,
+                    "recovery_required": True,
+                    "effect_state": "unknown",
+                    "runtime_signals": {
+                        **dict(result.get("runtime_signals") or {}),
+                        "effect_state": "unknown",
+                        "provider_effect_unknown": True,
+                    },
+                })
             cancellation_mode = self._tool_cancellation_mode(
                 getattr(binding, "definition", None),
             )

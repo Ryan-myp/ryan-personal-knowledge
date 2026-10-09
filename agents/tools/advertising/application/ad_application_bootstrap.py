@@ -28,9 +28,13 @@ from agents.agent_harness.core.agent_profile import AgentProfile
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
 from agents.agent_harness.core.features import RuntimeFeature
 from agents.tools.advertising.shared.features.factory import discover_features
-from agents.agent_harness.core.intent import LLMIntentParser, SimpleIntentRouter
 from agents.agent_harness.core.interfaces import EffectReconciler, ExecutionMode
-from agents.agent_harness.core.plugins import PluginKind, PluginLoader, PluginRegistry
+from agents.agent_harness.core.plugins import (
+    PluginKind,
+    PluginLoader,
+    PluginManifest,
+    PluginRegistry,
+)
 from agents.agent_harness.core.policy import RuntimePolicy
 from agents.agent_harness.core.tool_registry import GuardedToolRegistry, SimpleToolRegistry
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
@@ -84,8 +88,6 @@ class AdApplicationBootstrap:
         bootstrap boundary.
         """
         registry = options.get("registry")
-        intent_parser = options.get("intent_parser")
-        intent_router = options.get("intent_router")
         write_guard = options.get("write_guard")
         skill_roots = options.get("skill_roots")
         if skill_roots is None:
@@ -148,8 +150,6 @@ class AdApplicationBootstrap:
         cls._initialize_runtime_services(
             runtime,
             registry=registry,
-            intent_parser=intent_parser,
-            intent_router=intent_router,
             write_guard=write_guard,
             skill_roots=skill_roots,
             llm_client=llm_client,
@@ -222,8 +222,6 @@ class AdApplicationBootstrap:
         runtime: Any,
         *,
         registry: Any,
-        intent_parser: Any,
-        intent_router: Any,
         write_guard: Any,
         skill_roots: Any,
         llm_client: Any,
@@ -276,25 +274,9 @@ class AdApplicationBootstrap:
                 "缺少必填信息时先澄清，不从业务常识猜测"
             ),
         )
-        runtime.intent_parser = intent_parser or LLMIntentParser(
-            llm_client,
-            allow_rule_fallback=not require_llm,
-            profile=runtime.agent_profile,
-        )
-        if require_llm and isinstance(runtime.intent_parser, LLMIntentParser):
-            runtime.intent_parser.allow_rule_fallback = False
-        runtime.intent_router = intent_router or SimpleIntentRouter()
         runtime.write_guard = write_guard
         runtime.skill_loader = SkillLoader(skill_roots)
         runtime.skill_loader.load_all()
-        for skill in runtime.skill_loader.list_all().values():
-            register_aliases = getattr(
-                runtime.intent_parser, "register_namespace_aliases", None
-            )
-            if callable(register_aliases):
-                register_aliases(
-                    skill.namespace, skill.namespace_aliases or []
-                )
         runtime._llm = llm_client
         runtime.conversation_title_generator = ConversationTitleGenerator()
         runtime.conversation_title_use_llm = conversation_title_use_llm
@@ -307,6 +289,25 @@ class AdApplicationBootstrap:
             runtime.plugin_registry,
             allow_trusted_source=True,
         )
+        for skill in runtime.skill_loader.list_all().values():
+            skill_name = str(getattr(skill, "name", "") or "").strip()
+            if not skill_name:
+                continue
+            manifest = PluginManifest(
+                plugin_id=f"builtin:skill:{skill_name.lower()}",
+                version=str(getattr(skill, "version", "1.0.0") or "1.0.0"),
+                kinds=(PluginKind.SKILL.value,),
+                display_name=skill_name,
+                description=str(getattr(skill, "description", "") or ""),
+                source="builtin",
+                trusted=False,
+                executable=False,
+                metadata={
+                    "namespace": str(getattr(skill, "namespace", "") or ""),
+                    "advisory_only": True,
+                },
+            )
+            runtime.plugin_loader.install(manifest, contribution=skill)
         runtime.controls_service = AdvertisingRuntimeControls(
             runtime,
             mode_context=mode_context,
@@ -327,13 +328,6 @@ class AdApplicationBootstrap:
                     (PluginKind.FEATURE.value,),
                     description=f"Runtime feature {feature_name}",
                 )
-            register_descriptors = getattr(
-                runtime.intent_parser,
-                "register_intent_descriptors",
-                None,
-            )
-            if callable(register_descriptors):
-                register_descriptors(feature.intent_descriptors())
         runtime._skill_objects = {}
         runtime._skill_keys_by_platform = {}
         runtime._skill_tool_names = {}

@@ -23,8 +23,6 @@ from agents.agent_harness.core.features import RuntimeFeature
 from agents.agent_harness.core.interfaces import (
     EffectReconciler,
     ExecutionMode,
-    IntentParser,
-    IntentRouter,
     ToolRegistry,
     WriteGuard,
 )
@@ -68,8 +66,6 @@ class AdvertisingComposition(
     def __init__(
         self,
         registry: ToolRegistry = None,
-        intent_parser: IntentParser = None,
-        intent_router: IntentRouter = None,
         write_guard: WriteGuard = None,
         skill_roots: list[str] = None,
         llm_client=None,

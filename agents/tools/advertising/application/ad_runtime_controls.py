@@ -11,7 +11,6 @@ from typing import Any, Optional
 
 from agents.agent_harness import DeploymentHealth, HealthCheck
 
-from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.interfaces import ExecutionMode, ToolEffect
 from agents.agent_harness.core.memory import MemoryManager
 from .security import RuntimeSecurity
@@ -269,8 +268,6 @@ class AdvertisingRuntimeControls:
             )
         runtime._llm = llm_client
         runtime.platform_application.agent.model = llm_client
-        if isinstance(runtime.intent_parser, LLMIntentParser):
-            runtime.intent_parser.inject_llm(llm_client)
 
     def assert_llm_ready(self) -> None:
         runtime = self.runtime

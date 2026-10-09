@@ -225,28 +225,27 @@ checks. `AdvertisingRunService` maps the generic Run envelope to the existing
 advertising API response, and `AdvertisingRunMemoryRecorder` retains the narrow
 live-write outcome capture without owning Run state.
 
-Verification for this reduction: the generic advertising Run exercised two
-sequential Meta read Tools in one Run, preserving trusted account scope; the
-focused architecture-boundary, generic-runtime, Harness-contract, and
-runtime-boundary tests passed (`109 passed`). The full Agent suite is not
-green: the latest run reports `1,157 passed`, `79 failed`. Failures include
-tests that still expect Parser-driven natural-language routing, and workflows
-whose old creation-card/draft, scheduling-conversation, or cross-channel
-dispatcher contracts were removed without equivalent generic Tool/Skill or
-application UI coverage. Skill-up and model-less task tests also show that the
-Runtime evaluation adapter has not yet been converted to explicit Harness
-ModelTurn/ToolCall fixtures. These are not being treated as irrelevant test
-drift; behavior that remains a product requirement needs a supported generic
-Run/UI contract and end-to-end revalidation. Provider contract audit and the
-297-Tool snapshot validation pass; repository qguard reports `0.0 (F)` across
-649 scanned files and remains separate repository-wide quality debt.
+Verification for this reduction: a generic Run exercised sequential Provider
+read Tools while preserving trusted account scope; generic input interactions,
+incomplete creation forms, account selection, action clarification, write
+confirmation, idempotency and uncertain-effect recovery have regression
+coverage. Advertising code no longer constructs or maintains an intent parser
+or router catalog. The latest `make ad-agent-check` run passed (`1,246 passed`,
+one Starlette deprecation warning), and the Tool audit/snapshot validated 297
+Tools across four Tool Sources. The focused Skill-up adapter tests passed
+(`9 passed`); the full Skill-up CLI evaluation could not run because the local
+`skill-up` executable is not installed. The repository qguard gate reports
+`0.0 (F)` across 652 scanned files with 4,867 findings; this is repository-wide
+quality debt and is not evidence that the migration tests failed.
 
 This removes the second advertising turn loop. Scheduling management is a
 Platform control-plane API; cross-channel campaign actions are ordinary
 Provider Tools invoked together by the generic Harness when needed. There is no
 advertising Feature turn dispatcher. Creation Blueprint/template management
 endpoints remain application configuration services and do not execute Provider
-operations.
+operations. Incomplete calls return a generic Harness interaction; the
+advertising adapter projects it to account-selection, clarification, or creation
+form UI without executing a Provider operation or owning Run state.
 
 ## Acceptance Criteria
 
@@ -268,15 +267,16 @@ operations.
 
 ## Current Migration Note
 
-The directory moves are not evidence by themselves that every application adapter
-is generic. The advertising ModelAdapter and turn loop have been removed; the
-remaining application package still contains a large composition root and
-advertising control-plane services for account policy, creation Blueprint
-management, workflow recovery, scheduling, and API result mapping. These are not
-a second Run Kernel or Tool policy gate, but their size and feature-hook coverage
-remain maintainability and behavioral-parity work. New conversational behavior
-must enter through the generic Harness model/Tool loop and registered Tool
-contracts, not an advertising-only turn pipeline.
+The directory moves are not evidence by themselves that every application
+adapter is generic. The advertising ModelAdapter and turn loop have been
+removed. Advertising account policy, creation Blueprint/template management,
+workflow recovery, scheduling integration and API result mapping remain
+application or deployment concerns; they are not a second Run Kernel or Tool
+policy gate. `AdvertisingRunService` maps the generic result envelope,
+`AdvertisingToolInteractionProvider` projects policy interactions into the
+advertising UI, and the application composition installs one generic Harness.
+New conversational behavior must enter through the generic Harness model/Tool
+loop and registered Tool contracts, not an advertising-only turn pipeline.
 
 The application creation composition now contains only Blueprint/template/schema
 services. The disconnected advertising clarification handler, creation/action
@@ -284,7 +284,9 @@ draft merger, legacy response assembler, schedule draft flow, and cross-channel
 routed handler were removed; none had a caller in the generic Run path. Durable
 schedule CRUD, task submission, and Worker execution remain available through the
 Platform scheduling API. Cross-channel actions use registered Provider Tools in
-one Harness Run, retaining the same Tool policy and audit path. Blueprint and
-template management APIs remain available, but interactive card/draft continuity
-is not claimed as part of the current generic Run until it is reintroduced
-through a supported application UI contract.
+one Harness Run, retaining the same Tool policy and audit path. Blueprint-based
+creation and action clarification are represented as bounded Harness Tool
+interactions and projected into the advertising UI; follow-up requests return
+through the same generic Harness and are revalidated by Tool schemas, account scope
+and policy. This preserves the supported interaction contract without reviving
+a second turn state machine.

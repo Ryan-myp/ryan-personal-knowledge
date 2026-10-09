@@ -114,6 +114,7 @@ class RuntimeSecurity:
                 suggestion=str(redact(detail.suggestion)),
             )
         result.card_payload = redact(result.card_payload)
+        result.interaction = redact(result.interaction)
         return result
 
     @staticmethod

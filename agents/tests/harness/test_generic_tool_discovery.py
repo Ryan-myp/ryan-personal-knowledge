@@ -12,6 +12,7 @@ from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
 from agents.agent_harness.core.llm_client import LLMClient
 from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.agent_harness.messages import ModelTurn, ToolCall
+from agents.agent_platform.tools.policy import ToolExecutionPolicy
 
 
 def _definition(
@@ -218,6 +219,24 @@ def test_request_validator_rejects_before_model_and_keeps_run_identity():
         app.close()
 
 
+def test_missing_model_adapter_fails_with_explicit_nonempty_run_error():
+    app = AgentApplication.create(model=None)
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="Do work",
+            session_id="unconfigured-model-session",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        ))
+
+        assert result.status.value == "failed"
+        assert result.reply
+        assert "模型" in result.reply
+        assert result.data["error"] == "model_not_configured"
+    finally:
+        app.close()
+
+
 def test_run_tool_call_budget_rejects_oversized_batch_atomically():
     calls = []
 
@@ -359,5 +378,168 @@ def test_generic_model_tool_call_confirmation_gate_prevents_executor_run():
         assert result.needs_input is True
         assert result.reply == "Confirm publish?"
         assert executed == []
+    finally:
+        app.close()
+
+
+def test_generic_policy_interaction_survives_run_result_without_executing_tool():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(ToolCall("call-1", "update_record", {}),))
+
+    interaction = {
+        "type": "input_form",
+        "payload": {"fields": [{"name": "record_id"}]},
+    }
+    policy = ToolExecutionPolicy(
+        interaction_builder=lambda _context, reason, _message: (
+            interaction if reason == "input_schema" else None
+        ),
+    )
+    app = AgentApplication.create(
+        model=Model(),
+        tool_policy=policy,
+        tool_execution="sequential",
+    )
+    definition = _definition(
+        "update_record",
+        namespace="records",
+        action="update",
+        resource="record",
+        description="Update a record",
+        properties={"record_id": {"type": "string"}},
+    )
+    definition.input_schema.required = ["record_id"]
+
+    app.register_tool_source(StaticToolSource(
+        "records",
+        [ToolBinding(definition, lambda *_args: executed.append(True))],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="Update a record",
+            session_id="interaction-session",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        ))
+
+        payload = result.to_dict()
+        assert result.status.value == "awaiting_input"
+        assert result.needs_input is True
+        assert payload["interactions"] == [interaction]
+        assert payload["tool_results"][0]["interaction"] == interaction
+        assert executed == []
+    finally:
+        app.close()
+
+
+def test_generic_policy_enforces_nested_schema_constraints_before_execution():
+    executed = []
+    interactions = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(ToolCall(
+                "call-1",
+                "create_package",
+                {
+                    "name": "draft",
+                    "headlines": ["one"],
+                    "settings": {"daily_budget": 0},
+                },
+            ),))
+
+    definition = _definition(
+        "create_package",
+        namespace="packages",
+        action="create",
+        resource="package",
+        description="Create a package",
+        properties={
+            "name": {"type": "string"},
+            "headlines": {"type": "array", "minItems": 2},
+            "settings": {
+                "type": "object",
+                "properties": {"daily_budget": {"type": "number", "minimum": 1}},
+                "required": ["daily_budget"],
+                "additionalProperties": False,
+            },
+        },
+    )
+    definition.input_schema.required = ["name", "headlines", "settings"]
+    policy = ToolExecutionPolicy(
+        interaction_builder=lambda _context, reason, message: (
+            interactions.append((reason, message))
+            or {"type": "input_form", "prompt": message}
+            if reason == "input_schema" else None
+        ),
+    )
+    app = AgentApplication.create(
+        model=Model(),
+        tool_policy=policy,
+        tool_execution="sequential",
+    )
+    app.register_tool_source(StaticToolSource(
+        "packages",
+        [ToolBinding(definition, lambda *_args: executed.append(True))],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="Create a package",
+            session_id="schema-constraints-session",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        ))
+
+        assert result.status.value == "awaiting_input"
+        assert result.interactions[0]["type"] == "input_form"
+        assert interactions and interactions[0][0] == "input_schema"
+        assert executed == []
+    finally:
+        app.close()
+
+
+def test_model_adapter_gets_redacted_context_while_tools_keep_credentials():
+    seen_model_context = []
+    seen_tool_credentials = []
+
+    class Model:
+        def complete(self, _messages, _tools, request):
+            seen_model_context.append(dict(request.context))
+            if len(seen_model_context) == 1:
+                return ModelTurn(tool_calls=(ToolCall("call-1", "read_record", {}),))
+            return ModelTurn(content="done")
+
+    definition = _definition(
+        "read_record",
+        namespace="records",
+        action="get",
+        resource="record",
+        description="Read a record",
+    )
+
+    def execute(context, _arguments):
+        seen_tool_credentials.append(
+            context.request.context["credentials"]["access_token"]
+        )
+        return {"success": True}
+
+    app = AgentApplication.create(model=Model(), tool_execution="sequential")
+    app.register_tool_source(StaticToolSource(
+        "records", [ToolBinding(definition, execute)],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="Read a record",
+            session_id="model-context-redaction",
+            context={"credentials": {"access_token": "secret-token"}},
+        ))
+
+        assert result.status.value == "succeeded"
+        assert all("secret-token" not in repr(item) for item in seen_model_context)
+        assert all(item["credentials"] == "<redacted>" for item in seen_model_context)
+        assert seen_tool_credentials == ["secret-token"]
     finally:
         app.close()

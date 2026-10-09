@@ -25,7 +25,7 @@ from agents.tools.advertising.providers.source_factory import (  # noqa: E402
     create_tool_source,
     discover_tool_source_factory,
 )
-from agents.agent_harness.core.interfaces import ParsedIntent  # noqa: E402
+from agents.agent_harness.messages import ModelTurn, ToolCall  # noqa: E402
 from agents.agent_platform.data.persistence.store import AdAgentStore  # noqa: E402
 from agents.tools.advertising.application.ad_application import AdvertisingComposition  # noqa: E402
 
@@ -48,30 +48,35 @@ class _RecordingCampaignClient:
         return self._record("list_campaigns", *args, **kwargs)
 
 
-class _DeterministicIntentParser:
-    """A test-only parser that fixes intent; Runtime remains authoritative."""
+class _ContractHarnessModel:
+    """Issue one declared ToolCall through the generic Harness contract."""
 
-    def __init__(self, intent_type: str, namespace: str, scoped_parameters: dict[str, dict[str, str]]):
-        self.intent_type = intent_type
-        self.namespace = namespace
-        self.scoped_parameters = scoped_parameters
+    def __init__(self, tool_name: str, arguments: Mapping[str, str]):
+        self.tool_name = tool_name
+        self.arguments = dict(arguments)
+        self.invocations = 0
 
-    def refresh_tool_catalog(self, _definitions: Any) -> None:
-        return None
-
-    def register_tool_definitions(self, _definitions: Any) -> None:
-        return None
-
-    def register_namespace_aliases(self, _namespace: str, _aliases: Any) -> None:
-        return None
-
-    def parse(self, raw_input: str, _context: Any) -> ParsedIntent:
-        return ParsedIntent(
-            intent_type=self.intent_type,
-            raw_input=raw_input,
-            namespaces=[self.namespace],
-            scoped_parameters=self.scoped_parameters,
-        )
+    def complete(
+        self,
+        _messages: Any,
+        tools: Any,
+        _request: Any,
+    ) -> ModelTurn:
+        self.invocations += 1
+        if self.invocations > 1:
+            return ModelTurn(content="Campaign query completed.")
+        available = {
+            str(getattr(tool, "name", "")) for tool in (tools or ())
+        }
+        if self.tool_name not in available:
+            raise AssertionError(
+                f"Harness did not expose expected Tool {self.tool_name}"
+            )
+        return ModelTurn(tool_calls=(ToolCall(
+            "provider-contract-call",
+            self.tool_name,
+            self.arguments,
+        ),))
 
 
 def _read_scenarios(path: Path) -> list[dict[str, Any]]:
@@ -99,12 +104,13 @@ def run_harness(path: str | Path) -> dict[str, Any]:
         account_id = str(scenario["account_id"])
         client = _RecordingCampaignClient(platform)
         store = AdAgentStore(":memory:")
-        parser = _DeterministicIntentParser(
-            "list_campaigns", platform, {platform: {account_field: account_id}}
+        model = _ContractHarnessModel(
+            tool_name,
+            {account_field: account_id},
         )
         runtime = AdvertisingComposition(
-            intent_parser=parser,
             require_llm=False,
+            llm_client=model,
             persistence_store=store,
             offline_mode=False,
             enforce_account_scope=False,
@@ -127,7 +133,7 @@ def run_harness(path: str | Path) -> dict[str, Any]:
             if definition is None:
                 raise ValueError(f"Tool is not registered: {tool_name}")
             result = runtime.run(
-                user_input=f"contract probe {platform}",
+                user_input="List campaigns",
                 session_id=f"provider-contract:{platform}",
                 user_id="provider-contract-harness",
                 account_id=account_id,

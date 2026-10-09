@@ -15,8 +15,8 @@ from agents.agent_harness.skills.contract import SkillLoader
 from agents.skills.advertising.businesses.policy import BusinessSkillPolicy
 from agents.tools.advertising.application.account_policy import AccountWhitelistValidator
 from agents.tools.advertising.application.session_context import SessionContext
-from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.intent import SimpleIntentRouter
+from agents.agent_harness.core.intent import LLMIntentParser
 
 
 def test_core_does_not_host_advertising_domain_modules():
@@ -444,7 +444,7 @@ def test_parser_drops_llm_operation_and_note_metadata_from_scoped_parameters():
     }
 
 
-def test_generic_run_uses_model_output_without_legacy_intent_parser():
+def test_generic_run_uses_harness_model_and_has_no_ad_parser_or_router():
     class Model:
         def complete(self, _messages, _tools, _request):
             return ModelTurn(content="还无法确定具体的查询对象。")
@@ -455,11 +455,8 @@ def test_generic_run_uses_model_output_without_legacy_intent_parser():
         features=[],
     )
 
-    class Parser:
-        def parse(self, _text, _ctx):
-            raise AssertionError("legacy parser must not participate in a Run")
-
-    runtime.intent_parser = Parser()
+    assert not hasattr(runtime, "intent_parser")
+    assert not hasattr(runtime, "intent_router")
     result = runtime.run("查询新渠道报表")
 
     assert "还无法确定具体的查询对象" in result["reply"]
@@ -467,20 +464,23 @@ def test_generic_run_uses_model_output_without_legacy_intent_parser():
     assert "你好！我是 ad-agent" not in result["reply"]
 
 
-def test_legacy_parser_cannot_supply_or_satisfy_the_harness_model():
-    class Model:
-        def complete(self, _messages, _tools, _request):
-            return ModelTurn(content="reply")
+def test_advertising_application_has_no_parser_or_router_wiring():
+    root = Path(__file__).resolve().parents[2] / "tools" / "advertising" / "application"
+    source = "\n".join(
+        path.read_text(encoding="utf-8") for path in root.glob("*.py")
+    )
+    assert "intent_parser" not in source
+    assert "intent_router" not in source
+    assert "SimpleIntentRouter" not in source
 
-    class Parser:
-        def model_client(self):
-            return Model()
 
+def test_legacy_parser_is_not_an_advertising_composition_dependency():
     runtime = AdvertisingComposition(
         require_llm=True,
-        intent_parser=Parser(),
     )
 
     assert runtime.platform_application.agent.model is None
+    assert not hasattr(runtime, "intent_parser")
+    assert not hasattr(runtime, "intent_router")
     with pytest.raises(RuntimeError, match="LLM client is required"):
         runtime.assert_llm_ready()

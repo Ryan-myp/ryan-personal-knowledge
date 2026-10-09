@@ -30,6 +30,7 @@ class RunResult:
     runtime_signals: Mapping[str, Any] = field(default_factory=dict)
     data: Mapping[str, Any] = field(default_factory=dict)
     application_data: Mapping[str, Any] = field(default_factory=dict)
+    interactions: tuple[Mapping[str, Any], ...] = ()
 
     @classmethod
     def from_payload(cls, payload: Any) -> "RunResult":
@@ -52,6 +53,11 @@ class RunResult:
         )
         needs_input = bool(
             source.get("needs_input") or source.get("needs_confirmation")
+        )
+        interactions = tuple(
+            dict(item)
+            for item in (source.get("interactions") or ())
+            if isinstance(item, Mapping)
         )
         if recovery:
             status = RunStatus.RECOVERY_REQUIRED
@@ -89,6 +95,7 @@ class RunResult:
             recovery_required=recovery,
             runtime_signals=dict(signals),
             data=source,
+            interactions=interactions,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -102,6 +109,7 @@ class RunResult:
             "effect_state": self.effect_state,
             "recovery_required": self.recovery_required,
             "runtime_signals": dict(self.runtime_signals),
+            "interactions": [dict(item) for item in self.interactions],
         })
         return result
 

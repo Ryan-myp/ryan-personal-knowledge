@@ -3,6 +3,7 @@
 from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
 from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.agent_harness.core.interfaces import ParsedIntent
+from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 
@@ -43,7 +44,7 @@ def test_google_specialized_creation_chains_are_metadata_driven():
         ],
     }
     for campaign_type, tool_names in expected.items():
-        routed = runtime.intent_router.route(
+        routed = SimpleIntentRouter().route(
             ParsedIntent(
                 "create_campaign", "create", ["google-ads"],
                 scoped_parameters={"google-ads": {

@@ -9,6 +9,7 @@ from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
+from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
@@ -5005,7 +5006,7 @@ def test_meta_messaging_tool_publishes_destination_contract_and_route():
 
     runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(tool_source)
-    routed = runtime.intent_router.route(
+    routed = SimpleIntentRouter().route(
         ParsedIntent(
             "create_campaign", "create", ["meta"],
             scoped_parameters={"meta": {
@@ -5083,7 +5084,7 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
         ),
     ]
     for objective, optimization_goal, expected in cases:
-        routed = runtime.intent_router.route(
+        routed = SimpleIntentRouter().route(
             ParsedIntent(
                 "create_campaign", "create", ["meta"],
                 scoped_parameters={"meta": {
@@ -5162,7 +5163,7 @@ def test_meta_engagement_tool_routes_post_and_video_objectives():
         ("VIDEO_VIEWS", {"video_id": "video-1"}),
     ]
     for optimization_goal, source in cases:
-        routed = runtime.intent_router.route(
+        routed = SimpleIntentRouter().route(
             ParsedIntent(
                 "create_campaign", "create", ["meta"],
                 scoped_parameters={"meta": {

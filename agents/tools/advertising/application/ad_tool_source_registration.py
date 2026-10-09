@@ -87,10 +87,7 @@ class AdToolSourceRegistrationMixin:
             platform = self._canonical_platform(getattr(module, "platform_name", ""))
             if platform:
                 self.plugin_registry.unregister(f"provider-tools:{platform}")
-            try:
-                self._refresh_parser_catalog()
-            except Exception:
-                logger.exception("Tool Source rollback could not refresh parser catalog")
+            self._refresh_tool_catalog()
             raise
 
     def _register_provider_tool_source_unchecked(
@@ -134,9 +131,6 @@ class AdToolSourceRegistrationMixin:
         self._validate_parameter_lookup_contract()
         if self._read_only_mode:
             self._filter_write_tools()
-        register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
-        if callable(register_tools):
-            register_tools(self.registry.list_all())
         if getattr(module, "platform_name", None):
             canonical_namespace = self._canonical_platform(module.platform_name)
             skill_candidates = self.skill_loader.get_by_namespace(canonical_namespace)
@@ -164,7 +158,7 @@ class AdToolSourceRegistrationMixin:
                     for item in (getattr(runtime, "ad_format_catalogs", []) or [])
                     if isinstance(item, dict) and item.get("format_id")
                 }
-        self._refresh_parser_catalog()
+        self._refresh_tool_catalog()
         self._background_tasks.extend(runtime.background_tasks)
         if runtime.write_guard:
             self.write_guard = runtime.write_guard
@@ -238,9 +232,6 @@ class AdToolSourceRegistrationMixin:
         self.ad_format_catalogs[canonical] = normalized
 
     def _register_skill(self, skill: Skill) -> None:
-        register_aliases = getattr(self.intent_parser, "register_namespace_aliases", None)
-        if callable(register_aliases):
-            register_aliases(skill.namespace, skill.namespace_aliases or [])
         registered_names: list[str] = []
         for tool_def in skill.get_tools():
             skill_namespace = self._canonical_platform(skill.namespace)
@@ -265,11 +256,6 @@ class AdToolSourceRegistrationMixin:
             keys = self._skill_keys_by_platform.setdefault(namespace_key, [])
             if skill_key not in keys:
                 keys.append(skill_key)
-            register_tools = getattr(self.intent_parser, "register_tool_definitions", None)
-            if callable(register_tools):
-                register_tools([
-                    self.registry.get(name)[0] for name in registered_names
-                ])
 
 
 __all__ = ["AdToolSourceRegistrationMixin", "serialize_skill_lifecycle"]

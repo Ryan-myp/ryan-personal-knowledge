@@ -10,6 +10,8 @@ import time
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from agents.agent_harness import ToolCallContext
+from agents.agent_harness.core.interfaces import ToolSchema
+from agents.agent_harness.core.tool_registry import validate_tool_input
 
 
 def _value(definition: Any, name: str, default: Any = None) -> Any:
@@ -124,6 +126,9 @@ class ToolExecutionPolicy:
     confirmation_builder: Optional[
         Callable[[ToolCallContext, Any, Mapping[str, Any]], Mapping[str, Any] | None]
     ] = None
+    interaction_builder: Optional[
+        Callable[[ToolCallContext, str, str], Mapping[str, Any] | None]
+    ] = None
     audit_sink: Optional[Callable[[dict[str, Any]], None]] = None
     live_approved_tools_provider: Optional[Callable[[], Iterable[str]]] = None
     idempotency_store: Any = None
@@ -185,12 +190,17 @@ class ToolExecutionPolicy:
             "terminate": True,
             "needs_input": reason_code in {
                 "confirmation_required", "scope_required", "scope_mismatch",
+                "input_schema", "creation_input_required",
             },
             "needs_confirmation": reason_code == "confirmation_required",
             **self._confirmation_payload(
                 context, definition, dict(call.arguments), reason_code,
             ),
         }
+        if result["needs_input"] and callable(self.interaction_builder):
+            interaction = self.interaction_builder(context, reason_code, message)
+            if isinstance(interaction, Mapping):
+                result["interaction"] = dict(interaction)
         if not audit_ok:
             result["runtime_signals"] = {"audit_error": True}
             result["recovery_required"] = True
@@ -704,44 +714,34 @@ class ToolExecutionPolicy:
     def _validate_schema(
         definition: Any, arguments: dict[str, Any],
     ) -> Optional[str]:
-        schema = _schema(definition)
-        required = schema.get("required") or ()
-        missing = [
-            str(name) for name in required
-            if str(name) not in arguments
-        ]
-        if missing:
-            return "missing required fields: " + ", ".join(missing)
-        properties = schema.get("properties")
-        if not isinstance(properties, Mapping):
+        value = _value(definition, "input_schema", None)
+        if isinstance(value, ToolSchema):
+            schema = value
+        elif isinstance(value, Mapping):
+            schema = ToolSchema(
+                type=str(value.get("type") or "object"),
+                required=list(value.get("required") or ()),
+                properties=dict(value.get("properties") or {}),
+                requires=list(value.get("requires") or ()),
+                requires_any_of=[
+                    list(item) for item in (value.get("requires_any_of") or ())
+                    if isinstance(item, (list, tuple))
+                ],
+                requires_exactly_one_of=[
+                    list(item)
+                    for item in (value.get("requires_exactly_one_of") or ())
+                    if isinstance(item, (list, tuple))
+                ],
+                conditional_rules=list(value.get("conditional_rules") or ()),
+                additional_properties=bool(
+                    value.get("additionalProperties",
+                              value.get("additional_properties", False))
+                ),
+            )
+        else:
             return None
-        if schema.get("additionalProperties", schema.get("additional_properties", False)) is False:
-            unknown = sorted(set(arguments) - set(properties))
-            if unknown:
-                return "unknown fields: " + ", ".join(unknown)
-        for name, value in arguments.items():
-            spec = properties.get(name)
-            if not isinstance(spec, Mapping):
-                continue
-            expected = spec.get("type")
-            if expected == "string" and not isinstance(value, str):
-                return f"field '{name}' must be a string"
-            if expected == "boolean" and not isinstance(value, bool):
-                return f"field '{name}' must be a boolean"
-            if expected == "object" and not isinstance(value, Mapping):
-                return f"field '{name}' must be an object"
-            if expected == "array" and not isinstance(value, list):
-                return f"field '{name}' must be an array"
-            if expected == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
-                return f"field '{name}' must be an integer"
-            if expected == "number" and (
-                isinstance(value, bool) or not isinstance(value, (int, float))
-            ):
-                return f"field '{name}' must be a number"
-            enum = spec.get("enum")
-            if isinstance(enum, list) and value not in enum:
-                return f"field '{name}' has an unsupported value"
-        return None
+        errors = validate_tool_input(schema, arguments)
+        return errors[0] if errors else None
 
     def _audit(
         self,

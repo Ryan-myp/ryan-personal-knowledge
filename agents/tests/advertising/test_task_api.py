@@ -6,6 +6,8 @@ import time
 from fastapi.testclient import TestClient
 
 from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.agent_harness.messages import ModelTurn
+from agents.tests.advertising.harness_models import ScriptedHarnessModel
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 import agents.deployments.advertising.api_server as api_server
 
@@ -26,6 +28,9 @@ def test_task_api_queues_runtime_turn_and_returns_result(monkeypatch):
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         enforce_account_scope=False,
+    )
+    runtime.platform_application.agent.model = ScriptedHarnessModel(
+        ModelTurn(content="你好，我可以帮你查询广告数据。")
     )
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "task-key")

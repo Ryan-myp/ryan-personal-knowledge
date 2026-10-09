@@ -1,11 +1,17 @@
 from agents.agent_harness import InMemoryMetrics
+from agents.agent_harness.messages import ModelTurn
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 
 
 def test_ad_runtime_forwards_generic_metrics_to_the_harness_kernel():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(content="Request completed.")
+
     metrics = InMemoryMetrics()
     runtime = AdvertisingComposition(
         require_llm=False,
+        llm_client=Model(),
         enforce_account_scope=False,
         metrics=metrics,
         start_background_workers=False,

@@ -409,6 +409,8 @@ class ToolResult:
         card_payload: Optional[dict] = None,
         simulated: bool = False,
         error_detail: Optional[ToolError] = None,
+        needs_input: bool = False,
+        interaction: Optional[dict[str, Any]] = None,
     ):
         self.success = success
         self.data = data or {}
@@ -417,6 +419,8 @@ class ToolResult:
         self.requires_confirmation = requires_confirmation
         self.card_payload = card_payload
         self.simulated = simulated
+        self.needs_input = bool(needs_input)
+        self.interaction = interaction
     
     @classmethod
     def ok(cls, data: dict[str, Any]) -> "ToolResult":
@@ -447,6 +451,8 @@ class ToolResult:
             ),
             "requires_confirmation": self.requires_confirmation,
             "card_payload": self.card_payload,
+            "needs_input": self.needs_input,
+            "interaction": self.interaction,
             "simulated": self.simulated,
         }
 

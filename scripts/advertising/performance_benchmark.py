@@ -1,10 +1,10 @@
 #!/usr/bin/env python3.13
-"""Bounded, no-network Runtime benchmark for local regression checks.
+"""Bounded, no-network Harness benchmark for local regression checks.
 
 This is intentionally a smoke benchmark, not a production capacity claim.
-It measures the deterministic offline path so changes to routing, lookup
-planning, context limits, or lifecycle cleanup are visible before Provider
-E2E testing. It never loads credentials and never calls a Provider.
+It injects a fixed, trusted ModelAdapter turn to measure Harness lifecycle and
+Tool execution overhead. It does not benchmark model latency or parse prompts.
+It never loads credentials and never calls a Provider.
 """
 
 from __future__ import annotations
@@ -21,6 +21,27 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.evals.advertising.skill_up_engine import run as run_case  # noqa: E402
+from agents.agent_harness.messages import ModelTurn, ToolCall  # noqa: E402
+
+
+class _BenchmarkModel:
+    """Issue one fixed read call; this is a benchmark fixture, not an LLM."""
+
+    def __init__(self) -> None:
+        self._turn = 0
+
+    def complete(self, _messages, tools, _request):
+        self._turn += 1
+        if self._turn == 1:
+            available = {getattr(tool, "name", "") for tool in tools}
+            if "tiktok_list_apps" not in available:
+                raise RuntimeError("benchmark Tool is missing from the catalog")
+            return ModelTurn(tool_calls=(ToolCall(
+                "benchmark-apps-query",
+                "tiktok_list_apps",
+                {"account_id": "7397068114548195329"},
+            ),))
+        return ModelTurn(content="Benchmark fixture completed one app lookup.")
 
 
 def _percentile(values: list[float], percentile: float) -> float:
@@ -48,7 +69,7 @@ def run_benchmark(iterations: int = 10) -> dict:
             "case_id": f"benchmark-{index}",
             "workspace": "/tmp/ad-agent-benchmark",
             "messages": [{"role": "user", "content": prompt}],
-        })
+        }, model_adapter=_BenchmarkModel())
         durations.append((time.monotonic() - case_started) * 1000)
         if result.get("exit_code") != 0:
             failures += 1
@@ -63,6 +84,7 @@ def run_benchmark(iterations: int = 10) -> dict:
         "format_version": 1,
         "iterations": iterations,
         "prompt_class": "offline_lookup",
+        "model_adapter": "trusted scripted benchmark fixture",
         "latency_ms": {
             "p50": round(_percentile(durations, 50), 2),
             "p95": round(_percentile(durations, 95), 2),
@@ -76,7 +98,7 @@ def run_benchmark(iterations: int = 10) -> dict:
         "total_ms": round(total_ms, 2),
         "provider_calls": 0,
         "network_called": False,
-        "note": "offline smoke benchmark only; not a Provider capacity or live latency claim",
+        "note": "Harness smoke benchmark only; excludes model latency and Provider capacity",
     }
 
 

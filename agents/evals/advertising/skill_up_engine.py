@@ -138,6 +138,7 @@ def _session_result(
     runtime_result: Mapping[str, Any],
     duration_ms: int,
     workspace: Path,
+    model_name: str,
 ) -> Dict[str, Any]:
     """Build the stable skill-up result while retaining structured evidence."""
     reply = str(runtime_result.get("reply") or "")
@@ -155,7 +156,7 @@ def _session_result(
     transcript.append({"role": "assistant", "content": final_message})
     return {
         "engine": "ad-agent-runtime",
-        "model": "rule-parser/offline-fixture",
+        "model": model_name,
         "exit_code": 0,
         "duration_ms": duration_ms,
         "turns": max(1, sum(1 for message in messages if message["role"] == "user")),
@@ -207,7 +208,11 @@ def _trusted_eval_identity(root: Path):
     return whitelist, principal
 
 
-def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
+def run(
+    session_input: Mapping[str, Any],
+    *,
+    model_adapter: Any = None,
+) -> Dict[str, Any]:
     root = _bootstrap_import_path()
     from agents.agent_platform.data.persistence.store import AdAgentStore
     from agents.tools.advertising.application.ad_application import AdvertisingComposition
@@ -229,16 +234,16 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
     whitelist, principal = _trusted_eval_identity(root)
 
     # Bootstrap with an empty loader root, then use the public discovery seam
-    # once. This registers provider schemas before parsing (important for
-    # numeric/array fields) without loading the same Skill files twice.
+    # once. This registers provider schemas before execution without loading
+    # the same Skill files twice.
     store = AdAgentStore(":memory:")
     runtime = AdvertisingComposition(
         persistence_store=store,
         skill_roots=[str(skills_root / ".skill-up-bootstrap")],
-        # skill-up's Runtime engine intentionally uses deterministic rule
-        # parsing for offline contract evaluation. This is an explicit test
-        # mode; product Runtime defaults remain LLM-required.
-        require_llm=False,
+        # The runtime adapter uses the configured model in normal evaluation.
+        # Unit tests may inject a trusted in-process ModelAdapter; case input
+        # and the CLI protocol cannot construct or select one.
+        require_llm=model_adapter is None,
         offline_mode=True,
         execution_mode="dry_run",
         enforce_account_scope=True,
@@ -249,6 +254,8 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         # teardown against the temporary in-memory store.
         start_background_workers=False,
     )
+    if model_adapter is not None:
+        runtime.platform_application.agent.model = model_adapter
     # Always register the trusted provider Tool Source base first. A managed
     # Skill package is then loaded as an additional context root; it can guide
     # the plan but cannot replace or inject provider implementations.
@@ -292,6 +299,10 @@ def run(session_input: Mapping[str, Any]) -> Dict[str, Any]:
         runtime_result=runtime_result,
         duration_ms=duration_ms,
         workspace=workspace,
+        model_name=(
+            "trusted-injected-model-adapter"
+            if model_adapter is not None else "platform-configured-model"
+        ),
     )
 
 

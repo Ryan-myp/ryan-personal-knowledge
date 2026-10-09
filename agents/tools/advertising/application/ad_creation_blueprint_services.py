@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterable, Mapping, Optional
 
-from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.interfaces import ParsedIntent
+from agents.agent_harness.core.tool_ordering import order_by_resource_dependencies
 from agents.tools.advertising.shared.domain.blueprint import _schema_at_path
 
 logger = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class AdCreationBlueprintServicesMixin:
             )
         if not definitions:
             return None, "广告创建蓝图没有可用的创建能力。"
-        ordered = SimpleIntentRouter._order_by_resource_dependencies(definitions)
+        ordered = order_by_resource_dependencies(definitions)
         return {blueprint_platform: ordered}, None
 
 

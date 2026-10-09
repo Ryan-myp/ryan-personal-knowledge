@@ -839,7 +839,7 @@ def test_platform_tool_policy_enforces_schema_permissions_live_gate_and_audit():
     try:
         result = application.prompt("update", execution_mode="live")
         assert result.data["tool_results"][0]["is_error"] is True
-        assert "unknown fields" in result.data["tool_results"][0]["content"]
+        assert "not allowed" in result.data["tool_results"][0]["content"]
         assert calls == []
         assert any(
             event["decision"] == "blocked"

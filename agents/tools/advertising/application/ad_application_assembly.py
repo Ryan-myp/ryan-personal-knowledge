@@ -56,6 +56,7 @@ from .integration import (
     AdvertisingContextProvider,
     AdvertisingToolCatalog,
 )
+from .ad_tool_interaction import AdvertisingToolInteractionProvider
 from .ad_workflow_services import AdWorkflowServices
 from .input_builder import ToolInputBuilder
 from agents.agent_platform.infrastructure.durable import OutboxPublisher
@@ -455,6 +456,25 @@ class AdApplicationAssembly:
                 )
                 if not allowed:
                     return "scope_denied", str(message)
+            if str(getattr(tool, "action", "") or "").lower() == "create":
+                interaction_context = ToolCallContext(
+                    request=request,
+                    assistant_message=None,
+                    tool_call=ToolCall(
+                        id="creation-input-check",
+                        name=str(getattr(tool, "name", "") or ""),
+                        arguments=dict(arguments),
+                    ),
+                    state=None,
+                    tool_definition=tool,
+                )
+                if interaction_provider.creation_input_required(
+                    interaction_context
+                ):
+                    return (
+                        "creation_input_required",
+                        "广告创建蓝图仍缺少必填字段，请先补充创建表单",
+                    )
             if (
                 str(getattr(request, "execution_mode", "") or "").lower() == "live"
                 and bool(getattr(tool, "is_write_tool", False))
@@ -601,6 +621,7 @@ class AdApplicationAssembly:
                 create=not confirmed,
             )
 
+        interaction_provider = AdvertisingToolInteractionProvider(runtime)
         tool_policy = ToolExecutionPolicy(
             permissions=frozenset(runtime._granted_permissions),
             allow_live_writes=bool(runtime.allow_live_writes),
@@ -616,6 +637,7 @@ class AdApplicationAssembly:
             require_confirmation_for_writes=True,
             before_check=policy_scope_check,
             confirmation_builder=confirmation_builder,
+            interaction_builder=interaction_provider.build,
             live_approved_tools_provider=lambda: runtime._live_approved_tools,
             require_audit=True,
             idempotency_store=(

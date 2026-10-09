@@ -32,6 +32,8 @@ from agents.tools.advertising.shared.domain.auth import normalize_account_id
 from agents.agent_harness.core.namespace import normalize_namespace as normalize_platform
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
+from agents.agent_harness.messages import ModelTurn
+from agents.tests.advertising.harness_models import call, install
 
 
 def whitelist(**accounts):
@@ -45,6 +47,14 @@ def meta_principal():
         user_id="u1",
         permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
         account_scope={"meta": frozenset({"m1"})},
+    )
+
+
+def script_tool_calls(runtime, *tool_calls):
+    return install(
+        runtime,
+        ModelTurn(tool_calls=tuple(tool_calls)),
+        ModelTurn(content="Tool calls completed or were safely rejected."),
     )
 
 
@@ -405,6 +415,16 @@ def test_four_channel_create_chains_are_dry_run_only(
     validator.allowed_accounts = {platform: [account_id]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(factory())
+    create_tool = next(
+        definition.name
+        for definition in runtime.registry.list_all()
+        if definition.is_write_tool and definition.action == "create"
+        and definition.resource_type == "campaign"
+    )
+    script_tool_calls(
+        runtime,
+        call(create_tool, platform_params.get(create_tool, {})),
+    )
 
     result = runtime.run(
         f"创建 {platform} campaign 名称=smoke",
@@ -420,12 +440,26 @@ def test_four_channel_create_chains_are_dry_run_only(
 
 
 def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
-    """The provider-owned alias must keep the TikTok create chain intact."""
+    """The generic Harness selects a provider Tool; it does not build a private chain."""
     runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(tiktok=["t1"]),
     )
     runtime.register_tool_source(create_tiktok_tool_source())
+    script_tool_calls(
+        runtime,
+        call(
+            "tiktok_smart_plus_create_campaign",
+            {
+                "account_id": "t1",
+                "campaign_name": "daily-budget-chain",
+                "objective_type": "PRODUCT_SALES",
+                "campaign_type": "REGULAR_CAMPAIGN",
+                "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+                "budget": 100,
+            },
+        ),
+    )
 
     result = runtime.run(
         "创建 TikTok campaign 名称=daily-budget-chain",
@@ -461,14 +495,23 @@ def test_tiktok_cross_channel_create_maps_daily_budget_to_adgroup_budget():
     assert result["ui"]["cards"] or result["ui"]["clarification"]
 
 
-def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
-    """One incomplete channel must not let another channel create first."""
+def test_cross_channel_create_calls_enter_the_same_harness_interaction_path():
+    """Separate Provider Tools share Harness policy without a private preflight loop."""
     runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(meta=["m1"], tiktok=["t1"]),
     )
     runtime.register_tool_source(create_meta_tool_source())
     runtime.register_tool_source(create_tiktok_tool_source())
+    script_tool_calls(
+        runtime,
+        call("meta_create_campaign", {"name": "preflight"}, call_id="meta-create"),
+        call(
+            "tiktok_smart_plus_create_campaign",
+            {"account_id": "t1", "campaign_name": "preflight"},
+            call_id="tiktok-create",
+        ),
+    )
 
     result = runtime.run(
         "创建 Meta campaign，并创建 TikTok campaign 名称=preflight",
@@ -506,7 +549,9 @@ def test_cross_channel_create_preflight_blocks_all_chains_before_execution():
 
     assert result["results"] == []
     assert result["workflow_id"] is None
-    assert result["ui"].get("cards") or result["ui"].get("clarification")
+    assert result["needs_input"] is True
+    assert result["tool_results"]
+    assert all("interaction" in item for item in result["tool_results"])
     assert result["tool_plan"] == {}
 
 
@@ -515,6 +560,10 @@ def test_structured_google_platform_alias_params_reach_provider_tool():
     validator.allowed_accounts = {"google-ads": ["g1"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_google_tool_source())
+    script_tool_calls(runtime, call(
+        "google_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+    ))
 
     result = runtime.run(
         "更新 Google Ads campaign campaign_id=123",
@@ -523,14 +572,18 @@ def test_structured_google_platform_alias_params_reach_provider_tool():
         platform_params={
             "google-ads": {
                 "customer_id": "g1",
-                "updates": {"status": "PAUSED"},
             }
         },
+        principal=RequestPrincipal(
+            user_id="alias-user",
+            permissions=frozenset({"ads.read", "ads.plan"}),
+            account_scope={"google-ads": frozenset({"g1"})},
+        ),
     )
 
     assert result["results"][0]["success"] is True
     assert result["results"][0]["data"]["input"]["updates"] == {
-        "status": "PAUSED"
+        "status": "PAUSED",
     }
 
 
@@ -598,6 +651,16 @@ def test_provider_free_detail_reads_fail_closed_for_all_channels():
             offline_mode=False,
         )
         runtime.register_tool_source(factory())
+        detail_tool = {
+            "meta": "meta_get_campaign",
+            "google-ads": "google_get_campaign",
+            "tiktok": "tiktok_get_campaign",
+            "dv360": "dv360_get_campaign",
+        }[platform]
+        script_tool_calls(
+            runtime,
+            call(detail_tool, {"campaign_id": "123"}),
+        )
         result = runtime.run(
             f"查询 {'Google Ads' if platform == 'google-ads' else platform} campaign 详情 campaign_id=123",
             account_id=account,
@@ -812,6 +875,12 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
     )
     runtime.register_tool_source(create_meta_tool_source(client))
     runtime.registry.get("meta_update_campaign")[0].live_support = True
+    update = call(
+        "meta_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        call_id="confirm-update",
+    )
+    script_tool_calls(runtime, update)
     planned = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="confirm-session",
@@ -820,6 +889,7 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
         principal=meta_principal(),
     )
     payload = planned["results"][0]["confirmation_payload"]
+    script_tool_calls(runtime, update)
     accepted = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="confirm-session",
@@ -832,6 +902,12 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
     assert accepted["results"][0]["success"] is True
     assert len(client.calls) == 1
 
+    changed_update = call(
+        "meta_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "ACTIVE"}},
+        call_id="changed-update",
+    )
+    script_tool_calls(runtime, changed_update)
     changed = runtime.run(
         "更新 Meta campaign campaign_id=123 status=ACTIVE",
         session_id="confirm-session",
@@ -846,21 +922,12 @@ def test_confirmation_payload_is_bound_to_the_exact_plan(tmp_path):
     assert len(client.calls) == 1
 
 
-def test_live_cross_channel_batch_is_explicitly_unsupported():
-    runtime = AdvertisingComposition(require_llm=False,
-        whitelist_validator=whitelist(meta=["m1"]),
-        execution_mode=ExecutionMode.LIVE.value,
-        allow_live_writes=True,
-        granted_permissions={"ads.read", "ads.plan", "ads.write"},
-    )
+def test_legacy_cross_channel_batch_tool_is_not_registered():
+    runtime = AdvertisingComposition(require_llm=False)
     runtime.register_tool_source(create_meta_tool_source())
-    result = runtime.run(
-        "批量暂停 Meta campaign_ids=101,102",
-        account_id="m1",
-    )
-    assert result["results"]
-    assert all(item["success"] is False for item in result["results"])
-    assert all(item["data"]["execution_status"] == "unsupported" for item in result["results"])
+    names = {definition.name for definition in runtime.registry.list_all()}
+    assert "meta_update_campaign" in names
+    assert not any("cross_channel" in name or "batch_pause" in name for name in names)
 
 
 def test_create_tools_are_not_marked_safe_to_replay():
@@ -1067,6 +1134,14 @@ def test_tool_specific_unknown_creation_parameter_is_not_silently_dropped():
     validator.allowed_accounts = {"meta": ["m1"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
+    script_tool_calls(runtime, call(
+        "meta_create_campaign",
+        {
+            "name": "Contract test",
+            "objective": "OUTCOME_SALES",
+            "unsupported_future_field": "must-be-declared",
+        },
+    ))
     result = runtime.run(
         "创建 Meta campaign",
         account_id="m1",
@@ -1089,6 +1164,18 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
     validator.allowed_accounts = {"tiktok": ["t1"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_tiktok_tool_source())
+    script_tool_calls(runtime, call(
+        "tiktok_smart_plus_create_campaign",
+        {
+            "account_id": "t1",
+            "campaign_name": "Android acquisition",
+            "objective_type": "APP_PROMOTION",
+            "app_promotion_type": "APP_ACQUISITION",
+            "campaign_type": "REGULAR_CAMPAIGN",
+            "budget_mode": "BUDGET_MODE_DAY",
+            "daily_budget": 50,
+        },
+    ))
     result = runtime.run(
         "创建 TikTok campaign",
         account_id="t1",
@@ -1116,7 +1203,7 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
     )
     assert result["results"] == []
     assert result["ui"]["cards"]
-    assert result["response_source"] == "creation_card"
+    assert result["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
 
 
 def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
@@ -1124,6 +1211,16 @@ def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
     runtime.register_tool_source(create_tiktok_tool_source())
+    script_tool_calls(
+        runtime,
+        call(
+            "meta_create_campaign", {"name": "explicit-accounts-only"},
+            call_id="meta-account-required",
+        ),
+        call("tiktok_smart_plus_create_campaign", {
+            "campaign_name": "explicit-accounts-only",
+        }, call_id="tiktok-account-required"),
+    )
 
     result = runtime.run(
         "创建 Meta campaign，并创建 TikTok campaign 名称=explicit-accounts-only",
@@ -1131,12 +1228,15 @@ def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     )
 
     assert result["workflow_id"] is None
-    assert result["needs_confirmation"] is False
-    assert result["ui"]["clarification"]
+    assert result["tool_results"]
+    assert all(
+        "请求缺少受控账户范围" in str(item.get("content") or "")
+        for item in result["tool_results"]
+    )
     assert result["results"] == []
 
 
-def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
+def test_harness_lookup_mints_context_bound_selection_token():
     class LookupClient:
         platform = "tiktok"
 
@@ -1150,6 +1250,9 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
         selection_token_secret="selection-secret-1234",
     )
     runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
+    script_tool_calls(runtime, call(
+        "tiktok_list_apps", {"account_id": "t1"}, call_id="list-apps",
+    ))
 
     lookup = runtime.run(
         "查询 TikTok apps",
@@ -1165,6 +1268,19 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
     assert option["value"] == "app-1"
     assert option["selection_token"] != "<redacted>"
 
+    script_tool_calls(runtime, call(
+        "tiktok_smart_plus_create_campaign",
+        {
+            "account_id": "t1",
+            "campaign_name": "App acquisition",
+            "objective_type": "APP_PROMOTION",
+            "app_promotion_type": "APP_INSTALL",
+            "campaign_type": "REGULAR_CAMPAIGN",
+            "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+            "budget": 50,
+        },
+        call_id="create-app-campaign",
+    ))
     planned = runtime.run(
         "创建 TikTok campaign",
         session_id="selection-session",
@@ -1203,7 +1319,7 @@ def test_live_lookup_mints_context_bound_selection_token_for_dry_run_create():
     )
     assert planned["results"] == []
     assert planned["ui"]["cards"]
-    assert planned["tool_plan"] == {}
+    assert planned["workflow_id"] is None
 
 
 def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
@@ -1446,23 +1562,43 @@ def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
     assert any("selective_optimization" in error for error in errors)
 
 
-def test_provider_status_is_normalized_before_dry_run_update_plan():
+def test_provider_native_status_values_are_preserved_in_dry_run_plan():
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = {"tiktok": ["t1"], "google-ads": ["g1"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_tiktok_tool_source())
     runtime.register_tool_source(create_google_tool_source())
+    script_tool_calls(runtime, call(
+        "tiktok_update_campaign",
+        {"campaign_id": "123", "updates": {"status": 0}},
+    ))
+    tiktok_principal = RequestPrincipal(
+        user_id="u1", permissions=frozenset({"ads.read", "ads.plan"}),
+        account_scope={"tiktok": frozenset({"t1"})},
+    )
 
     tiktok = runtime.run(
         "更新 TikTok campaign campaign_id=123 status=PAUSED",
         account_id="t1",
+        principal=tiktok_principal,
+        platform_params={"tiktok": {"account_id": "t1"}},
     )
     tiktok_updates = tiktok["results"][0]["data"]["input"]["updates"]
-    assert tiktok_updates == {"campaign_group_status": 0}
+    assert tiktok_updates == {"status": 0}
 
+    script_tool_calls(runtime, call(
+        "google_update_campaign",
+        {"campaign_id": "456", "updates": {"status": "ENABLED"}},
+    ))
+    google_principal = RequestPrincipal(
+        user_id="u1", permissions=frozenset({"ads.read", "ads.plan"}),
+        account_scope={"google-ads": frozenset({"g1"})},
+    )
     google = runtime.run(
         "更新 Google campaign campaign_id=456 status=ACTIVE",
         account_id="g1",
+        principal=google_principal,
+        platform_params={"google-ads": {"customer_id": "g1"}},
     )
     google_updates = google["results"][0]["data"]["input"]["updates"]
     assert google_updates == {"status": "ENABLED"}
@@ -1474,11 +1610,28 @@ def test_common_business_objective_uses_skill_owned_provider_mapping():
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
     runtime.register_tool_source(create_tiktok_tool_source())
+    script_tool_calls(runtime, call(
+        "meta_create_campaign",
+        {"account_id": "m1", "name": "Sales", "objective": "OUTCOME_SALES"},
+        call_id="meta-sales-create",
+    ))
 
     meta = runtime.run("创建 Meta campaign objective=销售 名称=Sales", account_id="m1")
     assert meta["results"] == []
     assert meta["ui"].get("cards") or meta["ui"].get("clarification")
 
+    script_tool_calls(runtime, call(
+        "tiktok_smart_plus_create_campaign",
+        {
+            "account_id": "t1",
+            "campaign_name": "Sales",
+            "objective_type": "PRODUCT_SALES",
+            "sales_destination": "WEBSITE",
+            "campaign_type": "REGULAR_CAMPAIGN",
+            "budget_mode": "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+            "budget": 50,
+        },
+    ))
     tiktok = runtime.run(
         "创建 TikTok 销售 campaign 名称=Sales",
         account_id="t1",
@@ -1501,6 +1654,10 @@ def test_dry_run_reports_provider_fields_still_pending_without_calling_api():
     validator.allowed_accounts = {"meta": ["m1"]}
     runtime = AdvertisingComposition(require_llm=False, whitelist_validator=validator)
     runtime.register_tool_source(create_meta_tool_source())
+    script_tool_calls(runtime, call(
+        "meta_create_campaign",
+        {"account_id": "m1", "name": "Pending provider fields"},
+    ))
     result = runtime.run(
         "创建 Meta campaign 名称=Pending provider fields",
         account_id="m1",
@@ -1755,6 +1912,12 @@ def test_write_reservation_survives_runtime_restart():
     )
     first_runtime.register_tool_source(create_meta_tool_source(first_client))
     first_runtime.registry.get("meta_update_campaign")[0].live_support = True
+    update_call = call(
+        "meta_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        call_id="reservation-plan",
+    )
+    script_tool_calls(first_runtime, update_call)
     planned = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="persistent-confirm",
@@ -1763,6 +1926,7 @@ def test_write_reservation_survives_runtime_restart():
         principal=meta_principal(),
     )
     payload = planned["results"][0]["confirmation_payload"]
+    script_tool_calls(first_runtime, update_call)
     executed = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="persistent-confirm",
@@ -1785,6 +1949,11 @@ def test_write_reservation_survives_runtime_restart():
     )
     second_runtime.register_tool_source(create_meta_tool_source(second_client))
     second_runtime.registry.get("meta_update_campaign")[0].live_support = True
+    script_tool_calls(second_runtime, call(
+        "meta_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        call_id="reservation-duplicate",
+    ))
     duplicate = second_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="persistent-confirm",
@@ -1815,6 +1984,12 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
     )
     first_runtime.register_tool_source(create_meta_tool_source(first_client))
     first_runtime.registry.get("meta_update_campaign")[0].live_support = True
+    update_call = call(
+        "meta_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        call_id="uncertain-plan",
+    )
+    script_tool_calls(first_runtime, update_call)
 
     planned = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
@@ -1824,6 +1999,7 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
         principal=meta_principal(),
     )
     payload = planned["results"][0]["confirmation_payload"]
+    script_tool_calls(first_runtime, update_call)
     uncertain = first_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="uncertain-write",
@@ -1836,7 +2012,12 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
 
     assert uncertain["results"][0]["success"] is False
     assert uncertain["results"][0]["data"]["execution_status"] == "unknown"
-    assert store.get_workflow(uncertain["workflow_id"])["status"] == "recovery_required"
+    assert uncertain["recovery_required"] is True
+    assert uncertain["effect_state"] == "unknown"
+    run_record = store.get_execution_run(
+        uncertain["run_id"], user_id="u1", tenant_id="default",
+    )
+    assert run_record.status == "recovery_required"
     reservation = store._get_conn().execute(
         "SELECT status FROM write_reservations"
     ).fetchone()
@@ -1853,6 +2034,11 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
     )
     second_runtime.register_tool_source(create_meta_tool_source(second_client))
     second_runtime.registry.get("meta_update_campaign")[0].live_support = True
+    script_tool_calls(second_runtime, call(
+        "meta_update_campaign",
+        {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        call_id="uncertain-retry",
+    ))
     retry = second_runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="uncertain-write",

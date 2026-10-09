@@ -48,37 +48,14 @@ class AdvertisingCatalogService:
                 return canonical
         return normalized
 
-    def refresh_parser_catalog(self) -> None:
+    def refresh_tool_catalog(self) -> None:
         runtime = self.runtime
         runtime._context_service().clear()
-        definitions = runtime.registry.list_all()
         platform_application = getattr(runtime, "_platform_application", None)
         if platform_application is not None:
             platform_application.tool_source_ids = tuple(
                 runtime.registry.source_snapshot()
             )
-        refresh_catalog = getattr(runtime.intent_parser, "refresh_tool_catalog", None)
-        if callable(refresh_catalog):
-            refresh_catalog(definitions)
-        for feature in runtime.features:
-            register_descriptors = getattr(
-                runtime.intent_parser,
-                "register_intent_descriptors",
-                None,
-            )
-            if callable(register_descriptors):
-                register_descriptors(feature.intent_descriptors())
-        for skill in list(runtime._skill_objects.values()):
-            register_aliases = getattr(
-                runtime.intent_parser,
-                "register_namespace_aliases",
-                None,
-            )
-            if callable(register_aliases):
-                register_aliases(
-                    skill.namespace,
-                    skill.namespace_aliases or [],
-                )
 
     def on_tool_catalog_changed(self) -> None:
         runtime = self.runtime
@@ -90,7 +67,7 @@ class AdvertisingCatalogService:
                 else {},
                 tool_name=definition.name,
             )
-        self.refresh_parser_catalog()
+        self.refresh_tool_catalog()
 
     def register_tool(
         self,

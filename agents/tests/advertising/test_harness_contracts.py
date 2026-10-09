@@ -161,7 +161,7 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     skill = CustomSkill()
     assert runtime.register_skill(skill, "meta") is True
-    original_refresh = runtime._refresh_parser_catalog
+    original_refresh = runtime._refresh_tool_catalog
     failed = {"value": False}
 
     def fail_once():
@@ -170,7 +170,7 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
             raise RuntimeError("forced catalog refresh failure")
         return original_refresh()
 
-    runtime._refresh_parser_catalog = fail_once
+    runtime._refresh_tool_catalog = fail_once
     assert runtime.unload_skill("meta") is False
     assert [tool.name for tool in runtime.registry.list_all()] == [
         "atomic_unload_read"
@@ -178,7 +178,7 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     assert runtime.get_loaded_skills()["atomic-unload"] is skill
     assert runtime.plugin_registry.get("skill:atomic-unload").state.value == "active"
 
-    runtime._refresh_parser_catalog = original_refresh
+    runtime._refresh_tool_catalog = original_refresh
     assert runtime.unload_skill("meta") is True
     assert runtime.registry.list_all() == []
 
@@ -214,14 +214,14 @@ def test_skill_lifecycle_serializes_register_and_unload():
     runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     entered_refresh = threading.Event()
     release_refresh = threading.Event()
-    original_refresh = runtime._refresh_parser_catalog
+    original_refresh = runtime._refresh_tool_catalog
 
     def blocked_refresh():
         entered_refresh.set()
         assert release_refresh.wait(timeout=2)
         return original_refresh()
 
-    runtime._refresh_parser_catalog = blocked_refresh
+    runtime._refresh_tool_catalog = blocked_refresh
     register_result = []
     unregister_result = []
     register_thread = threading.Thread(
@@ -279,14 +279,15 @@ def test_tool_source_unload_clears_tools_and_derived_discovery_indexes():
     runtime.register_tool_source(create_meta_tool_source())
 
     assert runtime.registry.list_by_namespace("meta")
-    assert "meta_create_campaign" in runtime.intent_parser._intent_candidates_prompt()
+    assert "meta_create_campaign" in {
+        definition.name for definition in runtime.registry.list_all()
+    }
     assert runtime.parameter_catalogs.list("meta")
     assert runtime.list_ad_formats("meta")
 
     assert runtime.unload_skill("meta") is True
 
     assert runtime.registry.list_by_namespace("meta") == []
-    assert "meta_create_campaign" not in runtime.intent_parser._intent_candidates_prompt()
     assert runtime.parameter_catalogs.list("meta") == []
     assert runtime.list_ad_formats("meta") == []
     assert runtime.skill_loader.get_by_namespace("meta") == []
@@ -715,8 +716,9 @@ def test_harness_schema_gate_prevents_invalid_create_from_becoming_workflow():
     # The Harness enforces the Tool schema; the application does not create a
     # separate workflow or clarification state machine.
     assert result["workflow_id"] is None
-    assert result["results"]
-    assert result["results"][0]["success"] is False
+    assert result["results"] == []
+    assert result["needs_input"] is True
+    assert result["tool_results"][0]["is_error"] is True
 
 
 def test_workflow_resume_plan_preserves_account_scope():

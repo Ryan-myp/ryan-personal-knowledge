@@ -35,6 +35,23 @@ def _files(marker="not-imported"):
     }
 
 
+def test_builtin_skill_packages_are_visible_as_advisory_plugins():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        features=[],
+        start_background_workers=False,
+    )
+    try:
+        records = runtime.plugin_registry.list(kind="skill")
+
+        assert records
+        assert all(record.state.value == "active" for record in records)
+        assert all(record.manifest.executable is False for record in records)
+        assert all(record.manifest.source == "builtin" for record in records)
+    finally:
+        runtime.close(wait=True)
+
+
 def test_plugin_package_versions_are_immutable_and_tenant_scoped(tmp_path):
     store = AdAgentStore(str(tmp_path / "plugins.db"))
     manager = PluginPackageManager(store)
