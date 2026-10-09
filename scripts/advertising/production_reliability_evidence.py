@@ -250,7 +250,7 @@ def _child_run_worker(
     timeout_seconds: float,
     hold_before_run_seconds: float = 0.0,
 ) -> int:
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 
     store = _open_store(database)
     runtime_entry_calls = 0

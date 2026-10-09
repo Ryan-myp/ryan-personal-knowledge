@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Mapping, Optional
 
 from agents.agent_platform.data.persistence.models import ScheduledTaskRecord, ScheduledTaskRunRecord
-from .ad_conversation_services import AdConversationServices
+from ..operations.ad_conversation_services import AdConversationServices
 from agents.agent_platform.infrastructure.durable import TaskExecutionContext
 
 

@@ -37,15 +37,13 @@ agents/
 │
 ├── tools/
 │   └── advertising/                # Reusable advertising Tool Sources
-│       ├── application/            # Advertising composition and API-facing adapters
-│       │   ├── ad_application.py   # Public advertising scenario facade
-│       │   ├── ad_application_bootstrap.py
-│       │   ├── ad_application_assembly.py
-│       │   ├── ad_application_components.py
-│       │   ├── ad_run_service.py    # Generic Run request/response envelope adapter
-│       │   ├── ad_run_projection.py # Tool interactions to advertising UI projection
-│       │   ├── input_builder.py    # Schema-driven Tool input projection
-│       │   └── parameter_selection.py # Lookup options and scoped selection tokens
+│       ├── application/            # Advertising-specific application layer
+│       │   ├── composition/        # Scenario facade, bootstrap and dependency assembly
+│       │   ├── creation/           # Blueprints, contracts, templates and UI projection
+│       │   ├── execution/          # Account policy, Tool inputs and executor adapters
+│       │   ├── integrations/       # Tool/Skill Sources and provider/context adapters
+│       │   ├── operations/         # Session, task, scheduling and workflow services
+│       │   └── run/                # Harness Run envelope and advertising projections
 │       ├── shared/                 # Shared contracts, surfaces and templates
 │       ├── clients/                # Provider SDK/HTTP clients
 │       ├── providers/              # Provider Tool definitions and executors
@@ -104,11 +102,31 @@ local `.env` files and provider evidence are data, not Python package modules.
 | Harness | Agent loop, Run/Turn lifecycle, Tool-call scheduling, generic clarification and bounded follow-up | HTTP serving, Provider names, advertising account fields, business policy |
 | Platform | Agent/Scenario registry, API hosting, MCP, Knowledge/Memory services, governance, durable infrastructure | Provider-specific campaign logic or advertising workflow branches |
 | Tool Source | Closed schemas, effect/risk/replay metadata, fixed executors, Provider clients and provider-specific templates | Run lifecycle, direct model loop, permission bypasses |
-| Advertising application | Advertising composition, account-aware policy adapters, creation configuration and response/UI projection | Harness Run loop, Provider HTTP execution, duplicate Tool policy gate |
+| Advertising application | Scenario composition, account-aware policy, creation configuration, source integration and Run/UI projection | Harness Run loop, Provider HTTP execution, duplicate Tool policy gate |
 | Skills | Natural-language SOP, trigger conditions, business guidance and references | Executable API calls, credential access, Tool registration |
 | Knowledge | Original Markdown and other advisory source material | Identity, authorization or executable workflow definitions |
 | Scenario | Selecting registered Tool/Skill/Knowledge sources and scenario metadata | Planner, turn handler, Runtime, API client or business control flow |
 | Deployment | HTTP/CLI hosting, configuration loading, static assets and construction of the selected application | Run lifecycle, a second Tool gate, or direct Provider API calls |
+
+### Advertising Application Layers
+
+The `tools/advertising/application` package is divided by application responsibility,
+not by generic framework runtime concepts. Its root contains only package metadata;
+each implementation module has one owner:
+
+| Package | Owns | Dependency rule |
+| --- | --- | --- |
+| `composition/` | Public `AdvertisingComposition`, bootstrap, service graph and hooks | May assemble all application packages; no package imports it |
+| `creation/` | Creation blueprints, contracts, templates and UI configuration | Self-contained; Provider execution stays in Tools |
+| `execution/` | Account scope, Tool input projection, policy construction and executor adapter | Self-contained advertising edge around Harness execution contracts |
+| `integrations/` | Provider/Skill Sources, plugin lifecycle and advertising context adapters | Self-contained; does not own Run state |
+| `operations/` | Session, conversation, persistence, scheduling, task and workflow use cases | Self-contained application services |
+| `run/` | Run request/response mapping, controls, context and presentation adapters | May depend on execution policy and integration bindings, never owns Harness lifecycle |
+
+Composition is the only upward assembly layer. Other layers do not import composition;
+the automated architecture test checks exact module ownership and allowed dependency
+direction. There are no flat-module forwarding shims: callers import from the owning
+package.
 
 ## Dependency Direction
 
@@ -306,7 +324,7 @@ a second turn state machine.
 Advertising startup wiring is split into three explicit owners:
 `AdApplicationBootstrap` initializes advertising services and policy,
 `AdApplicationAssembly` builds the Platform/Harness dependency graph, and
-`ad_application_components.py` owns the typed assembly options, service graph,
+`composition/ad_application_components.py` owns the typed assembly options, service graph,
 RunStore adapter, and one-time installation onto the advertising facade.
 `AdvertisingToolPolicyFactory` owns construction of the shared Tool policy with
 advertising account-scope and confirmation hooks. `AdvertisingRunService` invokes
@@ -322,12 +340,33 @@ by the generic Kernel as `recovery_required`; diagnostics contain only the
 exception type, and a failed repair enqueue remains an error.
 
 Schema-driven parameter construction and lookup authorization now have separate
-owners. `input_builder.py` projects intent, session state and declared Tool schema
-metadata into Tool arguments. `parameter_selection.py` discovers lookup-backed
+owners. `execution/input_builder.py` projects intent, session state and declared Tool schema
+metadata into Tool arguments. `execution/parameter_selection.py` discovers lookup-backed
 fields, signs picker options to the session/user/account/tool scope, and enforces
 token provenance for live create/upload calls. All consumers now depend on the
 selection service directly; the input builder no longer exposes a second copy of
 that responsibility or forwarding methods.
+
+### Application Ownership Migration (2026-10-09)
+
+The advertising application modules are now physically organized into `composition/`,
+`creation/`, `execution/`, `integrations/`, `operations/` and `run/`. Deployment,
+scenario, evaluation, script and test imports point to the owning package; the former
+flat module paths are not retained. Advertising turn context sits beside the Tool/Skill
+integration that consumes it, so integrations do not depend on Run adapters. An
+architecture test checks exact module ownership and permitted dependency direction.
+The move also keeps default Skill and Knowledge roots anchored at the advertising
+package, with regression coverage for source discovery and plugin registration. Tool
+execution now fails closed with a sanitized result if an isolated Provider Client
+cannot accept the requested API-version marker; it no longer silently continues.
+
+Validation at this checkpoint: `make ad-agent-check` passed (`1,254 passed`, one
+Starlette/httpx deprecation warning); the contract audit validated 297 Tools across
+four Tool Sources. `git diff --check` passed. Qguard remains below its configured
+threshold: 121 findings in the advertising application package and 4,862 repository
+wide, primarily long functions, parameter counts and generic exception boundaries.
+Those findings are recorded as remaining maintainability work, not represented as a
+passing quality gate.
 
 Stale durable Run recovery now fails startup closed if the persistence recovery
 operation raises. Previously that exception was logged and suppressed, allowing

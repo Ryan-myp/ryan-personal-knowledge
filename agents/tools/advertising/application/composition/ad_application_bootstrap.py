@@ -38,19 +38,19 @@ from agents.agent_platform.data.knowledge.wiki import MarkdownWikiKnowledgeProvi
 from agents.tools.advertising.shared.domain.parameter_catalog import ParameterCatalogRegistry
 from agents.tools.advertising.shared.domain.parameter_selection import ParameterSelectionSigner
 from agents.agent_platform.data.knowledge.knowledge_management import ManagedKnowledgeProvider
-from .account_policy import AccountWhitelistValidator
+from ..execution.account_policy import AccountWhitelistValidator
 from .ad_application_assembly import AdApplicationAssembly
 from .ad_application_components import AdApplicationAssemblyOptions
-from .ad_runtime_context import AdvertisingRuntimeContext
-from .ad_runtime_catalog import AdvertisingCatalogService
-from .ad_runtime_controls import AdvertisingRuntimeControls
-from .ad_runtime_lifecycle import AdvertisingLifecycleService
-from .ad_runtime_policy import AdvertisingRuntimePolicy
-from .ad_runtime_presentation import AdvertisingPresentationService
-from .ad_runtime_reconciliation import AdvertisingRuntimeReconciliation
-from .ad_run_service import AdvertisingRunService
-from .ad_runtime_scope import AdvertisingRuntimeScope
-from .provider_bindings import ProviderBindings
+from ..run.ad_runtime_context import AdvertisingRuntimeContext
+from ..run.ad_runtime_catalog import AdvertisingCatalogService
+from ..run.ad_runtime_controls import AdvertisingRuntimeControls
+from ..run.ad_runtime_lifecycle import AdvertisingLifecycleService
+from ..run.ad_runtime_policy import AdvertisingRuntimePolicy
+from ..run.ad_runtime_presentation import AdvertisingPresentationService
+from ..run.ad_runtime_reconciliation import AdvertisingRuntimeReconciliation
+from ..run.ad_run_service import AdvertisingRunService
+from ..run.ad_runtime_scope import AdvertisingRuntimeScope
+from ..integrations.provider_bindings import ProviderBindings
 from agents.agent_harness.skills.contract import SkillLoader
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
 
@@ -134,7 +134,7 @@ class AdApplicationBootstrap:
         skill_roots = options.get("skill_roots")
         if skill_roots is None:
             skill_roots = [
-                str(Path(__file__).resolve().parents[3] / "skills" / "advertising")
+                str(Path(__file__).resolve().parents[4] / "skills" / "advertising")
             ]
         runtime.skill_loader = SkillLoader(skill_roots)
         runtime.skill_loader.load_all()
@@ -223,7 +223,7 @@ class AdApplicationBootstrap:
         knowledge_provider = options.get("knowledge_provider")
         persistence_store = options.get("persistence_store")
         base_provider = knowledge_provider or MarkdownWikiKnowledgeProvider(
-            Path(__file__).resolve().parents[3]
+            Path(__file__).resolve().parents[4]
             / "knowledge" / "advertising" / "wiki",
             search_index=persistence_store,
         )

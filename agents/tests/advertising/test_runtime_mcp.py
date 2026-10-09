@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.agent_platform.integrations.mcp.runtime_mcp import RuntimeMCPServers, _current_principal
 from agents.agent_harness.core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolResult, ToolSchema,

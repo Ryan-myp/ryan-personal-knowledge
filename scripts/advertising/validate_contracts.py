@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.tools.advertising.application.ad_application import AdvertisingComposition  # noqa: E402
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
 from agents.tools.advertising.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
 )

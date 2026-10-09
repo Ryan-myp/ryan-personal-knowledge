@@ -11,9 +11,9 @@ from agents.agent_harness.core.tool_registry import SimpleToolRegistry
 from agents.agent_platform.data.persistence.models import OutboxEvent
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.agent_platform.infrastructure.durable import OutboxConsumer
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
-from agents.tools.advertising.application.security import RuntimeSecurity
-from agents.tools.advertising.application.tool_executor import classify_error
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.execution.security import RuntimeSecurity
+from agents.tools.advertising.application.execution.tool_executor import classify_error
 
 
 def _tool(name="meta_update_campaign", effect=ToolEffect.WRITE):

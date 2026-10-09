@@ -38,25 +38,25 @@ from agents.agent_platform.data.persistence.session_manager import SessionManage
 from agents.agent_platform.data.persistence.adapters import (
     PersistenceTranscriptStore,
 )
-from .account_context import AccountResolver
-from .ad_conversation_services import AdConversationServices
-from .ad_persistence_services import AdPersistenceServices
-from .ad_session_services import AdSessionServices
-from .ad_task_services import AdTaskServices
-from .integration import (
+from ..execution.account_context import AccountResolver
+from ..operations.ad_conversation_services import AdConversationServices
+from ..operations.ad_persistence_services import AdPersistenceServices
+from ..operations.ad_session_services import AdSessionServices
+from ..operations.ad_task_services import AdTaskServices
+from ..integrations.integration import (
     AdvertisingContextProvider,
     AdvertisingToolCatalog,
 )
-from .ad_tool_policy_factory import AdvertisingToolPolicyFactory
-from .ad_workflow_services import AdWorkflowServices
-from .input_builder import ToolInputBuilder
+from ..execution.ad_tool_policy_factory import AdvertisingToolPolicyFactory
+from ..operations.ad_workflow_services import AdWorkflowServices
+from ..execution.input_builder import ToolInputBuilder
 from agents.agent_platform.infrastructure.durable import OutboxPublisher
-from .scheduling_service import SchedulingService
-from .security import RuntimeSecurity
-from .services import AdRuntimeServices
+from ..operations.scheduling_service import SchedulingService
+from ..execution.security import RuntimeSecurity
+from ..operations.services import AdRuntimeServices
 from agents.agent_platform.infrastructure.durable import RuntimeSupervisor
-from .tool_executor import ToolExecutor
-from .workflow import WorkflowCoordinator
+from ..execution.tool_executor import ToolExecutor
+from ..operations.workflow import WorkflowCoordinator
 from .ad_application_components import (
     AdApplicationAssemblyOptions,
     AdApplicationComponents,

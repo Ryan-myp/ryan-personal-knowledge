@@ -49,7 +49,7 @@ from agents.ad_agent.application import (
 )
 from agents.agent_harness.redaction import redact_for_persistence
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
-from agents.tools.advertising.application.account_policy import AccountWhitelistValidator
+from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
 from agents.agent_platform.integrations.mcp.mcp_management import MCPServerManager
 from agents.agent_platform.integrations.mcp.runtime_mcp import RuntimeMCPServers
 from agents.agent_platform.management.skill_management import (

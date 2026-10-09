@@ -11,8 +11,8 @@ from agents.agent_harness.core.interfaces import (
 )
 from agents.agent_harness.core.scope import ResourceScope
 from agents.agent_harness import TurnRequest
-from agents.tools.advertising.application.account_context import AccountResolver
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.execution.account_context import AccountResolver
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 
 
 def _tool(**overrides):
@@ -357,7 +357,7 @@ def test_advertising_composition_injects_the_generic_model_directly():
 def test_generic_run_results_keep_tool_result_and_confirmation_contracts():
     from types import SimpleNamespace
 
-    from agents.tools.advertising.application.ad_run_projection import (
+    from agents.tools.advertising.application.run.ad_run_projection import (
         AdvertisingRunProjection,
     )
 
@@ -429,10 +429,10 @@ def test_generic_run_invokes_registered_advertising_tool_with_scoped_account():
                 ),))
             return ModelTurn(content="Found one campaign.")
 
-    from agents.tools.advertising.application.account_policy import (
+    from agents.tools.advertising.application.execution.account_policy import (
         AccountWhitelistValidator,
     )
-    from agents.tools.advertising.application.ad_application import (
+    from agents.tools.advertising.application.composition.ad_application import (
         AdvertisingComposition,
     )
     from agents.tools.advertising.providers.meta import create_meta_tool_source
@@ -493,10 +493,10 @@ def test_generic_run_rejects_model_selected_account_outside_trusted_scope():
                 arguments={"account_id": "other-account", "limit": 1},
             ),))
 
-    from agents.tools.advertising.application.account_policy import (
+    from agents.tools.advertising.application.execution.account_policy import (
         AccountWhitelistValidator,
     )
-    from agents.tools.advertising.application.ad_application import (
+    from agents.tools.advertising.application.composition.ad_application import (
         AdvertisingComposition,
     )
     from agents.tools.advertising.providers.meta import create_meta_tool_source
@@ -570,10 +570,10 @@ def test_generic_run_uses_model_tool_loop_for_follow_up_queries():
                 ),))
             return ModelTurn(content="Campaign details retrieved.")
 
-    from agents.tools.advertising.application.account_policy import (
+    from agents.tools.advertising.application.execution.account_policy import (
         AccountWhitelistValidator,
     )
-    from agents.tools.advertising.application.ad_application import (
+    from agents.tools.advertising.application.composition.ad_application import (
         AdvertisingComposition,
     )
     from agents.tools.advertising.providers.meta import create_meta_tool_source
@@ -618,7 +618,7 @@ def test_ad_runtime_has_no_ad_pipeline_modules_or_legacy_executor_boundary():
     assert not (root / "ad_turn_pipeline.py").exists()
     assert not (root / "ad_turn_stages.py").exists()
     assert not (root / "ad_turn_state.py").exists()
-    assembly = (root / "ad_application_assembly.py").read_text(encoding="utf-8")
+    assembly = (root / "composition/ad_application_assembly.py").read_text(encoding="utf-8")
     assert "AdvertisingTurnHandler" not in assembly
     assert "AdTurnPipeline" not in assembly
     assert "AdvertisingModelAdapter" not in assembly

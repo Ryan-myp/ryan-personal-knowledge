@@ -1,6 +1,6 @@
 from agents.agent_harness import InMemoryMetrics
 from agents.agent_harness.messages import ModelTurn
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 
 
 def test_ad_runtime_forwards_generic_metrics_to_the_harness_kernel():

@@ -197,7 +197,7 @@ def advertising_skill_source(*, source_id: str = "ad-skills") -> MarkdownSkillDi
     from pathlib import Path
 
     return MarkdownSkillDirectorySource(
-        Path(__file__).resolve().parents[3] / "skills" / "advertising",
+        Path(__file__).resolve().parents[4] / "skills" / "advertising",
         source_id=source_id,
     )
 

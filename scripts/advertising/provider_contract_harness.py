@@ -27,7 +27,7 @@ from agents.tools.advertising.providers.source_factory import (  # noqa: E402
 )
 from agents.agent_harness.messages import ModelTurn, ToolCall  # noqa: E402
 from agents.agent_platform.data.persistence.store import AdAgentStore  # noqa: E402
-from agents.tools.advertising.application.ad_application import AdvertisingComposition  # noqa: E402
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
 
 
 class _RecordingCampaignClient:

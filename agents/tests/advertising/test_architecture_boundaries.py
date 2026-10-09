@@ -10,11 +10,11 @@ from agents.agent_harness.core.interfaces import (
 )
 from agents.agent_harness import ModelTurn
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.agent_harness.skills.contract import SkillLoader
 from agents.skills.advertising.businesses.policy import BusinessSkillPolicy
-from agents.tools.advertising.application.account_policy import AccountWhitelistValidator
-from agents.tools.advertising.application.session_context import SessionContext
+from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
+from agents.tools.advertising.application.operations.session_context import SessionContext
 from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.intent import LLMIntentParser
 
@@ -30,6 +30,91 @@ def test_core_does_not_host_advertising_domain_modules():
     }
     assert not any((core / name).exists() for name in moved)
     assert all((ad_domain / name).exists() for name in moved)
+
+
+def test_advertising_application_modules_have_single_layer_ownership():
+    """Application modules live under their architectural responsibility."""
+    root = Path(__file__).resolve().parents[2] / "tools" / "advertising" / "application"
+    ownership = {
+        "composition": {
+            "ad_application.py", "ad_application_assembly.py",
+            "ad_application_bootstrap.py", "ad_application_components.py",
+            "ad_application_contracts.py", "ad_application_facade.py",
+            "ad_application_hooks.py", "ad_runtime_facades.py",
+        },
+        "creation": {
+            "ad_creation_blueprint_services.py", "ad_creation_catalog_services.py",
+            "ad_creation_contract_services.py", "ad_creation_services.py",
+            "ad_creation_template_services.py", "ad_creation_ui_services.py",
+        },
+        "execution": {
+            "account_context.py", "account_policy.py", "ad_tool_interaction.py",
+            "ad_tool_policy_factory.py", "input_builder.py",
+            "parameter_selection.py", "security.py", "tool_executor.py",
+        },
+        "integrations": {
+            "ad_provider_runtime_services.py", "ad_skill_discovery.py",
+            "ad_skill_lifecycle.py", "ad_skill_plugins.py",
+            "ad_tool_source_registration.py", "ad_tool_source_services.py",
+            "ad_turn_context.py", "integration.py", "provider_bindings.py",
+            "tool_source_context.py",
+        },
+        "operations": {
+            "ad_conversation_services.py", "ad_persistence_services.py",
+            "ad_session_services.py", "ad_task_operational_services.py",
+            "ad_task_services.py", "ad_workflow_provider_reconciliation.py",
+            "ad_workflow_services.py", "reconciliation.py",
+            "scheduling_service.py", "services.py", "session_context.py",
+            "workflow.py",
+        },
+        "run": {
+            "ad_run_memory.py", "ad_run_projection.py", "ad_run_service.py",
+            "ad_runtime_catalog.py", "ad_runtime_context.py",
+            "ad_runtime_controls.py", "ad_runtime_lifecycle.py",
+            "ad_runtime_policy.py", "ad_runtime_presentation.py",
+            "ad_runtime_reconciliation.py", "ad_runtime_scope.py",
+        },
+    }
+
+    expected = set().union(*ownership.values())
+    actual = {
+        path.name
+        for path in root.glob("*.py")
+        if path.name != "__init__.py"
+    }
+    assert actual == set()
+    assert expected == {
+        path.name
+        for package in ownership
+        for path in (root / package).glob("*.py")
+        if path.name != "__init__.py"
+    }
+    for package, modules in ownership.items():
+        package_path = root / package
+        assert (package_path / "__init__.py").is_file()
+        assert {path.name for path in package_path.glob("*.py")} - {"__init__.py"} == modules
+
+    allowed_dependencies = {
+        "composition": set(ownership),
+        "creation": {"creation"},
+        "execution": {"execution"},
+        "integrations": {"integrations"},
+        "operations": {"operations"},
+        "run": {"execution", "integrations", "run"},
+    }
+    for package, dependencies in allowed_dependencies.items():
+        for path in (root / package).glob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom) or not node.level:
+                    continue
+                dependency = (
+                    package if node.level == 1 else (node.module or "").split(".")[0]
+                )
+                assert dependency in dependencies, (
+                    f"{path.relative_to(root)} imports across an invalid layer: "
+                    f"{node.module or ''}"
+                )
 
 
 def test_core_contracts_do_not_publish_advertising_models_or_scope_fields():
@@ -161,7 +246,7 @@ def test_runtime_has_no_advertising_feature_turn_handlers():
 
 
 def test_creation_application_exposes_configuration_not_turn_handlers():
-    from agents.tools.advertising.application.ad_creation_services import (
+    from agents.tools.advertising.application.creation.ad_creation_services import (
         AdCreationServicesMixin,
     )
 
@@ -278,7 +363,7 @@ def test_parsed_intent_is_an_opaque_publisher_extension_envelope():
 
 def test_generic_workflow_coordinator_receives_scope_from_application_boundary():
     """Workflow infrastructure must not require an account resolver."""
-    from agents.tools.advertising.application.workflow import WorkflowCoordinator
+    from agents.tools.advertising.application.operations.workflow import WorkflowCoordinator
 
     class Store:
         def __init__(self):

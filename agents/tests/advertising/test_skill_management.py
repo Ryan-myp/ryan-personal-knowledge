@@ -5,7 +5,7 @@ import time
 import threading
 from pathlib import Path
 
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
 from agents.agent_harness.messages import ModelTurn

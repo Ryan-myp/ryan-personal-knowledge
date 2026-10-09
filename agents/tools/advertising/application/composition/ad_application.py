@@ -31,22 +31,22 @@ from agents.agent_harness.core.tool_selector import DynamicToolSelector
 from agents.agent_platform.data.knowledge.wiki import KnowledgeProvider
 from agents.tools.advertising.shared.domain.security import PROTECTED_INPUT_FIELDS
 from agents.agent_platform.data.persistence.interfaces import PersistenceBackend
-from .account_policy import AccountWhitelistValidator
+from ..execution.account_policy import AccountWhitelistValidator
 from .ad_application_contracts import (
     SessionBusyError,
     execution_mode_context,
 )
 from .ad_application_facade import AdApplicationFacadeMixin
 from .ad_application_hooks import AdApplicationHooksMixin
-from .ad_creation_services import AdCreationServicesMixin
-from .ad_tool_source_services import AdToolSourceLifecycleMixin
+from ..creation.ad_creation_services import AdCreationServicesMixin
+from ..integrations.ad_tool_source_services import AdToolSourceLifecycleMixin
 from .ad_runtime_facades import (
     AdConversationRuntimeFacade,
     AdSessionRuntimeFacade,
     AdTaskRuntimeFacade,
     AdWorkflowRuntimeFacade,
 )
-from .session_context import SessionContext
+from ..operations.session_context import SessionContext
 
 
 class AdvertisingComposition(

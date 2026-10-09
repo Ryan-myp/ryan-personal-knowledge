@@ -26,8 +26,8 @@ from agents.tools.advertising.shared.domain.provider_evidence import (  # noqa: 
     build_provider_evidence_report,
     validate_provider_evidence,
 )
-from agents.tools.advertising.application.account_policy import AccountWhitelistValidator  # noqa: E402
-from agents.tools.advertising.application.ad_application import AdvertisingComposition  # noqa: E402
+from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator  # noqa: E402
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
 from agents.tools.advertising.providers.source_factory import create_tool_source  # noqa: E402
 
 

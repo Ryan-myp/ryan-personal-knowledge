@@ -32,8 +32,8 @@ from agents.tools.advertising.clients.base import RateLimiter, TemporaryError
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
 from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.ad_application import AccountWhitelistValidator, AdvertisingComposition
-from agents.tools.advertising.application.reconciliation import ToolReadbackReconciler
+from agents.tools.advertising.application.composition.ad_application import AccountWhitelistValidator, AdvertisingComposition
+from agents.tools.advertising.application.operations.reconciliation import ToolReadbackReconciler
 
 
 def _whitelist(**accounts):
@@ -1289,7 +1289,7 @@ def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
 
 
 def test_tool_timeout_capacity_stays_reserved_until_handler_exits():
-    from agents.tools.advertising.application.tool_executor import ToolExecutor
+    from agents.tools.advertising.application.execution.tool_executor import ToolExecutor
 
     finished = threading.Event()
 
@@ -1376,7 +1376,7 @@ def test_invalid_persisted_execution_mode_fails_back_to_deployment_default():
 
 
 def test_execution_mode_cache_is_bounded_and_expires(monkeypatch):
-    import agents.tools.advertising.application.ad_runtime_controls as controls_module
+    import agents.tools.advertising.application.run.ad_runtime_controls as controls_module
 
     runtime = AdvertisingComposition(require_llm=False, execution_mode="dry_run")
     try:

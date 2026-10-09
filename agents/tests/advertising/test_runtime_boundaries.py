@@ -166,7 +166,7 @@ def test_task_outcome_is_not_inferred_from_handler_returning_normally():
 
 def test_application_runtime_has_no_direct_provider_factory_imports():
     source = open(
-        "agents/tools/advertising/application/ad_application_assembly.py",
+        "agents/tools/advertising/application/composition/ad_application_assembly.py",
         encoding="utf-8",
     ).read()
     tree = ast.parse(source)
@@ -185,9 +185,9 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     from pathlib import Path
 
     root = Path("agents/tools/advertising/application")
-    facade = (root / "ad_application.py").read_text(encoding="utf-8")
-    bootstrap = (root / "ad_application_bootstrap.py").read_text(encoding="utf-8")
-    assembly = (root / "ad_application_assembly.py").read_text(encoding="utf-8")
+    facade = (root / "composition/ad_application.py").read_text(encoding="utf-8")
+    bootstrap = (root / "composition/ad_application_bootstrap.py").read_text(encoding="utf-8")
+    assembly = (root / "composition/ad_application_assembly.py").read_text(encoding="utf-8")
 
     # The facade delegates startup to Bootstrap, which owns the application
     # assembly. Neither public entrypoint may recreate the worker graph.
@@ -214,23 +214,23 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     from pathlib import Path
 
     root = Path("agents/tools/advertising/application")
-    facade = (root / "ad_application.py").read_text(encoding="utf-8")
-    application_facade = (root / "ad_application_facade.py").read_text(
+    facade = (root / "composition/ad_application.py").read_text(encoding="utf-8")
+    application_facade = (root / "composition/ad_application_facade.py").read_text(
         encoding="utf-8"
     )
-    hooks = (root / "ad_application_hooks.py").read_text(encoding="utf-8")
-    policy = (root / "ad_runtime_policy.py").read_text(encoding="utf-8")
-    context = (root / "ad_runtime_context.py").read_text(encoding="utf-8")
-    run_service = (root / "ad_run_service.py").read_text(encoding="utf-8")
-    run_projection = (root / "ad_run_projection.py").read_text(encoding="utf-8")
-    catalog = (root / "ad_runtime_catalog.py").read_text(encoding="utf-8")
-    lifecycle = (root / "ad_runtime_lifecycle.py").read_text(encoding="utf-8")
-    presentation = (root / "ad_runtime_presentation.py").read_text(
+    hooks = (root / "composition/ad_application_hooks.py").read_text(encoding="utf-8")
+    policy = (root / "run/ad_runtime_policy.py").read_text(encoding="utf-8")
+    context = (root / "run/ad_runtime_context.py").read_text(encoding="utf-8")
+    run_service = (root / "run/ad_run_service.py").read_text(encoding="utf-8")
+    run_projection = (root / "run/ad_run_projection.py").read_text(encoding="utf-8")
+    catalog = (root / "run/ad_runtime_catalog.py").read_text(encoding="utf-8")
+    lifecycle = (root / "run/ad_runtime_lifecycle.py").read_text(encoding="utf-8")
+    presentation = (root / "run/ad_runtime_presentation.py").read_text(
         encoding="utf-8"
     )
-    controls = (root / "ad_runtime_controls.py").read_text(encoding="utf-8")
-    scope = (root / "ad_runtime_scope.py").read_text(encoding="utf-8")
-    reconciliation = (root / "ad_runtime_reconciliation.py").read_text(
+    controls = (root / "run/ad_runtime_controls.py").read_text(encoding="utf-8")
+    scope = (root / "run/ad_runtime_scope.py").read_text(encoding="utf-8")
+    reconciliation = (root / "run/ad_runtime_reconciliation.py").read_text(
         encoding="utf-8"
     )
 
@@ -276,7 +276,7 @@ def test_ad_application_root_only_declares_composition_and_constructor():
     from pathlib import Path
 
     root = Path("agents/tools/advertising/application")
-    source = (root / "ad_application.py").read_text(encoding="utf-8")
+    source = (root / "composition/ad_application.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     classes = [
         node
@@ -302,7 +302,7 @@ def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback()
     root = Path("agents/tools/advertising/application")
     assert not (root / "ad_turn_engine.py").exists()
     assert not (root / "ad_turn_orchestrator.py").exists()
-    runtime_source = (root / "ad_application.py").read_text(encoding="utf-8")
+    runtime_source = (root / "composition/ad_application.py").read_text(encoding="utf-8")
     assert not (root / "ad_runtime.py").exists()
     assert "def _run_unlocked" not in runtime_source
     assert "getattr(self, \"_platform_application\"" not in runtime_source
@@ -332,7 +332,7 @@ def test_advertising_application_has_no_parallel_turn_orchestration():
         "ad_turn_request_services.py",
     )
     assert all(not (root / name).exists() for name in obsolete_modules)
-    integration = (root / "integration.py").read_text(encoding="utf-8")
+    integration = (root / "integrations/integration.py").read_text(encoding="utf-8")
     assert "AdvertisingModelAdapter" not in integration
     assert "AdvertisingTurnHandler" not in integration
 
@@ -343,8 +343,8 @@ def test_turn_application_services_do_not_import_provider_implementations():
 
     root = Path("agents/tools/advertising/application")
     for name in (
-        "ad_turn_context.py",
-        "ad_runtime_facades.py",
+        "integrations/ad_turn_context.py",
+        "composition/ad_runtime_facades.py",
     ):
         source = (root / name).read_text(encoding="utf-8")
         tree = ast.parse(source)
@@ -381,7 +381,7 @@ def test_supervisor_receives_task_kinds_from_the_application_composition_root():
 def test_tool_source_context_has_no_skill_back_reference():
     """Tool Sources receive execution dependencies, not Skill objects."""
     from agents.agent_harness.core.interfaces import ToolSourceContext
-    from agents.tools.advertising.application.tool_source_context import ToolSourceContextWrapper
+    from agents.tools.advertising.application.integrations.tool_source_context import ToolSourceContextWrapper
 
     assert "skills" not in ToolSourceContext.__dataclass_fields__
     assert not hasattr(ToolSourceContextWrapper(object()), "skills")

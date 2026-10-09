@@ -11,7 +11,7 @@ from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
 from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.tool_registry import validate_tool_input
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
 from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
 from agents.tools.advertising.clients.meta_client import MetaAPIClient

@@ -832,7 +832,7 @@ def test_session_rename_uses_authenticated_user_and_tenant_scope(monkeypatch, fa
 
 
 def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
     from agents.agent_platform.data.persistence.store import AdAgentStore
 
     store = AdAgentStore(":memory:")
@@ -1329,7 +1329,7 @@ def test_runtime_initialization_fails_without_llm(monkeypatch, tmp_path):
 
 
 def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
     from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
@@ -1350,7 +1350,7 @@ def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
 
 
 def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
     from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
@@ -1442,7 +1442,7 @@ def test_parameter_options_resolve_allows_global_catalog_without_account_id(fake
 
 
 def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch, tmp_path):
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
     from agents.agent_platform.data.persistence.store import AdAgentStore
 
     store = AdAgentStore(str(tmp_path / "skills.db"))
@@ -1509,7 +1509,7 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
 
 
 def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeypatch, tmp_path):
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
     from agents.agent_harness.messages import ModelTurn
     from agents.agent_platform.data.persistence.store import AdAgentStore
     from agents.agent_platform.management.skill_management import ManagedSkillManager

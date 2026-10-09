@@ -11,7 +11,7 @@ from agents.agent_platform.data.knowledge.knowledge_management import ManagedKno
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.agent_platform.data.persistence.models import TaskRecord
-from agents.tools.advertising.application.ad_task_services import AdTaskServices
+from agents.tools.advertising.application.operations.ad_task_services import AdTaskServices
 
 
 class FakeLLM:

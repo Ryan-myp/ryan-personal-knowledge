@@ -185,7 +185,7 @@ def _session_result(
 def _trusted_eval_identity(root: Path):
     """Load only the checked-in test accounts for offline contract runs."""
     from agents.agent_platform.governance.identity.principal import RequestPrincipal
-    from agents.tools.advertising.application.account_policy import (
+    from agents.tools.advertising.application.execution.account_policy import (
         AccountWhitelistValidator,
     )
 
@@ -215,7 +215,7 @@ def run(
 ) -> Dict[str, Any]:
     root = _bootstrap_import_path()
     from agents.agent_platform.data.persistence.store import AdAgentStore
-    from agents.tools.advertising.application.ad_application import AdvertisingComposition
+    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 
     messages = _messages(session_input)
     prompt = _runtime_prompt(messages)

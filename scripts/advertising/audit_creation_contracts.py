@@ -34,7 +34,7 @@ from agents.tools.advertising.shared.domain.blueprint import (  # noqa: E402
 )
 from agents.agent_harness.core.interfaces import ToolEffect  # noqa: E402
 from agents.agent_platform.data.persistence.store import AdAgentStore  # noqa: E402
-from agents.tools.advertising.application.ad_application import AdvertisingComposition  # noqa: E402
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
 
 
 _RESOURCE_FIELD = re.compile(

@@ -14,7 +14,7 @@ from agents.agent_harness.core.memory import MemoryManager
 from agents.agent_harness.core.policy import RuntimePolicy
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.agent_platform.data.persistence.interfaces import PersistenceBackend
-from .ad_runtime_controls import AdvertisingRuntimeControls
+from ..run.ad_runtime_controls import AdvertisingRuntimeControls
 from agents.agent_harness.skills.contract import Skill
 
 

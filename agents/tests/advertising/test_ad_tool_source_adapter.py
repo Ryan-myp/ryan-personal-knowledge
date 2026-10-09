@@ -1,4 +1,4 @@
-from agents.tools.advertising.application.integration import advertising_tool_source
+from agents.tools.advertising.application.integrations.integration import advertising_tool_source
 from agents.agent_harness import InMemoryToolCatalog, TurnRequest
 
 

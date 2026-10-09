@@ -7,7 +7,7 @@ from agents.agent_harness import (
     ToolBinding,
     StaticToolSource,
 )
-from agents.tools.advertising.application.integration import advertising_skill_source
+from agents.tools.advertising.application.integrations.integration import advertising_skill_source
 
 
 def test_a_non_ad_business_can_mount_its_own_skill_and_tool():

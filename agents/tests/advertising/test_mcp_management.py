@@ -15,7 +15,7 @@ from agents.agent_platform.integrations.mcp.mcp_management import (
 )
 from agents.agent_platform.data.persistence.mysql_store import _mysql_schema
 from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 
 
 class _MCPHandler(BaseHTTPRequestHandler):

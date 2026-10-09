@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 
 from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 import agents.deployments.advertising.api_server as api_server
 from agents.agent_platform.data.persistence.models import ExecutionRunRecord, TaskRecord, ToolCallRecord
 

@@ -7,7 +7,7 @@ from typing import Any, Sequence
 from agents.agent_harness import ToolSource
 from agents.agent_platform import AgentDefinition, ScenarioDefinition
 
-from agents.tools.advertising.application.integration import advertising_skill_source
+from agents.tools.advertising.application.integrations.integration import advertising_skill_source
 
 
 def advertising_agent_definition(

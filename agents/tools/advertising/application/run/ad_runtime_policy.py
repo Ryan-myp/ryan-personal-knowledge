@@ -18,7 +18,7 @@ from agents.agent_harness.core.interfaces import ExecutionMode, ToolEffect, Tool
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.tools.advertising.shared.domain.auth import normalize_account_id
 from agents.tools.advertising.shared.domain.contracts import ResourceResult
-from .provider_bindings import ProviderBindings
+from ..integrations.provider_bindings import ProviderBindings
 
 
 class AdvertisingRuntimePolicy:

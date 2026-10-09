@@ -22,7 +22,7 @@ from agents.tools.advertising.clients.meta_client import MetaAPIClient
 from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
-from agents.tools.advertising.application.ad_application import AccountWhitelistValidator, AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AccountWhitelistValidator, AdvertisingComposition
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.agent_harness.skills.contract import BaseSkill, SkillContract, SkillLoader
 from agents.agent_harness.core.tool_registry import validate_tool_input
@@ -1777,6 +1777,56 @@ def test_runtime_rejects_tool_version_not_supported_by_provider_client():
 
     assert result.success is False
     assert "要求 Provider API v0" in result.error
+    assert calls == []
+
+
+def test_runtime_fails_closed_when_supported_version_adapter_cannot_be_selected():
+    calls = []
+
+    class MarkerlessVersionClient:
+        __slots__ = ()
+        api_version = "v2"
+        SUPPORTED_API_VERSIONS = ("v2", "v1")
+
+        @property
+        def requested_tool_api_version(self):
+            return None
+
+        @requested_tool_api_version.setter
+        def requested_tool_api_version(self, _version):
+            raise RuntimeError("client_secret=version-marker-secret")
+
+        def supports_tool_api_version(self, version):
+            return version in self.SUPPORTED_API_VERSIONS
+
+    class Handler:
+        def __init__(self):
+            self.client = MarkerlessVersionClient()
+
+        def execute(self, _ctx, _input):
+            calls.append(True)
+            return ToolResult.ok({"unexpected": True})
+
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
+    runtime.registry.register(
+        ToolDefinition(
+            name="versioned_read_without_marker",
+            skill="provider",
+            namespace="version-probe",
+            description="read",
+            input_schema=ToolSchema(),
+            integration_api_version="v1",
+        ),
+        Handler(),
+    )
+
+    result = runtime.tool_executor.execute(
+        ToolContext("s1", "u1"), "versioned_read_without_marker", {}
+    )
+
+    assert result.success is False
+    assert "无法应用 Provider API 版本" in result.error
+    assert "version-marker-secret" not in result.error
     assert calls == []
 
 

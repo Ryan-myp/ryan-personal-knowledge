@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.agent_platform.data.persistence.models import ScheduledTaskRecord
 from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.agent_platform.infrastructure.durable import (
     CronExpression,
     CronExpressionError,

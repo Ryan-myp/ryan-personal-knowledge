@@ -18,8 +18,8 @@ if str(ROOT) not in sys.path:
 
 from agents.tools.advertising.shared.domain.provider_preflight import build_provider_preflight  # noqa: E402
 from agents.agent_harness.core.namespace import normalize_namespace  # noqa: E402
-from agents.tools.advertising.application.account_policy import AccountWhitelistValidator  # noqa: E402
-from agents.tools.advertising.application.ad_application import AdvertisingComposition  # noqa: E402
+from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator  # noqa: E402
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
 from agents.tools.advertising.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
 )

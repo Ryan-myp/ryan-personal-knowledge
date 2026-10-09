@@ -13,7 +13,7 @@ from agents.agent_harness import DeploymentHealth, HealthCheck
 
 from agents.agent_harness.core.interfaces import ExecutionMode, ToolEffect
 from agents.agent_harness.core.memory import MemoryManager
-from .security import RuntimeSecurity
+from ..execution.security import RuntimeSecurity
 
 logger = logging.getLogger(__name__)
 

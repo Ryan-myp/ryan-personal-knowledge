@@ -12,7 +12,7 @@ from agents.agent_platform.data.persistence.models import (
 )
 from agents.agent_platform.data.persistence.mysql_store import _MySQLPool
 from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.agent_platform.infrastructure.durable import TaskExecutor
 from agents.agent_platform.data.persistence.mysql_store import _mysql_schema, _translate_sql
 

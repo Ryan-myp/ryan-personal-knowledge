@@ -24,7 +24,7 @@ from agents.tools.advertising.providers.dv360 import (
     DV360ListCampaignsHandler,
     DV360GetLineItemReportHandler,
 )
-from agents.tools.advertising.application.ad_application import AdvertisingComposition, AccountWhitelistValidator
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition, AccountWhitelistValidator
 from agents.skills.advertising.businesses.policy import BusinessSkillPolicy
 from agents.agent_harness.core.interfaces import (
     ToolContext, ToolResult, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema,
@@ -608,7 +608,7 @@ class TestIntentParser:
         assert "Meta campaign scope" in prompt_text
 
     def test_llm_parser_receives_prior_tool_results_as_context_only(self):
-        from agents.tools.advertising.application.ad_application import SessionContext
+        from agents.tools.advertising.application.composition.ad_application import SessionContext
 
         class FakeLLM:
             def __init__(self):
@@ -816,7 +816,7 @@ class TestIntentParser:
         assert "id" not in values
 
     def test_creation_reply_is_a_complete_text_fallback_for_chinese_and_english(self):
-        from agents.tools.advertising.application.ad_application import AdvertisingComposition
+        from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 
         ui = {
             "cards": [{
@@ -2171,7 +2171,7 @@ class TestIterationContracts:
     def test_dv360_report_routes_with_line_item_id(self):
         from pathlib import Path
 
-        from agents.tools.advertising.application.account_policy import (
+        from agents.tools.advertising.application.execution.account_policy import (
             AccountWhitelistValidator,
         )
         from agents.tools.advertising.providers.dv360 import create_dv360_tool_source

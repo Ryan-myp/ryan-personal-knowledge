@@ -18,8 +18,8 @@ from agents.tools.advertising.shared.domain.blueprint import (
 from agents.tools.advertising.shared.domain.creation_card import CreationCardBuilder
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
-from agents.tools.advertising.application.account_policy import AccountWhitelistValidator
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
 from agents.agent_harness.messages import ModelTurn, ToolCall
 from agents.agent_harness import TurnRequest
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
@@ -1399,7 +1399,7 @@ def test_creation_card_ui_survives_durable_conversation_reload():
 
 
 def test_harness_interaction_projects_to_advertising_ui_without_turn_handler():
-    from agents.tools.advertising.application.ad_run_projection import (
+    from agents.tools.advertising.application.run.ad_run_projection import (
         AdvertisingRunProjection,
     )
 

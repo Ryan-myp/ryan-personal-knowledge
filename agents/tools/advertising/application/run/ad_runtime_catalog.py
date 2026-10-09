@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from agents.agent_harness.core.interfaces import ToolDefinition
-from .provider_bindings import ProviderBindings
+from ..integrations.provider_bindings import ProviderBindings
 
 
 class AdvertisingCatalogService:

@@ -12,8 +12,8 @@ from agents.agent_harness.core.memory import MemoryManager
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
 from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.ad_application import AdvertisingComposition
-from agents.tools.advertising.application.ad_turn_context import AdTurnContext, AdTurnContextService
+from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.tools.advertising.application.integrations.ad_turn_context import AdTurnContext, AdTurnContextService
 
 
 def test_markdown_wiki_is_canonical_and_metadata_is_source_addressable(tmp_path):
