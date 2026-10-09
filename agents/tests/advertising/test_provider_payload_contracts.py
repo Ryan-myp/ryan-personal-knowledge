@@ -21,7 +21,10 @@ from agents.tools.advertising.providers.tiktok.campaigns import (
     TikTokGetCampaignHandler,
     TikTokListCampaignsHandler,
 )
-from agents.tools.advertising.providers.google.campaigns import GoogleCreateCampaignHandler
+from agents.tools.advertising.providers.google.campaigns import (
+    GoogleCreateCampaignHandler,
+    GoogleListCampaignsHandler,
+)
 from agents.tools.advertising.providers.meta.provider import _meta_update_adapter
 from agents.tools.advertising.providers.tiktok.provider import _tiktok_update_adapter
 from agents.tools.advertising.providers.google.provider import _google_update_adapter
@@ -121,6 +124,55 @@ def test_google_campaign_report_without_ids_queries_bounded_account_scope():
     assert "FROM campaign WHERE segments.date DURING LAST_30_DAYS" in query
     assert "campaign.id =" not in query
     assert "LIMIT 4" in query
+
+
+@pytest.mark.parametrize("campaign_id", ["123 OR 1=1", "1; SELECT campaign.id", "'123'"])
+def test_google_campaign_list_rejects_gaql_fragments_as_campaign_ids(campaign_id):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, **_kwargs: queries.append(query) or []
+
+    with pytest.raises(ValueError, match="digits only"):
+        client.list_campaigns(campaign_id=campaign_id)
+
+    assert queries == []
+
+
+def test_google_campaign_list_builds_filter_from_validated_campaign_id():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, **_kwargs: queries.append(query) or []
+
+    assert client.list_campaigns(campaign_id="456", page_size=12) == []
+
+    query = " ".join(queries[0].split())
+    assert "WHERE campaign.id = 456" in query
+    assert query.endswith("LIMIT 12")
+
+
+@pytest.mark.parametrize("campaign_id", ["0", "9" * 100])
+def test_google_campaign_list_bounds_numeric_campaign_ids(campaign_id):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, **_kwargs: queries.append(query) or []
+
+    with pytest.raises(ValueError, match="positive numeric"):
+        client.list_campaigns(campaign_id=campaign_id)
+
+    assert queries == []
+
+
+def test_google_campaign_handler_passes_typed_campaign_id_to_client():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, **_kwargs: queries.append(query) or []
+    handler = GoogleListCampaignsHandler(client)
+    context = ToolContext(session_id="s1", user_id="u1", account_id="123")
+
+    result = handler.execute(context, {"campaign_id": "456", "limit": 12})
+
+    assert result.success
+    assert "WHERE campaign.id = 456" in " ".join(queries[0].split())
 
 
 def test_creation_tools_publish_provider_payload_requirements():

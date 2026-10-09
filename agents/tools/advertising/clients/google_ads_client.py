@@ -586,7 +586,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     # ==================== Campaign 管理 ====================
     
-    def list_campaigns(self, filter_query: str = None, page_size: int = 100) -> list:
+    def list_campaigns(
+        self, campaign_id: str = None, page_size: int = 100,
+    ) -> list:
         """获取 Campaign 列表"""
         try:
             page_size = max(1, min(int(page_size), 1000))
@@ -597,8 +599,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "campaign.advertising_channel_type, campaign.bidding_strategy "
             "FROM campaign"
         )
-        if filter_query:
-            query += f" WHERE {filter_query}"
+        if campaign_id not in (None, ""):
+            campaign_id = self._numeric_id(campaign_id, "campaign_id")
+            query += f" WHERE campaign.id = {campaign_id}"
         # ``_search_all`` keeps the paging seam for providers that expose a
         # page size, but Google Ads GAQL does not accept ``pageSize``.  Keep
         # the public list contract bounded with GAQL LIMIT so a large account
@@ -5412,8 +5415,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def _numeric_id(value: Any, field_name: str) -> str:
         """Validate IDs before interpolating them into GAQL."""
         value = str(value or "").strip()
-        if not re.fullmatch(r"\d+", value):
+        if not re.fullmatch(r"[0-9]+", value):
             raise ValueError(f"{field_name} must contain digits only")
+        if len(value) > 20 or int(value) < 1:
+            raise ValueError(
+                f"{field_name} must be a positive numeric identifier of at most 20 digits"
+            )
         return value
 
     @staticmethod

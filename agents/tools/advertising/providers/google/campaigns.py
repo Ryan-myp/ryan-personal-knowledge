@@ -28,15 +28,12 @@ class GoogleListCampaignsHandler(ToolHandler):
                 # accounts while preserving the generic Runtime provenance
                 # gate for live parent-resource writes.
                 campaign_id = input_data.get("campaign_id")
-                filter_query = None
                 if campaign_id not in (None, ""):
                     campaign_id = str(campaign_id).strip()
-                    if not campaign_id.isdigit():
+                    if not campaign_id.isascii() or not campaign_id.isdecimal():
                         return ToolResult.error("campaign_id must be a numeric Google Ads ID")
-                    filter_query = f"campaign.id = {campaign_id}"
-                if filter_query:
                     campaigns = client.list_campaigns(
-                        filter_query=filter_query,
+                        campaign_id=campaign_id,
                         page_size=input_data.get("limit", 100),
                     )
                 else:
