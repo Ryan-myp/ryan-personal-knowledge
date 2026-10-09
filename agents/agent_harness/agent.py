@@ -101,6 +101,7 @@ class Agent:
         system_prompt: str = "",
         max_turns: int = 12,
         tool_execution: str = "parallel",
+        max_tool_calls_per_run: int = 64,
         max_parallel_tools: int = 8,
         max_inflight_tool_invocations: int = 64,
         max_tools: int = 128,
@@ -113,6 +114,7 @@ class Agent:
         event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
         context_provider: Optional[ContextProvider] = None,
         input_sanitizer: Optional[Callable[[Any], Any]] = None,
+        request_validator: Optional[Callable[[TurnRequest], Optional[str]]] = None,
         model_max_retries: int = 0,
         model_retry_delay_seconds: float = 0.0,
         max_transcript_messages: int = 200,
@@ -137,6 +139,8 @@ class Agent:
     ) -> None:
         if max_turns <= 0:
             raise ValueError("max_turns must be positive")
+        if max_tool_calls_per_run <= 0:
+            raise ValueError("max_tool_calls_per_run must be positive")
         if tool_execution not in {"sequential", "parallel"}:
             raise ValueError("tool_execution must be sequential or parallel")
         if max_parallel_tools <= 0:
@@ -183,6 +187,7 @@ class Agent:
         self.skill_catalog = skill_catalog
         self._system_prompt = str(system_prompt or "")
         self.max_turns = int(max_turns)
+        self.max_tool_calls_per_run = int(max_tool_calls_per_run)
         self.tool_execution = tool_execution
         self.max_parallel_tools = int(max_parallel_tools)
         self.max_tools = int(max_tools)
@@ -224,6 +229,7 @@ class Agent:
         self.event_callback = event_callback
         self.context_provider = context_provider
         self.input_sanitizer = input_sanitizer
+        self.request_validator = request_validator
         self._system_messages = (
             [AgentMessage.system(system_prompt)] if system_prompt else []
         )
@@ -507,6 +513,24 @@ class Agent:
         except Exception:
             # Application result shaping cannot break the generic lifecycle.
             return {}
+
+    @staticmethod
+    def _awaiting_input_reply(
+        tool_results: Sequence[Mapping[str, Any]], fallback: str,
+    ) -> str:
+        """Prefer the trusted gate prompt over an empty model Tool-call turn."""
+        for item in tool_results:
+            if not (item.get("needs_input") or item.get("needs_confirmation")):
+                continue
+            payload = item.get("confirmation_payload")
+            if isinstance(payload, Mapping):
+                question = str(payload.get("question") or "").strip()
+                if question:
+                    return question
+            content = item.get("content")
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+        return str(fallback or "")
 
     def _notify_model_run_cleanup(
         self, request: TurnRequest, state: AgentState,
@@ -1212,6 +1236,33 @@ class Agent:
             checkpoint_source_id = self._restore_checkpoint(request, state)
             self._emit("agent_start", request)
             self._emit("turn_start", request, turn_index=0)
+            if callable(self.request_validator):
+                validation_error = self.request_validator(request)
+                if validation_error:
+                    if not isinstance(validation_error, str):
+                        raise TypeError("request_validator must return a string or None")
+                    self._emit(
+                        "turn_end",
+                        request,
+                        turn_index=0,
+                        tool_results=[],
+                        status="failed",
+                        reason="request_validation",
+                    )
+                    result = RunResult(
+                        run_id=str(request.run_id or ""),
+                        turn_id=str(request.turn_id or ""),
+                        status=RunStatus.FAILED,
+                        reply=validation_error,
+                        data={
+                            "request_validation_error": validation_error,
+                            "tool_results": [],
+                            "needs_input": False,
+                            "usage": dict(state.usage),
+                        },
+                    )
+                    self._emit("agent_end", request, status=result.status.value)
+                    return result
             user_message = AgentMessage.user(
                 self.input_sanitizer(request.user_input)
                 if callable(self.input_sanitizer)
@@ -1223,6 +1274,7 @@ class Agent:
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
             all_tool_results: list[dict[str, Any]] = []
+            tool_call_count = 0
             last_reply = ""
             application_data: Mapping[str, Any] = {}
             for turn_index in range(self.max_turns):
@@ -1253,10 +1305,42 @@ class Agent:
                 self._append_message(state, assistant, request=request)
                 last_reply = str(model_turn.content or "")
                 self._emit("message_end", request, message=assistant.to_dict())
+                tool_budget_exceeded = False
                 if model_turn.tool_calls:
-                    tool_results = self._tool_executor.execute_tools(
-                        request, assistant, model_turn.tool_calls, state,
-                    )
+                    requested_count = len(model_turn.tool_calls)
+                    if (
+                        tool_call_count + requested_count
+                        > self.max_tool_calls_per_run
+                    ):
+                        tool_budget_exceeded = True
+                        self._emit(
+                            "tool_call_budget_exceeded",
+                            request,
+                            accepted_count=tool_call_count,
+                            requested_count=requested_count,
+                            limit=self.max_tool_calls_per_run,
+                        )
+                        tool_results = [
+                            {
+                                "tool_call_id": str(call.id),
+                                "name": call.name,
+                                "content": (
+                                    "Run Tool-call budget exceeded; this batch "
+                                    "was rejected before execution."
+                                ),
+                                "is_error": True,
+                                "terminate": True,
+                                "runtime_signals": {
+                                    "tool_call_budget_exceeded": True,
+                                },
+                            }
+                            for call in model_turn.tool_calls
+                        ]
+                    else:
+                        tool_results = self._tool_executor.execute_tools(
+                            request, assistant, model_turn.tool_calls, state,
+                        )
+                        tool_call_count += requested_count
                     all_tool_results.extend(tool_results)
                     for result in tool_results:
                         tool_message = AgentMessage.tool(
@@ -1298,8 +1382,13 @@ class Agent:
                 )
                 if (
                     not model_turn.tool_calls
+                    or any(
+                        bool(item.get("needs_input") or item.get("needs_confirmation"))
+                        for item in tool_results
+                    )
                     or all(bool(item.get("terminate")) for item in tool_results)
                     or any(bool(item.get("recovery_required")) for item in tool_results)
+                    or tool_budget_exceeded
                     or (
                         callable(self.should_stop_after_turn)
                         and self.should_stop_after_turn(state)
@@ -1343,16 +1432,25 @@ class Agent:
                         else RunStatus.CANCELLED
                         if tool_cancelled
                         else RunStatus.FAILED
+                        if tool_budget_exceeded
+                        else RunStatus.FAILED
                         if model_turn.stop_reason in {"error", "policy_blocked"}
                         else RunStatus.AWAITING_INPUT
                         if awaiting_input
                         else RunStatus.SUCCEEDED
                     )
+                    terminal_reply = (
+                        "Run Tool-call budget exceeded; the rejected batch was not executed."
+                        if tool_budget_exceeded
+                        else
+                        self._awaiting_input_reply(tool_results, last_reply)
+                        if awaiting_input else last_reply
+                    )
                     result = RunResult(
                         run_id=str(request.run_id or ""),
                         turn_id=str(request.turn_id or ""),
                         status=terminal_status,
-                        reply=last_reply,
+                        reply=terminal_reply,
                         needs_input=awaiting_input,
                         recovery_required=tool_recovery or not checkpoint_ok,
                         runtime_signals=runtime_signals,
@@ -1361,6 +1459,9 @@ class Agent:
                                 item.to_dict() for item in state.messages
                             ],
                             "tool_results": list(all_tool_results),
+                            "tool_call_count": tool_call_count,
+                            "tool_call_limit": self.max_tool_calls_per_run,
+                            "tool_call_budget_exceeded": tool_budget_exceeded,
                             "needs_input": awaiting_input,
                             "usage": dict(state.usage),
                         },
@@ -1391,6 +1492,8 @@ class Agent:
                 data={
                     "messages": [item.to_dict() for item in state.messages],
                     "tool_results": list(all_tool_results),
+                    "tool_call_count": tool_call_count,
+                    "tool_call_limit": self.max_tool_calls_per_run,
                     "error": "maximum agent turns exceeded",
                     "usage": dict(state.usage),
                 },

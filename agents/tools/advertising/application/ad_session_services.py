@@ -67,9 +67,6 @@ class AdSessionServices:
             stored_ui = persisted_metadata.get("conversation_ui")
             if isinstance(stored_ui, dict):
                 ctx.metadata["conversation_ui"] = stored_ui
-            stored_schedule_draft = persisted_metadata.get("schedule_draft")
-            if isinstance(stored_schedule_draft, dict):
-                ctx.metadata["schedule_draft"] = stored_schedule_draft
             stored_creation_draft = persisted_metadata.get("creation_draft")
             if isinstance(stored_creation_draft, dict):
                 ctx.metadata["creation_draft"] = stored_creation_draft

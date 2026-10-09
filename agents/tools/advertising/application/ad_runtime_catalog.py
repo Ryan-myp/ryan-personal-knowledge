@@ -52,6 +52,11 @@ class AdvertisingCatalogService:
         runtime = self.runtime
         runtime._context_service().clear()
         definitions = runtime.registry.list_all()
+        platform_application = getattr(runtime, "_platform_application", None)
+        if platform_application is not None:
+            platform_application.tool_source_ids = tuple(
+                runtime.registry.source_snapshot()
+            )
         refresh_catalog = getattr(runtime.intent_parser, "refresh_tool_catalog", None)
         if callable(refresh_catalog):
             refresh_catalog(definitions)

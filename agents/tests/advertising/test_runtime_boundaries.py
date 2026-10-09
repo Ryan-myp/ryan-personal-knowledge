@@ -314,173 +314,24 @@ def test_ad_runtime_has_no_ad_turn_pipeline_or_stage_modules():
     assert not (root / "ad_turn_state.py").exists()
 
 
-def test_turn_adapter_delegates_creation_and_clarification_interaction():
+def test_advertising_application_has_no_parallel_turn_orchestration():
     from pathlib import Path
 
     root = Path("agents/tools/advertising/application")
-    integration = ast.parse(
-        (root / "integration.py").read_text(encoding="utf-8")
+    obsolete_modules = (
+        "integration_investigation.py",
+        "integration_turn_planner.py",
+        "integration_turn_handler.py",
+        "integration_result_assembler.py",
+        "ad_turn_account_services.py",
+        "ad_turn_feature_services.py",
+        "ad_turn_plan_services.py",
+        "ad_turn_request_services.py",
     )
-    adapter = next(
-        node for node in integration.body
-        if isinstance(node, ast.ClassDef)
-        and node.name == "AdvertisingModelAdapter"
-    )
-    start_turn = next(
-        node for node in adapter.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_start_turn"
-    )
-    direct_owner_accesses = {
-        node.attr
-        for node in ast.walk(start_turn)
-        if isinstance(node, ast.Attribute)
-        and isinstance(node.value, ast.Attribute)
-        and isinstance(node.value.value, ast.Name)
-        and node.value.value.id == "self"
-        and node.value.attr == "owner"
-    }
-    assert not direct_owner_accesses.intersection({
-        "build_creation_ui",
-        "creation_card_builder",
-        "_creation_contract_preflight",
-        "_creation_contract_reply",
-        "set_creation_draft",
-        "action_clarification_builder",
-        "action_clarification_reply",
-        "set_action_draft",
-    })
-    assert "run_batch_plan" not in direct_owner_accesses
-    assert "is_batch_intent" not in direct_owner_accesses
-
-    interaction_services = (root / "ad_turn_interaction_services.py").read_text(
-        encoding="utf-8"
-    )
-    assert "class AdTurnInteractionServicesMixin" in interaction_services
-    assert "def prepare_creation_turn" in interaction_services
-    assert "def prepare_action_clarification" in interaction_services
-
-    cross_channel = (root / ".." / "shared" / "features" / "cross_channel.py").read_text(
-        encoding="utf-8"
-    )
-    assert "def handle_routed_turn" in cross_channel
-
-
-def test_model_adapter_delegates_application_turn_orchestration():
-    from pathlib import Path
-
-    integration = ast.parse(
-        Path("agents/tools/advertising/application/integration.py").read_text(encoding="utf-8")
-    )
-    adapter = next(
-        node for node in integration.body
-        if isinstance(node, ast.ClassDef)
-        and node.name == "AdvertisingModelAdapter"
-    )
-    start_turn = next(
-        node for node in adapter.body
-        if isinstance(node, ast.FunctionDef) and node.name == "_start_turn"
-    )
-    calls = [
-        node for node in ast.walk(start_turn)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Attribute)
-        and isinstance(node.func.value.value, ast.Name)
-        and node.func.value.value.id == "self"
-        and node.func.value.attr == "_turn_handler"
-        and node.func.attr == "start_turn"
-    ]
-    assert len(calls) == 1
-    assert len(start_turn.body) == 1
-
-    handler = Path("agents/tools/advertising/application/integration_turn_handler.py")
-    assert handler.exists()
-
-
-def test_turn_account_services_keep_multi_platform_scope_isolated():
-    from types import SimpleNamespace
-
-    from agents.tools.advertising.application.ad_turn_account_services import (
-        AdTurnAccountServices,
-    )
-
-    validated = []
-    resolved = {
-        "meta": "meta-test-account",
-        "tiktok": "tiktok-test-account",
-    }
-
-    def validate(platform, account, is_write, scope):
-        validated.append((platform, account, is_write, scope))
-        return (account in scope.get(platform, []), "account outside principal scope")
-
-    owner = SimpleNamespace(
-        account_resolver=SimpleNamespace(
-            resolve=lambda _intent, platform, _tools, _fallback, **_kwargs:
-                resolved[platform]
-        ),
-        _canonical_platform=lambda platform: platform,
-        _validate_account_with_principal=validate,
-    )
-    request = SimpleNamespace(
-        principal=SimpleNamespace(account_scope={"meta": ["meta-test-account"]}),
-        context={"account_id": "must-not-cross-platform"},
-    )
-    routed = {
-        "meta": [SimpleNamespace(namespace="meta", is_write_tool=True)],
-        "tiktok": [SimpleNamespace(namespace="tiktok", is_write_tool=True)],
-    }
-
-    result = AdTurnAccountServices(owner).validate_write_account_scope(
-        intent=SimpleNamespace(namespaces=["meta", "tiktok"]),
-        routed=routed,
-        request=request,
-        request_context=request.context,
-        state={},
-        context_updates={},
-    )
-
-    assert result is not None
-    assert result.stop_reason == "policy_blocked"
-    assert [(item[0], item[1]) for item in validated] == [
-        ("meta", "meta-test-account"),
-        ("tiktok", "tiktok-test-account"),
-    ]
-
-
-def test_turn_account_services_asks_when_read_scope_is_ambiguous():
-    from types import SimpleNamespace
-
-    from agents.tools.advertising.application.ad_turn_account_services import (
-        AdTurnAccountServices,
-    )
-
-    owner = SimpleNamespace(
-        account_resolver=SimpleNamespace(resolve=lambda *_args, **_kwargs: None),
-        _canonical_platform=lambda platform: platform,
-        _available_accounts_for_request=lambda _platform, _scope: ["test-1", "test-2"],
-    )
-    request = SimpleNamespace(
-        principal=SimpleNamespace(account_scope={"meta": ["test-1", "test-2"]}),
-        context={},
-    )
-    session = SimpleNamespace(ctx=SimpleNamespace(account_id=None))
-    state = {}
-
-    result = AdTurnAccountServices(owner).resolve_read_account_scope(
-        intent=SimpleNamespace(namespaces=["meta"]),
-        routed={"meta": [SimpleNamespace(namespace="meta", is_write_tool=False)]},
-        request=request,
-        request_context=request.context,
-        session=session,
-        state=state,
-    )
-
-    assert result.model_turn is not None
-    assert result.model_turn.stop_reason == "awaiting_input"
-    assert state["confirmation_payload"]["type"] == "ask_account"
-    assert request.context == {}
-    assert session.ctx.account_id is None
+    assert all(not (root / name).exists() for name in obsolete_modules)
+    integration = (root / "integration.py").read_text(encoding="utf-8")
+    assert "AdvertisingModelAdapter" not in integration
+    assert "AdvertisingTurnHandler" not in integration
 
 
 def test_turn_application_services_do_not_import_provider_implementations():

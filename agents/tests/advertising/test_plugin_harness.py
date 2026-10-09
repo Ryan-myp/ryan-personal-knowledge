@@ -305,8 +305,8 @@ def test_runtime_publishes_tool_source_and_builtin_extensions_to_one_registry():
     plugins = {item["manifest"]["plugin_id"]: item for item in runtime.list_plugins()}
     assert plugins["provider-tools:meta"]["state"] == "active"
     assert "tool_source" in plugins["provider-tools:meta"]["manifest"]["kinds"]
-    assert plugins["renderer:ad-agent"]["state"] == "active"
-    assert any(
+    assert "renderer:ad-agent" not in plugins
+    assert not any(
         item["manifest"]["plugin_id"].startswith("feature:")
         for item in plugins.values()
     )

@@ -8,6 +8,7 @@ from agents.agent_harness.core.execution_plan import ExecutionPlan, PlanNode
 from agents.agent_harness.core.interfaces import (
     ParsedIntent, ToolDefinition, ToolSchema, ToolEffect, ToolContext, ToolResult,
 )
+from agents.agent_harness import ModelTurn
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 from agents.agent_harness.skills.contract import SkillLoader
@@ -16,7 +17,6 @@ from agents.tools.advertising.application.account_policy import AccountWhitelist
 from agents.tools.advertising.application.session_context import SessionContext
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.intent import SimpleIntentRouter
-from agents.tools.advertising.shared.features.response import AdAgentResponseRenderer
 
 
 def test_core_does_not_host_advertising_domain_modules():
@@ -59,7 +59,7 @@ def test_core_has_no_provider_or_advertising_security_catalog():
     )
     for forbidden in (
         "bc_id", "partner_id", "perter_id", "mcc", "campaign",
-        "ad_group", "tiktok", "google", "dv360", "platform", "provider",
+        "ad_group", "tiktok", "google", "dv360",
     ):
         assert forbidden not in source
 
@@ -132,12 +132,10 @@ def test_generic_runtime_adapters_do_not_import_ad_domain_or_name_account_fields
         assert "advertiser_id" not in source
 
 
-def test_runtime_discovers_domain_features_without_a_central_workflow_table():
+def test_runtime_has_no_advertising_feature_turn_handlers():
     runtime = AdvertisingComposition(require_llm=False)
 
-    assert "cross-channel" in {
-        feature.feature_name for feature in runtime.features
-    }
+    assert runtime.features == []
     assert not hasattr(runtime, "business_context")
     assert not hasattr(runtime, "load_business_context")
     assert not hasattr(runtime, "_build_tool_input")
@@ -146,6 +144,9 @@ def test_runtime_discovers_domain_features_without_a_central_workflow_table():
     assert not hasattr(runtime, "_start_workflow")
     assert not hasattr(runtime, "_finish_workflow")
     assert not hasattr(runtime, "_validate_tool_input_redline")
+    assert not hasattr(runtime, "_render_response")
+    assert not hasattr(runtime, "response_renderer")
+    assert not hasattr(runtime, "response_synthesizer")
     assert runtime.input_builder.services is runtime.services
     assert runtime.services.workflow_lease_owner() == runtime._workflow_lease_owner
     assert runtime.tool_executor.services is runtime.services
@@ -153,11 +154,30 @@ def test_runtime_discovers_domain_features_without_a_central_workflow_table():
     assert isinstance(runtime.workflow.services, type(runtime.services))
     assert AccountWhitelistValidator is not None
     assert SessionContext is not None
-    cross_channel_source = Path(
+    assert not Path(
         "agents/tools/advertising/shared/features/cross_channel.py"
-    ).read_text(encoding="utf-8")
-    assert "runtime._" not in cross_channel_source
+    ).exists()
     assert not hasattr(DynamicToolSelector(SkillLoader()), "business_context")
+
+
+def test_creation_application_exposes_configuration_not_turn_handlers():
+    from agents.tools.advertising.application.ad_creation_services import (
+        AdCreationServicesMixin,
+    )
+
+    service_names = {
+        base.__name__ for base in AdCreationServicesMixin.__mro__
+    }
+
+    assert "AdTurnInteractionServicesMixin" not in service_names
+    assert "AdCreationResponseServicesMixin" not in service_names
+    assert "AdSchedulingPreflightMixin" not in service_names
+    assert not hasattr(AdCreationServicesMixin, "prepare_creation_turn")
+    assert not hasattr(AdCreationServicesMixin, "adopt_creation_drafts")
+    assert not hasattr(AdCreationServicesMixin, "preflight_scheduled_prompt")
+    assert hasattr(AdCreationServicesMixin, "build_creation_ui")
+    assert hasattr(AdCreationServicesMixin, "list_creation_blueprints")
+    assert not hasattr(AdvertisingComposition, "preflight_scheduled_prompt")
 
 
 def test_business_skill_policy_is_loaded_and_enforced_outside_runtime(tmp_path):
@@ -424,49 +444,43 @@ def test_parser_drops_llm_operation_and_note_metadata_from_scoped_parameters():
     }
 
 
-def test_non_chat_request_without_a_tool_never_uses_greeting_fallback():
+def test_generic_run_uses_model_output_without_legacy_intent_parser():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(content="还无法确定具体的查询对象。")
+
     runtime = AdvertisingComposition(
         require_llm=False,
+        llm_client=Model(),
         features=[],
-        whitelist_validator=__import__(
-            "agents.tools.advertising.application.account_policy",
-            fromlist=["AccountWhitelistValidator"],
-        ).AccountWhitelistValidator.__new__(
-            __import__(
-                "agents.tools.advertising.application.account_policy",
-                fromlist=["AccountWhitelistValidator"],
-            ).AccountWhitelistValidator
-        ),
     )
-    runtime.whitelist_validator.allowed_accounts = {}
 
     class Parser:
         def parse(self, _text, _ctx):
-            return ParsedIntent(
-                "query_report", "query report", ["new-network"],
-                scoped_parameters={"new-network": {}},
-            )
+            raise AssertionError("legacy parser must not participate in a Run")
 
     runtime.intent_parser = Parser()
     result = runtime.run("查询新渠道报表")
 
     assert "还无法确定具体的查询对象" in result["reply"]
-    assert "Tool" not in result["reply"]
-    assert "Runtime" not in result["reply"]
+    assert result["tool_plan"] == {}
     assert "你好！我是 ad-agent" not in result["reply"]
 
 
-def test_read_renderer_does_not_claim_success_for_unknown_data_shape():
-    reply = AdAgentResponseRenderer().render(
-        ParsedIntent("list_resources", "list", ["new-network"]),
-        [{
-            "tool": "new_network_list_resources",
-            "platform": "new-network",
-            "success": True,
-            "data": {"unexpected": {"value": 1}},
-        }],
-        False,
+def test_legacy_parser_cannot_supply_or_satisfy_the_harness_model():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(content="reply")
+
+    class Parser:
+        def model_client(self):
+            return Model()
+
+    runtime = AdvertisingComposition(
+        require_llm=True,
+        intent_parser=Parser(),
     )
 
-    assert "成功执行查询操作" not in reply
-    assert "没有可展示的数据" in reply
+    assert runtime.platform_application.agent.model is None
+    with pytest.raises(RuntimeError, match="LLM client is required"):
+        runtime.assert_llm_ready()

@@ -1,15 +1,11 @@
 """Provider-neutral recurring task control-plane service.
 
-This service owns durable schedule CRUD, schedule drafts and hand-off to a
-generic task queue. It does not parse business requests, select Tools or call
-Providers; those responsibilities remain with a Feature and the Agent turn
-engine respectively.
+This service owns durable schedule CRUD and hand-off to the generic task queue.
+It does not parse business requests, select Tools or call Providers.
 """
 
 from __future__ import annotations
 
-import copy
-import json
 import uuid
 from datetime import datetime
 from typing import Any, Callable, Mapping, Optional
@@ -25,8 +21,6 @@ class SchedulingService:
         *,
         store: Any,
         submit_task: Callable[..., Any],
-        session_context: Callable[[str], Any],
-        preflight: Callable[..., dict[str, Any]],
         redact: Callable[[Any], Any],
         validate_input: Callable[[Any], list[str]],
         max_prompt_chars: int,
@@ -37,8 +31,6 @@ class SchedulingService:
     ) -> None:
         self.store = store
         self.submit_task = submit_task
-        self.session_context = session_context
-        self.preflight = preflight
         self.redact = redact
         self.validate_input = validate_input
         self.max_prompt_chars = int(max_prompt_chars)
@@ -48,31 +40,6 @@ class SchedulingService:
             raise ValueError("task_kind is required")
         self.principal_from_metadata = principal_from_metadata
         self.default_principal = default_principal
-
-    def get_draft(self, session_id: str) -> Optional[dict[str, Any]]:
-        session = self.session_context(str(session_id or ""))
-        if session is None:
-            return None
-        draft = session.ctx.metadata.get("schedule_draft")
-        return copy.deepcopy(draft) if isinstance(draft, dict) else None
-
-    def set_draft(
-        self, session_id: str, draft: Optional[Mapping[str, Any]],
-    ) -> None:
-        session = self.session_context(str(session_id or ""))
-        if session is None:
-            return
-        if draft is None:
-            session.ctx.metadata.pop("schedule_draft", None)
-            return
-        safe = self.redact(dict(draft))
-        serialized = json.dumps(safe, ensure_ascii=False, default=str)
-        if len(serialized.encode("utf-8")) > 32_000:
-            raise ValueError("scheduled task draft exceeds persistence limit")
-        session.ctx.metadata["schedule_draft"] = safe
-
-    def preflight_prompt(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        return self.preflight(prompt, **kwargs)
 
     def create(
         self, *, name: str, prompt: str, cron_expression: str,

@@ -984,10 +984,6 @@ class TestRuntimeQuery:
             def call(self, _messages):
                 return self.responses.pop(0)
 
-        class NoSynthesizer:
-            def synthesize(self, *_args, **_kwargs):
-                return None
-
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"google-ads": ["g1"]}
         rt = AdvertisingComposition(
@@ -995,7 +991,6 @@ class TestRuntimeQuery:
             llm_client=SequenceLLM(),
             persistence_store=AdAgentStore(":memory:"),
             whitelist_validator=validator,
-            response_synthesizer=NoSynthesizer(),
         )
         rt.register_tool_source(create_google_tool_source(GoogleClient()))
 

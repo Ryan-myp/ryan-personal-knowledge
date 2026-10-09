@@ -45,9 +45,7 @@ class RuntimeExecutionServices(Protocol):
     selection_signer: Any
     input_builder: Any
     session_manager: Any
-    response_renderer: Any
     execution_mode: str
-    max_tool_calls: int
     allow_live_writes: bool
     live_approved_tools: set[str]
     write_guard: Any

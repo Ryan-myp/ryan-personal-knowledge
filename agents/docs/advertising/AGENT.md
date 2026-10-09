@@ -23,27 +23,34 @@
 - Tool 是一个有明确输入/输出、权限、风险、重放、超时和资源层级的可执行动作。
 - Tool Source 是渠道拥有的 Tool 注册和 Provider 适配边界。
 - Client 负责认证后的请求、版本适配、限流、重试、错误分类和 payload 转换。
-- Runtime/Core 只实现通用规划、校验、授权、dry-run、幂等和恢复，
-  不为某个渠道或业务流程增加分支。
+- Agent Harness 拥有唯一的 model/Tool-call loop、Run/Turn 生命周期、transcript 与有界 Tool
+  调度；Platform 提供身份、策略、持久化和 durable services。广告组合根只接入广告 Tool/Skill、
+  advisory context、账户策略及 API/result adapters，不得建立自己的 Planner、turn loop 或 Tool gate。
 
-Runtime 不承载业务流程实现。可选业务扩展通过通用接口自动发现：
+广告业务流程默认通过标准 Skill 指导通用模型调用已注册 Tools；后续 Tool 调用在同一个
+Harness Run/transcript 中完成。模型发出的每个 Tool Call 仍由通用 Harness/Platform 执行边界
+校验、授权、限流并审计。应用层不得另建业务专属的 request planner、investigation loop、
+response synthesizer 或 renderer。
 
-- `RuntimePolicy`：由业务 Skill 提供渠道过滤、预算/类型等策略；
-- `RuntimeFeature`：由需要二阶段查询、批量计划或复杂编排的 Skill/Feature 提供；
-- `ResponseRenderer`：由应用层提供结果展示。
+平台保留可复用扩展协议，但它们不是广告流程的默认承载方式：
+
+- `RuntimePolicy`：为场景提供受控的 Tool 过滤与执行策略；广告侧仅接入账户范围等策略适配。
+- `RuntimeFeature`：仅在存在可跨场景复用的平台扩展时使用；不得用它恢复广告专属 Tool-call
+  dispatcher 或第二套对话编排。
+- `ResponseRenderer`：可供需要确定性展示的其他应用注入；广告当前 Run 由 Harness 模型直接
+  基于同一 transcript 生成回复，`AdvertisingRunService` 只投影通用结果结构。
 - `ExecutionPlan` / `WorkflowCoordinator`：分别负责不可变计划描述和持久化执行状态，
   不把业务流程实现塞回 Runtime。
 - `TaskExecutor`：负责长回合的持久化排队、受控并发、lease 心跳、取消和恢复；任务
   worker 只重新进入 Agent Runtime，不直接调用 Provider Handler。暂停/取消是本地
   调度语义，不代表外部广告平台已回滚。
-- `RuntimeServices` / `ToolExecutor` / `RuntimeSecurity`：分别提供 Feature 端口、
+- `RuntimeServices` / `ToolExecutor` / `RuntimeSecurity`：分别提供可复用扩展端口、
   Tool 执行和安全边界实现。
 - `PluginRegistry`：统一管理扩展的 Manifest、版本、依赖和生命周期；Tool Source、
   Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文都通过它登记。它不执行
   Provider 请求，也不替代 ToolRegistry 的权限、账户、dry-run 和审计门禁。
-- 最终回答经过 `ResponseSynthesizer`/`ResponseRenderer` 边界：LLM 只能基于脱敏的
-  用户输入、已执行结果、知识引用和分析结果回答，不能在最终回答阶段调用 Tool 或
-  改变执行状态；LLM 输出异常时必须回退到 Renderer。
+- 同一 Agent transcript 包含用户消息、模型 Tool Calls 与 Tool 结果；模型可在通用预算内
+  继续调用 Tool 或结束回复。回复不能绕开统一 Tool 执行边界改变外部状态。
 
 Runtime 只调用这些接口，不识别 `ecommerce`、`app`、`cross-channel` 等业务名称。
 
@@ -122,9 +129,9 @@ Renderer 或受信任 Skill；管理端上传的 Skill 只能登记为 tenant-sc
 已有 Tools + 新 Skill（自然语言 SOP / 约束 / evals）
 ```
 
-只有流程包含跨回合状态机、二阶段数据采集、批量展开或专用结果聚合时，才增加
-Skill-owned `RuntimeFeature`；Feature 通过 Runtime 的通用扩展上下文工作，仍不需要
-修改 Runtime 主循环。新增外部 API 动作时，才增加 Provider Client + Tool Source Tool。
+普通多步流程、连续查询和组合写入使用 Harness 的通用 Tool-call loop，由 Skill 描述
+何时调用哪些现有 Tools；缺少外部能力时，新增 Provider Client + Tool Source Tool。只有
+确属跨场景的平台扩展才考虑 `RuntimeFeature`，不得以 Feature 重建广告专属 turn 状态机。
 
 ### 3.1.1 Wiki 与 Memory
 

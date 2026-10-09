@@ -58,18 +58,6 @@ class AdvertisingRuntimePolicy:
             )
         return None
 
-    @staticmethod
-    def check_turn_budget(
-        deadline: float,
-        tool_call_count: int,
-        max_tool_calls: int = 32,
-    ) -> Optional[str]:
-        if tool_call_count > max_tool_calls:
-            return f"工具调用次数超过本回合上限（最多 {max_tool_calls} 次）"
-        if time.monotonic() > deadline:
-            return "本回合执行超时，已停止后续工具调用"
-        return None
-
     def check_tool_permissions(
         self,
         tool_def: Any,

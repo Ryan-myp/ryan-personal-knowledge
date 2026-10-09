@@ -2,6 +2,9 @@
 
 > 本文记录早期分层方案，不再作为当前目录结构依据。当前实现目录以
 > [`agents/ARCHITECTURE.md`](../../ARCHITECTURE.md) 为准。
+> 文中的 IntentParser → IntentRouter → ToolPlan、AdvertisingModelAdapter、广告 Feature
+> dispatcher 和 response assembler 流程均为历史设计快照；当前广告 Run 使用通用 Harness
+> model/Tool-call loop，具体实现边界见同目录 [`README.md`](./README.md)。
 
 > 实现状态以同目录 `README.md` 与 `PROGRESS.md` 为准。本文件描述分层边界；当前已补充统一 Tool/Skill 契约、动态参数选择凭证、workflow checkpoint/lease/recovery 和 `PersistenceBackend` 抽象。Harness Engineering 的完成度与剩余缺口见 `README.md` 的“Harness Engineering 评估”。
 

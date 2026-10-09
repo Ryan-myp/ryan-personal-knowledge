@@ -116,7 +116,8 @@ CPA、ROAS、view-through/视频指标（若该资源支持）。派生指标要
    可重试性；部分失败不能被汇总成“全部成功”。
 
 不要在 Skill 中写死 SDK 方法、Provider endpoint 或 Tool 名称。当前 Tool 的超时、输出上限、
-replay policy、readback Tool 和 live_support 才是执行合同；到期定时任务还必须重新预检。
+replay policy、readback Tool 和 live_support 才是执行合同；定时任务到期后作为新的
+Harness Run 执行，届时仍须重新经过当前 Tool schema、权限、账户范围和执行模式门禁。
 
 ## 常见故障判断
 

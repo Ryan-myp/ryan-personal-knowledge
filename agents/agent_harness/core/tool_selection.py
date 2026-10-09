@@ -7,12 +7,76 @@ Those concerns belong to an application adapter around this module.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional, Sequence
 
 from .interfaces import ParsedIntent, ToolDefinition
 from .namespace import normalize_namespace
 from .policy import RuntimePolicy, apply_policies, policy_metadata
+
+
+_TOKEN_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "by", "can", "do",
+    "for", "from", "how", "i", "in", "is", "it", "me", "my", "of",
+    "on", "or", "please", "show", "the", "to", "we", "with", "you",
+})
+
+
+def _terms(value: Any) -> set[str]:
+    text = str(value or "").casefold()
+    tokens = {
+        item for item in re.findall(r"[a-z0-9]+", text)
+        if item not in _TOKEN_STOPWORDS
+    }
+    tokens.update(
+        item[:-1] if item.endswith("s") and len(item) > 3 else item
+        for item in tuple(tokens)
+    )
+    for run in re.findall(r"[\u3400-\u9fff]+", text):
+        tokens.update(run[index:index + 2] for index in range(len(run) - 1))
+    return tokens
+
+
+def _tool_field(tool: Any, key: str, default: Any = "") -> Any:
+    if isinstance(tool, dict):
+        return tool.get(key, default)
+    return getattr(tool, key, default)
+
+
+def _schema_terms(tool: Any) -> set[str]:
+    schema = _tool_field(tool, "input_schema", {})
+    if callable(getattr(schema, "to_dict", None)):
+        schema = schema.to_dict()
+    properties = (
+        schema.get("properties", {})
+        if isinstance(schema, dict)
+        else getattr(schema, "properties", {})
+    )
+    terms: set[str] = set()
+    if isinstance(properties, dict):
+        for name, spec in properties.items():
+            terms.update(_terms(name))
+            if isinstance(spec, dict):
+                terms.update(_terms(spec.get("description", "")))
+    return terms
+
+
+def _relevance_score(query_terms: set[str], tool: Any) -> int:
+    fields = (
+        (6, _tool_field(tool, "name")),
+        (5, _tool_field(tool, "namespace")),
+        (5, _tool_field(tool, "intent_types", ())),
+        (4, _tool_field(tool, "intent_aliases", ())),
+        (3, _tool_field(tool, "action")),
+        (3, _tool_field(tool, "resource_type")),
+        (2, _tool_field(tool, "description")),
+    )
+    score = 0
+    for weight, value in fields:
+        overlap = query_terms & _terms(value)
+        score += weight * min(len(overlap), 3)
+    return score + len(query_terms & _schema_terms(tool))
 
 
 @dataclass
@@ -90,6 +154,32 @@ class ToolSelector:
                 **policy_metadata(self.policies),
             },
         )
+
+    def select_relevant(
+        self,
+        user_input: str,
+        available_tools: Sequence[Any],
+        *,
+        limit: int = 16,
+    ) -> list[Any]:
+        """Rank a bounded Tool subset using only publisher-owned metadata.
+
+        A zero-score request receives no executable Tool definitions. This
+        keeps unrelated Tools out of model context instead of falling back to
+        an arbitrary prefix of the registry.
+        """
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        query_terms = _terms(user_input)
+        if not query_terms:
+            return []
+        ranked = [
+            (_relevance_score(query_terms, tool), index, tool)
+            for index, tool in enumerate(available_tools or ())
+        ]
+        relevant = [item for item in ranked if item[0] > 0]
+        relevant.sort(key=lambda item: (-item[0], item[1]))
+        return [tool for _score, _index, tool in relevant[:limit]]
 
     def registered_namespaces(
         self, available_tools: Sequence[ToolDefinition]

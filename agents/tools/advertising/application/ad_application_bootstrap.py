@@ -27,12 +27,11 @@ from agents.agent_harness import (
 from agents.agent_harness.core.agent_profile import AgentProfile
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
 from agents.agent_harness.core.features import RuntimeFeature
-from agents.tools.advertising.shared.features.factory import discover_features, discover_response_renderer
+from agents.tools.advertising.shared.features.factory import discover_features
 from agents.agent_harness.core.intent import LLMIntentParser, SimpleIntentRouter
 from agents.agent_harness.core.interfaces import EffectReconciler, ExecutionMode
 from agents.agent_harness.core.plugins import PluginKind, PluginLoader, PluginRegistry
 from agents.agent_harness.core.policy import RuntimePolicy
-from agents.agent_harness.core.response import ResponseRenderer, ResponseSynthesizer
 from agents.agent_harness.core.tool_registry import GuardedToolRegistry, SimpleToolRegistry
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
 from agents.tools.advertising.shared.domain.blueprint import BlueprintCascadeEngine, BlueprintRegistry
@@ -41,7 +40,6 @@ from agents.tools.advertising.shared.domain.creation_card import CreationCardBui
 from agents.agent_platform.data.knowledge.wiki import MarkdownWikiKnowledgeProvider
 from agents.tools.advertising.shared.domain.parameter_catalog import ParameterCatalogRegistry
 from agents.tools.advertising.shared.domain.parameter_selection import ParameterSelectionSigner
-from agents.tools.advertising.shared.domain.response import LLMResponseSynthesizer
 from agents.agent_platform.data.knowledge.knowledge_management import ManagedKnowledgeProvider
 from agents.agent_platform.data.persistence.interfaces import PersistenceBackend
 from .account_policy import AccountWhitelistValidator
@@ -125,8 +123,6 @@ class AdApplicationBootstrap:
         )
         effect_reconcilers = options.get("effect_reconcilers")
         features = options.get("features")
-        response_renderer = options.get("response_renderer")
-        response_synthesizer = options.get("response_synthesizer")
         workflow_stale_after_seconds = float(
             options.get("workflow_stale_after_seconds", 300.0)
         )
@@ -160,8 +156,6 @@ class AdApplicationBootstrap:
             require_llm=require_llm,
             persistence_store=persistence_store,
             features=features,
-            response_renderer=response_renderer,
-            response_synthesizer=response_synthesizer,
             tool_selector=tool_selector,
             knowledge_provider=knowledge_provider,
             policies=policies,
@@ -236,8 +230,6 @@ class AdApplicationBootstrap:
         require_llm: bool,
         persistence_store: Any,
         features: Any,
-        response_renderer: Any,
-        response_synthesizer: Any,
         tool_selector: Any,
         knowledge_provider: Any,
         policies: Any,
@@ -306,10 +298,6 @@ class AdApplicationBootstrap:
         runtime._llm = llm_client
         runtime.conversation_title_generator = ConversationTitleGenerator()
         runtime.conversation_title_use_llm = conversation_title_use_llm
-        if runtime._llm is None:
-            model_client = getattr(runtime.intent_parser, "model_client", None)
-            if callable(model_client):
-                runtime._llm = model_client()
         runtime._sessions = {}
         runtime._session_locks = {}
         runtime._session_locks_guard = threading.RLock()
@@ -346,27 +334,6 @@ class AdApplicationBootstrap:
             )
             if callable(register_descriptors):
                 register_descriptors(feature.intent_descriptors())
-        runtime.response_renderer = response_renderer or discover_response_renderer()
-        if runtime.response_renderer is None:
-            raise RuntimeError("no response renderer is registered")
-        runtime.response_synthesizer = (
-            response_synthesizer
-            if response_synthesizer is not None
-            else (
-                LLMResponseSynthesizer(profile=runtime.agent_profile)
-                if runtime._llm is not None else None
-            )
-        )
-        renderer_name = str(
-            getattr(runtime.response_renderer, "renderer_name", "") or ""
-        ).strip()
-        if renderer_name:
-            runtime._register_builtin_plugin(
-                f"renderer:{renderer_name}",
-                runtime.response_renderer,
-                (PluginKind.RENDERER.value,),
-                description=f"Response renderer {renderer_name}",
-            )
         runtime._skill_objects = {}
         runtime._skill_keys_by_platform = {}
         runtime._skill_tool_names = {}
@@ -395,7 +362,7 @@ class AdApplicationBootstrap:
         )
         runtime.parameter_catalogs = ParameterCatalogRegistry()
         runtime.catalog_service = AdvertisingCatalogService(runtime)
-        runtime.presentation_service = AdvertisingPresentationService(runtime)
+        runtime.presentation_service = AdvertisingPresentationService()
         runtime.scope_service = AdvertisingRuntimeScope(runtime)
         runtime.reconciliation_service = AdvertisingRuntimeReconciliation(runtime)
         runtime.creation_blueprints = BlueprintRegistry()

@@ -2,6 +2,19 @@
 
 > 本文件记录当前源码状态，不代表所有平台 live API 能力已达到生产可用。默认执行模式为 `dry_run`；真实测试只允许使用 `config.yaml` 中的测试账户白名单，且不能修改线上凭证或账户元数据。下方历史记录仅供追溯，不能作为当前 live 成功证据。
 
+## Run orchestration update (2026-10-09)
+
+广告场景已使用 Harness 自己的 model/Tool-call loop：模型 Tool Call 与结果写入同一 Run
+transcript，由 Harness 的 Run budget、Tool-call budget、Tool executor 和 Platform policy
+统一约束。广告侧只负责场景装配、受限 Skill/知识上下文、账户策略适配和 API 响应投影；
+广告专属 ModelAdapter、investigation/planning loop、turn handler 和二次 response assembler
+不再是执行路径。多步查询和跨渠道操作必须由普通 Skills + 已注册 Tools 组合完成。
+
+先前条目中提到的广告 `RuntimeFeature` 承担跨渠道编排和 `ResponseRenderer` 承担最终回复，
+是此前架构状态，不代表当前广告 Run 的实现。平台仍保留通用扩展协议，但广告 Scenario
+当前不注册这类对话 dispatcher/renderer。`AdvertisingRunService` 的职责限于结果 envelope
+投影、会话记录和已验证 live 写入结果的窄范围记忆捕获。
+
 ## 当前契约（2026-09-30）
 
 - 单 Agent + 多 Skills + Tools；平台 Tool Source 是可执行注册表的来源，当前合同快照为 297 个工具，按 Provider 自动发现，不依赖中心渠道/工具配置表；每个 Tool Source 还提供 Provider 方法覆盖率发布门禁。DV360 Campaign 创建仍未纳入本轮范围，仅在 API Surface 标记为 planned，不注册不可执行 Tool。

@@ -11,11 +11,8 @@ from typing import Any, Optional
 
 from agents.agent_harness import DeploymentHealth, HealthCheck
 
-from agents.agent_harness.core.features import RuntimeFeature
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.interfaces import ExecutionMode, ToolEffect
-from agents.tools.advertising.shared.domain.response import LLMResponseSynthesizer
-from agents.tools.advertising.shared.features.factory import feature_for_intent
 from agents.agent_harness.core.memory import MemoryManager
 from .security import RuntimeSecurity
 
@@ -135,9 +132,6 @@ class AdvertisingRuntimeControls:
                         )
                 return self.runtime._execution_mode
             return self.runtime._execution_mode
-
-    def feature_for_intent(self, intent: Any) -> Optional[RuntimeFeature]:
-        return feature_for_intent(self.runtime.features, intent)
 
     def close(self, wait: bool = False) -> None:
         self.runtime.supervisor.close(wait=wait)
@@ -266,21 +260,21 @@ class AdvertisingRuntimeControls:
 
     def inject_llm(self, llm_client: Any) -> None:
         runtime = self.runtime
-        runtime._llm = llm_client
-        if runtime.response_synthesizer is None and llm_client is not None:
-            runtime.response_synthesizer = LLMResponseSynthesizer(
-                profile=runtime.agent_profile,
+        if llm_client is not None and not any(
+            callable(getattr(llm_client, method, None))
+            for method in ("complete", "stream")
+        ) and not callable(llm_client):
+            raise TypeError(
+                "LLM adapter must expose complete()/stream() or be callable"
             )
+        runtime._llm = llm_client
+        runtime.platform_application.agent.model = llm_client
         if isinstance(runtime.intent_parser, LLMIntentParser):
             runtime.intent_parser.inject_llm(llm_client)
 
     def assert_llm_ready(self) -> None:
         runtime = self.runtime
-        if (
-            runtime.require_llm
-            and isinstance(runtime.intent_parser, LLMIntentParser)
-            and runtime._llm is None
-        ):
+        if runtime.require_llm and runtime._llm is None:
             raise RuntimeError(
                 "LLM client is required; configure the model before starting the Agent"
             )

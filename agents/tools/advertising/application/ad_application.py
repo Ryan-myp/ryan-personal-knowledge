@@ -29,7 +29,6 @@ from agents.agent_harness.core.interfaces import (
     WriteGuard,
 )
 from agents.agent_harness.core.policy import RuntimePolicy
-from agents.agent_harness.core.response import ResponseRenderer, ResponseSynthesizer
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
 from agents.agent_platform.data.knowledge.wiki import KnowledgeProvider
 from agents.tools.advertising.shared.domain.security import PROTECTED_INPUT_FIELDS
@@ -93,8 +92,6 @@ class AdvertisingComposition(
         max_platform_params_bytes: int = 256_000,
         effect_reconcilers: Optional[Mapping[str, EffectReconciler]] = None,
         features: Optional[Iterable[RuntimeFeature]] = None,
-        response_renderer: Optional[ResponseRenderer] = None,
-        response_synthesizer: Optional[ResponseSynthesizer] = None,
         workflow_stale_after_seconds: float = 300.0,
         selection_token_secret: Optional[str] = None,
         parameter_selection_ttl_seconds: int = 600,

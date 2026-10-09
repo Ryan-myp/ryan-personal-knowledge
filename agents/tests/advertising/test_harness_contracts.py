@@ -18,6 +18,7 @@ from agents.agent_harness.core.interfaces import (
     EffectReconciler, ReconciliationObservation, ToolSourceRuntime,
     ReconciliationContext, ParsedIntent, ToolResult, Skill,
 )
+from agents.agent_harness.messages import ModelTurn, ToolCall
 from agents.agent_platform.data.knowledge.wiki import KnowledgeDocument
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry, validate_tool_input
@@ -33,13 +34,26 @@ from agents.tools.advertising.clients.dv360_client import DV360APIClient
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.tools.advertising.application.ad_application import AccountWhitelistValidator, AdvertisingComposition
 from agents.tools.advertising.application.reconciliation import ToolReadbackReconciler
-from agents.tools.advertising.shared.features.cross_channel import CrossChannelFeature
 
 
 def _whitelist(**accounts):
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
     validator.allowed_accounts = accounts
     return validator
+
+
+class _ScriptedHarnessModel:
+    """Return explicit model ToolCalls for deterministic Run-boundary tests."""
+
+    def __init__(self, *turns):
+        self.turns = list(turns)
+        self.messages = []
+
+    def complete(self, messages, _tools, _request):
+        self.messages.append(list(messages))
+        if not self.turns:
+            raise AssertionError("Harness requested an unexpected model turn")
+        return self.turns.pop(0)
 
 
 def test_runtime_registry_cannot_bypass_execution_boundary():
@@ -232,167 +246,31 @@ def test_skill_lifecycle_serializes_register_and_unload():
     assert runtime.registry.list_all() == []
 
 
-def test_batch_planner_selects_campaign_updater_from_tool_metadata():
-    """Batch routing must not depend on provider Tool registration order."""
-    lookup = ToolDefinition(
-        name="new_network_list_campaigns",
-        skill="new-network",
-        namespace="new-network",
-        description="List campaigns",
-        input_schema=ToolSchema(),
-        action="list",
-        resource_type="campaign",
-        intent_types=["cross_channel_batch_pause"],
-    )
-    updater = ToolDefinition(
-        name="new_network_update_campaign",
-        skill="new-network",
-        namespace="new-network",
-        description="Update a campaign",
-        input_schema=ToolSchema(properties={"updates": {"type": "object"}}),
-        action="update",
-        resource_type="campaign",
-        intent_types=["cross_channel_batch_pause"],
-        effect_class=ToolEffect.WRITE,
-    )
-
-    selected = CrossChannelFeature.select_batch_campaign_tool(
-        [lookup, updater], "cross_channel_batch_pause", AdvertisingComposition(require_llm=False)
-    )
-
-    assert selected is updater
-
-
-def test_batch_planner_fails_closed_for_ambiguous_campaign_updaters():
-    first = ToolDefinition(
-        name="new_network_update_campaign_a",
-        skill="new-network",
-        namespace="new-network",
-        description="Update a campaign variant A",
-        input_schema=ToolSchema(),
-        action="update",
-        resource_type="campaign",
-        intent_types=["cross_channel_batch_pause"],
-        effect_class=ToolEffect.WRITE,
-    )
-    second = ToolDefinition(
-        name="new_network_update_campaign_b",
-        skill="new-network",
-        namespace="new-network",
-        description="Update a campaign variant B",
-        input_schema=ToolSchema(),
-        action="update",
-        resource_type="campaign",
-        intent_types=["cross_channel_batch_pause"],
-        effect_class=ToolEffect.WRITE,
-    )
-
-    assert CrossChannelFeature.select_batch_campaign_tool(
-        [first, second], "cross_channel_batch_pause", AdvertisingComposition(require_llm=False)
-    ) is None
-
-
-def test_batch_budget_uses_provider_schema_and_rejects_unsupported_provider():
-    runtime = AdvertisingComposition(
-        require_llm=False,
-        persistence_store=AdAgentStore(":memory:"),
-        whitelist_validator=_whitelist(dv360=["d1"]),
-    )
-    runtime.register_tool_source(create_dv360_tool_source())
-
-    result = runtime.run(
-        "批量更新预算 DV360 campaign_ids=campaign-1 预算100元/天",
-        user_id="u1",
-        platform_params={"dv360": {"account_id": "d1"}},
-    )
-
-    assert result["results"][0]["success"] is False
-    assert "没有唯一兼容" in result["results"][0]["error"]
-    workflow = runtime._session_manager.get_workflow(result["workflow_id"])
-    assert workflow["status"] == "blocked"
-    assert workflow["metadata"]["planning_error_count"] == 1
-    assert workflow["items"] == []
-
-
-def test_batch_items_have_global_sequences_and_keep_account_on_validation_failure():
-    runtime = AdvertisingComposition(
-        require_llm=False,
-        persistence_store=AdAgentStore(":memory:"),
-        whitelist_validator=_whitelist(meta=["m1"], **{"google-ads": ["g1"]}),
-    )
-    runtime.register_tool_source(create_meta_tool_source())
-    runtime.register_tool_source(create_google_tool_source())
-
-    result = runtime.run(
-        "跨渠道批量更新预算 Meta 和 Google campaign_ids=meta-1 预算=100元/天",
-        user_id="u1",
-        platform_params={
-            "meta": {
-                "account_id": "m1",
-                    "campaign_ids": ["meta-1"],
-                    "budget": 100,
-                    "updates": {"invalid_field": "reject-me"},
-                },
-                "google": {
-                    "account_id": "g1", "campaign_ids": ["google-1"],
-                    "budget": 100,
-                },
-        },
-    )
-
-    workflow = runtime._session_manager.get_workflow(result["workflow_id"])
-    assert [item["sequence"] for item in workflow["items"]] == [1, 2]
-    assert [item["account_id"] for item in workflow["items"]] == ["m1", "g1"]
-    assert workflow["items"][0]["status"] == "failed"
-    assert workflow["items"][0]["input_data"]["campaign_id"] == "meta-1"
-    assert workflow["items"][1]["status"] == "succeeded"
-
-
-def test_cross_channel_batch_status_mapping_is_provider_owned():
-    """Batch status stays neutral in Core and maps through each Tool schema."""
-    runtime = AdvertisingComposition(
-        require_llm=False,
-        persistence_store=AdAgentStore(":memory:"),
-        whitelist_validator=_whitelist(
-            meta=["m1"], **{"google-ads": ["g1"]}, tiktok=["t1"], dv360=["d1"],
-        ),
-    )
-    runtime.register_tool_source(create_meta_tool_source())
-    runtime.register_tool_source(create_google_tool_source())
-    runtime.register_tool_source(create_tiktok_tool_source())
-    runtime.register_tool_source(create_dv360_tool_source())
-
-    platform_params = {
-        "meta": {"account_id": "m1", "campaign_ids": ["meta-1"]},
-        "google": {"customer_id": "g1", "campaign_ids": ["google-1"]},
-        "tiktok": {"account_id": "t1", "campaign_ids": ["tiktok-1"]},
-        "dv360": {"advertiser_id": "d1", "campaign_ids": ["dv360-1"]},
-    }
-    expected = {
-        "meta": {"pause": {"status": "PAUSED"}, "resume": {"status": "ACTIVE"}},
-        "google-ads": {
-            "pause": {"status": "PAUSED"}, "resume": {"status": "ENABLED"},
-        },
-        "tiktok": {
-            "pause": {"campaign_group_status": 0},
-            "resume": {"campaign_group_status": 1},
-        },
-        "dv360": {"pause": {"status": "PAUSED"}, "resume": {"status": "ACTIVE"}},
+def test_provider_tools_own_cross_channel_campaign_actions():
+    """Cross-channel actions use regular Provider Tools and schemas."""
+    sources = {
+        "meta": create_meta_tool_source(),
+        "google-ads": create_google_tool_source(),
+        "tiktok": create_tiktok_tool_source(),
+        "dv360": create_dv360_tool_source(),
     }
 
-    for action, text in (
-        ("pause", "跨渠道批量暂停 Meta、Google、TikTok、DV360 campaign"),
-        ("resume", "跨渠道批量恢复 Meta、Google、TikTok、DV360 campaign"),
-    ):
-        result = runtime.run(text, user_id="batch-user", platform_params=platform_params)
-        assert result["intent"]["intent_type"] == f"cross_channel_batch_{action}"
-        by_platform = {
-            item["platform"]: item["data"]["input"]["updates"]
-            for item in result["results"]
-        }
-        assert by_platform == {
-            platform: values[action] for platform, values in expected.items()
-        }
+    for namespace, source in sources.items():
+        campaign_updates = [
+            definition
+            for definition, _executor in source.register_tools()
+            if definition.action == "update"
+            and definition.resource_type == "campaign"
+            and "cross_channel_batch_pause" in definition.intent_types
+        ]
+        assert campaign_updates, namespace
+        for tool in campaign_updates:
+            assert {"cross_channel_batch_pause", "cross_channel_batch_resume"} <= set(
+                tool.intent_types
+            )
+            assert tool.effect_class == ToolEffect.WRITE
+            assert tool.resource_id_field in tool.input_schema.properties
+            assert "updates" in tool.input_schema.properties
 
 
 def test_tool_source_unload_clears_tools_and_derived_discovery_indexes():
@@ -442,35 +320,18 @@ def test_tool_source_registration_rolls_back_partial_tool_registration():
     assert "partial-provider" not in runtime.get_loaded_skills()
 
 
-def test_selector_only_builds_context_and_cannot_shrink_authoritative_plan():
-    class Parser:
-        def parse(self, _text, _ctx):
-            return ParsedIntent("route_test", "route test", ["meta"])
-
-    class Router:
-        def route(self, _intent, registry):
-            return {
-                "meta": [registry.get("route_first")[0], registry.get("route_second")[0]]
-            }
-
-    class NarrowSelector:
-        def build_context_for_input(self, *_args):
-            return {}
-
-        def optimize_for_llm(self, _text, _intent, all_tools):
-            return {
-                "selected_tools": list(all_tools[:1]), "tool_count": 1,
-                "tool_prompt": "one tool for model context", "expert_knowledge": "",
-                    "context": {}, "namespaces": ["meta"], "knowledge": [],
-            }
-
+def test_harness_executes_model_requested_tools_from_registered_catalog():
     class Handler:
         def execute(self, _ctx, _input_data):
             return ToolResult.ok({"executed": True})
 
-    runtime = AdvertisingComposition(require_llm=False,
-        intent_parser=Parser(), intent_router=Router(),
-        tool_selector=NarrowSelector(),
+    model = _ScriptedHarnessModel(ModelTurn(tool_calls=(
+        ToolCall("call-first", "route_first", {}),
+        ToolCall("call-second", "route_second", {}),
+    )), ModelTurn(content="两个读取已完成。"))
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        llm_client=model,
         whitelist_validator=_whitelist(meta=["m1"]),
     )
     for name in ("route_first", "route_second"):
@@ -505,12 +366,25 @@ def test_knowledge_context_is_read_only_bounded_and_source_addressable():
             )]
 
     provider = Provider()
-    runtime = AdvertisingComposition(require_llm=False, knowledge_provider=provider)
+    model = _ScriptedHarnessModel(ModelTurn(content="查到了相关资料。"))
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        llm_client=model,
+        knowledge_provider=provider,
+    )
     result = runtime.run("查询 Meta campaign", account_id=None)
 
     assert provider.calls
-    assert result["tool_selection"]["knowledge"][0]["source"] == "fixture"
-    assert result["tool_selection"]["knowledge"][0]["confidence"] == 0.9
+    prompt = "\n".join(
+        str(message.content)
+        for turn in model.messages
+        for message in turn
+        if message.role == "system"
+    )
+    assert "meta:campaigns.md" in prompt
+    assert "fixture" in prompt
+    assert "0.9" in prompt
+    assert result["tool_selection"]["tools"] == []
     assert not hasattr(provider, "add")
 
 
@@ -652,6 +526,12 @@ def test_live_confirmation_requires_payload_even_for_direct_runtime_call():
     )
     runtime.register_tool_source(create_meta_tool_source(Client()))
     runtime.registry.get("meta_update_campaign")[0].live_support = True
+    runtime.inject_llm(_ScriptedHarnessModel(ModelTurn(tool_calls=(
+        ToolCall(
+            "update-call", "meta_update_campaign",
+            {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        ),
+    )), ModelTurn(content="写入已被确认门禁拦截。")))
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="s1", user_id="u1", account_id="m1", confirmed=True,
@@ -682,6 +562,12 @@ def test_live_write_without_write_guard_fails_closed():
     runtime.register_tool_source(create_meta_tool_source(Client()))
     runtime.registry.get("meta_update_campaign")[0].live_support = True
     runtime.write_guard = None
+    runtime.inject_llm(_ScriptedHarnessModel(ModelTurn(tool_calls=(
+        ToolCall(
+            "update-call", "meta_update_campaign",
+            {"campaign_id": "123", "updates": {"status": "PAUSED"}},
+        ),
+    )), ModelTurn(content="写入已被 WriteGuard 门禁拦截。")))
     result = runtime.run(
         "更新 Meta campaign campaign_id=123 status=PAUSED",
         session_id="s-no-guard", user_id="u1", account_id="m1",
@@ -810,9 +696,13 @@ def test_workflow_state_machine_and_cancel_are_durable():
     assert runtime.get_workflow("w1", "u1")["status"] == "cancelled"
 
 
-def test_workflow_write_items_are_checkpointed_before_execution():
+def test_harness_schema_gate_prevents_invalid_create_from_becoming_workflow():
     store = AdAgentStore(":memory:")
     runtime = AdvertisingComposition(require_llm=False,
+        llm_client=_ScriptedHarnessModel(
+            ModelTurn(tool_calls=(ToolCall("create-call", "meta_create_campaign", {}),)),
+            ModelTurn(content="需要更多创建参数。"),
+        ),
         persistence_store=store,
         whitelist_validator=_whitelist(meta=["m1"]),
     )
@@ -822,10 +712,11 @@ def test_workflow_write_items_are_checkpointed_before_execution():
         session_id="checkpoint-session", user_id="u1", account_id="m1",
     )
 
-    # A campaign without a declared objective is a clarification turn, not a
-    # partially materialized workflow.
+    # The Harness enforces the Tool schema; the application does not create a
+    # separate workflow or clarification state machine.
     assert result["workflow_id"] is None
-    assert result["ui"]["clarification"]
+    assert result["results"]
+    assert result["results"][0]["success"] is False
 
 
 def test_workflow_resume_plan_preserves_account_scope():
@@ -1086,19 +977,40 @@ def test_provider_reconciler_uses_only_runtime_read_callback():
 
 
 def test_turn_tool_budget_stops_long_create_chain():
-    runtime = AdvertisingComposition(require_llm=False,
-        max_tool_calls=1,
-        whitelist_validator=_whitelist(meta=["m1"]),
+    calls = []
+
+    class Handler:
+        def execute(self, _ctx, _input):
+            calls.append(True)
+            return ToolResult.ok({"read": True})
+
+    model = _ScriptedHarnessModel(
+        ModelTurn(tool_calls=(ToolCall("first-call", "budget_read", {}),)),
+        ModelTurn(tool_calls=(ToolCall("second-call", "budget_read", {}),)),
     )
-    runtime.register_tool_source(create_meta_tool_source())
-    result = runtime.run(
-        "创建 Meta campaign 名称=budget-test",
-        account_id="m1",
+    runtime = AdvertisingComposition(require_llm=False,
+        llm_client=model,
+        max_tool_calls=1,
+        enforce_account_scope=False,
+    )
+    runtime.register_tool(
+        ToolDefinition(
+            name="budget_read", skill="budget", namespace="records",
+            description="Read a budget test record",
+            input_schema=ToolSchema(), action="get", resource_type="record",
+            intent_types=["budget_read"], effect_class=ToolEffect.READ,
+        ),
+        Handler(),
     )
 
-    assert result["results"] == []
-    assert result["ui"]["clarification"]
-    assert result["tool_plan"] == {}
+    result = runtime.run("read budget test record")
+
+    assert result["status"] == "failed"
+    assert result["runtime_signals"]["tool_call_budget_exceeded"] is True
+    assert result["tool_call_count"] == 1
+    assert [item["success"] for item in result["results"]] == [True, False]
+    assert calls == [True]
+    assert len(model.messages) == 2
 
 
 def test_missing_tool_permission_fails_closed_before_handler_execution():
@@ -1109,22 +1021,11 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
             calls.append(True)
             return type("Result", (), {"success": True, "data": {}})()
 
-    from agents.agent_harness.core.interfaces import ParsedIntent
-
-    class Parser:
-        def parse(self, _text, _ctx):
-            return ParsedIntent(
-                    intent_type="permission_test", raw_input="test", namespaces=["meta"]
-            )
-
-    class Router:
-        def route(self, _intent, registry):
-            definition, _ = registry.get("permissioned_read")
-            return {"meta": [definition]}
-
     runtime = AdvertisingComposition(require_llm=False,
-        intent_parser=Parser(),
-        intent_router=Router(),
+        llm_client=_ScriptedHarnessModel(
+            ModelTurn(tool_calls=(ToolCall("read-call", "permissioned_read", {}),)),
+            ModelTurn(content="读取已被权限门禁拦截。"),
+        ),
         whitelist_validator=_whitelist(meta=["m1"]),
         granted_permissions=set(),
     )
@@ -1167,6 +1068,13 @@ def test_trusted_principal_overrides_user_id_and_restricts_accounts():
         whitelist_validator=_whitelist(meta=["m1", "m2"]),
     )
     runtime.register_tool_source(create_meta_tool_source())
+    runtime.inject_llm(_ScriptedHarnessModel(ModelTurn(tool_calls=(
+        ToolCall("list-call", "meta_list_campaigns", {"account_id": "m2"}),
+    )), ModelTurn(tool_calls=(
+            ToolCall("list-call-allowed", "meta_list_campaigns", {"account_id": "m1"}),
+        )),
+        ModelTurn(content="读取已按可信身份执行。"),
+    ))
     principal = RequestPrincipal(
         user_id="trusted-user",
         tenant_id="tenant-a",
@@ -1175,22 +1083,23 @@ def test_trusted_principal_overrides_user_id_and_restricts_accounts():
     )
 
     denied = runtime.run(
-        "创建 Meta campaign 名称=Denied",
+        "查询 Meta campaign",
         user_id="forged-user",
         account_id="m2",
         principal=principal,
     )
-    assert denied["results"] == []
-    assert "授权范围" in denied["policy_errors"][0]
+    assert denied["results"]
+    assert denied["results"][0]["success"] is False
+    assert "授权范围" in denied["results"][0]["error"]
 
     allowed = runtime.run(
-        "创建 Meta campaign 名称=Allowed",
+        "查询 Meta campaign",
         user_id="forged-user",
         account_id="m1",
         principal=principal,
     )
-    assert allowed["results"] == []
-    assert allowed["ui"]["clarification"]
+    assert allowed["results"], allowed
+    assert "授权范围" not in allowed["results"][0].get("error", "")
     assert store.get_session(allowed["session_id"])["user_id"] == "trusted-user"
 
 

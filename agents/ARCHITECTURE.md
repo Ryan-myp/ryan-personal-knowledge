@@ -124,7 +124,7 @@ Provider client directly.
 | Current location | Target owner |
 | --- | --- |
 | `ad_agent/core` | Generic Run/Turn/Tool/intent contracts into Harness; Memory, model adapter, MCP and managed-package services into Platform; advertising-only scope and provider rules into advertising Tool Sources |
-| `ad_agent/runtime` | Generic loop/interaction/execution behavior moved to Harness; hosting, persistence, management and API behavior moved to Platform/Deployment; remaining advertising composition and turn adapter live under `tools/advertising/application` and are a documented reduction gap, not a second Runtime |
+| `ad_agent/runtime` | Generic loop/interaction/execution behavior moved to Harness; hosting, persistence, management and API behavior moved to Platform/Deployment; advertising composition and control-plane adapters live under `tools/advertising/application`, with no advertising ModelAdapter or turn loop |
 | `ad_agent/tools/providers` | `agents/tools/advertising/providers` |
 | `ad_agent/api_clients` | `agents/tools/advertising/clients` |
 | `ad_agent/creation_templates.py`, `ad_agent/domain/ad/blueprint.py`, `parameter_catalog.py` | `agents/tools/advertising/shared` and provider template assets |
@@ -135,8 +135,8 @@ Provider client directly.
 | `ad_agent/mcp_management.py`, `runtime_mcp.py` | `agent_platform/integrations/mcp` |
 | `ad_agent/skill_management.py`, `plugin_management.py` | `agent_platform/management` |
 | `ad_agent/agent_definition.py` | `agents/scenarios/advertising.py` |
-| `ad_agent/integration_investigation.py` | Harness generic interaction service, retaining the existing read-only Tool allowlist and bounded-call guarantees |
-| `ad_agent/integration_turn_*`, `integration_result_assembler.py` | Split generic request/response mechanics into Harness; remove advertising-only routing/creation behavior in favor of Skills, Tool schemas and shared interaction contracts |
+| `ad_agent/integration_investigation.py` | Removed; the generic model loop may request bounded follow-up Tools from the current Tool catalog |
+| `ad_agent/integration_turn_*`, `integration_result_assembler.py` | Removed; the Harness owns Tool-call iteration and Run lifecycle, while the advertising request adapter only projects the generic result envelope |
 | `ad_agent/api_server.py`, `ad_agent/chat.py`, `ad_agent/static`, `ad_agent/templates` | `agents/deployments/advertising`; HTTP/CLI and assets remain outside Platform core |
 | `ad_agent/api`, generic chat/session/task routes | `agent_platform/api`; scenario selection is injected by the deployment entry |
 | `ad_agent/persistence` | `agent_platform/data/persistence`; business callers use store interfaces, never SQL or SQLite-specific types |
@@ -212,6 +212,42 @@ verification at 0, no production multi-instance evidence, and maintainability at
 These remain explicit runtime/API evidence and decomposition work, not directory
 compatibility work.
 
+### Run-Orchestration Reduction (2026-10-09)
+
+The advertising scenario now supplies the configured generic model directly to
+the Harness. The advertising-only model adapter, intent-driven turn planner,
+read-only investigation planner, turn handler, and result assembler have been
+removed, along with their private request/account/feature/plan service chain.
+The Harness iterates model-issued Tool Calls and continues from Tool results;
+the advertising assembly contributes only bounded Tool selection, advisory
+context, the registered Tool catalog/executor adapter, and account-aware policy
+checks. `AdvertisingRunService` maps the generic Run envelope to the existing
+advertising API response, and `AdvertisingRunMemoryRecorder` retains the narrow
+live-write outcome capture without owning Run state.
+
+Verification for this reduction: the generic advertising Run exercised two
+sequential Meta read Tools in one Run, preserving trusted account scope; the
+focused architecture-boundary, generic-runtime, Harness-contract, and
+runtime-boundary tests passed (`109 passed`). The full Agent suite is not
+green: the latest run reports `1,157 passed`, `79 failed`. Failures include
+tests that still expect Parser-driven natural-language routing, and workflows
+whose old creation-card/draft, scheduling-conversation, or cross-channel
+dispatcher contracts were removed without equivalent generic Tool/Skill or
+application UI coverage. Skill-up and model-less task tests also show that the
+Runtime evaluation adapter has not yet been converted to explicit Harness
+ModelTurn/ToolCall fixtures. These are not being treated as irrelevant test
+drift; behavior that remains a product requirement needs a supported generic
+Run/UI contract and end-to-end revalidation. Provider contract audit and the
+297-Tool snapshot validation pass; repository qguard reports `0.0 (F)` across
+649 scanned files and remains separate repository-wide quality debt.
+
+This removes the second advertising turn loop. Scheduling management is a
+Platform control-plane API; cross-channel campaign actions are ordinary
+Provider Tools invoked together by the generic Harness when needed. There is no
+advertising Feature turn dispatcher. Creation Blueprint/template management
+endpoints remain application configuration services and do not execute Provider
+operations.
+
 ## Acceptance Criteria
 
 1. A second Scenario can select a different Tool Source and Skill Source through
@@ -233,9 +269,22 @@ compatibility work.
 ## Current Migration Note
 
 The directory moves are not evidence by themselves that every application adapter
-is generic. Advertising currently injects a domain-specific turn adapter and a
-large composition module into the single Platform/Harness lifecycle. It does not
-own a second Run Kernel or Tool policy gate, but its size and scope remain a
-maintainability/genericity gap; it must be reduced by moving deterministic
-capabilities into registered Tools and advisory procedures into Skills, not by
-renaming it as a second framework layer.
+is generic. The advertising ModelAdapter and turn loop have been removed; the
+remaining application package still contains a large composition root and
+advertising control-plane services for account policy, creation Blueprint
+management, workflow recovery, scheduling, and API result mapping. These are not
+a second Run Kernel or Tool policy gate, but their size and feature-hook coverage
+remain maintainability and behavioral-parity work. New conversational behavior
+must enter through the generic Harness model/Tool loop and registered Tool
+contracts, not an advertising-only turn pipeline.
+
+The application creation composition now contains only Blueprint/template/schema
+services. The disconnected advertising clarification handler, creation/action
+draft merger, legacy response assembler, schedule draft flow, and cross-channel
+routed handler were removed; none had a caller in the generic Run path. Durable
+schedule CRUD, task submission, and Worker execution remain available through the
+Platform scheduling API. Cross-channel actions use registered Provider Tools in
+one Harness Run, retaining the same Tool policy and audit path. Blueprint and
+template management APIs remain available, but interactive card/draft continuity
+is not claimed as part of the current generic Run until it is reintroduced
+through a supported application UI contract.

@@ -9,8 +9,8 @@
 - **持久化层**：通过 `PersistenceBackend` 抽象存储会话、工具调用、Campaign 状态、Agent Memory、Task、Outbox 和 Run Event；默认 SQLite 适合单进程，MySQL/InnoDB 可通过连接配置启用多实例共享状态
 - **结构化日志**：JSON 格式，便于 log aggregation
 - **模型驱动**：生产入口必须配置 LLM；离线 fixture 仅用于显式测试和评测，不是产品降级路径
-- **Planner 执行闭环**：每回合由 LLM 解析当前请求和受限 Skill/Tool 上下文，Runtime 依据注册元数据生成确定性计划并执行；业务策略、跨渠道流程和响应展示通过 Skill-owned Policy/Feature/Renderer 扩展；后续回合可读取最近脱敏 Tool 结果继续补参或决策
-- **LLM 结果闭环**：执行完成后，LLM 可基于脱敏的工具结果、知识引用和分析结果生成最终回答；输出协议、dry-run 事实和失败事实经过校验，异常时回退到确定性 Renderer
+- **通用 Tool-call 闭环**：Harness 把相关的已注册 Tool contract 提供给模型，执行模型发出的 Tool Calls，并将结果放回同一 Run transcript；模型可在 Harness 的回合与调用上限内继续调用 Tool 或结束回复。广告不再拥有自己的 intent-to-plan 或 turn loop
+- **结果与安全闭环**：Provider 请求仍只经统一 Tool contract、Harness executor 和 Platform policy；通用 Run 保存唯一身份、调用轨迹及状态。广告 API 适配器只把 Run 结果映射到既有响应结构
 - **安全边界**：写操作必须由当前请求明确提供目标账户、命中配置的测试账户白名单；live 还必须显式确认
 - **可扩展**：Tool 可以来自本地 Handler、SDK/HTTP Connector 或 MCP；新增集成不需要修改 Runtime、Router 或中心渠道表
 - **业务扩展**：大多数业务只需新增标准 Skill；需要新外部动作时发布 Tool Source/Executor，广告渠道的 Provider Module 只是具体实现
@@ -18,7 +18,7 @@
 - **广告创建蓝图**：广告 Provider Module 可提供版本化 JSON Blueprint，描述广告创建字段级联；Runtime 只做通用注册、校验和确定性状态计算，不执行 Blueprint 中的代码
 - **统一插件内核**：Tool Source、Feature、Renderer、受信任 Skill 扩展和托管 Skill 上下文统一发布 Plugin Manifest、版本、依赖和生命周期；托管 Skill 始终是不可执行的 advisory Plugin
 - **通用可观测性**：广告 Runtime 将安全 Run Trace 接入 Harness `MetricsSink`；默认指标只记录生命周期、Tool 调用计数和耗时，不保存 Prompt、参数、结果或凭证
-- **动态平台识别**：解析器从已注册 Tool/Skill 发布 namespace 和自然语言别名，不维护固定四渠道路由表
+- **动态 Tool 目录**：Harness 根据已注册 Tool 的名称、namespace、动作、资源、描述和 schema 元数据提供有界候选，不维护中心渠道路由表
 - **版本兼容**：Tool 声明 Provider API 版本；版本差异由渠道 Client 自己的 adapter 处理，Runtime 不增加渠道分支
 - **开发契约**：后续模块遵循 [`AGENT.md`](./AGENT.md)；广告专属代码约束见 [`AGENTS.md`](../../ad_agent/AGENTS.md)
 
@@ -159,13 +159,10 @@ Memory 与 Wiki、Session、Tool Audit 分离。用户明确的“记住/保存�
 召回，Memory 不能创建 Tool、权限、账户范围或凭证。SQLite 的 `memories` 表通过
 `PersistenceBackend` 访问，未来替换 MySQL/PostgreSQL 不需要修改 Runtime。
 
-广告查询分析支持受限的结果驱动补充取证。意图模型只有在 `metadata.planning_mode` 明确为
-`investigate` 时才进入该阶段；初始计划必须全部为只读 Tool，后续最多两轮、每轮一个 Tool，
-候选仅来自当前注册表及本次请求已选 namespace。账户/凭证字段不提供给规划模型，追加参数
-先与 Tool schema 校验，执行仍完全经过通用 Harness 的 principal、scope、权限、timeout 和
-审计门禁。Planner 无可用模型、输出无效或运行异常时，会收敛回已有结果，不阻断主查询。
-创建、更新、删除等写计划永远不触发该机制。`planning_mode` 不是授权凭据，也不会创建新
-Tool 或扩大账户范围。
+查询分析的连续检索由通用模型在同一 Harness Run 内发起后续 Tool Calls；每次调用仍由
+Harness 根据当前 Tool catalog 限定，并经过统一 schema、principal、scope、权限、timeout
+和审计门禁。Harness 的回合数、单次 Tool-call 数和 Tool 执行预算负责限制连续调用。广告
+应用不再维护 `planning_mode=investigate` 或独立 investigation planner。
 
 LLM 用量从 OpenAI-compatible Provider 响应读取并聚合到 Run usage：`input_tokens`、
 `output_tokens`、`total_tokens`、`cache_read_input_tokens`、`cache_write_input_tokens`、
@@ -326,7 +323,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 ### Harness Engineering 评估
 
-当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 Runtime 执行入口、Skill-owned Policy/Feature 扩展、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery、Provider 回查入口、LLM 输出后的二次 schema 校验，以及下一回合可用的脱敏 Tool 结果上下文。另有 `scripts/audit_provider_tools.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道批量状态保持为 `ACTIVE/PAUSED` 中性值，最终字段和值由所选 Tool 的 Provider Schema 映射。结论是“核心骨架符合，尚未达到生产闭环”，不能把当前 297 个工具数或单元测试通过当成 Provider live 已验证。
+当前核心 Harness 已具备：受限 Tool/Skill 契约、统一 model/Tool-call Run、Run/Turn 身份与 transcript、依赖感知且有界的 Tool 调度、policy hooks、权限/账户白名单、dry-run、显式确认、持久化幂等、workflow checkpoint/lease/recovery 与 Provider 回查入口。模型 Tool Call 按当前 Tool catalog 和 schema 约束；Tool 结果进入同一 transcript，后续调用继续消耗相同 Run 预算。`scripts/audit_provider_tools.py`、`scripts/validate_contracts.py` 和 `contracts/builtin_tools.json` 提供 API Surface、版本化契约快照、Provider 方法覆盖率和 drift gate。跨渠道广告写操作由普通 Provider Tools 组成，最终字段和值由各 Tool 的 Provider Schema 映射。结论仍是“核心骨架具备，尚未达到生产闭环”，不能把当前 297 个工具数或单元测试通过当成 Provider live 已验证。
 
 #### 发布就绪门禁与证据分层
 
@@ -365,7 +362,7 @@ Provider live lookup 返回的动态选项会附带短时 `selection_token`。�
 
 门禁规则位于 [`readiness_policy.json`](../../tools/advertising/contracts/readiness_policy.json)，Provider 本地场景位于 [`provider_contract_scenarios.json`](../../tools/advertising/contracts/provider_contract_scenarios.json)。新增渠道时只需新增自己的 Tool Source、Tool 和对应的本地场景证据；Runtime/中心 Router 不增加渠道分支。
 
-当前已增加统一 `PluginRegistry`：所有内置 Tool Source、Runtime Feature、Response Renderer、受信任可执行 Skill 和租户托管 Skill 都登记为带 `PluginManifest` 的扩展，并提供依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。这个阶段完成的是插件内核和声明式接入，不代表已经支持任意第三方代码热加载。
+平台提供统一 `PluginRegistry`，支持 Tool Source、Runtime Feature、Response Renderer、受信任 Skill 扩展和租户托管 Skill 等声明式扩展的 Manifest、依赖排序、版本约束、启停/卸载和安全快照；`GET /plugins` 只返回 Manifest 与生命周期元数据。协议支持某类扩展不代表广告 Scenario 当前注册或使用了它；广告 Run 不注册 Feature turn dispatcher 或 Response Renderer。该插件内核也不代表支持任意第三方代码热加载。
 Runtime 对 Tool Source/Skill 的注册、卸载和派生索引刷新使用同一把生命周期锁；
 执行请求仍可并发，但不会在注册中途观察到半套 Tool 或 Skill ownership 状态。卸载失败时
 会回滚 Registry、参数目录、Blueprint、SkillLoader、格式目录和 Parser catalog。
@@ -402,17 +399,22 @@ Schema、权限、账户、dry-run、确认、幂等和审计门禁。后续仍�
 
 ### Runtime 边界结论
 
-广告 `AdvertisingComposition` 是应用组合根：它把广告 Skill、Provider Module、Feature、
-Policy、Renderer 和持久化端口装配成一个可运行应用。它不是通用 Core，也不应继续增加
-通用队列、租约或 Provider 分支。通用执行壳是 `agents/agent_harness/`，队列/Outbox/
-Schedule 生命周期由 `agents/agent_platform/infrastructure/durable/` 管理；新增广告业务应优先落到 Skill、Tool、
-Tool Source/Executor 或独立 Feature。
+广告 `AdvertisingComposition` 是场景组合根，不是通用 Core，也不拥有自己的 Agent loop、
+Planner 或 Tool 门禁。通用执行壳是 `agents/agent_harness/`，队列/Outbox/Schedule durable
+lifecycle 由 `agents/agent_platform/infrastructure/durable/` 管理；新对话能力应优先落到
+标准 Skill 和注册 Tool/Tool Source。
 
-当前装配图已经收敛到 `runtime/ad_application_assembly.py`：`AdvertisingComposition` 负责广告应用
-配置、能力注册入口和稳定门面，`AdApplicationAssembly` 负责把 `PersistenceBackend`、通用
-`AgentRuntimeKernel`、Tool 执行器、Schedule/Task/Outbox worker 与广告应用服务接起来。
-Assembly 只做依赖连接，不根据渠道或业务流程分支；新的简单能力仍应通过 Skill + Tool/MCP
-Tool 扩展，只有需要可信执行代码、特殊恢复或新的应用控制面的能力才新增 Provider Module/Feature。
+当前装配入口位于 `agents/tools/advertising/application/ad_application_assembly.py`：它通过
+`AgentPlatform` 把配置的 LLM、通用 Tool catalog/selector、advisory Context Provider 和
+账户范围策略接到 Harness。广告场景当前不注册 Feature turn handler；调度自然语言草稿与
+跨渠道 routed handler 已从运行时发现/组合中移除。调度 CRUD、任务提交和 Worker 执行仍通过
+Platform `/schedules` control-plane 提供；跨渠道广告操作通过普通 Provider Tool 执行，多个
+Tool 调用贯穿同一 Harness Run、policy 和 audit 路径。
+
+创建应用组合已移除未接入通用 Run 的旧 clarification handler、创建/动作草稿恢复器和
+旧 response assembler。Blueprint、Template 与创建表单 schema 的配置/管理能力保留；当前
+不把旧聊天创建卡片或调度草稿的跨轮连续性描述为已支持能力，恢复这些体验需经通用 Run
+的正式 UI/result contract 实现并补端到端测试。
 
 暂留的工程缺口：
 
@@ -485,119 +487,51 @@ Google Ads 当前使用 REST Client 而不是可选的 `google-ads` SDK。Client
 ## 架构设计
 
 仓库整体六层 Agent 中台架构见
-[`agent-platform-architecture.md`](../../../docs/agent-platform-architecture.md)。
-广告在其中属于应用场景层，复用单一通用 Agent；通用 Run/Session/Tool/Skill 执行能力由
-[`agent_harness`](../../agent_harness/) 与
-[`agent_platform`](../../agent_platform/) 提供。
+[`agent-platform-architecture.md`](../../../docs/agent-platform-architecture.md)。广告属于
+应用场景层，复用唯一的通用 Agent；Harness 提供 Run Kernel、model/Tool loop、transcript
+和执行预算，Platform 提供身份、权限、持久化及 durable infrastructure。
 
 可直接打开交互式架构图：[`ad_agent_architecture.html`](../../../docs/ad_agent_architecture.html)。
-图中标注了单 Agent、多 Skills、Tool Registry、Tool Sources/Executors，以及异步 Task、Outbox、Run Event、恢复和后续 MySQL 演进关系。
 
-Runtime Harness 分为四个可组合部分：`agents/agent_harness/runtime_kernel.py` 负责最底层的请求身份规范化、
-Session 并发/租约、执行模式和 Run identity；`agents/agent_harness/agent.py`
-提供维护 transcript 的通用 model→Tool→model loop；`agents/agent_harness/turn_pipeline.py`
-提供通用 Turn Handler 适配契约；`agents/agent_harness/agent_runtime.py`
-通用 Harness 提供可嵌入的 `agents.agent_harness.AgentRuntime` 门面；
-`agents/agent_harness/tool_catalog.py`
-提供不依赖广告域的 Tool catalog。任意应用都通过同一个 Harness Agent 或
-Turn Handler 执行，不再创建业务 Pipeline。
+一次广告 Run 的真实调用边界：
 
-广告的 `runtime/ad_application.py` 是场景组合根，负责把广告 Skills、Tools、Provider
-Modules、数据适配和基础设施资源注入唯一的平台应用。广告不再拥有自己的 Pipeline、
-Stages 或回合状态机；`runtime/ad_application_assembly.py` 只提供一个符合 Harness
-契约的 Turn Handler。`runtime/runtime.py` 仅作为稳定导出入口。Generic Runtime
-通过 opaque `TurnRequest.context` 与场景交换领域数据，因此新增业务 Skill/Tool
-不需要把账户、渠道或业务流程分支写回 Core。
-
-工具选择也分成两个层次：`core/tool_selection.py` 的 `ToolSelector` 只读取 Tool
-publisher metadata 和解析后的 intent，`PromptRenderer` 只负责生成有界的模型上下文；
-`core/tool_selector.py` 的 `DynamicToolSelector` 负责知识库、Skill 和租户上下文的
-组合与筛选，不承担 Tool 执行、权限授予或业务路由。
-
-执行策略由 `agents/agent_platform/tools/policy.py` 的
-`ToolExecutionPolicy` 统一计算。它把 Tool 声明的
-权限、Scope、Effect、live 能力、批准清单和 WriteGuard 状态转换成不可变的
-`PolicyDecision`；dry-run 规划和 live 执行因此使用同一份契约但拥有不同门槛。
-确认卡片和确认 token 仍由应用安全服务生成/消费，ToolExecutionPolicy 不解析 UI payload，
-避免把展示协议带回 Core。
-
+```text
+AdvertisingRunService
+  -> PlatformApplication / AgentRuntime
+     -> Agent Harness: model <-> Tool calls, one Run identity
+        -> bounded ToolSelector metadata filter
+        -> Platform policy: schema, principal, scope, mode, confirmation, audit
+        -> registered provider Tool executor / SDK or HTTP client
+     -> generic RunResult
+  -> advertising response projection and conversation persistence
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        AdvertisingComposition                         │
-│   ┌─────────────┐  ┌─────────────┐  ┌───────────────────┐   │
-│   │ IntentParser │  │IntentRouter │  │   ToolRegistry     │   │
-│   │ (LLM)        │  │ (多平台)    │  │   (工具注册表)      │   │
-│   └─────────────┘  └─────────────┘  └───────────────────┘   │
-│                             │                                │
-│   ┌─────────────────────────┼─────────────────────────────┐  │
-│   │                   ToolSourceLayer                     │  │
-│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │  │
-│   │  │ Meta     │ │ Google   │ │ TikTok   │ │ DV360    │ │  │
-│   │  │ Cap      │ │ Cap      │ │ Cap      │ │ Cap      │ │  │
-│   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ │  │
-│   └───────────────────────────────────────────────────────┘  │
-│                            │                                  │
-│   ┌────────────────────────┼───────────────────────────────┐ │
-│   │                  API Clients Layer                      │ │
-│   │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │ │
-│   │  │ Meta     │ │ Google   │ │ TikTok   │ │ DV360    │ │ │
-│   │  │ Client   │ │ Client   │ │ Client   │ │ Client   │ │ │
-│   │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ │ │
-│   └───────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Persistence Layer                        │
-│   ┌─────────────┐  ┌─────────────┐  ┌───────────────────┐   │
-│   │   Sessions  │  │ Tool Calls  │  │ Campaign State    │   │
-│   │  (SQLite)   │  │  (SQLite)   │  │   (SQLite)        │   │
-│   └─────────────┘  └─────────────┘  └───────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+
+广告应用不再有自己的 intent-to-plan adapter、turn handler、investigation planner 或结果
+assembler。`AdvertisingContextProvider` 只注入有界的 Skill、Knowledge、Memory 和 Blueprint
+提示；候选 Tools 由已注册 Tool metadata 排序筛选，真正调用必须由模型 Tool Call 触发并通过
+统一 Harness/Platform 执行门禁。`IntentParser` 仍用于定时指令的预检等管理场景，不负责交互式
+Run 的对话路由。
+
+通用 `ToolExecutionPolicy` 统一处理 Tool 声明的权限、Scope、Effect、live 能力、批准清单和
+WriteGuard。广告只扩展账户白名单、账户字段与写操作确认校验；不另建执行循环或 Provider 门禁。
 
 ## 目录结构
 
-```
-ad_agent/
-├── __init__.py              # 包入口
-├── core/
-│   ├── agent_runtime.py     # Agent Harness Runtime 导出
-│   ├── runtime_kernel.py    # 请求/会话/租约生命周期内核
-│   ├── interfaces.py        # 核心接口定义
-│   ├── tool_selection.py    # 通用 Tool 选择与 Prompt 渲染
-│   ├── tool_selector.py     # Skill/知识上下文兼容适配层
-│   ├── policy_engine.py     # 平台 ToolExecutionPolicy 的广告导出
-│   ├── tool_registry.py     # 工具注册表与来源生命周期
-│   ├── tool_sources.py      # ToolBinding/ToolSource/Executor 契约
-│   ├── turn_pipeline.py     # 通用回合阶段与终止/错误语义
-│   └── intent.py            # 意图解析与路由
-├── runtime/
-│   ├── runtime.py           # 稳定公共导出入口（不承载主循环）
-│   ├── ad_application.py    # 广告应用组合根
-│   ├── ad_application_assembly.py # AgentPlatform 场景装配
-│   ├── ad_task_services.py  # 广告任务提交、权限与结果适配
-│   ├── scheduling_service.py # 广告定时任务服务
-│   └── skill.py             # Skill 加载
-├── tools/providers/
-│   ├── base.py              # 能力基类
-│   ├── factory.py           # 按包约定发现 Tool Source
-│   └── <platform>/provider.py  # 渠道能力包
-├── api_clients/
-│   ├── base.py              # 客户端基类（重试/限流）
-│   └── <platform>_client.py # 按约定可选的 Provider Client
-├── persistence/
-│   ├── store.py             # SQLite 单进程 backend
-│   ├── mysql_store.py       # MySQL/InnoDB backend
-│   ├── factory.py           # 按环境选择 backend
-│   └── session_manager.py   # 会话管理器
-├── logging/
-│   └── __init__.py          # 结构化日志
-├── user_skills/
-│   └── README.md             # 标准用户 Skill 的边界说明
-└── tests/
-    ├── test_ad_agent.py      # 核心回归测试
-    └── ...                   # Harness、契约与 Provider 回归测试
+```text
+agents/
+├── agent_harness/                 # 通用 Run Kernel、model/Tool loop、contracts
+├── agent_platform/                # identity、policy、API、persistence、durable services
+├── tools/advertising/
+│   ├── providers/                 # 渠道 Tool Source 与固定 executors
+│   ├── clients/                   # SDK/HTTP Provider clients
+│   ├── shared/                    # 广告 schema、blueprint、业务数据组件
+│   └── application/               # 广告组合根、账户策略、API/result adapters
+├── skills/advertising/            # 标准、可移植的 SKILL.md 包
+├── knowledge/advertising/wiki/    # 原始知识文档及检索资产
+├── scenarios/advertising.py       # Tool/Skill/Knowledge source 声明
+├── deployments/advertising/      # HTTP/CLI hosting 与前端资源
+├── ad_agent/                      # 广告应用配置与组合入口
+└── tests/{harness,platform,advertising}/
 ```
 
 HTTP 入口的声明层和安全边界位于 `agents/agent_platform/api/`：
@@ -608,13 +542,17 @@ api/
 └── security.py     # API key -> trusted Principal、权限与脱敏边界
 ```
 
-模型适配器的规划和结果边界位于同级：
+广告应用边界由以下小型适配器组成：
 
 ```text
-integration.py                  # Harness turn bridge
-integration_turn_planner.py     # 参数合并、Tool Call、依赖补全
-integration_result_assembler.py # Tool 结果、业务分析、回复与 application_data
+ad_application_assembly.py # 将广告 Tool/Skill、账户策略和 context 接到通用 Platform/Harness
+integration.py             # 通用 Harness 的 Tool、Skill、Context 端口适配
+ad_run_service.py          # 广告请求与 RunResult 响应映射
+ad_run_memory.py           # 仅记录已验证的 live 写入结果
 ```
+
+此前的 `AdvertisingModelAdapter`、广告 intent planner、investigation planner、turn handler
+和 result assembler 已移除。它们不再是可用或兼容的执行入口。
 
 通用 Harness 位于同级的 `agents/agent_harness/`，不依赖 `ad_agent`：
 

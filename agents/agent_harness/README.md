@@ -65,6 +65,8 @@ Applications inject:
   bindings;
 - one request-level Turn Handler when the application needs a deterministic
   orchestration adapter;
+- an optional `request_validator(request)` that rejects malformed or
+  application-disallowed envelopes before user content reaches the model;
 - policy hooks such as `before_tool_call` and `after_tool_call`;
 - an optional `RunStore`, `TranscriptStore` and session implementation;
 - an optional `IdempotencyStore` for cross-process, SQL-backed write replay

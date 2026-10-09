@@ -6,10 +6,13 @@ core/llm_client.py - LLM 客户端封装
 import os
 import json
 import logging
+import re
 import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional, Dict, Any
+
+from ..messages import AgentMessage, ModelTurn, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +79,8 @@ class LLMClient:
         api_key: str = None,
         base_url: str = None,
         timeout_seconds: float = 30.0,
+        max_tool_calls_per_response: int = 64,
+        max_tool_argument_chars: int = 65_536,
     ):
         """
         Args:
@@ -90,7 +95,13 @@ class LLMClient:
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if max_tool_calls_per_response <= 0:
+            raise ValueError("max_tool_calls_per_response must be positive")
+        if max_tool_argument_chars <= 0:
+            raise ValueError("max_tool_argument_chars must be positive")
         self.timeout_seconds = float(timeout_seconds)
+        self.max_tool_calls_per_response = int(max_tool_calls_per_response)
+        self.max_tool_argument_chars = int(max_tool_argument_chars)
         
         # 懒加载 OpenAI 客户端
         self._client = None
@@ -126,6 +137,221 @@ class LLMClient:
         """
         text, _usage = self.call_with_usage(messages, temperature)
         return text
+
+    def complete(self, messages, tools, request) -> ModelTurn:
+        """Implement the Harness ModelAdapter contract with native Tool calls."""
+        provider_messages = self._provider_messages(messages)
+        provider_tools = self._provider_tools(tools)
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": provider_messages,
+            "temperature": 0.1,
+        }
+        if provider_tools:
+            kwargs["tools"] = provider_tools
+            kwargs["tool_choice"] = "auto"
+        context = getattr(request, "context", None)
+        if isinstance(context, dict):
+            max_tokens = context.get("max_output_tokens")
+            if isinstance(max_tokens, int) and not isinstance(max_tokens, bool):
+                if max_tokens > 0:
+                    kwargs["max_tokens"] = max_tokens
+
+        collector = _ACTIVE_USAGE_COLLECTOR.get()
+        if collector is not None:
+            collector.add({"llm_requests": 1})
+        try:
+            response = self._get_client().chat.completions.create(**kwargs)
+        except Exception as error:
+            logger.error("LLM Tool-call generation failed: %s", type(error).__name__)
+            raise
+        choice = next(iter(getattr(response, "choices", ()) or ()), None)
+        if choice is None:
+            raise LLMStructuredOutputError("LLM response did not contain a choice")
+        message = getattr(choice, "message", None)
+        if message is None:
+            raise LLMStructuredOutputError("LLM response did not contain a message")
+        allowed_names = {
+            self._tool_value(tool, "name") for tool in tools or ()
+        }
+        raw_calls = tuple(getattr(message, "tool_calls", None) or ())
+        if len(raw_calls) > self.max_tool_calls_per_response:
+            raise LLMStructuredOutputError(
+                "LLM returned too many Tool calls in one response"
+            )
+        calls = tuple(self._tool_call(item, allowed_names) for item in raw_calls)
+        call_ids = [item.id for item in calls]
+        if len(call_ids) != len(set(call_ids)):
+            raise LLMStructuredOutputError(
+                "LLM returned duplicate Tool call ids"
+            )
+        usage = self._normalize_usage(getattr(response, "usage", None))
+        if collector is not None:
+            usage["llm_requests"] = 0
+            collector.add(usage)
+        return ModelTurn(
+            content=getattr(message, "content", None) or "",
+            tool_calls=calls,
+            stop_reason=(
+                "tool_call" if calls
+                else str(getattr(choice, "finish_reason", None) or "stop")
+            ),
+            usage=usage,
+        )
+
+    @staticmethod
+    def _tool_value(tool: Any, key: str, default: Any = None) -> Any:
+        if isinstance(tool, dict):
+            return tool.get(key, default)
+        return getattr(tool, key, default)
+
+    @classmethod
+    def _provider_tools(cls, tools: Any) -> list[dict[str, Any]]:
+        definitions = []
+        for tool in tools or ():
+            name = str(cls._tool_value(tool, "name", "") or "").strip()
+            if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", name):
+                raise LLMStructuredOutputError(
+                    "active Tool catalog contains an invalid function name"
+                )
+            raw_schema = cls._tool_value(tool, "input_schema", {})
+            if callable(getattr(raw_schema, "to_dict", None)):
+                raw_schema = raw_schema.to_dict()
+            schema = dict(raw_schema) if isinstance(raw_schema, dict) else {}
+            properties = schema.get("properties")
+            parameters = {
+                "type": "object",
+                "properties": dict(properties) if isinstance(properties, dict) else {},
+                "required": [
+                    str(item) for item in (schema.get("required") or ())
+                    if str(item)
+                ],
+                "additionalProperties": bool(
+                    schema.get("additionalProperties", False)
+                ),
+            }
+            definitions.append({
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": str(
+                        cls._tool_value(tool, "description", "") or ""
+                    )[:1200],
+                    "parameters": parameters,
+                },
+            })
+        return definitions
+
+    @staticmethod
+    def _message_content(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if value is None:
+            return ""
+        try:
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError) as error:
+            raise LLMStructuredOutputError(
+                "conversation contains non-serializable model content"
+            ) from error
+
+    @classmethod
+    def _provider_messages(cls, messages: Any) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for message in messages or ():
+            role = str(cls._tool_value(message, "role", "") or "").strip()
+            if role not in {"system", "user", "assistant", "tool"}:
+                raise LLMStructuredOutputError(
+                    "conversation contains an unsupported message role"
+                )
+            content = cls._message_content(
+                cls._tool_value(message, "content", "")
+            )
+            item: dict[str, Any] = {"role": role, "content": content}
+            if role == "assistant":
+                metadata = cls._tool_value(message, "metadata", {})
+                raw_calls = (
+                    metadata.get("tool_calls", [])
+                    if isinstance(metadata, dict) else []
+                )
+                calls = []
+                for call in raw_calls or ():
+                    name = str(cls._tool_value(call, "name", "") or "").strip()
+                    call_id = str(cls._tool_value(call, "id", "") or "").strip()
+                    arguments = cls._tool_value(call, "arguments", {})
+                    if not name or not call_id:
+                        raise LLMStructuredOutputError(
+                            "transcript contains an incomplete Tool call"
+                        )
+                    calls.append({
+                        "id": call_id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": cls._message_content(arguments),
+                        },
+                    })
+                if calls:
+                    item["tool_calls"] = calls
+            elif role == "tool":
+                call_id = str(
+                    cls._tool_value(message, "tool_call_id", "") or ""
+                ).strip()
+                if not call_id:
+                    raise LLMStructuredOutputError(
+                        "transcript contains a Tool result without a call id"
+                    )
+                item["tool_call_id"] = call_id
+                name = str(cls._tool_value(message, "name", "") or "").strip()
+                if name:
+                    item["name"] = name
+            result.append(item)
+        return result
+
+    def _tool_call(self, value: Any, allowed_names: set[str]) -> ToolCall:
+        cls = type(self)
+        function = cls._tool_value(value, "function", {})
+        name = str(cls._tool_value(function, "name", "") or "").strip()
+        call_id = str(cls._tool_value(value, "id", "") or "").strip()
+        if (
+            not name or len(name) > 64 or not call_id
+            or len(call_id) > 128 or name not in allowed_names
+        ):
+            raise LLMStructuredOutputError(
+                "LLM requested a Tool outside the active catalog"
+            )
+        raw_arguments = cls._tool_value(function, "arguments", "{}")
+        if isinstance(raw_arguments, str):
+            if len(raw_arguments) > self.max_tool_argument_chars:
+                raise LLMStructuredOutputError(
+                    "LLM Tool arguments exceeded the configured size limit"
+                )
+            try:
+                arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError as error:
+                raise LLMStructuredOutputError(
+                    "LLM Tool arguments were not valid JSON"
+                ) from error
+        else:
+            arguments = raw_arguments
+        if not isinstance(arguments, dict):
+            raise LLMStructuredOutputError(
+                "LLM Tool arguments must be a JSON object"
+            )
+        try:
+            serialized_arguments = json.dumps(
+                arguments, ensure_ascii=False, separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as error:
+            raise LLMStructuredOutputError(
+                "LLM Tool arguments were not JSON serializable"
+            ) from error
+        if len(serialized_arguments) > self.max_tool_argument_chars:
+            raise LLMStructuredOutputError(
+                "LLM Tool arguments exceeded the configured size limit"
+            )
+        return ToolCall(id=call_id, name=name, arguments=arguments)
 
     def call_with_usage(
         self, messages: list[dict], temperature: float = 0.1,
@@ -272,9 +498,13 @@ class LLMClient:
 def create_llm_client(
     model: str = None, api_key: str = None, base_url: str = None,
     timeout_seconds: float = 30.0,
+    max_tool_calls_per_response: int = 64,
+    max_tool_argument_chars: int = 65_536,
 ) -> LLMClient:
     """工厂函数，创建 LLM 客户端"""
     return LLMClient(
         model=model, api_key=api_key, base_url=base_url,
         timeout_seconds=timeout_seconds,
+        max_tool_calls_per_response=max_tool_calls_per_response,
+        max_tool_argument_chars=max_tool_argument_chars,
     )

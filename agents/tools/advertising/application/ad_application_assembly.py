@@ -25,6 +25,7 @@ from agents.agent_harness import (
     ToolCallContext,
     TurnRequest,
 )
+from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.agent_platform import (
     AgentPlatform,
     PlatformApplication,
@@ -53,7 +54,6 @@ from .ad_session_services import AdSessionServices
 from .ad_task_services import AdTaskServices
 from .integration import (
     AdvertisingContextProvider,
-    AdvertisingModelAdapter,
     AdvertisingToolCatalog,
 )
 from .ad_workflow_services import AdWorkflowServices
@@ -313,8 +313,6 @@ class AdApplicationAssembly:
         scheduling_service = SchedulingService(
             store=store,
             submit_task=runtime.submit_task,
-            session_context=lambda session_id: runtime._sessions.get(str(session_id or "")),
-            preflight=runtime.preflight_scheduled_prompt,
             redact=runtime._redact_for_persistence,
             validate_input=security.validate_input_redline,
             max_prompt_chars=runtime.max_user_input_chars,
@@ -382,19 +380,19 @@ class AdApplicationAssembly:
                                     break
                         if scoped_account not in (None, ""):
                             break
-            intent_namespaces = (
-                request.context.get("_agent_intent_namespaces", ())
+            tool_namespaces = (
+                request.context.get("_agent_tool_namespaces", ())
                 if isinstance(request.context, Mapping) else ()
             )
-            if not intent_namespaces and isinstance(request.context, Mapping):
+            if not tool_namespaces and isinstance(request.context, Mapping):
                 platform_params = request.context.get("platform_params")
-                intent_namespaces = (
+                tool_namespaces = (
                     list(platform_params.keys())
                     if isinstance(platform_params, Mapping) else []
                 )
             multiple_namespaces = len({
                 runtime._canonical_platform(namespace)
-                for namespace in (intent_namespaces or ())
+                for namespace in (tool_namespaces or ())
             }) > 1
             scope_fields = tuple(
                 getattr(tool, "scope_fields", ()) or (
@@ -402,25 +400,32 @@ class AdApplicationAssembly:
                     "advertiser_id", "customer_id",
                 )
             )
-            account = (
-                scoped_account
-                or (
-                    None
-                    if multiple_namespaces
-                    else (
-                        request.context.get("account_id")
-                        if isinstance(request.context, Mapping) else None
-                    )
-                )
-                or next(
-                    (
-                        arguments.get(field)
-                        for field in scope_fields
-                        if arguments.get(field) not in (None, "")
-                    ),
-                    None,
+            request_account = scoped_account or (
+                None
+                if multiple_namespaces
+                else (
+                    request.context.get("account_id")
+                    if isinstance(request.context, Mapping) else None
                 )
             )
+            argument_account = next(
+                (
+                    arguments.get(field)
+                    for field in scope_fields
+                    if arguments.get(field) not in (None, "")
+                ),
+                None,
+            )
+            if (
+                request_account not in (None, "")
+                and argument_account not in (None, "")
+                and str(request_account).strip() != str(argument_account).strip()
+            ):
+                return (
+                    "scope_mismatch",
+                    "Tool 参数账户与当前请求的可信账户范围不一致",
+                )
+            account = request_account or argument_account
             if not account and (
                 bool(getattr(tool, "is_write_tool", False))
                 or runtime.enforce_account_scope
@@ -662,9 +667,49 @@ class AdApplicationAssembly:
             advertising_scenario_definition(agent_id=platform.agent_id)
         )
         context_provider = AdvertisingContextProvider(runtime)
+        tool_selector = ToolSelector()
+
+        def select_tools(request: TurnRequest, tools: Any) -> list[Any]:
+            selected = tool_selector.select_relevant(
+                request.user_input,
+                tools,
+                limit=max(1, min(int(runtime.max_tool_calls), 64)),
+            )
+            context = request.context
+            if isinstance(context, dict):
+                context["_agent_tool_namespaces"] = list(dict.fromkeys(
+                    str(getattr(item, "namespace", "") or "")
+                    for item in selected
+                    if getattr(item, "namespace", None)
+                ))
+            return selected
+
+        def validate_request(request: TurnRequest) -> str | None:
+            context = request.context if isinstance(request.context, Mapping) else {}
+            platform_params = context.get("platform_params")
+            limit_error = runtime._validate_request_limits(
+                request.user_input,
+                platform_params,
+            )
+            if limit_error:
+                return limit_error
+            protected_fields = security.validate_input_redline(platform_params)
+            if protected_fields:
+                return (
+                    "请求包含禁止传入的凭证/账户配置字段："
+                    + ", ".join(protected_fields)
+                )
+            text_fields = security.validate_text_redline(request.user_input)
+            if text_fields:
+                return (
+                    "请求包含禁止传入的凭证字段："
+                    + ", ".join(text_fields)
+                )
+            return None
+
         platform_application = platform.create_application(
             "advertising",
-            model=AdvertisingModelAdapter(runtime),
+            model=runtime._llm,
             dependencies=PlatformDependencies(
                 data=DataLayer(
                     knowledge_store=runtime.knowledge_provider,
@@ -680,10 +725,12 @@ class AdApplicationAssembly:
             options={
                 "ports": ports,
                 "tool_catalog": AdvertisingToolCatalog(runtime),
+                "tool_selector": select_tools,
                 "skill_catalog": InMemorySkillCatalog(),
                 "tool_policy": tool_policy,
                 "context_provider": context_provider,
                 "input_sanitizer": runtime._redact_for_persistence,
+                "request_validator": validate_request,
                 "run_store": run_store,
                 "checkpoint_store": run_store,
                 "transcript_store": (
@@ -691,6 +738,7 @@ class AdApplicationAssembly:
                 ),
                 "metrics": getattr(runtime, "metrics", None),
                 "max_turns": max(4, int(runtime.max_tool_calls) + 2),
+                "max_tool_calls_per_run": int(runtime.max_tool_calls),
                 "tool_execution": "sequential",
             },
         )

@@ -1,10 +1,4 @@
-"""Context preparation for one advertising Agent turn.
-
-Memory and Skill context are advisory inputs to intent parsing.  Keeping this
-work here makes the turn engine an orchestrator instead of a context store,
-and gives future context implementations a single application boundary.
-The service never selects or executes a Tool.
-"""
+"""Bounded advisory context preparation for the generic Agent Harness."""
 
 from __future__ import annotations
 
@@ -17,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AdTurnContext:
-    """Bounded context produced for the current turn."""
+    """Bounded advisory context assembled before model completion."""
 
     recalled_memories: list[dict[str, Any]] = field(default_factory=list)
     memory_updates: list[dict[str, Any]] = field(default_factory=list)
@@ -25,7 +19,7 @@ class AdTurnContext:
 
 
 class AdTurnContextService:
-    """Build and refresh the application-owned advisory turn context."""
+    """Build application-owned context without routing or executing Tools."""
 
     _CONTEXT_LIMITS = {
         "tool_prompt": 6000,
@@ -175,8 +169,7 @@ class AdTurnContextService:
                     session_id=session_id,
                 )
             except Exception:
-                # Memory is an advisory enhancement. A storage/index failure
-                # must never block intent parsing or Tool policy.
+                # Memory is advisory and must not block the generic Run.
                 logger.debug("构建 Memory 上下文失败", exc_info=True)
 
         trace.stage_status(
@@ -195,7 +188,6 @@ class AdTurnContextService:
                 runtime=runtime,
                 session=session,
                 safe_user_input=safe_user_input,
-                intent_type=None,
                 tenant_id=tenant_id,
                 context=context,
             )
@@ -225,56 +217,6 @@ class AdTurnContextService:
             )
         return context
 
-    def enrich(
-        self,
-        *,
-        runtime: Any,
-        session: Any,
-        safe_user_input: str,
-        intent: Any,
-        tenant_id: str,
-        context: AdTurnContext,
-        trace: Any,
-    ) -> None:
-        """Replace only the model-facing Skill slice after intent parsing."""
-        trace.stage_status(
-            "context_enrichment",
-            "意图上下文补充",
-            "running",
-            subtitle="根据已识别目标收敛可用知识",
-            safe_metadata={"phase": "context_enrichment"},
-        )
-        try:
-            self._store_skill_context(
-                runtime=runtime,
-                session=session,
-                safe_user_input=safe_user_input,
-                intent_type=getattr(intent, "intent_type", None),
-                tenant_id=tenant_id,
-                context=context,
-            )
-        except Exception as exc:
-            logger.debug("构建意图级 Skill/知识上下文失败", exc_info=True)
-            trace.stage_status(
-                "context_enrichment",
-                "意图上下文补充",
-                "failed",
-                subtitle="补充上下文失败，保留前一阶段上下文",
-                safe_metadata={"error_type": type(exc).__name__},
-            )
-        else:
-            trace.stage_status(
-                "context_enrichment",
-                "意图上下文补充",
-                "succeeded",
-                subtitle="已按意图收敛上下文",
-                safe_metadata={
-                    "phase": "context_enrichment",
-                    "intent_type": getattr(intent, "intent_type", ""),
-                    "context_budget": self._budget_snapshot(session),
-                },
-            )
-
     @classmethod
     def _store_skill_context(
         cls,
@@ -282,14 +224,13 @@ class AdTurnContextService:
         runtime: Any,
         session: Any,
         safe_user_input: str,
-        intent_type: str | None,
         tenant_id: str,
         context: AdTurnContext,
     ) -> None:
         skill_context = runtime._build_skill_context(
             safe_user_input,
             runtime.registry.list_all(),
-            intent_type,
+            None,
             tenant_id,
         )
         if not isinstance(skill_context, dict):

@@ -70,10 +70,6 @@ class AdRuntimeServices(RuntimeExecutionServices):
         return self._runtime._session_manager
 
     @property
-    def response_renderer(self):
-        return self._runtime.response_renderer
-
-    @property
     def execution_mode(self) -> str:
         return self._runtime.execution_mode
 
@@ -227,6 +223,3 @@ class AdRuntimeServices(RuntimeExecutionServices):
 
     def workflow_stale_after_seconds(self) -> float:
         return self._runtime.workflow_stale_after_seconds
-
-    def preflight_scheduled_prompt(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
-        return self._runtime.preflight_scheduled_prompt(prompt, **kwargs)

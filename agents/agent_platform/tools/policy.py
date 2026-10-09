@@ -183,7 +183,9 @@ class ToolExecutionPolicy:
             "block": True,
             "reason": message,
             "terminate": True,
-            "needs_input": reason_code == "confirmation_required",
+            "needs_input": reason_code in {
+                "confirmation_required", "scope_required", "scope_mismatch",
+            },
             "needs_confirmation": reason_code == "confirmation_required",
             **self._confirmation_payload(
                 context, definition, dict(call.arguments), reason_code,

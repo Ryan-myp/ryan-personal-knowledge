@@ -124,9 +124,6 @@ class AdPersistenceServices:
             "conversation_digest": session.ctx.metadata.get("conversation_digest", ""),
             "memory_updates": session.ctx.metadata.get("memory_updates", [])[-20:],
         }
-        schedule_draft = session.ctx.metadata.get("schedule_draft")
-        if isinstance(schedule_draft, dict):
-            metadata["schedule_draft"] = self.runtime._redact_for_persistence(schedule_draft)
         creation_draft = session.ctx.metadata.get("creation_draft")
         if isinstance(creation_draft, dict):
             metadata["creation_draft"] = self.runtime._redact_for_persistence(creation_draft)

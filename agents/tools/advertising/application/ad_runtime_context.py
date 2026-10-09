@@ -7,12 +7,11 @@ bounded prior Tool results for the model-facing turn pipeline.
 
 from __future__ import annotations
 
-import inspect
 import json
 from collections import OrderedDict
 from typing import Any
 
-from agents.agent_harness.core.interfaces import ParsedIntent, ToolResult
+from agents.agent_harness.core.interfaces import ToolResult
 
 
 class AdvertisingRuntimeContext:
@@ -60,27 +59,6 @@ class AdvertisingRuntimeContext:
         context["publisher_context"] = publisher_context
         return context
 
-    def optimize_tool_selection(
-        self,
-        user_input: str,
-        intent: ParsedIntent,
-        available_tools: list[Any],
-        tenant_id: str,
-    ) -> dict[str, Any]:
-        optimizer = self.runtime.tool_selector.optimize_for_llm
-        try:
-            parameters = inspect.signature(optimizer).parameters
-        except (TypeError, ValueError):
-            parameters = {}
-        if "tenant_id" in parameters:
-            return optimizer(
-                user_input,
-                intent,
-                available_tools,
-                tenant_id=tenant_id,
-            )
-        return optimizer(user_input, intent, available_tools)
-
     def prior_tool_results(
         self,
         session: Any,
@@ -109,13 +87,6 @@ class AdvertisingRuntimeContext:
                 )
             rows.append(f"[{tool_name}] {encoded[:1200]}")
         return "\n".join(rows)[:max_chars]
-
-    @staticmethod
-    def from_session_metadata(session: Any = None) -> dict[str, Any]:
-        if session is None:
-            return {}
-        value = session.ctx.metadata.get("skill_context")
-        return value if isinstance(value, dict) else {}
 
     def clear(self) -> None:
         self._blueprint_context_cache.clear()

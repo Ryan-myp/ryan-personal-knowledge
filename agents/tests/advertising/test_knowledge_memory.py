@@ -1,5 +1,6 @@
 import pytest
 
+from agents.agent_harness import ModelTurn
 from agents.agent_platform.data.knowledge.wiki import MarkdownWikiKnowledgeProvider
 from agents.agent_platform.data.semantic import InMemorySemanticIndex
 from agents.agent_platform.data.knowledge.knowledge_management import (
@@ -9,7 +10,6 @@ from agents.agent_platform.data.knowledge.knowledge_management import (
 )
 from agents.agent_harness.core.memory import MemoryManager
 from agents.agent_harness.core.intent import LLMIntentParser
-from agents.tools.advertising.shared.domain.response import LLMResponseSynthesizer
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
@@ -1147,9 +1147,9 @@ def test_runtime_recalls_explicit_memory_across_sessions_without_granting_tools(
         def __init__(self):
             self.calls = []
 
-        def call(self, messages):
-            self.calls.append(messages)
-            return '{"intent_type":"chat","namespaces":[]}'
+        def complete(self, messages, _tools, _request):
+            self.calls.append([message.to_dict() for message in messages])
+            return ModelTurn(content="已读取到你的广告偏好。")
 
     llm = FakeLLM()
     store = AdAgentStore(":memory:")
@@ -1165,7 +1165,7 @@ def test_runtime_recalls_explicit_memory_across_sessions_without_granting_tools(
 
     assert result["memory"][0]["content"] == "偏好：优先使用 Google 搜索广告"
     assert any(
-        "Memory" in str(message.get("content"))
+        "memory" in str(message.get("content")).lower()
         for call in llm.calls
         for message in call
     )
@@ -1244,7 +1244,6 @@ def test_context_budget_is_uniform_and_reported():
         runtime=FakeRuntime(),
         session=session,
         safe_user_input="查询",
-        intent_type=None,
         tenant_id="tenant-a",
         context=context,
     )
@@ -1291,63 +1290,25 @@ def test_session_working_memory_has_character_budget_and_preserves_digest():
     runtime.close(wait=True)
 
 
-def test_llm_response_synthesizer_is_grounded_and_rejects_internal_protocol():
-    class FakeLLM:
-        def __init__(self, answer):
-            self.answer = answer
-
-        def call(self, _messages):
-            return self.answer
-
-    intent = ParsedIntent("list_campaigns", "查询", ["google"])
-    result = [{
-        "tool": "google_list_campaigns",
-        "platform": "google",
-        "success": True,
-        "data": {"campaigns": [{"name": "Demo", "status": "PAUSED"}]},
-    }]
-    synthesizer = LLMResponseSynthesizer()
-    answer = synthesizer.synthesize(
-        FakeLLM("找到 1 个 Campaign：Demo，状态为 PAUSED。"),
-        user_input="查询 Google Campaign",
-        intent=intent,
-        results=result,
-        knowledge=[],
-        analysis={},
-        fallback_reply="fallback",
-    )
-    assert "PAUSED" in answer
-    assert synthesizer.synthesize(
-        FakeLLM('{"intent_type":"list_campaigns"}'),
-        user_input="查询",
-        intent=intent,
-        results=result,
-        knowledge=[],
-        analysis={},
-        fallback_reply="fallback",
-    ) is None
-    assert synthesizer.synthesize(
-        FakeLLM("查询未执行任何 dry-run，也未调用 Google Ads API。"),
-        user_input="查询 Google Ads 报表",
-        intent=intent,
-        results=[{
-            "tool": "google_list_campaigns",
-            "platform": "google",
-            "success": False,
-            "error": "provider unavailable",
-        }],
-        knowledge=[],
-        analysis={},
-        fallback_reply="暂时无法读取 Google Ads 广告账户，请检查账户连接。",
-    ) is None
-
-
 def test_runtime_inject_llm_enables_response_synthesis_after_late_bootstrap():
     class FakeLLM:
-        def call(self, _messages):
-            return '{"intent_type":"chat","namespaces":[]}'
+        def __init__(self):
+            self.synthesis_calls = 0
 
-    runtime = AdvertisingComposition(require_llm=True, features=[])
-    assert runtime.response_synthesizer is None
-    runtime.inject_llm(FakeLLM())
-    assert runtime.response_synthesizer is not None
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(content="Harness completed the turn.")
+
+        def call(self, _messages):
+            self.synthesis_calls += 1
+            return "This second response path must stay unused."
+
+    runtime = AdvertisingComposition(require_llm=True)
+    model = FakeLLM()
+    runtime.inject_llm(model)
+    assert runtime.platform_application.agent.model is model
+
+    result = runtime.run("请简单回复", session_id="late-model-session")
+
+    assert result["status"] == "succeeded"
+    assert result["reply"] == "Harness completed the turn."
+    assert model.synthesis_calls == 0

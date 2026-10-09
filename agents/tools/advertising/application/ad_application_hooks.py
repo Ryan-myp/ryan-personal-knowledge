@@ -7,7 +7,6 @@ from typing import Any, Mapping, Optional
 from agents.agent_harness import TurnRequest
 
 from agents.agent_harness.core.execution_trace import ExecutionTrace
-from agents.agent_harness.core.features import RuntimeFeature
 from agents.agent_harness.core.interfaces import ExecutionMode, ParsedIntent, ToolResult
 from agents.agent_harness.core.policy import validate_policies
 from .ad_application_contracts import execution_mode_context
@@ -25,9 +24,6 @@ from .session_context import SessionContext
 
 class AdApplicationHooksMixin:
     """Non-public application hooks consumed by the assembled runtime graph."""
-
-    def _feature_for_intent(self, intent: Any) -> Optional[RuntimeFeature]:
-        return self._controls_service().feature_for_intent(intent)
 
     def _resolve_workflow_item_scope(
         self,
@@ -66,7 +62,7 @@ class AdApplicationHooksMixin:
     def _presentation_service(self) -> AdvertisingPresentationService:
         service = getattr(self, "presentation_service", None)
         if service is None:
-            service = AdvertisingPresentationService(self)
+            service = AdvertisingPresentationService()
             self.presentation_service = service
         return service
 
@@ -172,20 +168,6 @@ class AdApplicationHooksMixin:
             tenant_id,
         )
 
-    def _optimize_tool_selection(
-        self,
-        user_input: str,
-        intent: ParsedIntent,
-        available_tools: list,
-        tenant_id: str,
-    ) -> dict:
-        return self._context_service().optimize_tool_selection(
-            user_input,
-            intent,
-            available_tools,
-            tenant_id,
-        )
-
     def _build_prior_tool_results_context(
         self,
         session: SessionContext,
@@ -230,18 +212,6 @@ class AdApplicationHooksMixin:
             policy = AdvertisingRuntimePolicy(self)
             self.runtime_policy = policy
         return policy
-
-    @staticmethod
-    def _check_turn_budget(
-        deadline: float,
-        tool_call_count: int,
-        max_tool_calls: int = 32,
-    ) -> Optional[str]:
-        return AdvertisingRuntimePolicy.check_turn_budget(
-            deadline,
-            tool_call_count,
-            max_tool_calls,
-        )
 
     def _check_tool_permissions(
         self,
@@ -397,32 +367,6 @@ class AdApplicationHooksMixin:
 
     def _resolve_readback_definition(self, write_tool: str):
         return self._reconciliation_service().resolve_readback_definition(write_tool)
-
-    def _render_response(
-        self,
-        user_input: str,
-        intent: Any,
-        results: list[dict[str, Any]],
-        needs_confirmation: bool,
-        analysis: Optional[dict[str, Any]] = None,
-        session: Optional[SessionContext] = None,
-        fallback_reply: Optional[str] = None,
-    ) -> tuple[str, str]:
-        return self._presentation_service().render_response(
-            user_input,
-            intent,
-            results,
-            needs_confirmation,
-            analysis=analysis,
-            session=session,
-            fallback_reply=fallback_reply,
-        )
-
-    def _build_skill_context_from_metadata(
-        self,
-        session: Optional[SessionContext] = None,
-    ) -> dict[str, Any]:
-        return self._context_service().from_session_metadata(session)
 
     def _run_service(self) -> AdvertisingRunService:
         service = getattr(self, "run_service", None)
