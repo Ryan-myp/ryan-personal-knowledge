@@ -357,7 +357,9 @@ def test_advertising_composition_injects_the_generic_model_directly():
 def test_generic_run_results_keep_tool_result_and_confirmation_contracts():
     from types import SimpleNamespace
 
-    from agents.tools.advertising.application.ad_run_service import AdvertisingRunService
+    from agents.tools.advertising.application.ad_run_projection import (
+        AdvertisingRunProjection,
+    )
 
     definition = SimpleNamespace(
         name="publish_record",
@@ -371,7 +373,7 @@ def test_generic_run_results_keep_tool_result_and_confirmation_contracts():
         _sessions={},
     )
 
-    result = AdvertisingRunService._application_state_from_run(
+    result = AdvertisingRunProjection.application_state_from_run(
         runtime,
         {
             "needs_input": True,

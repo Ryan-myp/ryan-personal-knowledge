@@ -37,6 +37,15 @@ agents/
 │
 ├── tools/
 │   └── advertising/                # Reusable advertising Tool Sources
+│       ├── application/            # Advertising composition and API-facing adapters
+│       │   ├── ad_application.py   # Public advertising scenario facade
+│       │   ├── ad_application_bootstrap.py
+│       │   ├── ad_application_assembly.py
+│       │   ├── ad_application_components.py
+│       │   ├── ad_run_service.py    # Generic Run request/response envelope adapter
+│       │   ├── ad_run_projection.py # Tool interactions to advertising UI projection
+│       │   ├── input_builder.py    # Schema-driven Tool input projection
+│       │   └── parameter_selection.py # Lookup options and scoped selection tokens
 │       ├── shared/                 # Shared contracts, surfaces and templates
 │       ├── clients/                # Provider SDK/HTTP clients
 │       ├── providers/              # Provider Tool definitions and executors
@@ -95,6 +104,7 @@ local `.env` files and provider evidence are data, not Python package modules.
 | Harness | Agent loop, Run/Turn lifecycle, Tool-call scheduling, generic clarification and bounded follow-up | HTTP serving, Provider names, advertising account fields, business policy |
 | Platform | Agent/Scenario registry, API hosting, MCP, Knowledge/Memory services, governance, durable infrastructure | Provider-specific campaign logic or advertising workflow branches |
 | Tool Source | Closed schemas, effect/risk/replay metadata, fixed executors, Provider clients and provider-specific templates | Run lifecycle, direct model loop, permission bypasses |
+| Advertising application | Advertising composition, account-aware policy adapters, creation configuration and response/UI projection | Harness Run loop, Provider HTTP execution, duplicate Tool policy gate |
 | Skills | Natural-language SOP, trigger conditions, business guidance and references | Executable API calls, credential access, Tool registration |
 | Knowledge | Original Markdown and other advisory source material | Identity, authorization or executable workflow definitions |
 | Scenario | Selecting registered Tool/Skill/Knowledge sources and scenario metadata | Planner, turn handler, Runtime, API client or business control flow |
@@ -291,7 +301,7 @@ through the same generic Harness and are revalidated by Tool schemas, account sc
 and policy. This preserves the supported interaction contract without reviving
 a second turn state machine.
 
-### Composition and Recovery Hardening (2026-10-09)
+### Composition, Selection and Recovery Hardening (2026-10-09)
 
 Advertising startup wiring is split into three explicit owners:
 `AdApplicationBootstrap` initializes advertising services and policy,
@@ -299,11 +309,25 @@ Advertising startup wiring is split into three explicit owners:
 `ad_application_components.py` owns the typed assembly options, service graph,
 RunStore adapter, and one-time installation onto the advertising facade.
 `AdvertisingToolPolicyFactory` owns construction of the shared Tool policy with
-advertising account-scope and confirmation hooks. These are application-boundary
-adapters; none creates another Run loop or execution gate.
+advertising account-scope and confirmation hooks. `AdvertisingRunService` invokes
+one generic Run and preserves the advertising response envelope;
+`AdvertisingRunProjection` maps generic Tool results and bounded interactions to
+the ad-facing result/UI shape. These are application-boundary adapters; none
+creates another Run loop or execution gate.
+
+Schema-driven parameter construction and lookup authorization now have separate
+owners. `input_builder.py` projects intent, session state and declared Tool schema
+metadata into Tool arguments. `parameter_selection.py` discovers lookup-backed
+fields, signs picker options to the session/user/account/tool scope, and enforces
+token provenance for live create/upload calls. All consumers now depend on the
+selection service directly; the input builder no longer exposes a second copy of
+that responsibility or forwarding methods.
 
 Stale durable Run recovery now fails startup closed if the persistence recovery
 operation raises. Previously that exception was logged and suppressed, allowing
 the process to serve requests while persisted Runs might remain in an ambiguous
 state. A regression test covers this failure path. The full `make ad-agent-check`
-passed after the change (`1,247 passed`, one Starlette/httpx deprecation warning).
+passed after the recovery change (`1,247 passed`, one Starlette/httpx deprecation
+warning). The parameter-selection extraction's focused regression suite passed
+(`145 passed`); full validation of the combined changes is recorded with the
+subsequent migration checkpoint.

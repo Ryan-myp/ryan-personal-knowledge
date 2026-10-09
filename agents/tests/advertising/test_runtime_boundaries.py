@@ -222,6 +222,7 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     policy = (root / "ad_runtime_policy.py").read_text(encoding="utf-8")
     context = (root / "ad_runtime_context.py").read_text(encoding="utf-8")
     run_service = (root / "ad_run_service.py").read_text(encoding="utf-8")
+    run_projection = (root / "ad_run_projection.py").read_text(encoding="utf-8")
     catalog = (root / "ad_runtime_catalog.py").read_text(encoding="utf-8")
     lifecycle = (root / "ad_runtime_lifecycle.py").read_text(encoding="utf-8")
     presentation = (root / "ad_runtime_presentation.py").read_text(
@@ -236,6 +237,7 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     assert "class AdvertisingRuntimePolicy" in policy
     assert "class AdvertisingRuntimeContext" in context
     assert "class AdvertisingRunService" in run_service
+    assert "class AdvertisingRunProjection" in run_projection
     assert "class AdvertisingCatalogService" in catalog
     assert "class AdvertisingLifecycleService" in lifecycle
     assert "class AdvertisingPresentationService" in presentation
@@ -261,6 +263,7 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     assert "api_clients" not in policy
     assert "api_clients" not in context
     assert "api_clients" not in run_service
+    assert "api_clients" not in run_projection
     assert "api_clients" not in catalog
     assert "api_clients" not in lifecycle
     assert "api_clients" not in presentation

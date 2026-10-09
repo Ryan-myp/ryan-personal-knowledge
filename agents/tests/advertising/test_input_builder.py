@@ -32,7 +32,7 @@ def test_google_asset_lookup_decorates_union_typed_selection_fields():
         "data_status": "live",
     })
 
-    decorated = builder.decorate_lookup_result(
+    decorated = builder.parameter_selection.decorate_lookup_result(
         asset_tool,
         result,
         ToolContext(

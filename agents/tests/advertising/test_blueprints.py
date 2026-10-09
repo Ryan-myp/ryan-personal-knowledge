@@ -1399,6 +1399,10 @@ def test_creation_card_ui_survives_durable_conversation_reload():
 
 
 def test_harness_interaction_projects_to_advertising_ui_without_turn_handler():
+    from agents.tools.advertising.application.ad_run_projection import (
+        AdvertisingRunProjection,
+    )
+
     runtime = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
@@ -1406,7 +1410,7 @@ def test_harness_interaction_projects_to_advertising_ui_without_turn_handler():
     )
     card = {"type": "ad_creation_form", "blueprint_id": "tiktok.app_install"}
     try:
-        state = runtime.run_service._application_state_from_run(
+        state = AdvertisingRunProjection.application_state_from_run(
             runtime,
             {
                 "tool_results": [{

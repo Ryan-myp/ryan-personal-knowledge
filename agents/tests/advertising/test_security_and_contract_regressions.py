@@ -1421,7 +1421,7 @@ def test_global_tiktok_app_lookup_needs_no_account_and_selection_is_portable():
 
     definition = runtime.registry.get("tiktok_create_adgroup")[0]
     tool_input = {"app_id": option["value"]}
-    errors = runtime.input_builder.apply_selection_tokens(
+    errors = runtime.input_builder.parameter_selection.apply_selection_tokens(
         definition,
         tool_input,
         {"selection_tokens": {"app_id": option["selection_token"]}},
@@ -1506,7 +1506,7 @@ def test_live_dynamic_parameter_rejects_unattested_raw_value():
         definition for definition, _ in create_tiktok_tool_source().register_tools()
         if definition.name == "tiktok_create_adgroup"
     )
-    errors = runtime.input_builder.apply_selection_tokens(
+    errors = runtime.input_builder.parameter_selection.apply_selection_tokens(
         definition,
         {"app_id": "app-1"},
         {"app_id": "app-1"},
@@ -1529,7 +1529,7 @@ def test_live_creation_chain_trusts_parent_id_from_prior_runtime_result():
     runtime.register_tool_source(create_tiktok_tool_source())
     definition = runtime.registry.get("tiktok_create_adgroup")[0]
     tool_input = {"campaign_id": "created-by-prior-node"}
-    errors = runtime.input_builder.apply_selection_tokens(
+    errors = runtime.input_builder.parameter_selection.apply_selection_tokens(
         definition,
         tool_input,
         {},
@@ -1553,7 +1553,7 @@ def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
         definition for definition, _ in tool_source.register_tools()
         if definition.name == "google_create_campaign"
     )
-    errors = runtime.input_builder.apply_selection_tokens(
+    errors = runtime.input_builder.parameter_selection.apply_selection_tokens(
         definition,
         {"app_campaign_setting": {"selective_optimization": ["customers/1/conversionActions/2"]}},
         {},

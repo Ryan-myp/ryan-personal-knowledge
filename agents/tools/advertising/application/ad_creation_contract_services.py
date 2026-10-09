@@ -224,7 +224,9 @@ class AdCreationContractServicesMixin:
                 )
             value = context_values.get(value_path)
             if value is None and "." in value_path:
-                value = self.input_builder._value_at_path(context_values, value_path)
+                value = self.input_builder.parameter_selection.value_at_path(
+                    context_values, value_path,
+                )
             if value in (None, "", [], {}):
                 if dependency.get("required", True):
                     label = str(dependency.get("label") or value_path)
@@ -251,7 +253,7 @@ class AdCreationContractServicesMixin:
                 "当前查询还缺少必要的上级条件：" + "、".join(missing_source)
             )
         result = self.tool_executor.execute(session.ctx, source_tool, input_data)
-        result = self.input_builder.decorate_lookup_result(
+        result = self.input_builder.parameter_selection.decorate_lookup_result(
             definition, result, session.ctx, actual_platform,
             target_tool_name=tool_name,
             target_field=field,
@@ -275,8 +277,8 @@ class AdCreationContractServicesMixin:
         errors: list[str] = []
         for tool in definitions.values():
             properties = getattr(tool.input_schema, "properties", {}) or {}
-            for field_name, field_schema in self.input_builder._iter_schema_fields(properties):
-                lookup_tool = self.input_builder.lookup_tool_for_schema_field(
+            for field_name, field_schema in self.input_builder.parameter_selection.iter_schema_fields(properties):
+                lookup_tool = self.input_builder.parameter_selection.lookup_tool_for_field(
                     field_schema
                 )
                 if not lookup_tool:

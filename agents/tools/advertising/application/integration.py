@@ -336,7 +336,7 @@ class AdvertisingToolExecutor:
         result = self.owner.tool_executor.execute(
             session.ctx, self.definition.name, dict(input_data), clients,
         )
-        result = self.owner.input_builder.decorate_lookup_result(
+        result = self.owner.input_builder.parameter_selection.decorate_lookup_result(
             self.definition, result, session.ctx,
             str(getattr(self.definition, "namespace", "") or ""),
         )
