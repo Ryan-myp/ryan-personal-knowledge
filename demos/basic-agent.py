@@ -8,12 +8,31 @@
 - 任务执行
 """
 
+import ast
 import json
+import math
+import operator
 import re
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
 import time
 import os
+
+
+_BINARY_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+_UNARY_OPERATORS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+_MAX_EXPRESSION_LENGTH = 256
+_MAX_EXPRESSION_NODES = 64
+_MAX_POWER = 100
+_MAX_RESULT_MAGNITUDE = 1e100
 
 
 @dataclass
@@ -189,11 +208,47 @@ def search_tool(query: str) -> str:
 def calculator_tool(expression: str) -> str:
     """计算器工具"""
     try:
-        # 简单的计算器实现
-        result = eval(expression)
+        result = _evaluate_arithmetic(expression)
         return f"🧮 计算结果: {expression} = {result}"
-    except Exception as e:
-        return f"❌ 计算失败: {str(e)}"
+    except (ArithmeticError, SyntaxError, TypeError, ValueError) as error:
+        return f"❌ 计算失败: {error}"
+
+
+def _evaluate_arithmetic(expression: str) -> int | float:
+    if not isinstance(expression, str) or not expression.strip():
+        raise ValueError("请输入算术表达式")
+    if len(expression) > _MAX_EXPRESSION_LENGTH:
+        raise ValueError("算术表达式过长")
+
+    tree = ast.parse(expression, mode="eval")
+    if sum(1 for _ in ast.walk(tree)) > _MAX_EXPRESSION_NODES:
+        raise ValueError("算术表达式过于复杂")
+    return _evaluate_arithmetic_node(tree.body)
+
+
+def _evaluate_arithmetic_node(node: ast.AST) -> int | float:
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+            raise ValueError("只支持数字常量")
+        result = node.value
+    elif isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPERATORS:
+        result = _UNARY_OPERATORS[type(node.op)](_evaluate_arithmetic_node(node.operand))
+    elif isinstance(node, ast.BinOp) and type(node.op) in _BINARY_OPERATORS:
+        left = _evaluate_arithmetic_node(node.left)
+        right = _evaluate_arithmetic_node(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > _MAX_POWER:
+            raise ValueError("指数过大")
+        result = _BINARY_OPERATORS[type(node.op)](left, right)
+    else:
+        raise ValueError("只支持基础算术运算")
+
+    try:
+        within_bounds = math.isfinite(result) and abs(result) <= _MAX_RESULT_MAGNITUDE
+    except OverflowError:
+        within_bounds = False
+    if not within_bounds:
+        raise ValueError("计算结果超出范围")
+    return result
 
 
 def translator_tool(text: str) -> str:
@@ -211,50 +266,25 @@ def creator_tool(topic: str) -> str:
     return f"📝 已创建关于'{topic}'的内容..."
 
 
+def _register_demo_tools(agent: BaseAgent) -> None:
+    tools = [
+        Tool("search", "搜索工具", {"query": "str"}, search_tool),
+        Tool("calculator", "计算器工具", {"expression": "str"}, calculator_tool),
+        Tool("translator", "翻译工具", {"text": "str"}, translator_tool),
+        Tool("explainer", "解释工具", {"topic": "str"}, explainer_tool),
+        Tool("creator", "创建工具", {"topic": "str"}, creator_tool),
+    ]
+    for tool in tools:
+        agent.register_tool(tool)
+
+
 def demo():
     """演示"""
     print("🤖 Agent 基础实现示例")
     print("=" * 50)
-    
-    # 创建 Agent
     agent = BaseAgent()
-    
-    # 注册工具
-    agent.register_tool(Tool(
-        name="search",
-        description="搜索工具",
-        parameters={"query": "str"},
-        func=search_tool
-    ))
-    
-    agent.register_tool(Tool(
-        name="calculator",
-        description="计算器工具",
-        parameters={"expression": "str"},
-        func=calculator_tool
-    ))
-    
-    agent.register_tool(Tool(
-        name="translator",
-        description="翻译工具",
-        parameters={"text": "str"},
-        func=translator_tool
-    ))
-    
-    agent.register_tool(Tool(
-        name="explainer",
-        description="解释工具",
-        parameters={"topic": "str"},
-        func=explainer_tool
-    ))
-    
-    agent.register_tool(Tool(
-        name="creator",
-        description="创建工具",
-        parameters={"topic": "str"},
-        func=creator_tool
-    ))
-    
+    _register_demo_tools(agent)
+
     # 测试执行
     test_inputs = [
         "帮我搜索 Python 编程",

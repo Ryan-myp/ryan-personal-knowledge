@@ -7,9 +7,51 @@ Google Ads API 客户端
 API 版本: v24.2
 """
 
+from datetime import date
+import re
 from typing import List, Dict, Optional
 from api_common import ApiResponse, BaseAdPlatformClient
 import requests
+
+
+_GOOGLE_ID = re.compile(r"[0-9]+\Z")
+_CAMPAIGN_STATUS_FILTER = re.compile(
+    r"campaign\.status\s*=\s*(?:'(?P<single>[A-Z_]+)'|\"(?P<double>[A-Z_]+)\"|(?P<bare>[A-Z_]+))\Z",
+    re.IGNORECASE,
+)
+
+
+def _google_numeric_id(value: str, field_name: str) -> str:
+    normalized = str(value or "").strip()
+    if (
+        not _GOOGLE_ID.fullmatch(normalized)
+        or len(normalized) > 20
+        or int(normalized) < 1
+    ):
+        raise ValueError(f"{field_name} must be a positive numeric identifier")
+    return normalized
+
+
+def _campaign_status_filter(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("filter must be a campaign status equality")
+    match = _CAMPAIGN_STATUS_FILTER.fullmatch(value.strip())
+    if not match:
+        raise ValueError("filter only supports campaign.status equality")
+    status = next(item for item in match.groupdict().values() if item)
+    if status.upper() not in {"ENABLED", "PAUSED", "REMOVED"}:
+        raise ValueError("campaign status filter is not supported")
+    return f"campaign.status = '{status.upper()}'"
+
+
+def _iso_date(value: str, field_name: str) -> str:
+    try:
+        parsed = date.fromisoformat(str(value))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD)") from error
+    if parsed.isoformat() != value:
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD)")
+    return parsed.isoformat()
 
 
 class GoogleAdsClient(BaseAdPlatformClient):
@@ -52,15 +94,21 @@ class GoogleAdsClient(BaseAdPlatformClient):
                 resp = requests.post(url, headers=headers, json=kwargs.get('data', {}), timeout=30)
             
             data = resp.json()
+            if not isinstance(data, dict):
+                return ApiResponse(
+                    success=False,
+                    error="Invalid Google Ads API response payload",
+                )
             if resp.status_code != 200:
                 return ApiResponse(success=False, error=data.get('error', {}).get('message', 'API error'), data=data)
             
             return ApiResponse(success=True, data=data)
-        except Exception as e:
+        except (requests.RequestException, ValueError) as e:
             return ApiResponse(success=False, error=str(e))
     
     def search(self, customer_id: str, query: str) -> ApiResponse:
         """执行 GAQL 查询"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
         data = {'query': query}
         return self.request('POST', f'customers/{customer_id}:search', data=data)
     
@@ -76,13 +124,15 @@ class GoogleAdsClient(BaseAdPlatformClient):
     # ==================== 广告系列管理 ====================
     def list_campaigns(self, customer_id: str, filter: str = None) -> ApiResponse:
         """获取广告系列列表"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
         query = "SELECT campaign.id, campaign.name, campaign.status, campaign.advertising_channel_type FROM campaign"
         if filter:
-            query += f" WHERE {filter}"
+            query += f" WHERE {_campaign_status_filter(filter)}"
         return self.search(customer_id, query)
     
     def get_campaign(self, customer_id: str, campaign_id: str) -> ApiResponse:
         """获取广告系列详情"""
+        campaign_id = _google_numeric_id(campaign_id, "campaign_id")
         query = f"SELECT campaign.id, campaign.name, campaign.status FROM campaign WHERE campaign.id = {campaign_id}"
         return self.search(customer_id, query)
     
@@ -110,6 +160,8 @@ class GoogleAdsClient(BaseAdPlatformClient):
     # ==================== 广告组管理 ====================
     def list_ad_groups(self, customer_id: str, campaign_id: str) -> ApiResponse:
         """获取广告组列表"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        campaign_id = _google_numeric_id(campaign_id, "campaign_id")
         query = f"SELECT ad_group.id, ad_group.name, ad_group.status FROM ad_group WHERE ad_group.campaign = 'customers/{customer_id}/campaigns/{campaign_id}'"
         return self.search(customer_id, query)
     
@@ -136,6 +188,8 @@ class GoogleAdsClient(BaseAdPlatformClient):
     # ==================== 关键词管理 ====================
     def list_keywords(self, customer_id: str, ad_group_id: str) -> ApiResponse:
         """获取关键词列表"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        ad_group_id = _google_numeric_id(ad_group_id, "ad_group_id")
         query = f"SELECT keyword.id, keyword.text, keyword.match_type FROM keyword WHERE keyword.ad_group = 'customers/{customer_id}/adGroups/{ad_group_id}'"
         return self.search(customer_id, query)
     
@@ -157,6 +211,8 @@ class GoogleAdsClient(BaseAdPlatformClient):
     # ==================== 广告管理 ====================
     def list_ads(self, customer_id: str, ad_group_id: str) -> ApiResponse:
         """获取广告列表"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        ad_group_id = _google_numeric_id(ad_group_id, "ad_group_id")
         query = f"SELECT ad.id, ad.type, ad.status FROM ad WHERE ad.ad_group = 'customers/{customer_id}/adGroups/{ad_group_id}'"
         return self.search(customer_id, query)
     
@@ -198,14 +254,18 @@ class GoogleAdsClient(BaseAdPlatformClient):
     
     def get_bid_suggestion(self, customer_id: str, campaign_id: str) -> ApiResponse:
         """获取出价建议"""
+        campaign_id = _google_numeric_id(campaign_id, "campaign_id")
         query = f"SELECT keyword_match_type, metrics.all_conversions, metrics.estimated_ranked_cpc_micros FROM keyword_view WHERE segments.date DURING LAST_30_DAYS AND campaign.id = {campaign_id}"
         return self.search(customer_id, query)
     
     # ==================== 报表 ====================
     def generate_report(self, customer_id: str, date_range: Dict) -> ApiResponse:
         """生成报表"""
-        start_date = date_range['start']
-        end_date = date_range['end']
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        start_date = _iso_date(date_range['start'], "start")
+        end_date = _iso_date(date_range['end'], "end")
+        if start_date > end_date:
+            raise ValueError("start must not be later than end")
         query = f"SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date BETWEEN '{start_date}' AND '{end_date}'"
         return self.search(customer_id, query)
     

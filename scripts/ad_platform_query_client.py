@@ -4,15 +4,101 @@
 补充创建广告时需要的完整定向参数：设备、性别、年龄、语言、兴趣、行为等
 """
 
+import re
 import requests
 from typing import List, Dict, Optional
+
+
+_GOOGLE_ID = re.compile(r"[0-9]+\Z")
+_INTEGER = re.compile(r"[+-]?[0-9]+\Z")
+
+
+def _google_numeric_id(value: str, field_name: str) -> str:
+    normalized = str(value or "").strip()
+    if (
+        not _GOOGLE_ID.fullmatch(normalized)
+        or len(normalized) > 20
+        or int(normalized) < 1
+    ):
+        raise ValueError(f"{field_name} must be a positive numeric identifier")
+    return normalized
+
+
+def _google_query_limit(value, default: int) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool) or not _INTEGER.fullmatch(str(value).strip()):
+        raise ValueError("limit must be an integer")
+    limit = int(value)
+    if limit < 1:
+        raise ValueError("limit must be a positive integer")
+    return min(limit, 1000)
 
 
 class AdPlatformQueryClient:
     """广告平台定向参数查询客户端"""
     
-    def __init__(self, credentials: dict):
+    def __init__(self, credentials: dict, *, google_ads_client=None):
         self.credentials = credentials
+        self._google_ads_client = google_ads_client
+
+    def get_client(self, platform: str):
+        if platform != 'google_ads':
+            raise ValueError(f"Unsupported SDK client: {platform}")
+        if self._google_ads_client is None:
+            self._google_ads_client = self._create_google_ads_client()
+        return self._google_ads_client
+
+    def _create_google_ads_client(self):
+        credentials = self.credentials.get('google', {})
+        required = ('client_id', 'client_secret', 'developer_token', 'refresh_token')
+        if not all(credentials.get(key) for key in required):
+            raise ValueError("Google Ads OAuth credentials and developer token are required")
+        try:
+            from google.ads.googleads.client import GoogleAdsClient
+            from google.oauth2.credentials import Credentials
+        except ImportError as error:
+            raise RuntimeError("Google Ads SDK is required for Google targeting queries") from error
+
+        oauth_credentials = Credentials(
+            token=None,
+            refresh_token=credentials['refresh_token'],
+            client_id=credentials['client_id'],
+            client_secret=credentials['client_secret'],
+            token_uri="https://oauth2.googleapis.com/token",
+        )
+        return GoogleAdsClient(
+            credentials=oauth_credentials,
+            developer_token=credentials['developer_token'],
+            login_customer_id=credentials.get('login_customer_id', ''),
+            use_proto_plus=True,
+        )
+
+    @staticmethod
+    def _request_json(url, *, headers=None, params=None):
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Provider response must be a JSON object")
+        return payload
+
+    @staticmethod
+    def _list_field(payload, field_name):
+        values = payload.get(field_name, [])
+        if not isinstance(values, list):
+            raise ValueError(f"Provider response field '{field_name}' must be a list")
+        return values
+
+    @classmethod
+    def _tiktok_list(cls, payload):
+        code = payload.get('code')
+        if code not in (None, 0, '0'):
+            raise RuntimeError(f"TikTok query failed with provider code {code}")
+        data = payload.get('data', {})
+        if not isinstance(data, dict):
+            raise ValueError("TikTok response field 'data' must be an object")
+        return cls._list_field(data, 'list')
     
     # ========== TikTok 定向参数查询接口 ==========
     
@@ -26,13 +112,7 @@ class AdPlatformQueryClient:
             'page_size': kwargs.get('page_size', 100)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/query/device/'
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json().get('data', {})
-            return data.get('list', []) if isinstance(data, dict) else []
-        except Exception as e:
-            print(f"[TikTok] list_devices error: {e}")
-            return []
+        return self._tiktok_list(self._request_json(url, headers=headers, params=params))
     
     def tiktok_list_genders(self, advertiser_id: str, **kwargs) -> List[Dict]:
         """列出性别选项 - 用于性别定向"""
@@ -80,13 +160,7 @@ class AdPlatformQueryClient:
             'page_size': kwargs.get('page_size', 50)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/query/interest/'
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json().get('data', {})
-            return data.get('list', []) if isinstance(data, dict) else []
-        except Exception as e:
-            print(f"[TikTok] list_interests error: {e}")
-            return []
+        return self._tiktok_list(self._request_json(url, headers=headers, params=params))
     
     def tiktok_list_behaviors(self, advertiser_id: str, **kwargs) -> List[Dict]:
         """列出行为标签 - 用于行为定向"""
@@ -107,13 +181,7 @@ class AdPlatformQueryClient:
             'category_level': kwargs.get('category_level', 1)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/query/interest/category/'
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json().get('data', {})
-            return data.get('list', []) if isinstance(data, dict) else []
-        except Exception as e:
-            print(f"[TikTok] list_interest_categories error: {e}")
-            return []
+        return self._tiktok_list(self._request_json(url, headers=headers, params=params))
     
     def tiktok_get_app_list(self, advertiser_id: str, **kwargs) -> List[Dict]:
         """列出可投放的 APP - 用于应用定向"""
@@ -125,13 +193,7 @@ class AdPlatformQueryClient:
             'page_size': kwargs.get('page_size', 100)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/query/app/'
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json().get('data', {})
-            return data.get('list', []) if isinstance(data, dict) else []
-        except Exception as e:
-            print(f"[TikTok] get_app_list error: {e}")
-            return []
+        return self._tiktok_list(self._request_json(url, headers=headers, params=params))
     
     def tiktok_get_website_list(self, advertiser_id: str, **kwargs) -> List[Dict]:
         """列出可投放的网站 - 用于网站定向"""
@@ -143,13 +205,7 @@ class AdPlatformQueryClient:
             'page_size': kwargs.get('page_size', 100)
         }
         url = 'https://business-api.tiktok.com/open_api/v1.3/query/site/'
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json().get('data', {})
-            return data.get('list', []) if isinstance(data, dict) else []
-        except Exception as e:
-            print(f"[TikTok] get_website_list error: {e}")
-            return []
+        return self._tiktok_list(self._request_json(url, headers=headers, params=params))
     
     # ========== Meta 定向参数查询接口 ==========
     
@@ -176,64 +232,13 @@ class AdPlatformQueryClient:
     def meta_list_age_ranges(self, account_id: str, **kwargs) -> List[Dict]:
         """列出年龄区间 - 用于年龄定向"""
         return [
-            {'code': '13', 'name': '13岁', 'min_age': 13, 'max_age': 13},
-            {'code': '14', 'name': '14岁', 'min_age': 14, 'max_age': 14},
-            {'code': '15', 'name': '15岁', 'min_age': 15, 'max_age': 15},
-            {'code': '16', 'name': '16岁', 'min_age': 16, 'max_age': 16},
-            {'code': '17', 'name': '17岁', 'min_age': 17, 'max_age': 17},
-            {'code': '18', 'name': '18岁', 'min_age': 18, 'max_age': 18},
-            {'code': '19', 'name': '19岁', 'min_age': 19, 'max_age': 19},
-            {'code': '20', 'name': '20岁', 'min_age': 20, 'max_age': 20},
-            {'code': '21', 'name': '21岁', 'min_age': 21, 'max_age': 21},
-            {'code': '22', 'name': '22岁', 'min_age': 22, 'max_age': 22},
-            {'code': '23', 'name': '23岁', 'min_age': 23, 'max_age': 23},
-            {'code': '24', 'name': '24岁', 'min_age': 24, 'max_age': 24},
-            {'code': '25', 'name': '25岁', 'min_age': 25, 'max_age': 25},
-            {'code': '26', 'name': '26岁', 'min_age': 26, 'max_age': 26},
-            {'code': '27', 'name': '27岁', 'min_age': 27, 'max_age': 27},
-            {'code': '28', 'name': '28岁', 'min_age': 28, 'max_age': 28},
-            {'code': '29', 'name': '29岁', 'min_age': 29, 'max_age': 29},
-            {'code': '30', 'name': '30岁', 'min_age': 30, 'max_age': 30},
-            {'code': '31', 'name': '31岁', 'min_age': 31, 'max_age': 31},
-            {'code': '32', 'name': '32岁', 'min_age': 32, 'max_age': 32},
-            {'code': '33', 'name': '33岁', 'min_age': 33, 'max_age': 33},
-            {'code': '34', 'name': '34岁', 'min_age': 34, 'max_age': 34},
-            {'code': '35', 'name': '35岁', 'min_age': 35, 'max_age': 35},
-            {'code': '36', 'name': '36岁', 'min_age': 36, 'max_age': 36},
-            {'code': '37', 'name': '37岁', 'min_age': 37, 'max_age': 37},
-            {'code': '38', 'name': '38岁', 'min_age': 38, 'max_age': 38},
-            {'code': '39', 'name': '39岁', 'min_age': 39, 'max_age': 39},
-            {'code': '40', 'name': '40岁', 'min_age': 40, 'max_age': 40},
-            {'code': '41', 'name': '41岁', 'min_age': 41, 'max_age': 41},
-            {'code': '42', 'name': '42岁', 'min_age': 42, 'max_age': 42},
-            {'code': '43', 'name': '43岁', 'min_age': 43, 'max_age': 43},
-            {'code': '44', 'name': '44岁', 'min_age': 44, 'max_age': 44},
-            {'code': '45', 'name': '45岁', 'min_age': 45, 'max_age': 45},
-            {'code': '46', 'name': '46岁', 'min_age': 46, 'max_age': 46},
-            {'code': '47', 'name': '47岁', 'min_age': 47, 'max_age': 47},
-            {'code': '48', 'name': '48岁', 'min_age': 48, 'max_age': 48},
-            {'code': '49', 'name': '49岁', 'min_age': 49, 'max_age': 49},
-            {'code': '50', 'name': '50岁', 'min_age': 50, 'max_age': 50},
-            {'code': '51', 'name': '51岁', 'min_age': 51, 'max_age': 51},
-            {'code': '52', 'name': '52岁', 'min_age': 52, 'max_age': 52},
-            {'code': '53', 'name': '53岁', 'min_age': 53, 'max_age': 53},
-            {'code': '54', 'name': '54岁', 'min_age': 54, 'max_age': 54},
-            {'code': '55', 'name': '55岁', 'min_age': 55, 'max_age': 55},
-            {'code': '56', 'name': '56岁', 'min_age': 56, 'max_age': 56},
-            {'code': '57', 'name': '57岁', 'min_age': 57, 'max_age': 57},
-            {'code': '58', 'name': '58岁', 'min_age': 58, 'max_age': 58},
-            {'code': '59', 'name': '59岁', 'min_age': 59, 'max_age': 59},
-            {'code': '60', 'name': '60岁', 'min_age': 60, 'max_age': 60},
-            {'code': '61', 'name': '61岁', 'min_age': 61, 'max_age': 61},
-            {'code': '62', 'name': '62岁', 'min_age': 62, 'max_age': 62},
-            {'code': '63', 'name': '63岁', 'min_age': 63, 'max_age': 63},
-            {'code': '64', 'name': '64岁', 'min_age': 64, 'max_age': 64},
-            {'code': '65', 'name': '65岁', 'min_age': 65, 'max_age': 65},
-            {'code': '66', 'name': '66岁', 'min_age': 66, 'max_age': 66},
-            {'code': '67', 'name': '67岁', 'min_age': 67, 'max_age': 67},
-            {'code': '68', 'name': '68岁', 'min_age': 68, 'max_age': 68},
-            {'code': '69', 'name': '69岁', 'min_age': 69, 'max_age': 69},
-            {'code': '70', 'name': '70岁及以上', 'min_age': 70, 'max_age': 999}
+            {
+                'code': str(age),
+                'name': f'{age}岁' if age < 70 else '70岁及以上',
+                'min_age': age,
+                'max_age': age if age < 70 else 999,
+            }
+            for age in range(13, 71)
         ]
     
     def meta_list_languages(self, account_id: str, **kwargs) -> List[Dict]:
@@ -263,27 +268,19 @@ class AdPlatformQueryClient:
         """列出兴趣标签 - 用于兴趣定向"""
         token = self.credentials.get('meta', {}).get('access_token', '')
         url = f"https://graph.facebook.com/v19.0/{account_id}/interests"
-        params = {'access_token': token, 'limit': kwargs.get('limit', 100)}
-        try:
-            resp = requests.get(url, params=params, timeout=30)
-            data = resp.json()
-            return data.get('data', [])
-        except Exception as e:
-            print(f"[Meta] list_interests error: {e}")
-            return []
+        headers = {'Authorization': f'Bearer {token}'}
+        params = {'limit': kwargs.get('limit', 100)}
+        payload = self._request_json(url, headers=headers, params=params)
+        return self._list_field(payload, 'data')
     
     def meta_list_behaviors(self, account_id: str, **kwargs) -> List[Dict]:
         """列出行为标签 - 用于行为定向"""
         token = self.credentials.get('meta', {}).get('access_token', '')
         url = f"https://graph.facebook.com/v19.0/{account_id}/behaviors"
-        params = {'access_token': token, 'limit': kwargs.get('limit', 100)}
-        try:
-            resp = requests.get(url, params=params, timeout=30)
-            data = resp.json()
-            return data.get('data', [])
-        except Exception as e:
-            print(f"[Meta] list_behaviors error: {e}")
-            return []
+        headers = {'Authorization': f'Bearer {token}'}
+        params = {'limit': kwargs.get('limit', 100)}
+        payload = self._request_json(url, headers=headers, params=params)
+        return self._list_field(payload, 'data')
     
     def meta_list_demographics(self, account_id: str, **kwargs) -> List[Dict]:
         """列出人口统计选项 - 用于精细定向"""
@@ -312,24 +309,28 @@ class AdPlatformQueryClient:
     
     def google_list_locations(self, customer_id: str, **kwargs) -> List[Dict]:
         """列出地域 - 用于地域定向"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        limit = _google_query_limit(kwargs.get('limit'), default=200)
         client = self.get_client('google_ads')
-        location_service = client.get_service("LocationCriterionService")
-        query = f"SELECT criterion.id, criterion.name, criterion.type FROM criterion WHERE criterion.type = 'LOCATION' LIMIT {kwargs.get('limit', 200)}"
-        try:
-            response = location_service.search_stream(customer_id=customer_id, query=query)
-            locations = []
-            for batch in response:
-                for row in batch.results:
-                    locations.append({
-                        'id': row.criterion.id,
-                        'name': row.criterion.name,
-                        'type': row.criterion.type,
-                        'targeting_type': 'Location'
-                    })
-            return locations
-        except Exception as e:
-            print(f"[Google Ads] list_locations error: {e}")
-            return []
+        google_ads_service = client.get_service("GoogleAdsService")
+        query = (
+            "SELECT geo_target_constant.id, geo_target_constant.name, "
+            "geo_target_constant.target_type FROM geo_target_constant "
+            "WHERE geo_target_constant.status = ENABLED "
+            f"LIMIT {limit}"
+        )
+        response = google_ads_service.search_stream(
+            customer_id=customer_id, query=query
+        )
+        return [
+            {
+                'id': row.geo_target_constant.id,
+                'name': row.geo_target_constant.name,
+                'type': row.geo_target_constant.target_type,
+            }
+            for batch in response
+            for row in batch.results
+        ]
     
     def google_list_languages(self, customer_id: str, **kwargs) -> List[Dict]:
         """列出语言选项 - 用于语言定向"""
@@ -355,11 +356,27 @@ class AdPlatformQueryClient:
     
     def google_list_audiences(self, customer_id: str, **kwargs) -> List[Dict]:
         """列出受众 - 用于受众定向"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        limit = _google_query_limit(kwargs.get('limit'), default=100)
         client = self.get_client('google_ads')
-        query = f"SELECT keyword.id, keyword.text, keyword.match_type FROM keyword LIMIT {kwargs.get('limit', 100)}"
-        # 这里需要使用正确的 Google Ads API 服务
-        print("[Google Ads] list_audiences 需要使用 google-ads 库")
-        return []
+        google_ads_service = client.get_service("GoogleAdsService")
+        query = (
+            "SELECT user_list.id, user_list.name, user_list.type "
+            "FROM user_list "
+            f"LIMIT {limit}"
+        )
+        response = google_ads_service.search_stream(
+            customer_id=customer_id, query=query
+        )
+        return [
+            {
+                'id': row.user_list.id,
+                'name': row.user_list.name,
+                'type': row.user_list.type,
+            }
+            for batch in response
+            for row in batch.results
+        ]
     
     # ========== DV360 定向参数查询接口 ==========
     
@@ -399,13 +416,8 @@ class AdPlatformQueryClient:
         headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
         url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/interestTargets"
         params = {'pageSize': kwargs.get('page_size', 100)}
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json()
-            return data.get('interestTargets', [])
-        except Exception as e:
-            print(f"[DV360] list_interests error: {e}")
-            return []
+        payload = self._request_json(url, headers=headers, params=params)
+        return self._list_field(payload, 'interestTargets')
     
     def dv360_list_location_targets(self, partner_id: str, **kwargs) -> List[Dict]:
         """列出地域定向 - 用于地域定向"""
@@ -413,10 +425,5 @@ class AdPlatformQueryClient:
         headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
         url = f"https://display-video.googleapis.com/v1/partners/{partner_id}/locationTargets"
         params = {'pageSize': kwargs.get('page_size', 100)}
-        try:
-            resp = requests.get(url, headers=headers, params=params, timeout=30)
-            data = resp.json()
-            return data.get('locationTargets', [])
-        except Exception as e:
-            print(f"[DV360] list_location_targets error: {e}")
-            return []
+        payload = self._request_json(url, headers=headers, params=params)
+        return self._list_field(payload, 'locationTargets')

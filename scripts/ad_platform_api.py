@@ -9,6 +9,7 @@ import sys
 import json
 import time
 import argparse
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
@@ -18,6 +19,30 @@ CREDENTIALS_FILE = Path(__file__).parent.parent / "config" / "ad_platform_creden
 
 # 各平台客户端缓存
 _clients = {}
+
+
+def _google_numeric_id(value: Any, field_name: str) -> str:
+    """Validate an identifier before embedding it in a Google Ads GAQL query."""
+    normalized = str(value or "").strip()
+    if (
+        not re.fullmatch(r"[0-9]+", normalized)
+        or len(normalized) > 20
+        or int(normalized) < 1
+    ):
+        raise ValueError(f"{field_name} must be a positive numeric identifier")
+    return normalized
+
+
+def _google_query_limit(value: Any, *, default: int = 100) -> int:
+    """Bound a caller-provided GAQL LIMIT to a small positive integer."""
+    if value is None:
+        return default
+    if isinstance(value, bool) or not re.fullmatch(r"[+-]?[0-9]+", str(value).strip()):
+        raise ValueError("limit must be an integer")
+    limit = int(value)
+    if limit < 1:
+        raise ValueError("limit must be a positive integer")
+    return min(limit, 1000)
 
 
 class AdPlatformClient:
@@ -907,6 +932,7 @@ class AdPlatformClient:
     
     def google_list_campaigns(self, customer_id: str, **kwargs) -> List[Dict]:
         """列出广告系列"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
         client = self.get_client('google')
         gaia = client.get_service('GoogleAdsService')
         query = f"""
@@ -930,6 +956,8 @@ class AdPlatformClient:
     
     def google_get_campaign(self, customer_id: str, campaign_id: str, **kwargs) -> Dict:
         """获取广告系列详情"""
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        campaign_id = _google_numeric_id(campaign_id, "campaign_id")
         client = self.get_client('google')
         gaia = client.get_service('GoogleAdsService')
         query = f"""
@@ -945,43 +973,49 @@ class AdPlatformClient:
     
     def google_list_campaign_budgets(self, customer_id: str, limit: int = 10, **kwargs) -> List[Dict]:
         """列出 Campaign Budget"""
-        try:
-            client = self.get_client('google')
-            gaia = client.get_service('GoogleAdsService')
-            query = f"SELECT campaign_budget.id, campaign_budget.name, campaign_budget.amount_micros FROM campaign_budget LIMIT {limit}"
-            response = gaia.search(customer_id=customer_id, query=query)
-            budgets = []
-            for result in response:
-                budgets.append({
-                    'id': result.campaign_budget.id,
-                    'name': result.campaign_budget.name,
-                    'amount_micros': result.campaign_budget.amount_micros,
-                    'resource_name': result.campaign_budget.resource_name
-                })
-            return budgets
-        except Exception as e:
-            print(f"[Google Ads] list_campaign_budgets error: {e}")
-            return []
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        limit = _google_query_limit(limit, default=10)
+        client = self.get_client('google')
+        gaia = client.get_service('GoogleAdsService')
+        query = (
+            "SELECT campaign_budget.id, campaign_budget.name, "
+            f"campaign_budget.amount_micros FROM campaign_budget LIMIT {limit}"
+        )
+        response = gaia.search(customer_id=customer_id, query=query)
+        return [
+            {
+                'id': result.campaign_budget.id,
+                'name': result.campaign_budget.name,
+                'amount_micros': result.campaign_budget.amount_micros,
+                'resource_name': result.campaign_budget.resource_name,
+            }
+            for result in response
+        ]
     
     def google_list_bidding_strategies(self, customer_id: str, limit: int = 10, **kwargs) -> List[Dict]:
         """列出出价策略"""
-        try:
-            client = self.get_client('google')
-            gaia = client.get_service('GoogleAdsService')
-            query = f"SELECT bidding_strategy.id, bidding_strategy.name, bidding_strategy.type FROM bidding_strategy LIMIT {limit}"
-            response = gaia.search(customer_id=customer_id, query=query)
-            strategies = []
-            for result in response:
-                strategies.append({
-                    'id': result.bidding_strategy.id,
-                    'name': result.bidding_strategy.name,
-                    'type': result.bidding_strategy.type.name if hasattr(result.bidding_strategy.type, 'name') else str(result.bidding_strategy.type),
-                    'resource_name': result.bidding_strategy.resource_name
-                })
-            return strategies
-        except Exception as e:
-            print(f"[Google Ads] list_bidding_strategies error: {e}")
-            return []
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        limit = _google_query_limit(limit, default=10)
+        client = self.get_client('google')
+        gaia = client.get_service('GoogleAdsService')
+        query = (
+            "SELECT bidding_strategy.id, bidding_strategy.name, "
+            f"bidding_strategy.type FROM bidding_strategy LIMIT {limit}"
+        )
+        response = gaia.search(customer_id=customer_id, query=query)
+        return [
+            {
+                'id': result.bidding_strategy.id,
+                'name': result.bidding_strategy.name,
+                'type': (
+                    result.bidding_strategy.type.name
+                    if hasattr(result.bidding_strategy.type, 'name')
+                    else str(result.bidding_strategy.type)
+                ),
+                'resource_name': result.bidding_strategy.resource_name,
+            }
+            for result in response
+        ]
     
     def google_create_campaign_budget(self, customer_id: str, name: str, amount_micros: int, **kwargs) -> Dict:
         """创建 Campaign Budget"""
@@ -1094,28 +1128,29 @@ class AdPlatformClient:
     
     def google_list_ad_groups(self, customer_id: str, campaign_id: str, **kwargs) -> List[Dict]:
         """列出广告组"""
-        try:
-            client = self.get_client('google')
-            gaia = client.get_service('GoogleAdsService')
-            query = f"""
-                SELECT ad_group.id, ad_group.name, ad_group.status
-                FROM ad_group 
-                WHERE ad_group.campaign = "customers/{customer_id}/campaigns/{campaign_id}"
-            """
-            response = gaia.search_stream(customer_id=customer_id, query=query)
-            
-            ad_groups = []
-            for batch in response:
-                for row in batch.results:
-                    ad_groups.append({
-                        'id': row.ad_group.id,
-                        'name': row.ad_group.name,
-                        'status': row.ad_group.status.name if hasattr(row.ad_group.status, 'name') else str(row.ad_group.status)
-                    })
-            return ad_groups
-        except Exception as e:
-            print(f"[Google Ads] list_ad_groups error: {e}")
-            return []
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        campaign_id = _google_numeric_id(campaign_id, "campaign_id")
+        client = self.get_client('google')
+        gaia = client.get_service('GoogleAdsService')
+        query = f"""
+            SELECT ad_group.id, ad_group.name, ad_group.status
+            FROM ad_group
+            WHERE ad_group.campaign = "customers/{customer_id}/campaigns/{campaign_id}"
+        """
+        response = gaia.search_stream(customer_id=customer_id, query=query)
+        return [
+            {
+                'id': row.ad_group.id,
+                'name': row.ad_group.name,
+                'status': (
+                    row.ad_group.status.name
+                    if hasattr(row.ad_group.status, 'name')
+                    else str(row.ad_group.status)
+                ),
+            }
+            for batch in response
+            for row in batch.results
+        ]
     
     def google_create_ad_group(self, customer_id: str, campaign_id: str, name: str, **kwargs) -> Dict:
         """创建广告组"""
@@ -1139,48 +1174,32 @@ class AdPlatformClient:
     
     def google_list_keywords(self, customer_id: str, campaign_id: str = None, **kwargs) -> List[Dict]:
         """列出关键词 - 使用 Google Ads API"""
-        client = self.get_client('google_ads')
-        ga_service = client.get_service("KeywordService")
-        query = f"SELECT keyword.id, keyword.text, keyword.match_type, campaign.id as campaign_id FROM keyword"
-        if campaign_id:
-            query += f" WHERE campaign.id = {campaign_id}"
-        query += f" LIMIT {kwargs.get('limit', 100)}"
-        
-        try:
-            response = gaia.search_stream(customer_id=customer_id, query=query)
-            keywords = []
-            for batch in response:
-                for row in batch.results:
-                    keywords.append({
-                        'id': row.keyword.id,
-                        'text': row.keyword.text,
-                        'match_type': row.keyword.match_type,
-                        'campaign_id': campaign_id
-                    })
-            return keywords
-        except Exception as e:
-            print(f"[Google Ads] list_keywords error: {e}")
-            return []
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        if campaign_id is not None:
+            campaign_id = _google_numeric_id(campaign_id, "campaign_id")
+        limit = _google_query_limit(kwargs.get('limit', 100))
         client = self.get_client('google')
-        ad_group_criterion_service = client.get_service('AdGroupCriterionService')
-        query = f"""
-            SELECT keyword.id, keyword.text, keyword.match_type, ad_group_criterion.status
-            FROM keyword JOIN ad_group_criterion
-            ON ad_group_criterion.ad_group = 'customers/{customer_id}/adGroups/{ad_group_id}'
-            WHERE ad_group_criterion.type = 'KEYWORD'
-        """
-        response = gaia.search_stream(customer_id=customer_id, query=query)
-        
-        keywords = []
-        for batch in response:
-                for row in batch.results:
-                    keywords.append({
-                    'id': row.keyword.id,
-                    'text': row.keyword.text,
-                    'match_type': row.keyword.match_type,
-                    'status': row.ad_group_criterion.status
-                })
-        return keywords
+        ga_service = client.get_service("GoogleAdsService")
+        query = (
+            "SELECT ad_group_criterion.criterion_id, "
+            "ad_group_criterion.keyword.text, "
+            "ad_group_criterion.keyword.match_type, campaign.id "
+            "FROM ad_group_criterion WHERE ad_group_criterion.type = KEYWORD"
+        )
+        if campaign_id:
+            query += f" AND campaign.id = {campaign_id}"
+        query += f" LIMIT {limit}"
+        response = ga_service.search_stream(customer_id=customer_id, query=query)
+        return [
+            {
+                'id': row.ad_group_criterion.criterion_id,
+                'text': row.ad_group_criterion.keyword.text,
+                'match_type': row.ad_group_criterion.keyword.match_type,
+                'campaign_id': row.campaign.id,
+            }
+            for batch in response
+            for row in batch.results
+        ]
     
     def google_create_keyword(self, customer_id: str, ad_group_id: str, text: str, **kwargs) -> Dict:
         """创建关键词"""
@@ -1204,27 +1223,28 @@ class AdPlatformClient:
     
     def google_list_ads(self, customer_id: str, ad_group_id: str, **kwargs) -> List[Dict]:
         """列出广告"""
-        try:
-            client = self.get_client('google')
-            gaia = client.get_service('GoogleAdsService')
-            query = f"""
-                SELECT ad_group_ad.ad.id, ad_group_ad.status
-                FROM ad_group_ad
-                WHERE ad_group_ad.ad_group = "customers/{customer_id}/adGroups/{ad_group_id}"
-            """
-            response = gaia.search_stream(customer_id=customer_id, query=query)
-            
-            ads = []
-            for batch in response:
-                for row in batch.results:
-                    ads.append({
-                        'id': row.ad_group_ad.ad.id,
-                        'status': row.ad_group_ad.status.name if hasattr(row.ad_group_ad.status, 'name') else str(row.ad_group_ad.status)
-                    })
-            return ads
-        except Exception as e:
-            print(f"[Google Ads] list_ads error: {e}")
-            return []
+        customer_id = _google_numeric_id(customer_id, "customer_id")
+        ad_group_id = _google_numeric_id(ad_group_id, "ad_group_id")
+        client = self.get_client('google')
+        gaia = client.get_service('GoogleAdsService')
+        query = f"""
+            SELECT ad_group_ad.ad.id, ad_group_ad.status
+            FROM ad_group_ad
+            WHERE ad_group_ad.ad_group = "customers/{customer_id}/adGroups/{ad_group_id}"
+        """
+        response = gaia.search_stream(customer_id=customer_id, query=query)
+        return [
+            {
+                'id': row.ad_group_ad.ad.id,
+                'status': (
+                    row.ad_group_ad.status.name
+                    if hasattr(row.ad_group_ad.status, 'name')
+                    else str(row.ad_group_ad.status)
+                ),
+            }
+            for batch in response
+            for row in batch.results
+        ]
 
     def google_create_responsive_search_ad(self, customer_id: str, ad_group_id: str, **kwargs) -> Dict:
         """创建响应式搜索广告"""
