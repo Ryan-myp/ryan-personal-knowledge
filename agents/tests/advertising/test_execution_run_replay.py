@@ -60,6 +60,56 @@ def test_application_bootstrap_fails_if_durable_run_recovery_fails(monkeypatch):
         store.close()
 
 
+def test_run_store_adapter_logs_safe_failure_and_queues_event_repair(caplog):
+    from agents.tools.advertising.application.ad_application_components import (
+        AdRunStoreAdapter,
+    )
+
+    class SessionManagerStub:
+        def append_execution_run_event(self, _run_id, _event):
+            raise OSError("private provider payload")
+
+    class PersistenceStub:
+        def __init__(self):
+            self.events = []
+
+        def enqueue_execution_event_repair(self, run_id, event):
+            self.events.append((run_id, event))
+            return True
+
+    persistence = PersistenceStub()
+    adapter = AdRunStoreAdapter(
+        SessionManagerStub(), persistence_store=persistence,
+    )
+
+    assert adapter.append_event("run-repair", {"type": "tool_started"}) is False
+    assert persistence.events == [
+        ("run-repair", {"type": "tool_started"}),
+    ]
+    assert "OSError" in caplog.text
+    assert "private provider payload" not in caplog.text
+
+
+def test_run_store_adapter_surfaces_repair_enqueue_failure():
+    from agents.tools.advertising.application.ad_application_components import (
+        AdRunStoreAdapter,
+    )
+
+    class SessionManagerStub:
+        def append_execution_run_event(self, _run_id, _event):
+            return False
+
+    class PersistenceStub:
+        def enqueue_execution_event_repair(self, _run_id, _event):
+            raise OSError("repair store unavailable")
+
+    adapter = AdRunStoreAdapter(
+        SessionManagerStub(), persistence_store=PersistenceStub(),
+    )
+    with pytest.raises(OSError, match="repair store unavailable"):
+        adapter.append_event("run-repair", {"type": "tool_started"})
+
+
 def test_runtime_exposes_durable_latest_run_after_async_free_turn():
     class Model:
         def complete(self, _messages, _tools, _request):

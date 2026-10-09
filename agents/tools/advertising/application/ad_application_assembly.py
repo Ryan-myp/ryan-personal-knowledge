@@ -181,7 +181,7 @@ class AdApplicationAssembly:
             workflow_services=AdWorkflowServices(runtime),
             task_services=AdTaskServices(runtime),
             run_store=(
-                AdRunStoreAdapter(session_manager, runtime)
+                AdRunStoreAdapter(session_manager, store)
                 if session_manager is not None else None
             ),
             tool_policy=AdvertisingToolPolicyFactory(runtime).build(store),

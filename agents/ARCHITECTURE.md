@@ -315,6 +315,12 @@ one generic Run and preserves the advertising response envelope;
 the ad-facing result/UI shape. These are application-boundary adapters; none
 creates another Run loop or execution gate.
 
+`AdRunStoreAdapter` now receives `SessionManager` and `PersistenceBackend`
+explicitly rather than reaching through the facade's private Runtime fields. A
+failed event append queues durable repair and returns the failure signal consumed
+by the generic Kernel as `recovery_required`; diagnostics contain only the
+exception type, and a failed repair enqueue remains an error.
+
 Schema-driven parameter construction and lookup authorization now have separate
 owners. `input_builder.py` projects intent, session state and declared Tool schema
 metadata into Tool arguments. `parameter_selection.py` discovers lookup-backed

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
@@ -25,13 +26,19 @@ from .services import AdRuntimeServices
 from .tool_executor import ToolExecutor
 from .workflow import WorkflowCoordinator
 
+logger = logging.getLogger(__name__)
+
 
 class AdRunStoreAdapter:
     """Expose the advertising persistence API through the generic RunStore port."""
 
-    def __init__(self, session_manager: SessionManager, runtime: Any) -> None:
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        persistence_store: PersistenceBackend,
+    ) -> None:
         self.session_manager = session_manager
-        self.runtime = runtime
+        self.persistence_store = persistence_store
 
     def start_run(self, **payload: Any) -> Any:
         from agents.agent_platform.data.persistence.models import ExecutionRunRecord
@@ -46,7 +53,7 @@ class AdRunStoreAdapter:
                 tenant_id=str(payload.get("tenant_id") or "default"),
                 execution_mode=str(
                     payload.get("execution_mode")
-                    or getattr(self.runtime, "execution_mode", "dry_run")
+                    or "dry_run"
                 ),
                 task_id=(
                     str(payload["task_id"]) if payload.get("task_id") else None
@@ -62,12 +69,17 @@ class AdRunStoreAdapter:
             accepted = self.session_manager.append_execution_run_event(
                 str(run_id), dict(event),
             )
-        except Exception:
+        except Exception as error:
+            logger.warning(
+                "durable Run event append failed (run_id=%s, error_type=%s); "
+                "queueing repair",
+                str(run_id), type(error).__name__,
+            )
             accepted = False
         if accepted:
             return True
         enqueue = getattr(
-            self.runtime._persistence_store,
+            self.persistence_store,
             "enqueue_execution_event_repair",
             None,
         )
