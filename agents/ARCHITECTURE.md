@@ -225,12 +225,12 @@ checks. `AdvertisingRunService` maps the generic Run envelope to the existing
 advertising API response, and `AdvertisingRunMemoryRecorder` retains the narrow
 live-write outcome capture without owning Run state.
 
-Verification for this reduction: a generic Run exercised sequential Provider
+Verification for this reduction at its original checkpoint: a generic Run exercised sequential Provider
 read Tools while preserving trusted account scope; generic input interactions,
 incomplete creation forms, account selection, action clarification, write
 confirmation, idempotency and uncertain-effect recovery have regression
 coverage. Advertising code no longer constructs or maintains an intent parser
-or router catalog. The latest `make ad-agent-check` run passed (`1,246 passed`,
+or router catalog. That checkpoint's `make ad-agent-check` run passed (`1,246 passed`,
 one Starlette deprecation warning), and the Tool audit/snapshot validated 297
 Tools across four Tool Sources. The focused Skill-up adapter tests passed
 (`9 passed`); the full Skill-up CLI evaluation could not run because the local
@@ -290,3 +290,20 @@ interactions and projected into the advertising UI; follow-up requests return
 through the same generic Harness and are revalidated by Tool schemas, account scope
 and policy. This preserves the supported interaction contract without reviving
 a second turn state machine.
+
+### Composition and Recovery Hardening (2026-10-09)
+
+Advertising startup wiring is split into three explicit owners:
+`AdApplicationBootstrap` initializes advertising services and policy,
+`AdApplicationAssembly` builds the Platform/Harness dependency graph, and
+`ad_application_components.py` owns the typed assembly options, service graph,
+RunStore adapter, and one-time installation onto the advertising facade.
+`AdvertisingToolPolicyFactory` owns construction of the shared Tool policy with
+advertising account-scope and confirmation hooks. These are application-boundary
+adapters; none creates another Run loop or execution gate.
+
+Stale durable Run recovery now fails startup closed if the persistence recovery
+operation raises. Previously that exception was logged and suppressed, allowing
+the process to serve requests while persisted Runs might remain in an ambiguous
+state. A regression test covers this failure path. The full `make ad-agent-check`
+passed after the change (`1,247 passed`, one Starlette/httpx deprecation warning).

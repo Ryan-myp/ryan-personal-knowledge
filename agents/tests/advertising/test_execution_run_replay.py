@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from agents.agent_harness.messages import ModelTurn
 from agents.agent_platform.data.persistence.models import ExecutionRunRecord
+from agents.agent_platform.data.persistence.session_manager import SessionManager
 from agents.agent_platform.data.persistence.store import AdAgentStore
 from agents.tools.advertising.application.ad_application import AdvertisingComposition
 
@@ -40,6 +43,21 @@ def test_stale_execution_run_becomes_recovery_required_with_event():
     record = store.get_execution_run("stale")
     assert record.status == "recovery_required"
     assert store.list_execution_run_events("stale")[-1]["type"] == "recovery_required"
+
+
+def test_application_bootstrap_fails_if_durable_run_recovery_fails(monkeypatch):
+    def fail_recovery(_self, _stale_after_seconds):
+        raise RuntimeError("run recovery storage failure")
+
+    monkeypatch.setattr(
+        SessionManager, "recover_stale_execution_runs", fail_recovery,
+    )
+    store = AdAgentStore(":memory:")
+    try:
+        with pytest.raises(RuntimeError, match="run recovery storage failure"):
+            AdvertisingComposition(persistence_store=store)
+    finally:
+        store.close()
 
 
 def test_runtime_exposes_durable_latest_run_after_async_free_turn():
