@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
     creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
     creation_template_id: Optional[str] = Field(default=None, max_length=240)
     execution_mode: Optional[Literal["dry_run", "live"]] = None
+    tool_allowlist: Optional[list[str]] = Field(default=None, max_length=128)
 
 
 class ExecutionModeRequest(BaseModel):
@@ -208,6 +209,7 @@ class ChatStreamRequest(BaseModel):
     creation_blueprint_version: Optional[str] = Field(default=None, max_length=32)
     creation_template_id: Optional[str] = Field(default=None, max_length=240)
     execution_mode: Optional[Literal["dry_run", "live"]] = None
+    tool_allowlist: Optional[list[str]] = Field(default=None, max_length=128)
 
 
 class WorkflowReconcileRequest(BaseModel):

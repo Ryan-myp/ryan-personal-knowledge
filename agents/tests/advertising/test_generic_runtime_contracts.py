@@ -400,6 +400,48 @@ def test_generic_run_results_keep_tool_result_and_confirmation_contracts():
     assert result["confirmation_payload"] == {"token": "opaque"}
 
 
+def test_coalesced_duplicate_reads_are_hidden_from_advertising_results():
+    from types import SimpleNamespace
+
+    from agents.applications.advertising.run.ad_run_projection import (
+        AdvertisingRunProjection,
+    )
+
+    definition = SimpleNamespace(
+        name="list_campaigns",
+        namespace="google-ads",
+        action="list",
+        resource_type="campaign",
+        intent_types=["list_campaigns"],
+    )
+    runtime = SimpleNamespace(
+        registry=SimpleNamespace(get=lambda _name: (definition, object())),
+        _sessions={},
+    )
+    result = AdvertisingRunProjection.application_state_from_run(
+        runtime,
+        {
+            "tool_results": [
+                {
+                    "name": "list_campaigns",
+                    "content": {"success": True, "data": {"campaigns": []}},
+                },
+                {
+                    "name": "list_campaigns",
+                    "content": {"success": True, "data": {"campaigns": []}},
+                    "runtime_signals": {"duplicate_read_coalesced": True},
+                },
+            ],
+        },
+        "session-1",
+        "List campaigns",
+    )
+
+    assert len(result["last_results"]) == 1
+    assert result["tool_plan"] == {"google-ads": ["list_campaigns"]}
+    assert result["tool_selection"] == {"tools": ["list_campaigns"]}
+
+
 def test_generic_run_invokes_registered_advertising_tool_with_scoped_account():
     from agents.agent_harness import ModelTurn, ToolCall
 

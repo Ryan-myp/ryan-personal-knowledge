@@ -51,7 +51,7 @@ def test_timed_out_tool_keeps_capacity_until_underlying_call_exits():
     deadline = time.monotonic() + 2
     while True:
         try:
-            output, _ = coordinator._invoke_tool(binding, context, call, {})
+            output, _, _ = coordinator._invoke_tool(binding, context, call, {})
             break
         except ToolCapacityError:
             if time.monotonic() >= deadline:

@@ -2,6 +2,8 @@
 
 import pytest
 import glob
+import json
+from pathlib import Path
 from fastapi.testclient import TestClient
 
 import agents.deployments.advertising.api_server as api_server
@@ -198,10 +200,36 @@ def test_builtin_template_is_account_bound_read_only_and_duplicable():
 
 def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     definitions = load_builtin_template_definitions()
-    assert len(definitions) == 11
+    assert len(definitions) == 13
     assert {item["provider"] for item in definitions} == {
         "meta", "google-ads", "tiktok", "dv360",
     }
+    requested_blueprints = {
+        "google-ads.performance_max",
+        "google-ads.shopping",
+        "google-ads.app",
+        "meta.catalog_sales",
+        "meta.traffic_link",
+        "meta.conversion_link",
+        "meta.app_promotion",
+        "tiktok.product_sales_video",
+        "tiktok.traffic_video",
+        "tiktok.app_conversion_video",
+    }
+    assert requested_blueprints <= {
+        item["blueprint_id"] for item in definitions
+    }
+    blueprint_paths = glob.glob("agents/tools/advertising/providers/*/blueprints/*.json")
+    blueprint_versions = {
+        blueprint["id"]: blueprint["version"]
+        for path in blueprint_paths
+        for blueprint in [json.loads(Path(path).read_text(encoding="utf-8"))]
+    }
+    assert all(
+        item["blueprint_version"] == blueprint_versions[item["blueprint_id"]]
+        for item in definitions
+        if item["blueprint_id"] in requested_blueprints
+    )
     assert all(item["account_id"] for item in definitions)
     assert all(item["verification_status"] in {
         "live_verified", "partial_live_verified",
@@ -229,6 +257,33 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     assert listed
     assert {item["provider"] for item in listed} == {"meta"}
     assert {item["account_id"] for item in listed} == {"2806375919473667"}
+
+
+def test_requested_ad_type_templates_bind_only_to_the_confirmed_test_account():
+    definitions = load_builtin_template_definitions()
+    expected_accounts = {
+        "google-ads.performance_max": "9055507554",
+        "google-ads.shopping": "9055507554",
+        "google-ads.app": "9055507554",
+        "meta.catalog_sales": "2806375919473667",
+        "meta.traffic_link": "2806375919473667",
+        "meta.conversion_link": "2806375919473667",
+        "meta.app_promotion": "2806375919473667",
+        "tiktok.product_sales_video": "7397068114548195329",
+        "tiktok.traffic_video": "7397068114548195329",
+        "tiktok.app_conversion_video": "7397068114548195329",
+    }
+    templates = {
+        item["blueprint_id"]: item
+        for item in definitions
+        if item["blueprint_id"] in expected_accounts
+    }
+
+    assert set(templates) == set(expected_accounts)
+    assert {
+        blueprint_id: template["account_id"]
+        for blueprint_id, template in templates.items()
+    } == expected_accounts
 
 
 def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
@@ -270,7 +325,7 @@ def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
         )
         assert response.status_code == 200
         templates = response.json()["templates"]
-        assert len(templates) == 11
+        assert len(templates) == 13
         assert all(item["source"] == "builtin" for item in templates)
         assert {item["account_id"] for item in templates} == {
             "2806375919473667", "9055507554",

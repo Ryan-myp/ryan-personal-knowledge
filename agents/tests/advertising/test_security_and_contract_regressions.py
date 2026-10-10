@@ -84,18 +84,18 @@ def test_live_write_support_is_opt_in_for_new_tools():
 
 
 def test_integration_api_version_is_bound_to_every_client_endpoint_builder():
-    meta = MetaAPIClient({"api_version": "v19.0"})
+    meta = MetaAPIClient({"api_version": "v25.0"})
     google = GoogleAdsAPIClient({"api_version": "v24"})
     tiktok = TikTokAPIClient({"api_version": "open_api/v1.3"})
     dv360 = DV360APIClient({"api_version": "v4"})
 
-    assert meta._build_url("me/accounts").startswith("https://graph.facebook.com/v19.0/")
+    assert meta._build_url("me/accounts").startswith("https://graph.facebook.com/v25.0/")
     assert google._build_url("customers/1").startswith("https://googleads.googleapis.com/v24/")
     assert tiktok._build_url("campaign/get/").startswith("https://business-api.tiktok.com/open_api/v1.3/")
     assert dv360._build_url("advertisers/1").startswith("https://display-video.googleapis.com/v4/")
 
     with pytest.raises(ValueError, match="Unsupported Meta API version"):
-        MetaAPIClient({"api_version": "v99.0"})
+        MetaAPIClient({"api_version": "v19.0"})
 
 
 def test_builtin_write_handlers_never_report_success_without_a_provider_client():

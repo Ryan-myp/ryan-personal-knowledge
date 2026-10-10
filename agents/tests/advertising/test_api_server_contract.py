@@ -148,11 +148,15 @@ def test_chat_request_preparation_does_not_block_the_event_loop():
     )
 
     class Runtime:
+        calls = []
+
         def run(self, **_kwargs):
+            self.calls.append(dict(_kwargs))
             return {"success": True, "reply": "ok", "results": []}
 
+    runtime = Runtime()
     context = ApiContext(
-        runtime_getter=lambda: Runtime(),
+        runtime_getter=lambda: runtime,
         authorize_request=lambda *_args: principal,
         require_permission=lambda *_args: None,
         activate_tenant_skills=lambda _principal: callback_threads.append(
@@ -168,9 +172,16 @@ def test_chat_request_preparation_does_not_block_the_event_loop():
     app.include_router(create_chat_router(context))
 
     with TestClient(app) as client:
-        response = client.post("/chat", json={"user_input": "hello"})
+        response = client.post(
+            "/chat",
+            json={
+                "user_input": "hello",
+                "tool_allowlist": ["read_record"],
+            },
+        )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
+    assert runtime.calls[0]["tool_allowlist"] == ["read_record"]
     assert {name for name, _thread_id in callback_threads} == {"skills", "mcp"}
     assert all(thread_id != main_thread for _name, thread_id in callback_threads)
 
@@ -1558,7 +1569,7 @@ def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeyp
             json={"user_input": "查询广告"},
         )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     assert model.messages
     assert "tenant-guidance" in "\n".join(
         str(message.content) for message in model.messages[0]

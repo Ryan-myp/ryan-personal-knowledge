@@ -41,6 +41,7 @@ class AdvertisingRunService:
         cancellation_event: Optional[threading.Event] = None,
         event_callback: Optional[ExecutionEventCallback] = None,
         execution_mode: Optional[str] = None,
+        tool_allowlist: Optional[list[str]] = None,
         task_id: Optional[str] = None,
     ) -> dict:
         runtime = self.runtime
@@ -64,6 +65,9 @@ class AdvertisingRunService:
             cancellation_event=cancellation_event,
             event_callback=event_callback,
             execution_mode=execution_mode,
+            tool_allowlist=(
+                tuple(tool_allowlist) if tool_allowlist is not None else None
+            ),
             task_id=task_id,
         ))
         application_state = dict(getattr(result, "application_data", None) or {})

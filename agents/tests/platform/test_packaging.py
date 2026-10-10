@@ -58,6 +58,11 @@ def test_wheel_excludes_local_state_and_stale_build_outputs(tmp_path):
     assert len(wheels) == 1
     with zipfile.ZipFile(wheels[0]) as wheel:
         files = set(wheel.namelist())
+        metadata_path = next(
+            path for path in files
+            if path.endswith(".dist-info/METADATA")
+        )
+        metadata = wheel.read(metadata_path).decode("utf-8")
 
     assert not any("/tests/" in f"/{path}" for path in files)
     assert not any("/build/" in f"/{path}" for path in files)
@@ -71,6 +76,7 @@ def test_wheel_excludes_local_state_and_stale_build_outputs(tmp_path):
     assert any(path.startswith("agents/skills/advertising/") for path in files)
     assert any(path.startswith("agents/knowledge/advertising/") for path in files)
     assert any(path.startswith("agents/deployments/advertising/static/") for path in files)
+    assert "Requires-Dist: openai<2.0.0,>=1.0.0" in metadata
 
 
 def test_platform_wheel_excludes_advertising_application(tmp_path):

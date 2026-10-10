@@ -31,7 +31,7 @@ from .keywords import GoogleListKeywordsHandler
 from ._utils import for_customer
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_app_ad_group_schema,
-    google_app_ad_schema, google_ad_schema,
+    google_app_ad_schema, google_shopping_product_ad_schema, google_ad_schema,
     google_asset_schema, google_asset_create_schema, google_campaign_asset_schema,
     google_asset_group_asset_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
@@ -309,6 +309,7 @@ class GoogleToolSource(BaseProviderToolSource):
             "google_create_specialized_ad_group",
         ],
         "create_app_ad": ["google_create_app_ad"],
+        "create_shopping_product_ad": ["google_create_shopping_product_ad"],
         "create_search_ad": ["google_create_search_ad", "google_create_ad"],
         "create_pmax_asset_group": ["google_create_pmax_asset_group", "google_create_asset_group"],
         "create_product_group": ["google_create_product_group"],
@@ -584,7 +585,10 @@ class GoogleToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_app_ad",
-                description="创建 Google App Campaign AppAd 素材广告；live 仅在受控测试账号和确认后执行。",
+                description=(
+                    "创建 Google App Campaign AppAd。v24 要求 Ad 使用 ENABLED；"
+                    "只有实时查询确认父 Ad Group 为 PAUSED 时才允许创建。"
+                ),
                 method_name="create_app_ad", result_key="app_ad_plan",
                 properties=app_ad_schema["properties"],
                 required=app_ad_schema["required"],
@@ -644,10 +648,12 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_assets", description="查询 Google Ads 客户级可复用 Asset 列表。",
                 method_name="list_assets", result_key="assets",
-                properties=asset_schema["properties"], required=["customer_id"],
+                properties=asset_schema["properties"],
                 action="list", resource_type="asset", intent_types=["list_assets"],
                 traits=["read", "asset"],
-                argument_builder=lambda _ctx, data: ((data.get("customer_id"),), {
+                argument_builder=lambda ctx, data: ((
+                    ctx.account_id or data.get("customer_id"),
+                ), {
                     "page_size": data.get("limit", 100),
                 }),
             ),
@@ -655,10 +661,13 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_get_asset", description="查询 Google Ads 客户级 Asset 详情。",
                 method_name="get_asset", result_key="asset",
-                properties=asset_schema["properties"], required=["customer_id", "asset_id"],
+                properties=asset_schema["properties"], required=["asset_id"],
                 action="get", resource_type="asset", resource_id_field="asset_id",
                 intent_types=["get_asset"], traits=["read", "asset"],
-                argument_builder=lambda _ctx, data: ((data["asset_id"], data.get("customer_id")), {}),
+                argument_builder=lambda ctx, data: ((
+                    data["asset_id"],
+                    ctx.account_id or data.get("customer_id"),
+                ), {}),
             ),
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
@@ -756,7 +765,7 @@ class GoogleToolSource(BaseProviderToolSource):
                 description="查询 Google PMax Asset Group 已关联的 Asset 列表。",
                 method_name="list_asset_group_assets", result_key="asset_group_assets",
                 properties=asset_group_asset_schema["properties"],
-                required=["customer_id", "asset_group_id"],
+                required=["asset_group_id"],
                 action="list", resource_type="asset_group_asset",
                 parent_resource_type="asset_group",
                 resource_id_field="asset_group_asset_id",
@@ -1262,6 +1271,30 @@ class GoogleToolSource(BaseProviderToolSource):
                     "final_mobile_urls": data.get("final_mobile_urls"),
                     "status": data.get("status"),
                 }),
+            ),
+            method_tool(
+                namespace="google-ads", skill="google-ads-api-expert",
+                name="google_create_shopping_product_ad",
+                description="创建 Google Shopping Product Ad；live 创建固定为 PAUSED。",
+                method_name="create_shopping_product_ad",
+                result_key="ad_id",
+                properties=google_shopping_product_ad_schema()["properties"],
+                required=google_shopping_product_ad_schema()["required"],
+                requires=google_shopping_product_ad_schema()["requires"],
+                action="create", resource_type="ad", parent_resource_type="ad_group",
+                resource_id_field="ad_id", parent_resource_id_field="ad_group_id",
+                intent_types=["create_shopping_product_ad", "create_campaign"],
+                activation_rules=[{
+                    "field": "campaign_type",
+                    "aliases": ["advertising_channel_type"],
+                    "in": ["SHOPPING"],
+                }],
+                traits=["write", "ad", "shopping"], write=True,
+                live_support=True, readback_tool="google_get_ad",
+                integration_api_version="v24", required_permissions=["ads.plan"],
+                argument_builder=lambda _ctx, data: ((
+                    data["ad_group_id"], data["name"],
+                ), {"status": data.get("status", "PAUSED")}),
             ),
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
@@ -1965,9 +1998,14 @@ class GoogleToolSource(BaseProviderToolSource):
             namespace="google-ads",
             description="查询 Google Ads Campaign 列表。",
             input_schema=ToolSchema(
-                required=["customer_id"],
                 properties={
-                    "customer_id": {"type": "string"},
+                    "customer_id": {
+                        "type": "string",
+                        "description": (
+                            "Optional scope assertion only; the account is always "
+                            "taken from trusted request context."
+                        ),
+                    },
                     "campaign_id": {
                         "type": "string",
                         "description": "可选：精确查询一个 Campaign ID，适用于父资源选择",

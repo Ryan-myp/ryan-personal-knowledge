@@ -9,6 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Optional
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
+from agents.agent_harness.core.security import sha256_json
 from ..provider_base import (
     BaseProviderToolSource,
     CampaignUpdateHandler,
@@ -29,7 +30,8 @@ from .creatives import MetaCreateCreativeHandler, MetaLookupCreativeHandler
 from .parameters import (
     meta_campaign_schema, meta_adset_schema, meta_ad_schema,
     meta_ad_format_catalog, meta_lead_ad_schema, meta_catalog_ad_schema,
-    meta_messaging_ad_schema, meta_link_ad_schema, meta_engagement_ad_schema,
+    meta_app_promotion_ad_schema, meta_messaging_ad_schema,
+    meta_link_ad_schema, meta_engagement_ad_schema,
     meta_audience_schema, meta_conversion_event_schema, meta_creative_schema,
     meta_catalog_schema, meta_product_set_schema,
     meta_lead_form_schema,
@@ -77,6 +79,46 @@ def _meta_lookup(tool: str, result_key: str, values: list[str], labels: list[str
     if depends_on:
         metadata["lookup_dependencies"] = depends_on
     return metadata
+
+
+def _scope_meta_reads_to_context(
+    tools: list[tuple[ToolDefinition, ToolHandler]],
+) -> list[tuple[ToolDefinition, ToolHandler]]:
+    """Make user-supplied account IDs optional on Meta read Tools.
+
+    The authenticated Runtime context is the authoritative account scope.
+    Keeping the field optional preserves explicit scope assertions for callers
+    without making blueprint lookups ask the model to repeat trusted context.
+    """
+    for definition, _handler in tools:
+        schema = definition.input_schema
+        if (
+            definition.effect_class != ToolEffect.READ
+            or "account_id" not in schema.properties
+        ):
+            continue
+        schema.required = [
+            field for field in schema.required if field != "account_id"
+        ]
+        schema.requires = [
+            field for field in schema.requires if field != "account_id"
+        ]
+        schema.requires_any_of = [
+            [field for field in group if field != "account_id"]
+            for group in schema.requires_any_of
+        ]
+        schema.requires_any_of = [
+            group for group in schema.requires_any_of if group
+        ]
+        schema.requires_exactly_one_of = [
+            [field for field in group if field != "account_id"]
+            for group in schema.requires_exactly_one_of
+        ]
+        schema.requires_exactly_one_of = [
+            group for group in schema.requires_exactly_one_of if group
+        ]
+        definition.contract_hash = sha256_json(schema.to_dict())
+    return tools
 
 
 # Provider-owned identifier catalog used by every Meta lifecycle Tool and
@@ -157,17 +199,10 @@ META_LOOKUP_CONTRACTS = {
             "meta_list_businesses", "businesses", ["id", "business_id"],
             ["name", "business_name", "id"],
         ),
-        # Meta Marketing API does not provide a general app catalog for this
-        # field, and there is no safe Page/Post enumeration in this package.
-        # Show an explicit manual input guide instead of inventing a lookup.
-        "application_id": {
-            "manual_entry": {
-                "title": "Meta 应用 ID",
-                "instructions": "请从 Meta for Developers 的应用设置中复制 App ID；广告账户列表接口不会返回应用目录。",
-                "example": "123456789012345",
-                "source": "external_provider_identifier",
-            },
-        },
+        "application_id": _meta_lookup(
+            "meta_list_apps", "apps", ["id", "app_id"],
+            ["name", "app_name", "id"],
+        ),
         "post_id": {
             "manual_entry": {
                 "title": "Facebook 帖子 ID",
@@ -235,8 +270,8 @@ class MetaToolSource(BaseProviderToolSource):
     platform_name = "meta"
     provider_client_class = MetaAPIClient
     provider_method_exclusions = {"resource_belongs_to_account"}
-    tool_source_version = "1.4.0"
-    integration_api_version = "v19.0"
+    tool_source_version = "1.5.0"
+    integration_api_version = MetaAPIClient.API_VERSION
     # Provider endpoint -> executable Tool(s).  This lives with the provider
     # package and is consumed only by the release audit, never by Runtime
     # routing.
@@ -255,6 +290,7 @@ class MetaToolSource(BaseProviderToolSource):
         "update_product_set": ["meta_update_product_set"],
         "delete_product_set": ["meta_delete_product_set"],
         "list_campaigns": ["meta_list_campaigns"],
+        "list_apps": ["meta_list_apps"],
         "list_pages": ["meta_list_pages"], "list_pixels": ["meta_list_pixels"],
         "search_targeting": ["meta_search_targeting_options"],
         "get_pixel": ["meta_get_pixel"],
@@ -284,6 +320,7 @@ class MetaToolSource(BaseProviderToolSource):
         "list_ads": ["meta_list_ads"], "get_ad": ["meta_get_ad"],
         "create_ad": ["meta_create_ad"], "create_lead_ad": ["meta_create_lead_ad"],
         "create_catalog_ad": ["meta_create_catalog_ad"],
+        "create_app_promotion_ad": ["meta_create_app_promotion_ad"],
         "create_messaging_ad": ["meta_create_messaging_ad"],
         "create_link_ad": ["meta_create_traffic_ad", "meta_create_conversion_ad"],
         "create_engagement_ad": ["meta_create_engagement_ad"],
@@ -349,7 +386,27 @@ class MetaToolSource(BaseProviderToolSource):
         lead_form_schema = meta_lead_form_schema()
         lead_schema = meta_lead_schema()
         business_schema = meta_business_schema()
+        app_promotion_schema = _paused_create_schema(
+            meta_app_promotion_ad_schema()
+        )
         tools = [
+            method_tool(
+                namespace="meta", skill="meta-marketing-api", name="meta_list_apps",
+                description=(
+                    "查询当前广告账户可推广的 Meta 应用，用于 App Promotion "
+                    "应用选择；只读并限制结果数量。"
+                ),
+                method_name="list_apps", result_key="apps", properties={
+                    "account_id": {"type": "string"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 1000,
+                    },
+                }, required=[], action="list", resource_type="app",
+                intent_types=["list_apps"], traits=["read", "app", "lookup"],
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "limit": data.get("limit", 25),
+                }),
+            ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_list_pages",
                 description="查询广告账户可推广的 Facebook Page。", method_name="list_pages",
@@ -672,7 +729,7 @@ class MetaToolSource(BaseProviderToolSource):
                 live_support=True,
                 readback_tool="meta_get_creative",
                 required_permissions=["ads.plan"],
-                integration_api_version="v19.0",
+                integration_api_version=MetaAPIClient.API_VERSION,
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["creative_id"], data["updates"]), {}),
             ),
             method_tool(
@@ -961,7 +1018,7 @@ class MetaToolSource(BaseProviderToolSource):
                 ],
                 traits=["write", "ad", "lead", "instant_form"], write=True,
                 live_support=True, readback_tool="meta_get_ad",
-                integration_api_version="v19.0", required_permissions=["ads.plan"],
+                integration_api_version=MetaAPIClient.API_VERSION, required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "form_id", "link", "message", "headline",
@@ -989,13 +1046,44 @@ class MetaToolSource(BaseProviderToolSource):
                 ],
                 traits=["write", "ad", "catalog", "dynamic_product"], write=True,
                 live_support=True, readback_tool="meta_get_ad",
-                integration_api_version="v19.0", required_permissions=["ads.plan"],
+                integration_api_version=MetaAPIClient.API_VERSION, required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"), data["adset_id"], {
                     key: data[key] for key in (
                         "name", "page_id", "product_set_id", "link", "message",
                         "headline", "description", "ad_style", "call_to_action_type", "status",
                     ) if key in data
                 }), {}),
+            ),
+            method_tool(
+                namespace="meta", skill="meta-marketing-api",
+                name="meta_create_app_promotion_ad",
+                description="创建 Meta App Promotion 安装广告；live 创建固定为 PAUSED。",
+                method_name="create_app_promotion_ad", result_key="ad_id",
+                properties=app_promotion_schema["properties"],
+                required=app_promotion_schema["required"],
+                requires=app_promotion_schema["requires"],
+                conditional_rules=app_promotion_schema["conditional_rules"],
+                action="create", resource_type="ad", parent_resource_type="ad_set",
+                resource_id_field="ad_id", parent_resource_id_field="adset_id",
+                intent_types=["create_app_promotion_ad", "create_campaign"],
+                activation_rules=[{
+                    "if": {
+                        "objective": {"aliases": ["objective_type"], "in": [
+                            "OUTCOME_APP_PROMOTION",
+                        ]},
+                        "optimization_goal": {"in": ["APP_INSTALLS"]},
+                        "application_id": {"exists": True},
+                    },
+                }],
+                traits=["write", "ad", "app_promotion"], write=True,
+                live_support=True, readback_tool="meta_get_ad",
+                integration_api_version=MetaAPIClient.API_VERSION, required_permissions=["ads.plan"],
+                argument_builder=lambda ctx, data: ((
+                    account_from(ctx, data, "account_id"), data["adset_id"], {
+                        key: data[key] for key in app_promotion_schema["properties"]
+                        if key != "adset_id" and key in data
+                    },
+                ), {}),
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api",
@@ -1020,7 +1108,7 @@ class MetaToolSource(BaseProviderToolSource):
                 }],
                 traits=["write", "ad", "messaging", "click_to_message"], write=True,
                 live_support=True, readback_tool="meta_get_ad",
-                integration_api_version="v19.0", required_permissions=["ads.plan"],
+                integration_api_version=MetaAPIClient.API_VERSION, required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data, "account_id"), data["adset_id"], {
                         key: data[key] for key in meta_messaging_ad_schema()["properties"]
@@ -1065,7 +1153,7 @@ class MetaToolSource(BaseProviderToolSource):
                     },
                 }],
                 traits=traits, write=True, live_support=True,
-                readback_tool="meta_get_ad", integration_api_version="v19.0",
+                readback_tool="meta_get_ad", integration_api_version=MetaAPIClient.API_VERSION,
                 required_permissions=["ads.plan"],
                 argument_builder=lambda ctx, data: ((
                     account_from(ctx, data, "account_id"), data["adset_id"], {
@@ -1101,7 +1189,7 @@ class MetaToolSource(BaseProviderToolSource):
                 }},
             ],
             traits=["write", "ad", "engagement"], write=True, live_support=True,
-            readback_tool="meta_get_ad", integration_api_version="v19.0",
+            readback_tool="meta_get_ad", integration_api_version=MetaAPIClient.API_VERSION,
             required_permissions=["ads.plan"],
             argument_builder=lambda ctx, data: ((
                 account_from(ctx, data, "account_id"), data["adset_id"], {
@@ -1333,7 +1421,7 @@ class MetaToolSource(BaseProviderToolSource):
             # ``ads.plan`` is the base contract; Runtime adds the separate
             # ``ads.write`` grant only for live execution.
             required_permissions=["ads.plan"],
-            integration_api_version="v19.0",
+            integration_api_version=MetaAPIClient.API_VERSION,
         ), MetaCreateCampaignHandler(api_client)))
 
         # List Ad Sets
@@ -1421,7 +1509,7 @@ class MetaToolSource(BaseProviderToolSource):
             parent_resource_id_field="campaign_id",
             readback_tool="meta_get_adset",
             required_permissions=["ads.plan"],
-            integration_api_version="v19.0",
+            integration_api_version=MetaAPIClient.API_VERSION,
         ), MetaCreateAdSetHandler(api_client)))
 
         # List Ads
@@ -1484,7 +1572,7 @@ class MetaToolSource(BaseProviderToolSource):
             parent_resource_id_field="adset_id",
             readback_tool="meta_get_ad",
             required_permissions=["ads.plan"],
-            integration_api_version="v19.0",
+            integration_api_version=MetaAPIClient.API_VERSION,
             activation_rules=[{
                 "if": {
                     "objective": {"aliases": ["objective_type"], "not_in": [
@@ -1619,7 +1707,7 @@ class MetaToolSource(BaseProviderToolSource):
             resource_id_field="creative_id",
             readback_tool="meta_get_creative",
             required_permissions=["ads.plan"],
-            integration_api_version="v19.0",
+            integration_api_version=MetaAPIClient.API_VERSION,
         ), MetaCreateCreativeHandler(api_client)))
 
         # Update tools: dry-run 可完整生成计划；live 仅调用已存在的 Client 方法。
@@ -1674,7 +1762,7 @@ class MetaToolSource(BaseProviderToolSource):
                     "ad": "meta_get_ad",
                 }[resource_type],
                 required_permissions=["ads.plan"],
-                integration_api_version="v19.0",
+                integration_api_version=MetaAPIClient.API_VERSION,
             ), CampaignUpdateHandler(
                 api_client, resource_type, _meta_update_adapter,
                 resource_id_field=resource_id,
@@ -1685,7 +1773,9 @@ class MetaToolSource(BaseProviderToolSource):
 
         tools.extend(self._extended_provider_tools(api_client))
 
-        return apply_lookup_contracts(tools, META_LOOKUP_CONTRACTS)
+        return _scope_meta_reads_to_context(
+            apply_lookup_contracts(tools, META_LOOKUP_CONTRACTS)
+        )
 
 def create_meta_tool_source(api_client: Optional[MetaAPIClient] = None) -> MetaToolSource:
     cap = MetaToolSource()

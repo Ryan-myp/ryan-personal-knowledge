@@ -35,6 +35,8 @@ from .tool_catalog import ToolCatalog
 from .tool_execution import (
     ToolCallContext,
     ToolExecutionCoordinator,
+    ToolReadCache,
+    ToolWriteReplayCache,
 )
 
 
@@ -611,7 +613,14 @@ class Agent:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
         if callable(self.tool_selector):
             tools = list(self.tool_selector(request, tuple(tools)))
+        if request.tool_allowlist is not None:
+            allowed = set(request.tool_allowlist)
+            tools = [tool for tool in tools if self._tool_name(tool) in allowed]
         tools = list(tools[: self.max_tools])
+        if isinstance(request.context, dict):
+            request.context["_harness_visible_tool_names"] = tuple(
+                name for name in (self._tool_name(tool) for tool in tools) if name
+            )
         messages = state.snapshot()
         model_request = request
         if self.context_provider is not None:
@@ -668,6 +677,12 @@ class Agent:
         if context != dict(model_request.context or {}):
             model_request = replace(model_request, context=context)
         return messages, tools, model_request
+
+    @staticmethod
+    def _tool_name(tool: Any) -> str:
+        if isinstance(tool, Mapping):
+            return str(tool.get("name") or "").strip()
+        return str(getattr(tool, "name", "") or "").strip()
 
     @staticmethod
     def _interrupt_reason(
@@ -765,6 +780,8 @@ class Agent:
             state.last_used_at = time.monotonic()
         checkpoint_source_id: str | None = None
         all_tool_results: list[dict[str, Any]] = []
+        run_read_cache = ToolReadCache()
+        run_write_cache = ToolWriteReplayCache()
         try:
             self._state_io.hydrate(request, state)
             checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
@@ -876,6 +893,8 @@ class Agent:
                             assistant,
                             model_turn.tool_calls,
                             state,
+                            read_cache=run_read_cache,
+                            write_cache=run_write_cache,
                         )
                         tool_call_count += requested_count
                     all_tool_results.extend(tool_results)
@@ -973,8 +992,14 @@ class Agent:
                         if tool_cancelled
                         else RunStatus.FAILED
                         if tool_budget_exceeded
-                        else RunStatus.FAILED
-                        if model_turn.stop_reason in {"error", "policy_blocked"}
+                        or model_turn.stop_reason in {"error", "policy_blocked"}
+                        or any(
+                            isinstance(item.get("runtime_signals"), Mapping)
+                            and item["runtime_signals"].get(
+                                "tool_allowlist_violation"
+                            )
+                            for item in tool_results
+                        )
                         else RunStatus.AWAITING_INPUT
                         if awaiting_input
                         else RunStatus.SUCCEEDED

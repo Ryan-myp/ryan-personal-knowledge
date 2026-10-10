@@ -181,7 +181,7 @@ def test_creation_contract_audit_closes_blueprint_and_lookup_sources_without_io(
     report = audit_creation_contracts(build_creation_runtime())
 
     assert report["issues"] == []
-    assert report["blueprint_count"] == 28
+    assert report["blueprint_count"] == 29
     assert report["creation_tool_count"] > 0
     assert report["lookup_contract_count"] > 0
     assert not report["unresolved_fields"]

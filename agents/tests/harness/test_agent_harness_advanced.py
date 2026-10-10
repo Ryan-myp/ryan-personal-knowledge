@@ -733,3 +733,624 @@ def test_tool_execution_coordinator_preserves_dependency_and_event_order():
         ]
     finally:
         app.close()
+
+
+def test_identical_replay_safe_reads_share_provider_result_and_keep_call_audits():
+    executions = []
+    before_calls = []
+    after_calls = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return "unused"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "reads",
+        [ToolBinding(
+            {
+                "name": "read_record",
+                "effect_class": "read",
+                "replay_policy": "safe",
+            },
+            lambda _ctx, args: executions.append(dict(args)) or {
+                "success": True,
+                "data": {"id": "record-1"},
+            },
+        )],
+    ))
+    events = []
+    coordinator = ToolExecutionCoordinator(
+        tool_catalog=app.tools,
+        emit=lambda event, _request, **payload: events.append((event, payload)),
+        interrupt_reason=lambda _request: None,
+        assert_not_interrupted=lambda _request: None,
+        before_tool_call=lambda context: before_calls.append(
+            context.tool_call.id
+        ),
+        after_tool_call=lambda context, _result: after_calls.append(
+            context.tool_call.id
+        ),
+    )
+    try:
+        results = coordinator.execute_tools(
+            TurnRequest(user_input="read"),
+            type("Assistant", (), {})(),
+            (
+                ToolCall("read-1", "read_record", {"account": "test", "id": "1"}),
+                ToolCall("read-2", "read_record", {"id": "1", "account": "test"}),
+            ),
+            object(),
+        )
+
+        assert len(executions) == 1
+        assert set(before_calls) == {"read-1", "read-2"}
+        assert set(after_calls) == {"read-1", "read-2"}
+        assert [result["tool_call_id"] for result in results] == [
+            "read-1",
+            "read-2",
+        ]
+        assert results[0]["success"] is True
+        assert results[1]["success"] is True
+        assert any(
+            result.get("runtime_signals", {}).get("duplicate_read_coalesced")
+            for result in results
+        )
+        assert [
+            payload["tool_call_id"]
+            for event, payload in events
+            if event == "tool_execution_end"
+        ] == ["read-1", "read-2"]
+    finally:
+        app.close()
+
+
+def test_replay_safe_reads_are_coalesced_across_turns_in_one_run():
+    executions = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall("read-1", "read_record", {"record_id": "r-1"}),
+                ))
+            if self.turn == 2:
+                return ModelTurn(tool_calls=(
+                    ToolCall("read-2", "read_record", {"record_id": "r-1"}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model(), max_turns=4)
+    app.register_tool_source(StaticToolSource(
+        "reads",
+        [ToolBinding(
+            {
+                "name": "read_record",
+                "effect_class": "read",
+                "replay_policy": "safe",
+            },
+            lambda _ctx, args: executions.append(dict(args)) or {
+                "success": True,
+                "data": {"record_id": "r-1"},
+            },
+        )],
+    ))
+    try:
+        result = app.prompt("read this record")
+        tool_results = result.data["tool_results"]
+        assert executions == [{"record_id": "r-1"}]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "read-1", "read-2",
+        ]
+        assert tool_results[1]["runtime_signals"][
+            "duplicate_read_coalesced"
+        ] is True
+    finally:
+        app.close()
+
+
+def test_replay_key_coalesces_effective_inputs_but_keeps_distinct_queries():
+    executions = []
+
+    class ScopedReadExecutor:
+        def replay_key(self, context, arguments):
+            trusted_account = context.request.context["account_id"]
+            requested_account = arguments.get("account_id", trusted_account)
+            return {
+                "account_id": requested_account,
+                "limit": arguments.get("limit", 25),
+                "cursor": arguments.get("cursor"),
+            }
+
+        def execute(self, _context, arguments):
+            executions.append(dict(arguments))
+            return {"success": True, "data": {"items": []}}
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn > 1:
+                return "done"
+            return ModelTurn(tool_calls=(
+                ToolCall("read-1", "list_records", {"limit": 50}),
+                ToolCall(
+                    "read-2",
+                    "list_records",
+                    {"account_id": "acct-1", "limit": 50},
+                ),
+                ToolCall(
+                    "read-3",
+                    "list_records",
+                    {"account_id": "acct-1", "limit": 50, "cursor": "next"},
+                ),
+            ))
+
+    app = AgentApplication.create(model=Model(), max_turns=2)
+    app.register_tool_source(StaticToolSource(
+        "records",
+        [ToolBinding(
+            {
+                "name": "list_records",
+                "effect_class": "read",
+                "replay_policy": "safe",
+            },
+            ScopedReadExecutor(),
+        )],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="list records",
+            context={"account_id": "acct-1"},
+        ))
+
+        assert result.status.value == "succeeded"
+        assert executions == [
+            {"limit": 50},
+            {"account_id": "acct-1", "limit": 50, "cursor": "next"},
+        ]
+        tool_results = result.data["tool_results"]
+        assert len(tool_results) == 3
+        assert sum(
+            item.get("runtime_signals", {}).get("duplicate_read_coalesced", False)
+            for item in tool_results
+        ) == 1
+    finally:
+        app.close()
+
+
+def test_identical_unsafe_writes_are_coalesced_across_turns_in_one_run():
+    executions = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn in {1, 2}:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        f"create-{self.turn}",
+                        "create_record",
+                        {"name": "record-1"},
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model(), max_turns=4)
+    app.register_tool_source(StaticToolSource(
+        "writes",
+        [ToolBinding(
+            {
+                "name": "create_record",
+                "effect_class": "write",
+                "replay_policy": "unsafe",
+            },
+            lambda _ctx, args: executions.append(dict(args)) or {
+                "success": True,
+                "data": {"id": "record-1"},
+            },
+        )],
+    ))
+    try:
+        result = app.prompt("create one record")
+        tool_results = result.data["tool_results"]
+
+        assert executions == [{"name": "record-1"}]
+        assert [item["tool_call_id"] for item in tool_results] == [
+            "create-1",
+            "create-2",
+        ]
+        assert tool_results[0]["success"] is True
+        assert tool_results[1]["success"] is True
+        assert tool_results[1]["runtime_signals"][
+            "duplicate_write_coalesced"
+        ] is True
+    finally:
+        app.close()
+
+
+def test_write_replay_cache_does_not_merge_distinct_arguments():
+    executions = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(
+                ToolCall("create-1", "create_record", {"name": "one"}),
+                ToolCall("create-2", "create_record", {"name": "two"}),
+            ))
+
+    app = AgentApplication.create(model=Model(), max_turns=1)
+    app.register_tool_source(StaticToolSource(
+        "writes",
+        [ToolBinding(
+            {"name": "create_record", "effect_class": "write"},
+            lambda _ctx, args: executions.append(dict(args)) or {
+                "success": True,
+                "data": {"name": args["name"]},
+            },
+        )],
+    ))
+    try:
+        app.prompt("create two records")
+        assert executions == [{"name": "one"}, {"name": "two"}]
+    finally:
+        app.close()
+
+
+def test_write_replay_cache_prevents_retrying_an_identical_failed_write():
+    executions = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn in {1, 2}:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        f"create-{self.turn}",
+                        "create_record",
+                        {"name": "record-1"},
+                    ),
+                ))
+            return "done"
+
+    def create(_ctx, args):
+        executions.append(dict(args))
+        if len(executions) == 1:
+            return {"success": False, "error": "provider rejected the request"}
+        return {"success": True, "data": {"id": "record-1"}}
+
+    app = AgentApplication.create(model=Model(), max_turns=4)
+    app.register_tool_source(StaticToolSource(
+        "writes",
+        [ToolBinding(
+            {
+                "name": "create_record",
+                "effect_class": "write",
+                "replay_policy": "unsafe",
+            },
+            create,
+        )],
+    ))
+    try:
+        result = app.prompt("create one record")
+        tool_results = result.data["tool_results"]
+
+        assert executions == [
+            {"name": "record-1"},
+        ]
+        assert tool_results[0]["success"] is False
+        assert tool_results[1]["success"] is False
+        assert tool_results[1]["runtime_signals"][
+            "duplicate_write_coalesced"
+        ] is True
+    finally:
+        app.close()
+
+
+def test_identical_uncertain_writes_in_one_batch_are_invoked_only_once():
+    executions = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(
+                ToolCall("create-1", "create_record", {"name": "record-1"}),
+                ToolCall("create-2", "create_record", {"name": "record-1"}),
+            ))
+
+    app = AgentApplication.create(model=Model(), max_turns=2)
+    app.register_tool_source(StaticToolSource(
+        "writes",
+        [ToolBinding(
+            {
+                "name": "create_record",
+                "effect_class": "write",
+                "replay_policy": "unsafe",
+            },
+            lambda _ctx, args: executions.append(dict(args)) or {
+                "success": True,
+                "effect_state": "unknown",
+                "requires_reconciliation": True,
+            },
+        )],
+    ))
+    try:
+        result = app.prompt("create one record")
+        tool_results = result.data["tool_results"]
+
+        assert executions == [{"name": "record-1"}]
+        assert tool_results[1]["effect_state"] == "unknown"
+        assert tool_results[1]["runtime_signals"][
+            "duplicate_write_coalesced"
+        ] is True
+        assert result.recovery_required is True
+    finally:
+        app.close()
+
+
+def test_turn_request_tool_allowlist_is_enforced_at_execution_boundary():
+    executions = []
+
+    class Model:
+        def complete(self, _messages, tools, _request):
+            names = [
+                item.get("name") if isinstance(item, dict) else item.name
+                for item in tools
+            ]
+            assert names == ["read_record"]
+            return ModelTurn(tool_calls=(
+                ToolCall("unavailable", "write_record", {"id": "r-1"}),
+            ))
+
+    app = AgentApplication.create(model=Model(), max_turns=2)
+    app.register_tool_source(StaticToolSource(
+        "records",
+        [
+            ToolBinding(
+                {"name": "read_record", "effect_class": "read"},
+                lambda _ctx, _args: {"success": True},
+            ),
+            ToolBinding(
+                {"name": "write_record", "effect_class": "write"},
+                lambda _ctx, args: executions.append(dict(args))
+                or {"success": True},
+            ),
+        ],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="read one record",
+            tool_allowlist=("read_record",),
+        ))
+
+        assert executions == []
+        assert result.status.value == "failed"
+        blocked = result.data["tool_results"][0]
+        assert blocked["is_error"] is True
+        assert blocked["terminate"] is True
+        assert blocked["runtime_signals"]["tool_allowlist_violation"] is True
+    finally:
+        app.close()
+
+
+def test_replay_safe_read_cache_does_not_cross_run_boundaries():
+    executions = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn in {1, 3}:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        f"read-{self.turn}",
+                        "read_record",
+                        {"record_id": "r-1"},
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model(), max_turns=3)
+    app.register_tool_source(StaticToolSource(
+        "reads",
+        [ToolBinding(
+            {
+                "name": "read_record",
+                "effect_class": "read",
+                "replay_policy": "safe",
+            },
+            lambda _ctx, args: executions.append(dict(args)) or {
+                "success": True,
+                "data": {"record_id": "r-1"},
+            },
+        )],
+    ))
+    try:
+        first = app.prompt("read this record")
+        second = app.prompt("read this record again")
+        assert first.status.value == "succeeded"
+        assert second.status.value == "succeeded"
+        assert executions == [
+            {"record_id": "r-1"},
+            {"record_id": "r-1"},
+        ]
+    finally:
+        app.close()
+
+
+def test_run_read_cache_is_invalidated_after_a_non_replay_safe_tool():
+    reads = []
+    revision = {"value": 0}
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            calls = {
+                1: (ToolCall("read-before", "read_record", {"record_id": "r-1"}),),
+                2: (ToolCall("write", "update_record", {"record_id": "r-1"}),),
+                3: (ToolCall("read-after", "read_record", {"record_id": "r-1"}),),
+            }
+            return ModelTurn(tool_calls=calls[self.turn]) if self.turn in calls else "done"
+
+    app = AgentApplication.create(model=Model(), max_turns=5)
+    app.register_tool_source(StaticToolSource(
+        "records",
+        [
+            ToolBinding(
+                {
+                    "name": "read_record",
+                    "effect_class": "read",
+                    "replay_policy": "safe",
+                },
+                lambda _ctx, _args: reads.append(revision["value"]) or {
+                    "success": True,
+                    "data": {"revision": revision["value"]},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "update_record",
+                    "effect_class": "write",
+                },
+                lambda _ctx, _args: revision.update(value=1) or {
+                    "success": True,
+                },
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("read, update, and reread this record")
+        tool_results = result.data["tool_results"]
+        reads_by_id = {
+            item["tool_call_id"]: item["content"]["data"]["revision"]
+            for item in tool_results
+            if item["name"] == "read_record"
+        }
+        assert reads == [0, 1]
+        assert reads_by_id == {"read-before": 0, "read-after": 1}
+    finally:
+        app.close()
+
+
+def test_batch_read_coalescing_does_not_merge_writes_or_different_arguments():
+    executions = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return "unused"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "tools",
+        [
+            ToolBinding(
+                {
+                    "name": "read_record",
+                    "effect_class": "read",
+                    "replay_policy": "safe",
+                },
+                lambda _ctx, args: executions.append(("read", dict(args))) or {
+                    "success": True,
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "write_record",
+                    "effect_class": "write",
+                    "replay_policy": "unsafe",
+                },
+                lambda _ctx, args: executions.append(("write", dict(args))) or {
+                    "success": True,
+                },
+            ),
+        ],
+    ))
+    coordinator = ToolExecutionCoordinator(
+        tool_catalog=app.tools,
+        emit=lambda *_args, **_kwargs: None,
+        interrupt_reason=lambda _request: None,
+        assert_not_interrupted=lambda _request: None,
+    )
+    try:
+        coordinator.execute_tools(
+            TurnRequest(user_input="run"),
+            type("Assistant", (), {})(),
+            (
+                ToolCall("read-1", "read_record", {"id": "1"}),
+                ToolCall("read-2", "read_record", {"id": "2"}),
+                ToolCall("write-1", "write_record", {"id": "same"}),
+                ToolCall("write-2", "write_record", {"id": "same"}),
+            ),
+            object(),
+        )
+
+        assert len(executions) == 4
+    finally:
+        app.close()
+
+
+def test_batch_read_coalescing_shares_failures_without_losing_call_audit():
+    executions = []
+    after_calls = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return "unused"
+
+    def read_missing(_context, _arguments):
+        executions.append(True)
+        raise LookupError("record not found")
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "reads",
+        [ToolBinding(
+            {
+                "name": "read_record",
+                "effect_class": "read",
+                "replay_policy": "safe",
+            },
+            read_missing,
+        )],
+    ))
+    coordinator = ToolExecutionCoordinator(
+        tool_catalog=app.tools,
+        emit=lambda *_args, **_kwargs: None,
+        interrupt_reason=lambda _request: None,
+        assert_not_interrupted=lambda _request: None,
+        after_tool_call=lambda context, _result: after_calls.append(
+            context.tool_call.id
+        ),
+    )
+    try:
+        results = coordinator.execute_tools(
+            TurnRequest(user_input="read the missing record"),
+            type("Assistant", (), {})(),
+            (
+                ToolCall("read-1", "read_record", {"id": "missing"}),
+                ToolCall("read-2", "read_record", {"id": "missing"}),
+            ),
+            object(),
+        )
+
+        assert len(executions) == 1
+        assert len(results) == 2
+        assert all(result["is_error"] for result in results)
+        assert set(after_calls) == {"read-1", "read-2"}
+    finally:
+        app.close()

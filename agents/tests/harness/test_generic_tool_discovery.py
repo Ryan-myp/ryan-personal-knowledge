@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
+from types import MappingProxyType, SimpleNamespace
 
 from agents.agent_harness import (
     AgentApplication,
@@ -8,7 +8,11 @@ from agents.agent_harness import (
     ToolBinding,
     TurnRequest,
 )
-from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
+from agents.agent_harness.core.interfaces import (
+    ToolDefinition,
+    ToolEffect,
+    ToolSchema,
+)
 from agents.agent_harness.core.llm_client import LLMClient
 from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.agent_harness.messages import ModelTurn, ToolCall
@@ -34,10 +38,15 @@ def _definition(
         action=action,
         resource_type=resource,
         intent_types=list(intent_types),
+        effect_class=(
+            ToolEffect.READ
+            if action in {"get", "list", "read", "search", "query", "fetch"}
+            else ToolEffect.WRITE
+        ),
     )
 
 
-def test_relevant_tool_selection_uses_publisher_metadata_and_is_bounded():
+def test_read_request_does_not_select_write_tools_and_remains_bounded():
     tools = [
         _definition(
             "find_campaigns",
@@ -71,7 +80,68 @@ def test_relevant_tool_selection_uses_publisher_metadata_and_is_bounded():
         "列出 Google Ads campaigns", tools, limit=2,
     )
 
-    assert [item.name for item in selected] == ["find_campaigns", "update_campaign_budget"]
+    assert [item.name for item in selected] == ["find_campaigns"]
+
+
+def test_explicit_tool_name_narrows_selection_to_the_named_registered_tool():
+    tools = [
+        _definition(
+            "google_list_campaigns",
+            namespace="google-ads",
+            action="list",
+            resource="campaign",
+            description="List campaigns",
+        ),
+        _definition(
+            "google_update_campaign",
+            namespace="google-ads",
+            action="update",
+            resource="campaign",
+            description="Update a campaign",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "只调用 google_list_campaigns 一次，不得启用或修改广告。",
+        tools,
+        limit=8,
+    )
+
+    assert [item.name for item in selected] == ["google_list_campaigns"]
+
+
+def test_read_intent_with_negative_write_constraints_selects_reads_only():
+    tools = [
+        _definition(
+            "list_campaigns",
+            namespace="ads",
+            action="list",
+            resource="campaign",
+            description="List campaigns",
+        ),
+        _definition(
+            "pause_campaign",
+            namespace="ads",
+            action="pause",
+            resource="campaign",
+            description="Pause a campaign",
+        ),
+        _definition(
+            "update_campaign",
+            namespace="ads",
+            action="update",
+            resource="campaign",
+            description="Update a campaign",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "列出 campaigns，只查询，不要暂停、启用或更新任何 campaign。",
+        tools,
+        limit=8,
+    )
+
+    assert [item.name for item in selected] == ["list_campaigns"]
 
 
 def test_relevant_tool_selection_returns_empty_for_unmatched_request():
@@ -86,6 +156,42 @@ def test_relevant_tool_selection_returns_empty_for_unmatched_request():
     ]
 
     assert ToolSelector().select_relevant("Tell me a joke", tools) == []
+
+
+def test_unselected_tool_is_rejected_when_request_context_is_missing():
+    executions = []
+
+    class Model:
+        def complete(self, _messages, tools, _request):
+            assert tools == []
+            return ModelTurn(tool_calls=(
+                ToolCall("hallucinated", "private_write", {"value": "x"}),
+            ))
+
+    app = AgentApplication.create(
+        model=Model(),
+        tool_selector=lambda _request, _tools: [],
+    )
+    app.register_tool_source(StaticToolSource("private", [
+        ToolBinding(
+            {"name": "private_write", "effect_class": "write"},
+            lambda _context, value: executions.append(value) or {
+                "success": True,
+            },
+        ),
+    ]))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="unmatched request",
+            context=MappingProxyType({}),
+        ))
+
+        assert executions == []
+        assert result.status.value == "failed"
+        blocked = result.data["tool_results"][0]
+        assert blocked["runtime_signals"]["tool_allowlist_violation"] is True
+    finally:
+        app.close()
 
 
 def test_relevant_tool_selection_rejects_non_positive_limit():

@@ -2037,8 +2037,25 @@ class TestMockHandlers:
     def test_google_list_campaigns_handler(self):
         handler = GoogleListCampaignsHandler()
         ctx = ToolContext(session_id="s1", user_id="u1", account_id="9055507554")
-        result = handler.execute(ctx, {"customer_id": "9055507554"})
+        result = handler.execute(ctx, {})
         assert result.success
+
+    def test_google_list_campaigns_rejects_customer_id_outside_trusted_context(self):
+        class Client:
+            calls = []
+
+            def list_campaigns(self, **_kwargs):
+                self.calls.append(True)
+                return []
+
+        client = Client()
+        ctx = ToolContext(session_id="s1", user_id="u1", account_id="trusted-account")
+        result = GoogleListCampaignsHandler(client).execute(
+            ctx, {"customer_id": "other-account"}
+        )
+
+        assert result.success is False
+        assert client.calls == []
 
     def test_tiktok_list_campaigns_handler(self):
         handler = TikTokListCampaignsHandler()

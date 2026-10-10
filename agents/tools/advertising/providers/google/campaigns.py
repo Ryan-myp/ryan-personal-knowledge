@@ -20,6 +20,15 @@ class GoogleListCampaignsHandler(ToolHandler):
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         customer_id = ctx.account_id
+        requested_customer = str(input_data.get("customer_id") or "").strip()
+        if (
+            requested_customer
+            and customer_id
+            and requested_customer != str(customer_id).strip()
+        ):
+            return ToolResult.error(
+                "customer_id does not match the trusted request account"
+            )
         if self.client and customer_id:
             try:
                 client = for_customer(self.client, customer_id)

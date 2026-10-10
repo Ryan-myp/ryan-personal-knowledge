@@ -90,9 +90,24 @@ class TurnRequest:
     event_callback: Optional[Callable[[dict[str, Any]], None]] = None
     execution_mode: Optional[str] = None
     task_id: Optional[str] = None
+    tool_allowlist: Optional[tuple[str, ...]] = None
     run_id: Optional[str] = None
     turn_id: Optional[str] = None
     streaming: bool = False
+
+    def __post_init__(self) -> None:
+        if self.tool_allowlist is None:
+            return
+        names = tuple(
+            dict.fromkeys(
+                str(name).strip()
+                for name in self.tool_allowlist
+                if str(name).strip()
+            )
+        )
+        if len(names) > 128:
+            raise ValueError("tool_allowlist exceeds the 128 Tool limit")
+        object.__setattr__(self, "tool_allowlist", names)
 
     def with_effective_identity(
         self, *, session_id: str, user_id: str, tenant_id: str,

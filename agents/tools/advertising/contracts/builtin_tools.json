@@ -1,5 +1,5 @@
 {
-  "digest": "29c5c2bd69ae8a001a9e1edbf23aa3d2c64c47843157e36cc005025243d816e0",
+  "digest": "199bdef29ecdbd00b23daa27e922f80d8502bef04c97635f3719452944f9a470",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2444,8 +2444,8 @@
       ]
     },
     "google-ads": {
-      "digest": "d278adcf776802027870420c676527c776908fcc66c527686505d0e2b03b2bc9",
-      "tool_count": 103,
+      "digest": "eda29a8dc6ded2ffce4a35c1e4608c640fdcbd2b110a6b5c6bbe2d13ba6e9aeb",
+      "tool_count": 104,
       "tools": [
         {
           "action": "create",
@@ -3089,9 +3089,9 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "bbf903707f3b833259b4f6dc2db60790ea411a0327e1cc70bebe8aa91314de2d",
+          "contract_hash": "ba21ab537c523024f90b31b882a4da493123723cc7c9e8b3a7260f82b95f8000",
           "contract_version": "1.4.0",
-          "description": "创建 Google App Campaign AppAd 素材广告；live 仅在受控测试账号和确认后执行。",
+          "description": "创建 Google App Campaign AppAd。v24 要求 Ad 使用 ENABLED；只有实时查询确认父 Ad Group 为 PAUSED 时才允许创建。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -3244,11 +3244,10 @@
                 "type": "string"
               },
               "status": {
-                "description": "Ad status",
+                "default": "PAUSED",
+                "description": "Requested state; App Ads require an ENABLED ad under a PAUSED Ad Group",
                 "enum": [
-                  "ENABLED",
-                  "PAUSED",
-                  "REMOVED"
+                  "PAUSED"
                 ],
                 "type": "string"
               },
@@ -9889,6 +9888,116 @@
               ],
               "field": "campaign_type",
               "in": [
+                "SHOPPING"
+              ]
+            }
+          ],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "8602137b5defb7847f3b95b6cc81daaf60b5413132279b46dbf327c1350421cd",
+          "contract_version": "1.4.0",
+          "description": "创建 Google Shopping Product Ad；live 创建固定为 PAUSED。",
+          "effect_class": "write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_id": {
+                "description": "Parent Shopping Ad Group ID",
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "ad_groups",
+                "lookup_tool": "google_list_ad_groups",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "ad_group_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "ad_group_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "name": {
+                "description": "Shopping Product Ad name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "default": "PAUSED",
+                "description": "Shopping Product Ad status; live creation is paused-only",
+                "enum": [
+                  "PAUSED"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "ad_group_id",
+              "name"
+            ],
+            "requires": [
+              "name"
+            ],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [],
+          "intent_types": [
+            "create_shopping_product_ad",
+            "create_campaign"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_create_shopping_product_ad",
+          "namespace": "google-ads",
+          "parent_resource_id_field": "ad_group_id",
+          "parent_resource_type": "ad_group",
+          "readback_tool": "google_get_ad",
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "shopping"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
                 "SMART"
               ]
             }
@@ -12581,7 +12690,7 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "86e2e8e3dbc3b7654ead4953435b158f4013e617eb08e98c964e513cfdd630b0",
+          "contract_hash": "b714b2bd308d269e54b310c1b4e0caa9369cb4620c6fccc97d8e1fd7e30622d0",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 客户级 Asset 详情。",
           "effect_class": "read",
@@ -12620,7 +12729,6 @@
               }
             },
             "required": [
-              "customer_id",
               "asset_id"
             ],
             "requires": [],
@@ -14061,7 +14169,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "6a704ec0d6fc5b62f5df2cd3cbd816dafb9a4b2c6d3acaa28e557d422fa92a98",
+          "contract_hash": "c86654582397987feda6f6fdc1666b5a5890042ece4255b198ab8a48e25f11a3",
           "contract_version": "1.4.0",
           "description": "查询 Google PMax Asset Group 已关联的 Asset 列表。",
           "effect_class": "read",
@@ -14143,7 +14251,6 @@
               }
             },
             "required": [
-              "customer_id",
               "asset_group_id"
             ],
             "requires": [],
@@ -14379,7 +14486,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "aa6a46b3e3365943c421f807dd51995df254914bbf5f2673b3cc8d3a8128d381",
+          "contract_hash": "ad77e9ccee812187a4f3b0dd265f85cbeef6ccac2c95a36242087de497202ea1",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads 客户级可复用 Asset 列表。",
           "effect_class": "read",
@@ -14417,9 +14524,7 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "customer_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
@@ -14949,7 +15054,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8614629f28069a8867ff96afa497af6507d300a7dbce11098bda0c04fb6e2acc",
+          "contract_hash": "bf43320167441c61d8b0e1853be0ac5c20a4cda96c5a5c936e05e9663a91e56a",
           "contract_version": "1.4.0",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
@@ -14976,15 +15081,14 @@
                 "type": "string"
               },
               "customer_id": {
+                "description": "Optional scope assertion only; the account is always taken from trusted request context.",
                 "type": "string"
               },
               "limit": {
                 "type": "integer"
               }
             },
-            "required": [
-              "customer_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
@@ -18313,15 +18417,15 @@
       ]
     },
     "meta": {
-      "digest": "fdb63a4818a2759fd3e5bd902aa15a45432049be380fdd3d6d1a63dcc9a73c59",
-      "tool_count": 78,
+      "digest": "835a75d6c5626b60b312168d40bc74fc840ffc03ec17a6282ed7baa57b9b70e3",
+      "tool_count": 80,
       "tools": [
         {
           "action": "boost",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "b1a07fd10d8cd923adc4d44fe685194bfee731474f2eebb6963d9e265b14da82",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "将已有 Meta Page 帖子创建为推广广告。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -18376,7 +18480,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "boost_post"
@@ -18461,8 +18565,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "fc8e8e7607bfe836dd9a31520b6fec9e1de8d08f7df7cd40fa6419f5dce52b06",
-          "contract_version": "1.4.0",
+          "contract_hash": "a1ffc32127df877fd9a53f18a52b02b31db627ba2edaa3626d1b0a03e9dd6cbf",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Ad。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -19040,7 +19144,7 @@
             ],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_campaign",
@@ -19080,8 +19184,8 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "0bf8bacd651606fa062501ee58cbcf3b9699f8c24b23616cc684314f38ac1b9d",
-          "contract_version": "1.4.0",
+          "contract_hash": "05bcc2720ed2bf370666f86581df911f2dea75ed21f0a6d6875dce3d8d465cd8",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -19480,12 +19584,20 @@
                 "properties": {
                   "application_id": {
                     "description": "Meta application ID",
-                    "manual_entry": {
-                      "example": "123456789012345",
-                      "instructions": "请从 Meta for Developers 的应用设置中复制 App ID；广告账户列表接口不会返回应用目录。",
-                      "source": "external_provider_identifier",
-                      "title": "Meta 应用 ID"
+                    "lookup_defaults": {
+                      "limit": 1000
                     },
+                    "lookup_result_key": "apps",
+                    "lookup_tool": "meta_list_apps",
+                    "selection_label_fields": [
+                      "name",
+                      "app_name",
+                      "id"
+                    ],
+                    "selection_value_fields": [
+                      "id",
+                      "app_id"
+                    ],
                     "type": "string"
                   },
                   "custom_event_str": {
@@ -20520,7 +20632,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_campaign",
@@ -20558,10 +20670,263 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "application_id": {
+                  "exists": true
+                },
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_APP_PROMOTION"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "APP_INSTALLS"
+                  ]
+                }
+              }
+            }
+          ],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "23d289988c466fdba494c6a7896cec89dccac20d908cc38e740447c0d625dd84",
+          "contract_version": "1.5.0",
+          "description": "创建 Meta App Promotion 安装广告；live 创建固定为 PAUSED。",
+          "effect_class": "write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "app_image_requires_image_hash",
+                "if": {
+                  "media_type": "IMAGE"
+                },
+                "message": "IMAGE creatives require image_hash",
+                "required": [
+                  "image_hash"
+                ]
+              },
+              {
+                "id": "app_video_requires_video_id",
+                "if": {
+                  "media_type": "VIDEO"
+                },
+                "message": "VIDEO creatives require video_id",
+                "required": [
+                  "video_id"
+                ]
+              }
+            ],
+            "properties": {
+              "adset_id": {
+                "description": "Parent App Promotion Ad Set ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "ad_sets",
+                "lookup_tool": "meta_list_ad_sets",
+                "selection_label_fields": [
+                  "name",
+                  "adset_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "adset_id"
+                ],
+                "type": "string"
+              },
+              "application_id": {
+                "description": "Meta application ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_result_key": "apps",
+                "lookup_tool": "meta_list_apps",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "app_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "app_id"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "image_hash": {
+                "description": "Uploaded image hash",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_result_key": "image_assets",
+                "lookup_tool": "meta_list_image_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "filename",
+                  "hash",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "hash",
+                  "id",
+                  "image_hash"
+                ],
+                "type": "string"
+              },
+              "media_type": {
+                "default": "IMAGE",
+                "description": "App ad media format",
+                "enum": [
+                  "IMAGE",
+                  "VIDEO"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "object_store_url": {
+                "description": "App Store or Google Play URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 100
+                },
+                "lookup_result_key": "pages",
+                "lookup_tool": "meta_list_pages",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "page_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "page_id"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "default": "PAUSED",
+                "description": "受控创建固定为暂停状态",
+                "enum": [
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "Uploaded video ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_result_key": "video_assets",
+                "lookup_tool": "meta_list_video_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "title",
+                  "name",
+                  "video_id",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "video_id"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "application_id",
+              "object_store_url"
+            ],
+            "requires": [
+              "page_id",
+              "application_id",
+              "object_store_url"
+            ],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v25.0",
+          "intent_aliases": [],
+          "intent_types": [
+            "create_app_promotion_ad",
+            "create_campaign"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_app_promotion_ad",
+          "namespace": "meta",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "readback_tool": "meta_get_ad",
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "meta-marketing-api",
+          "skill_refs": [],
+          "timeout_seconds": 30.0,
+          "traits": [
+            "write",
+            "ad",
+            "app_promotion"
+          ]
+        },
+        {
+          "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "db0c012cebb3408b572c7921e75f37a275012b3fd439dd4e33e3f18a8b6b38af",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -20719,7 +21084,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_audience"
@@ -20759,7 +21124,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "f1399903ab1187b4f1f84bda8d61bf41b1106489eb326038e1088b699e20f05d",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -21070,7 +21435,7 @@
             ],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [
             "创建 Meta 广告系列",
             "创建 Meta campaign"
@@ -21115,7 +21480,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "f2af06ad9c564e8417ae329acf8982d9eb8ffe019e4964e10b14b5e43fbe09a0",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta 商品目录；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -21183,7 +21548,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_catalog"
@@ -21248,7 +21613,7 @@
           ],
           "cancellation_mode": "cooperative",
           "contract_hash": "b9ffced78946d20600b049754eaa814f0b4ce5b4500d95ef29416baff57b21a9",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Catalog/Dynamic Product Ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -21395,7 +21760,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_catalog_ad",
@@ -21461,8 +21826,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "54576730ab2ddc80f4f1d636ebc80e46cfa17d239a8a2c0f6a2de68edead33ad",
-          "contract_version": "1.4.0",
+          "contract_hash": "1d0c42074c7796fec6d2d5f135fd47f9b5cc30017d32ef4de164fec91c548c1b",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -21650,7 +22015,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_conversion_ad",
@@ -21692,7 +22057,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "362d525e2772e9c9986d6e1584f17712865d9e56d4cf84085a3c79293f645a9d",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Creative；受控 live 路径仅允许配合 PAUSED Ad 使用。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -21786,7 +22151,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_creative"
@@ -21826,7 +22191,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "e71a3b64ba85f122baf9d5cb5bd9ec94dbde9f38d842201bad9228268218a9d4",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "为 Meta Pixel 创建 Custom Conversion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -21940,7 +22305,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_custom_conversion"
@@ -22021,8 +22386,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "0d3f26d1f424dcf06cb10cda94e2f0cb855b634d9ea90dfe478ee84fa6f59c00",
-          "contract_version": "1.4.0",
+          "contract_hash": "f941eea7ffa7bb0620cee98ffaa42f607995fa17763468d6a214b39a3408ab5a",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Post Engagement/Video Views 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -22179,7 +22544,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_engagement_ad",
@@ -22251,7 +22616,7 @@
           ],
           "cancellation_mode": "cooperative",
           "contract_hash": "80c50f3c523371e213003c399d972bd6e5c52d9cb36f33500cc82e4280255294",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -22385,7 +22750,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_lead_ad",
@@ -22428,7 +22793,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "8e5bd73ff42fe7cc930c89e717a84266648073e597ee02bb1dfc5554e7da25bd",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Lead Ads Instant Form；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -22637,7 +23002,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_lead_form"
@@ -22677,7 +23042,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "9b686e56297de4eff860c444c55635eb0883a7522149585eb12cddbd0bc9c639",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "基于 Meta Custom Audience 创建 Lookalike Audience；源 Audience 必须来自当前广告账户，默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -22757,7 +23122,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_lookalike_audience"
@@ -22820,7 +23185,7 @@
           ],
           "cancellation_mode": "cooperative",
           "contract_hash": "bfa6b8f3e1263e1e6f17987cbcc9c4232ef10735d625ec53f0fa2bfcfb1b8fb4",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Click-to-Message 消息广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -22974,7 +23339,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_messaging_ad",
@@ -23017,7 +23382,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "70c1c4f6307dfa7c3bd99e84b772c2ffa6da1dadbd3ea8af97c021ffb33a5de3",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "在 Meta 商品目录下创建商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23078,7 +23443,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_product_set"
@@ -23140,8 +23505,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "54576730ab2ddc80f4f1d636ebc80e46cfa17d239a8a2c0f6a2de68edead33ad",
-          "contract_version": "1.4.0",
+          "contract_hash": "1d0c42074c7796fec6d2d5f135fd47f9b5cc30017d32ef4de164fec91c548c1b",
+          "contract_version": "1.5.0",
           "description": "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23329,7 +23694,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "create_traffic_ad",
@@ -23371,7 +23736,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "cb78f343943946da413edf2b417afdbe14909d85a96d4da0833c12de43743daf",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta ad；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23420,7 +23785,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_ad"
@@ -23460,7 +23825,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "45a63167b50e69aebf90a3400383797e4939be5f1ef897f1f7e6d020a38194a3",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta ad_set；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23509,7 +23874,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_adset"
@@ -23549,7 +23914,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "970095094d888bb9caef52cc20fa715aa02a3aa3204d23d1a24482cdd31daac8",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta Custom 或 Lookalike Audience；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23590,7 +23955,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_audience"
@@ -23630,7 +23995,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "a7382059fe91fee88dff58a81a9f65efa35c07b14e256cc1f575bb48a7513849",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta campaign；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23671,7 +24036,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [
             "删除 Meta campaign"
           ],
@@ -23714,7 +24079,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "654e18c8dcef16aba53dc56b97b5b726668ee3adb8df34c91c303e04b63c50dc",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta 商品目录；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23755,7 +24120,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_catalog"
@@ -23795,7 +24160,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "92d0151f2168141e32f5c73f814a06556046cc26bb70cf58854a048d1daf25aa",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta Creative；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23836,7 +24201,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_creative"
@@ -23876,7 +24241,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "2abbfa29f325643707eb11b9b6db91e95de8ac5de5100a35cc878a6bfd6d5d3b",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta Custom Conversion；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23919,7 +24284,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_custom_conversion"
@@ -23960,7 +24325,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "e71aa20d34055790d1812dd69a30aa8649ca5d246936ef4fbcd717392e38eb4b",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "删除 Meta 商品集；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -24028,7 +24393,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "delete_product_set"
@@ -24068,8 +24433,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "5f53d20538dc3e30e6f4dc9af0772b6ea775be37ebcd40876930a18142fea5d4",
-          "contract_version": "1.4.0",
+          "contract_hash": "bff2baa3aa57e9b832033d59b28c6623a04b95242dfb8347e5bbdbbae02333c1",
+          "contract_version": "1.5.0",
           "description": "获取 Meta 广告账户详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24088,14 +24453,12 @@
                 "type": "array"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_account"
@@ -24135,7 +24498,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "ede8b6c8ab4acab02d36b62d4276d316813a2559c16c9c9058bb4a54af2efd54",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24202,7 +24565,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_ad"
@@ -24241,8 +24604,8 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "de42267631a62016b3815e9809e05ad29348da798c887db4ac78a3eb5c7a1ec6",
-          "contract_version": "1.4.0",
+          "contract_hash": "2447cd4afe1ededb272709cd49acee42047ad166b0e70f3083ce5c0aac3153c4",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Ad 级报表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24277,14 +24640,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_ad_report"
@@ -24325,7 +24686,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "8ad0b7041eca1042e0cd3d43ae2226d7b52b19f32653aef679b68a2d6c9572df",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "获取 Meta Ad Set 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24392,7 +24753,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_adset"
@@ -24431,8 +24792,8 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "de5696bcb0b091454095d365083d392eea24ac9716b326b36210cc4c8b206fbf",
-          "contract_version": "1.4.0",
+          "contract_hash": "3a385343858e970b003ec2c6f3b38c9eb5dcca3d9fe7f86223537c707994d849",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Ad Set 级报表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24467,14 +24828,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_adset_report"
@@ -24514,8 +24873,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "970095094d888bb9caef52cc20fa715aa02a3aa3204d23d1a24482cdd31daac8",
-          "contract_version": "1.4.0",
+          "contract_hash": "dc5bd4f533834391b9ee51bb2c193585a0e9270d3e8e79a32f26655ad86f8aeb",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Custom 或 Lookalike Audience 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24549,14 +24908,13 @@
               }
             },
             "required": [
-              "account_id",
               "audience_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_audience"
@@ -24596,7 +24954,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "99327a2ca5cfd0bb2a870cc718da61be23d0d1b6d3b87c6baa73acbcf83ddb48",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Business Manager 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24645,7 +25003,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_business"
@@ -24685,7 +25043,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "91f04c50def19ae6ebb3f5f7926ffc146aaf14be35985b437927ce3a1c9a4154",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24729,7 +25087,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [
             "查询 Meta campaign 详情",
             "查看 Meta campaign 详情",
@@ -24773,7 +25131,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "7199285520a95ad12036dce354405ec8ed3301f3c11655b8d1c38d74b967119a",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24826,7 +25184,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [
             "查询 Meta 报表",
             "查询 Meta campaign 报表",
@@ -24873,8 +25231,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "61f125dcee5b77dafbf83d89a3f0b7c94c44ffee84cd43307faac8851f54a4e9",
-          "contract_version": "1.4.0",
+          "contract_hash": "d8cd6de9b24e1677757a55f3c5d560fdb19f331e073e8c9a264f9ddf87ceeb36",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 商品目录详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -24915,14 +25273,13 @@
               }
             },
             "required": [
-              "account_id",
               "catalog_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_catalog"
@@ -24961,8 +25318,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "0c62eed4da2f1142f4ca4e3ec68225f8f9156380af30a2b83f3a507250c8c669",
-          "contract_version": "1.4.0",
+          "contract_hash": "57ba2628a2ac304b2bdab9541c24db25d2735eb4406dbe0fdfb49b9cea9fd566",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Creative 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25003,14 +25360,13 @@
               }
             },
             "required": [
-              "account_id",
               "creative_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_creative"
@@ -25049,8 +25405,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "dfbf9356082120c3b6b35aa8727acbc1c4795bf9bd9933bba52bf70521f61b58",
-          "contract_version": "1.4.0",
+          "contract_hash": "9cd6a4ec93009d8755b5d52c176edc39558306c3cbb7348ed2ca84c2cf76ec3d",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Custom Conversion 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25092,14 +25448,13 @@
               }
             },
             "required": [
-              "account_id",
               "custom_conversion_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_custom_conversion"
@@ -25139,8 +25494,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "b964d0b67ea830cdea1160dea0be855e7dd9a9c67fde8602b16003982013922b",
-          "contract_version": "1.4.0",
+          "contract_hash": "4c4c85fcb94335cd9282c3ac49a20a31e8351d7d025447fddb22c7cbb00682d2",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Instant Form 中单个 Lead 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25219,7 +25574,6 @@
               }
             },
             "required": [
-              "account_id",
               "page_id",
               "form_id",
               "lead_id"
@@ -25232,7 +25586,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_lead"
@@ -25272,7 +25626,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "a404c2b4a743f82d7c5d797a2c8f11daef614220936b23b1354185cf2480ba9c",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Lead Ads Instant Form 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25338,7 +25692,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_lead_form"
@@ -25377,8 +25731,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "3f321c76c31beb223689368f7b85968f6c5fd32027d3e3941f1444416123bfad",
-          "contract_version": "1.4.0",
+          "contract_hash": "4548c01256d460c3f39d139de17c42018998ddbbbf59f3cdee57e05170a641d2",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Pixel 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25415,14 +25769,13 @@
               }
             },
             "required": [
-              "account_id",
               "pixel_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_pixel"
@@ -25461,8 +25814,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "094acf92294ff3f480d51a08fdca831bd76cebad4c89ba0359664b26340729d9",
-          "contract_version": "1.4.0",
+          "contract_hash": "91fbf3bf0b8accb393d92b3988afe5cd104686d2e22d49ccf8345d752fea2534",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 商品集详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25529,7 +25882,6 @@
               }
             },
             "required": [
-              "account_id",
               "catalog_id",
               "product_set_id"
             ],
@@ -25537,7 +25889,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "get_product_set"
@@ -25578,7 +25930,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "4f50bd2ab4576a2af05a6076b8614344ca53265297776b4fa2a2f52d57e8bbab",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "列出 Meta 可访问的广告账户。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25616,7 +25968,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_accounts"
@@ -25656,7 +26008,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "f904bbecbe3bf53b14b3910413468c0caafe9c99bf66e53cd349fc71009b9d14",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "列出 Meta Ad Set 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25693,7 +26045,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_adsets"
@@ -25733,7 +26085,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "dbc98069bfc2d40117ece25ec105c016977c174c245454218f63ac401d96846c",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "列出 Meta Ad 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25778,7 +26130,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_ads"
@@ -25817,8 +26169,72 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
-          "contract_version": "1.4.0",
+          "contract_hash": "56104841165461de25b1c8d9c89c62345dbfe29e5f6921706896178064813d3e",
+          "contract_version": "1.5.0",
+          "description": "查询当前广告账户可推广的 Meta 应用，用于 App Promotion 应用选择；只读并限制结果数量。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v25.0",
+          "intent_aliases": [],
+          "intent_types": [
+            "list_apps"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_list_apps",
+          "namespace": "meta",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "app",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "meta-marketing-api",
+          "skill_refs": [],
+          "timeout_seconds": 30.0,
+          "traits": [
+            "read",
+            "app",
+            "lookup"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Custom Audience 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25834,14 +26250,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_audiences"
@@ -25881,7 +26295,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "fd48219e91a1af38fd726b443ef9db1e361ba6638efdd084087ca581aaf862ca",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "查询当前 Meta 用户可访问的 Business Manager 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25928,7 +26342,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_businesses"
@@ -25967,8 +26381,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
-          "contract_version": "1.4.0",
+          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_version": "1.5.0",
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25984,14 +26398,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [
             "列出 Meta 广告系列",
             "列出 Meta campaign 列表",
@@ -26043,8 +26455,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
-          "contract_version": "1.4.0",
+          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 商品目录。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26060,14 +26472,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_catalogs"
@@ -26106,8 +26516,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "87652da425212a232ebb3efead5fd8961f78fa6c663e9970c7cd60041829ecd0",
-          "contract_version": "1.4.0",
+          "contract_hash": "7cfe290101f55c3da24f2738582b6ed51e717da7068473cba84615d4f272784c",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 广告账户下的 Creative。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26127,14 +26537,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_creatives"
@@ -26173,8 +26581,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f4bb54d2491910eba95fe05174900c2938f00d44fb8e26cd115b5b97d4350543",
-          "contract_version": "1.4.0",
+          "contract_hash": "133bd97ba7ccc86b7f7c806ef3c388fda42185d2fda05a0ed584cccfaaca7b88",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 广告账户下的 Custom Conversion。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26202,14 +26610,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_custom_conversions"
@@ -26249,8 +26655,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7a215cc1ab46014f3bac8620a0071f20c8b9195dedde0d66499a16414890b316",
-          "contract_version": "1.4.0",
+          "contract_hash": "b1d4be4158a3738935cb38967f81b7dcc5b626a2e101b94bd620de91bac3c036",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 广告账户已上传的图片素材。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26270,14 +26676,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_image_assets",
@@ -26319,7 +26723,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "9c6027b0866614cede10e679573e632fed2158c43082cc82b98ee50ea8d756e5",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "查询 Facebook Page 下已发布的 Lead Ads Instant Form。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26356,7 +26760,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_lead_forms"
@@ -26395,8 +26799,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "1a35c0e4011298a576cc136efb2ddbb09a4dc28db1a7217c0130acfcd56d84eb",
-          "contract_version": "1.4.0",
+          "contract_hash": "73ed29fd594c7e7cfccd89dba09c8b39617cdc2686082fdb5a1819bcf9126cb0",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Instant Form 收集到的 Lead 数据。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26475,7 +26879,6 @@
               }
             },
             "required": [
-              "account_id",
               "page_id",
               "form_id"
             ],
@@ -26486,7 +26889,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_leads"
@@ -26525,8 +26928,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
-          "contract_version": "1.4.0",
+          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_version": "1.5.0",
           "description": "查询广告账户可推广的 Facebook Page。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26542,14 +26945,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_pages"
@@ -26588,8 +26989,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
-          "contract_version": "1.4.0",
+          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 广告账户下的 Pixel。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26605,14 +27006,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_pixels"
@@ -26651,8 +27050,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "db1b54e9cfbffaba14c76ba1d8b06a91da7d90188672789b399b2f0294e3767c",
-          "contract_version": "1.4.0",
+          "contract_hash": "aee8018d3af8d8082aa9a4940c1a859de7ebba5627db9ec9d126b4e411849224",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 商品目录下的商品集。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26686,14 +27085,13 @@
               }
             },
             "required": [
-              "account_id",
               "catalog_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_product_sets"
@@ -26733,8 +27131,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "677ce9c4fbdcc204da038df693c5baa216beca12712017e886db973cd84f8123",
-          "contract_version": "1.4.0",
+          "contract_hash": "f8cd5f94e47633bf308aad986f0d92cd3eeeb8910a55fba728958d64b4b39c35",
+          "contract_version": "1.5.0",
           "description": "查询 Meta 广告账户已上传的视频素材。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26754,14 +27152,12 @@
                 "type": "integer"
               }
             },
-            "required": [
-              "account_id"
-            ],
+            "required": [],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "list_video_assets",
@@ -26802,8 +27198,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8e3038cf6855d93780eb926d396df0111bb0a001879049a032510bf2013cd081",
-          "contract_version": "1.4.0",
+          "contract_hash": "23ff37d2fde86b121fa1cd09dd4faa4456356db84a071b969e052f3a80822cb5",
+          "contract_version": "1.5.0",
           "description": "按 Ad Set ID 精确查询 Meta Ad Set，供创建广告时选择指定父级。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26850,14 +27246,13 @@
               }
             },
             "required": [
-              "account_id",
               "adset_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "lookup_adset"
@@ -26897,8 +27292,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "0c62eed4da2f1142f4ca4e3ec68225f8f9156380af30a2b83f3a507250c8c669",
-          "contract_version": "1.4.0",
+          "contract_hash": "57ba2628a2ac304b2bdab9541c24db25d2735eb4406dbe0fdfb49b9cea9fd566",
+          "contract_version": "1.5.0",
           "description": "按 Creative ID 精确查询 Meta Creative，供创建广告时选择刚创建或不在首屏列表中的素材。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26939,14 +27334,13 @@
               }
             },
             "required": [
-              "account_id",
               "creative_id"
             ],
             "requires": [],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "lookup_creative"
@@ -26987,7 +27381,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "d57e52fd0a42e397177510c3d5a61a4c4b3d36251a6b2be25c7c3319ee9daa0c",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "调用 Meta pause_ad 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27029,7 +27423,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "provider_pause_ad"
@@ -27069,7 +27463,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "aa58d8b67d08ac54d250c255c4cc7d4b0e01ecaa0ddc13119ddd048b11877482",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "调用 Meta pause_adset 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27111,7 +27505,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "provider_pause_adset"
@@ -27151,7 +27545,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "a52cf9486425087b91851f32a940c1d55ff91ff4cf6b0f55f4933eb449b9934d",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "调用 Meta pause_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27185,7 +27579,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "provider_pause_campaign"
@@ -27225,7 +27619,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "a52cf9486425087b91851f32a940c1d55ff91ff4cf6b0f55f4933eb449b9934d",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "调用 Meta resume_campaign 管理接口；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27259,7 +27653,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "provider_resume_campaign"
@@ -27298,8 +27692,8 @@
           "action": "search",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "cb67b1b105be12f1dbd67d00500619908d1d593fb72e217902146ed032f2999a",
-          "contract_version": "1.4.0",
+          "contract_hash": "c2acdc27a6e469bb65cc4899959c17a18cc6d58bb4767ca1587b9eecab7f78ce",
+          "contract_version": "1.5.0",
           "description": "查询 Meta Targeting Search 选项（兴趣、地理、语言、职位等）；只读，返回的 ID 可用于后续 Ad Set 定向选择。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -27340,17 +27734,15 @@
               }
             },
             "required": [
-              "account_id",
               "query"
             ],
             "requires": [
-              "account_id",
               "query"
             ],
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "search_targeting_options",
@@ -27392,7 +27784,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "5edecab5427395299395de6a73818ee8711585d1d0455ca447a89a3f23fa72ab",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "向 Meta Pixel 发送 Conversions API 事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27548,7 +27940,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "send_conversion_events",
@@ -27591,7 +27983,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "0c2d64390476b8de263e76141b2be310758c84be4e2d967ffa0a8a19c8fd8e0a",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "向 Meta Test Events 发送一批 Conversions API 测试事件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27751,7 +28143,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "test_conversion_events",
@@ -27795,7 +28187,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "3866d8057ad45863f836d18e2e093fcb7380703fb60602a93aed74b11c04730e",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta ad；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -27928,7 +28320,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_ad"
@@ -27968,7 +28360,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "525c7eca3045b5137b1ccb3b903a0c7f12effb7761071c9a930b2d1afc4832d5",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta ad_set；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28115,7 +28507,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_adset"
@@ -28155,7 +28547,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "dcd83df2e3d82dae7c81a53ea800efbf5928e344b62789512543574395674ffb",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta Audience 的名称、描述、规则或来源属性；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28226,7 +28618,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_audience"
@@ -28266,7 +28658,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "341774b52237c8dde974396bd0765c64af9f4c226f90f52332da405233cdb6f6",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta campaign；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28360,7 +28752,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [
             "更新 Meta campaign"
           ],
@@ -28407,7 +28799,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "a42ff2c42ba270325b6f9a77003b91ff756d7e9b0bd0c468878f8c069e1d026c",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta 商品目录名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28462,7 +28854,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_catalog"
@@ -28502,7 +28894,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "68e45484928377c8a72cd294f8fb5b62e08ca2cdd5249e7cb80b1d4635097306",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta Creative 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28557,7 +28949,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_creative"
@@ -28597,7 +28989,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "cdc988d113329ac764a75ad64372f9314b52961438103e80c9aa44816f6773c1",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta Custom Conversion 的可变字段；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28665,7 +29057,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_custom_conversion"
@@ -28706,7 +29098,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "c58b9aae767b15bb0267a26418ab7c45b9de81a1280f6269b4fcc99fbffc55e7",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta Lead Ads Instant Form 名称；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -28910,7 +29302,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_lead_form"
@@ -28950,7 +29342,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "0803d4fb4a91649e64ce21bc23b4c8236345bcce5d9edad284a9b6552d43e137",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "更新 Meta 商品集名称或筛选条件；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -29043,7 +29435,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "update_product_set"
@@ -29084,7 +29476,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "1dff7d9de094a0977bda2d5cc9059cb750574a3b97e591ce705ff6ec28917e90",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "向 Meta Custom Audience 上传已 SHA-256 哈希的客户标识；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -29328,7 +29720,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "upload_audience_users"
@@ -29369,7 +29761,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "e610b928fa229d6a3d2044cd5aa4f3d49e6ba3c93546487ac4926465222ee909",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "上传可由 Meta 获取的 HTTPS 图片素材；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -29410,7 +29802,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "upload_image_asset",
@@ -29452,7 +29844,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "72d8ffbe8da9262058883c23b6b6231eb3ed7100fc4450c1611e09bce7662d69",
-          "contract_version": "1.4.0",
+          "contract_version": "1.5.0",
           "description": "上传可由 Meta 获取的 HTTPS 视频素材；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -29498,7 +29890,7 @@
             "requires_any_of": [],
             "type": "object"
           },
-          "integration_api_version": "v19.0",
+          "integration_api_version": "v25.0",
           "intent_aliases": [],
           "intent_types": [
             "upload_video_asset",
@@ -29538,7 +29930,7 @@
       ]
     },
     "tiktok": {
-      "digest": "f1eb27bcdee02fb2224e5f491b28dad00bf87605d7cae11da90b2297a04b0ba4",
+      "digest": "2f0cb5001c45bd3a4a13a1da324c63d927cb77b887e4b772d36b93bd21b25b4e",
       "tool_count": 85,
       "tools": [
         {
@@ -31653,7 +32045,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "bdac21057c3f6143d87456c6d5d27903b8d28f6729aa1acee699d0e90fcae825",
+          "contract_hash": "e8d919ac84ba2f4d3698620fbc23c2ea72adb5cb807374d419f747abc228d518",
           "contract_version": "1.3.0",
           "description": "使用 TikTok v1.3 当前的一步 Spark Ads 接口创建 Campaign、Ad Group 和 Spark Ad；覆盖 Reach、Video views、Community interaction。live 仅允许暂停状态。",
           "effect_class": "write",
@@ -31713,14 +32105,6 @@
                 },
                 "required": [
                   "landing_page_url"
-                ]
-              },
-              {
-                "if": {
-                  "identity_type": "BC_AUTH_TT"
-                },
-                "required": [
-                  "identity_authorized_bc_id"
                 ]
               },
               {
@@ -31849,24 +32233,6 @@
                   "GENDER_UNLIMITED",
                   "GENDER_MALE",
                   "GENDER_FEMALE"
-                ],
-                "type": "string"
-              },
-              "identity_authorized_bc_id": {
-                "description": "Authorized Business Center selected from the identity lookup",
-                "lookup_result_key": "identities",
-                "lookup_tool": "tiktok_list_identities",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "business_center_name",
-                  "display_name",
-                  "name",
-                  "authorized_bc_id"
-                ],
-                "selection_value_fields": [
-                  "authorized_bc_id",
-                  "bc_id",
-                  "id"
                 ],
                 "type": "string"
               },
@@ -42744,7 +43110,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "98fb4c45b007aa65a49851f6346bd659a28a37e442c4c1ff80e1b234541d3099",
+          "contract_hash": "454f046593973389add9d89982e33efbf9ecb52b6745693c151527829686c8fe",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -43060,23 +43426,6 @@
                           },
                           "type": "string"
                         },
-                        "identity_authorized_bc_id": {
-                          "description": "Authorized Business Center ID",
-                          "lookup_result_key": "identities",
-                          "lookup_tool": "tiktok_list_identities",
-                          "selection_label_fields": [
-                            "business_center_name",
-                            "display_name",
-                            "name",
-                            "authorized_bc_id"
-                          ],
-                          "selection_value_fields": [
-                            "authorized_bc_id",
-                            "bc_id",
-                            "id"
-                          ],
-                          "type": "string"
-                        },
                         "identity_id": {
                           "description": "Identity ID",
                           "lookup_result_key": "identities",
@@ -43264,24 +43613,6 @@
                 "enum": [
                   "NORMAL",
                   "DEFERRED"
-                ],
-                "type": "string"
-              },
-              "identity_authorized_bc_id": {
-                "description": "Authorized Business Center selected from the identity lookup",
-                "lookup_result_key": "identities",
-                "lookup_tool": "tiktok_list_identities",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "business_center_name",
-                  "display_name",
-                  "name",
-                  "authorized_bc_id"
-                ],
-                "selection_value_fields": [
-                  "authorized_bc_id",
-                  "bc_id",
-                  "id"
                 ],
                 "type": "string"
               },
@@ -43592,7 +43923,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7ac8f6997ad20a316dc2b37dd4488d83107fff3ab403c2d33c088a253de90497",
+          "contract_hash": "9f65ab9d8aa1445e278cdd9017ec48a555ffeecadef406fc17ebaf90f33d2439",
           "contract_version": "1.3.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -43657,17 +43988,6 @@
                   "objective_type": "TRAFFIC"
                 },
                 "message": "TRAFFIC Smart+ requires WEBSITE and CLICK or TRAFFIC_LANDING_PAGE_VIEW"
-              },
-              {
-                "if": {
-                  "catalog_id": {
-                    "exists": true
-                  }
-                },
-                "message": "Catalog Ads require catalog_authorized_bc_id returned with the selected catalog",
-                "required": [
-                  "catalog_authorized_bc_id"
-                ]
               }
             ],
             "properties": {
@@ -43779,23 +44099,6 @@
                 ],
                 "type": "string"
               },
-              "catalog_authorized_bc_id": {
-                "description": "Business Center ID returned with the selected Catalog; required for Catalog Ads",
-                "lookup_result_key": "catalogs",
-                "lookup_tool": "tiktok_list_catalogs",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "catalog_name",
-                  "name",
-                  "catalog_authorized_bc_id"
-                ],
-                "selection_value_fields": [
-                  "catalog_authorized_bc_id",
-                  "authorized_bc_id",
-                  "bc_id"
-                ],
-                "type": "string"
-              },
               "catalog_id": {
                 "description": "Catalog ID returned by tiktok_list_catalogs",
                 "lookup_result_key": "catalogs",
@@ -43844,24 +44147,6 @@
                   "GENDER_UNLIMITED",
                   "GENDER_MALE",
                   "GENDER_FEMALE"
-                ],
-                "type": "string"
-              },
-              "identity_authorized_bc_id": {
-                "description": "Authorized Business Center selected from the identity lookup",
-                "lookup_result_key": "identities",
-                "lookup_tool": "tiktok_list_identities",
-                "minLength": 1,
-                "selection_label_fields": [
-                  "business_center_name",
-                  "display_name",
-                  "name",
-                  "authorized_bc_id"
-                ],
-                "selection_value_fields": [
-                  "authorized_bc_id",
-                  "bc_id",
-                  "id"
                 ],
                 "type": "string"
               },
@@ -44702,7 +44987,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "bbc915803129f4ab244028e78359684b37d51bdcf60053be4778b67a55c7516d",
+          "contract_hash": "ba441558537344d6433cff0c71baa7907ec614525efe7e1df39c6148f8e5c05f",
           "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。",
           "effect_class": "write",
@@ -44987,23 +45272,6 @@
                                 "source": "external_provider_identifier",
                                 "title": "TikTok 行动号召 ID"
                               },
-                              "type": "string"
-                            },
-                            "identity_authorized_bc_id": {
-                              "description": "Authorized Business Center ID",
-                              "lookup_result_key": "identities",
-                              "lookup_tool": "tiktok_list_identities",
-                              "selection_label_fields": [
-                                "business_center_name",
-                                "display_name",
-                                "name",
-                                "authorized_bc_id"
-                              ],
-                              "selection_value_fields": [
-                                "authorized_bc_id",
-                                "bc_id",
-                                "id"
-                              ],
                               "type": "string"
                             },
                             "identity_id": {
@@ -48909,8 +49177,21 @@
         "execution_status": "dry_run_only",
         "inventory_scope": "official_resource_operations_baseline",
         "method": "create_app_ad",
-        "notes": "Dry-run AppAd payload builder; live mutation remains disabled until test-account verification",
+        "notes": "Live AppAd creation is constrained to PAUSED status",
         "provider": "google-ads",
+        "resource": "ad",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "create_shopping_product",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "create_shopping_product_ad",
+        "provider": "google-ads",
+        "provider_operation": "AdGroupAdService.mutateAdGroupAds",
         "resource": "ad",
         "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
         "status": "implemented"
@@ -49427,7 +49708,7 @@
     "meta": [
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49439,7 +49720,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49451,7 +49732,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49463,7 +49744,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49475,7 +49756,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49487,7 +49768,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49499,7 +49780,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49511,7 +49792,7 @@
       },
       {
         "action": "pause",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49523,7 +49804,7 @@
       },
       {
         "action": "resume",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49535,7 +49816,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49547,7 +49828,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49559,7 +49840,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49571,7 +49852,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49583,7 +49864,7 @@
       },
       {
         "action": "pause",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49595,7 +49876,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49607,7 +49888,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49619,7 +49900,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49631,7 +49912,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49643,7 +49924,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49655,7 +49936,7 @@
       },
       {
         "action": "create_lead",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49667,7 +49948,7 @@
       },
       {
         "action": "create_catalog",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49678,8 +49959,21 @@
         "status": "implemented"
       },
       {
+        "action": "create_app_promotion",
+        "api_version": "v25.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "create_app_promotion_ad",
+        "provider": "meta",
+        "provider_operation": "AdSet/{adset_id}/ads",
+        "resource": "ad",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
         "action": "create_messaging",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49691,7 +49985,7 @@
       },
       {
         "action": "create_link",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49703,7 +49997,7 @@
       },
       {
         "action": "create_engagement",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49715,7 +50009,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49727,7 +50021,7 @@
       },
       {
         "action": "pause",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49739,7 +50033,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49751,7 +50045,7 @@
       },
       {
         "action": "pause",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49763,7 +50057,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49775,7 +50069,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49787,7 +50081,7 @@
       },
       {
         "action": "upload",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49799,7 +50093,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49811,7 +50105,7 @@
       },
       {
         "action": "upload",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49823,7 +50117,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49835,7 +50129,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49847,7 +50141,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49859,7 +50153,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49871,7 +50165,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49883,7 +50177,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49895,7 +50189,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49907,7 +50201,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49919,7 +50213,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49931,7 +50225,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49943,7 +50237,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49955,7 +50249,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49966,8 +50260,20 @@
         "status": "implemented"
       },
       {
+        "action": "list",
+        "api_version": "v25.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "list_apps",
+        "provider": "meta",
+        "resource": "app",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
         "action": "search",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49979,7 +50285,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -49991,7 +50297,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50003,7 +50309,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50015,7 +50321,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50027,7 +50333,7 @@
       },
       {
         "action": "report",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50039,7 +50345,7 @@
       },
       {
         "action": "report",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50051,7 +50357,7 @@
       },
       {
         "action": "report",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50063,7 +50369,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50075,7 +50381,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50087,7 +50393,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50099,7 +50405,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50111,7 +50417,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50123,7 +50429,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50135,7 +50441,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50147,7 +50453,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50159,7 +50465,7 @@
       },
       {
         "action": "source_upload",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50171,7 +50477,7 @@
       },
       {
         "action": "events_test",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50183,7 +50489,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50195,7 +50501,7 @@
       },
       {
         "action": "events_config",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "not_supported",
         "gap": "公开 Graph API 文档未确认 Pixel CAPI 配置的稳定独立读写接口，暂不伪造 Tool",
@@ -50207,12 +50513,12 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
         "method": "list_custom_conversions",
-        "notes": "Meta SDK v19.0 account edge contract",
+        "notes": "Meta Marketing API v25.0 account edge contract",
         "provider": "meta",
         "resource": "custom_conversion",
         "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
@@ -50220,12 +50526,12 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
         "method": "get_custom_conversion",
-        "notes": "Meta SDK v19.0 node contract",
+        "notes": "Meta Marketing API v25.0 node contract",
         "provider": "meta",
         "resource": "custom_conversion",
         "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
@@ -50233,7 +50539,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50246,12 +50552,12 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
         "method": "delete_custom_conversion",
-        "notes": "Meta SDK v19.0 node contract",
+        "notes": "Meta Marketing API v25.0 node contract",
         "provider": "meta",
         "resource": "custom_conversion",
         "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
@@ -50259,7 +50565,7 @@
       },
       {
         "action": "event",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50271,7 +50577,7 @@
       },
       {
         "action": "create",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50283,7 +50589,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50295,7 +50601,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50307,7 +50613,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50319,7 +50625,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50331,7 +50637,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50343,7 +50649,7 @@
       },
       {
         "action": "list",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50355,7 +50661,7 @@
       },
       {
         "action": "get",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50367,7 +50673,7 @@
       },
       {
         "action": "update",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50379,7 +50685,7 @@
       },
       {
         "action": "delete",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -50391,7 +50697,7 @@
       },
       {
         "action": "boost",
-        "api_version": "v19.0",
+        "api_version": "v25.0",
         "evidence_level": "code_contract",
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
@@ -51562,12 +51868,12 @@
     },
     "meta": {
       "adapter_versions": [],
-      "api_version": "v19.0",
+      "api_version": "v25.0",
       "issues": [],
       "supported_api_versions": [
-        "v19.0"
+        "v25.0"
       ],
-      "tool_source_api_version": "v19.0"
+      "tool_source_api_version": "v25.0"
     },
     "tiktok": {
       "adapter_versions": [],
@@ -51579,5 +51885,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 297
+  "tool_count": 300
 }

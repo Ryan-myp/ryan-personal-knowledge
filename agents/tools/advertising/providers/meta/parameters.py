@@ -760,7 +760,7 @@ def meta_creative_schema() -> dict[str, Any]:
             ),
             "image_hash": _field(
                 "string", "Uploaded image hash",
-                lookup_tool="meta_list_image_assets", lookup_result_key="images",
+                lookup_tool="meta_list_image_assets", lookup_result_key="image_assets",
                 selection_value_fields=["hash", "image_hash", "id"],
                 selection_label_fields=["name", "hash", "id"],
             ),
@@ -817,10 +817,6 @@ def meta_promoted_object_schema() -> dict[str, Any]:
         ),
         "application_id": _field(
             "string", "Meta application ID",
-            manual_entry={
-                "title": "应用 ID",
-                "instructions": "当前 Meta Tool Source 未声明通用应用列表查询 Tool，请提供已在 Meta 账号中关联的应用 ID。",
-            },
         ),
         "object_store_url": _field("string", "App store URL"),
         "product_set_id": _field(
@@ -1080,11 +1076,11 @@ def meta_adset_schema() -> dict[str, Any]:
 
 def meta_ad_schema() -> dict[str, Any]:
     image_ref = _meta_asset_ref(
-        "Uploaded image hash", "meta_list_image_assets", "images",
+        "Uploaded image hash", "meta_list_image_assets", "image_assets",
         ["hash", "image_hash", "id"], ["name", "hash", "id"],
     )
     video_ref = _meta_asset_ref(
-        "Uploaded video ID", "meta_list_video_assets", "videos",
+        "Uploaded video ID", "meta_list_video_assets", "video_assets",
         ["video_id", "id"], ["title", "name", "video_id", "id"],
     )
     cta_value = _object({
@@ -1277,6 +1273,67 @@ def meta_catalog_ad_schema() -> dict[str, Any]:
     }
 
 
+def meta_app_promotion_ad_schema() -> dict[str, Any]:
+    """Create contract for paused Meta App Promotion image/video ads."""
+    image_ref = _meta_asset_ref(
+        "Uploaded image hash", "meta_list_image_assets", "image_assets",
+        ["hash", "image_hash", "id"], ["name", "hash", "id"],
+    )
+    video_ref = _meta_asset_ref(
+        "Uploaded video ID", "meta_list_video_assets", "video_assets",
+        ["video_id", "id"], ["title", "name", "video_id", "id"],
+    )
+    return {
+        "required": [
+            "adset_id", "name", "page_id", "application_id", "object_store_url",
+        ],
+        "requires": ["page_id", "application_id", "object_store_url"],
+        "properties": {
+            "adset_id": _field("string", "Parent App Promotion Ad Set ID"),
+            "name": _field("string", "Ad name", maxLength=400),
+            "page_id": _field(
+                "string", "Facebook Page ID", minLength=1,
+                lookup_tool="meta_list_pages", lookup_result_key="pages",
+                selection_value_fields=["id", "page_id"],
+                selection_label_fields=["name", "page_name", "id"],
+            ),
+            "application_id": _field(
+                "string", "Meta application ID", minLength=1,
+            ),
+            "object_store_url": _field(
+                "string", "App Store or Google Play URL", minLength=1,
+            ),
+            "media_type": _field(
+                "string", "App ad media format", enum=["IMAGE", "VIDEO"],
+                default="IMAGE",
+            ),
+            "image_hash": image_ref,
+            "video_id": video_ref,
+            "message": _field("string", "Primary text"),
+            "headline": _field("string", "Headline"),
+            "description": _field("string", "Description"),
+            "status": _field(
+                "string", "Initial delivery status; controlled creation is paused-only",
+                enum=["PAUSED"], default="PAUSED",
+            ),
+        },
+        "conditional_rules": [
+            {
+                "id": "app_image_requires_image_hash",
+                "if": {"media_type": "IMAGE"},
+                "required": ["image_hash"],
+                "message": "IMAGE creatives require image_hash",
+            },
+            {
+                "id": "app_video_requires_video_id",
+                "if": {"media_type": "VIDEO"},
+                "required": ["video_id"],
+                "message": "VIDEO creatives require video_id",
+            },
+        ],
+    }
+
+
 def meta_messaging_ad_schema() -> dict[str, Any]:
     """Create contract for a Meta click-to-message creative."""
     return {
@@ -1351,14 +1408,14 @@ def meta_link_ad_schema() -> dict[str, Any]:
             ),
             "image_hash": _field(
                 "string", "Uploaded image hash", minLength=1,
-                lookup_tool="meta_list_image_assets", lookup_result_key="images",
+                lookup_tool="meta_list_image_assets", lookup_result_key="image_assets",
                 selection_value_fields=["hash", "image_hash", "id"],
                 selection_label_fields=["name", "hash", "id"],
                 **_ui_equals("media_type", "IMAGE"),
             ),
             "video_id": _field(
                 "string", "Uploaded video ID", minLength=1,
-                lookup_tool="meta_list_video_assets", lookup_result_key="videos",
+                lookup_tool="meta_list_video_assets", lookup_result_key="video_assets",
                 selection_value_fields=["video_id", "id"],
                 selection_label_fields=["title", "name", "video_id", "id"],
                 **_ui_equals("media_type", "VIDEO"),
@@ -1418,7 +1475,7 @@ def meta_engagement_ad_schema() -> dict[str, Any]:
             ),
             "video_id": _field(
                 "string", "Video ID", minLength=1,
-                lookup_tool="meta_list_video_assets", lookup_result_key="videos",
+                lookup_tool="meta_list_video_assets", lookup_result_key="video_assets",
                 selection_value_fields=["video_id", "id"],
                 selection_label_fields=["title", "name", "video_id", "id"],
             ),

@@ -121,7 +121,12 @@ def test_cross_channel_tools_publish_result_relationship_metadata():
         ),
         (
             "SHOPPING",
-            ["google_create_campaign", "google_create_ad_group", "google_create_product_group"],
+            [
+                "google_create_campaign",
+                "google_create_ad_group",
+                "google_create_product_group",
+                "google_create_shopping_product_ad",
+            ],
         ),
         (
             "DISPLAY",

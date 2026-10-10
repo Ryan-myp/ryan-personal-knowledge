@@ -82,6 +82,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 creation_blueprint_version=request.creation_blueprint_version,
                 creation_template_id=request.creation_template_id,
                 execution_mode=request.execution_mode,
+                tool_allowlist=request.tool_allowlist,
                 principal=principal,
             )
             return JSONResponse(
@@ -180,6 +181,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                     creation_blueprint_version=request.creation_blueprint_version,
                     creation_template_id=request.creation_template_id,
                     execution_mode=request.execution_mode,
+                    tool_allowlist=request.tool_allowlist,
                     principal=principal,
                     event_callback=observe,
                 ))

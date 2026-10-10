@@ -32,7 +32,7 @@ _META_INSIGHTS_DATE_PRESET_ALIASES = {
 
 class MetaAPIClient(BasePlatformClient):
     """
-    Meta Marketing API 客户端 (v19.0)
+    Meta Marketing API 客户端 (v25.0)
     
     官方文档: https://developers.facebook.com/docs/marketing-api
     认证: OAuth2 Access Token
@@ -42,7 +42,7 @@ class MetaAPIClient(BasePlatformClient):
     - 广告账户级: 50 次/10秒
     """
     
-    API_VERSION = "v19.0"
+    API_VERSION = "v25.0"
     SUPPORTED_API_VERSIONS = (API_VERSION,)
     BASE_URL = f"https://graph.facebook.com/{API_VERSION}"
     
@@ -1043,6 +1043,24 @@ class MetaAPIClient(BasePlatformClient):
                 {"limit": limit, "fields": "id,name,category,tasks"},
             )
 
+    def list_apps(self, account_id: str, limit: int = 25) -> list:
+        """List applications advertisable by the scoped Meta ad account."""
+        clean_id = self._clean_meta_id(account_id, "account_id")
+        if (
+            not isinstance(limit, int)
+            or isinstance(limit, bool)
+            or not 1 <= limit <= 1000
+        ):
+            raise ValueError("Meta application list limit must be between 1 and 1000")
+        return self._list_graph_pages(
+            clean_id,
+            f"/act_{clean_id}/advertisable_applications",
+            {
+                "limit": limit,
+                "fields": "id,name,object_store_urls,supported_platforms",
+            },
+        )
+
     def list_pixels(self, account_id: str, limit: int = 25) -> list:
         """List Meta Pixels owned by an ad account."""
         clean_id = str(account_id).replace("act_", "")
@@ -1853,6 +1871,82 @@ class MetaAPIClient(BasePlatformClient):
                 "object_story_spec": {
                     "page_id": page_id,
                     "template_data": template_data,
+                },
+            },
+            live=live,
+        )
+
+    def create_app_promotion_ad(
+        self,
+        account_id: str,
+        adset_id: str,
+        ad: dict,
+        live: bool = False,
+    ) -> str | dict[str, Any]:
+        """Create a paused App Promotion image or video ad."""
+        if not isinstance(ad, dict):
+            raise ValueError("app promotion ad must be an object")
+        page_id = str(ad.get("page_id") or "").strip()
+        application_id = str(ad.get("application_id") or "").strip()
+        store_url = str(ad.get("object_store_url") or "").strip()
+        if not page_id or not application_id or not store_url:
+            raise ValueError(
+                "page_id, application_id and object_store_url are required"
+            )
+        parsed_url = urlparse(store_url)
+        if parsed_url.scheme != "https" or not parsed_url.netloc:
+            raise ValueError("object_store_url must be an absolute HTTPS URL")
+
+        media_type = str(ad.get("media_type") or "IMAGE").upper().strip()
+        call_to_action = {
+            "type": "INSTALL_MOBILE_APP",
+            "value": {
+                "application": application_id,
+                "link": store_url,
+            },
+        }
+        shared_content = {
+            "message": ad.get("message", ""),
+            "call_to_action": call_to_action,
+        }
+        if media_type == "IMAGE":
+            image_hash = str(ad.get("image_hash") or "").strip()
+            if not image_hash:
+                raise ValueError("IMAGE creatives require image_hash")
+            link_data = {
+                **shared_content,
+                "link": store_url,
+                "name": ad.get("headline", ""),
+                "description": ad.get("description", ""),
+                "image_hash": image_hash,
+            }
+            story_media = {"link_data": link_data}
+        elif media_type == "VIDEO":
+            video_id = str(ad.get("video_id") or "").strip()
+            if not video_id:
+                raise ValueError("VIDEO creatives require video_id")
+            video_data = {
+                **shared_content,
+                "video_id": video_id,
+                "title": ad.get("headline", ""),
+            }
+            story_media = {"video_data": video_data}
+        else:
+            raise ValueError("media_type must be IMAGE or VIDEO")
+
+        status = str(ad.get("status") or "PAUSED").upper().strip()
+        if status != "PAUSED":
+            raise ValueError("Meta App Promotion live creation only allows PAUSED Ads")
+
+        return self.create_ad(
+            account_id,
+            adset_id,
+            {
+                "name": ad.get("name", "Untitled App Promotion Ad"),
+                "status": status,
+                "object_story_spec": {
+                    "page_id": page_id,
+                    **story_media,
                 },
             },
             live=live,

@@ -1148,7 +1148,32 @@ def google_app_ad_schema() -> dict[str, Any]:
             "images": asset,
             "videos": asset,
             "html5_media_bundles": asset,
-            "status": _field("string", "Ad status", enum=GOOGLE_STATUSES),
+            "status": _field(
+                "string",
+                "Requested state; App Ads require an ENABLED ad under a PAUSED Ad Group",
+                enum=["PAUSED"],
+                default="PAUSED",
+            ),
+        },
+    }
+
+
+def google_shopping_product_ad_schema() -> dict[str, Any]:
+    """Create contract for a paused Google Shopping Product Ad."""
+    return {
+        "required": ["ad_group_id", "name"],
+        "requires": ["name"],
+        "properties": {
+            "ad_group_id": _field(
+                "string", "Parent Shopping Ad Group ID", minLength=1
+            ),
+            "name": _field("string", "Shopping Product Ad name", maxLength=255),
+            "status": _field(
+                "string",
+                "Shopping Product Ad status; live creation is paused-only",
+                enum=["PAUSED"],
+                default="PAUSED",
+            ),
         },
     }
 

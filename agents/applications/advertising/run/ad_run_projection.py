@@ -26,6 +26,12 @@ class AdvertisingRunProjection:
         for item in payload.get("tool_results") or ():
             if not isinstance(item, Mapping):
                 continue
+            runtime_signals = item.get("runtime_signals")
+            if (
+                isinstance(runtime_signals, Mapping)
+                and runtime_signals.get("duplicate_read_coalesced") is True
+            ):
+                continue
             name = str(item.get("name") or "").strip()
             raw = item.get("content")
             result = dict(raw) if isinstance(raw, Mapping) else {

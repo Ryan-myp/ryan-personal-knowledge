@@ -21,6 +21,24 @@ _TOKEN_STOPWORDS = frozenset({
     "for", "from", "how", "i", "in", "is", "it", "me", "my", "of",
     "on", "or", "please", "show", "the", "to", "we", "with", "you",
 })
+_READ_CUES = (
+    "get", "list", "read", "search", "query", "fetch", "retrieve", "show",
+    "查一下", "查询", "列出", "查看", "获取", "检索",
+)
+_WRITE_CUES = (
+    "create", "update", "delete", "pause", "enable", "disable", "launch",
+    "submit", "save", "publish", "edit", "change", "modify", "set",
+    "创建", "新建", "更新", "修改", "删除", "暂停", "启用", "停用",
+    "上线", "提交", "保存", "发布", "设置", "调整",
+)
+_WRITE_NEGATIONS = (
+    "do not", "don't", "dont", "never", "without", "avoid", "no need to",
+    "不要", "别", "禁止", "不需要", "无需", "不用",
+)
+_INTENT_REVERSALS = ("but", "instead", "however", "但", "而是", "不过")
+_READ_ACTIONS = frozenset({
+    "get", "list", "read", "search", "query", "fetch", "retrieve",
+})
 
 
 def _terms(value: Any) -> set[str]:
@@ -60,6 +78,45 @@ def _schema_terms(tool: Any) -> set[str]:
             if isinstance(spec, dict):
                 terms.update(_terms(spec.get("description", "")))
     return terms
+
+
+def _contains_cue(text: str, cue: str) -> bool:
+    if re.fullmatch(r"[a-z]+", cue):
+        return re.search(rf"\b{re.escape(cue)}(?:s|ed|ing)?\b", text) is not None
+    return cue in text
+
+
+def _is_read_only_request(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    if not any(_contains_cue(text, cue) for cue in _READ_CUES):
+        return False
+    for cue in _WRITE_CUES:
+        for match in re.finditer(re.escape(cue), text):
+            prefix = text[max(0, match.start() - 32):match.start()]
+            negation_positions = [
+                prefix.rfind(negation)
+                for negation in _WRITE_NEGATIONS
+                if prefix.rfind(negation) >= 0
+            ]
+            if not negation_positions:
+                return False
+            last_negation = max(negation_positions)
+            if any(
+                reversal in prefix[last_negation + 1:]
+                for reversal in _INTENT_REVERSALS
+            ):
+                return False
+    return True
+
+
+def _is_read_tool(tool: Any) -> bool:
+    effect = _tool_field(
+        tool,
+        "effect_class",
+        _tool_field(tool, "effect", "read"),
+    )
+    effect = getattr(effect, "value", effect)
+    return str(effect or "read").strip().casefold() in {"read", "none"}
 
 
 def _relevance_score(query_terms: set[str], tool: Any) -> int:
@@ -170,14 +227,29 @@ class ToolSelector:
         """
         if limit <= 0:
             raise ValueError("limit must be positive")
+        text = str(user_input or "").casefold()
+        explicitly_named = [
+            tool for tool in (available_tools or ())
+            if (name := str(_tool_field(tool, "name", "") or "").strip())
+            and name.casefold() in text
+        ]
+        if explicitly_named:
+            candidates = explicitly_named
+        else:
+            candidates = list(available_tools or ())
         query_terms = _terms(user_input)
         if not query_terms:
             return []
         ranked = [
             (_relevance_score(query_terms, tool), index, tool)
-            for index, tool in enumerate(available_tools or ())
+            for index, tool in enumerate(candidates)
         ]
         relevant = [item for item in ranked if item[0] > 0]
+        if _is_read_only_request(user_input):
+            relevant = [
+                item for item in relevant
+                if _is_read_tool(item[2])
+            ]
         relevant.sort(key=lambda item: (-item[0], item[1]))
         return [tool for _score, _index, tool in relevant[:limit]]
 

@@ -162,6 +162,7 @@ class AdApplicationFacadeMixin:
         cancellation_event: Optional[threading.Event] = None,
         event_callback: Optional[ExecutionEventCallback] = None,
         execution_mode: Optional[str] = None,
+        tool_allowlist: Optional[list[str]] = None,
         task_id: Optional[str] = None,
     ) -> dict:
         return self._run_service().run(
@@ -181,6 +182,7 @@ class AdApplicationFacadeMixin:
             cancellation_event=cancellation_event,
             event_callback=event_callback,
             execution_mode=execution_mode,
+            tool_allowlist=tool_allowlist,
             task_id=task_id,
         )
 

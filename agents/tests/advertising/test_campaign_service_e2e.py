@@ -39,6 +39,54 @@ def test_only_matching_successful_tool_result_counts_as_execution():
     assert summarize_chat(result, "meta_create_campaign")["passed"] is False
 
 
+def test_coalesced_duplicate_tool_calls_count_as_one_effective_execution():
+    result = {
+        "tool_call_count": 2,
+        "results": [
+            {
+                "tool": "meta_list_catalogs",
+                "success": True,
+                "data": {"data_status": "live", "catalogs": []},
+            }
+        ],
+        "tool_results": [
+            {"name": "meta_list_catalogs", "success": True},
+            {
+                "name": "meta_list_catalogs",
+                "success": True,
+                "runtime_signals": {"duplicate_read_coalesced": True},
+            },
+        ],
+    }
+
+    summary = summarize_chat(result, "meta_list_catalogs")
+
+    assert summary["passed"] is True
+    assert summary["model_tool_call_count"] == 2
+    assert summary["coalesced_call_count"] == 1
+    assert summary["effective_execution_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [
+            {"tool": "meta_list_apps", "success": True, "data": {"apps": []}},
+            {"tool": "meta_list_apps", "success": True, "data": {"apps": []}},
+        ],
+        [
+            {"tool": "meta_list_apps", "success": True, "data": {"apps": []}},
+            {"tool": "meta_list_businesses", "success": True, "data": {"businesses": []}},
+        ],
+    ],
+)
+def test_duplicate_or_unrequested_tool_calls_fail_single_tool_evidence(rows):
+    assert summarize_chat(
+        {"results": rows},
+        "meta_list_apps",
+    )["passed"] is False
+
+
 def test_dry_run_plan_disguised_as_a_resource_id_is_not_a_real_write():
     result = {
         "results": [
@@ -111,7 +159,7 @@ def test_transport_timeout_is_recorded_without_credential_url(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     recorder.case = {"case_id": "timeout", "provider": "meta", "account": "123"}
     request = requests.Request(
-        "GET", "https://graph.facebook.com/v19.0/act_123/campaigns?access_token=secret"
+        "GET", "https://graph.facebook.com/v25.0/act_123/campaigns?access_token=secret"
     ).prepare()
 
     def timeout(*args, **kwargs):
@@ -162,12 +210,14 @@ def test_confirmation_response_is_saved_even_if_second_request_times_out(
             tmp_path,
             "meta",
             "meta_create_campaign",
-            {},
+            {"_e2e_blueprint_id": "meta.traffic_link"},
             "confirmation-timeout",
             write=True,
         )
     evidence = json.loads((tmp_path / "cases/confirmation-timeout.json").read_text())
     assert len(calls) == 2
+    assert calls[0]["json"]["tool_allowlist"] == ["meta_create_campaign"]
+    assert calls[0]["json"]["creation_blueprint_id"] == "meta.traffic_link"
     assert evidence["phases"][0]["response"]["needs_confirmation"] is True
     assert evidence["phases"][1]["transport_error"] == "ReadTimeout"
     assert "secret" not in json.dumps(evidence)
@@ -177,10 +227,85 @@ def test_test_deployment_blocks_other_meta_account_paths(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     recorder.case = {"case_id": "cross-account", "provider": "meta", "account": "123"}
     request = requests.Request(
-        "GET", "https://graph.facebook.com/v19.0/act_999/campaigns"
+        "GET", "https://graph.facebook.com/v25.0/act_999/campaigns"
     ).prepare()
     with pytest.raises(PermissionError, match="test account"):
         recorder._guard(request, "meta", {})
+
+
+@pytest.mark.parametrize(
+    "operation_status",
+    ["ENABLE", "ACTIVE", ""],
+)
+def test_tiktok_creation_requires_explicit_disabled_status(
+    tmp_path, operation_status
+):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {
+        "case_id": "tiktok-status",
+        "provider": "tiktok",
+        "account": "123",
+    }
+    request = requests.Request(
+        "POST",
+        "https://business-api.tiktok.com/open_api/v1.3/smart_plus/campaign/create/",
+        json={
+            "advertiser_id": "123",
+            "operation_status": operation_status,
+        },
+    ).prepare()
+
+    with pytest.raises(PermissionError, match="DISABLE"):
+        recorder._guard(request, "tiktok", json.loads(request.body))
+
+
+def test_google_customer_mutate_requires_paused_campaign_operations(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {
+        "case_id": "google-status",
+        "provider": "google-ads",
+        "account": "123",
+    }
+    request = requests.Request(
+        "POST",
+        "https://googleads.googleapis.com/v24/customers/123/googleAds:mutate",
+        json={"mutateOperations": [{
+            "campaignOperation": {
+                "create": {"campaignName": "test", "status": "ENABLED"}
+            }
+        }]},
+    ).prepare()
+
+    with pytest.raises(PermissionError, match="PAUSED"):
+        recorder._guard(request, "google-ads", json.loads(request.body))
+
+
+def test_google_app_ad_requires_a_previously_read_paused_parent(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    data = {"mutateOperations": [{
+        "adGroupAdOperation": {
+            "create": {
+                "adGroup": "customers/123/adGroups/77",
+                "status": "ENABLED",
+                "ad": {"appAd": {"headlines": [{"text": "Install"}]}},
+            }
+        }
+    }]}
+
+    with pytest.raises(PermissionError, match="verified PAUSED parent"):
+        recorder._guard_google(
+            data,
+            "/v24/customers/123/googleAds:mutate",
+        )
+
+    recorder._capture_google_ad_group_statuses(
+        {"results": [{"adGroup": {"id": "77", "status": "PAUSED"}}]}
+    )
+    assert recorder.paused_ad_groups == {"77"}
+    recorder._guard_google(
+        data,
+        "/v24/customers/123/googleAds:mutate",
+    )
 
 
 def test_service_restart_reuses_private_persistence_directory(tmp_path):
@@ -205,12 +330,12 @@ def test_write_success_requires_real_mutation_transport_evidence():
             ]
         },
     }
-    reads = [{"method": "GET", "path": "/v19.0/123", "http_status": 200}]
+    reads = [{"method": "GET", "path": "/v25.0/123", "http_status": 200}]
     assert classify_evidence(case, reads, write=True) == "no_provider_evidence"
     assert (
         classify_evidence(
             case,
-            [{"method": "POST", "path": "/v19.0/123", "http_status": 200}],
+            [{"method": "POST", "path": "/v25.0/123", "http_status": 200}],
             write=True,
         )
         == "verified"
@@ -300,6 +425,38 @@ def test_successful_transport_does_not_hide_an_unchanged_requested_name():
     checks = readback_checks(read, "123", {"name": "new", "status": 0})
     assert checks["name"]["passed"] is False
     assert checks["status"]["passed"] is True
+
+
+def test_report_ignores_non_case_json_artifacts(tmp_path, capsys):
+    from scripts.advertising.campaign_service_e2e import report
+
+    cases = tmp_path / "cases"
+    cases.mkdir()
+    (tmp_path / "provider-http.jsonl").write_text("", encoding="utf-8")
+    (cases / "created-resource-ids.json").write_text(
+        json.dumps({"resources": ["campaign-1"]}), encoding="utf-8"
+    )
+    (cases / "valid-case.json").write_text(
+        json.dumps({
+            "provider": "meta",
+            "tool": "meta_list_campaigns",
+            "params": {},
+            "response": {
+                "results": [{
+                    "tool": "meta_list_campaigns",
+                    "success": True,
+                    "data": {"campaigns": []},
+                }],
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    report(tmp_path)
+
+    document = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert [case["case_id"] for case in document["cases"]] == ["valid-case"]
+    assert "1" in capsys.readouterr().out
 
 
 def test_ad_readback_checks_the_real_creative_reference():

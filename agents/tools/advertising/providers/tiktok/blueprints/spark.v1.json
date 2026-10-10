@@ -45,7 +45,6 @@
     {"path": "ad.ad_name", "tool_ref": "tiktok_create_all_in_one_spark_ad.ad_name", "label": "广告名称", "required": true},
     {"path": "ad.identity_type", "tool_ref": "tiktok_create_all_in_one_spark_ad.identity_type", "label": "广告身份类型", "required": true, "source": "enum", "options": ["AUTH_CODE", "TT_USER", "BC_AUTH_TT"]},
     {"path": "ad.identity_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.identity_id", "label": "广告身份", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_identities"},
-    {"path": "ad.identity_authorized_bc_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.identity_authorized_bc_id", "label": "Business Center ID", "required_when": {"field": "ad.identity_type", "equals": "BC_AUTH_TT"}},
     {"path": "ad.tiktok_item_id", "tool_ref": "tiktok_create_all_in_one_spark_ad.tiktok_item_id", "label": "已授权 TikTok 帖子", "required": true},
     {"path": "ad.call_to_action", "tool_ref": "tiktok_create_all_in_one_spark_ad.call_to_action", "label": "行动号召", "required_when": {"field": "ad_group.optimization_goal", "in": ["PAGE_VISIT"]}},
     {"path": "ad.landing_page_url", "tool_ref": "tiktok_create_all_in_one_spark_ad.landing_page_url", "label": "落地页链接", "required_when": {"field": "ad_group.optimization_goal", "in": ["PAGE_VISIT"]}}

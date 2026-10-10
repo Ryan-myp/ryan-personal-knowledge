@@ -6,8 +6,8 @@
   "title": "Google Shopping 广告",
   "description": "按 Google Shopping 类型配置 Merchant Center、商品广告组和商品分组。",
   "selector": {"dimension": "ad_format", "field": "campaign.advertising_channel_type", "values": ["SHOPPING"], "label": "Google 广告系列类型", "options": [{"value": "SHOPPING", "label": "购物"}]},
-  "tools": ["google_create_campaign", "google_create_ad_group", "google_create_product_group"],
-  "resources": ["campaign", "ad_group", "product_group"],
+  "tools": ["google_create_campaign", "google_create_ad_group", "google_create_product_group", "google_create_shopping_product_ad"],
+  "resources": ["campaign", "ad_group", "product_group", "ad"],
   "fields": [
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
     {"path": "campaign.contains_eu_political_advertising", "tool_ref": "google_create_campaign.contains_eu_political_advertising", "label": "欧盟政治广告声明", "required": true, "source": "enum", "options": ["DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING", "CONTAINS_EU_POLITICAL_ADVERTISING"]},
@@ -24,7 +24,9 @@
     {"path": "product_group.product_group_type", "tool_ref": "google_create_product_group.product_group_type", "label": "商品分组维度", "required": true, "source": "enum", "options": ["all_products", "product_type_1", "brand", "condition", "custom_label_0"]},
     {"path": "product_group.partition_type", "tool_ref": "google_create_product_group.partition_type", "label": "分组方式", "required": true, "source": "enum", "options": ["UNIT", "SUBDIVISION"]}
     ,{"path": "product_group.cpc_bid_micros", "tool_ref": "google_create_product_group.cpc_bid_micros", "label": "商品分组 CPC（微单位；UNIT 必填）", "required_when": {"field": "product_group.partition_type", "equals": "UNIT"}, "source": "tool_schema"},
-    {"path": "product_group.status", "tool_ref": "google_create_product_group.status", "label": "商品分组状态", "required": false, "source": "enum", "options": ["PAUSED", "ENABLED"], "default": "PAUSED"}
+    {"path": "product_group.status", "tool_ref": "google_create_product_group.status", "label": "商品分组状态", "required": false, "source": "enum", "options": ["PAUSED", "ENABLED"], "default": "PAUSED"},
+    {"path": "ad.name", "tool_ref": "google_create_shopping_product_ad.name", "label": "商品广告名称", "required": true},
+    {"path": "ad.status", "tool_ref": "google_create_shopping_product_ad.status", "label": "广告状态（受控创建固定暂停）", "required": true, "source": "enum", "options": ["PAUSED"], "default": "PAUSED"}
   ],
   "rules": [{"id": "bidding_strategy_changed", "when": {"field": "campaign.bidding_strategy", "changed": true}, "reset": ["campaign.target_roas"]}]
 }

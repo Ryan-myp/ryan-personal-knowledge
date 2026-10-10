@@ -1851,7 +1851,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         query = f"""
             SELECT campaign.id, ad_group.id, ad_group_ad.ad.id,
                    ad_group_ad.ad.resource_name, ad_group_ad.ad.name,
-                   ad_group_ad.status
+                   ad_group_ad.ad.type, ad_group_ad.status
             FROM ad_group_ad
             {where}
             LIMIT {page_size}
@@ -1879,6 +1879,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'resourceName', ad.get('resourceName')
             ),
             'name': ad.get('name'),
+            'ad_type': ad.get('type'),
             'status': association.get('status'),
         }
 
@@ -3140,7 +3141,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
                    ad_group_ad.ad.responsive_search_ad.headlines,
                    ad_group_ad.ad.responsive_search_ad.descriptions,
                    ad_group_ad.ad.responsive_search_ad.path1,
-                   ad_group_ad.ad.responsive_search_ad.path2
+                   ad_group_ad.ad.responsive_search_ad.path2,
+                   ad_group_ad.ad.app_ad.headlines,
+                   ad_group_ad.ad.app_ad.descriptions,
+                   ad_group_ad.ad.app_ad.images,
+                   ad_group_ad.ad.app_ad.youtube_videos,
+                   ad_group_ad.ad.app_ad.html5_media_bundles
             FROM ad_group_ad
             WHERE ad_group_ad.ad.id = {numeric_ad_id}
         """
@@ -3164,6 +3170,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'ad_type': ad.get('type'),
                 'final_urls': ad.get('finalUrls', []),
                 'responsive_search_ad': ad.get('responsiveSearchAd'),
+                'app_ad': ad.get('appAd'),
             }
         raise APIError(f"Google ad {raw_ad_id} was not found")
     
@@ -4716,11 +4723,21 @@ class GoogleAdsAPIClient(BasePlatformClient):
         if not isinstance(descriptions, list) or not 2 <= len(descriptions) <= 5:
             raise ValueError("App Ad requires 2 to 5 descriptions")
         status = str(status or "PAUSED").upper()
-        if status not in {"PAUSED", "ENABLED"}:
-            raise ValueError("status must be PAUSED or ENABLED")
+        if status != "PAUSED":
+            raise ValueError("App Ad creation must request PAUSED status")
+        provider_status = "ENABLED"
+        delivery_guard = {
+            "resource": "ad_group",
+            "required_status": "PAUSED",
+        }
 
         if live:
             customer = self._numeric_id(self.customer_id, "customer_id")
+            parent_group = self.get_ad_group(ad_group_id)
+            if str(parent_group.get("status") or "").upper() != "PAUSED":
+                raise ValueError(
+                    "Google App Ad creation requires the parent Ad Group must be PAUSED"
+                )
             app_ad: dict[str, Any] = {
                 "headlines": [
                     self._app_text_asset(item, "headline") for item in headlines
@@ -4743,14 +4760,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
                         )}
                         for item in values
                     ]
-            # Google does not allow an AppAd association to be PAUSED. The
-            # enclosing App Campaign and Ad Group remain PAUSED, so the
-            # hierarchy is still inactive while the provider-valid ad status
-            # is ENABLED.
-            ad_status = "ENABLED" if status == "PAUSED" else status
             response = self._mutate("adGroupAds", {"create": {
                 "adGroup": f"customers/{customer}/adGroups/{ad_group_id}",
-                "status": ad_status,
+                "status": provider_status,
                 "ad": {"name": str(name).strip(), "appAd": app_ad},
             }})
             resource_name = self._mutation_resource_name(response)
@@ -4760,7 +4772,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "mode": "live", "execution_status": "executed", "live_support": True,
                 "ad_resource_name": resource_name,
                 "ad_id": resource_name.rsplit("~", 1)[-1],
-                "ad_group_id": ad_group_id, "status": ad_status,
+                "ad_group_id": ad_group_id, "status": provider_status,
+                "requested_status": status,
+                "delivery_guard": delivery_guard,
             }
 
         app_ad: dict[str, Any] = {
@@ -4786,7 +4800,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "create": {
                     "resourceName": ad_resource_name,
                     "adGroup": f"customers/{customer}/adGroups/{ad_group_id}",
-                    "status": status,
+                    "status": provider_status,
                     "ad": {
                         "name": str(name).strip(),
                         "appAd": app_ad,
@@ -4801,9 +4815,50 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "execution_status": "planned",
             "mode": "dry_run",
             "live_support": True,
+            "delivery_guard": delivery_guard,
         }
     
     # ==================== Ad 管理 ====================
+
+    def create_shopping_product_ad(
+        self,
+        ad_group_id: str,
+        name: str,
+        status: str = "PAUSED",
+        live: bool = False,
+    ) -> str | dict[str, Any]:
+        """Create a Google Shopping product AdGroupAd."""
+        ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
+        name = str(name or "").strip()
+        if not name:
+            raise ValueError("name is required")
+        status = str(status or "PAUSED").upper()
+        if status not in {"PAUSED", "ENABLED"}:
+            raise ValueError("status must be PAUSED or ENABLED")
+        if live and status != "PAUSED":
+            raise ValueError(
+                "Google live Shopping Ad creation only allows PAUSED status"
+            )
+
+        create = {
+            "adGroup": f"customers/{self.customer_id}/adGroups/{ad_group_id}",
+            "status": status,
+            "ad": {"name": name, "shoppingProductAd": {}},
+        }
+        if not live:
+            return {
+                "mode": "dry_run",
+                "execution_status": "planned",
+                "live_support": True,
+                "ad_id": f"customers/{self.customer_id}/adGroupAds/-1~-1",
+                "operation": {"adGroupAds": {"create": create}},
+            }
+
+        response = self._mutate("adGroupAds", {"create": create})
+        resource_name = self._mutation_resource_name(response)
+        if not resource_name:
+            raise APIError(f"Shopping Ad mutate returned no resource name: {response}")
+        return str(resource_name.rsplit("/", 1)[-1])
     
     def create_search_ad(
         self,

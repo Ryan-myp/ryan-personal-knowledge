@@ -115,6 +115,8 @@ class TikTokAPIClient(BasePlatformClient):
         self.access_token = self.credentials.get('access_token', '')
         # 速率限制: 100次/分钟
         self._rate_limiter = RateLimiter(max_requests=100, period=60)
+        self._catalog_authorization: dict[tuple[str, str], str] = {}
+        self._identity_authorization: dict[tuple[str, str, str], str] = {}
 
     @staticmethod
     def _normalize_status(value: Any) -> int:
@@ -156,6 +158,110 @@ class TikTokAPIClient(BasePlatformClient):
         if isinstance(payload, dict) and isinstance(payload.get("data"), dict):
             return payload["data"]
         return payload
+
+    @staticmethod
+    def _is_private_business_center_field(key: Any) -> bool:
+        normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+        return (
+            normalized in {"bcinfo", "bcid", "businesscenterid", "authorizedbcid"}
+            or normalized.endswith("authorizedbcid")
+            or normalized.endswith("businesscenterid")
+        )
+
+    @classmethod
+    def _public_provider_data(cls, value: Any) -> Any:
+        """Remove Business Center authorization metadata from provider reads."""
+        if isinstance(value, dict):
+            return {
+                key: cls._public_provider_data(item)
+                for key, item in value.items()
+                if not cls._is_private_business_center_field(key)
+            }
+        if isinstance(value, list):
+            return [cls._public_provider_data(item) for item in value]
+        return value
+
+    @classmethod
+    def _contains_private_business_center_field(cls, value: Any) -> bool:
+        if isinstance(value, dict):
+            return any(
+                cls._is_private_business_center_field(key)
+                or cls._contains_private_business_center_field(item)
+                for key, item in value.items()
+            )
+        if isinstance(value, list):
+            return any(cls._contains_private_business_center_field(item) for item in value)
+        return False
+
+    @staticmethod
+    def _business_center_value(record: Any) -> Optional[str]:
+        if not isinstance(record, dict):
+            return None
+        bc_info = record.get("bc_info")
+        if not isinstance(bc_info, dict):
+            bc_info = {}
+        value = (
+            record.get("catalog_authorized_bc_id")
+            or record.get("identity_authorized_bc_id")
+            or record.get("authorized_bc_id")
+            or record.get("bc_id")
+            or record.get("business_center_id")
+            or bc_info.get("bc_id")
+            or bc_info.get("business_center_id")
+        )
+        return str(value).strip() if value not in (None, "") else None
+
+    def _resolve_catalog_authorization(
+        self, advertiser_id: str, catalog_id: str
+    ) -> str:
+        key = (str(advertiser_id), str(catalog_id))
+        cached = self._catalog_authorization.get(key)
+        if cached:
+            return cached
+        self.list_catalogs(
+            key[0],
+            filtering=[{
+                "field": "CATALOG_IDS",
+                "operator": "IN",
+                "values": [key[1]],
+            }],
+            page_size=100,
+        )
+        cached = self._catalog_authorization.get(key)
+        if not cached:
+            raise ValueError(
+                "Selected catalog is unavailable for the current advertiser"
+            )
+        return cached
+
+    def _resolve_identity_authorization(
+        self, advertiser_id: str, identity_type: str, identity_id: str
+    ) -> str:
+        key = (str(advertiser_id), str(identity_type).upper(), str(identity_id))
+        cached = self._identity_authorization.get(key)
+        if cached:
+            return cached
+        identities = self.list_identities(
+            key[0], key[1], page_size=100
+        )
+        cached = self._identity_authorization.get(key)
+        if cached:
+            return cached
+        for identity in identities:
+            if (
+                isinstance(identity, dict)
+                and str(identity.get("identity_id") or identity.get("id") or "")
+                == key[2]
+                and str(identity.get("available_status") or "").upper()
+                == "AVAILABLE"
+            ):
+                value = self._business_center_value(identity)
+                if value:
+                    self._identity_authorization[key] = value
+                    return value
+        raise ValueError(
+            "Selected identity is unavailable or not authorized for this advertiser"
+        )
 
     @staticmethod
     def _encode_filtering(filtering: Any, *, id_field: Optional[str] = None) -> Optional[str]:
@@ -995,13 +1101,14 @@ class TikTokAPIClient(BasePlatformClient):
                 in wanted_ad_ids
             )
 
-        return self._list_pages(
+        rows = self._list_pages(
             'ad/get/',
             data,
             max_pages=1 if wanted_ad_ids else 100,
             max_items=max_results,
             item_filter=matches_requested_ad,
         )
+        return self._public_provider_data(rows)
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
         """Get one Ad through an exact, bounded provider query."""
@@ -1085,17 +1192,18 @@ class TikTokAPIClient(BasePlatformClient):
         if ad.get('ad_text') and not creative.get('ad_text'):
             creative['ad_text'] = ad['ad_text']
 
-        if "identity_authorized_bc_id" in ad or "identity_authorized_bc_id" in creative:
-            raise ValueError("BC authorization is resolved privately by the Provider")
+        if self._contains_private_business_center_field(ad):
+            raise ValueError(
+                "Provider authorization context is resolved privately by the client"
+            )
         if live and creative.get("identity_type") == "BC_AUTH_TT":
-            identity = next((
-                item for item in self.list_identities(advertiser_id, "BC_AUTH_TT", page_size=100)
-                if str(item.get("identity_id") or "") == str(creative.get("identity_id") or "")
-                and item.get("available_status") == "AVAILABLE"
-            ), None)
-            if not identity or not identity.get("identity_authorized_bc_id"):
-                raise ValueError("selected BC identity is not authorized for this advertiser")
-            creative["identity_authorized_bc_id"] = identity["identity_authorized_bc_id"]
+            creative["identity_authorized_bc_id"] = (
+                self._resolve_identity_authorization(
+                    advertiser_id,
+                    "BC_AUTH_TT",
+                    str(creative.get("identity_id") or ""),
+                )
+            )
 
         data = {
             'advertiser_id': str(advertiser_id),
@@ -1549,6 +1657,10 @@ class TikTokAPIClient(BasePlatformClient):
         """Create an Upgraded Smart+ ad group using the current endpoint."""
         if not isinstance(adgroup, dict):
             raise ValueError("TikTok Smart+ ad group payload must be an object")
+        if self._contains_private_business_center_field(adgroup):
+            raise ValueError(
+                "Provider authorization context is resolved privately by the client"
+            )
         adgroup = {**adgroup, "request_id": str(adgroup.get("request_id") or time.time_ns())}
         if live and self._smart_plus_status(adgroup) != "DISABLE":
             raise ValueError("TikTok Smart+ live creation only allows a paused ad group")
@@ -1602,11 +1714,21 @@ class TikTokAPIClient(BasePlatformClient):
                 raise ValueError("LEAD_GENERATION requires a lead promotion_type")
             if adgroup.get("promotion_target_type") in (None, ""):
                 raise ValueError("LEAD_GENERATION requires promotion_target_type")
-        if adgroup.get("catalog_id") not in (None, "", []):
-            if adgroup.get("catalog_authorized_bc_id") in (None, "", []):
-                raise ValueError(
-                    "Catalog Ads require catalog_authorized_bc_id from the selected catalog"
-                )
+        catalog_authorization = None
+        if adgroup.get("catalog_id") not in (None, "", []) and live:
+            catalog_authorization = self._resolve_catalog_authorization(
+                advertiser_id, str(adgroup["catalog_id"])
+            )
+        identity_authorization = None
+        if (
+            live
+            and str(adgroup.get("identity_type") or "").upper() == "BC_AUTH_TT"
+        ):
+            identity_authorization = self._resolve_identity_authorization(
+                advertiser_id,
+                "BC_AUTH_TT",
+                str(adgroup.get("identity_id") or ""),
+            )
         if (
             public_objective in {"SALES", "PRODUCT_SALES", "WEB_CONVERSIONS"}
             and str(adgroup.get("promotion_type") or "").upper() == "WEBSITE"
@@ -1651,12 +1773,11 @@ class TikTokAPIClient(BasePlatformClient):
 
         wire_fields = {
             "request_id", "operation_status", "adgroup_name", "catalog_id", "product_set_id",
-            "catalog_authorized_bc_id",
             "promotion_type", "promotion_target_type", "optimization_goal", "optimization_event",
             "app_attribution_source", "app_data_source", "app_id", "bid_type", "bid_price",
             "conversion_bid_price", "deep_bid_type", "roas_bid", "billing_event", "budget_mode",
             "budget", "schedule_type", "schedule_start_time", "schedule_end_time", "frequency",
-            "identity_type", "identity_id", "identity_authorized_bc_id",
+            "identity_type", "identity_id",
             "pixel_id", "tracking_pixel_id",
         }
         data = {"advertiser_id": str(advertiser_id), "campaign_id": str(campaign_id)}
@@ -1664,6 +1785,10 @@ class TikTokAPIClient(BasePlatformClient):
             key: value for key, value in adgroup.items()
             if key in wire_fields and value not in (None, "", [])
         })
+        if catalog_authorization:
+            data["catalog_authorized_bc_id"] = catalog_authorization
+        if identity_authorization:
+            data["identity_authorized_bc_id"] = identity_authorization
         data["targeting_spec"] = targeting_spec
         data["operation_status"] = self._smart_plus_status(adgroup)
         if not live:
@@ -1681,7 +1806,7 @@ class TikTokAPIClient(BasePlatformClient):
         response = self._smart_plus_response(result, "adgroup")
         if not response.get("adgroup_id"):
             raise APIError("TikTok Smart+ ad group response missing adgroup_id")
-        return response
+        return self._public_provider_data(response)
 
     def create_smart_plus_ad(
         self, advertiser_id: str, campaign_id: str, adgroup_id: str,
@@ -1697,6 +1822,10 @@ class TikTokAPIClient(BasePlatformClient):
         """
         if not isinstance(ad, dict):
             raise ValueError("TikTok Smart+ ad payload must be an object")
+        if self._contains_private_business_center_field(ad):
+            raise ValueError(
+                "Provider authorization context is resolved privately by the client"
+            )
         ad = {**ad, "request_id": str(ad.get("request_id") or time.time_ns())}
         if live and self._smart_plus_status(ad) != "DISABLE":
             raise ValueError("TikTok Smart+ live creation only allows a paused ad")
@@ -1709,7 +1838,7 @@ class TikTokAPIClient(BasePlatformClient):
                 key: ad[key]
                 for key in (
                     "ad_format", "tiktok_item_id", "identity_type", "identity_id",
-                    "identity_authorized_bc_id", "music_info", "aigc_disclosure_type",
+                    "music_info", "aigc_disclosure_type",
                 )
                 if ad.get(key) not in (None, "", [])
             }
@@ -1789,9 +1918,13 @@ class TikTokAPIClient(BasePlatformClient):
             identity_type = str(creative_info.get("identity_type") or "").upper()
             if identity_type in {"TT_USER", "BC_AUTH_TT", "AUTH_CODE"} and not creative_info.get("identity_id"):
                 raise ValueError("TikTok Smart+ creative_info requires identity_id")
-            if identity_type == "BC_AUTH_TT" and not creative_info.get("identity_authorized_bc_id"):
-                raise ValueError(
-                    "TikTok Smart+ creative_info requires identity_authorized_bc_id for BC_AUTH_TT"
+            if identity_type == "BC_AUTH_TT" and live:
+                creative_info["identity_authorized_bc_id"] = (
+                    self._resolve_identity_authorization(
+                        advertiser_id,
+                        identity_type,
+                        str(creative_info.get("identity_id") or ""),
+                    )
                 )
             normalized_creative_list.append({"creative_info": creative_info})
         creative_list = normalized_creative_list
@@ -1838,9 +1971,19 @@ class TikTokAPIClient(BasePlatformClient):
         # identity is present in ``creative_info``.  Keep this translation at
         # the TikTok boundary so the public creation-card contract remains
         # flat and provider-neutral.
-        for key in ("identity_type", "identity_id", "identity_authorized_bc_id"):
+        for key in ("identity_type", "identity_id"):
             if ad.get(key) not in (None, ""):
                 configuration.setdefault(key, ad[key])
+        identity_authorization = next(
+            (
+                item["creative_info"].get("identity_authorized_bc_id")
+                for item in creative_list
+                if item["creative_info"].get("identity_authorized_bc_id")
+            ),
+            None,
+        )
+        if identity_authorization:
+            configuration["identity_authorized_bc_id"] = identity_authorization
         tracking = dict(configuration.get("tracking_info") or {})
         for key in ("tracking_app_id", "click_tracking_url", "impression_tracking_url"):
             if ad.get(key) not in (None, ""):
@@ -1964,7 +2107,7 @@ class TikTokAPIClient(BasePlatformClient):
         response = self._smart_plus_response(result, "ad")
         if not response.get("smart_plus_ad_id") and not response.get("ad_id"):
             raise APIError("TikTok Smart+ ad response missing smart_plus_ad_id")
-        return response
+        return self._public_provider_data(response)
 
     def _update_smart_plus(
         self, resource: str, advertiser_id: str, resource_id: str, updates: dict[str, Any],
@@ -2045,6 +2188,10 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("TikTok all-in-one Spark Ads payload must be an object")
 
         normalized = dict(payload)
+        if self._contains_private_business_center_field(normalized):
+            raise ValueError(
+                "Provider authorization context is resolved privately by the client"
+            )
         if live and self._smart_plus_status(normalized) != "DISABLE":
             raise ValueError("TikTok Spark live creation only allows paused resources")
         objective = str(normalized.get("objective_type") or "").upper()
@@ -2139,11 +2286,15 @@ class TikTokAPIClient(BasePlatformClient):
                 "landing_page_url is required when call_to_action is specified"
             )
 
-        if str(normalized.get("identity_type") or "").upper() == "BC_AUTH_TT" and not normalized.get(
-            "identity_authorized_bc_id"
+        identity_authorization = None
+        if (
+            live
+            and str(normalized.get("identity_type") or "").upper() == "BC_AUTH_TT"
         ):
-            raise ValueError(
-                "identity_type=BC_AUTH_TT requires identity_authorized_bc_id"
+            identity_authorization = self._resolve_identity_authorization(
+                advertiser_id,
+                "BC_AUTH_TT",
+                str(normalized.get("identity_id") or ""),
             )
 
         # Do not forward Runtime-only fields or silently pass arbitrary input
@@ -2155,7 +2306,7 @@ class TikTokAPIClient(BasePlatformClient):
             "schedule_type", "schedule_start_time", "schedule_end_time",
             "optimization_goal", "frequency", "frequency_schedule", "bid_type",
             "bid_price", "conversion_bid_price", "ad_name", "identity_type",
-            "identity_id", "identity_authorized_bc_id", "tiktok_item_id",
+            "identity_id", "tiktok_item_id",
             "call_to_action", "landing_page_url",
         }
         data = {"advertiser_id": str(advertiser_id)}
@@ -2163,6 +2314,8 @@ class TikTokAPIClient(BasePlatformClient):
             key: value for key, value in normalized.items()
             if key in wire_fields and value not in (None, "", [])
         })
+        if identity_authorization:
+            data["identity_authorized_bc_id"] = identity_authorization
         if not live:
             return {
                 "mode": "dry_run",
@@ -2184,7 +2337,7 @@ class TikTokAPIClient(BasePlatformClient):
                 raise APIError(
                     f"TikTok all-in-one Spark Ads response missing {resource}"
                 )
-        return payload_data
+        return self._public_provider_data(payload_data)
     
     # ==================== 报表查询 ====================
     
@@ -3026,7 +3179,7 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'ad/get/', params=data)
         payload = self._data_section(result)
         rows = payload.get('list', []) if isinstance(payload, dict) else []
-        return self._limit_list(rows, page_size)
+        return self._public_provider_data(self._limit_list(rows, page_size))
 
     def get_creative(self, advertiser_id: str, creative_id: str) -> dict:
         """Get an Ad-backed logical Creative through the official Ad Get API."""
@@ -3699,7 +3852,20 @@ class TikTokAPIClient(BasePlatformClient):
                 payload.get("identity_list", payload.get("list", payload.get("identities", [])))
                 if isinstance(payload, dict) else []
             )
-        return self._limit_list(rows, page_size)
+        public_rows = []
+        identity_scope = str(identity_type or "").upper()
+        for row in self._limit_list(rows, page_size):
+            if not isinstance(row, dict):
+                continue
+            identity_id = str(row.get("identity_id") or row.get("id") or "").strip()
+            authorization = self._business_center_value(row)
+            if identity_id and authorization:
+                scope = identity_scope or str(row.get("identity_type") or "").upper()
+                self._identity_authorization[
+                    (advertiser_id, scope, identity_id)
+                ] = authorization
+            public_rows.append(self._public_provider_data(row))
+        return public_rows
 
     def get_identity(self, advertiser_id: str, identity_id: str) -> dict:
         """Get one advertiser identity through the existing identity/get endpoint."""
@@ -3786,21 +3952,21 @@ class TikTokAPIClient(BasePlatformClient):
         result = self.request('GET', 'catalog/get/', params=data)
         payload = self._data_section(result)
         catalogs = payload.get('list', []) if isinstance(payload, dict) else []
-        # Catalog Ads require the owning Business Center in addition to the
-        # catalog ID. TikTok returns it nested under ``bc_info``; expose a
-        # stable provider-owned alias for the creation-card picker.
+        # Keep authorization metadata in this Provider client's private cache;
+        # the lookup result itself is safe to pass to the model and UI.
         normalized = []
         for catalog in catalogs:
             if not isinstance(catalog, dict):
                 continue
-            item = dict(catalog)
-            bc_info = item.get("bc_info")
-            if isinstance(bc_info, dict):
-                bc_id = bc_info.get("bc_id") or bc_info.get("business_center_id")
-                if bc_id not in (None, ""):
-                    item.setdefault("catalog_authorized_bc_id", str(bc_id))
-                    item.setdefault("authorized_bc_id", str(bc_id))
-            normalized.append(item)
+            catalog_id = str(
+                catalog.get("catalog_id") or catalog.get("id") or ""
+            ).strip()
+            authorization = self._business_center_value(catalog)
+            if catalog_id and authorization:
+                self._catalog_authorization[
+                    (advertiser_id, catalog_id)
+                ] = authorization
+            normalized.append(self._public_provider_data(catalog))
         return self._limit_list(normalized, page_size)
 
     def get_catalog(self, advertiser_id: str, catalog_id: str) -> dict:
@@ -3858,7 +4024,7 @@ class TikTokAPIClient(BasePlatformClient):
             payload.get("list", payload.get("product_sets", []))
             if isinstance(payload, dict) else []
         )
-        return rows[:limit] if isinstance(rows, list) else []
+        return self._public_provider_data(rows[:limit]) if isinstance(rows, list) else []
 
     def get_product_set(
         self, advertiser_id: str, catalog_id: str, product_set_id: str

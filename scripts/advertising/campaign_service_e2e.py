@@ -53,13 +53,44 @@ def paused_payload(provider, values):
 
 
 def summarize_chat(payload, expected_tool):
-    rows = payload.get("results") or payload.get("data", {}).get("tool_results") or []
+    data = payload.get("data")
+    rows = payload.get("results")
+    if not isinstance(rows, list):
+        rows = data.get("tool_results", []) if isinstance(data, dict) else []
+    rows = [row for row in rows if isinstance(row, dict)]
+    execution_rows = payload.get("tool_results")
+    if not isinstance(execution_rows, list) and isinstance(data, dict):
+        execution_rows = data.get("tool_results")
+    execution_rows = (
+        [row for row in execution_rows if isinstance(row, dict)]
+        if isinstance(execution_rows, list)
+        else rows
+    )
+    coalesced_count = sum(
+        any(
+            bool((row.get("runtime_signals") or {}).get(signal))
+            for signal in (
+                "duplicate_read_coalesced",
+                "duplicate_write_coalesced",
+            )
+        )
+        for row in execution_rows
+    )
+    raw_tool_call_count = payload.get("tool_call_count")
+    model_tool_call_count = (
+        raw_tool_call_count
+        if isinstance(raw_tool_call_count, int) and raw_tool_call_count >= 0
+        else len(execution_rows)
+    )
+    effective_execution_count = max(
+        0, len(execution_rows) - coalesced_count
+    )
     matched = [
         row
         for row in rows
         if (row.get("tool_name") or row.get("tool") or row.get("name")) == expected_tool
     ]
-    passed = any(
+    succeeded = any(
         (row.get("result") or row).get("success") is True
         and not (row.get("result") or row).get("simulated")
         and not any(
@@ -71,10 +102,27 @@ def summarize_chat(payload, expected_tool):
         )
         for row in matched
     )
+    unexpected_tools = [
+        str(row.get("tool_name") or row.get("tool") or row.get("name") or "")
+        for row in rows
+        if (row.get("tool_name") or row.get("tool") or row.get("name"))
+        != expected_tool
+    ]
+    passed = (
+        len(rows) == 1
+        and len(matched) == 1
+        and succeeded
+        and model_tool_call_count == len(execution_rows)
+        and effective_execution_count == 1
+    )
     return {
         "passed": passed,
         "status": payload.get("status"),
         "matched_results": matched,
+        "unexpected_tools": unexpected_tools,
+        "model_tool_call_count": model_tool_call_count,
+        "coalesced_call_count": coalesced_count,
+        "effective_execution_count": effective_execution_count,
     }
 
 
@@ -248,9 +296,21 @@ def report(directory):
         if line.strip()
     ]
     cases = []
-    documents = [
-        (path, json.loads(path.read_text())) for path in (root / "cases").glob("*.json")
-    ]
+    documents = []
+    for path in (root / "cases").glob("*.json"):
+        try:
+            case = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (
+            not isinstance(case, dict)
+            or case.get("provider") not in PROVIDERS
+            or case.get("tool") not in definitions
+            or not isinstance(case.get("params"), dict)
+            or not isinstance(case.get("response"), dict)
+        ):
+            continue
+        documents.append((path, case))
     completion_times = {path: path.stat().st_mtime for path, _ in documents}
     events_by_case = {}
     for event in events:
@@ -271,6 +331,9 @@ def report(directory):
             "case_id": path.stem,
             "provider": case["provider"],
             "tool": case["tool"],
+            "account": case.get("account"),
+            "blueprint_id": case.get("blueprint_id"),
+            "blueprint_version": case.get("blueprint_version"),
             "resource": tool.resource_type if tool else None,
             "action": tool.action if tool else None,
             "outcome": outcome,
@@ -548,6 +611,16 @@ def _walk(value):
             yield from _walk(item)
 
 
+def _walk_with_keys(value, parents=()):
+    if isinstance(value, dict):
+        yield value, parents
+        for key, item in value.items():
+            yield from _walk_with_keys(item, (*parents, str(key)))
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_with_keys(item, parents)
+
+
 class ProviderRecorder:
     """Observe real transport, with extra safety restrictions for this test deployment."""
 
@@ -558,6 +631,7 @@ class ProviderRecorder:
         self.created = (
             set(json.loads(owned_path.read_text())) if owned_path.is_file() else set()
         )
+        self.paused_ad_groups = set()
         self.lock = threading.RLock()
         self.original = requests.Session.send
 
@@ -585,10 +659,6 @@ class ProviderRecorder:
             raise PermissionError("Provider request outside the test account")
         if request.method != "POST":
             return
-        for node in _walk(data):
-            for field in ("status", "operation_status"):
-                if str(node.get(field, "")).upper() in {"ENABLED", "ENABLE", "ACTIVE"}:
-                    raise PermissionError("test resources must not be activated")
         if provider == "meta" and path.rstrip("/").endswith(
             ("/campaigns", "/adsets", "/ads")
         ):
@@ -596,6 +666,9 @@ class ProviderRecorder:
                 raise PermissionError("Meta creation must explicitly be PAUSED")
         if provider == "google-ads":
             self._guard_google(data, path)
+        if provider == "tiktok" and "/create/" in path:
+            if str(data.get("operation_status") or "").upper() != "DISABLE":
+                raise PermissionError("TikTok creation must explicitly be DISABLE")
         if provider == "meta" and re.fullmatch(r"/v[\d.]+/\d+/?", path):
             if path.rstrip("/").rsplit("/", 1)[-1] not in self.created:
                 raise PermissionError("update is not a resource created by this test")
@@ -603,14 +676,54 @@ class ProviderRecorder:
             self._guard_tiktok_update(data)
 
     def _guard_google(self, data, path):
-        serving = any(
-            name in path
-            for name in ("campaigns:", "adGroups:", "adGroupAds:", "assetGroups:")
-        )
-        for node in _walk(data):
-            if serving and isinstance(node.get("create"), dict):
-                if node["create"].get("status") != "PAUSED":
-                    raise PermissionError("Google creation must explicitly be PAUSED")
+        serving_resources = {
+            "campaigns": "Campaign",
+            "adGroups": "Ad Group",
+            "adGroupAds": "Ad",
+            "assetGroups": "Asset Group",
+        }
+        operation_resources = {
+            "campaignOperation": "campaigns",
+            "adGroupOperation": "adGroups",
+            "adGroupAdOperation": "adGroupAds",
+            "assetGroupOperation": "assetGroups",
+        }
+        path_resource = path.rsplit("/", 1)[-1].split(":", 1)[0]
+        for node, parents in _walk_with_keys(data):
+            create = node.get("create")
+            if isinstance(create, dict):
+                resource = path_resource
+                if resource == "googleAds":
+                    resource = next(
+                        (
+                            operation_resources[item]
+                            for item in reversed(parents)
+                            if item in operation_resources
+                        ),
+                        "",
+                    )
+                label = serving_resources.get(resource)
+                ad = create.get("ad")
+                is_app_ad = isinstance(ad, dict) and isinstance(
+                    ad.get("appAd") or ad.get("app_ad"),
+                    dict,
+                )
+                if is_app_ad:
+                    parent = str(create.get("adGroup") or "")
+                    match = re.search(r"/adGroups/(\d+)$", parent)
+                    if (
+                        str(create.get("status") or "").upper() != "ENABLED"
+                        or match is None
+                        or match.group(1) not in self.paused_ad_groups
+                    ):
+                        raise PermissionError(
+                            "Google App Ad requires a verified PAUSED parent Ad Group"
+                        )
+                    continue
+                if label and str(create.get("status") or "").upper() != "PAUSED":
+                    raise PermissionError(
+                        f"Google {label} creation must explicitly be PAUSED"
+                    )
             update = node.get("update")
             if isinstance(update, dict):
                 resource = update.get("resourceName", "")
@@ -660,6 +773,8 @@ class ProviderRecorder:
             document = response.json()
         except ValueError:
             document = {}
+        if provider == "google-ads":
+            self._capture_google_ad_group_statuses(document)
         path = urlsplit(request.url).path
         creates = (
             "/create/" in path
@@ -737,6 +852,17 @@ class ProviderRecorder:
                     self.created.update(str(item) for item in value)
         _json_write(self.root / "created-resource-ids.json", sorted(self.created))
 
+    def _capture_google_ad_group_statuses(self, document):
+        for node in _walk(document):
+            group = node.get("adGroup") or node.get("ad_group")
+            if not isinstance(group, dict) or group.get("id") is None:
+                continue
+            group_id = str(group["id"])
+            if str(group.get("status") or "").upper() == "PAUSED":
+                self.paused_ad_groups.add(group_id)
+            else:
+                self.paused_ad_groups.discard(group_id)
+
 
 def serve(directory, port):
     import uvicorn
@@ -773,8 +899,8 @@ def chat(directory, provider, tool, params, case_id, write=False):
     }
     body = {
         "user_input": (
-            f"这是受控测试。仅使用 {provider} 测试账户 {account}。请执行工具 {tool} 一次，"
-            "不得执行其他渠道工具，不得启用广告。严格原样使用下方 JSON 作为工具参数，"
+            f"这是受控测试。仅使用 {provider} 测试账户 {account}。请只调用工具 {tool} 一次，"
+            "不得调用任何其他 Tool，不得启用广告。严格原样使用下方 JSON 作为工具参数，"
             "不能额外添加 JSON 里没有的字段（尤其 customer_id、account_id）；账户范围已由请求上下文提供。"
             "账号所有者已授权本轮暂停资源功能测试。需要确认时先调用工具，让平台返回结构化确认凭证，"
             "不要只用文字询问确认；平台门禁仍必须完整执行。"
@@ -784,9 +910,24 @@ def chat(directory, provider, tool, params, case_id, write=False):
         "session_id": f"qa-{provider}-{case_id}",
         "account_id": account,
         "platform_params": {provider: params},
+        "tool_allowlist": [tool],
         "execution_mode": "live" if write else "dry_run",
     }
-    evidence = {"provider": provider, "tool": tool, "params": params, "phases": []}
+    blueprint_id = params.pop("_e2e_blueprint_id", None)
+    blueprint_version = params.pop("_e2e_blueprint_version", None)
+    if blueprint_id:
+        body["creation_blueprint_id"] = blueprint_id
+    if blueprint_version:
+        body["creation_blueprint_version"] = blueprint_version
+    evidence = {
+        "provider": provider,
+        "account": account,
+        "tool": tool,
+        "blueprint_id": blueprint_id,
+        "blueprint_version": blueprint_version,
+        "params": params,
+        "phases": [],
+    }
     case_path = root / "cases" / f"{case_id}.json"
 
     def request_phase(phase):
@@ -841,17 +982,24 @@ def main():
     parser.add_argument("--params", default="{}")
     parser.add_argument("--case-id", default="probe")
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--blueprint-id")
+    parser.add_argument("--blueprint-version")
     args = parser.parse_args()
     if args.command == "start":
         start(args.directory, args.port)
     elif args.command == "serve":
         serve(args.directory, args.port)
     elif args.command == "chat":
+        params = json.loads(args.params)
+        if args.blueprint_id:
+            params["_e2e_blueprint_id"] = args.blueprint_id
+        if args.blueprint_version:
+            params["_e2e_blueprint_version"] = args.blueprint_version
         chat(
             args.directory,
             args.provider,
             args.tool,
-            json.loads(args.params),
+            params,
             args.case_id,
             args.write,
         )

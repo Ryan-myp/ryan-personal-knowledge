@@ -47,12 +47,12 @@ class _GenericContextExecutor:
     def __init__(self, executor: Any) -> None:
         self.executor = executor
 
-    def execute(self, context: Any, input_data: dict[str, Any]) -> Any:
+    def _tool_context(self, context: Any) -> ToolContext:
         request = context.request
         request_context = (
             request.context if isinstance(request.context, Mapping) else {}
         )
-        ad_context = ToolContext(
+        return ToolContext(
             session_id=str(request.session_id or ""),
             user_id=str(request.user_id or "anonymous"),
             scope={
@@ -69,6 +69,17 @@ class _GenericContextExecutor:
                 "lease_lost_event": request.lease_lost_event,
             },
         )
+
+    def replay_key(
+        self, context: Any, input_data: dict[str, Any],
+    ) -> Any:
+        key_builder = getattr(self.executor, "replay_key", None)
+        if not callable(key_builder):
+            return None
+        return key_builder(self._tool_context(context), dict(input_data))
+
+    def execute(self, context: Any, input_data: dict[str, Any]) -> Any:
+        ad_context = self._tool_context(context)
         execute = getattr(self.executor, "execute", None)
         if callable(execute):
             return execute(ad_context, input_data)

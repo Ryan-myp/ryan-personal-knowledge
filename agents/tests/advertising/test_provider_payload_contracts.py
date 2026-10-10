@@ -10,6 +10,7 @@ from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
 from agents.agent_harness.core.intent import SimpleIntentRouter
+from agents.agent_harness.core.security import sha256_json
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
@@ -1250,7 +1251,8 @@ def test_meta_adset_and_ad_report_tools_allow_account_queries_and_forward_limit(
         ("meta_get_ad_report", "ad_ids"),
     ):
         definition, handler = registered[tool_name]
-        assert definition.input_schema.required == ["account_id"]
+        assert definition.input_schema.required == []
+        assert "account_id" in definition.input_schema.properties
         assert "limit" in definition.input_schema.properties
         assert resource_id_field not in definition.input_schema.required
         result = handler.execute(context, {"limit": 7})
@@ -1928,6 +1930,34 @@ def test_google_customer_client_tool_is_read_only():
     assert tool.input_schema.required == ["customer_id"]
 
 
+def test_google_campaign_list_uses_trusted_account_context_not_tool_parameter():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_tool_source().register_tools()
+    }
+    tool = definitions["google_list_campaigns"]
+
+    assert "customer_id" not in tool.input_schema.required
+    assert "customer_id" in tool.input_schema.properties
+    assert "trusted request context" in (
+        tool.input_schema.properties["customer_id"]["description"]
+    )
+    assert "campaign_id" in tool.input_schema.properties
+
+
+def test_google_asset_reads_take_account_scope_from_runtime_context():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_tool_source().register_tools()
+    }
+    for name in (
+        "google_list_assets",
+        "google_get_asset",
+        "google_list_asset_group_assets",
+    ):
+        assert "customer_id" not in definitions[name].input_schema.required
+
+
 def test_existing_creation_contracts_keep_provider_specific_fixes():
     meta_definitions = {
         definition.name: definition
@@ -2243,9 +2273,10 @@ def test_meta_custom_conversion_management_tools_publish_closed_lifecycle_contra
         "meta_list_custom_conversions", "meta_get_custom_conversion",
         "meta_update_custom_conversion", "meta_delete_custom_conversion",
     } <= definitions.keys()
-    assert definitions["meta_list_custom_conversions"].input_schema.required == [
-        "account_id"
-    ]
+    assert definitions["meta_list_custom_conversions"].input_schema.required == []
+    assert "account_id" in definitions[
+        "meta_list_custom_conversions"
+    ].input_schema.properties
     assert definitions["meta_update_custom_conversion"].input_schema.required == [
         "account_id", "custom_conversion_id", "updates"
     ]
@@ -2670,8 +2701,9 @@ def test_google_asset_tools_publish_read_contracts():
         definition.name: definition
         for definition, _handler in create_google_tool_source().register_tools()
     }
-    assert definitions["google_list_assets"].input_schema.required == ["customer_id"]
-    assert definitions["google_get_asset"].input_schema.required == ["customer_id", "asset_id"]
+    assert definitions["google_list_assets"].input_schema.required == []
+    assert definitions["google_get_asset"].input_schema.required == ["asset_id"]
+    assert "customer_id" in definitions["google_get_asset"].input_schema.properties
 
 
 def test_google_pmax_asset_group_builds_bounded_multistep_dry_run_plan():
@@ -2837,7 +2869,11 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     create = plan["operation"]["adGroupAds"]["create"]
     assert create["resourceName"] == "customers/123/ads/-1"
     assert create["adGroup"] == "customers/123/adGroups/42"
-    assert create["status"] == "PAUSED"
+    assert create["status"] == "ENABLED"
+    assert plan["delivery_guard"] == {
+        "resource": "ad_group",
+        "required_status": "PAUSED",
+    }
     assert create["ad"]["appAd"]["headlines"] == [
         {"text": "Install the app"}, {"text": "Shop anywhere"}
     ]
@@ -2861,6 +2897,7 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     assert app_ad.input_schema.required == [
         "ad_group_id", "name", "headlines", "descriptions"
     ]
+    assert app_ad.input_schema.properties["status"]["enum"] == ["PAUSED"]
 
 
 def test_google_pmax_live_chain_uses_one_atomic_customer_mutate():
@@ -2982,7 +3019,7 @@ def test_google_customer_mutate_posts_cross_service_operations_and_normalizes_re
     ]
 
 
-def test_google_app_live_chain_uses_inline_text_and_provider_valid_ad_status():
+def test_google_app_live_chain_enables_ad_only_under_paused_ad_group():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
 
@@ -2995,6 +3032,9 @@ def test_google_app_live_chain_uses_inline_text_and_provider_valid_ad_status():
         return {"results": [{"resourceName": resource_name}]}
 
     client._mutate = fake_mutate
+    client._search = lambda _query: {
+        "results": [{"adGroup": {"id": "77", "status": "PAUSED"}}]
+    }
     result = client.create_app_ad(
         "77", "Live App Ad",
         headlines=[{"text": "Install now"}, {"text": "Shop in the app"}],
@@ -3007,6 +3047,11 @@ def test_google_app_live_chain_uses_inline_text_and_provider_valid_ad_status():
         "mode": "live", "execution_status": "executed", "live_support": True,
         "ad_resource_name": "customers/123/adGroupAds/77~88",
         "ad_id": "88", "ad_group_id": "77", "status": "ENABLED",
+        "requested_status": "PAUSED",
+        "delivery_guard": {
+            "resource": "ad_group",
+            "required_status": "PAUSED",
+        },
     }
     assert [resource for resource, _operation in calls] == ["adGroupAds"]
     ad_create = calls[-1][1]["create"]
@@ -3016,6 +3061,26 @@ def test_google_app_live_chain_uses_inline_text_and_provider_valid_ad_status():
     assert ad_create["ad"]["appAd"]["headlines"] == [
         {"text": "Install now"}, {"text": "Shop in the app"}
     ]
+
+
+def test_google_app_live_ad_creation_refuses_an_unpaused_parent_group():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._search = lambda _query: {
+        "results": [{"adGroup": {"id": "77", "status": "ENABLED"}}]
+    }
+    client._mutate = lambda *args, **kwargs: calls.append((args, kwargs))
+
+    with pytest.raises(ValueError, match="parent Ad Group must be PAUSED"):
+        client.create_app_ad(
+            "77", "Live App Ad",
+            headlines=[{"text": "Install now"}, {"text": "Shop in the app"}],
+            descriptions=[{"text": "Fast checkout"}, {"text": "Download today"}],
+            status="PAUSED",
+            live=True,
+        )
+
+    assert calls == []
 
 
 def test_google_specialized_ad_live_creation_rejects_enabled_status():
@@ -3628,23 +3693,27 @@ def test_tiktok_smart_plus_rejects_provider_invalid_budget_and_keeps_tracking_op
 
 def test_tiktok_smart_plus_catalog_context_is_normalized_and_forwarded():
     client = TikTokAPIClient({"access_token": "test"})
-    client.request = lambda method, endpoint, params=None, **kwargs: {
-        "data": {"list": [{
-            "catalog_id": "catalog-1",
-            "name": "Approved catalog",
-            "bc_info": {"bc_id": "bc-1"},
-        }]}
-    }
+    calls = []
+
+    def request(method, endpoint, params=None, data=None, **kwargs):
+        calls.append((method, endpoint, params, data))
+        if endpoint == "catalog/get/":
+            return {"data": {"list": [{
+                "catalog_id": "catalog-1",
+                "name": "Approved catalog",
+                "bc_info": {"bc_id": "private-bc-1"},
+            }]}}
+        return {"code": 0, "data": {"adgroup_id": "group-1"}}
+
+    client.request = request
 
     catalogs = client.list_catalogs("123")
-    assert catalogs[0]["catalog_authorized_bc_id"] == "bc-1"
-    assert catalogs[0]["authorized_bc_id"] == "bc-1"
+    assert catalogs == [{
+        "catalog_id": "catalog-1",
+        "name": "Approved catalog",
+    }]
+    assert "private-bc-1" not in json.dumps(catalogs)
 
-    calls = []
-    client.request = lambda method, endpoint, data=None, **kwargs: (
-        calls.append((method, endpoint, data))
-        or {"code": 0, "data": {"adgroup_id": "group-1"}}
-    )
     client.create_smart_plus_adgroup("123", "campaign-1", {
         "objective_type": "PRODUCT_SALES",
         "adgroup_name": "Catalog app group",
@@ -3656,24 +3725,58 @@ def test_tiktok_smart_plus_catalog_context_is_normalized_and_forwarded():
         "schedule_start_time": "2026-09-09 00:00:00",
         "location_ids": ["1643084"],
         "catalog_id": "catalog-1",
-        "catalog_authorized_bc_id": "bc-1",
     }, live=True)
-    assert calls[0][2]["catalog_id"] == "catalog-1"
-    assert calls[0][2]["catalog_authorized_bc_id"] == "bc-1"
+    create_payload = calls[-1][3]
+    assert create_payload["catalog_id"] == "catalog-1"
+    assert create_payload["catalog_authorized_bc_id"] == "private-bc-1"
+    assert "private-bc-1" not in json.dumps(catalogs)
 
-    with pytest.raises(ValueError, match="catalog_authorized_bc_id"):
-        client.create_smart_plus_adgroup("123", "campaign-1", {
-            "objective_type": "PRODUCT_SALES",
-            "adgroup_name": "Missing BC",
-            "promotion_type": "APP_ANDROID",
-            "optimization_goal": "VALUE",
-            "bid_type": "BID_TYPE_NO_BID",
-            "billing_event": "OCPM",
-            "schedule_type": "SCHEDULE_FROM_NOW",
-            "schedule_start_time": "2026-09-09 00:00:00",
-            "location_ids": ["1643084"],
-            "catalog_id": "catalog-1",
-        }, live=True)
+
+def test_tiktok_identity_authorization_is_private_and_resolved_for_live_smart_plus():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, params=None, data=None, **kwargs):
+        calls.append((method, endpoint, params, data))
+        if endpoint == "identity/get/":
+            return {"code": 0, "data": {"identity_list": [{
+                "identity_id": "identity-1",
+                "identity_type": "BC_AUTH_TT",
+                "available_status": "AVAILABLE",
+                "display_name": "QA identity",
+                "identity_authorized_bc_id": "private-bc-2",
+            }]}}
+        return {"code": 0, "data": {"smart_plus_ad_id": "ad-1"}}
+
+    client.request = request
+    identities = client.list_identities("123", "BC_AUTH_TT", page_size=100)
+    assert identities == [{
+        "identity_id": "identity-1",
+        "identity_type": "BC_AUTH_TT",
+        "available_status": "AVAILABLE",
+        "display_name": "QA identity",
+    }]
+    assert "private-bc-2" not in json.dumps(identities)
+
+    result = client.create_smart_plus_ad("123", "campaign-1", "group-1", {
+        "ad_name": "Private identity resolution",
+        "objective_type": "TRAFFIC",
+        "ad_format": "SINGLE_IMAGE",
+        "tiktok_item_id": "approved-post-1",
+        "identity_type": "BC_AUTH_TT",
+        "identity_id": "identity-1",
+        "call_to_action": "LEARN_MORE",
+        "landing_page_url": "https://example.com/",
+    }, live=True)
+
+    assert result["smart_plus_ad_id"] == "ad-1"
+    create_payload = calls[-1][3]
+    creative = create_payload["creative_list"][0]["creative_info"]
+    assert creative["identity_authorized_bc_id"] == "private-bc-2"
+    assert create_payload["ad_configuration"]["identity_authorized_bc_id"] == (
+        "private-bc-2"
+    )
+    assert "private-bc-2" not in json.dumps(result)
 
 
 def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
@@ -3681,6 +3784,11 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
         definition.name: definition
         for definition, _handler in create_tiktok_tool_source().register_tools()
     }
+    public_contracts = json.dumps(
+        [definition.input_schema.to_dict() for definition in definitions.values()]
+    ).lower()
+    assert "bc_id" not in public_contracts
+    assert "business_center_id" not in public_contracts
     campaign_schema = definitions["tiktok_smart_plus_create_campaign"].input_schema
     errors = validate_tool_input(
         campaign_schema,
@@ -3696,6 +3804,7 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
     assert any("catalog_enabled" in error for error in errors)
 
     adgroup_schema = definitions["tiktok_smart_plus_create_adgroup"].input_schema
+    assert "catalog_authorized_bc_id" not in adgroup_schema.properties
     errors = validate_tool_input(
         adgroup_schema,
         {
@@ -3709,7 +3818,15 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
         },
         include_tool_requirements=True,
     )
-    assert any("catalog_authorized_bc_id" in error for error in errors)
+    assert not any("catalog_authorized_bc_id" in error for error in errors)
+    ad_schema = definitions["tiktok_smart_plus_create_ad"].input_schema
+    assert "identity_authorized_bc_id" not in ad_schema.properties
+    assert "identity_authorized_bc_id" not in definitions[
+        "tiktok_list_identities"
+    ].input_schema.properties
+    assert "business center id" not in json.dumps(
+        [definition.input_schema.to_dict() for definition in definitions.values()]
+    ).lower()
 
     client = TikTokAPIClient({"access_token": "test"})
     client.request = lambda *args, **kwargs: pytest.fail(
@@ -5155,6 +5272,163 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
         ]
 
 
+def test_meta_app_promotion_ad_builds_app_install_story_and_live_tool_contract():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-app-1"}
+    )
+
+    assert client.create_app_promotion_ad("act_1", "as_1", {
+        "name": "App install ad",
+        "page_id": "page-1",
+        "application_id": "app-1",
+        "object_store_url": "https://apps.apple.com/app/id123",
+        "media_type": "IMAGE",
+        "image_hash": "image-1",
+        "message": "Install the app",
+        "headline": "Shop in the app",
+        "status": "PAUSED",
+    }, live=True) == "ad-app-1"
+
+    creative = json.loads(payloads[-1][2]["creative"])
+    link_data = creative["object_story_spec"]["link_data"]
+    assert payloads[-1][:2] == ("POST", "/act_1/ads")
+    assert link_data["link"] == "https://apps.apple.com/app/id123"
+    assert link_data["image_hash"] == "image-1"
+    assert link_data["call_to_action"] == {
+        "type": "INSTALL_MOBILE_APP",
+        "value": {"application": "app-1", "link": "https://apps.apple.com/app/id123"},
+    }
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_tool_source().register_tools()
+    }
+    tool = definitions["meta_create_app_promotion_ad"]
+    assert tool.live_support is True
+    assert tool.readback_tool == "meta_get_ad"
+    assert tool.input_schema.properties["application_id"]["lookup_tool"] == (
+        "meta_list_apps"
+    )
+    assert tool.input_schema.properties["status"]["enum"] == ["PAUSED"]
+
+
+def test_meta_advertisable_apps_are_scoped_and_registered_as_lookup_tool():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client._list_graph_pages = (
+        lambda account_id, endpoint, params, **kwargs: (
+            calls.append((account_id, endpoint, params, kwargs))
+            or [{"id": "app-1", "name": "QA app"}]
+        )
+    )
+
+    assert client.list_apps("act_123", limit=40) == [
+        {"id": "app-1", "name": "QA app"}
+    ]
+    assert calls == [(
+        "123",
+        "/act_123/advertisable_applications",
+        {
+            "limit": 40,
+            "fields": "id,name,object_store_urls,supported_platforms",
+        },
+        {},
+    )]
+    with pytest.raises(ValueError, match="between 1 and 1000"):
+        client.list_apps("123", limit=1001)
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_tool_source().register_tools()
+    }
+    lookup = definitions["meta_list_apps"]
+    assert lookup.action == "list"
+    assert lookup.resource_type == "app"
+    assert lookup.effect_class.value == "read"
+    assert lookup.replay_policy.value == "safe"
+    assert lookup.input_schema.additional_properties is False
+    assert "account_id" not in lookup.input_schema.required
+    assert definitions["meta_create_adset"].input_schema.properties[
+        "promoted_object"
+    ]["properties"]["application_id"]["lookup_tool"] == "meta_list_apps"
+
+
+def test_meta_blueprint_read_lookups_take_account_scope_from_runtime_context():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_meta_tool_source().register_tools()
+    }
+    scoped_reads = [
+        definition
+        for definition in definitions.values()
+        if definition.effect_class.value == "read"
+        and "account_id" in definition.input_schema.properties
+    ]
+    assert scoped_reads
+
+    for definition in scoped_reads:
+        schema = definition.input_schema
+        assert "account_id" in schema.properties
+        assert "account_id" not in schema.required
+        assert "account_id" not in schema.requires
+        assert all(
+            "account_id" not in group
+            for group in schema.requires_any_of + schema.requires_exactly_one_of
+        )
+        assert definition.contract_hash == sha256_json(schema.to_dict())
+
+    assert definitions["meta_list_product_sets"].input_schema.required == [
+        "catalog_id",
+    ]
+
+
+def test_meta_app_promotion_ad_rejects_missing_media_reference():
+    client = MetaAPIClient({"access_token": "test"})
+    with pytest.raises(ValueError, match="IMAGE creatives require image_hash"):
+        client.create_app_promotion_ad("act_1", "as_1", {
+            "page_id": "page-1",
+            "application_id": "app-1",
+            "object_store_url": "https://apps.apple.com/app/id123",
+            "media_type": "IMAGE",
+        })
+
+
+def test_meta_app_promotion_video_ad_uses_video_story_and_rejects_active_status():
+    client = MetaAPIClient({"access_token": "test"})
+    payloads = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append((method, endpoint, data)) or {"id": "ad-video-1"}
+    )
+
+    client.create_app_promotion_ad("act_1", "as_1", {
+        "name": "Video app install",
+        "page_id": "page-1",
+        "application_id": "app-1",
+        "object_store_url": "https://play.google.com/store/apps/details?id=example",
+        "media_type": "VIDEO",
+        "video_id": "video-1",
+        "status": "PAUSED",
+    }, live=True)
+    story = json.loads(payloads[-1][2]["creative"])["object_story_spec"]
+    assert story["video_data"]["video_id"] == "video-1"
+    assert story["video_data"]["call_to_action"]["value"] == {
+        "application": "app-1",
+        "link": "https://play.google.com/store/apps/details?id=example",
+    }
+
+    with pytest.raises(ValueError, match="PAUSED"):
+        client.create_app_promotion_ad("act_1", "as_1", {
+            "page_id": "page-1",
+            "application_id": "app-1",
+            "object_store_url": "https://play.google.com/store/apps/details?id=example",
+            "media_type": "VIDEO",
+            "video_id": "video-1",
+            "status": "ACTIVE",
+        }, live=True)
+
+
 @pytest.mark.parametrize(
     "engagement_type, source_field, source_value, expected_story",
     [
@@ -5330,7 +5604,8 @@ def test_meta_creative_tools_publish_crud_and_narrow_update_contract():
     } <= set(definitions)
     lookup = definitions["meta_lookup_creative"]
     assert lookup.action == "get"
-    assert lookup.input_schema.required == ["account_id", "creative_id"]
+    assert lookup.input_schema.required == ["creative_id"]
+    assert "account_id" in lookup.input_schema.properties
     assert lookup.input_schema.properties["creative_id"]["lookup_tool"] == (
         "meta_list_creatives"
     )
@@ -5448,7 +5723,7 @@ def test_meta_catalog_tools_require_scope_and_keep_writes_dry_run():
     }
     assert expected <= set(definitions)
     assert definitions["meta_list_product_sets"].input_schema.required == [
-        "account_id", "catalog_id"
+        "catalog_id"
     ]
     assert definitions["meta_create_catalog"].input_schema.required == [
         "business_id", "name", "vertical"
@@ -5486,7 +5761,8 @@ def test_meta_targeting_search_is_scoped_read_only_and_published():
     }
     targeting = definitions["meta_search_targeting_options"]
     assert targeting.is_write_tool is False
-    assert targeting.input_schema.required == ["account_id", "query"]
+    assert targeting.input_schema.required == ["query"]
+    assert "account_id" in targeting.input_schema.properties
     assert "adinterest" in targeting.input_schema.properties["type"]["enum"]
 
 
@@ -5703,6 +5979,93 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
     ad = operations[-1][1]["create"]["ad"]
     assert ad["responsiveSearchAd"]["path1"] == "buy"
     assert ad["responsiveSearchAd"]["path2"] == "now"
+
+
+def test_google_shopping_product_ad_is_created_paused_and_has_readback_tool():
+    client = GoogleAdsAPIClient({"customer_id": "123"})
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/adGroupAds/456~789"}]}
+    )
+
+    assert client.create_shopping_product_ad(
+        "456", "Product Ad", live=True
+    ) == "456~789"
+    assert operations == [(
+        "adGroupAds",
+        {"create": {
+            "adGroup": "customers/123/adGroups/456",
+            "status": "PAUSED",
+            "ad": {"name": "Product Ad", "shoppingProductAd": {}},
+        }},
+    )]
+
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_google_tool_source().register_tools()
+    }
+    tool = definitions["google_create_shopping_product_ad"]
+    assert tool.live_support is True
+    assert tool.readback_tool == "google_get_ad"
+    assert tool.input_schema.properties["status"]["enum"] == ["PAUSED"]
+
+
+def test_google_shopping_product_ad_rejects_non_paused_live_creation():
+    client = GoogleAdsAPIClient({"customer_id": "123"})
+    with pytest.raises(ValueError, match="PAUSED"):
+        client.create_shopping_product_ad(
+            "456", "Product Ad", status="ENABLED", live=True
+        )
+
+
+def test_google_ad_queries_expose_ad_type_and_app_creative_assets():
+    client = GoogleAdsAPIClient({"customer_id": "123"})
+    queries = []
+    client._search_all = lambda query, **_kwargs: (
+        queries.append(query)
+        or [{
+            "campaign": {"id": "1"},
+            "adGroup": {"id": "456"},
+            "adGroupAd": {
+                "resourceName": "customers/123/adGroupAds/456~789",
+                "status": "PAUSED",
+                "ad": {
+                    "id": "789",
+                    "name": "Shopping Product",
+                    "type": "SHOPPING_PRODUCT_AD",
+                },
+            },
+        }]
+    )
+
+    listed = client.list_ads(ad_group_id="456")
+    assert listed[0]["id"] == "456~789"
+    assert listed[0]["ad_type"] == "SHOPPING_PRODUCT_AD"
+    assert "ad_group_ad.ad.type" in queries[0]
+
+    client._search = lambda query: (
+        queries.append(query)
+        or {"results": [{
+            "adGroupAd": {
+                "resourceName": "customers/123/adGroupAds/456~789",
+                "status": "PAUSED",
+                "ad": {
+                    "id": "789",
+                    "name": "App Install",
+                    "type": "APP_AD",
+                    "appAd": {
+                        "headlines": [{"text": "Install"}],
+                        "descriptions": [{"text": "Try it"}],
+                    },
+                },
+            },
+        }]}
+    )
+    detail = client.get_ad("456~789")
+    assert detail["ad_type"] == "APP_AD"
+    assert detail["app_ad"]["headlines"] == [{"text": "Install"}]
+    assert "ad_group_ad.ad.app_ad.headlines" in queries[1]
 
 
 def test_google_campaign_handler_forwards_all_optimization_parameters():
@@ -6689,6 +7052,7 @@ def test_google_list_ads_supports_account_scope_and_returns_parent_ids():
                     "id": "303",
                     "resourceName": "customers/123/ads/303",
                     "name": "Search ad",
+                    "type": "RESPONSIVE_SEARCH_AD",
                 },
                 "resourceName": "customers/123/adGroupAds/202~303",
                 "status": "PAUSED",
@@ -6704,6 +7068,7 @@ def test_google_list_ads_supports_account_scope_and_returns_parent_ids():
         "ad_group_id": "202",
         "resource_name": "customers/123/adGroupAds/202~303",
         "name": "Search ad",
+        "ad_type": "RESPONSIVE_SEARCH_AD",
         "status": "PAUSED",
     }]
     assert "FROM ad_group_ad" in queries[0]

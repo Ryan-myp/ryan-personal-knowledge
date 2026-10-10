@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+from agents.tools.advertising.clients.tiktok_client import TIKTOK_SMART_PLUS_CTA_VALUES
 from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
 from agents.tools.advertising.providers.meta import create_meta_tool_source
 from agents.tools.advertising.providers.google import create_google_tool_source
@@ -62,10 +63,10 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
-    assert versions["tiktok.app_conversion_video"] == "2.0.1"
+    assert versions["tiktok.app_conversion_video"] == "2.0.2"
     assert versions["tiktok.lead_generation"] == "2.0.0"
-    assert versions["tiktok.product_sales_video"] == "2.0.1"
-    assert versions["tiktok.traffic_video"] == "3.0.0"
+    assert versions["tiktok.product_sales_video"] == "2.0.2"
+    assert versions["tiktok.traffic_video"] == "3.0.1"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 
@@ -312,6 +313,136 @@ def test_meta_and_google_blueprints_use_only_registered_tool_fields():
             field["tool_ref"].split(".", 1)[0] in blueprint.tools
             for field in blueprint.fields
         )
+
+
+def test_meta_app_promotion_blueprint_declares_the_app_ad_creation_chain():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_meta_tool_source())
+
+    blueprint = runtime.creation_blueprints.get("meta.app_promotion")
+    assert blueprint is not None
+    assert blueprint.tools == (
+        "meta_create_campaign",
+        "meta_create_adset",
+        "meta_create_app_promotion_ad",
+    )
+    assert blueprint.raw["resources"] == ["campaign", "ad_set", "ad"]
+    assert all(
+        field["tool_ref"].split(".", 1)[0] in blueprint.tools
+        for field in blueprint.fields
+    )
+    assert "OUTCOME_APP_PROMOTION" in next(
+        field["options"]
+        for field in blueprint.fields
+        if field["path"] == "campaign.objective"
+    )
+    app_ad = next(
+        field for field in blueprint.fields
+        if field["path"] == "ad.application_id"
+    )
+    assert app_ad["tool_ref"] == "meta_create_app_promotion_ad.application_id"
+    assert app_ad["lookup_tool"] == "meta_list_apps"
+    app_in_adset = next(
+        field for field in blueprint.fields
+        if field["path"] == "ad_set.promoted_object.application_id"
+    )
+    assert app_in_adset["lookup_tool"] == "meta_list_apps"
+
+
+def test_requested_ad_type_blueprints_have_registered_create_and_readback_tools():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    sources = (
+        create_google_tool_source(),
+        create_meta_tool_source(),
+        create_tiktok_tool_source(),
+    )
+    for source in sources:
+        runtime.register_tool_source(source)
+
+    expected_ids = {
+        "google-ads.performance_max",
+        "google-ads.shopping",
+        "google-ads.app",
+        "meta.catalog_sales",
+        "meta.traffic_link",
+        "meta.conversion_link",
+        "meta.app_promotion",
+        "tiktok.product_sales_video",
+        "tiktok.traffic_video",
+        "tiktok.app_conversion_video",
+    }
+    blueprints = {
+        item["id"]: runtime.creation_blueprints.get(item["id"])
+        for item in runtime.list_creation_blueprints()
+        if item["id"] in expected_ids
+    }
+    assert set(blueprints) == expected_ids
+
+    definitions = {
+        binding.definition.name: binding.definition
+        for source in sources
+        for binding in source.list_bindings()
+    }
+    for blueprint in blueprints.values():
+        for tool_name in blueprint.tools:
+            definition = definitions[tool_name]
+            assert definition.action == "create"
+            assert definition.readback_tool in definitions
+            assert definitions[definition.readback_tool].action in {"get", "list"}
+        for resource_type in blueprint.raw["resources"]:
+            resource_tools = [
+                definition
+                for definition in definitions.values()
+                if definition.namespace == blueprint.provider
+                and definition.resource_type == resource_type
+            ]
+            assert any(
+                definition.action == "get"
+                for definition in resource_tools
+            ), (blueprint.blueprint_id, resource_type, "get")
+            assert any(
+                definition.action == "list"
+                for definition in resource_tools
+            ), (blueprint.blueprint_id, resource_type, "list")
+
+    google_shopping = blueprints["google-ads.shopping"]
+    assert "google_create_shopping_product_ad" in google_shopping.tools
+    meta_app = blueprints["meta.app_promotion"]
+    assert meta_app.tools[-1] == "meta_create_app_promotion_ad"
+    for tool_name in (
+        "meta_create_traffic_ad",
+        "meta_create_conversion_ad",
+        "meta_create_app_promotion_ad",
+    ):
+        properties = definitions[tool_name].input_schema.properties
+        assert properties["image_hash"]["lookup_result_key"] == "image_assets"
+        assert properties["video_id"]["lookup_result_key"] == "video_assets"
+    assert definitions["meta_create_app_promotion_ad"].input_schema.properties[
+        "application_id"
+    ]["lookup_tool"] == "meta_list_apps"
+    tiktok_product_sales = blueprints["tiktok.product_sales_video"]
+    product_set = next(
+        field for field in tiktok_product_sales.fields
+        if field["path"] == "ad_group.product_set_id"
+    )
+    assert product_set["lookup_tool"] == "tiktok_list_product_sets"
+    for blueprint_id in (
+        "tiktok.product_sales_video",
+        "tiktok.app_conversion_video",
+    ):
+        fields = {
+            field["path"]: field
+            for field in blueprints[blueprint_id].fields
+        }
+        assert fields["ad.image_web_uris"]["lookup_tool"] == "tiktok_list_images"
+        assert fields["ad.image_web_uris"]["required_when"] == {
+            "field": "ad.ad_format",
+            "equals": "SINGLE_VIDEO",
+        }
+    tiktok_traffic = blueprints["tiktok.traffic_video"]
+    fields = {field["path"]: field for field in tiktok_traffic.fields}
+    assert fields["ad.video_id"]["lookup_tool"] == "tiktok_list_videos"
+    assert fields["ad.tiktok_item_id"].get("required", False) is False
 
 
 def test_google_bidding_strategy_cascade_requires_only_matching_target():
@@ -585,7 +716,7 @@ def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
     assert geo["properties"]["regions"]["lookup_tool"] == "meta_search_targeting_options"
     assert geo["properties"]["regions"]["lookup_defaults"] == {"type": "adgeolocation"}
     promoted = next(item for item in card["fields"] if item["path"] == "ad_set.promoted_object")
-    assert promoted["object_properties"]["application_id"]["manual_entry"]["source"] == "external_provider_identifier"
+    assert promoted["object_properties"]["application_id"]["lookup_tool"] == "meta_list_apps"
     assert promoted["object_properties"]["custom_event_type"]["enum"]
     assert promoted["object_properties"]["custom_event_str"]["manual_entry"]
 
@@ -670,8 +801,41 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
         scoped_parameters={"tiktok": {"objective": "PRODUCT_SALES"}},
     ))["cards"][0]
     sales_fields = {item["path"]: item for item in sales["fields"]}
-    assert sales_fields["ad.call_to_action_id"]["manual_entry"]["source"] == "external_provider_identifier"
+    assert [
+        option["value"] for option in sales_fields["ad.call_to_action"]["options"]
+    ] == list(TIKTOK_SMART_PLUS_CTA_VALUES)
     assert sales_fields["ad.identity_type"]["source"] == "enum"
+
+
+@pytest.mark.parametrize(
+    "blueprint_id",
+    [
+        "tiktok.product_sales_video",
+        "tiktok.traffic_video",
+        "tiktok.app_conversion_video",
+    ],
+)
+def test_tiktok_smart_plus_blueprints_use_registered_cta_enum(blueprint_id):
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_tiktok_tool_source())
+    blueprint = runtime.creation_blueprints.get(blueprint_id)
+    fields = {field["path"]: field for field in blueprint.fields}
+
+    cta = fields.get("ad.call_to_action")
+    assert cta is not None
+    assert cta["tool_ref"] == "tiktok_smart_plus_create_ad.call_to_action"
+    assert cta.get("manual_entry") is None
+
+    evaluated = runtime.evaluate_creation_blueprint(
+        blueprint_id,
+        {"ad.call_to_action": "SHOP_NOW"},
+    )
+    cta_state = next(
+        field for field in evaluated["fields"]
+        if field["path"] == "ad.call_to_action"
+    )
+    assert cta_state["options"] == list(TIKTOK_SMART_PLUS_CTA_VALUES)
+    assert cta_state["state"] == "set"
 
 
 def test_lookup_catalog_applies_provider_defaults_without_network_call():

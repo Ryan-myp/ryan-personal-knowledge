@@ -6,12 +6,13 @@ retries, circuit breaking, cancellation and model-facing output limits.
 """
 
 from __future__ import annotations
-from contextvars import copy_context
 
+import hashlib
 import json
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from contextvars import copy_context
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 from .messages import AgentMessage, ToolCall
@@ -29,6 +30,88 @@ TOOL_CANCELLATION_MODES = frozenset({
 
 class ToolCapacityError(RuntimeError):
     """The bounded Tool invocation pool has no free execution slot."""
+
+
+class ToolReadCache:
+    """Share bounded replay-safe read results within one Agent Run."""
+
+    def __init__(self, max_entries: int = 256) -> None:
+        self._initialize(max_entries=max_entries)
+
+    def _initialize(
+        self,
+        *,
+        max_entries: int,
+        cache_result: Callable[[Any], bool] | None = None,
+        retain_exceptions: bool = True,
+    ) -> None:
+        if max_entries <= 0:
+            raise ValueError("max_entries must be positive")
+        self._lock = threading.Lock()
+        self._entries: dict[str, Future[tuple[Any, int]]] = {}
+        self._max_entries = int(max_entries)
+        self._cache_result = cache_result or (lambda _value: True)
+        self._retain_exceptions = bool(retain_exceptions)
+
+    def get_or_invoke(
+        self,
+        key: str,
+        operation: Callable[[], tuple[Any, int]],
+    ) -> tuple[tuple[Any, int], bool]:
+        with self._lock:
+            future = self._entries.get(key)
+            owner = future is None
+            if future is None:
+                while len(self._entries) >= self._max_entries:
+                    oldest_completed = next(
+                        (
+                            entry_key for entry_key, entry in self._entries.items()
+                            if entry.done()
+                        ),
+                        None,
+                    )
+                    if oldest_completed is None:
+                        break
+                    self._entries.pop(oldest_completed, None)
+                if len(self._entries) < self._max_entries:
+                    future = Future()
+                    self._entries[key] = future
+                else:
+                    owner = False
+        if future is None:
+            return operation(), False
+        if owner:
+            try:
+                value = operation()
+                future.set_result(value)
+                if not self._cache_result(value):
+                    with self._lock:
+                        if self._entries.get(key) is future:
+                            self._entries.pop(key, None)
+            except BaseException as error:
+                if not future.done():
+                    future.set_exception(error)
+                if not self._retain_exceptions:
+                    with self._lock:
+                        if self._entries.get(key) is future:
+                            self._entries.pop(key, None)
+                raise
+        return future.result(), not owner
+
+    def clear(self) -> None:
+        """Discard prior reads after a possible side effect or failed read."""
+        with self._lock:
+            self._entries.clear()
+
+
+class ToolWriteReplayCache(ToolReadCache):
+    """Prevent identical writes from running twice inside one Agent Run."""
+
+    def __init__(self, max_entries: int = 256) -> None:
+        super()._initialize(
+            max_entries=max_entries,
+            retain_exceptions=True,
+        )
 
 
 class ToolCallContext:
@@ -146,6 +229,15 @@ class ToolExecutionCoordinator:
         replay = getattr(replay, "value", replay)
         return str(replay).strip().lower() in {"", "safe", "idempotent"}
 
+    def _call_replay_safe(self, call: ToolCall) -> bool:
+        if self.tool_catalog is None:
+            return False
+        try:
+            binding = self.tool_catalog.get_binding(call.name)
+        except (KeyError, TypeError, AttributeError):
+            return False
+        return self._tool_replay_safe(getattr(binding, "definition", None))
+
     @classmethod
     def _tool_cancellation_mode(cls, definition: Any) -> str:
         value = str(
@@ -172,6 +264,40 @@ class ToolExecutionCoordinator:
             )
         except (TypeError, ValueError):
             return json.dumps(str(value), ensure_ascii=False)
+
+    def _replay_cache_key(
+        self,
+        binding: Any,
+        context: ToolCallContext,
+        call: ToolCall,
+    ) -> str:
+        raw_arguments = dict(call.arguments)
+        invocation_key: Any = raw_arguments
+        key_builder = getattr(binding.executor, "replay_key", None)
+        if callable(key_builder):
+            try:
+                candidate = key_builder(context, raw_arguments)
+                if candidate is not None:
+                    invocation_key = candidate
+            except Exception as error:
+                self.emit(
+                    "tool_replay_key_error",
+                    context.request,
+                    tool_call_id=call.id,
+                    tool_name=call.name,
+                    error_type=type(error).__name__,
+                )
+        request = context.request
+        identity = {
+            "tool": call.name,
+            "tenant_id": request.tenant_id,
+            "user_id": request.user_id,
+            "session_id": request.session_id,
+            "execution_mode": request.execution_mode or "dry_run",
+            "invocation": invocation_key,
+        }
+        serialized = self._serialized_tool_value(identity).encode("utf-8")
+        return hashlib.sha256(serialized).hexdigest()
 
     def _truncate_tool_text(self, value: str, budget: int) -> str:
         marker = "\n...[tool output truncated]"
@@ -297,77 +423,108 @@ class ToolExecutionCoordinator:
         context: ToolCallContext,
         call: ToolCall,
         definition: Any,
-    ) -> tuple[Any, int]:
+        batch_read_cache: ToolReadCache | None = None,
+        write_cache: ToolWriteReplayCache | None = None,
+    ) -> tuple[Any, int, str | None]:
         execute = getattr(binding.executor, "execute", None)
         if not callable(execute):
             execute = binding.executor if callable(binding.executor) else None
         if not callable(execute):
             raise TypeError(f"Tool '{call.name}' has no executor")
         max_retries = self.tool_max_retries if self._tool_replay_safe(definition) else 0
-        retry_count = 0
-        for attempt in range(max_retries + 1):
-            self.assert_not_interrupted(context.request)
-            try:
-                if self.tool_timeout_seconds is None:
-                    output = execute(context, dict(call.arguments))
-                else:
-                    if not self._inflight_tool_slots.acquire(blocking=False):
-                        raise ToolCapacityError("Tool execution capacity exhausted")
-                    pool = None
-                    try:
-                        pool = ThreadPoolExecutor(
-                            max_workers=1, thread_name_prefix="agent-tool-call",
+
+        def invoke() -> tuple[Any, int]:
+            retry_count = 0
+            for attempt in range(max_retries + 1):
+                self.assert_not_interrupted(context.request)
+                try:
+                    if self.tool_timeout_seconds is None:
+                        output = execute(context, dict(call.arguments))
+                    else:
+                        if not self._inflight_tool_slots.acquire(blocking=False):
+                            raise ToolCapacityError(
+                                "Tool execution capacity exhausted"
+                            )
+                        pool = None
+                        try:
+                            pool = ThreadPoolExecutor(
+                                max_workers=1,
+                                thread_name_prefix="agent-tool-call",
+                            )
+                            future: Future[Any] = pool.submit(
+                                copy_context().run,
+                                execute,
+                                context,
+                                dict(call.arguments),
+                            )
+                        except Exception:
+                            self._inflight_tool_slots.release()
+                            if pool is not None:
+                                pool.shutdown(wait=False, cancel_futures=True)
+                            raise
+                        future.add_done_callback(
+                            lambda _completed: self._inflight_tool_slots.release()
                         )
-                        future: Future[Any] = pool.submit(
-                            copy_context().run, execute, context, dict(call.arguments),
-                        )
-                    except Exception:
-                        self._inflight_tool_slots.release()
-                        if pool is not None:
+                        try:
+                            output = future.result(
+                                timeout=self.tool_timeout_seconds
+                            )
+                        except FutureTimeoutError as error:
+                            future.cancel()
+                            self.emit(
+                                "tool_timeout",
+                                context.request,
+                                tool_call_id=call.id,
+                                tool_name=call.name,
+                                timeout_seconds=self.tool_timeout_seconds,
+                            )
+                            raise TimeoutError(
+                                f"Tool '{call.name}' timed out"
+                            ) from error
+                        finally:
                             pool.shutdown(wait=False, cancel_futures=True)
-                        raise
-                    future.add_done_callback(
-                        lambda _completed: self._inflight_tool_slots.release()
-                    )
-                    try:
-                        output = future.result(timeout=self.tool_timeout_seconds)
-                    except FutureTimeoutError as error:
-                        future.cancel()
-                        self.emit(
-                            "tool_timeout",
-                            context.request,
-                            tool_call_id=call.id,
-                            tool_name=call.name,
-                            timeout_seconds=self.tool_timeout_seconds,
+                    return output, retry_count
+                except Exception as error:
+                    retryable = (
+                        isinstance(
+                            error,
+                            (TimeoutError, FutureTimeoutError, ConnectionError),
                         )
-                        raise TimeoutError(
-                            f"Tool '{call.name}' timed out"
-                        ) from error
-                    finally:
-                        pool.shutdown(wait=False, cancel_futures=True)
-                return output, retry_count
-            except Exception as error:
-                retryable = (
-                    isinstance(
-                        error,
-                        (TimeoutError, FutureTimeoutError, ConnectionError),
+                        or "transient" in type(error).__name__.lower()
                     )
-                    or "transient" in type(error).__name__.lower()
-                )
-                if not retryable or attempt >= max_retries:
-                    raise
-                retry_count += 1
-                self.emit(
-                    "tool_retry",
-                    context.request,
-                    tool_call_id=call.id,
-                    tool_name=call.name,
-                    attempt=retry_count,
-                    error_type=type(error).__name__,
-                )
-                if self.tool_retry_delay_seconds:
-                    time.sleep(self.tool_retry_delay_seconds)
-        raise RuntimeError("tool invocation loop exited unexpectedly")
+                    if not retryable or attempt >= max_retries:
+                        raise
+                    retry_count += 1
+                    self.emit(
+                        "tool_retry",
+                        context.request,
+                        tool_call_id=call.id,
+                        tool_name=call.name,
+                        attempt=retry_count,
+                        error_type=type(error).__name__,
+                    )
+                    if self.tool_retry_delay_seconds:
+                        time.sleep(self.tool_retry_delay_seconds)
+            raise RuntimeError("tool invocation loop exited unexpectedly")
+
+        if self._tool_replay_safe(definition):
+            if batch_read_cache is None:
+                output, retry_count = invoke()
+                return output, retry_count, None
+            cache = batch_read_cache
+            coalesced_kind = "read"
+        elif self._tool_is_write(definition) and write_cache is not None:
+            cache = write_cache
+            coalesced_kind = "write"
+        else:
+            output, retry_count = invoke()
+            return output, retry_count, None
+        cache_key = self._replay_cache_key(binding, context, call)
+        (output, retry_count), coalesced = cache.get_or_invoke(
+            cache_key,
+            invoke,
+        )
+        return output, retry_count, coalesced_kind if coalesced else None
 
     def execute_one(
         self,
@@ -375,6 +532,8 @@ class ToolExecutionCoordinator:
         assistant: AgentMessage,
         call: ToolCall,
         state: Any,
+        batch_read_cache: ToolReadCache | None = None,
+        write_cache: ToolWriteReplayCache | None = None,
     ) -> dict[str, Any]:
         binding = None
         if self.tool_catalog is not None:
@@ -456,8 +615,13 @@ class ToolExecutionCoordinator:
                     "terminate": False,
                     "runtime_signals": {"tool_circuit_open": True},
                 }
-            output, retry_count = self._invoke_tool(
-                binding, context, call, definition,
+            output, retry_count, coalesced = self._invoke_tool(
+                binding,
+                context,
+                call,
+                definition,
+                batch_read_cache,
+                write_cache,
             )
             self.tool_circuit.record_success(call.name)
             safe_output = redact_for_persistence(output)
@@ -505,6 +669,16 @@ class ToolExecutionCoordinator:
                         )
                 if result.get("requires_confirmation"):
                     result["needs_confirmation"] = True
+            if coalesced == "read":
+                result["runtime_signals"] = {
+                    **dict(result.get("runtime_signals") or {}),
+                    "duplicate_read_coalesced": True,
+                }
+            elif coalesced == "write":
+                result["runtime_signals"] = {
+                    **dict(result.get("runtime_signals") or {}),
+                    "duplicate_write_coalesced": True,
+                }
             if uncertain_effect:
                 result.update({
                     "terminate": True,
@@ -687,6 +861,8 @@ class ToolExecutionCoordinator:
         assistant: AgentMessage,
         calls: Sequence[ToolCall],
         state: Any,
+        read_cache: ToolReadCache | None = None,
+        write_cache: ToolWriteReplayCache | None = None,
     ) -> list[dict[str, Any]]:
         if not calls:
             return []
@@ -702,6 +878,20 @@ class ToolExecutionCoordinator:
         pending = list(calls)
         completed: dict[str, dict[str, Any]] = {}
         results: dict[str, dict[str, Any]] = {}
+        context = request.context if isinstance(request.context, Mapping) else {}
+        visible_names = context.get("_harness_visible_tool_names")
+        allowed_names = (
+            {str(name) for name in visible_names}
+            if isinstance(visible_names, (list, tuple, set, frozenset))
+            else None
+        )
+        if request.tool_allowlist is not None:
+            explicit_names = set(request.tool_allowlist)
+            allowed_names = (
+                explicit_names
+                if allowed_names is None
+                else allowed_names & explicit_names
+            )
         while pending:
             ready = [
                 call for call in pending
@@ -718,6 +908,20 @@ class ToolExecutionCoordinator:
                 } for call in pending]
             runnable: list[ToolCall] = []
             for call in ready:
+                if allowed_names is not None and call.name not in allowed_names:
+                    result = {
+                        "tool_call_id": str(call.id),
+                        "name": call.name,
+                        "content": (
+                            "Tool was not available in the active Tool selection"
+                        ),
+                        "is_error": True,
+                        "terminate": True,
+                        "runtime_signals": {"tool_allowlist_violation": True},
+                    }
+                    completed[str(call.id)] = result
+                    results[str(call.id)] = result
+                    continue
                 failed = [
                     completed[str(dep)] for dep in call.depends_on
                     if completed[str(dep)].get("is_error")
@@ -739,6 +943,7 @@ class ToolExecutionCoordinator:
                 else:
                     runnable.append(call)
             resolved_calls: list[ToolCall] = []
+            batch_read_cache = read_cache or ToolReadCache()
             binding_errors: dict[str, dict[str, Any]] = {}
             for call in runnable:
                 resolved, error = self._resolve_argument_bindings(
@@ -770,7 +975,14 @@ class ToolExecutionCoordinator:
                 )
             if self.tool_execution == "sequential" or len(resolved_calls) <= 1:
                 batch = [
-                    self.execute_one(request, assistant, call, state)
+                    self.execute_one(
+                        request,
+                        assistant,
+                        call,
+                        state,
+                        batch_read_cache,
+                        write_cache,
+                    )
                     for call in resolved_calls
                 ]
             elif resolved_calls:
@@ -780,7 +992,14 @@ class ToolExecutionCoordinator:
                 )
                 futures = [
                     pool.submit(
-                        copy_context().run, self.execute_one, request, assistant, call, state,
+                        copy_context().run,
+                        self.execute_one,
+                        request,
+                        assistant,
+                        call,
+                        state,
+                        batch_read_cache,
+                        write_cache,
                     )
                     for call in resolved_calls
                 ]
@@ -812,6 +1031,14 @@ class ToolExecutionCoordinator:
                 self._emit_tool_end(request, call, result)
                 completed[str(call.id)] = result
                 results[str(call.id)] = result
+            cache_invalidated = any(
+                not self._call_replay_safe(call) for call in runnable
+            ) or any(
+                result.get("is_error")
+                for result in batch_by_id.values()
+            )
+            if read_cache is not None and cache_invalidated:
+                read_cache.clear()
             pending = [
                 call for call in pending
                 if str(call.id) not in completed
@@ -841,4 +1068,6 @@ __all__ = [
     "TOOL_CANCELLATION_MODES",
     "ToolCallContext",
     "ToolExecutionCoordinator",
+    "ToolReadCache",
+    "ToolWriteReplayCache",
 ]

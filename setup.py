@@ -78,6 +78,7 @@ setup(
         "uvicorn>=0.22.0",
         "PyMySQL>=1.1.0",
         "fastmcp>=3.4.0,<4.0.0",
+        "openai>=1.0.0,<2.0.0",
     ],
     extras_require={
         "claude": [

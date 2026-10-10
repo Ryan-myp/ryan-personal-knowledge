@@ -655,6 +655,18 @@ class ProviderMethodHandler(ToolHandler):
             Callable[[ToolContext, dict[str, Any], Any], Any]
         ] = None
 
+    def replay_key(self, ctx: ToolContext, input_data: dict) -> dict[str, Any]:
+        """Fingerprint the effective provider invocation without making a request."""
+        args, kwargs = self.argument_builder(ctx, dict(input_data))
+        return {
+            "method": self.method_name,
+            "args": args,
+            "kwargs": kwargs,
+            "execution_mode": str(
+                getattr(ctx, "metadata", {}).get("execution_mode", "dry_run")
+            ),
+        }
+
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         if self.client is None:
             if self.write:

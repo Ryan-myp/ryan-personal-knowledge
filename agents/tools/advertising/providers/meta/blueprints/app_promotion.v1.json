@@ -1,0 +1,45 @@
+{
+  "id": "meta.app_promotion",
+  "version": "1.0.0",
+  "provider": "meta",
+  "ad_format": "app_promotion",
+  "title": "Meta App Promotion 安装广告",
+  "description": "按 App Promotion 目标配置应用、商店链接和素材，创建暂停状态的安装广告。",
+  "match_terms": ["应用推广", "App Promotion", "App install", "应用安装广告"],
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective",
+    "values": ["OUTCOME_APP_PROMOTION"],
+    "label": "Meta 推广目标",
+    "options": [{"value": "OUTCOME_APP_PROMOTION", "label": "应用推广"}]
+  },
+  "tools": ["meta_create_campaign", "meta_create_adset", "meta_create_app_promotion_ad"],
+  "resources": ["campaign", "ad_set", "ad"],
+  "fields": [
+    {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标", "required": true, "source": "enum", "options": ["OUTCOME_APP_PROMOTION"], "presentation": "derived_readonly"},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum"},
+    {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum", "options": ["AUCTION"]},
+    {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "required": true, "source": "enum", "options": ["APP_INSTALLS"]},
+    {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "required": true, "source": "enum", "options": ["IMPRESSIONS"]},
+    {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "受众定向", "required": true},
+    {"path": "ad_set.promoted_object.application_id", "tool_ref": "meta_create_adset.promoted_object.application_id", "label": "推广应用", "required": true, "source": "lookup", "lookup_tool": "meta_list_apps"},
+    {"path": "ad_set.promoted_object.object_store_url", "tool_ref": "meta_create_adset.promoted_object.object_store_url", "label": "应用商店链接", "required": true},
+    {"path": "ad.name", "tool_ref": "meta_create_app_promotion_ad.name", "label": "广告名称", "required": true},
+    {"path": "ad.page_id", "tool_ref": "meta_create_app_promotion_ad.page_id", "label": "Facebook Page", "required": true, "source": "lookup", "lookup_tool": "meta_list_pages"},
+    {"path": "ad.application_id", "tool_ref": "meta_create_app_promotion_ad.application_id", "label": "Meta 应用", "required": true, "source": "lookup", "lookup_tool": "meta_list_apps"},
+    {"path": "ad.object_store_url", "tool_ref": "meta_create_app_promotion_ad.object_store_url", "label": "应用商店链接", "required": true},
+    {"path": "ad.media_type", "tool_ref": "meta_create_app_promotion_ad.media_type", "label": "素材形式", "required": true, "source": "enum", "options": ["IMAGE", "VIDEO"]},
+    {"path": "ad.image_hash", "tool_ref": "meta_create_app_promotion_ad.image_hash", "label": "图片素材", "source": "lookup", "lookup_tool": "meta_list_image_assets", "presentation": "asset_picker", "accept": "image/*", "visible_when": {"field": "ad.media_type", "equals": "IMAGE"}, "required_when": {"field": "ad.media_type", "equals": "IMAGE"}},
+    {"path": "ad.video_id", "tool_ref": "meta_create_app_promotion_ad.video_id", "label": "视频素材", "source": "lookup", "lookup_tool": "meta_list_video_assets", "presentation": "asset_picker", "accept": "video/*", "visible_when": {"field": "ad.media_type", "equals": "VIDEO"}, "required_when": {"field": "ad.media_type", "equals": "VIDEO"}},
+    {"path": "ad.message", "tool_ref": "meta_create_app_promotion_ad.message", "label": "广告正文", "required": true},
+    {"path": "ad.headline", "tool_ref": "meta_create_app_promotion_ad.headline", "label": "标题", "required": true},
+    {"path": "ad.description", "tool_ref": "meta_create_app_promotion_ad.description", "label": "补充说明"},
+    {"path": "ad.status", "tool_ref": "meta_create_app_promotion_ad.status", "label": "广告状态（受控创建固定暂停）", "required": true, "source": "enum", "options": ["PAUSED"], "default": "PAUSED"}
+  ],
+  "rules": [
+    {"id": "media_type_changed", "when": {"field": "ad.media_type", "changed": true}, "reset": ["ad.image_hash", "ad.video_id"]}
+  ]
+}

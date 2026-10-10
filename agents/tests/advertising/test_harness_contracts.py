@@ -45,9 +45,14 @@ class _ScriptedHarnessModel:
     def __init__(self, *turns):
         self.turns = list(turns)
         self.messages = []
+        self.tool_names = []
 
-    def complete(self, messages, _tools, _request):
+    def complete(self, messages, tools, _request):
         self.messages.append(list(messages))
+        self.tool_names.append([
+            tool.get("name") if isinstance(tool, dict) else tool.name
+            for tool in tools
+        ])
         if not self.turns:
             raise AssertionError("Harness requested an unexpected model turn")
         return self.turns.pop(0)
@@ -333,7 +338,7 @@ def test_harness_executes_model_requested_tools_from_registered_catalog():
         whitelist_validator=_whitelist(meta=["m1"]),
     )
     for name in ("route_first", "route_second"):
-        runtime.registry.register(
+        runtime.register_tool(
             ToolDefinition(
                 name=name, skill="route-test", namespace="meta", description=name,
                 input_schema=ToolSchema(properties={
@@ -345,8 +350,15 @@ def test_harness_executes_model_requested_tools_from_registered_catalog():
             ), Handler()
         )
 
-    result = runtime.run("route test", account_id="m1")
+    result = runtime.run(
+        "调用 route_first 和 route_second 读取数据",
+        account_id="m1",
+    )
     assert result["tool_plan"] == {"meta": ["route_first", "route_second"]}
+    assert any(
+        {"route_first", "route_second"} <= set(names)
+        for names in model.tool_names
+    ), model.tool_names
     assert [item["success"] for item in result["results"]] == [True, True]
 
 
@@ -1020,15 +1032,16 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
             calls.append(True)
             return type("Result", (), {"success": True, "data": {}})()
 
+    model = _ScriptedHarnessModel(
+        ModelTurn(tool_calls=(ToolCall("read-call", "permissioned_read", {}),)),
+        ModelTurn(content="读取已被权限门禁拦截。"),
+    )
     runtime = AdvertisingComposition(require_llm=False,
-        llm_client=_ScriptedHarnessModel(
-            ModelTurn(tool_calls=(ToolCall("read-call", "permissioned_read", {}),)),
-            ModelTurn(content="读取已被权限门禁拦截。"),
-        ),
+        llm_client=model,
         whitelist_validator=_whitelist(meta=["m1"]),
         granted_permissions=set(),
     )
-    runtime.registry.register(
+    runtime.register_tool(
         ToolDefinition(
             name="permissioned_read",
             skill="test",
@@ -1040,7 +1053,10 @@ def test_missing_tool_permission_fails_closed_before_handler_execution():
         ),
         Handler(),
     )
-    result = runtime.run("test", account_id="m1")
+    result = runtime.run("调用 permissioned_read 读取", account_id="m1")
+    assert any(
+        "permissioned_read" in names for names in model.tool_names
+    ), model.tool_names
     assert result["results"][0]["success"] is False
     assert "ads.read" in result["results"][0]["error"]
     assert calls == []

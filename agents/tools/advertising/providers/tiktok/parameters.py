@@ -1712,10 +1712,6 @@ def tiktok_all_in_one_spark_ad_schema() -> dict[str, Any]:
                 "required": ["landing_page_url"],
             },
             {
-                "if": {"identity_type": "BC_AUTH_TT"},
-                "required": ["identity_authorized_bc_id"],
-            },
-            {
                 "if": {"objective_type": "REACH"},
                 "allowed": {"optimization_goal": ["REACH"]},
             },
@@ -1828,12 +1824,6 @@ def tiktok_all_in_one_spark_ad_schema() -> dict[str, Any]:
                 lookup_result_key="identities",
                 selection_value_fields=["identity_id", "id"],
                 selection_label_fields=["display_name", "name", "id"],
-            ),
-            "identity_authorized_bc_id": _field(
-                "string", "Authorized Business Center selected from the identity lookup",
-                minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities",
-                selection_value_fields=["authorized_bc_id", "bc_id", "id"],
-                selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"],
             ),
             "tiktok_item_id": _field(
                 "string", "Authorized TikTok post ID used by Spark Ads",
@@ -1986,11 +1976,6 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 },
                 "message": "TRAFFIC Smart+ requires WEBSITE and CLICK or TRAFFIC_LANDING_PAGE_VIEW",
             },
-            {
-                "if": {"catalog_id": {"exists": True}},
-                "required": ["catalog_authorized_bc_id"],
-                "message": "Catalog Ads require catalog_authorized_bc_id returned with the selected catalog",
-            },
         ],
         "properties": {
             "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
@@ -2025,15 +2010,6 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 selection_label_fields=["app_name", "name", "display_name", "id"],
             ),
             "catalog_id": _field("string", "Catalog ID returned by tiktok_list_catalogs", minLength=1, lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs"),
-            "catalog_authorized_bc_id": _field(
-                "string",
-                "Business Center ID returned with the selected Catalog; required for Catalog Ads",
-                minLength=1,
-                lookup_tool="tiktok_list_catalogs",
-                lookup_result_key="catalogs",
-                selection_value_fields=["catalog_authorized_bc_id", "authorized_bc_id", "bc_id"],
-                selection_label_fields=["catalog_name", "name", "catalog_authorized_bc_id"],
-            ),
             "product_set_id": _field(
                 "string", "Product set ID returned by tiktok_list_product_sets", minLength=1,
                 lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
@@ -2095,7 +2071,6 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             "frequency_schedule": _field("number", "Frequency window in days", minimum=1),
             "identity_type": _field("string", "Identity type", enum=["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]),
             "identity_id": _field("string", "Identity ID", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities"),
-            "identity_authorized_bc_id": _field("string", "Authorized Business Center selected from the identity lookup", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities", selection_value_fields=["authorized_bc_id", "bc_id", "id"], selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"]),
             "pixel_id": _field("string", "Pixel ID", minLength=1, lookup_tool="tiktok_list_pixels", lookup_result_key="pixels"),
             "tracking_pixel_id": _field("string", "Tracking Pixel ID", minLength=1, lookup_tool="tiktok_list_pixels", lookup_result_key="pixels"),
         },
@@ -2144,7 +2119,6 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "ad_text_list": _field("array", "Smart+ ad text list", minItems=1, items={"type": "object", "required": ["ad_text"], "properties": {"ad_text": _field("string", "Ad text", minLength=1, maxLength=100)}, "additionalProperties": False}),
             "identity_type": _field("string", "Identity type", enum=["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]),
             "identity_id": _field("string", "Identity ID", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities"),
-            "identity_authorized_bc_id": _field("string", "Authorized Business Center selected from the identity lookup", minLength=1, lookup_tool="tiktok_list_identities", lookup_result_key="identities", selection_value_fields=["authorized_bc_id", "bc_id", "id"], selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"]),
             "call_to_action_id": _field("string", "CTA ID"),
             "call_to_action": _field(
                 "string", "TikTok Smart+ CTA enum value",
@@ -2219,13 +2193,6 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
                                 "call_to_action_id": _field("string", "TikTok CTA ID"),
                                 "identity_type": _field("string", "Identity type"),
                                 "identity_id": _field("string", "Identity ID"),
-                                "identity_authorized_bc_id": _field(
-                                    "string", "Authorized Business Center ID",
-                                    lookup_tool="tiktok_list_identities",
-                                    lookup_result_key="identities",
-                                    selection_value_fields=["authorized_bc_id", "bc_id", "id"],
-                                    selection_label_fields=["business_center_name", "display_name", "name", "authorized_bc_id"],
-                                ),
                                 "material_name": _field("string", "Creative material name"),
                                 "music_info": _field("object", "TikTok music configuration", additionalProperties=False),
                             },

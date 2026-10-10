@@ -241,6 +241,54 @@ class AdvertisingToolExecutor:
         self.owner = owner
         self.definition = definition
 
+    def replay_key(self, context: Any, input_data: dict[str, Any]) -> Any:
+        request = context.request
+        request_context = (
+            request.context if isinstance(request.context, Mapping) else {}
+        )
+        session = self._request_session(request, request_context)
+        account_id = self._request_account(request_context, input_data, session)
+        tool_context = copy.copy(session.ctx)
+        tool_context.scope = dict(getattr(session.ctx, "scope", {}) or {})
+        if account_id not in (None, ""):
+            tool_context.scope["account_id"] = str(account_id)
+        tool_context.metadata = {
+            **getattr(session.ctx, "metadata", {}),
+            "execution_mode": str(request.execution_mode or "dry_run"),
+            "run_id": str(request.run_id or ""),
+            "turn_id": str(request.turn_id or ""),
+        }
+        _definition, handler = self.owner._get_registered_tool(
+            self.definition.name
+        )
+        key_builder = getattr(handler, "replay_key", None)
+        if callable(key_builder):
+            return {
+                "namespace": str(self.definition.namespace or ""),
+                "provider_invocation": key_builder(
+                    tool_context, dict(input_data)
+                ),
+            }
+
+        arguments = dict(input_data)
+        scope_fields = tuple(
+            getattr(self.definition, "scope_fields", ()) or (
+                "account_id", "ad_account_id", "advertiser_id", "customer_id",
+            )
+        )
+        trusted_scope = str(account_id or "").strip()
+        for field in scope_fields:
+            supplied = str(arguments.get(field) or "").strip()
+            if supplied and supplied.removeprefix("act_") == (
+                trusted_scope.removeprefix("act_")
+            ):
+                arguments.pop(field, None)
+        return {
+            "namespace": str(self.definition.namespace or ""),
+            "account_id": trusted_scope,
+            "arguments": arguments,
+        }
+
     def execute(self, context: Any, input_data: dict[str, Any]) -> dict[str, Any]:
         request = context.request
         request_context = (
