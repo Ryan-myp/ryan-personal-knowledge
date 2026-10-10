@@ -54,9 +54,12 @@ def meta_updates(resource_type: str) -> dict[str, Any]:
         ),
     }
     if resource_type == "campaign":
+        from .meta.parameters import META_BID_STRATEGIES
+
         common.update({
             "daily_budget": _field("number", "Daily budget", minimum=0),
             "budget": _field("number", "Budget alias", minimum=0),
+            "bid_strategy": _field("string", "Campaign budget bidding strategy", enum=META_BID_STRATEGIES),
         })
     elif resource_type == "adset":
         common.update({

@@ -536,29 +536,11 @@ class TikTokAPIClient(BasePlatformClient):
         self, advertiser_id: str, campaign_id: str, updates: dict, live: bool = False
     ) -> dict:
         """更新 Campaign"""
-        normalized_updates = {key: value for key, value in updates.items() if value is not None}
-        daily_budget = normalized_updates.pop('daily_budget', None)
-        budget = normalized_updates.pop('budget', None)
-        if daily_budget is not None:
-            normalized_updates['budget'] = float(daily_budget)
-        elif budget is not None:
-            normalized_updates['budget'] = float(budget)
-        data = {
-            'advertiser_id': str(advertiser_id),
-            # TikTok v1.3 models hierarchy IDs as strings on create.  Do not
-            # coerce them to integers: large IDs are opaque provider values
-            # and the API rejects numeric JSON for this field.
-            'campaign_id': str(campaign_id),
-            'campaign': normalized_updates,
-        }
-        if not live:
-            return {
-                "mode": "dry_run", "execution_status": "planned", "live_support": True,
-                "campaign_id": str(campaign_id), "advertiser_id": str(advertiser_id),
-                "operation": {"campaign/update/": data},
-            }
-        self.acquire_rate_limit(self._rate_limiter)
-        return self.request('POST', 'campaign/update/', data=data)
+        return self._update_hierarchy(
+            advertiser_id, campaign_id, updates, resource="campaign",
+            resource_field="campaign_id", name_field="campaign_name",
+            status_alias="campaign_group_status", live=live,
+        )
     
     def pause_campaign(self, advertiser_id: str, campaign_id: str) -> dict:
         """暂停 Campaign"""
@@ -671,6 +653,10 @@ class TikTokAPIClient(BasePlatformClient):
         behavior.
         """
         budget_mode = adgroup.get('budget_mode')
+        if adgroup.get("bid_type") == "BID_TYPE_NO_BID":
+            if adgroup.get("pacing") not in (None, "", "PACING_MODE_SMOOTH"):
+                raise ValueError("TikTok No-Bid requires smooth delivery")
+            adgroup = {**adgroup, "pacing": "PACING_MODE_SMOOTH"}
         requested_status = self._normalize_status(adgroup.get('status', 0))
         if live and requested_status != 0:
             raise ValueError("TikTok live creation only allows paused Ad Groups")
@@ -777,27 +763,57 @@ class TikTokAPIClient(BasePlatformClient):
         live: bool = False,
     ) -> dict:
         """更新 Ad Group"""
-        normalized_updates = {key: value for key, value in updates.items() if value is not None}
-        daily_budget = normalized_updates.pop('daily_budget', None)
-        budget = normalized_updates.pop('budget', None)
-        if daily_budget is not None:
-            normalized_updates['daily_budget'] = int(float(daily_budget) * 100)
-        elif budget is not None:
-            normalized_updates['budget'] = int(float(budget) * 100)
-        data = {
-            'advertiser_id': str(advertiser_id),
-            'campaign_id': str(campaign_id),
-            'ad_group_id': str(adgroup_id),
-            'ad_group': normalized_updates,
-        }
+        return self._update_hierarchy(
+            advertiser_id, adgroup_id, updates, resource="adgroup",
+            resource_field="adgroup_id", name_field="adgroup_name",
+            status_alias="ad_group_status", live=live,
+        )
+
+    def _update_hierarchy(
+        self, advertiser_id, resource_id, updates, *,
+        resource, resource_field, name_field, status_alias, live,
+    ):
+        values = {key: value for key, value in updates.items() if value is not None}
+        statuses = [self._normalize_status(values.pop(key))
+                    for key in ("status", status_alias) if key in values]
+        if len(set(statuses)) > 1:
+            raise ValueError("conflicting delivery status fields")
+        if "name" in values:
+            values[name_field] = values.pop("name")
+        if "daily_budget" in values:
+            amount = float(values.pop("daily_budget"))
+            if "budget" in values and float(values["budget"]) != amount:
+                raise ValueError("conflicting budget fields")
+            values["budget"] = amount
+        if "budget" in values:
+            values["budget"] = float(values["budget"])
+        if "bid_amount" in values:
+            values["bid_price"] = float(values.pop("bid_amount"))
+        operations = {}
+        if values:
+            operations[f"{resource}/update/"] = {
+                "advertiser_id": str(advertiser_id),
+                resource_field: str(resource_id), **values,
+            }
+        if statuses:
+            operations[f"{resource}/status/update/"] = {
+                "advertiser_id": str(advertiser_id),
+                resource_field + "s": [str(resource_id)],
+                "operation_status": "DISABLE" if statuses[0] == 0 else "ENABLE",
+            }
+        if not operations:
+            raise ValueError("updates must contain a supported non-null field")
         if not live:
             return {
                 "mode": "dry_run", "execution_status": "planned", "live_support": True,
-                "adgroup_id": str(adgroup_id), "advertiser_id": str(advertiser_id),
-                "campaign_id": str(campaign_id), "operation": {"adgroup/update/": data},
+                resource_field: str(resource_id), "advertiser_id": str(advertiser_id),
+                "operation": operations,
             }
-        self.acquire_rate_limit(self._rate_limiter)
-        return self.request('POST', 'adgroup/update/', data=data)
+        results = {}
+        for endpoint, payload in operations.items():
+            self.acquire_rate_limit(self._rate_limiter)
+            results[endpoint] = self.request("POST", endpoint, data=payload)
+        return results if len(results) > 1 else next(iter(results.values()))
 
     def update_adgroup_targeting(
         self, advertiser_id: str, campaign_id: str, adgroup_id: str,
@@ -1018,7 +1034,10 @@ class TikTokAPIClient(BasePlatformClient):
             creative = dict(supplied_creatives)
 
         requested_status = self._normalize_status(ad.get('status', 0))
-        if live and requested_status != 0:
+        if live and (
+            requested_status != 0
+            or str(ad.get('operation_status') or 'DISABLE').upper() != 'DISABLE'
+        ):
             raise ValueError("TikTok live creation only allows paused Ads")
         creative.update({
             'ad_name': ad.get('name', creative.get('ad_name', 'Untitled Ad')),
@@ -1065,6 +1084,18 @@ class TikTokAPIClient(BasePlatformClient):
             creative.pop('creative_type', None)
         if ad.get('ad_text') and not creative.get('ad_text'):
             creative['ad_text'] = ad['ad_text']
+
+        if "identity_authorized_bc_id" in ad or "identity_authorized_bc_id" in creative:
+            raise ValueError("BC authorization is resolved privately by the Provider")
+        if live and creative.get("identity_type") == "BC_AUTH_TT":
+            identity = next((
+                item for item in self.list_identities(advertiser_id, "BC_AUTH_TT", page_size=100)
+                if str(item.get("identity_id") or "") == str(creative.get("identity_id") or "")
+                and item.get("available_status") == "AVAILABLE"
+            ), None)
+            if not identity or not identity.get("identity_authorized_bc_id"):
+                raise ValueError("selected BC identity is not authorized for this advertiser")
+            creative["identity_authorized_bc_id"] = identity["identity_authorized_bc_id"]
 
         data = {
             'advertiser_id': str(advertiser_id),
@@ -3063,11 +3094,23 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError(
                 "advertiser_id, adgroup_id and creative_id must not be empty"
             )
+        patch_update = not bool({"landing_page_url", "call_to_action_id"} & set(creative))
+        if live and not patch_update:
+            current = self.get_ad(advertiser_id, adgroup_id, creative_id)
+            preserved = {
+                field: current[field] for field in (
+                    "ad_name", "ad_format", "ad_text", "video_id", "image_ids",
+                    "identity_type", "identity_id", "identity_authorized_bc_id",
+                    "tiktok_item_id", "landing_page_url", "call_to_action",
+                    "call_to_action_id", "operation_status",
+                ) if current.get(field) not in (None, "", [])
+            }
+            creative = {**preserved, **creative}
         data = {
             "advertiser_id": advertiser_id,
             "adgroup_id": adgroup_id,
             "creatives": [{"ad_id": creative_id, **creative}],
-            "patch_update": True,
+            "patch_update": patch_update,
         }
         if not live:
             return {
@@ -3631,7 +3674,7 @@ class TikTokAPIClient(BasePlatformClient):
         if not advertiser_id.isdigit():
             raise ValueError("advertiser_id must contain digits only")
         if identity_type is not None and str(identity_type).upper() not in {
-            "CUSTOMIZED_USER", "AUTH_CODE", "TT_USER",
+            "CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT",
         }:
             raise ValueError("unsupported identity_type")
         try:
@@ -3653,7 +3696,7 @@ class TikTokAPIClient(BasePlatformClient):
             rows = payload
         else:
             rows = (
-                payload.get("list", payload.get("identities", []))
+                payload.get("identity_list", payload.get("list", payload.get("identities", [])))
                 if isinstance(payload, dict) else []
             )
         return self._limit_list(rows, page_size)

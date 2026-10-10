@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from contextvars import copy_context
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, replace
@@ -133,7 +134,7 @@ class ModelExecutionCoordinator:
             executor = ThreadPoolExecutor(
                 max_workers=1, thread_name_prefix="agent-model"
             )
-            future = executor.submit(invoke)
+            future = executor.submit(copy_context().run, invoke)
         except (RuntimeError, OSError, MemoryError):
             self._model_slots.release()
             if executor is not None:

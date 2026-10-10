@@ -26,6 +26,7 @@ class AdvertisingToolPolicyFactory:
             write_guard_configured=True,
             require_confirmation_for_writes=True,
             before_check=self.check_scope_and_confirmation,
+            scope_resolver=self.resolve_scope,
             confirmation_builder=self.build_confirmation,
             interaction_builder=self.interactions.build,
             live_approved_tools_provider=lambda: runtime._live_approved_tools,
@@ -34,6 +35,15 @@ class AdvertisingToolPolicyFactory:
                 PersistenceIdempotencyStore(store) if store is not None else None
             ),
         )
+
+    def resolve_scope(self, tool: Any, request: Any, arguments: Mapping[str, Any]) -> Any:
+        request_context = request.context if isinstance(request.context, Mapping) else {}
+        platform = self.runtime._canonical_platform(str(getattr(tool, "namespace", "") or ""))
+        request_account, argument_account = self._accounts_for_call(
+            tool, platform, arguments, request_context,
+        )
+        account = request_account or argument_account
+        return {"namespace": platform, "account_id": str(account)} if account else None
 
     def check_scope_and_confirmation(
         self,
@@ -122,12 +132,11 @@ class AdvertisingToolPolicyFactory:
     ) -> tuple[Any, Any]:
         runtime = self.runtime
         scoped_account = self._scoped_account(tool, platform, request_context)
-        namespaces = request_context.get("_agent_tool_namespaces", ())
-        if not namespaces:
-            platform_params = request_context.get("platform_params")
-            namespaces = (
-                list(platform_params) if isinstance(platform_params, Mapping) else []
-            )
+        platform_params = request_context.get("platform_params")
+        namespaces = (
+            list(platform_params) if isinstance(platform_params, Mapping) and platform_params
+            else request_context.get("_agent_tool_namespaces", ())
+        )
         multiple_namespaces = len({
             runtime._canonical_platform(namespace)
             for namespace in (namespaces or ())

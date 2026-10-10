@@ -1299,6 +1299,19 @@ class MetaAPIClient(BasePlatformClient):
             "Meta campaign get",
         )
 
+    def find_campaigns_by_name(self, account_id: str, name: str) -> list:
+        """Find an exact name across the account, without a first-page scan."""
+        clean_id = self._clean_meta_id(account_id, "account_id")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("campaign name must not be empty")
+        return self._list_graph_pages(
+            clean_id, f"/act_{clean_id}/campaigns", {
+                "fields": "id,name,status,objective",
+                "limit": 2,
+                "filtering": json.dumps([{"field": "name", "operator": "EQUAL", "value": name}]),
+            },
+        )
+
     def resource_belongs_to_account(
         self, account_id: str, resource_type: str, resource_id: str
     ) -> bool:
@@ -1318,18 +1331,18 @@ class MetaAPIClient(BasePlatformClient):
         }.get(str(resource_type or "").lower(), str(resource_type or "").lower())
 
         # Graph object IDs are globally addressable. For objects that expose
-        # ``account_id`` (notably Ad Creative), a node read is both cheaper
+        # ``account_id``, a node read is both cheaper
         # and more complete than searching an arbitrary first page of the
         # account edge. If the provider omits the ownership field, retain the
         # bounded edge lookup as a conservative fallback.
-        if resource_type == "creative":
+        if resource_type in {"campaign", "adset", "ad", "creative"}:
             try:
                 node = self.require_resource_object(
                     self.request(
-                        "GET", f"/{self._clean_meta_id(resource_id, 'creative_id')}",
+                        "GET", f"/{self._clean_meta_id(resource_id, resource_type + '_id')}",
                         extra_params={"fields": "id,account_id"},
                     ),
-                    "Meta creative ownership lookup",
+                    "Meta resource ownership lookup",
                 )
                 owner_id = str(node.get("account_id") or "").replace("act_", "")
                 if owner_id:
@@ -1426,6 +1439,8 @@ class MetaAPIClient(BasePlatformClient):
             data['buying_type'] = campaign['buying_type']
         data['status'] = requested_status
         daily_budget = campaign.get('daily_budget', campaign.get('budget'))
+        if daily_budget is not None or campaign.get('lifetime_budget') is not None:
+            data['bid_strategy'] = campaign.get('bid_strategy', 'LOWEST_COST_WITHOUT_CAP')
         if daily_budget is not None:
             data['daily_budget'] = str(int(float(daily_budget) * 100))  # 转为分
         if campaign.get('lifetime_budget') is not None:
@@ -1684,7 +1699,7 @@ class MetaAPIClient(BasePlatformClient):
     def get_ad(self, ad_id: str, fields: list = None) -> dict:
         """获取 Ad 详情"""
         params = {
-            'fields': ','.join(fields) if fields else 'id,name,status,adset_id'
+            'fields': ','.join(fields) if fields else 'id,name,status,adset_id,campaign_id,creative'
         }
         return self.require_resource_object(
             self.request('GET', f"/{ad_id}", extra_params=params),

@@ -1084,7 +1084,8 @@ def test_provider_budget_aliases_are_normalized_before_api_payload():
     assert tiktok_payloads[-1]["budget"] == 12.5
     assert tiktok_payloads[-1]["operation_status"] == "DISABLE"
     tiktok.update_campaign("t1", "123", {"budget": 15.25}, live=True)
-    assert tiktok_payloads[-1]["campaign"]["budget"] == 15.25
+    assert tiktok_payloads[-1]["budget"] == 15.25
+    assert "campaign" not in tiktok_payloads[-1]
 
 
 def test_tiktok_parent_scoped_reads_filter_provider_broad_pages_locally():

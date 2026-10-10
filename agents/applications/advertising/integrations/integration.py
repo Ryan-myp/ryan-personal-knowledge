@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import copy
 from typing import Any, Mapping
 
 from agents.agent_harness import (
@@ -300,9 +301,25 @@ class AdvertisingToolExecutor:
         clients = self.owner._build_request_clients(
             request_context.get("credentials"),
         )
+        tool_context = copy.copy(session.ctx)
+        tool_context.scope = dict(session.ctx.scope)
+        tool_context.metadata = {
+            **session.ctx.metadata,
+            "execution_mode": str(request.execution_mode or "dry_run"),
+            "run_id": str(request.run_id or ""),
+            "turn_id": str(request.turn_id or ""),
+            "cancellation_event": request.cancellation_event,
+            "lease_lost_event": request.lease_lost_event,
+        }
         result = self.owner.tool_executor.execute(
-            session.ctx, self.definition.name, dict(input_data), clients,
+            tool_context, self.definition.name, dict(input_data), clients,
         )
+        if self.definition.is_write_tool and result.success:
+            result.data = {
+                "execution_status": "executed",
+                **result.data,
+                "execution_mode": str(request.execution_mode or "dry_run"),
+            }
         result = self.owner.input_builder.parameter_selection.decorate_lookup_result(
             self.definition, result, session.ctx,
             str(getattr(self.definition, "namespace", "") or ""),

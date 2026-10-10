@@ -58,20 +58,22 @@ class MetaGetCampaignHandler(ToolHandler):
         # 如果只有名称没有 ID，先列出 campaigns 找匹配的
         if not campaign_id and campaign_name:
             try:
-                campaigns = (
-                    call_with_optional_page_size(
+                if isinstance(self.client, MetaAPIClient):
+                    campaigns = self.client.find_campaigns_by_name(account_id, campaign_name)
+                else:
+                    campaigns = call_with_optional_page_size(
                         self.client.list_campaigns,
                         account_id,
                         limit=input_data.get("limit", 25),
-                    )
-                    if self.client else []
-                )
-                name_lower = campaign_name.lower()
-                for c in campaigns:
-                    cname = (c.get("name") or c.get("campaign_name") or "").lower()
-                    if cname == name_lower or name_lower in cname or cname in name_lower:
-                        campaign_id = str(c.get("id") or c.get("campaign_id", ""))
-                        break
+                    ) if self.client else []
+                matches = [
+                    c for c in campaigns
+                    if (c.get("name") or c.get("campaign_name") or "") == campaign_name
+                ]
+                if len(matches) > 1:
+                    return ToolResult.error("找到多个同名 Campaign，请提供准确 ID。")
+                if matches:
+                    campaign_id = str(matches[0].get("id") or matches[0].get("campaign_id", ""))
                 if not campaign_id:
                     names = [c.get("name") or c.get("campaign_name") for c in campaigns[:5]]
                     return ToolResult.error(

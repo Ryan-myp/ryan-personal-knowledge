@@ -71,7 +71,7 @@ TIKTOK_KEYWORD_LANGUAGES = [
 ]
 TIKTOK_INTEREST_KEYWORD_MODES = ["FUZZ_MATCH", "SEMANTIC_RECOMMEND"]
 TIKTOK_INTEREST_AUDIENCE_TYPES = ["GENERAL_INTEREST", "PURCHASE_INTENTION"]
-TIKTOK_IDENTITY_TYPES = ["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER"]
+TIKTOK_IDENTITY_TYPES = ["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]
 TIKTOK_PIXEL_OBJECT_TYPES = ["WEBSITE", "APP"]
 
 # Current v1.3 all-in-one Spark Ads surface.  This is intentionally separate
@@ -1009,6 +1009,12 @@ def tiktok_adgroup_schema() -> dict[str, Any]:
             "is_hfss": _field("boolean", "Whether the product is high fat, salt or sugar"),
         },
         "conditional_rules": [
+            {
+                "id": "no_bid_smooth_delivery",
+                "if": {"bid_type": "BID_TYPE_NO_BID"},
+                "allowed": {"pacing": ["PACING_MODE_SMOOTH"]},
+                "message": "No-Bid requires smooth delivery",
+            },
             {
                 "id": "app_android_dependencies",
                 "if": {"promotion_type": "APP_ANDROID"},

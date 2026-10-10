@@ -764,6 +764,7 @@ class Agent:
             state.usage = {}
             state.last_used_at = time.monotonic()
         checkpoint_source_id: str | None = None
+        all_tool_results: list[dict[str, Any]] = []
         try:
             self._state_io.hydrate(request, state)
             checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
@@ -808,7 +809,6 @@ class Agent:
             self._state_io.append_message(state, user_message, request=request)
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
-            all_tool_results: list[dict[str, Any]] = []
             tool_call_count = 0
             last_reply = ""
             application_data: Mapping[str, Any] = {}
@@ -1092,6 +1092,7 @@ class Agent:
                 data={
                     "messages": [item.to_dict() for item in state.messages],
                     "error": "model_token_budget_exceeded",
+                    "tool_results": list(all_tool_results),
                     "usage": dict(state.usage),
                 },
             )
@@ -1110,6 +1111,7 @@ class Agent:
                 data={
                     "messages": [item.to_dict() for item in state.messages],
                     "error": "model_timeout",
+                    "tool_results": list(all_tool_results),
                     "usage": dict(state.usage),
                 },
             )
@@ -1140,6 +1142,7 @@ class Agent:
                 data={
                     "messages": [item.to_dict() for item in state.messages],
                     "error": type(error).__name__,
+                    "tool_results": list(all_tool_results),
                     "usage": dict(state.usage),
                 },
             )

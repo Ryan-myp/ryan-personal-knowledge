@@ -1,6 +1,7 @@
 """Provider-neutral execution boundary for registered advertising Tools."""
 
 from __future__ import annotations
+from contextvars import copy_context
 
 import copy
 import threading
@@ -306,7 +307,7 @@ class _ToolInvocationRunner:
             )
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ad-agent-tool")
         try:
-            future = executor.submit(self._invoke_handler, invocation, handler)
+            future = executor.submit(copy_context().run, self._invoke_handler, invocation, handler)
         except RuntimeError:
             capacity.release()
             executor.shutdown(wait=False, cancel_futures=True)
@@ -483,7 +484,7 @@ class ToolExecutor:
         request_clients: Optional[dict[str, Any]],
     ) -> Optional[ToolResult]:
         write_error = self._live_write_error(
-            definition, handler, tool_name, request_clients
+            ctx, definition, handler, tool_name, request_clients
         )
         if write_error:
             return write_error
@@ -491,12 +492,16 @@ class ToolExecutor:
 
     def _live_write_error(
         self,
+        ctx: Any,
         definition: ToolDefinition,
         handler: Any,
         tool_name: str,
         request_clients: Optional[dict[str, Any]],
     ) -> Optional[ToolResult]:
-        if not definition.is_write_tool or self.services.execution_mode != "live":
+        mode = str((ctx.metadata if ctx else {}).get(
+            "execution_mode", self.services.execution_mode,
+        ))
+        if not definition.is_write_tool or mode != "live":
             return None
         platform = self.services.normalize_namespace(definition.namespace)
         request_client = (request_clients or {}).get(platform)

@@ -6,6 +6,7 @@ retries, circuit breaking, cancellation and model-facing output limits.
 """
 
 from __future__ import annotations
+from contextvars import copy_context
 
 import json
 import threading
@@ -318,7 +319,7 @@ class ToolExecutionCoordinator:
                             max_workers=1, thread_name_prefix="agent-tool-call",
                         )
                         future: Future[Any] = pool.submit(
-                            execute, context, dict(call.arguments),
+                            copy_context().run, execute, context, dict(call.arguments),
                         )
                     except Exception:
                         self._inflight_tool_slots.release()
@@ -779,7 +780,7 @@ class ToolExecutionCoordinator:
                 )
                 futures = [
                     pool.submit(
-                        self.execute_one, request, assistant, call, state,
+                        copy_context().run, self.execute_one, request, assistant, call, state,
                     )
                     for call in resolved_calls
                 ]

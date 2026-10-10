@@ -163,6 +163,13 @@ class AdvertisingToolInteractionProvider:
         context: Any,
         definition: Any,
     ) -> Mapping[str, Any] | None:
+        request_context = context.request.context
+        selected_workflow = isinstance(request_context, Mapping) and (
+            request_context.get("creation_blueprint_id")
+            or request_context.get("creation_template_id")
+        )
+        if not selected_workflow and getattr(definition, "resource_type", "") != "campaign":
+            return self._action_interaction(context, definition, "请补齐工具必需参数。")
         ui = self._creation_ui(context, definition)
         cards = ui.get("cards") if isinstance(ui, Mapping) else None
         if not isinstance(cards, list) or not cards:
@@ -180,6 +187,16 @@ class AdvertisingToolInteractionProvider:
             return False
         arguments = getattr(context.tool_call, "arguments", {})
         if validate_tool_input(definition.input_schema, dict(arguments)):
+            return False
+        provider_required = getattr(definition.input_schema, "requires", ()) or ()
+        if any(arguments.get(field) in (None, "", []) for field in provider_required):
+            return True
+        request_context = context.request.context
+        selected_workflow = isinstance(request_context, Mapping) and (
+            request_context.get("creation_blueprint_id")
+            or request_context.get("creation_template_id")
+        )
+        if not selected_workflow:
             return False
         return bool(self._creation_ui(context, definition).get("needs_input"))
 

@@ -40,6 +40,7 @@ API_SURFACE = [
     {"resource": "account", "action": "get", "method": "get_account", "status": "implemented"},
     {"resource": "campaign", "action": "list", "method": "list_campaigns", "status": "implemented"},
     {"resource": "campaign", "action": "get", "method": "get_campaign", "status": "implemented"},
+    {"resource": "campaign", "action": "list", "method": "find_campaigns_by_name", "status": "implemented"},
     {"resource": "campaign", "action": "create", "method": "create_campaign", "status": "implemented"},
     {"resource": "campaign", "action": "update", "method": "update_campaign", "status": "implemented"},
     {"resource": "campaign", "action": "pause", "method": "pause_campaign", "status": "implemented"},

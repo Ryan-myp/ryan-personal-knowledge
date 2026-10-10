@@ -204,6 +204,8 @@ class ParameterSelectionService:
             seen: set[str] = set()
             expires_at = 0
             for item in values:
+                if len(options) >= 20:
+                    break
                 extracted = self._extract_selection_option(
                     item, field_name, field_schema,
                 )

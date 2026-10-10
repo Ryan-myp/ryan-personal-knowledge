@@ -1,5 +1,5 @@
 {
-  "digest": "828ce8a5cc9b4f4b32e934e79e36cdd3b9614c7b2d77592fee1264f588c0d562",
+  "digest": "29c5c2bd69ae8a001a9e1edbf23aa3d2c64c47843157e36cc005025243d816e0",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2444,7 +2444,7 @@
       ]
     },
     "google-ads": {
-      "digest": "bab578c7289095b5451903d668bcd5a9b33950cd7137e7f7e3db6dcad032e3fc",
+      "digest": "d278adcf776802027870420c676527c776908fcc66c527686505d0e2b03b2bc9",
       "tool_count": 103,
       "tools": [
         {
@@ -4663,7 +4663,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "1411d6613981ecdf93d2180becbc84171044aa91ae0f44b298599f57b8bba39e",
+          "contract_hash": "b59ee2f98ae2da20455f830887a2c417150093893447e365deac10356cfd7630",
           "contract_version": "1.4.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
@@ -4787,16 +4787,6 @@
                 "message": "VIDEO requires video_setting",
                 "required": [
                   "video_setting"
-                ]
-              },
-              {
-                "id": "pmax_goal_setting_dependency",
-                "if": {
-                  "advertising_channel_type": "PERFORMANCE_MAX"
-                },
-                "message": "PERFORMANCE_MAX requires campaign_goal_setting (optional optimization goal selection)",
-                "required": [
-                  "campaign_goal_setting"
                 ]
               },
               {
@@ -18323,7 +18313,7 @@
       ]
     },
     "meta": {
-      "digest": "0a20ebdb42fc9ed3dd21d5d6a66bb3e6a638f748386c1e9075b4d3a42a16d44f",
+      "digest": "fdb63a4818a2759fd3e5bd902aa15a45432049be380fdd3d6d1a63dcc9a73c59",
       "tool_count": 78,
       "tools": [
         {
@@ -20768,7 +20758,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f73ffb2923b1c85b01b40af5764a36394f8fd6eb2a425699c38317cd147df602",
+          "contract_hash": "f1399903ab1187b4f1f84bda8d61bf41b1106489eb326038e1088b699e20f05d",
           "contract_version": "1.4.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
@@ -20791,6 +20781,17 @@
             "properties": {
               "account_id": {
                 "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "bid_strategy": {
+                "default": "LOWEST_COST_WITHOUT_CAP",
+                "description": "Campaign budget bidding strategy",
+                "enum": [
+                  "LOWEST_COST_WITHOUT_CAP",
+                  "LOWEST_COST_WITH_BID_CAP",
+                  "COST_CAP",
+                  "LOWEST_COST_WITH_MIN_ROAS"
+                ],
                 "type": "string"
               },
               "budget": {
@@ -28264,7 +28265,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7fccd957da7537197f2d0ef48e81a5f75e1f9be657a27ae5eed0bccace40424e",
+          "contract_hash": "341774b52237c8dde974396bd0765c64af9f4c226f90f52332da405233cdb6f6",
           "contract_version": "1.4.0",
           "description": "更新 Meta campaign；受控 live 路径仅允许操作已暂停测试资源。",
           "effect_class": "write",
@@ -28309,6 +28310,16 @@
                   }
                 },
                 "properties": {
+                  "bid_strategy": {
+                    "description": "Campaign budget bidding strategy",
+                    "enum": [
+                      "LOWEST_COST_WITHOUT_CAP",
+                      "LOWEST_COST_WITH_BID_CAP",
+                      "COST_CAP",
+                      "LOWEST_COST_WITH_MIN_ROAS"
+                    ],
+                    "type": "string"
+                  },
                   "budget": {
                     "description": "Budget alias",
                     "minimum": 0,
@@ -29527,7 +29538,7 @@
       ]
     },
     "tiktok": {
-      "digest": "b590b57a4710bea34a40583ee319f9a0415ea70524b842476813939bfbc06425",
+      "digest": "f1eb27bcdee02fb2224e5f491b28dad00bf87605d7cae11da90b2297a04b0ba4",
       "tool_count": 85,
       "tools": [
         {
@@ -29600,7 +29611,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "874d8256332a9caf626bda2afa0267349d76973a5f7e3da83f980888548651bb",
+          "contract_hash": "cd1b6d4dc03fbad248e852c3f1d453de0931a5ab1faf1c5d0ac1c577b2f1e7bb",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Ad。",
           "effect_class": "write",
@@ -29819,7 +29830,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string",
                 "ui_visible_when": {
@@ -30272,7 +30284,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8c55cfde074264282417e6f46a8ed5d4504b6223e277ba517c801a8acd8186e7",
+          "contract_hash": "de68a935dbb647149bf3e90e07b4be4fb87a9122ecce19208cc89791f584a9d3",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Ads Ad Group。",
           "effect_class": "write",
@@ -30281,6 +30293,18 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "allowed": {
+                  "pacing": [
+                    "PACING_MODE_SMOOTH"
+                  ]
+                },
+                "id": "no_bid_smooth_delivery",
+                "if": {
+                  "bid_type": "BID_TYPE_NO_BID"
+                },
+                "message": "No-Bid requires smooth delivery"
+              },
               {
                 "allowed": {
                   "billing_event": [
@@ -32959,7 +32983,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f893b6653751074efa3b9756d19b5c6f09218db6e647b4e9f267e21c7716a043",
+          "contract_hash": "cdf2604e1c4757e3dfa7e3208a9c2a1990664c9ad40b4c4532ce668c9d580cfb",
           "contract_version": "1.3.0",
           "description": "创建 TikTok CAROUSEL 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -33175,7 +33199,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string",
                 "ui_visible_when": {
@@ -33588,7 +33613,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "3a71a769a6761f80ccdbab353a4f263c1693aef2bc15d4366c0cf3f8652e0a7a",
+          "contract_hash": "6c39eaf589aac6731cd7299978db1e54dd953974db7743deb4d0b0331d57ffbd",
           "contract_version": "2",
           "description": "创建 TikTok 广告创意；TikTok v1.3 会将创意作为 Ad 的 creatives 载荷创建，需要提供所属 Campaign、Ad Group 和素材/文案，默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -33811,7 +33836,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string",
                 "ui_visible_when": {
@@ -34871,7 +34897,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8c2653805b77a1234fa23c23b05b7df5312a098f3b76fee72f7f1c613dcc1739",
+          "contract_hash": "596ddbff384a8da7cbcdfc0108cad0e1fc035d8d57db3584ddc3e332b04ac499",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Product Sales 商品销售广告，支持 Catalog、Shop 商品引用和素材创意；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -35123,7 +35149,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string",
                 "ui_visible_when": {
@@ -35592,7 +35619,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7d6c1f903ac24bb2b71f26ec1af48e5b26299197b29f88c09262b5c47c6b59bf",
+          "contract_hash": "9c1b95144757cb36c97adc73abf01ace23d9ee1ea019a006c0a1963fb0abe618",
           "contract_version": "1.3.0",
           "description": "创建 TikTok Product Sales 商品销售广告组，支持 Website、Catalog 和 Shop 商品来源；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -35601,6 +35628,18 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "allowed": {
+                  "pacing": [
+                    "PACING_MODE_SMOOTH"
+                  ]
+                },
+                "id": "no_bid_smooth_delivery",
+                "if": {
+                  "bid_type": "BID_TYPE_NO_BID"
+                },
+                "message": "No-Bid requires smooth delivery"
+              },
               {
                 "allowed": {
                   "billing_event": [
@@ -36986,7 +37025,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "94ffd49a71a0c035f83bbb44f1eb40a5fac57a5b6a2040a1197624ef3b96a5aa",
+          "contract_hash": "c75b86a1d9df3bc9362f49e36353bfe08c3bd19cccf73a2cf1578cd6e67c2466",
           "contract_version": "1.3.0",
           "description": "创建 TikTok SINGLE_IMAGE 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -37202,7 +37241,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string",
                 "ui_visible_when": {
@@ -37643,7 +37683,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "707e376b09bce3936314ca092d50767fdcae6a04535026e9166ad2a844003c01",
+          "contract_hash": "741ca4078725a05241dfaa2aaf278012765c99fef472ead71cbd981fcdaf4d6d",
           "contract_version": "1.3.0",
           "description": "创建 TikTok SINGLE_VIDEO 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -37859,7 +37899,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string",
                 "ui_visible_when": {
@@ -40946,7 +40987,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "64091373285426b99ca1fcb27a62b572e9857a1c3f6f0f6b122809eacdda46fb",
+          "contract_hash": "1bfb92c3f01e21c982a4280f1727b878d52ffba847c64f7e31b1a1fc2777f30e",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告账户下的可用广告身份。",
           "effect_class": "read",
@@ -40982,7 +41023,8 @@
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
-                  "TT_USER"
+                  "TT_USER",
+                  "BC_AUTH_TT"
                 ],
                 "type": "string"
               },
@@ -49426,6 +49468,18 @@
         "execution_status": "dry_run_only",
         "inventory_scope": "official_graph_edges_baseline",
         "method": "get_campaign",
+        "provider": "meta",
+        "resource": "campaign",
+        "source_url": "https://developers.facebook.com/docs/marketing-api/reference",
+        "status": "implemented"
+      },
+      {
+        "action": "list",
+        "api_version": "v19.0",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_graph_edges_baseline",
+        "method": "find_campaigns_by_name",
         "provider": "meta",
         "resource": "campaign",
         "source_url": "https://developers.facebook.com/docs/marketing-api/reference",

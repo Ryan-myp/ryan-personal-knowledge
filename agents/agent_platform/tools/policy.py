@@ -123,6 +123,7 @@ class ToolExecutionPolicy:
     before_check: Optional[
         Callable[[Any, Any, Mapping[str, Any]], Optional[tuple[str, str]]]
     ] = None
+    scope_resolver: Optional[Callable[[Any, Any, Mapping[str, Any]], Any]] = None
     confirmation_builder: Optional[
         Callable[[ToolCallContext, Any, Mapping[str, Any]], Mapping[str, Any] | None]
     ] = None
@@ -184,11 +185,15 @@ class ToolExecutionPolicy:
             decision="blocked",
             reason_code=reason_code,
         )
+        repairable = (
+            reason_code == "input_schema"
+            and self._can_repair_extra_fields(definition, dict(call.arguments))
+        )
         result = {
             "block": True,
             "reason": message,
-            "terminate": True,
-            "needs_input": reason_code in {
+            "terminate": not repairable,
+            "needs_input": not repairable and reason_code in {
                 "confirmation_required", "scope_required", "scope_mismatch",
                 "input_schema", "creation_input_required",
             },
@@ -209,11 +214,22 @@ class ToolExecutionPolicy:
             result["recovery_required"] = True
         return result
 
+    def _can_repair_extra_fields(self, definition: Any, arguments: dict[str, Any]) -> bool:
+        schema = _schema(definition)
+        properties = schema.get("properties") or {}
+        if not schema or schema.get("additionalProperties", False) is not False:
+            return False
+        extras = set(arguments) - set(properties)
+        if not extras:
+            return False
+        declared = {key: value for key, value in arguments.items() if key not in extras}
+        return self._validate_schema(definition, declared) is None
+
     def after_tool_call(
         self, context: ToolCallContext, result: Mapping[str, Any],
     ) -> Optional[Mapping[str, Any]]:
         tool_data = result.get("data")
-        uncertain = (
+        uncertain = _is_write(context.tool_definition) and (
             result.get("success") is False
             or result.get("effect_state") in {"unknown", "recovery_required"}
             or (
@@ -441,6 +457,11 @@ class ToolExecutionPolicy:
         if not isinstance(request_context, Mapping):
             request_context = {}
         scope = request_context.get("scope")
+        if scope is None and callable(self.scope_resolver):
+            try:
+                scope = self.scope_resolver(definition, request, arguments)
+            except Exception:
+                return "scope_invalid", "resource scope resolution failed"
         if bool(_value(definition, "scope_required", False)) and scope is None:
             return "scope_required", "Tool requires a resolved resource scope"
         scope_policy = request_context.get("scope_policy")

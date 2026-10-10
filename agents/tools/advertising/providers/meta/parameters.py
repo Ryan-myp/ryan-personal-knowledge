@@ -874,6 +874,10 @@ def meta_campaign_schema() -> dict[str, Any]:
                 },
             ),
             "buying_type": _field("string", "Buying type", enum=["AUCTION", "RESERVED"]),
+            "bid_strategy": _field(
+                "string", "Campaign budget bidding strategy",
+                enum=META_BID_STRATEGIES, default="LOWEST_COST_WITHOUT_CAP",
+            ),
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
             "special_ad_categories": _field(
                 ["array", "string"], "Special ad category; use NONE when not applicable",

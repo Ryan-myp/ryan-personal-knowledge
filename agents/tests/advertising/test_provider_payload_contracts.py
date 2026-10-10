@@ -2372,6 +2372,7 @@ def test_meta_test_capi_tool_requires_test_code_and_uses_test_endpoint_contract(
 
 def test_meta_resource_ownership_accepts_graph_ids_and_ad_set_alias():
     client = MetaAPIClient({"access_token": "test"})
+    client.request = lambda *_args, **_kwargs: {"id": "as-1"}
     client.list_pixels = lambda account_id, limit=25: [{"id": "px-1"}]
     assert client.resource_belongs_to_account("123", "pixel", "px-1") is True
 
@@ -3449,7 +3450,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
         "name": "Video creative", "video_id": "video-1",
         "creative_type": "SINGLE_VIDEO", "ad_text": "Try it",
         "call_to_action_id": "cta-1", "identity_id": "identity-1",
-        "deeplink": "myapp://home", "operation_status": "ENABLE",
+        "deeplink": "myapp://home", "operation_status": "DISABLE",
     }, live=True)
     assert payloads[-1]["adgroup_id"] == "202"
     ad = payloads[-1]["creatives"][0]
@@ -3457,6 +3458,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
     assert ad["ad_text"] == "Try it"
     assert ad["call_to_action_id"] == "cta-1"
     assert ad["deeplink"] == "myapp://home"
+    assert ad["operation_status"] == "DISABLE"
 
 
 def test_tiktok_typed_ad_tools_validate_assets_and_fix_format_payloads():
@@ -6789,10 +6791,10 @@ def test_google_update_ad_uses_atomic_ad_and_ad_group_ad_mutations():
                 },
                 "updateMask": {
                     "paths": [
-                        "responsiveSearchAd.headlines",
-                        "responsiveSearchAd.descriptions",
-                        "finalUrls",
-                        "responsiveSearchAd.path1",
+                        "responsive_search_ad.headlines",
+                        "responsive_search_ad.descriptions",
+                        "final_urls",
+                        "responsive_search_ad.path1",
                     ]
                 },
             }
@@ -6840,7 +6842,7 @@ def test_google_update_ad_rejects_creative_mutation_for_non_responsive_search_ad
 def test_google_ad_content_field_maps_final_url_without_status_context():
     assert GoogleAdsAPIClient._google_ad_content_field(
         "final_url", " https://example.test/path "
-    ) == ({"finalUrls": ["https://example.test/path"]}, "finalUrls")
+    ) == ({"finalUrls": ["https://example.test/path"]}, "final_urls")
 
     with pytest.raises(ValueError, match="final_url"):
         GoogleAdsAPIClient._google_ad_content_field("final_url", "")

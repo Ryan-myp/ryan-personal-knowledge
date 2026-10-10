@@ -628,7 +628,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
         query = f"""
             SELECT campaign.id, campaign.name, campaign.status,
-                   campaign.advertising_channel_type, campaign.bidding_strategy
+                   campaign.advertising_channel_type, campaign.advertising_channel_sub_type,
+                   campaign.bidding_strategy, campaign.bidding_strategy_type,
+                   campaign.app_campaign_setting.app_id,
+                   campaign.app_campaign_setting.app_store,
+                   campaign.app_campaign_setting.bidding_strategy_goal_type,
+                   campaign.shopping_setting.merchant_id,
+                   campaign.shopping_setting.feed_label,
+                   campaign.shopping_setting.campaign_priority
             FROM campaign
             WHERE campaign.id = {campaign_id}
         """
@@ -642,7 +649,23 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'name': camp.get('name'),
                 'status': camp.get('status'),
                 'advertising_channel_type': camp.get('advertisingChannelType'),
+                'advertising_channel_sub_type': camp.get('advertisingChannelSubType'),
                 'bidding_strategy': camp.get('biddingStrategy'),
+                'bidding_strategy_type': camp.get('biddingStrategyType'),
+                'app_campaign_setting': {
+                    target: camp.get("appCampaignSetting", {}).get(source)
+                    for source, target in (
+                        ("appId", "app_id"), ("appStore", "app_store"),
+                        ("biddingStrategyGoalType", "bidding_strategy_goal_type"),
+                    ) if source in camp.get("appCampaignSetting", {})
+                },
+                'shopping_setting': {
+                    target: camp.get("shoppingSetting", {}).get(source)
+                    for source, target in (
+                        ("merchantId", "merchant_id"), ("feedLabel", "feed_label"),
+                        ("campaignPriority", "campaign_priority"),
+                    ) if source in camp.get("shoppingSetting", {})
+                },
             }
         raise APIError(f"Google campaign {campaign_id} was not found")
 
@@ -3112,7 +3135,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
             numeric_ad_id = self._numeric_id(raw_ad_id, "ad_id")
         query = f"""
             SELECT ad_group_ad.ad.id, ad_group_ad.ad.resource_name,
-                   ad_group_ad.ad.name, ad_group_ad.status
+                   ad_group_ad.resource_name, ad_group_ad.ad.name, ad_group_ad.status,
+                   ad_group_ad.ad.type, ad_group_ad.ad.final_urls,
+                   ad_group_ad.ad.responsive_search_ad.headlines,
+                   ad_group_ad.ad.responsive_search_ad.descriptions,
+                   ad_group_ad.ad.responsive_search_ad.path1,
+                   ad_group_ad.ad.responsive_search_ad.path2
             FROM ad_group_ad
             WHERE ad_group_ad.ad.id = {numeric_ad_id}
         """
@@ -3133,6 +3161,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'resource_name': ad.get('resourceName'),
                 'name': ad.get('name'),
                 'status': association.get('status'),
+                'ad_type': ad.get('type'),
+                'final_urls': ad.get('finalUrls', []),
+                'responsive_search_ad': ad.get('responsiveSearchAd'),
             }
         raise APIError(f"Google ad {raw_ad_id} was not found")
     
@@ -4243,15 +4274,15 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 )
             return (
                 {"responsiveSearchAd": {field: [{"text": text} for text in value]}},
-                f"responsiveSearchAd.{field}",
+                f"responsive_search_ad.{field}",
             )
         if field == "final_url":
             if not isinstance(value, str) or not value.strip():
                 raise ValueError("final_url must be a non-empty URL")
-            return {"finalUrls": [value.strip()]}, "finalUrls"
+            return {"finalUrls": [value.strip()]}, "final_urls"
         if not isinstance(value, str) or len(value) > 15:
             raise ValueError(f"{field} must be a string of at most 15 characters")
-        return {"responsiveSearchAd": {field: value}}, f"responsiveSearchAd.{field}"
+        return {"responsiveSearchAd": {field: value}}, f"responsive_search_ad.{field}"
 
     def _build_google_ad_content_operation(
         self, numeric_ad_id: str, updates: dict[str, Any]
