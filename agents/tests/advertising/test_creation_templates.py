@@ -5,12 +5,12 @@ import glob
 from fastapi.testclient import TestClient
 
 import agents.deployments.advertising.api_server as api_server
-from agents.tools.advertising.shared.creation_templates import (
+from agents.applications.advertising.creation.templates import (
     CreationTemplateError,
     CreationTemplateManager,
     load_builtin_template_definitions,
 )
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
 
 

@@ -15,6 +15,8 @@ agents/
 │   ├── core/                       # Generic intent, Tool, policy and trace contracts
 │   ├── skills/                     # Standard Skill source/catalog adapters
 │   ├── agent.py                    # Model ↔ Tool loop and transcript state
+│   ├── model_execution.py          # Model capacity, streaming, retries and budgets
+│   ├── state_persistence.py        # Bounded transcripts and scoped checkpoints
 │   ├── agent_runtime.py            # Run-facing Runtime facade
 │   ├── runtime_kernel.py           # Run/Turn identity, lease, mode and cancellation
 │   ├── tool_execution.py           # Bounded, policy-hooked Tool scheduling
@@ -22,31 +24,34 @@ agents/
 │   └── application.py              # Standalone Harness composition
 │
 ├── agent_platform/                 # Hosting and shared platform services
-│   ├── api/                        # Generic routes and request context
-│   ├── data/                       # Knowledge, Memory and persistence ports
-│   │   ├── knowledge/              # Generic ingest, indexing, query and audit
-│   │   └── persistence/            # Store interfaces and implementations
-│   ├── integrations/               # MCP and other protocol adapters
-│   │   └── mcp/
+│   ├── data/                       # Generic data ports and adapters
+│   ├── integrations/               # Protocol-neutral integration contracts
 │   ├── management/                 # Tenant-managed Skills and plugin packages
+│   ├── evals/                      # Generic descriptive-only Skill evaluator
 │   ├── governance/                 # Shared identity and Tool execution policy
 │   ├── infrastructure/             # Durable tasks, workers and stores
 │   ├── definitions.py              # Agent and Scenario declarations
 │   ├── platform.py                 # Registry and application factory
 │   └── runtime.py                  # Six-layer Platform composition
 │
+├── applications/
+│   └── advertising/                # Advertising product application
+│       ├── composition/            # Scenario facade and dependency assembly
+│       ├── creation/               # Templates and creation UI projection
+│       ├── execution/              # Account policy and Tool execution adapter
+│       ├── integrations/           # Provider/Skill Source lifecycle and MCP
+│       ├── knowledge/              # Advertising Wiki query and ingest
+│       ├── operations/             # Sessions, tasks, scheduling and workflows
+│       ├── persistence/            # Advertising records and store adapters
+│       └── run/                    # Advertising Run response projection
+│
 ├── tools/
 │   └── advertising/                # Reusable advertising Tool Sources
-│       ├── application/            # Advertising-specific application layer
-│       │   ├── composition/        # Scenario facade, bootstrap and dependency assembly
-│       │   ├── creation/           # Blueprints, contracts, templates and UI projection
-│       │   ├── execution/          # Account policy, Tool inputs and executor adapters
-│       │   ├── integrations/       # Tool/Skill Sources and provider/context adapters
-│       │   ├── operations/         # Session, task, scheduling and workflow services
-│       │   └── run/                # Harness Run envelope and advertising projections
-│       ├── shared/                 # Shared contracts, surfaces and templates
+│       ├── shared/                 # Provider-neutral advertising contracts
 │       ├── clients/                # Provider SDK/HTTP clients
+│       ├── source.py               # Portable standard Tool Source adapter
 │       ├── providers/              # Provider Tool definitions and executors
+│       │   ├── contracts.py        # Private Provider installation metadata
 │       │   ├── google/
 │       │   ├── meta/
 │       │   ├── tiktok/
@@ -68,6 +73,7 @@ agents/
 │
 ├── deployments/
 │   └── advertising/                # HTTP/CLI hosting and deployment-owned UI
+│       ├── api/                    # Advertising HTTP routes and security
 │       ├── api_server.py
 │       ├── chat.py
 │       ├── local_config.py
@@ -87,8 +93,10 @@ agents/
 
 Repository operator scripts are outside the importable package tree at
 `scripts/advertising/`.
+The independent Platform wheel is defined at `packaging/agent-platform/`.
 
-Packaging metadata lives at the repository root and deployment configuration
+Product packaging metadata lives at the repository root; Harness and Platform
+also have independent wheel definitions. Deployment configuration
 remains in `ad_agent/`. HTTP
 hosting, CLI and static assets are under `deployments/advertising`; the deployment
 entry in `ad_agent/` only constructs the selected Platform application. Repository
@@ -100,7 +108,7 @@ local `.env` files and provider evidence are data, not Python package modules.
 | Area | Owns | Must not own |
 | --- | --- | --- |
 | Harness | Agent loop, Run/Turn lifecycle, Tool-call scheduling, generic clarification and bounded follow-up | HTTP serving, Provider names, advertising account fields, business policy |
-| Platform | Agent/Scenario registry, API hosting, MCP, Knowledge/Memory services, governance, durable infrastructure | Provider-specific campaign logic or advertising workflow branches |
+| Platform | Agent/Scenario registry, generic source composition, governance and durable infrastructure | Advertising HTTP routes, campaign persistence, Wiki rules or provider-specific workflows |
 | Tool Source | Closed schemas, effect/risk/replay metadata, fixed executors, Provider clients and provider-specific templates | Run lifecycle, direct model loop, permission bypasses |
 | Advertising application | Scenario composition, account-aware policy, creation configuration, source integration and Run/UI projection | Harness Run loop, Provider HTTP execution, duplicate Tool policy gate |
 | Skills | Natural-language SOP, trigger conditions, business guidance and references | Executable API calls, credential access, Tool registration |
@@ -110,7 +118,7 @@ local `.env` files and provider evidence are data, not Python package modules.
 
 ### Advertising Application Layers
 
-The `tools/advertising/application` package is divided by application responsibility,
+The `applications/advertising` package is divided by application responsibility,
 not by generic framework runtime concepts. Its root contains only package metadata;
 each implementation module has one owner:
 
@@ -120,6 +128,8 @@ each implementation module has one owner:
 | `creation/` | Creation blueprints, contracts, templates and UI configuration | Self-contained; Provider execution stays in Tools |
 | `execution/` | Account scope, Tool input projection, policy construction and executor adapter | Self-contained advertising edge around Harness execution contracts |
 | `integrations/` | Provider/Skill Sources, plugin lifecycle and advertising context adapters | Self-contained; does not own Run state |
+| `knowledge/` | Advertising Wiki ingest, query, provenance and audit | Depends on generic knowledge ports and the application Store, not Provider clients |
+| `persistence/` | Advertising records, Store interfaces and adapters | SQL belongs here; application services consume interfaces |
 | `operations/` | Session, conversation, persistence, scheduling, task and workflow use cases | Self-contained application services |
 | `run/` | Run request/response mapping, controls, context and presentation adapters | May depend on execution policy and integration bindings, never owns Harness lifecycle |
 
@@ -152,22 +162,22 @@ Provider client directly.
 | Current location | Target owner |
 | --- | --- |
 | `ad_agent/core` | Generic Run/Turn/Tool/intent contracts into Harness; Memory, model adapter, MCP and managed-package services into Platform; advertising-only scope and provider rules into advertising Tool Sources |
-| `ad_agent/runtime` | Generic loop/interaction/execution behavior moved to Harness; hosting, persistence, management and API behavior moved to Platform/Deployment; advertising composition and control-plane adapters live under `tools/advertising/application`, with no advertising ModelAdapter or turn loop |
+| `ad_agent/runtime` | Generic loop/interaction/execution behavior moved to Harness; hosting, persistence, management and API behavior moved to Platform/Deployment; advertising composition and control-plane adapters live under `applications/advertising`, with no advertising ModelAdapter or turn loop |
 | `ad_agent/tools/providers` | `agents/tools/advertising/providers` |
 | `ad_agent/api_clients` | `agents/tools/advertising/clients` |
 | `ad_agent/creation_templates.py`, `ad_agent/domain/ad/blueprint.py`, `parameter_catalog.py` | `agents/tools/advertising/shared` and provider template assets |
 | `ad_agent/domain/ad` | Split: provider creation rules/evidence/security into the advertising Tool Source; principal and generic request identity into Platform governance; Knowledge adapters into Platform Knowledge |
 | `ad_agent/skills` | `agents/skills/advertising` |
-| `ad_agent/knowledge_base` | Markdown corpus to `agents/knowledge/advertising/wiki`; generic ingest/query/audit services to `agent_platform/data/knowledge` |
-| `ad_agent/knowledge_*` | Generic Knowledge service modules under `agent_platform/data/knowledge` |
-| `ad_agent/mcp_management.py`, `runtime_mcp.py` | `agent_platform/integrations/mcp` |
+| `ad_agent/knowledge_base` | Markdown corpus to `agents/knowledge/advertising/wiki`; generic ingest/query/audit services to `applications/advertising/knowledge` |
+| `ad_agent/knowledge_*` | Generic Knowledge service modules under `applications/advertising/knowledge` |
+| `ad_agent/mcp_management.py`, `runtime_mcp.py` | `applications/advertising/integrations/mcp` |
 | `ad_agent/skill_management.py`, `plugin_management.py` | `agent_platform/management` |
 | `ad_agent/agent_definition.py` | `agents/scenarios/advertising.py` |
 | `ad_agent/integration_investigation.py` | Removed; the generic model loop may request bounded follow-up Tools from the current Tool catalog |
 | `ad_agent/integration_turn_*`, `integration_result_assembler.py` | Removed; the Harness owns Tool-call iteration and Run lifecycle, while the advertising request adapter only projects the generic result envelope |
 | `ad_agent/api_server.py`, `ad_agent/chat.py`, `ad_agent/static`, `ad_agent/templates` | `agents/deployments/advertising`; HTTP/CLI and assets remain outside Platform core |
-| `ad_agent/api`, generic chat/session/task routes | `agent_platform/api`; scenario selection is injected by the deployment entry |
-| `ad_agent/persistence` | `agent_platform/data/persistence`; business callers use store interfaces, never SQL or SQLite-specific types |
+| `ad_agent/api`, chat/session/task routes | `deployments/advertising/api`; scenario selection is injected by the deployment entry |
+| `ad_agent/persistence` | `applications/advertising/persistence`; business callers use store interfaces, never SQL or SQLite-specific types |
 | `ad_agent/scripts` | repository `scripts/advertising`; commands are not importable runtime capabilities |
 | `ad_agent/docs` and product guides | `agents/docs/advertising`; the root `agents/ARCHITECTURE.md` is the canonical architecture decision |
 | `ad_agent/templates`, static assets | `agents/deployments/advertising`; provider-specific editors stay optional and cannot call APIs directly |
@@ -376,3 +386,109 @@ passed after the recovery change (`1,247 passed`, one Starlette/httpx deprecatio
 warning). The parameter-selection extraction's focused regression suite passed
 (`145 passed`); full validation of the combined changes is recorded with the
 subsequent migration checkpoint.
+
+### Application, Source and Package Boundaries (2026-10-09)
+
+Advertising-owned composition, persistence, Wiki services and MCP integration
+now live under `applications/advertising/`; advertising HTTP routes live under
+`deployments/advertising/api/`. Provider Tool modules under `tools/advertising/`
+no longer import the application to obtain creation-template persistence or Wiki
+services. Built-in creation-template data is packaged with the application.
+
+At assembly, verified advertising Tool Sources are published through
+`PlatformDependencies.integrations.tool_sources`. The advertising catalog adopts
+only contracts already present in its guarded registry; it cannot use this path
+to bypass the application's registration lifecycle. Dynamic source changes
+refresh the Platform dependency snapshot. The Harness still owns the single Run
+and the Tool execution policy remains the only execution gate.
+
+The Platform has an independent wheel definition at `packaging/agent-platform/`;
+the wheel test checks that advertising application, Provider Tool and deployment
+modules are absent. The product wheel continues to include the complete
+advertising application and assets. Build metadata is outside the
+`agent_platform` package so its `platform.py` cannot shadow Python's standard
+library during wheel construction.
+
+This is an ownership and packaging improvement, not proof that the Platform is
+fully domain-neutral. At that checkpoint, managed Skill evaluation still
+contained advertising-named environment settings and an advertising Runtime
+evaluator contract. These evaluation and installation boundaries are addressed
+in the following checkpoint; large generic Harness modules remain a
+maintainability concern.
+
+Validation: `make ad-agent-check` passed with 1,311 tests, 297 audited Tool
+contracts and one upstream Starlette/httpx deprecation warning. The repository
+quality gate remains failing: 4,828 findings across 656 files, score 0.0.
+
+### Evaluation and Execution Boundary Hardening (2026-10-09)
+
+Managed Skill evaluation now accepts trusted deployment-supplied
+`ManagedEvaluationEngine` bindings. The platform's built-in SDK evaluator lives
+under `agent_platform/evals/` and has no advertising default Skill path, Tool
+catalog or prompt. Advertising supplies its own Runtime evaluator and
+descriptive catalog through `applications/advertising/integrations/skill_evaluation.py`.
+Uploaded packages may select registered names and allowed parameters only;
+they cannot supply an adapter path, command, environment or MCP configuration.
+Generated file-path arrays use JSON so read-only file context survives the
+skill-up command boundary. A regression test executes the actual deployed
+adapter script from an unrelated directory, rather than relying on a successful
+fake CLI exit code.
+
+Framework management configuration uses `AGENT_PLATFORM_*` variables. Evaluator
+context uses `AGENT_EVAL_*`. The old advertising-named platform variables are
+not aliases. The deployment injects the advertising evaluator explicitly at API
+startup and through management route dependencies.
+
+The old `ToolSourceModule/Context/Runtime` installation contracts are removed
+from Harness. Provider-specific setup records now belong to the advertising
+Tool package and do not represent Run state. Providers publish standard
+`source_id/list_bindings()` contracts; both application installation and portable
+publication share permission/version validation. `tools/advertising/source.py`
+adapts fixed handlers to standard ToolCallContext without importing the product
+application. Standard Skill source selection lives in the declarative Scenario.
+
+`Agent` delegates model calls to `ModelExecutionCoordinator` and durable
+transcripts/checkpoints to `AgentStatePersistence`. There is still one Run loop.
+Model capacity applies even with no timeout; timed-out calls retain their slots
+until the underlying invocation actually exits. Transcript trimming is linear
+in the bounded message buffer, without repeated whole-buffer sums.
+
+Explicit checkpoint resume verifies tenant, user and session before restoring
+messages. Scope mismatch fails without calling the model. A missing, malformed
+or unreadable checkpoint returns `recovery_required`; it cannot silently restart
+as a fresh Run. Store exceptions are translated at one boundary and diagnostics
+retain exception types, not raw storage error messages.
+
+The independent Harness and Platform wheels are built and unpacked together in
+a temporary installation directory that contains no advertising packages. The
+reference support scenario successfully runs from that installation. Harness
+packaging also declares its standard Skill parser's PyYAML dependency.
+
+No HTTP request/response schema or Provider payload schema is changed. Existing
+deployments continue using their explicitly configured database path. The
+application Store factory now preserves `:memory:` and uses the deployment cwd
+for an unspecified database path, never the installed Python package. Embedders
+must pass their intended persisted path explicitly. No data migration, old
+import forwarding package or second execution entry is added. Restart the
+deployment to use the moved modules and new management environment names.
+
+Validation of the combined checkpoint:
+
+- `make ad-agent-check`: 1,347 tests passed, 297 Tool contracts audited and
+  validated, compile and staged/unstaged diff checks passed. One upstream
+  Starlette/httpx deprecation warning remains.
+- Focused coverage: 184 tests passed; 89.33% across model execution, state
+  persistence, evaluator protocol/configuration, SDK evaluator and portable
+  advertising source adaptation. Each measured module is above 80%. Coverage
+  execution also reports the local C-tracer fallback and existing test Store
+  connection cleanup warnings; these are not production recovery evidence.
+- Independent wheel smoke test: passed with no advertising application/Tool
+  package in the temporary installation.
+- Full repository qguard: failed, 4,829 findings across 662 Python files,
+  score 0.0. The threshold and scan scope were not weakened.
+
+Remaining scope is explicit: the optional legacy intent implementation and
+large Agent/managed-package modules still need further maintainability work;
+the repository-wide quality gate is not met. This checkpoint did not perform
+new live Provider API tests, production load tests or multi-host recovery
+validation. It does not establish the separate 95-point quality target.

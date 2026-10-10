@@ -22,8 +22,8 @@ from agents.tools.advertising.clients.meta_client import MetaAPIClient
 from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
-from agents.tools.advertising.application.composition.ad_application import AccountWhitelistValidator, AdvertisingComposition
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.composition.ad_application import AccountWhitelistValidator, AdvertisingComposition
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_harness.skills.contract import BaseSkill, SkillContract, SkillLoader
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.tools.advertising.shared.domain.cross_channel import CampaignRef, BatchOperation

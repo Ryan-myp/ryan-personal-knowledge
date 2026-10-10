@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from dataclasses import replace
 import uuid
@@ -17,7 +16,16 @@ from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
 from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
+from .model_execution import (
+    ModelExecutionCoordinator,
+    ModelExecutionOptions,
+    ModelTimeoutError,
+    ModelCapacityError,
+    ModelBudgetExceededError,
+    ModelUnavailableError,
+)
 from .persistence import TranscriptStore
+from .state_persistence import AgentStatePersistence, TranscriptPersistenceError
 from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
 from .results import RunResult, RunStatus
@@ -36,8 +44,7 @@ class ModelAdapter(Protocol):
         messages: Sequence[AgentMessage],
         tools: Sequence[Any],
         request: TurnRequest,
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 class StreamingModelAdapter(ModelAdapter, Protocol):
@@ -48,28 +55,7 @@ class StreamingModelAdapter(ModelAdapter, Protocol):
         messages: Sequence[AgentMessage],
         tools: Sequence[Any],
         request: TurnRequest,
-    ) -> Any:
-        ...
-
-
-class ModelTimeoutError(TimeoutError):
-    """The provider did not produce a result within the configured deadline."""
-
-
-class ModelCapacityError(RuntimeError):
-    """Too many model calls remain in flight, including timed-out calls."""
-
-
-class ModelBudgetExceededError(RuntimeError):
-    """The provider returned usage beyond the configured Run budget."""
-
-
-class ModelUnavailableError(RuntimeError):
-    """No model adapter is configured for a Run."""
-
-
-class TranscriptPersistenceError(RuntimeError):
-    """The durable transcript could not be loaded or appended safely."""
+    ) -> Any: ...
 
 
 class AgentCancelledError(RuntimeError):
@@ -204,11 +190,7 @@ class Agent:
         self.session_ttl_seconds = float(session_ttl_seconds)
         self.max_sessions = int(max_sessions)
         self.model_timeout_seconds = (
-            float(model_timeout_seconds)
-            if model_timeout_seconds is not None else None
-        )
-        self._model_slots = threading.BoundedSemaphore(
-            int(max_inflight_model_invocations)
+            float(model_timeout_seconds) if model_timeout_seconds is not None else None
         )
         self.model_fallbacks = tuple(model_fallbacks or ())
         self.max_input_tokens = max_input_tokens
@@ -217,8 +199,7 @@ class Agent:
         self.max_stream_delta_chars = int(max_stream_delta_chars)
         self.max_tool_result_chars = int(max_tool_result_chars)
         self.tool_timeout_seconds = (
-            float(tool_timeout_seconds)
-            if tool_timeout_seconds is not None else None
+            float(tool_timeout_seconds) if tool_timeout_seconds is not None else None
         )
         self.tool_max_retries = int(tool_max_retries)
         self.tool_retry_delay_seconds = float(tool_retry_delay_seconds)
@@ -245,11 +226,38 @@ class Agent:
         self._subscriber_guard = threading.RLock()
         self._event_guard = threading.RLock()
         self._event_sequences: dict[str, int] = {}
+        self._state_io = AgentStatePersistence(
+            transcript_store=self.transcript_store,
+            checkpoint_store=self.checkpoint_store,
+            system_messages=self._system_messages,
+            max_messages=self.max_transcript_messages,
+            max_chars=self.max_transcript_chars,
+            emit=self._emit,
+        )
+        self._models = ModelExecutionCoordinator(
+            options=ModelExecutionOptions(
+                timeout_seconds=self.model_timeout_seconds,
+                max_inflight=int(max_inflight_model_invocations),
+                max_retries=self.model_max_retries,
+                retry_delay_seconds=self.model_retry_delay_seconds,
+                max_stream_delta_chars=self.max_stream_delta_chars,
+                max_input_tokens=self.max_input_tokens,
+                max_output_tokens=self.max_output_tokens,
+                max_total_tokens=self.max_total_tokens,
+            ),
+            providers=lambda: (self.model, *self.model_fallbacks),
+            prepare=self._model_inputs,
+            normalize=self._normalize_turn,
+            emit=self._emit,
+            assert_not_interrupted=self._assert_not_interrupted,
+        )
         self._tool_executor = ToolExecutionCoordinator(
             tool_catalog=self.tool_catalog,
             emit=self._emit,
             interrupt_reason=lambda request: self._interrupt_reason(request),
-            assert_not_interrupted=lambda request: self._assert_not_interrupted(request),
+            assert_not_interrupted=lambda request: self._assert_not_interrupted(
+                request
+            ),
             before_tool_call=self.before_tool_call,
             after_tool_call=self.after_tool_call,
             tool_execution=self.tool_execution,
@@ -268,11 +276,13 @@ class Agent:
         user_id: str = "anonymous",
         tenant_id: str = "default",
     ) -> str:
-        return "\x1f".join((
-            str(tenant_id or "default"),
-            str(user_id or "anonymous"),
-            str(session_id or "__default__"),
-        ))
+        return "\x1f".join(
+            (
+                str(tenant_id or "default"),
+                str(user_id or "anonymous"),
+                str(session_id or "__default__"),
+            )
+        )
 
     def _state_for(
         self,
@@ -329,7 +339,8 @@ class Agent:
     def _evict_sessions_locked(self) -> None:
         now = time.monotonic()
         expired = [
-            key for key, state in self._session_states.items()
+            key
+            for key, state in self._session_states.items()
             if not state.is_running
             and now - state.last_used_at >= self.session_ttl_seconds
         ]
@@ -401,7 +412,8 @@ class Agent:
             self._abort_events.pop(key, None)
 
     def subscribe(
-        self, callback: Callable[[dict[str, Any]], None],
+        self,
+        callback: Callable[[dict[str, Any]], None],
     ) -> Callable[[], None]:
         if not callable(callback):
             raise TypeError("Agent subscriber must be callable")
@@ -428,13 +440,17 @@ class Agent:
         tenant_id: str = "default",
     ) -> RunResult:
         """Convenience API for interactive callers that do not need an envelope."""
-        return self.run(TurnRequest(
-            user_input=str(user_input),
-            session_id=session_id,
-            user_id=user_id,
-            tenant_id=tenant_id,
-            cancellation_event=self._abort_event_for(session_id, user_id, tenant_id),
-        ))
+        return self.run(
+            TurnRequest(
+                user_input=str(user_input),
+                session_id=session_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                cancellation_event=self._abort_event_for(
+                    session_id, user_id, tenant_id
+                ),
+            )
+        )
 
     def _emit(self, event_type: str, request: TurnRequest, **payload: Any) -> None:
         run_key = str(request.run_id or "")
@@ -475,17 +491,21 @@ class Agent:
                     calls.append(item)
                     continue
                 if isinstance(item, Mapping):
-                    calls.append(ToolCall(
-                        id=str(item.get("id") or item.get("tool_call_id") or ""),
-                        name=str(item.get("name") or ""),
-                        arguments=dict(item.get("arguments") or item.get("args") or {}),
-                        depends_on=tuple(item.get("depends_on") or ()),
-                        argument_bindings=tuple(
-                            ToolArgumentBinding(**binding)
-                            for binding in item.get("argument_bindings") or ()
-                            if isinstance(binding, Mapping)
-                        ),
-                    ))
+                    calls.append(
+                        ToolCall(
+                            id=str(item.get("id") or item.get("tool_call_id") or ""),
+                            name=str(item.get("name") or ""),
+                            arguments=dict(
+                                item.get("arguments") or item.get("args") or {}
+                            ),
+                            depends_on=tuple(item.get("depends_on") or ()),
+                            argument_bindings=tuple(
+                                ToolArgumentBinding(**binding)
+                                for binding in item.get("argument_bindings") or ()
+                                if isinstance(binding, Mapping)
+                            ),
+                        )
+                    )
             return ModelTurn(
                 content=value.get("content", value.get("reply", "")),
                 tool_calls=tuple(calls),
@@ -520,7 +540,8 @@ class Agent:
 
     @staticmethod
     def _awaiting_input_reply(
-        tool_results: Sequence[Mapping[str, Any]], fallback: str,
+        tool_results: Sequence[Mapping[str, Any]],
+        fallback: str,
     ) -> str:
         """Prefer the trusted gate prompt over an empty model Tool-call turn."""
         for item in tool_results:
@@ -555,7 +576,9 @@ class Agent:
         )
 
     def _notify_model_run_cleanup(
-        self, request: TurnRequest, state: AgentState,
+        self,
+        request: TurnRequest,
+        state: AgentState,
     ) -> None:
         """Release adapter-owned state after every Run, including failures."""
         callback = getattr(self.model, "on_run_cleanup", None)
@@ -568,7 +591,9 @@ class Agent:
                 return
 
     def _notify_context_cleanup(
-        self, request: TurnRequest, state: AgentState,
+        self,
+        request: TurnRequest,
+        state: AgentState,
     ) -> None:
         """Release context-provider state after every Run."""
         callback = getattr(self.context_provider, "cleanup", None)
@@ -579,12 +604,14 @@ class Agent:
                 return
 
     def _model_inputs(
-        self, request: TurnRequest, state: AgentState,
+        self,
+        request: TurnRequest,
+        state: AgentState,
     ) -> tuple[list[Any], list[Any], TurnRequest]:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
         if callable(self.tool_selector):
             tools = list(self.tool_selector(request, tuple(tools)))
-        tools = list(tools[:self.max_tools])
+        tools = list(tools[: self.max_tools])
         messages = state.snapshot()
         model_request = request
         if self.context_provider is not None:
@@ -641,131 +668,6 @@ class Agent:
         if context != dict(model_request.context or {}):
             model_request = replace(model_request, context=context)
         return messages, tools, model_request
-
-    @staticmethod
-    def _provider_name(provider: Any) -> str:
-        return str(
-            getattr(provider, "model_name", None)
-            or getattr(provider, "name", None)
-            or provider.__class__.__name__
-        )
-
-    @staticmethod
-    def _retryable_model_error(error: Exception) -> bool:
-        if isinstance(error, (TimeoutError, ConnectionError, FutureTimeoutError)):
-            return True
-        status = getattr(error, "status_code", None)
-        if isinstance(status, int) and (status == 429 or status >= 500):
-            return True
-        name = type(error).__name__.lower()
-        return any(token in name for token in ("timeout", "ratelimit", "transient"))
-
-    def _invoke_with_timeout(
-        self,
-        invoke: Callable[[], Any],
-    ) -> Any:
-        if self.model_timeout_seconds is None:
-            return invoke()
-        if not self._model_slots.acquire(blocking=False):
-            raise ModelCapacityError("model execution capacity exhausted")
-        executor = None
-        try:
-            executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent-model")
-            future = executor.submit(invoke)
-        except Exception:
-            self._model_slots.release()
-            if executor is not None:
-                executor.shutdown(wait=False, cancel_futures=True)
-            raise
-        future.add_done_callback(lambda _completed: self._model_slots.release())
-        try:
-            return future.result(timeout=self.model_timeout_seconds)
-        except FutureTimeoutError as error:
-            future.cancel()
-            raise ModelTimeoutError("model provider timed out") from error
-        finally:
-            # A provider that ignores cancellation may continue in its own
-            # thread, but the Run never waits unboundedly for it.
-            executor.shutdown(wait=False, cancel_futures=True)
-
-    def _stream_model(
-        self,
-        provider: Any,
-        messages: Sequence[AgentMessage],
-        tools: Sequence[Any],
-        request: TurnRequest,
-        abort_event: Optional[threading.Event] = None,
-    ) -> ModelTurn:
-        stream = getattr(provider, "stream", None)
-        if not callable(stream):
-            return self._invoke_with_timeout(
-                lambda: (
-                    provider.complete(messages, tools, request)
-                    if callable(getattr(provider, "complete", None))
-                    else provider(messages, tools, request)
-                ),
-            )
-        # Consume the iterator inside the bounded worker. A timeout around
-        # only ``stream(...)`` is insufficient because most providers return
-        # a lazy iterator whose next chunk can block indefinitely.
-        return self._invoke_with_timeout(
-            lambda: self._consume_stream(
-                stream(messages, tools, request), request, abort_event,
-            ),
-        )
-
-    def _consume_stream(
-        self,
-        iterator: Any,
-        request: TurnRequest,
-        abort_event: Optional[threading.Event] = None,
-    ) -> ModelTurn:
-        parts: list[str] = []
-        final: Optional[ModelTurn] = None
-        calls: list[ToolCall] = []
-        for chunk in iterator:
-            self._assert_not_interrupted(request, abort_event)
-            if isinstance(chunk, ModelTurn):
-                final = chunk
-                if chunk.tool_calls:
-                    calls.extend(chunk.tool_calls)
-                continue
-            if isinstance(chunk, str):
-                delta = chunk
-            elif isinstance(chunk, Mapping):
-                delta = chunk.get("delta", chunk.get("content", ""))
-                for item in chunk.get("tool_calls") or ():
-                    if isinstance(item, ToolCall):
-                        calls.append(item)
-                    elif isinstance(item, Mapping):
-                        calls.append(ToolCall(
-                            id=str(item.get("id") or item.get("tool_call_id") or ""),
-                            name=str(item.get("name") or ""),
-                            arguments=dict(item.get("arguments") or item.get("args") or {}),
-                            depends_on=tuple(item.get("depends_on") or ()),
-                        ))
-            else:
-                delta = ""
-            if delta not in (None, ""):
-                safe_delta = str(delta)[:self.max_stream_delta_chars]
-                parts.append(safe_delta)
-                self._emit(
-                    "model_delta",
-                    request,
-                    delta=safe_delta,
-                )
-        if final is None:
-            final = ModelTurn(
-                content="".join(parts),
-                tool_calls=tuple(calls),
-            )
-        elif parts:
-            final = replace(
-                final,
-                content="".join(parts),
-                tool_calls=tuple(final.tool_calls or calls),
-            )
-        return final
 
     @staticmethod
     def _interrupt_reason(
@@ -827,410 +729,6 @@ class Agent:
             },
         )
 
-    def _call_provider(
-        self,
-        provider: Any,
-        messages: Sequence[AgentMessage],
-        tools: Sequence[Any],
-        request: TurnRequest,
-        abort_event: Optional[threading.Event] = None,
-    ) -> ModelTurn:
-        streaming = bool(
-            request.streaming
-            or (
-                isinstance(request.context, Mapping)
-                and request.context.get("streaming")
-            )
-        )
-        value = (
-            self._stream_model(
-                provider, messages, tools, request, abort_event,
-            )
-            if streaming else self._invoke_with_timeout(
-                lambda: (
-                    provider.complete(messages, tools, request)
-                    if callable(getattr(provider, "complete", None))
-                    else provider(messages, tools, request)
-                ),
-            )
-        )
-        self._assert_not_interrupted(request, abort_event)
-        return self._normalize_turn(value)
-
-    def _call_model(
-        self,
-        request: TurnRequest,
-        state: AgentState,
-        abort_event: Optional[threading.Event] = None,
-    ) -> ModelTurn:
-        messages, tools, model_request = self._model_inputs(request, state)
-        providers = tuple(
-            provider
-            for provider in (self.model, *self.model_fallbacks)
-            if provider is not None
-        )
-        if not providers:
-            raise ModelUnavailableError("No model adapter is configured")
-        last_error: Optional[Exception] = None
-        for provider_index, provider in enumerate(providers):
-            complete = getattr(provider, "complete", None)
-            stream = getattr(provider, "stream", None)
-            if not callable(complete) and not callable(stream) and not callable(provider):
-                raise TypeError("model must be callable or expose complete()/stream()")
-            provider_name = self._provider_name(provider)
-            for attempt in range(self.model_max_retries + 1):
-                emit_model_lifecycle = bool(
-                    request.streaming
-                    or self.model_timeout_seconds is not None
-                    or self.model_fallbacks
-                )
-                if emit_model_lifecycle:
-                    self._emit(
-                        "model_start",
-                        request,
-                        provider=provider_name,
-                        provider_index=provider_index,
-                        attempt=attempt + 1,
-                    )
-                try:
-                    value = self._call_provider(
-                        provider, messages, tools, model_request, abort_event,
-                    )
-                    model_turn = self._normalize_turn(value)
-                    self._record_usage(request, state, model_turn)
-                    if emit_model_lifecycle:
-                        self._emit(
-                            "model_end",
-                            request,
-                            provider=provider_name,
-                            provider_index=provider_index,
-                            usage=dict(model_turn.usage),
-                        )
-                    return model_turn
-                except ModelBudgetExceededError:
-                    raise
-                except Exception as error:
-                    last_error = error
-                    retryable = self._retryable_model_error(error)
-                    self._emit(
-                        "model_error",
-                        request,
-                        provider=provider_name,
-                        provider_index=provider_index,
-                        error_type=type(error).__name__,
-                        retryable=retryable,
-                    )
-                    if retryable and attempt < self.model_max_retries:
-                        self._emit(
-                            "model_retry",
-                            request,
-                            attempt=attempt + 1,
-                            provider=provider_name,
-                            error_type=type(error).__name__,
-                        )
-                        if self.model_retry_delay_seconds:
-                            time.sleep(self.model_retry_delay_seconds)
-                        continue
-                    if (
-                        retryable
-                        and provider_index < len(providers) - 1
-                    ):
-                        self._emit(
-                            "model_fallback",
-                            request,
-                            from_provider=provider_name,
-                            to_provider=self._provider_name(providers[provider_index + 1]),
-                            error_type=type(error).__name__,
-                        )
-                        break
-                    raise
-        raise last_error or RuntimeError("model call failed")
-
-    @staticmethod
-    def _usage_number(usage: Mapping[str, Any], *names: str) -> int:
-        for name in names:
-            value = usage.get(name)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                return max(0, int(value))
-        return 0
-
-    def _record_usage(
-        self, request: TurnRequest, state: AgentState, model_turn: ModelTurn,
-    ) -> None:
-        usage = model_turn.usage if isinstance(model_turn.usage, Mapping) else {}
-        input_tokens = self._usage_number(
-            usage, "input_tokens", "prompt_tokens", "input",
-        )
-        output_tokens = self._usage_number(
-            usage, "output_tokens", "completion_tokens", "output",
-        )
-        total_tokens = self._usage_number(usage, "total_tokens", "total")
-        if not total_tokens:
-            total_tokens = input_tokens + output_tokens
-        cache_read_tokens = self._usage_number(
-            usage,
-            "cache_read_input_tokens",
-            "cached_input_tokens",
-            "cache_read_tokens",
-        )
-        cache_write_tokens = self._usage_number(
-            usage,
-            "cache_write_input_tokens",
-            "cache_creation_input_tokens",
-        )
-        llm_requests = self._usage_number(
-            usage, "llm_requests", "api_requests",
-        )
-        if not llm_requests and (input_tokens or output_tokens):
-            llm_requests = 1
-        counters = (
-            ("input_tokens", input_tokens),
-            ("output_tokens", output_tokens),
-            ("total_tokens", total_tokens),
-            ("cache_read_input_tokens", cache_read_tokens),
-            ("cache_write_input_tokens", cache_write_tokens),
-            ("llm_requests", llm_requests),
-            ("adapter_turns", 1),
-        )
-        for key, value in counters:
-            state.usage[key] = int(state.usage.get(key, 0)) + int(value)
-        if usage or any(
-            limit is not None for limit in (
-                self.max_input_tokens,
-                self.max_output_tokens,
-                self.max_total_tokens,
-            )
-        ):
-            self._emit("model_usage", request, usage=dict(state.usage))
-        limits = (
-            ("input_tokens", self.max_input_tokens),
-            ("output_tokens", self.max_output_tokens),
-            ("total_tokens", self.max_total_tokens),
-        )
-        exceeded = [
-            name for name, limit in limits
-            if limit is not None and state.usage.get(name, 0) > limit
-        ]
-        if exceeded:
-            raise ModelBudgetExceededError(
-                "model token budget exceeded: " + ", ".join(exceeded),
-            )
-
-    @staticmethod
-    def _message_from_payload(value: Any) -> Optional[AgentMessage]:
-        if isinstance(value, AgentMessage):
-            return value
-        if not isinstance(value, Mapping):
-            return None
-        role = str(value.get("role") or "user")
-        if role not in {"system", "user", "assistant", "tool"}:
-            return None
-        return AgentMessage(
-            role=role,
-            content=value.get("content", ""),
-            message_id=str(value.get("message_id") or ""),
-            run_id=str(value.get("run_id") or ""),
-            turn_id=str(value.get("turn_id") or ""),
-            tool_call_id=value.get("tool_call_id"),
-            name=value.get("name"),
-            metadata=dict(value.get("metadata") or {}),
-            timestamp=float(value.get("timestamp") or time.time()),
-        )
-
-    def _hydrate_state(
-        self, request: TurnRequest, state: AgentState,
-    ) -> None:
-        if state.hydrated:
-            return
-        if self.transcript_store is not None and request.session_id:
-            try:
-                loaded = self.transcript_store.load(
-                    str(request.session_id),
-                    tenant_id=str(request.tenant_id or "default"),
-                    user_id=str(request.user_id or "anonymous"),
-                    limit=self.max_transcript_messages,
-                )
-            except Exception as error:
-                raise TranscriptPersistenceError(
-                    "transcript load failed",
-                ) from error
-            restored = [
-                message for item in loaded
-                if (message := self._message_from_payload(item)) is not None
-                and message.role != "system"
-            ]
-            state.messages = list(self._system_messages)
-            for message in restored:
-                self._append_message(state, message, persist=False)
-        state.hydrated = True
-
-    def _append_message(
-        self,
-        state: AgentState,
-        message: AgentMessage,
-        *,
-        request: Optional[TurnRequest] = None,
-        persist: bool = True,
-    ) -> None:
-        """Keep durable transcript state bounded while retaining system context."""
-        state.messages.append(message)
-        system_messages = [
-            item for item in state.messages if item.role == "system"
-        ]
-        non_system = [
-            item for item in state.messages if item.role != "system"
-        ]
-        while (
-            len(system_messages) + len(non_system)
-            > self.max_transcript_messages
-            and non_system
-        ):
-            non_system.pop(0)
-        while (
-            sum(len(str(item.content)) for item in system_messages + non_system)
-            > self.max_transcript_chars
-            and non_system
-        ):
-            non_system.pop(0)
-        state.messages = system_messages + non_system
-        if (
-            persist
-            and request is not None
-            and self.transcript_store is not None
-            and request.session_id
-        ):
-            safe_message = self._message_from_payload(
-                redact_for_persistence(message.to_dict()),
-            )
-            if safe_message is None:
-                raise RuntimeError("transcript message could not be serialized")
-            try:
-                self.transcript_store.append(
-                    str(request.session_id),
-                    [safe_message],
-                    tenant_id=str(request.tenant_id or "default"),
-                    user_id=str(request.user_id or "anonymous"),
-                )
-            except Exception as error:
-                raise TranscriptPersistenceError(
-                    "transcript append failed",
-                ) from error
-
-    def _save_checkpoint(
-        self,
-        request: TurnRequest,
-        state: AgentState,
-        *,
-        turn_index: int,
-        tool_results: Sequence[Mapping[str, Any]],
-    ) -> bool:
-        save = getattr(self.checkpoint_store, "save_checkpoint", None)
-        if not callable(save):
-            return True
-        try:
-            save(
-                str(request.run_id or ""),
-                {
-                    "run_id": str(request.run_id or ""),
-                    "turn_id": str(request.turn_id or ""),
-                    "session_id": str(request.session_id or ""),
-                    "tenant_id": str(request.tenant_id or "default"),
-                    "user_id": str(request.user_id or "anonymous"),
-                    "turn_index": int(turn_index),
-                    "messages": [
-                        redact_for_persistence(item.to_dict())
-                        for item in state.messages
-                    ],
-                    "tool_results": redact_for_persistence(
-                        [dict(item) for item in tool_results],
-                    ),
-                    "usage": dict(state.usage),
-                    "saved_at": time.time(),
-                },
-            )
-            self._emit(
-                "checkpoint_saved",
-                request,
-                turn_index=int(turn_index),
-            )
-            return True
-        except Exception as error:
-            self._emit(
-                "checkpoint_error",
-                request,
-                error_type=type(error).__name__,
-            )
-            return False
-
-    def _clear_checkpoint(self, request: TurnRequest) -> None:
-        self._clear_checkpoint_id(str(request.run_id or ""), request)
-
-    def _clear_checkpoint_id(
-        self, checkpoint_id: str, request: TurnRequest,
-    ) -> None:
-        clear = getattr(self.checkpoint_store, "clear_checkpoint", None)
-        if not callable(clear):
-            return
-        try:
-            clear(str(checkpoint_id or ""))
-            self._emit("checkpoint_cleared", request)
-        except Exception:
-            self._emit(
-                "checkpoint_error",
-                request,
-                phase="clear",
-            )
-
-    def _restore_checkpoint(
-        self, request: TurnRequest, state: AgentState,
-    ) -> str | None:
-        context = request.context
-        if not isinstance(context, Mapping) or not context.get(
-            "resume_from_checkpoint"
-        ):
-            return None
-        checkpoint_id = str(
-            context.get("resume_run_id") or request.run_id or ""
-        ).strip()
-        load = getattr(self.checkpoint_store, "load_checkpoint", None)
-        if not checkpoint_id or not callable(load):
-            return None
-        try:
-            checkpoint = load(checkpoint_id)
-        except Exception as error:
-            self._emit(
-                "checkpoint_error",
-                request,
-                phase="load",
-                error_type=type(error).__name__,
-            )
-            return None
-        if not isinstance(checkpoint, Mapping):
-            return None
-        messages = [
-            message for item in checkpoint.get("messages") or ()
-            if (message := self._message_from_payload(item)) is not None
-            and message.role != "system"
-        ]
-        if messages:
-            state.messages = list(self._system_messages)
-            for message in messages:
-                self._append_message(state, message, persist=False)
-        saved_usage = checkpoint.get("usage")
-        if isinstance(saved_usage, Mapping):
-            state.usage = {
-                str(key): max(0, int(value))
-                for key, value in saved_usage.items()
-                if isinstance(value, (int, float)) and not isinstance(value, bool)
-            }
-        self._emit(
-            "checkpoint_resumed",
-            request,
-            source_run_id=checkpoint_id,
-            turn_index=checkpoint.get("turn_index"),
-        )
-        return checkpoint_id
-
     def run(self, request: TurnRequest) -> RunResult:
         if not isinstance(request.context, Mapping):
             raise TypeError("TurnRequest.context must be a mapping")
@@ -1241,13 +739,19 @@ class Agent:
             context=dict(request.context),
         )
         state = self._state_for(
-            request.session_id, request.user_id, request.tenant_id,
+            request.session_id,
+            request.user_id,
+            request.tenant_id,
         )
         session_lock = self._lock_for(
-            request.session_id, request.user_id, request.tenant_id,
+            request.session_id,
+            request.user_id,
+            request.tenant_id,
         )
         abort_event = self._abort_event_for(
-            request.session_id, request.user_id, request.tenant_id,
+            request.session_id,
+            request.user_id,
+            request.tenant_id,
         )
         with session_lock:
             if state.is_running:
@@ -1261,15 +765,17 @@ class Agent:
             state.last_used_at = time.monotonic()
         checkpoint_source_id: str | None = None
         try:
-            self._hydrate_state(request, state)
-            checkpoint_source_id = self._restore_checkpoint(request, state)
+            self._state_io.hydrate(request, state)
+            checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
             self._emit("agent_start", request)
             self._emit("turn_start", request, turn_index=0)
             if callable(self.request_validator):
                 validation_error = self.request_validator(request)
                 if validation_error:
                     if not isinstance(validation_error, str):
-                        raise TypeError("request_validator must return a string or None")
+                        raise TypeError(
+                            "request_validator must return a string or None"
+                        )
                     self._emit(
                         "turn_end",
                         request,
@@ -1299,7 +805,7 @@ class Agent:
                 run_id=str(request.run_id or ""),
                 turn_id=str(request.turn_id or ""),
             )
-            self._append_message(state, user_message, request=request)
+            self._state_io.append_message(state, user_message, request=request)
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
             all_tool_results: list[dict[str, Any]] = []
@@ -1310,14 +816,16 @@ class Agent:
                 interrupt_reason = self._interrupt_reason(request, abort_event)
                 if interrupt_reason is not None:
                     result = self._interrupted_result(
-                        request, state, reason=interrupt_reason,
+                        request,
+                        state,
+                        reason=interrupt_reason,
                     )
                     self._emit("agent_end", request, status=result.status.value)
                     return result
                 if turn_index > 0:
                     self._emit("turn_start", request, turn_index=turn_index)
                 tool_results = []
-                model_turn = self._call_model(request, state, abort_event)
+                model_turn = self._models.complete(request, state, abort_event)
                 if model_turn.context_updates and isinstance(request.context, dict):
                     request.context.update(dict(model_turn.context_updates))
                 assistant = AgentMessage.assistant(
@@ -1331,16 +839,13 @@ class Agent:
                         ],
                     },
                 )
-                self._append_message(state, assistant, request=request)
+                self._state_io.append_message(state, assistant, request=request)
                 last_reply = str(model_turn.content or "")
                 self._emit("message_end", request, message=assistant.to_dict())
                 tool_budget_exceeded = False
                 if model_turn.tool_calls:
                     requested_count = len(model_turn.tool_calls)
-                    if (
-                        tool_call_count + requested_count
-                        > self.max_tool_calls_per_run
-                    ):
+                    if tool_call_count + requested_count > self.max_tool_calls_per_run:
                         tool_budget_exceeded = True
                         self._emit(
                             "tool_call_budget_exceeded",
@@ -1367,7 +872,10 @@ class Agent:
                         ]
                     else:
                         tool_results = self._tool_executor.execute_tools(
-                            request, assistant, model_turn.tool_calls, state,
+                            request,
+                            assistant,
+                            model_turn.tool_calls,
+                            state,
                         )
                         tool_call_count += requested_count
                     all_tool_results.extend(tool_results)
@@ -1391,7 +899,9 @@ class Agent:
                                 },
                             },
                         )
-                        self._append_message(state, tool_message, request=request)
+                        self._state_io.append_message(
+                            state, tool_message, request=request
+                        )
                         self._emit(
                             "message_end",
                             request,
@@ -1403,7 +913,7 @@ class Agent:
                     turn_index=turn_index,
                     tool_results=tool_results,
                 )
-                checkpoint_ok = self._save_checkpoint(
+                checkpoint_ok = self._state_io.save_checkpoint(
                     request,
                     state,
                     turn_index=turn_index,
@@ -1424,16 +934,18 @@ class Agent:
                     )
                 ):
                     application_data = self._notify_model_run_end(
-                        request, model_turn, tool_results, state,
+                        request,
+                        model_turn,
+                        tool_results,
+                        state,
                     )
-                    awaiting_input = (
-                        model_turn.stop_reason in {
-                            "awaiting_input", "awaiting_confirmation", "needs_input",
-                        }
-                        or any(
-                            bool(item.get("needs_input") or item.get("needs_confirmation"))
-                            for item in tool_results
-                        )
+                    awaiting_input = model_turn.stop_reason in {
+                        "awaiting_input",
+                        "awaiting_confirmation",
+                        "needs_input",
+                    } or any(
+                        bool(item.get("needs_input") or item.get("needs_confirmation"))
+                        for item in tool_results
                     )
                     tool_recovery = any(
                         bool(item.get("recovery_required"))
@@ -1444,8 +956,7 @@ class Agent:
                         for item in tool_results
                     )
                     tool_cancelled = any(
-                        bool(item.get("cancelled"))
-                        for item in tool_results
+                        bool(item.get("cancelled")) for item in tool_results
                     )
                     runtime_signals = {
                         key: value
@@ -1471,9 +982,9 @@ class Agent:
                     terminal_reply = (
                         "Run Tool-call budget exceeded; the rejected batch was not executed."
                         if tool_budget_exceeded
-                        else
-                        self._awaiting_input_reply(tool_results, last_reply)
-                        if awaiting_input else last_reply
+                        else self._awaiting_input_reply(tool_results, last_reply)
+                        if awaiting_input
+                        else last_reply
                     )
                     result = RunResult(
                         run_id=str(request.run_id or ""),
@@ -1485,9 +996,7 @@ class Agent:
                         recovery_required=tool_recovery or not checkpoint_ok,
                         runtime_signals=runtime_signals,
                         data={
-                            "messages": [
-                                item.to_dict() for item in state.messages
-                            ],
+                            "messages": [item.to_dict() for item in state.messages],
                             "tool_results": list(all_tool_results),
                             "tool_call_count": tool_call_count,
                             "tool_call_limit": self.max_tool_calls_per_run,
@@ -1502,18 +1011,21 @@ class Agent:
                         RunStatus.RECOVERY_REQUIRED,
                         RunStatus.CANCELLED,
                     }:
-                        self._clear_checkpoint(request)
-                        if (
-                            checkpoint_source_id
-                            and checkpoint_source_id != str(request.run_id or "")
+                        self._state_io.clear_checkpoint(request)
+                        if checkpoint_source_id and checkpoint_source_id != str(
+                            request.run_id or ""
                         ):
-                            self._clear_checkpoint_id(
-                                checkpoint_source_id, request,
+                            self._state_io.clear_checkpoint_id(
+                                checkpoint_source_id,
+                                request,
                             )
                     self._emit("agent_end", request, status=result.status.value)
                     return result
             application_data = self._notify_model_run_end(
-                request, model_turn, tool_results, state,
+                request,
+                model_turn,
+                tool_results,
+                state,
             )
             result = RunResult(
                 run_id=str(request.run_id or ""),
@@ -1605,13 +1117,17 @@ class Agent:
             return result
         except AgentLeaseLostError:
             result = self._interrupted_result(
-                request, state, reason="session_lease_lost",
+                request,
+                state,
+                reason="session_lease_lost",
             )
             self._emit("agent_end", request, status=result.status.value)
             return result
         except AgentCancelledError:
             result = self._interrupted_result(
-                request, state, reason="cancelled",
+                request,
+                state,
+                reason="cancelled",
             )
             self._emit("agent_end", request, status=result.status.value)
             return result

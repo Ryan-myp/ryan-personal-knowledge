@@ -26,6 +26,8 @@ project_root = Path(__file__).resolve().parents[3]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
+
 from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,27 +51,27 @@ from agents.ad_agent.application import (
 )
 from agents.agent_harness.redaction import redact_for_persistence
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
-from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
-from agents.agent_platform.integrations.mcp.mcp_management import MCPServerManager
-from agents.agent_platform.integrations.mcp.runtime_mcp import RuntimeMCPServers
+from agents.applications.advertising.execution.account_policy import AccountWhitelistValidator
+from agents.applications.advertising.integrations.mcp.mcp_management import MCPServerManager
+from agents.applications.advertising.integrations.mcp.runtime_mcp import RuntimeMCPServers
 from agents.agent_platform.management.skill_management import (
     BuiltinSkillCatalog,
     ManagedSkillManager,
 )
-from agents.agent_platform.data.persistence.factory import create_persistence_store
-from agents.agent_platform.api.security import RequestAuthorizer
-from agents.agent_platform.api.context import ApiContext
-from agents.agent_platform.api.routes.chat import create_chat_router
-from agents.agent_platform.api.routes.catalog import create_catalog_router
-from agents.agent_platform.api.routes.knowledge import create_knowledge_router
-from agents.agent_platform.api.routes.management import create_management_router
-from agents.agent_platform.api.routes.sessions import create_sessions_router
-from agents.agent_platform.api.routes.tasks import create_tasks_router
-from agents.agent_platform.api.routes.workflows import create_workflows_router
-from agents.agent_platform.api.models import (
+from agents.applications.advertising.persistence.factory import create_persistence_store
+from agents.deployments.advertising.api.security import RequestAuthorizer
+from agents.deployments.advertising.api.context import ApiContext
+from agents.deployments.advertising.api.routes.chat import create_chat_router
+from agents.deployments.advertising.api.routes.catalog import create_catalog_router
+from agents.deployments.advertising.api.routes.knowledge import create_knowledge_router
+from agents.deployments.advertising.api.routes.management import create_management_router
+from agents.deployments.advertising.api.routes.sessions import create_sessions_router
+from agents.deployments.advertising.api.routes.tasks import create_tasks_router
+from agents.deployments.advertising.api.routes.workflows import create_workflows_router
+from agents.deployments.advertising.api.models import (
     ExecutionModeRequest,
 )
-from agents.tools.advertising.shared.creation_templates import (
+from agents.applications.advertising.creation.templates import (
     creation_template_manager_for_runtime,
 )
 
@@ -304,7 +306,7 @@ def _init_runtime():
         # advisory context only. They never replace or add provider Tools.
         # This process is intentionally bound to its configured service
         # tenant; multi-tenant deployments should isolate Runtime contexts.
-        skill_manager = ManagedSkillManager(store)
+        skill_manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
         recovered = skill_manager.recover_interrupted_evaluations(
             stale_after_seconds=0
         )
@@ -640,7 +642,7 @@ def _activate_request_tenant_skills(principal: RequestPrincipal) -> None:
     if not runtime or not getattr(runtime, "persistence_store", None):
         return
     try:
-        ManagedSkillManager(runtime.persistence_store).activate_published(
+        ManagedSkillManager(runtime.persistence_store, evaluation_engines=advertising_evaluation_engines()).activate_published(
             principal.tenant_id, runtime
         )
     except Exception as exc:

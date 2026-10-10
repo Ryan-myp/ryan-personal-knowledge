@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Sequence
+from pathlib import Path
 
-from agents.agent_harness import ToolSource
+from agents.agent_harness import ToolSource, MarkdownSkillDirectorySource
 from agents.agent_platform import AgentDefinition, ScenarioDefinition
 
-from agents.tools.advertising.application.integrations.integration import advertising_skill_source
+def advertising_skill_source(*, source_id: str = "ad-skills") -> MarkdownSkillDirectorySource:
+    """Select a portable directory of standard, advisory Skill packages."""
+    return MarkdownSkillDirectorySource(
+        Path(__file__).resolve().parents[1] / "skills/advertising",
+        source_id=source_id,
+    )
 
 
 def advertising_agent_definition(
@@ -53,4 +59,4 @@ def advertising_scenario_definition(
     )
 
 
-__all__ = ["advertising_agent_definition", "advertising_scenario_definition"]
+__all__ = ["advertising_skill_source", "advertising_agent_definition", "advertising_scenario_definition"]

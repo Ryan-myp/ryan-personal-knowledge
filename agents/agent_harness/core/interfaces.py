@@ -708,55 +708,10 @@ class Skill(ABC):
         """返回指定工具的执行器"""
         raise NotImplementedError("Subclasses must implement 'get_tool_handler'")
 
-class ToolSourceModule(ABC):
-    """
-    能力模块接口 - 对应 Go 的 internal/integrations/contract/runtime.go
-    
-    业务模块通过此接口向运行时声明自己的能力和扩展点。
-    这是 DAP 架构的核心抽象：业务不直接操作 Runtime，而是通过接口注入能力。
-    """
-    @abstractmethod
-    def configure(self, context: "ToolSourceContext") -> "ToolSourceRuntime":
-        """
-        配置并返回能力运行时。
-        
-        职责：
-        1. 读取扩展依赖（如凭证、配置）
-        2. 创建工具处理器
-        3. 向注册表注册工具
-        4. 返回 ToolSourceRuntime 生命周期声明
-        """
-        pass
 
 
-@dataclass
-class ToolSourceContext:
-    """Tool Source 配置上下文"""
-    registry: ToolRegistry
-    config: dict[str, Any] = field(default_factory=dict)
-    session_store: Optional[Any] = None  # 会话存储（可选）
 
 
-@dataclass
-class ToolSourceRuntime:
-    """
-    能力运行时声明 - 对应 Go 的 ToolSourceRuntime
-    
-    业务模块向 Runtime 提交的能力生命周期声明。
-
-    流程和路由归 Skill 所有；Tool Source 只提供原子 Tool、输入契约
-    以及必要的运行时扩展点。
-    """
-    # 写入前保护钩子（可选）
-    write_guard: Optional["WriteGuard"] = None
-
-    # 后台任务（可选）
-    background_tasks: list[dict] = field(default_factory=list)
-
-    # Skill-owned parameter catalogs.  A catalog may expose static enums or
-    # a dynamic lookup descriptor without making the shared Runtime know a
-    # integration field names.
-    parameter_catalogs: list[Any] = field(default_factory=list)
 
 class WriteGuard(ABC):
     """

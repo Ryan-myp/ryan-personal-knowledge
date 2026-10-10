@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from agents.agent_harness.messages import ModelTurn
-from agents.agent_platform.data.persistence.models import ExecutionRunRecord
-from agents.agent_platform.data.persistence.session_manager import SessionManager
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.persistence.models import ExecutionRunRecord
+from agents.applications.advertising.persistence.session_manager import SessionManager
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
 
 def _run(run_id="run-1", *, updated_at=None):
@@ -61,7 +61,7 @@ def test_application_bootstrap_fails_if_durable_run_recovery_fails(monkeypatch):
 
 
 def test_run_store_adapter_logs_safe_failure_and_queues_event_repair(caplog):
-    from agents.tools.advertising.application.composition.ad_application_components import (
+    from agents.applications.advertising.composition.ad_application_components import (
         AdRunStoreAdapter,
     )
 
@@ -91,7 +91,7 @@ def test_run_store_adapter_logs_safe_failure_and_queues_event_repair(caplog):
 
 
 def test_run_store_adapter_surfaces_repair_enqueue_failure():
-    from agents.tools.advertising.application.composition.ad_application_components import (
+    from agents.applications.advertising.composition.ad_application_components import (
         AdRunStoreAdapter,
     )
 

@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.agent_platform.data.knowledge.knowledge_audit import infer_source_kind
-from agents.agent_platform.data.knowledge.wiki import parse_frontmatter
+from agents.applications.advertising.knowledge.knowledge_audit import infer_source_kind
+from agents.applications.advertising.knowledge.wiki import parse_frontmatter
 
 
 _FRONTMATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---(?P<tail>\n|$)", re.DOTALL)

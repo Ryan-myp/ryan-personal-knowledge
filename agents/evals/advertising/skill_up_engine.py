@@ -185,7 +185,7 @@ def _session_result(
 def _trusted_eval_identity(root: Path):
     """Load only the checked-in test accounts for offline contract runs."""
     from agents.agent_platform.governance.identity.principal import RequestPrincipal
-    from agents.tools.advertising.application.execution.account_policy import (
+    from agents.applications.advertising.execution.account_policy import (
         AccountWhitelistValidator,
     )
 
@@ -214,14 +214,14 @@ def run(
     model_adapter: Any = None,
 ) -> Dict[str, Any]:
     root = _bootstrap_import_path()
-    from agents.agent_platform.data.persistence.store import AdAgentStore
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.persistence.store import AdAgentStore
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
     messages = _messages(session_input)
     prompt = _runtime_prompt(messages)
     workspace = Path(str(session_input.get("workspace") or os.getcwd())).resolve()
     skills_root = Path(
-        os.environ.get("AD_AGENT_SKILLS_ROOT")
+        os.environ.get("AGENT_EVAL_SKILLS_ROOT")
         or root / "agents" / "skills" / "advertising"
     ).resolve()
     if not skills_root.is_dir():

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.agent_platform.data.knowledge.knowledge_audit import audit_knowledge_base
+from agents.applications.advertising.knowledge.knowledge_audit import audit_knowledge_base
 
 
 def main() -> int:

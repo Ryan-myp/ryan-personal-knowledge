@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.agent_platform.data.persistence.session_manager import SessionManager
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.session_manager import SessionManager
 from agents.tools.advertising.providers.meta import MetaToolSource, MetaListCampaignsHandler
 from agents.tools.advertising.providers.google import GoogleToolSource, GoogleListCampaignsHandler
 from agents.tools.advertising.providers.tiktok import TikTokToolSource, TikTokListCampaignsHandler
@@ -24,7 +24,7 @@ from agents.tools.advertising.providers.dv360 import (
     DV360ListCampaignsHandler,
     DV360GetLineItemReportHandler,
 )
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition, AccountWhitelistValidator
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition, AccountWhitelistValidator
 from agents.skills.advertising.businesses.policy import BusinessSkillPolicy
 from agents.agent_harness.core.interfaces import (
     ToolContext, ToolResult, RiskLevel, ToolEffect, ReplayPolicy, ToolSchema,
@@ -608,7 +608,7 @@ class TestIntentParser:
         assert "Meta campaign scope" in prompt_text
 
     def test_llm_parser_receives_prior_tool_results_as_context_only(self):
-        from agents.tools.advertising.application.composition.ad_application import SessionContext
+        from agents.applications.advertising.composition.ad_application import SessionContext
 
         class FakeLLM:
             def __init__(self):
@@ -816,7 +816,7 @@ class TestIntentParser:
         assert "id" not in values
 
     def test_creation_reply_is_a_complete_text_fallback_for_chinese_and_english(self):
-        from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+        from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
         ui = {
             "cards": [{
@@ -1601,7 +1601,7 @@ class TestSafeWriteExecution:
     def test_live_creation_chain_uses_one_confirmation_for_all_dependencies(self):
         """Harness ToolCalls declare dependencies and share one live approval."""
         from agents.tools.advertising.providers.provider_base import SimpleIdempotencyGuard
-        from agents.agent_harness.core.interfaces import ToolSourceRuntime
+        from agents.tools.advertising.providers.contracts import (ProviderInstallation)
         from agents.agent_harness.messages import ToolArgumentBinding, ToolCall
 
         class ChainHandler:
@@ -1656,7 +1656,7 @@ class TestSafeWriteExecution:
                     context.registry.register(
                         definition, ChainHandler(resource, self.calls),
                     )
-                return ToolSourceRuntime(write_guard=SimpleIdempotencyGuard())
+                return ProviderInstallation(write_guard=SimpleIdempotencyGuard())
 
         validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
         validator.allowed_accounts = {"meta": ["m1"]}
@@ -2077,7 +2077,7 @@ class TestSessionManager:
         sm.record_conversation_message("sess-delete", "turn-1", "user", "删除这条对话")
         sm.record_conversation_message("sess-delete", "turn-1", "assistant", "已记录")
 
-        from agents.agent_platform.data.persistence.store import ToolCallRecord
+        from agents.applications.advertising.persistence.store import ToolCallRecord
         sm.record_tool_call(
             "sess-delete", "turn-1", ToolCallRecord(
                 id="tool-delete", session_id="sess-delete", turn_id="turn-1",
@@ -2109,7 +2109,7 @@ class TestSessionManager:
     def test_tool_call_recording(self, store):
         sm = SessionManager(store)
         sm.create_session("sess-1", "user-1")
-        from agents.agent_platform.data.persistence.store import ToolCallRecord
+        from agents.applications.advertising.persistence.store import ToolCallRecord
         record = ToolCallRecord(
             id="tc-1", session_id="sess-1", turn_id="turn-1",
             tool_name="meta_list_campaigns", platform="meta",
@@ -2171,7 +2171,7 @@ class TestIterationContracts:
     def test_dv360_report_routes_with_line_item_id(self):
         from pathlib import Path
 
-        from agents.tools.advertising.application.execution.account_policy import (
+        from agents.applications.advertising.execution.account_policy import (
             AccountWhitelistValidator,
         )
         from agents.tools.advertising.providers.dv360 import create_dv360_tool_source

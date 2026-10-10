@@ -19,7 +19,7 @@
 ### Python
 
 ```python
-from agents.tools.advertising.wiki_query import get_wiki_loader
+from agents.applications.advertising.knowledge.wiki_query import get_wiki_loader
 
 loader = get_wiki_loader()
 results = loader.search(

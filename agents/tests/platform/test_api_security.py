@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from agents.agent_platform.api.security import RequestAuthorizer
+from agents.deployments.advertising.api.security import RequestAuthorizer
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
 

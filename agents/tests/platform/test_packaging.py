@@ -1,6 +1,7 @@
 """Packaging tests validate the wheel, not only setup metadata."""
 
 import os
+import shutil
 import subprocess
 import sys
 import zipfile
@@ -70,3 +71,40 @@ def test_wheel_excludes_local_state_and_stale_build_outputs(tmp_path):
     assert any(path.startswith("agents/skills/advertising/") for path in files)
     assert any(path.startswith("agents/knowledge/advertising/") for path in files)
     assert any(path.startswith("agents/deployments/advertising/static/") for path in files)
+
+
+def test_platform_wheel_excludes_advertising_application(tmp_path):
+    platform_root = REPOSITORY_ROOT / "agents" / "agent_platform"
+    packaging_root = REPOSITORY_ROOT / "packaging" / "agent-platform"
+    assert (packaging_root / "pyproject.toml").is_file()
+    source_root = tmp_path / "source"
+    package_root = source_root / "agents"
+    package_root.mkdir(parents=True)
+    shutil.copy2(REPOSITORY_ROOT / "agents" / "__init__.py", package_root)
+    shutil.copytree(
+        platform_root,
+        package_root / "agent_platform",
+        ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__"),
+    )
+    build_root = source_root / "packaging" / "agent-platform"
+    build_root.mkdir(parents=True)
+    shutil.copy2(packaging_root / "pyproject.toml", build_root)
+    result = subprocess.run(
+        [
+            sys.executable, "-c",
+            "import sys; from setuptools.build_meta import build_wheel; build_wheel(sys.argv[1])",
+            str(tmp_path),
+        ],
+        cwd=build_root,
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path[1:])},
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, f"{result.stdout}\n{result.stderr}"
+    wheels = list(tmp_path.glob("agent_platform-*.whl"))
+    assert len(wheels) == 1
+    with zipfile.ZipFile(wheels[0]) as wheel:
+        files = set(wheel.namelist())
+    assert "agents/agent_platform/platform.py" in files
+    assert not any(path.startswith("agents/applications/") for path in files)
+    assert not any(path.startswith("agents/tools/advertising/") for path in files)
+    assert not any(path.startswith("agents/deployments/") for path in files)

@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from agents.tools.advertising.application.run.ad_run_memory import (
+from agents.applications.advertising.run.ad_run_memory import (
     AdvertisingRunMemoryRecorder,
 )
 
@@ -138,7 +138,7 @@ def test_live_provider_failure_remembers_only_allowlisted_error_code():
 
 def test_advertising_run_service_records_live_write_outcomes():
     from agents.agent_harness import RunResult
-    from agents.tools.advertising.application.run.ad_run_service import (
+    from agents.applications.advertising.run.ad_run_service import (
         AdvertisingRunService,
     )
 

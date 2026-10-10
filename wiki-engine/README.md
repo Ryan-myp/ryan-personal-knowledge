@@ -3,7 +3,7 @@
 > 基于 Karpathy LLM Wiki 模式的通用知识引擎，为 biz-delivery 提供持续演进的知识库能力。
 
 > 说明：广告 Agent Runtime 的唯一知识入口是
-> `agents/agent_platform/data/knowledge/wiki.py` 中的
+> `agents/applications/advertising/knowledge/wiki.py` 中的
 > `MarkdownWikiKnowledgeProvider`。本目录是通用 ingest/query/lint 兼容工具，
 > 不维护第二套运行时索引。
 

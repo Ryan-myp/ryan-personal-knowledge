@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
-from agents.agent_harness.core.interfaces import ToolSourceRuntime
+from agents.tools.advertising.providers.contracts import ProviderInstallation
 
 
 class AdFormatCoverage(Enum):
@@ -24,7 +24,7 @@ class AdFormatCoverage(Enum):
 
 
 @dataclass
-class AdToolSourceRuntime(ToolSourceRuntime):
+class AdvertisingProviderInstallation(ProviderInstallation):
     """Advertising extension data returned by an ad Tool Source."""
 
     ad_format_catalogs: list[dict[str, Any]] = None
@@ -146,7 +146,7 @@ class ResourceResult:
 
 __all__ = [
     "AdFormatCoverage",
-    "AdToolSourceRuntime",
+    "AdvertisingProviderInstallation",
     "RESOURCE_RESULT_STATUSES",
     "ResourceRef",
     "ResourceResult",

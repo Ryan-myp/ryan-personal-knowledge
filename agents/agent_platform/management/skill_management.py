@@ -5,7 +5,7 @@ the entry point, while ``scripts/``, ``references/``, ``assets/`` and other
 package files are preserved as part of the version snapshot.  The important
 security boundary is that this package is *context*, not a new executable
 provider integration.  The Runtime never imports files from a managed
-package; advertising side effects remain behind the existing Tool Source/Tool
+package; external side effects remain behind the registered Tool Source/Tool
 registry and its policy gates.
 """
 
@@ -31,6 +31,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, Optional
 
 import yaml
+from .evaluation import skill_up_config
 
 from agents.agent_harness.redaction import redact_for_persistence
 from agents.agent_harness.skills.contract import SkillContract
@@ -46,7 +47,6 @@ _MAX_FILES = 512
 _MAX_FILE_BYTES = 2 * 1024 * 1024
 _MAX_PACKAGE_BYTES = 16 * 1024 * 1024
 _TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".yaml", ".yml", ".json", ".csv"}
-_MANAGED_EVAL_ENGINES = {"claude_sdk", "ad-agent-runtime"}
 _CREDENTIAL_ASSIGNMENT_RE = re.compile(
     r"(?im)(?P<field>access[_-]?token|refresh[_-]?token|developer[_-]?token|"
     r"client[_-]?secret|private[_-]?key|app[_-]?secret|api[_-]?key|"
@@ -60,14 +60,14 @@ _CREDENTIAL_ASSIGNMENT_RE = re.compile(
 # manager facade per request; a manager-local executor would not actually
 # bound concurrent evaluations across requests.
 _EVAL_MAX_WORKERS = max(
-    1, min(int(os.environ.get("AD_AGENT_SKILL_EVAL_WORKERS", "2")), 8)
+    1, min(int(os.environ.get("AGENT_PLATFORM_SKILL_EVAL_WORKERS", "2")), 8)
 )
 _EVAL_MAX_QUEUE = max(
-    0, min(int(os.environ.get("AD_AGENT_SKILL_EVAL_QUEUE", "8")), 64)
+    0, min(int(os.environ.get("AGENT_PLATFORM_SKILL_EVAL_QUEUE", "8")), 64)
 )
 _EVAL_EXECUTOR = ThreadPoolExecutor(
     max_workers=_EVAL_MAX_WORKERS,
-    thread_name_prefix="ad-agent-skill-eval",
+    thread_name_prefix="agent-platform-skill-eval",
 )
 _EVAL_CAPACITY = threading.BoundedSemaphore(_EVAL_MAX_WORKERS + _EVAL_MAX_QUEUE)
 
@@ -397,9 +397,21 @@ def _safe_evaluation_payload(value: Any) -> Any:
 class ManagedSkillManager:
     """CRUD, validation and materialization for versioned Skill packages."""
 
-    def __init__(self, store: Any, root: Optional[str] = None):
+    def __init__(
+        self, store: Any, root: Optional[str] = None, *,
+        evaluation_engines: Optional[Mapping[str, Any]] = None,
+    ):
+        from .evaluation import ManagedEvaluationEngine, builtin_evaluation_engines
+
         self.store = store
-        configured = root or os.environ.get("AD_AGENT_MANAGED_SKILLS_ROOT")
+        self.evaluation_engines = builtin_evaluation_engines()
+        for name, engine in (evaluation_engines or {}).items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("managed evaluation engine requires a non-empty name")
+            if not isinstance(engine, ManagedEvaluationEngine):
+                raise TypeError("managed evaluation engine must be a trusted engine binding")
+            self.evaluation_engines[name] = engine
+        configured = root or os.environ.get("AGENT_PLATFORM_MANAGED_SKILLS_ROOT")
         if configured:
             self.root = Path(configured).expanduser().resolve()
         else:
@@ -413,7 +425,7 @@ class ManagedSkillManager:
                 # while isolating separate in-memory stores.
                 base_value = getattr(store, "_managed_skills_root", None)
                 if not base_value:
-                    base_value = tempfile.mkdtemp(prefix="ad-agent-managed-skills-")
+                    base_value = tempfile.mkdtemp(prefix="agent-platform-managed-skills-")
                     try:
                         setattr(store, "_managed_skills_root", base_value)
                     except Exception:
@@ -430,7 +442,7 @@ class ManagedSkillManager:
     @staticmethod
     def _validate_skill_document(skill_name: str, files: Mapping[str, bytes]) -> None:
         """Validate SKILL.md with the production parser without importing code."""
-        with tempfile.TemporaryDirectory(prefix="ad-agent-skill-validate-") as temp:
+        with tempfile.TemporaryDirectory(prefix="agent-platform-skill-validate-") as temp:
             directory = Path(temp) / skill_name
             directory.mkdir()
             for path, data in files.items():
@@ -794,14 +806,13 @@ class ManagedSkillManager:
             loaded += 1
         return loaded
 
-    @staticmethod
-    def _validate_eval_config(record: Mapping[str, Any]) -> tuple[Path, dict[str, Any]]:
+    def _validate_eval_config(self, record: Mapping[str, Any]) -> tuple[Path, dict[str, Any]]:
         """Validate the user Skill's data-only skill-up configuration.
 
         The service deliberately does not execute user-provided custom engine
         commands or judge scripts. Platform-managed adapters and declarative
         judges run in the isolated evaluation workspace; the adapter receives
-        no advertising credentials.
+        no external service credentials.
         """
         files = decode_skill_files(record.get("files") or {})
         eval_path = Path("evals/eval.yaml")
@@ -819,25 +830,21 @@ class ManagedSkillManager:
         if engine.get("custom") is not None:
             raise SkillPackageError("managed Skill evaluation cannot use a Custom Engine")
         engine_name = str(engine.get("name", "")).strip()
-        if engine_name not in _MANAGED_EVAL_ENGINES:
+        if engine_name not in self.evaluation_engines:
             raise SkillPackageError(
                 "managed Skill evaluation must use a platform-managed engine: "
-                "claude_sdk or ad-agent-runtime"
+                + ", ".join(sorted(self.evaluation_engines))
             )
         engine_kwargs = engine.get("kwargs") or {}
         if not isinstance(engine_kwargs, Mapping):
             raise SkillPackageError("managed Skill evaluation engine.kwargs must be an object")
-        if engine_name == "claude_sdk":
-            allowed_kwargs = {
-                "max_tokens", "file_paths", "max_skill_context_chars",
-                "max_tool_context_chars", "max_file_context_chars",
-            }
-            for key in engine_kwargs:
-                key_text = str(key)
-                if key_text not in allowed_kwargs:
-                    raise SkillPackageError(
-                        f"managed Skill evaluation does not support engine.kwargs.{key_text}"
-                    )
+        allowed_kwargs = self.evaluation_engines[engine_name].allowed_kwargs
+        for key in engine_kwargs:
+            key_text = str(key)
+            if key_text not in allowed_kwargs:
+                raise SkillPackageError(
+                    f"managed Skill evaluation does not support engine.kwargs.{key_text}"
+                )
         environment = config.get("environment") or {}
         if not isinstance(environment, dict) or environment.get("type", "none") != "none":
             raise SkillPackageError("managed Skill evaluation only supports environment.type=none")
@@ -954,60 +961,19 @@ class ManagedSkillManager:
             actual_eval = evaluation_workspace / eval_path
             command = os.environ.get("SKILL_UP_BIN", "skill-up")
             command_parts = [command] if os.path.sep in command else [shutil.which(command) or command]
-            timeout = max(1, min(int(os.environ.get("AD_AGENT_SKILL_UP_TIMEOUT", "900")), 1800))
+            timeout = max(1, min(int(os.environ.get("AGENT_PLATFORM_SKILL_UP_TIMEOUT", "900")), 1800))
             engine_name = str((_config.get("engine") or {}).get("name", ""))
             evaluation_env = self._evaluation_environment(engine_name)
-            evaluation_env["AD_AGENT_REPO_ROOT"] = str(
-                Path(__file__).resolve().parents[2]
+            engine_binding = self.evaluation_engines[engine_name]
+            evaluation_env.update(engine_binding.environment)
+            evaluation_env["AGENT_EVAL_SKILLS_ROOT"] = str(evaluation_workspace)
+            generated_eval = evaluation_workspace / f".skill-up-eval-{run_id}.yaml"
+            eval_config = skill_up_config(_config, engine_binding, timeout)
+            generated_eval.write_text(
+                yaml.safe_dump(eval_config, allow_unicode=True, sort_keys=False),
+                encoding="utf-8",
             )
-            evaluation_env["AD_AGENT_SKILLS_ROOT"] = str(evaluation_workspace)
-            eval_config = _config
-            if engine_name in {"ad-agent-runtime", "claude_sdk"}:
-                # The platform owns these adapters. User packages may provide
-                # cases and judges, but never the command that runs them.
-                adapter_name = (
-                    "claude_sdk_engine.py" if engine_name == "claude_sdk"
-                    else "skill_up_engine.py"
-                )
-                adapter = Path(__file__).resolve().parent / "evals" / adapter_name
-                generated_eval = evaluation_workspace / f".skill-up-eval-{run_id}.yaml"
-                eval_config = dict(_config)
-                original_engine = _config.get("engine") or {}
-                eval_config["engine"] = {
-                    "name": engine_name,
-                    **({"model": original_engine["model"]} if "model" in original_engine else {}),
-                    "custom": {
-                        "transport": "local",
-                        "response_format": "session_result",
-                        "timeout_seconds": timeout,
-                        "local": {
-                            # Reuse the interpreter that owns the managed
-                            # evaluation process; never fall back to the
-                            # host's system Python.
-                            "command": sys.executable,
-                            "args": [
-                                str(adapter), "--input", "${input_file}",
-                                "--output", "${output_file}",
-                            ],
-                            "cwd": "${workspace}",
-                            "input_file": "inputs/ad-agent-session.json",
-                            "output_file": "outputs/ad-agent-session-result.json",
-                        },
-                    },
-                }
-                original_kwargs = original_engine.get("kwargs") or {}
-                if original_kwargs and engine_name == "claude_sdk":
-                    # skill-up's Custom Engine contract uses string kwargs;
-                    # normalize YAML scalar values before generating the
-                    # platform-owned config (the adapter parses bounded ints).
-                    eval_config["engine"]["custom"]["kwargs"] = {
-                        str(key): str(value) for key, value in original_kwargs.items()
-                    }
-                generated_eval.write_text(
-                    yaml.safe_dump(eval_config, allow_unicode=True, sort_keys=False),
-                    encoding="utf-8",
-                )
-                actual_eval = generated_eval
+            actual_eval = generated_eval
             validation = subprocess.run(
                 command_parts + ["validate", str(actual_eval)],
                 cwd=str(evaluation_workspace), capture_output=True, text=True,
@@ -1076,7 +1042,7 @@ class ManagedSkillManager:
 
     @staticmethod
     def _evaluation_environment(engine_name: str = "") -> dict[str, str]:
-        """Remove advertising credentials from the skill-up subprocess.
+        """Remove external service credentials from the skill-up subprocess.
 
         The selected model credential may be needed by a built-in Engine, but
         provider credentials and service API keys are never part of a Skill
@@ -1093,9 +1059,9 @@ class ManagedSkillManager:
         if engine_name == "claude_sdk":
             # Claude is the only managed evaluator that needs a model secret.
             # Keep only its explicitly supported key/base URL; never pass the
-            # ad-agent/OpenAI/provider credential set through to the child.
+            # service/other-model/provider credential set through to the child.
             for key in (
-                "ANTHROPIC_API_KEY", "AD_AGENT_CLAUDE_API_KEY", "ANTHROPIC_BASE_URL",
+                "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
             ):
                 if os.environ.get(key):
                     environment[key] = os.environ[key]

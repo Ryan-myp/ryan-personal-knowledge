@@ -384,7 +384,7 @@ Tool Source。`SKILL.md` 仍只负责自然语言知识、SOP 和安全边界；
    - 第 50 行：修复 credentials 路径，从 `parent.parent` 改为 `parent.parent.parent`
    - 添加 JSON 凭证文件加载逻辑
 
-3. **`agents/tools/advertising/application/runtime.py`**
+3. **`agents/applications/advertising/runtime.py`**
    - 第 148-153 行：添加平台别名映射（`google-ads` → `google`）
 
 ### 测试结果

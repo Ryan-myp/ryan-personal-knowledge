@@ -1,15 +1,16 @@
 """Tests for standard-directory Skill management and safe activation."""
 
 import pytest
+from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
 import time
 import threading
 from pathlib import Path
 
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
 from agents.agent_harness.messages import ModelTurn
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_platform.management.skill_management import (
     BuiltinSkillCatalog,
     ManagedSkillManager,
@@ -104,7 +105,7 @@ def test_channel_skill_body_is_available_to_model_context():
 
 def test_standard_skill_directory_is_versioned_and_published(tmp_path):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
 
     draft = manager.create_version(
         "tenant-a", "business-growth", "1.0.0", _files(), "user-a"
@@ -136,7 +137,7 @@ def test_standard_skill_directory_is_versioned_and_published(tmp_path):
 
 def test_new_version_archives_previous_release_and_active_lookup_is_scoped(tmp_path):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     manager.create_version("tenant-a", "business-growth", "1.0.0", _files(), "u1")
     manager.publish("tenant-a", "business-growth", "1.0.0")
     manager.create_version(
@@ -157,7 +158,7 @@ def test_new_version_archives_previous_release_and_active_lookup_is_scoped(tmp_p
 
 def test_unpublish_removes_release_but_keeps_version_for_explicit_rollback(tmp_path):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     manager.create_version("tenant-a", "business-growth", "1.0.0", _files(), "u1")
 
     runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
@@ -186,8 +187,8 @@ def test_unpublish_removes_release_but_keeps_version_for_explicit_rollback(tmp_p
 def test_publication_serializes_runtime_activation_and_release_pointer(tmp_path):
     """Separate HTTP manager facades cannot diverge Runtime and SQLite state."""
     store = AdAgentStore(":memory:")
-    manager_a = ManagedSkillManager(store, root=str(tmp_path / "managed"))
-    manager_b = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager_a = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
+    manager_b = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     manager_a.create_version("tenant-a", "release-skill", "1.0.0", _files("release-skill"), "u1")
     manager_a.create_version(
         "tenant-a", "release-skill", "2.0.0",
@@ -255,7 +256,7 @@ def test_publication_serializes_runtime_activation_and_release_pointer(tmp_path)
 )
 def test_invalid_standard_skill_package_is_rejected(files, message):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     with pytest.raises(SkillPackageError, match=message):
         manager.create_version("tenant-a", "business-growth", "1.0.0", files, "u1")
 
@@ -263,7 +264,7 @@ def test_invalid_standard_skill_package_is_rejected(files, message):
 def test_managed_skills_are_isolated_by_tenant_on_shared_runtime():
     store = AdAgentStore(":memory:")
     runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     first_files = _files("first-skill")
     first_files["SKILL.md"] = first_files["SKILL.md"].replace(
         "platform: multi_platform\n", "platform: multi_platform\naliases: [tenant-a-only]\n"
@@ -302,8 +303,8 @@ def test_managed_skills_are_isolated_by_tenant_on_shared_runtime():
 def test_separate_in_memory_stores_do_not_share_materialized_skill_cache():
     first_store = AdAgentStore(":memory:")
     second_store = AdAgentStore(":memory:")
-    first = ManagedSkillManager(first_store)
-    second = ManagedSkillManager(second_store)
+    first = ManagedSkillManager(first_store, evaluation_engines=advertising_evaluation_engines())
+    second = ManagedSkillManager(second_store, evaluation_engines=advertising_evaluation_engines())
 
     assert first.root != second.root
     first_store.close()
@@ -312,7 +313,7 @@ def test_separate_in_memory_stores_do_not_share_materialized_skill_cache():
 
 def test_publish_does_not_commit_when_runtime_activation_fails():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     manager.create_version("tenant-a", "broken-skill", "1.0.0", _files("broken-skill"), "u1")
 
     class BrokenRuntime:
@@ -328,7 +329,7 @@ def test_publish_does_not_commit_when_runtime_activation_fails():
 
 def test_materialized_skill_cache_rejects_tampering(tmp_path):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     manager.create_version("tenant-a", "tamper-check", "1.0.0", _files("tamper-check"), "u1")
     record = store.get_skill_version("tenant-a", "tamper-check", "1.0.0")
 
@@ -366,7 +367,7 @@ def test_skill_up_environment_is_minimal_and_engine_scoped(monkeypatch):
 
 def test_skill_up_config_is_data_only_and_uses_standard_package_files():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     files = {
         **_files("evaluated-skill"),
         "evals/eval.yaml": (
@@ -397,7 +398,7 @@ def test_skill_up_config_is_data_only_and_uses_standard_package_files():
 
 def test_skill_with_evaluation_suite_cannot_publish_before_passing(tmp_path):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     files = {
         **_files("gated-skill"),
         "evals/eval.yaml": (
@@ -416,7 +417,7 @@ def test_skill_with_evaluation_suite_cannot_publish_before_passing(tmp_path):
 
 
 def test_skill_package_rejects_credential_assignments_in_context_files():
-    manager = ManagedSkillManager(AdAgentStore(":memory:"))
+    manager = ManagedSkillManager(AdAgentStore(":memory:"), evaluation_engines=advertising_evaluation_engines())
     files = {
         **_files("credential-skill"),
         "references/auth.md": "Runtime-owned config only\naccess_token: YOUR_TOKEN\n",
@@ -426,7 +427,7 @@ def test_skill_package_rejects_credential_assignments_in_context_files():
 
 
 def test_skill_package_rejects_service_account_file_assignments():
-    manager = ManagedSkillManager(AdAgentStore(":memory:"))
+    manager = ManagedSkillManager(AdAgentStore(":memory:"), evaluation_engines=advertising_evaluation_engines())
     files = {
         **_files("service-account-skill"),
         "references/auth.md": "service_account_file: /tmp/provider.json\n",
@@ -437,7 +438,7 @@ def test_skill_package_rejects_service_account_file_assignments():
 
 def test_skill_up_config_allows_platform_managed_claude_sdk_with_safe_kwargs():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     files = {
         **_files("claude-skill"),
         "evals/eval.yaml": (
@@ -466,7 +467,7 @@ def test_skill_up_config_allows_platform_managed_claude_sdk_with_safe_kwargs():
 
 def test_skill_up_config_rejects_custom_engines_and_judge_scripts():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     files = {
         **_files("unsafe-eval"),
         "evals/eval.yaml": (
@@ -487,7 +488,7 @@ def test_skill_up_config_rejects_custom_engines_and_judge_scripts():
 
 def test_managed_skill_eval_rejects_external_cli_engines():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     files = {
         **_files("external-engine"),
         "evals/eval.yaml": (
@@ -506,7 +507,7 @@ def test_managed_skill_eval_rejects_external_cli_engines():
 
 def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, monkeypatch):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     files = {
         **_files("runnable-eval"),
         "evals/eval.yaml": (
@@ -552,7 +553,7 @@ def test_skill_up_evaluation_is_persisted_for_an_immutable_version(tmp_path, mon
 
 def test_skill_up_allows_only_one_active_evaluation_per_version(tmp_path, monkeypatch):
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store, root=str(tmp_path / "managed"))
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines(), root=str(tmp_path / "managed"))
     files = {
         **_files("single-flight-eval"),
         "evals/eval.yaml": (
@@ -590,7 +591,7 @@ def test_skill_up_allows_only_one_active_evaluation_per_version(tmp_path, monkey
 
 def test_interrupted_skill_up_evaluation_is_recovered_and_retryable():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     manager.create_version("tenant-a", "recoverable-eval", "1.0.0", _files("recoverable-eval"), "u1")
     version = store.get_skill_version("tenant-a", "recoverable-eval", "1.0.0")
     run = store.claim_skill_evaluation("old-run", version["version_id"], "tenant-a")
@@ -616,7 +617,7 @@ def test_interrupted_skill_up_evaluation_is_recovered_and_retryable():
 
 def test_skill_evaluation_updates_are_tenant_and_run_scoped():
     store = AdAgentStore(":memory:")
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     manager.create_version("tenant-a", "scoped-eval", "1.0.0", _files("scoped-eval"), "u1")
     version = store.get_skill_version("tenant-a", "scoped-eval", "1.0.0")
     store.claim_skill_evaluation("run-a", version["version_id"], "tenant-a")
@@ -660,7 +661,7 @@ def test_skill_up_never_imports_user_skill_plugin(tmp_path, monkeypatch):
         f"Path({str(marker)!r}).write_text('imported')\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("AD_AGENT_SKILLS_ROOT", str(skill_dir))
+    monkeypatch.setenv("AGENT_EVAL_SKILLS_ROOT", str(skill_dir))
     monkeypatch.setenv(
         "AD_AGENT_BASE_SKILLS_ROOT",
         str(Path(__file__).resolve().parents[2] / "skills" / "advertising"),
@@ -686,7 +687,7 @@ def test_runtime_turn_uses_request_tenant_managed_context():
 
     store = AdAgentStore(":memory:")
     runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     manager.create_version("tenant-a", "tenant-skill", "1.0.0", _files("tenant-skill"), "u1")
     manager.publish("tenant-a", "tenant-skill", "1.0.0", runtime=runtime)
 

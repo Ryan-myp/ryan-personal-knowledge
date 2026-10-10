@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from agents.agent_harness.core.interfaces import ToolContext, ToolResult
-from agents.tools.advertising.application.execution.parameter_selection import (
+from agents.applications.advertising.execution.parameter_selection import (
     ParameterSelectionService,
 )
 

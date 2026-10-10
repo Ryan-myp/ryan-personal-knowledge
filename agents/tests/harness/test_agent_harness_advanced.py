@@ -643,8 +643,11 @@ def test_agent_can_explicitly_resume_a_durable_checkpoint():
         checkpoint_store=checkpoints,
     )
     try:
-        first.agent._save_checkpoint(
-            TurnRequest(user_input="resume me", run_id="old-run", turn_id="old-turn"),
+        first.agent._state_io.save_checkpoint(
+            TurnRequest(
+                user_input="resume me", run_id="old-run", turn_id="old-turn",
+                session_id="resume-session",
+            ),
             first.agent._state_for(None),
             turn_index=0,
             tool_results=(),
@@ -665,6 +668,7 @@ def test_agent_can_explicitly_resume_a_durable_checkpoint():
     try:
         result = second.prompt(
             "continue",
+            session_id="resume-session",
             context={
                 "resume_from_checkpoint": True,
                 "resume_run_id": "old-run",

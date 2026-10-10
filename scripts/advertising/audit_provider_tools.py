@@ -39,7 +39,7 @@ from agents.tools.advertising.shared.domain.contracts import AdFormatCoverage  #
 from agents.tools.advertising.shared.domain.provider_evidence import (  # noqa: E402
     merge_provider_evidence_files,
 )
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition  # noqa: E402
 from agents.agent_platform.management.skill_management import (  # noqa: E402
     SkillPackageError,
     _validate_no_credential_assignments,

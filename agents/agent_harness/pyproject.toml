@@ -7,6 +7,7 @@ name = "agent-harness"
 version = "0.1.0"
 description = "Application-neutral Agent Runtime, Run Kernel, Skills and Tools"
 requires-python = ">=3.13,<3.14"
+dependencies = ["PyYAML>=6.0"]
 readme = "README.md"
 license = { text = "MIT" }
 classifiers = [

@@ -19,14 +19,14 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition  # noqa: E402
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition  # noqa: E402
 from agents.tools.advertising.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
 )
 from scripts.advertising.audit_provider_tools import discover_platform_slugs  # noqa: E402
 from agents.agent_harness.core.interfaces import ReplayPolicy, ToolEffect  # noqa: E402
 from agents.tools.advertising.shared.domain.security import PROTECTED_INPUT_FIELDS  # noqa: E402
-from agents.agent_platform.data.persistence.store import AdAgentStore  # noqa: E402
+from agents.applications.advertising.persistence.store import AdAgentStore  # noqa: E402
 
 
 # Built-in Tool Sources are a regression baseline, not a closed-world count.

@@ -71,8 +71,37 @@ def test_deployment_and_operations_are_outside_framework_packages():
     assert (AGENTS_ROOT.parent / "scripts" / "advertising" / "audit_provider_tools.py").is_file()
 
 
+def test_advertising_application_owns_its_data_and_http_implementation():
+    application = AGENTS_ROOT / "applications" / "advertising"
+    deployment = AGENTS_ROOT / "deployments" / "advertising"
+    assert (application / "composition" / "ad_application.py").is_file()
+    assert (application / "persistence" / "store.py").is_file()
+    assert (application / "knowledge" / "wiki.py").is_file()
+    assert (deployment / "api" / "models.py").is_file()
+    assert not (AGENTS_ROOT / "tools" / "advertising" / "application").exists()
+    assert not (AGENTS_ROOT / "agent_platform" / "data" / "persistence").exists()
+    assert not (AGENTS_ROOT / "agent_platform" / "data" / "knowledge").exists()
+    assert not (AGENTS_ROOT / "agent_platform" / "api").exists()
+
+
+def test_platform_does_not_own_advertising_persistence_or_permissions():
+    platform = AGENTS_ROOT / "agent_platform"
+    source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in platform.rglob("*.py")
+        if "build" not in path.parts and "__pycache__" not in path.parts
+    )
+    assert "CampaignRecord" not in source
+    assert "CreationTemplateRecord" not in source
+    assert '"ads.write"' not in source
+    assert "AD_AGENT_" not in source
+
+
 def test_framework_and_platform_do_not_import_advertising_implementation():
-    forbidden_fragments = ("agents.ad_agent", "agents.tools.advertising")
+    forbidden_fragments = (
+        "agents.ad_agent", "agents.tools.advertising", "agents.applications.advertising",
+        "agents.deployments.advertising", "agents.evals.advertising",
+    )
     for package in (AGENTS_ROOT / "agent_harness", AGENTS_ROOT / "agent_platform"):
         imports = _python_imports(package)
         assert not any(
@@ -82,9 +111,30 @@ def test_framework_and_platform_do_not_import_advertising_implementation():
         ), package
 
 
+def test_harness_only_defines_the_standard_tool_source_contract():
+    interface = AGENTS_ROOT / "agent_harness/core/interfaces.py"
+    classes = {
+        node.name for node in ast.parse(interface.read_text()).body
+        if isinstance(node, ast.ClassDef)
+    }
+    assert not {
+        "ToolSourceModule", "ToolSourceContext", "ToolSourceRuntime",
+        "ProviderModule", "ProviderInstallationContext", "ProviderInstallation",
+    } & classes
+
+
 def test_advertising_tools_are_independent_of_the_deployment_package():
     imports = _python_imports(AGENTS_ROOT / "tools" / "advertising")
-    assert not any("agents.ad_agent" in imported for imported in imports)
+    assert not any(
+        "agents.ad_agent" in imported or "agents.applications.advertising" in imported
+        for imported in imports
+    )
+
+
+def test_portable_advertising_tool_source_lives_in_the_tool_package():
+    assert (AGENTS_ROOT / "tools/advertising/source.py").is_file()
+    from agents.tools.advertising.source import advertising_tool_source
+    assert callable(advertising_tool_source)
 
 
 def test_harness_and_platform_are_independent_of_advertising_packages():

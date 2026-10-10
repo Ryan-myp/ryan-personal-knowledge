@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.agent_platform.data.knowledge.wiki import MarkdownWikiKnowledgeProvider
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.knowledge.wiki import MarkdownWikiKnowledgeProvider
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_platform.data.semantic import (
     HashEmbeddingProvider,
     InMemorySemanticIndex,

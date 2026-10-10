@@ -5,10 +5,10 @@ import time
 
 from fastapi.testclient import TestClient
 
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_harness.messages import ModelTurn
 from agents.tests.advertising.harness_models import ScriptedHarnessModel
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 import agents.deployments.advertising.api_server as api_server
 
 

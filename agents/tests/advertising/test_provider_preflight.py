@@ -11,8 +11,8 @@ from agents.agent_harness.core.interfaces import (
     ToolSchema,
 )
 from agents.tools.advertising.shared.domain.provider_preflight import build_provider_preflight
-from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.execution.account_policy import AccountWhitelistValidator
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from scripts.advertising.provider_preflight import (
     _credential_configured,
     build_runtime,

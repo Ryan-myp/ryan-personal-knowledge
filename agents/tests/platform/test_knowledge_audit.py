@@ -1,6 +1,6 @@
 from datetime import date
 
-from agents.agent_platform.data.knowledge.knowledge_audit import audit_knowledge_base, infer_source_kind
+from agents.applications.advertising.knowledge.knowledge_audit import audit_knowledge_base, infer_source_kind
 from scripts.advertising.normalize_knowledge_metadata import _normalise_page
 
 

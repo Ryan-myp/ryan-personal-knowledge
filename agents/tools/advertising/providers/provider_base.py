@@ -16,15 +16,12 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Callable, Optional
 
-from agents.agent_harness.core.interfaces import (
-    ToolContext, ToolResult, ToolDefinition, ToolHandler,
-    ToolSourceModule, ToolSourceContext,
-    WriteGuard, WriteReservation, RiskLevel, ToolEffect
-)
+from agents.agent_harness.core.interfaces import (ToolContext, ToolResult, ToolDefinition, ToolHandler, WriteGuard, WriteReservation, RiskLevel, ToolEffect)
+from agents.tools.advertising.providers.contracts import (ProviderModule, ProviderInstallationContext)
 from agents.agent_harness import StaticToolSource, ToolBinding
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
 from agents.tools.advertising.shared.domain.security import protected_update_paths
-from agents.tools.advertising.shared.domain.contracts import AdToolSourceRuntime
+from agents.tools.advertising.shared.domain.contracts import AdvertisingProviderInstallation
 
 
 def call_with_optional_page_size(
@@ -142,7 +139,7 @@ def apply_lookup_contracts(
     return tools
 
 
-class BaseProviderToolSource(ToolSourceModule, ABC):
+class BaseProviderToolSource(ProviderModule, ABC):
     """
     平台 Tool Source 基类。
     
@@ -185,15 +182,15 @@ class BaseProviderToolSource(ToolSourceModule, ABC):
 {tool_list}
 """.strip()
     
-    def configure(self, context: ToolSourceContext) -> AdToolSourceRuntime:
+    def configure(self, context: ProviderInstallationContext) -> AdvertisingProviderInstallation:
         """
-        配置并返回 ToolSourceRuntime。
+        配置并返回 ProviderInstallation。
         
-        对应 DAP Agent ToolSourceModule.Configure() 模式：
+        对应 DAP Agent ProviderModule.Configure() 模式：
         1. 读取业务依赖
         2. 创建工具处理器
         3. 注册到 Registry
-        4. 返回 ToolSourceRuntime
+        4. 返回 ProviderInstallation
         """
         # Step 1: 注册平台工具
         self._register_platform_tools(context.registry)
@@ -201,7 +198,7 @@ class BaseProviderToolSource(ToolSourceModule, ABC):
         # Workflow policy belongs to the Skill contract. Tool Source only
         # registers executable tools and its provider-independent write guard.
         write_guard = self._build_write_guard()
-        return AdToolSourceRuntime(
+        return AdvertisingProviderInstallation(
             write_guard=write_guard,
             ad_format_catalogs=self.get_ad_format_catalog(),
             creation_blueprints=self.get_creation_blueprints(),
@@ -318,8 +315,21 @@ class BaseProviderToolSource(ToolSourceModule, ABC):
                 )
         return list(dict.fromkeys(errors))
     
-    def _register_platform_tools(self, registry: SimpleToolRegistry) -> None:
-        """子类实现：将平台工具注册到 Registry"""
+    @property
+    def source_id(self) -> str:
+        return f"provider-module:{self.platform_name}"
+
+    def list_bindings(self) -> tuple[ToolBinding, ...]:
+        """Publish validated contracts to any standard Agent Harness."""
+        from agents.tools.advertising.source import portable_binding
+
+        return tuple(
+            portable_binding(binding.definition, binding.executor)
+            for binding in self._validated_bindings()
+        )
+
+    def _validated_bindings(self) -> list[ToolBinding]:
+        """Attach the same permissions/version contract for every consumer."""
         tools = self.register_tools()
         version_errors = self._validate_provider_version_contract(tools)
         if version_errors:
@@ -373,10 +383,14 @@ class BaseProviderToolSource(ToolSourceModule, ABC):
                     "ads.plan" if defn.is_write_tool else "ads.read"
                 ]
             bindings.append(ToolBinding(defn, handler))
+        return bindings
+
+    def _register_platform_tools(self, registry: SimpleToolRegistry) -> None:
+        bindings = self._validated_bindings()
         if bindings:
             registry.register_source(
                 StaticToolSource(
-                    f"provider-module:{self.platform_name}",
+                    self.source_id,
                     bindings,
                 )
             )

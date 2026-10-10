@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.tools.advertising.providers.meta import create_meta_tool_source
 from agents.agent_harness.core.plugins import (
     PluginKind,

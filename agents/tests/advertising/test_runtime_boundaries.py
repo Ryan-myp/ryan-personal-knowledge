@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 
 from agents.agent_harness import AgentRuntimeKernel, TurnRequest
 from agents.agent_platform.infrastructure.durable import task_outcome_status
-from agents.agent_platform.data.persistence.models import ToolCallRecord
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.models import ToolCallRecord
+from agents.applications.advertising.persistence.store import AdAgentStore
 
 
 class _LeaseStore:
@@ -166,7 +166,7 @@ def test_task_outcome_is_not_inferred_from_handler_returning_normally():
 
 def test_application_runtime_has_no_direct_provider_factory_imports():
     source = open(
-        "agents/tools/advertising/application/composition/ad_application_assembly.py",
+        "agents/applications/advertising/composition/ad_application_assembly.py",
         encoding="utf-8",
     ).read()
     tree = ast.parse(source)
@@ -184,7 +184,7 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
     """The facade delegates infrastructure wiring to an explicit assembly."""
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     facade = (root / "composition/ad_application.py").read_text(encoding="utf-8")
     bootstrap = (root / "composition/ad_application_bootstrap.py").read_text(encoding="utf-8")
     assembly = (root / "composition/ad_application_assembly.py").read_text(encoding="utf-8")
@@ -213,7 +213,7 @@ def test_ad_runtime_assembly_is_the_only_application_composition_graph():
 def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     facade = (root / "composition/ad_application.py").read_text(encoding="utf-8")
     application_facade = (root / "composition/ad_application_facade.py").read_text(
         encoding="utf-8"
@@ -275,7 +275,7 @@ def test_ad_runtime_domain_policy_and_context_are_replaceable_services():
 def test_ad_application_root_only_declares_composition_and_constructor():
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     source = (root / "composition/ad_application.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     classes = [
@@ -299,7 +299,7 @@ def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback()
     """New code enters directly through the platform application."""
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     assert not (root / "ad_turn_engine.py").exists()
     assert not (root / "ad_turn_orchestrator.py").exists()
     runtime_source = (root / "composition/ad_application.py").read_text(encoding="utf-8")
@@ -311,7 +311,7 @@ def test_ad_runtime_has_one_platform_entrypoint_without_compatibility_fallback()
 def test_ad_runtime_has_no_ad_turn_pipeline_or_stage_modules():
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     assert not (root / "ad_turn_pipeline.py").exists()
     assert not (root / "ad_turn_stages.py").exists()
     assert not (root / "ad_turn_state.py").exists()
@@ -320,7 +320,7 @@ def test_ad_runtime_has_no_ad_turn_pipeline_or_stage_modules():
 def test_advertising_application_has_no_parallel_turn_orchestration():
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     obsolete_modules = (
         "integration_investigation.py",
         "integration_turn_planner.py",
@@ -341,7 +341,7 @@ def test_turn_application_services_do_not_import_provider_implementations():
     """Turn stages depend on Runtime contracts, never on channel clients."""
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     for name in (
         "integrations/ad_turn_context.py",
         "composition/ad_runtime_facades.py",
@@ -380,11 +380,10 @@ def test_supervisor_receives_task_kinds_from_the_application_composition_root():
 
 def test_tool_source_context_has_no_skill_back_reference():
     """Tool Sources receive execution dependencies, not Skill objects."""
-    from agents.agent_harness.core.interfaces import ToolSourceContext
-    from agents.tools.advertising.application.integrations.tool_source_context import ToolSourceContextWrapper
+    from agents.tools.advertising.providers.contracts import (ProviderInstallationContext)
 
-    assert "skills" not in ToolSourceContext.__dataclass_fields__
-    assert not hasattr(ToolSourceContextWrapper(object()), "skills")
+    assert "skills" not in ProviderInstallationContext.__dataclass_fields__
+    assert not hasattr(ProviderInstallationContext(object()), "skills")
 
 
 def test_monitoring_tool_counts_are_tenant_scoped_by_session_column():

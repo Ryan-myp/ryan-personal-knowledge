@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent
 AGENTS_ROOT = ROOT / "agents"
 _DATA_ROOTS = (
     AGENTS_ROOT / "ad_agent",
+    AGENTS_ROOT / "applications" / "advertising",
     AGENTS_ROOT / "tools" / "advertising",
     AGENTS_ROOT / "skills" / "advertising",
     AGENTS_ROOT / "knowledge" / "advertising",

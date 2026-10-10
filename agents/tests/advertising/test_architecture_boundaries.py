@@ -10,11 +10,11 @@ from agents.agent_harness.core.interfaces import (
 )
 from agents.agent_harness import ModelTurn
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.agent_harness.skills.contract import SkillLoader
 from agents.skills.advertising.businesses.policy import BusinessSkillPolicy
-from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
-from agents.tools.advertising.application.operations.session_context import SessionContext
+from agents.applications.advertising.execution.account_policy import AccountWhitelistValidator
+from agents.applications.advertising.operations.session_context import SessionContext
 from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.intent import LLMIntentParser
 
@@ -34,7 +34,7 @@ def test_core_does_not_host_advertising_domain_modules():
 
 def test_advertising_application_modules_have_single_layer_ownership():
     """Application modules live under their architectural responsibility."""
-    root = Path(__file__).resolve().parents[2] / "tools" / "advertising" / "application"
+    root = Path(__file__).resolve().parents[2] / "applications" / "advertising"
     ownership = {
         "composition": {
             "ad_application.py", "ad_application_assembly.py",
@@ -46,6 +46,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_creation_blueprint_services.py", "ad_creation_catalog_services.py",
             "ad_creation_contract_services.py", "ad_creation_services.py",
             "ad_creation_template_services.py", "ad_creation_ui_services.py",
+            "templates.py",
         },
         "execution": {
             "account_context.py", "account_policy.py", "ad_tool_interaction.py",
@@ -57,7 +58,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_skill_lifecycle.py", "ad_skill_plugins.py",
             "ad_tool_source_registration.py", "ad_tool_source_services.py",
             "ad_turn_context.py", "integration.py", "provider_bindings.py",
-            "tool_source_context.py",
+            "skill_evaluation.py",
         },
         "operations": {
             "ad_conversation_services.py", "ad_persistence_services.py",
@@ -246,7 +247,7 @@ def test_runtime_has_no_advertising_feature_turn_handlers():
 
 
 def test_creation_application_exposes_configuration_not_turn_handlers():
-    from agents.tools.advertising.application.creation.ad_creation_services import (
+    from agents.applications.advertising.creation.ad_creation_services import (
         AdCreationServicesMixin,
     )
 
@@ -363,7 +364,7 @@ def test_parsed_intent_is_an_opaque_publisher_extension_envelope():
 
 def test_generic_workflow_coordinator_receives_scope_from_application_boundary():
     """Workflow infrastructure must not require an account resolver."""
-    from agents.tools.advertising.application.operations.workflow import WorkflowCoordinator
+    from agents.applications.advertising.operations.workflow import WorkflowCoordinator
 
     class Store:
         def __init__(self):

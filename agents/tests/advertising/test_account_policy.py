@@ -1,6 +1,6 @@
 """The advertising Tool package receives account policy from its deployment."""
 
-from agents.tools.advertising.application.execution.account_policy import (
+from agents.applications.advertising.execution.account_policy import (
     AccountWhitelistValidator,
 )
 

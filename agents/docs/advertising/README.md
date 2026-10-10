@@ -91,7 +91,7 @@ import os
 
 from agents.ad_agent.application import create_advertising_application
 from agents.agent_harness.core.llm_client import create_llm_client
-from agents.agent_platform.data.persistence.factory import create_persistence_store
+from agents.applications.advertising.persistence.factory import create_persistence_store
 
 store = create_persistence_store()
 application = create_advertising_application(
@@ -404,7 +404,7 @@ Planner 或 Tool 门禁。通用执行壳是 `agents/agent_harness/`，队列/Ou
 lifecycle 由 `agents/agent_platform/infrastructure/durable/` 管理；新对话能力应优先落到
 标准 Skill 和注册 Tool/Tool Source。
 
-当前装配入口位于 `agents/tools/advertising/application/ad_application_assembly.py`：它通过
+当前装配入口位于 `agents/applications/advertising/composition/ad_application_assembly.py`：它通过
 `AgentPlatform` 把配置的 LLM、通用 Tool catalog/selector、advisory Context Provider 和
 账户范围策略接到 Harness。广告场景当前不注册 Feature turn handler；调度自然语言草稿与
 跨渠道 routed handler 已从运行时发现/组合中移除。调度 CRUD、任务提交和 Worker 执行仍通过
@@ -534,7 +534,7 @@ agents/
 └── tests/{harness,platform,advertising}/
 ```
 
-HTTP 入口的声明层和安全边界位于 `agents/agent_platform/api/`：
+HTTP 入口的声明层和安全边界位于 `agents/deployments/advertising/api/`：
 
 ```text
 api/

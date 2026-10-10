@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agents.agent_platform.data.persistence.models import TaskRecord  # noqa: E402
-from agents.agent_platform.data.persistence.mysql_store import MySQLStore  # noqa: E402
-from agents.agent_platform.data.persistence.store import AdAgentStore  # noqa: E402
+from agents.applications.advertising.persistence.models import TaskRecord  # noqa: E402
+from agents.applications.advertising.persistence.mysql_store import MySQLStore  # noqa: E402
+from agents.applications.advertising.persistence.store import AdAgentStore  # noqa: E402
 from agents.agent_harness.messages import ModelTurn  # noqa: E402
 
 
@@ -250,7 +250,7 @@ def _child_run_worker(
     timeout_seconds: float,
     hold_before_run_seconds: float = 0.0,
 ) -> int:
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
     store = _open_store(database)
     runtime_entry_calls = 0

@@ -11,7 +11,7 @@ from agents.evals.advertising.skill_up_engine import (
     run,
 )
 from agents.tests.advertising.harness_models import ScriptedHarnessModel, call
-from agents.evals.advertising.claude_sdk_engine import (
+from agents.agent_platform.evals.claude_sdk_engine import (
     _anthropic_messages,
     run as run_claude_sdk,
 )
@@ -202,7 +202,12 @@ def test_claude_sdk_adapter_passes_skill_tool_and_file_context_without_tools(tmp
     (tmp_path / "inputs" / "brief.txt").write_text(
         "App promotion brief", encoding="utf-8"
     )
-    monkeypatch.setenv("AD_AGENT_SKILLS_ROOT", str(skill_root))
+    monkeypatch.setenv("AGENT_EVAL_SKILLS_ROOT", str(skill_root))
+    from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
+    monkeypatch.setenv(
+        "AGENT_EVAL_TOOL_CATALOG",
+        advertising_evaluation_engines()["claude_sdk"].environment["AGENT_EVAL_TOOL_CATALOG"],
+    )
     client = _FakeClaudeClient()
 
     result = run_claude_sdk(

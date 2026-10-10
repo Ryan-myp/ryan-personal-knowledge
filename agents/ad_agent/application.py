@@ -6,7 +6,7 @@ from typing import Any
 
 from agents.agent_platform import PlatformApplication
 
-from agents.tools.advertising.application.composition.ad_application import (
+from agents.applications.advertising.composition.ad_application import (
     AdvertisingComposition as _AdvertisingComposition,
 )
 

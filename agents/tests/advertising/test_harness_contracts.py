@@ -13,16 +13,13 @@ from agents.tools.advertising.providers.meta import create_meta_tool_source
 from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
-from agents.agent_harness.core.interfaces import (
-    ToolContext, ToolSchema, ToolDefinition, ToolEffect,
-    EffectReconciler, ReconciliationObservation, ToolSourceRuntime,
-    ReconciliationContext, ParsedIntent, ToolResult, Skill,
-)
+from agents.agent_harness.core.interfaces import (ToolContext, ToolSchema, ToolDefinition, ToolEffect, EffectReconciler, ReconciliationObservation, ReconciliationContext, ParsedIntent, ToolResult, Skill)
+from agents.tools.advertising.providers.contracts import (ProviderInstallation)
 from agents.agent_harness.messages import ModelTurn, ToolCall
-from agents.agent_platform.data.knowledge.wiki import KnowledgeDocument
+from agents.applications.advertising.knowledge.wiki import KnowledgeDocument
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry, validate_tool_input
-from agents.tools.advertising.wiki_query import WikiQueryTool, wiki_get_errors
+from agents.applications.advertising.knowledge.wiki_query import WikiQueryTool, wiki_get_errors
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.tools.advertising.shared.domain.parameter_selection import (
     ParameterSelectionError,
@@ -31,9 +28,9 @@ from agents.tools.advertising.shared.domain.parameter_selection import (
 from agents.tools.advertising.clients.base import RateLimiter, TemporaryError
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
 from agents.tools.advertising.clients.dv360_client import DV360APIClient
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.composition.ad_application import AccountWhitelistValidator, AdvertisingComposition
-from agents.tools.advertising.application.operations.reconciliation import ToolReadbackReconciler
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.composition.ad_application import AccountWhitelistValidator, AdvertisingComposition
+from agents.applications.advertising.operations.reconciliation import ToolReadbackReconciler
 
 
 def _whitelist(**accounts):
@@ -470,7 +467,7 @@ def test_lookup_contract_must_reference_same_provider_read_tool():
                 ),
                 lambda _ctx, _input: None,
             )
-            return ToolSourceRuntime()
+            return ProviderInstallation()
 
     with pytest.raises(ValueError, match="unknown lookup tool"):
         AdvertisingComposition(require_llm=False, ).register_tool_source(BadLookupToolSource())
@@ -1289,7 +1286,7 @@ def test_write_tool_timeout_is_unknown_and_requires_reconciliation():
 
 
 def test_tool_timeout_capacity_stays_reserved_until_handler_exits():
-    from agents.tools.advertising.application.execution.tool_executor import ToolExecutor
+    from agents.applications.advertising.execution.tool_executor import ToolExecutor
 
     finished = threading.Event()
 
@@ -1376,7 +1373,7 @@ def test_invalid_persisted_execution_mode_fails_back_to_deployment_default():
 
 
 def test_execution_mode_cache_is_bounded_and_expires(monkeypatch):
-    import agents.tools.advertising.application.run.ad_runtime_controls as controls_module
+    import agents.applications.advertising.run.ad_runtime_controls as controls_module
 
     runtime = AdvertisingComposition(require_llm=False, execution_mode="dry_run")
     try:

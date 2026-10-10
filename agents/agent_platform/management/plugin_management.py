@@ -149,9 +149,9 @@ class PluginPackageManager:
         if "plugin.manifest.json" not in entries:
             raise PluginPackageError("Plugin archive requires plugin.manifest.json")
 
-        signing_key = os.environ.get("AD_AGENT_PLUGIN_PACKAGE_SIGNING_KEY")
-        require_signature = os.environ.get("AD_AGENT_REQUIRE_PLUGIN_SIGNATURE") == "1"
-        with tempfile.TemporaryDirectory(prefix="ad-agent-plugin-validate-") as root:
+        signing_key = os.environ.get("AGENT_PLATFORM_PLUGIN_PACKAGE_SIGNING_KEY")
+        require_signature = os.environ.get("AGENT_PLATFORM_REQUIRE_PLUGIN_SIGNATURE") == "1"
+        with tempfile.TemporaryDirectory(prefix="agent-platform-plugin-validate-") as root:
             directory = Path(root)
             for relative, data in entries.items():
                 target = directory / relative

@@ -88,7 +88,7 @@ agents/
     └── runtime/                    # 广告场景的 Tool/数据/基础设施装配
 ```
 
-`agents/tools/advertising/application/` 只负责广告场景的 Tool、数据和基础设施装配，不是平台核心
+`agents/applications/advertising/` 负责广告场景的应用装配、数据与知识服务，不是平台核心；可复用渠道 Tool 位于 `agents/tools/advertising/`
 Run Kernel。通用身份、Session 并发、Run 生命周期、Turn Handler 和 Tool Source
 生命周期只归 `agents/agent_harness/`；场景层不能再创建第二套 Kernel、Pipeline、
 Router 或 Tool 门禁。

@@ -76,16 +76,16 @@ def test_timed_out_model_keeps_capacity_until_provider_call_exits():
     )
     try:
         with pytest.raises(ModelTimeoutError):
-            agent._invoke_with_timeout(blocked)
+            agent._models.invoke(blocked)
         assert entered.is_set()
         with pytest.raises(ModelCapacityError):
-            agent._invoke_with_timeout(blocked)
+            agent._models.invoke(blocked)
     finally:
         release.set()
     deadline = time.monotonic() + 2
     while True:
         try:
-            assert agent._invoke_with_timeout(blocked) == "done"
+            assert agent._models.invoke(blocked) == "done"
             break
         except ModelCapacityError:
             if time.monotonic() >= deadline:

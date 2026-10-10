@@ -10,7 +10,7 @@ from agents.agent_harness.core.interfaces import (
     ToolResult,
     ToolSchema,
 )
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
 
 class _LeakyHandler(ToolHandler):

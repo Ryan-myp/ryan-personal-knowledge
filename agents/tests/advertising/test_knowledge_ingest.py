@@ -2,16 +2,16 @@ import hashlib
 
 import pytest
 
-from agents.agent_platform.data.knowledge.knowledge_ingest import (
+from agents.applications.advertising.knowledge.knowledge_ingest import (
     KnowledgeIngestError,
     KnowledgeIngestService,
     RawKnowledgeManager,
 )
-from agents.agent_platform.data.knowledge.knowledge_management import ManagedKnowledgeManager
+from agents.applications.advertising.knowledge.knowledge_management import ManagedKnowledgeManager
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.agent_platform.data.persistence.models import TaskRecord
-from agents.tools.advertising.application.operations.ad_task_services import AdTaskServices
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.models import TaskRecord
+from agents.applications.advertising.operations.ad_task_services import AdTaskServices
 
 
 class FakeLLM:

@@ -30,8 +30,8 @@ from agents.deployments.advertising.local_config import load_default_local_env
 load_default_local_env()
 
 from agents.ad_agent.application import create_advertising_application
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.agent_platform.data.persistence.factory import create_persistence_store
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.factory import create_persistence_store
 
 
 def print_banner():

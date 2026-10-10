@@ -9,14 +9,15 @@ import threading
 from pathlib import Path
 
 import pytest
+from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
 import yaml
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import agents.deployments.advertising.api_server as api_server
-from agents.agent_platform.api.context import ApiContext
-from agents.agent_platform.api.routes.chat import create_chat_router
+from agents.deployments.advertising.api.context import ApiContext
+from agents.deployments.advertising.api.routes.chat import create_chat_router
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
 
@@ -132,8 +133,8 @@ def test_chat_routes_are_owned_by_a_dedicated_route_module():
     }
 
     assert chat_routes == {
-        "/chat": "agents.agent_platform.api.routes.chat",
-        "/chat/stream": "agents.agent_platform.api.routes.chat",
+        "/chat": "agents.deployments.advertising.api.routes.chat",
+        "/chat/stream": "agents.deployments.advertising.api.routes.chat",
     }
 
 
@@ -189,11 +190,11 @@ def test_operational_routes_are_owned_by_dedicated_route_modules():
         }
     }
 
-    assert route_modules["/sessions"] == "agents.agent_platform.api.routes.sessions"
-    assert route_modules["/tasks"] == "agents.agent_platform.api.routes.tasks"
-    assert route_modules["/schedules"] == "agents.agent_platform.api.routes.tasks"
-    assert route_modules["/knowledge/search"] == "agents.agent_platform.api.routes.knowledge"
-    assert route_modules["/memory"] == "agents.agent_platform.api.routes.knowledge"
+    assert route_modules["/sessions"] == "agents.deployments.advertising.api.routes.sessions"
+    assert route_modules["/tasks"] == "agents.deployments.advertising.api.routes.tasks"
+    assert route_modules["/schedules"] == "agents.deployments.advertising.api.routes.tasks"
+    assert route_modules["/knowledge/search"] == "agents.deployments.advertising.api.routes.knowledge"
+    assert route_modules["/memory"] == "agents.deployments.advertising.api.routes.knowledge"
 
 
 def test_management_and_catalog_routes_are_owned_by_dedicated_route_modules():
@@ -216,17 +217,17 @@ def test_management_and_catalog_routes_are_owned_by_dedicated_route_modules():
         }
     }
 
-    assert route_modules["/creation-templates"] == "agents.agent_platform.api.routes.catalog"
-    assert route_modules["/plugins/packages"] == "agents.agent_platform.api.routes.plugins"
-    assert route_modules["/mcp/servers"] == "agents.agent_platform.api.routes.mcp"
-    assert route_modules["/skills"] == "agents.agent_platform.api.routes.skills"
+    assert route_modules["/creation-templates"] == "agents.deployments.advertising.api.routes.catalog"
+    assert route_modules["/plugins/packages"] == "agents.deployments.advertising.api.routes.plugins"
+    assert route_modules["/mcp/servers"] == "agents.deployments.advertising.api.routes.mcp"
+    assert route_modules["/skills"] == "agents.deployments.advertising.api.routes.skills"
     management_source = Path(
-        api_server.project_root / "agents/agent_platform/api/routes/management.py"
+        api_server.project_root / "agents/deployments/advertising/api/routes/management.py"
     )
     assert len(management_source.read_text(encoding="utf-8").splitlines()) <= 80
-    assert route_modules["/tools"] == "agents.agent_platform.api.routes.catalog"
-    assert route_modules["/parameter-options"] == "agents.agent_platform.api.routes.catalog"
-    assert route_modules["/workflows/{workflow_id}"] == "agents.agent_platform.api.routes.workflows"
+    assert route_modules["/tools"] == "agents.deployments.advertising.api.routes.catalog"
+    assert route_modules["/parameter-options"] == "agents.deployments.advertising.api.routes.catalog"
+    assert route_modules["/workflows/{workflow_id}"] == "agents.deployments.advertising.api.routes.workflows"
 
 
 def test_cors_allows_existing_mutation_methods_and_request_headers(fake_server):
@@ -832,8 +833,8 @@ def test_session_rename_uses_authenticated_user_and_tenant_scope(monkeypatch, fa
 
 
 def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     store = AdAgentStore(":memory:")
     managed_runtime = AdvertisingComposition(
@@ -915,7 +916,7 @@ def test_knowledge_document_can_be_saved_as_draft_and_published(monkeypatch):
 
 
 def test_raw_knowledge_upload_persists_source_before_queueing_ingest(monkeypatch):
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     store = AdAgentStore(":memory:")
 
@@ -1329,7 +1330,7 @@ def test_runtime_initialization_fails_without_llm(monkeypatch, tmp_path):
 
 
 def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
     from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
@@ -1350,7 +1351,7 @@ def test_tools_endpoint_exposes_parameter_schema_and_enum_catalog(monkeypatch):
 
 
 def test_parameter_options_endpoint_can_scope_same_field_to_tool(monkeypatch):
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
     from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
@@ -1442,8 +1443,8 @@ def test_parameter_options_resolve_allows_global_catalog_without_account_id(fake
 
 
 def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch, tmp_path):
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     store = AdAgentStore(str(tmp_path / "skills.db"))
     managed_runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
@@ -1509,9 +1510,9 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
 
 
 def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeypatch, tmp_path):
-    from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+    from agents.applications.advertising.composition.ad_application import AdvertisingComposition
     from agents.agent_harness.messages import ModelTurn
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
     from agents.agent_platform.management.skill_management import ManagedSkillManager
     from agents.tests.advertising.harness_models import ScriptedHarnessModel
 
@@ -1519,7 +1520,7 @@ def test_chat_activates_published_skill_for_authenticated_request_tenant(monkeyp
     managed_runtime = AdvertisingComposition(
         require_llm=False, persistence_store=store, offline_mode=True
     )
-    manager = ManagedSkillManager(store)
+    manager = ManagedSkillManager(store, evaluation_engines=advertising_evaluation_engines())
     manager.create_version(
         "tenant-b",
         "tenant-guidance",

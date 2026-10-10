@@ -6,8 +6,8 @@ import time
 import pytest
 
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
-from agents.agent_platform.data.persistence.models import TaskRecord
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.models import TaskRecord
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_platform.infrastructure.durable import TaskExecutor, TaskCapacityError
 
 

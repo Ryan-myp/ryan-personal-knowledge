@@ -4,10 +4,10 @@ from datetime import datetime, timedelta
 
 from fastapi.testclient import TestClient
 
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 import agents.deployments.advertising.api_server as api_server
-from agents.agent_platform.data.persistence.models import ExecutionRunRecord, TaskRecord, ToolCallRecord
+from agents.applications.advertising.persistence.models import ExecutionRunRecord, TaskRecord, ToolCallRecord
 
 
 def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():

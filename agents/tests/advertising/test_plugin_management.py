@@ -7,8 +7,8 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
-from agents.agent_platform.data.persistence.store import AdAgentStore
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_platform.management.plugin_management import PluginPackageManager
 from agents.agent_harness.core.plugin_package import (
     PluginPackageError,

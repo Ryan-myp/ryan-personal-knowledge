@@ -18,8 +18,8 @@ from agents.tools.advertising.shared.domain.blueprint import (
 from agents.tools.advertising.shared.domain.creation_card import CreationCardBuilder
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema, ToolEffect
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
-from agents.tools.advertising.application.execution.account_policy import AccountWhitelistValidator
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.execution.account_policy import AccountWhitelistValidator
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.agent_harness.messages import ModelTurn, ToolCall
 from agents.agent_harness import TurnRequest
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
@@ -846,7 +846,7 @@ def test_incomplete_update_asks_for_resource_before_materializing_tool_plan():
 
 
 def test_action_clarification_survives_restart_and_model_resolves_follow_up():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     store = AdAgentStore(":memory:")
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -1207,7 +1207,7 @@ def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous(
 
 
 def test_creation_selector_publishes_scoped_accounts_and_templates():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     runtime = AdvertisingComposition(
         require_llm=False,
@@ -1237,7 +1237,7 @@ def test_creation_selector_publishes_scoped_accounts_and_templates():
 
 
 def test_creation_form_keeps_selected_account_and_only_matching_templates():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     runtime = AdvertisingComposition(
         require_llm=False,
@@ -1267,7 +1267,7 @@ def test_creation_form_keeps_selected_account_and_only_matching_templates():
 
 
 def test_creation_catalog_unifies_ad_types_required_inputs_and_account_templates():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     runtime = AdvertisingComposition(
         require_llm=False,
@@ -1311,7 +1311,7 @@ def test_creation_catalog_unifies_ad_types_required_inputs_and_account_templates
 
 
 def test_creation_run_gates_known_type_on_account_before_showing_full_form():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     runtime = AdvertisingComposition(
         require_llm=False,
@@ -1348,7 +1348,7 @@ def test_creation_run_gates_known_type_on_account_before_showing_full_form():
 
 
 def test_creation_card_ui_survives_durable_conversation_reload():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     runtime = AdvertisingComposition(
         require_llm=False,
@@ -1399,7 +1399,7 @@ def test_creation_card_ui_survives_durable_conversation_reload():
 
 
 def test_harness_interaction_projects_to_advertising_ui_without_turn_handler():
-    from agents.tools.advertising.application.run.ad_run_projection import (
+    from agents.applications.advertising.run.ad_run_projection import (
         AdvertisingRunProjection,
     )
 
@@ -1526,7 +1526,7 @@ def test_incomplete_harness_create_returns_blueprint_interaction_before_executio
 
 
 def test_template_selection_is_applied_to_creation_draft_without_execution():
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     runtime = AdvertisingComposition(
         require_llm=False,

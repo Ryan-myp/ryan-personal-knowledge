@@ -11,8 +11,8 @@ from agents.agent_harness.core.interfaces import (
 )
 from agents.agent_harness.core.scope import ResourceScope
 from agents.agent_harness import TurnRequest
-from agents.tools.advertising.application.execution.account_context import AccountResolver
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.execution.account_context import AccountResolver
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
 
 def _tool(**overrides):
@@ -357,7 +357,7 @@ def test_advertising_composition_injects_the_generic_model_directly():
 def test_generic_run_results_keep_tool_result_and_confirmation_contracts():
     from types import SimpleNamespace
 
-    from agents.tools.advertising.application.run.ad_run_projection import (
+    from agents.applications.advertising.run.ad_run_projection import (
         AdvertisingRunProjection,
     )
 
@@ -429,14 +429,14 @@ def test_generic_run_invokes_registered_advertising_tool_with_scoped_account():
                 ),))
             return ModelTurn(content="Found one campaign.")
 
-    from agents.tools.advertising.application.execution.account_policy import (
+    from agents.applications.advertising.execution.account_policy import (
         AccountWhitelistValidator,
     )
-    from agents.tools.advertising.application.composition.ad_application import (
+    from agents.applications.advertising.composition.ad_application import (
         AdvertisingComposition,
     )
     from agents.tools.advertising.providers.meta import create_meta_tool_source
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     client = MetaClient()
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -493,14 +493,14 @@ def test_generic_run_rejects_model_selected_account_outside_trusted_scope():
                 arguments={"account_id": "other-account", "limit": 1},
             ),))
 
-    from agents.tools.advertising.application.execution.account_policy import (
+    from agents.applications.advertising.execution.account_policy import (
         AccountWhitelistValidator,
     )
-    from agents.tools.advertising.application.composition.ad_application import (
+    from agents.applications.advertising.composition.ad_application import (
         AdvertisingComposition,
     )
     from agents.tools.advertising.providers.meta import create_meta_tool_source
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     client = MetaClient()
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -570,14 +570,14 @@ def test_generic_run_uses_model_tool_loop_for_follow_up_queries():
                 ),))
             return ModelTurn(content="Campaign details retrieved.")
 
-    from agents.tools.advertising.application.execution.account_policy import (
+    from agents.applications.advertising.execution.account_policy import (
         AccountWhitelistValidator,
     )
-    from agents.tools.advertising.application.composition.ad_application import (
+    from agents.applications.advertising.composition.ad_application import (
         AdvertisingComposition,
     )
     from agents.tools.advertising.providers.meta import create_meta_tool_source
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     client = MetaClient()
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -614,7 +614,7 @@ def test_generic_run_uses_model_tool_loop_for_follow_up_queries():
 def test_ad_runtime_has_no_ad_pipeline_modules_or_legacy_executor_boundary():
     from pathlib import Path
 
-    root = Path("agents/tools/advertising/application")
+    root = Path("agents/applications/advertising")
     assert not (root / "ad_turn_pipeline.py").exists()
     assert not (root / "ad_turn_stages.py").exists()
     assert not (root / "ad_turn_state.py").exists()
@@ -626,7 +626,7 @@ def test_ad_runtime_has_no_ad_pipeline_modules_or_legacy_executor_boundary():
 
 def test_ad_run_rejects_invalid_request_envelopes_before_model():
     from agents.agent_harness import ModelTurn
-    from agents.agent_platform.data.persistence.store import AdAgentStore
+    from agents.applications.advertising.persistence.store import AdAgentStore
 
     class Model:
         def __init__(self):

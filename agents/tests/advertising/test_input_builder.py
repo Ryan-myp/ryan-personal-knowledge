@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from agents.agent_harness.core.interfaces import ToolContext, ToolResult
-from agents.tools.advertising.application.execution.input_builder import ToolInputBuilder
+from agents.applications.advertising.execution.input_builder import ToolInputBuilder
 from agents.tools.advertising.providers.google import create_google_tool_source
 
 

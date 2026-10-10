@@ -23,7 +23,7 @@ from agents.tools.advertising.providers.meta import create_meta_tool_source
 from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition, AccountWhitelistValidator
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition, AccountWhitelistValidator
 from agents.agent_harness.skills.contract import SkillContract
 from agents.tools.advertising.providers.source_factory import create_tool_source, discover_tool_source_factory
 from agents.tools.advertising.clients.factory import create_platform_client

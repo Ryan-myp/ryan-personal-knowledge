@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from agents.agent_platform.api.context import read_request_body_limited
+from agents.deployments.advertising.api.context import read_request_body_limited
 
 
 class _Request:

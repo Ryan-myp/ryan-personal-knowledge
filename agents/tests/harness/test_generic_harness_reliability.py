@@ -15,8 +15,8 @@ from agents.agent_harness import (
     TurnRequest,
 )
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
-from agents.agent_platform.data.persistence.store import AdAgentStore
-from agents.agent_platform.data.persistence.adapters import (
+from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.persistence.adapters import (
     PersistenceIdempotencyStore,
 )
 

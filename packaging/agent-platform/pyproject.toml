@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-platform"
+version = "0.1.0"
+description = "Application-neutral Agent composition, governance and durable operations"
+requires-python = ">=3.13,<3.14"
+dependencies = ["agent-harness==0.1.0", "PyYAML>=6.0"]
+
+[project.optional-dependencies]
+claude = ["anthropic>=0.40.0"]
+
+[tool.setuptools]
+package-dir = { "" = "../.." }
+
+[tool.setuptools.packages.find]
+where = ["../.."]
+include = ["agents", "agents.agent_platform", "agents.agent_platform.*"]
+exclude = ["agents.agent_platform.benchmarks", "agents.agent_platform.benchmarks.*"]

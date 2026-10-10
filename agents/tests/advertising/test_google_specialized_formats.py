@@ -5,7 +5,7 @@ from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.intent import SimpleIntentRouter
 from agents.agent_harness.core.tool_registry import validate_tool_input
-from agents.tools.advertising.application.composition.ad_application import AdvertisingComposition
+from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 
 
 def _definitions():
