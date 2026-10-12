@@ -203,9 +203,20 @@ class ParameterSelectionService:
             options: list[dict[str, Any]] = []
             seen: set[str] = set()
             expires_at = 0
+            allowed_asset_types = {
+                str(item).strip().upper()
+                for item in field_schema.get("lookup_asset_types", ())
+                if str(item).strip()
+            }
             for item in values:
                 if len(options) >= 20:
                     break
+                if allowed_asset_types and (
+                    not isinstance(item, dict)
+                    or str(item.get("type") or "").strip().upper()
+                    not in allowed_asset_types
+                ):
+                    continue
                 extracted = self._extract_selection_option(
                     item, field_name, field_schema,
                 )

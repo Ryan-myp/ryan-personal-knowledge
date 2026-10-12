@@ -265,7 +265,7 @@ class GoogleToolSource(BaseProviderToolSource):
         "list_feed_items", "get_feed_item", "create_feed_item",
         "update_feed_item", "delete_feed_item",
     }
-    tool_source_version = "1.4.0"
+    tool_source_version = "1.5.0"
     integration_api_version = "v24"
     provider_method_coverage = {
         "list_campaigns": ["google_list_campaigns"], "get_campaign": ["google_get_campaign"],
@@ -579,6 +579,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     data["campaign_id"], data["name"],
                 ), {
                     "cpc_bid_micros": None,
+                    "type": None,
                     "status": data.get("status"),
                 }),
             ),
@@ -655,6 +656,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     ctx.account_id or data.get("customer_id"),
                 ), {
                     "page_size": data.get("limit", 100),
+                    "asset_id": data.get("asset_id"),
                 }),
             ),
             method_tool(

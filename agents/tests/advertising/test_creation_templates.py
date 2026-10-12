@@ -4,15 +4,21 @@ import pytest
 import glob
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 import agents.deployments.advertising.api_server as api_server
+from agents.agent_harness.core.interfaces import ParsedIntent
+from agents.applications.advertising.creation.ad_creation_template_services import (
+    AdCreationTemplateServicesMixin,
+)
 from agents.applications.advertising.creation.templates import (
     CreationTemplateError,
     CreationTemplateManager,
     load_builtin_template_definitions,
 )
 from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.execution.input_builder import ToolInputBuilder
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
 
 
@@ -83,6 +89,44 @@ def test_template_rejects_unknown_or_sensitive_fields():
         templates.create(
             "tenant-a", "user-a",
             payload(values={"campaign.objective": {"access_token": "secret"}}),
+        )
+
+
+def test_template_allows_description_fields_but_rejects_script_fields():
+    blueprint = {
+        **BLUEPRINT,
+        "id": "demo.copy",
+        "fields": [{
+            "path": "ad.descriptions",
+            "tool_ref": "meta_create_ad.descriptions",
+        }],
+    }
+    templates = CreationTemplateManager(
+        AdAgentStore(":memory:"),
+        lambda blueprint_id, version=None: (
+            blueprint if blueprint_id == blueprint["id"] else None
+        ),
+    )
+    accepted = templates.create(
+        "tenant-a",
+        "user-a",
+        payload(
+            blueprint_id=blueprint["id"],
+            values={"ad.descriptions": ["A valid ad description"]},
+        ),
+    )
+    assert accepted["values"] == {
+        "ad.descriptions": ["A valid ad description"],
+    }
+
+    with pytest.raises(CreationTemplateError, match="凭证或可执行配置"):
+        templates.create(
+            "tenant-a",
+            "user-a",
+            payload(
+                blueprint_id=blueprint["id"],
+                values={"ad.descriptions": {"script": "print(1)"}},
+            ),
         )
 
 
@@ -229,9 +273,17 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
         "app_store": "APPLE_APP_STORE",
         "bidding_strategy_goal_type": "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
     }
+    assert templates_by_key["google.test.app"]["values"][
+        "campaign.selective_optimization"
+    ] == {
+        "conversion_actions": [
+            "customers/9055507554/conversionActions/453201534",
+            "customers/9055507554/conversionActions/6497810605",
+        ]
+    }
     assert templates_by_key["google.test.shopping"]["values"][
         "campaign.shopping_setting.merchant_id"
-    ] == "115791065"
+    ] == 115791065
     assert templates_by_key["google.test.shopping"]["values"][
         "product_group.partition_type"
     ] == "UNIT"
@@ -402,3 +454,229 @@ def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
             json={"name": "不能改"},
         )
         assert protected.status_code == 422
+
+
+def test_google_builtin_templates_prefill_everything_except_name_schedule_and_budget():
+    definitions = {
+        item["key"]: item
+        for item in load_builtin_template_definitions()
+        if item["key"] in {
+            "google.test.performance-max",
+            "google.test.shopping",
+            "google.test.app",
+        }
+    }
+    user_inputs = {
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget",
+    }
+    expected_input_labels = {
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算",
+    }
+
+    assert set(definitions) == {
+        "google.test.performance-max",
+        "google.test.shopping",
+        "google.test.app",
+    }
+
+    for key, template in definitions.items():
+        blueprint_path = (
+            Path("agents/tools/advertising/providers/google/blueprints")
+            / f"{template['blueprint_id'].rsplit('.', 1)[-1]}.v1.json"
+        )
+        blueprint = json.loads(blueprint_path.read_text(encoding="utf-8"))
+        required_paths = {
+            field["path"]
+            for field in blueprint["fields"]
+            if field.get("required") is True
+        }
+
+        assert set(template["required_inputs"]) == expected_input_labels, key
+        assert required_paths - user_inputs <= set(template["values"]), key
+        assert user_inputs <= {
+            field["path"]
+            for field in blueprint["fields"]
+            if field.get("required") is True
+        }, key
+        assert template["values"]["campaign.status"] == "PAUSED", key
+
+    expected_live_status = "live_verified_with_provider_limits"
+    for template in definitions.values():
+        assert template["verification_status"] == expected_live_status
+        assert template["account_id"] == "9055507554"
+
+    assert "AssetGroupAsset" in definitions[
+        "google.test.performance-max"
+    ]["verified_scope"]
+    assert "UNIT_INCLUDED" in definitions[
+        "google.test.performance-max"
+    ]["verified_scope"]
+    assert "Product Group" in definitions["google.test.shopping"]["verified_scope"]
+    assert "ENABLED" in definitions["google.test.shopping"]["verified_scope"]
+    assert "App Ad" in definitions["google.test.app"]["verified_scope"]
+    assert "ENABLED" in definitions["google.test.app"]["verified_scope"]
+
+    pmax = definitions["google.test.performance-max"]["values"]
+    assert type(pmax["campaign.shopping_setting"]["merchant_id"]) is int
+    assert len(pmax["asset_group.headlines"]) >= 3
+    assert len(pmax["asset_group.long_headlines"]) >= 1
+    assert len(pmax["asset_group.descriptions"]) >= 2
+    assert pmax["asset_group.final_urls"]
+    assert pmax["asset_group.images"]
+    assert pmax["asset_group.square_marketing_images"]
+    assert pmax["asset_group.logos"]
+    assert pmax["asset_group.business_names"]
+    assert pmax["asset_group.status"] == "PAUSED"
+    assert pmax["listing_group_filter.filter_type"] == "UNIT_INCLUDED"
+    assert pmax["listing_group_filter.listing_source"] == "SHOPPING"
+    assert "listing_group_filter.product_dimension" not in pmax
+    assert pmax["asset_group.long_headlines"] == [
+        {"text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời"},
+    ]
+    assert pmax["asset_group.descriptions"][0] == {
+        "text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời, lại còn freeship",
+    }
+    assert all(
+        isinstance(item, dict) and item.get("text") and not item.get("asset_id")
+        for item in pmax["asset_group.headlines"]
+    )
+    assert pmax["asset_group.images"] == [
+        "customers/9055507554/assets/194802085984",
+    ]
+    assert pmax["asset_group.square_marketing_images"] == [
+        "customers/9055507554/assets/194802072931",
+    ]
+    assert pmax["asset_group.logos"] == [
+        "customers/9055507554/assets/194784955410",
+    ]
+    assert pmax["asset_group.business_names"] == [{"text": "蝦皮購物"}]
+
+    shopping = definitions["google.test.shopping"]["values"]
+    assert type(shopping["campaign.shopping_setting.merchant_id"]) is int
+    assert shopping["campaign.bidding_strategy"] == "MAXIMIZE_CLICKS"
+    assert shopping["ad_group.name"]
+    assert shopping["ad_group.status"] == "PAUSED"
+    assert shopping["ad_group.cpc_bid_micros"] == 500000
+    assert shopping["product_group.cpc_bid_micros"] == 500000
+    assert shopping["product_group.status"] == "PAUSED"
+    assert shopping["ad.name"]
+    assert shopping["ad.status"] == "PAUSED"
+
+    app = definitions["google.test.app"]["values"]
+    assert app["campaign.bidding_strategy"] == "TARGET_CPA"
+    assert app["campaign.target_cpa_micros"] == 11010000
+    assert len(app["ad.headlines"]) >= 2
+    assert len(app["ad.descriptions"]) >= 2
+    assert app["ad.images"] == [
+        "customers/9055507554/assets/312078053811",
+    ]
+    assert app["ad_group.name"]
+    assert app["ad_group.status"] == "PAUSED"
+    assert app["ad.name"]
+    assert app["ad.status"] == "PAUSED"
+
+
+def test_google_template_user_inputs_are_projected_into_campaign_tool_arguments():
+    definitions = {
+        item["key"]: item
+        for item in load_builtin_template_definitions()
+    }
+    template = definitions["google.test.app"]
+    blueprint_paths = glob.glob(
+        "agents/tools/advertising/providers/*/blueprints/*.json"
+    )
+    blueprints = {
+        blueprint.blueprint_id: blueprint
+        for blueprint in (
+            load_blueprint_file(path) for path in blueprint_paths
+        )
+    }
+
+    class Registry:
+        def get(self, blueprint_id, version=None):
+            blueprint = blueprints.get(blueprint_id)
+            if blueprint is None or (
+                version is not None and version != blueprint.version
+            ):
+                return None
+            return blueprint
+
+    class Validator:
+        allowed_accounts = {"google-ads": ["9055507554"]}
+
+    class Runtime(AdCreationTemplateServicesMixin):
+        persistence_store = AdAgentStore(":memory:")
+        creation_blueprints = Registry()
+        creation_card_builder = None
+        whitelist_validator = Validator()
+
+        @staticmethod
+        def _canonical_platform(value):
+            return str(value)
+
+    runtime = Runtime()
+    intent = ParsedIntent(
+        "create_campaign",
+        "创建 App Campaign",
+        ["google-ads"],
+        scoped_parameters={
+            "google-ads": {
+                "campaign_name": "QA App Template 20261012",
+                "end_date": "2026-10-31",
+                "google_create_campaign": {
+                    "start_date": "2026-10-13",
+                    "daily_budget": 50,
+                },
+            }
+        },
+    )
+    applied = runtime.apply_creation_template_to_intent(
+        intent,
+        CreationTemplateManager._builtin_id(template),
+        account_id="9055507554",
+    )
+    tool_definition = SimpleNamespace(
+        name="google_create_campaign",
+        action="create",
+        input_schema=SimpleNamespace(
+            properties={
+                "campaign_name": {"type": "string"},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+                "daily_budget": {"type": "number"},
+                "bidding_strategy": {"type": "string"},
+                "target_cpa_micros": {"type": "integer"},
+                "app_campaign_setting": {"type": "object"},
+                "selective_optimization": {"type": "object"},
+                "status": {"type": "string"},
+            },
+            required=["campaign_name", "start_date", "end_date", "daily_budget"],
+            conditional_rules=[],
+        ),
+    )
+    input_builder = ToolInputBuilder(SimpleNamespace(
+        normalize_namespace=lambda value: str(value),
+        is_dry_run=lambda: False,
+    ))
+
+    arguments = input_builder.build(tool_definition, applied, "google-ads")
+
+    assert arguments["campaign_name"] == "QA App Template 20261012"
+    assert arguments["start_date"] == "2026-10-13"
+    assert arguments["end_date"] == "2026-10-31"
+    assert arguments["daily_budget"] == 50
+    assert arguments["bidding_strategy"] == "TARGET_CPA"
+    assert arguments["target_cpa_micros"] == 11010000
+    assert arguments["app_campaign_setting"] == template["values"][
+        "campaign.app_campaign_setting"
+    ]
+    assert arguments["selective_optimization"] == template["values"][
+        "campaign.selective_optimization"
+    ]
+    assert arguments["status"] == "PAUSED"

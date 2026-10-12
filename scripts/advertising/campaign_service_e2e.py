@@ -44,6 +44,7 @@ RESOURCES = {
     "ad",
     "creative",
     "asset_group",
+    "listing_group_filter",
     "product_group",
 }
 SENSITIVE = re.compile(
@@ -466,6 +467,130 @@ def _load_state(directory):
     return root, state, {"X-API-Key": key}
 
 
+def _e2e_request_case(request):
+    """Select recorder scope only for confirmed-account chat and read lookups."""
+    path = str(getattr(getattr(request, "url", None), "path", ""))
+    headers = getattr(request, "headers", {}) or {}
+    if path == "/chat":
+        provider = str(headers.get("x-e2e-provider") or "")
+        account = str(headers.get("x-e2e-account") or "")
+        case_id = str(headers.get("x-e2e-case") or "")
+    elif path == "/parameter-options/resolve":
+        query = getattr(request, "query_params", {}) or {}
+        provider = str(query.get("platform") or "")
+        account = str(query.get("account_id") or "")
+        header_provider = str(headers.get("x-e2e-provider") or provider)
+        header_account = str(headers.get("x-e2e-account") or account)
+        if (header_provider, header_account) != (provider, account):
+            return {}
+        case_id = str(headers.get("x-e2e-case") or "")
+    else:
+        return {}
+
+    if provider not in CONFIRMED_ACCOUNTS:
+        return {}
+    if account not in CONFIRMED_ACCOUNTS[provider]:
+        return {}
+    safe_case_id = re.sub(r"[^A-Za-z0-9_.-]", "-", case_id)[:120]
+    return {
+        "case_id": safe_case_id or f"{provider}-parameter-options",
+        "provider": provider,
+        "account": account,
+    }
+
+
+def resolve_selection_tokens(
+    directory,
+    provider,
+    tool_name,
+    field_values,
+    case_id,
+    session_id,
+    *,
+    lookup_queries=None,
+):
+    """Resolve exact lookup values into tokens bound to the E2E session."""
+    root, state, headers = _load_state(directory)
+    account_ids = state.get("accounts", {}).get(provider)
+    if (
+        provider not in CONFIRMED_ACCOUNTS
+        or account_ids != CONFIRMED_ACCOUNTS[provider]
+    ):
+        raise ValueError("selection lookup requires the confirmed test account")
+    if not str(tool_name or "").strip() or not str(session_id or "").strip():
+        raise ValueError("selection lookup requires a Tool and session ID")
+    if not isinstance(field_values, dict) or not field_values:
+        raise ValueError("selection lookup requires field values")
+    if lookup_queries is not None and not isinstance(lookup_queries, dict):
+        raise ValueError("lookup_queries must be an object")
+
+    resolved = {}
+    for field, values in field_values.items():
+        if (
+            not isinstance(field, str)
+            or not field.strip()
+            or not isinstance(values, (list, tuple))
+            or not values
+        ):
+            raise ValueError("selection fields must contain non-empty value lists")
+        queries = (
+            lookup_queries.get(field, values)
+            if isinstance(lookup_queries, dict) else values
+        )
+        if not isinstance(queries, (list, tuple)) or len(queries) != len(values):
+            raise ValueError(f"lookup query count does not match values for {field}")
+        tokens = []
+        for expected_value, query in zip(values, queries):
+            if expected_value in (None, "") or query in (None, ""):
+                raise ValueError(f"selection lookup values must not be empty for {field}")
+            response = requests.get(
+                state["base_url"] + "/parameter-options/resolve",
+                params={
+                    "platform": provider,
+                    "field": field,
+                    "tool_name": tool_name,
+                    "account_id": account_ids[0],
+                    "session_id": session_id,
+                    "query": str(query),
+                },
+                headers={
+                    **headers,
+                    "X-E2E-Case": case_id,
+                    "X-E2E-Provider": provider,
+                    "X-E2E-Account": account_ids[0],
+                },
+                timeout=60,
+            )
+            if not response.ok:
+                raise RuntimeError(
+                    f"parameter lookup failed for {provider}.{field} "
+                    f"(HTTP {response.status_code})"
+                )
+            try:
+                options = response.json().get("options", [])
+            except (AttributeError, ValueError) as error:
+                raise RuntimeError(
+                    f"parameter lookup returned invalid data for {provider}.{field}"
+                ) from error
+            matches = [
+                item for item in options
+                if isinstance(item, dict) and item.get("value") == expected_value
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"selected value was not uniquely returned by "
+                    f"{provider}.{field} lookup"
+                )
+            token = matches[0].get("selection_token")
+            if not isinstance(token, str) or not token:
+                raise ValueError(
+                    f"{provider}.{field} lookup did not return a selection token"
+                )
+            tokens.append(token)
+        resolved[field] = tokens
+    return resolved
+
+
 def _approved_tools():
     names = []
     for provider in PROVIDERS:
@@ -481,6 +606,7 @@ def _approved_tools():
             if (
                 tool.action == "create"
                 and tool.resource_type != "creative"
+                and tool.resource_type != "listing_group_filter"
                 and not ({"status", "operation_status"} & set(fields))
             ):
                 continue
@@ -662,6 +788,7 @@ class ProviderRecorder:
             set(json.loads(owned_path.read_text())) if owned_path.is_file() else set()
         )
         self.paused_ad_groups = set()
+        self.paused_asset_groups = set()
         self.lock = threading.RLock()
         self.original = requests.Session.send
 
@@ -734,6 +861,18 @@ class ProviderRecorder:
                         "",
                     )
                 label = serving_resources.get(resource)
+                if resource == "assetGroupListingGroupFilters":
+                    parent = str(create.get("assetGroup") or "")
+                    match = re.fullmatch(
+                        r"customers/\d+/assetGroups/(\d+)", parent
+                    )
+                    if (
+                        match is None
+                        or match.group(1) not in self.paused_asset_groups
+                    ):
+                        raise PermissionError(
+                            "Google listing filter requires a verified PAUSED Asset Group"
+                        )
                 ad = create.get("ad")
                 is_app_ad = isinstance(ad, dict) and isinstance(
                     ad.get("appAd") or ad.get("app_ad"),
@@ -805,7 +944,8 @@ class ProviderRecorder:
         except ValueError:
             document = {}
         if provider == "google-ads":
-            self._capture_google_ad_group_statuses(document)
+            if response.ok:
+                self._capture_google_paused_resources(document)
         path = urlsplit(request.url).path
         creates = (
             "/create/" in path
@@ -872,6 +1012,7 @@ class ProviderRecorder:
             "ad_ids",
             "creative_id",
             "asset_group_id",
+            "listing_group_filter_id",
             "resourceName",
         }
         for node in _walk(document):
@@ -883,16 +1024,27 @@ class ProviderRecorder:
                     self.created.update(str(item) for item in value)
         _json_write(self.root / "created-resource-ids.json", sorted(self.created))
 
-    def _capture_google_ad_group_statuses(self, document):
+    def _capture_google_paused_resources(self, document):
         for node in _walk(document):
-            group = node.get("adGroup") or node.get("ad_group")
-            if not isinstance(group, dict) or group.get("id") is None:
-                continue
-            group_id = str(group["id"])
-            if str(group.get("status") or "").upper() == "PAUSED":
-                self.paused_ad_groups.add(group_id)
-            else:
-                self.paused_ad_groups.discard(group_id)
+            for keys, known_paused in (
+                (("adGroup", "ad_group"), self.paused_ad_groups),
+                (("assetGroup", "asset_group"), self.paused_asset_groups),
+            ):
+                resource = next(
+                    (
+                        node.get(key)
+                        for key in keys
+                        if isinstance(node.get(key), dict)
+                    ),
+                    None,
+                )
+                if not isinstance(resource, dict) or resource.get("id") is None:
+                    continue
+                resource_id = str(resource["id"])
+                if str(resource.get("status") or "").upper() == "PAUSED":
+                    known_paused.add(resource_id)
+                else:
+                    known_paused.discard(resource_id)
 
 
 def serve(directory, port):
@@ -908,12 +1060,7 @@ def serve(directory, port):
 
     @app.middleware("http")
     async def scope(request, call_next):
-        if request.url.path == "/chat":
-            recorder.case = {
-                "case_id": request.headers.get("x-e2e-case", ""),
-                "provider": request.headers.get("x-e2e-provider", ""),
-                "account": request.headers.get("x-e2e-account", ""),
-            }
+        recorder.case = _e2e_request_case(request)
         return await call_next(request)
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_config=None)
@@ -921,7 +1068,7 @@ def serve(directory, port):
 
 def chat(
     directory, provider, tool, params, case_id, write=False, template_id=None,
-    session_id=None,
+    session_id=None, user_input=None,
 ):
     root, state, headers = _load_state(directory)
     account = str(state["accounts"][provider][0])
@@ -938,9 +1085,13 @@ def chat(
         "X-E2E-Provider": provider,
         "X-E2E-Account": account,
     }
+    request_text = str(user_input or "").strip() or (
+        f"请调用工具 {tool} 一次，使用本请求中的结构化参数。"
+    )
     body = {
         "user_input": (
-            f"这是受控测试。仅使用 {provider} 测试账户 {account}。请只调用工具 {tool} 一次，"
+            f"{request_text}\n\n这是受控测试。仅使用 {provider} 测试账户 {account}。"
+            f"请只调用工具 {tool} 一次，"
             "不得调用任何其他 Tool，不得启用广告。工具参数以本请求的结构化 platform_params 为准，"
             "不能额外添加字段（尤其 customer_id、account_id）；账户范围已由请求上下文提供。"
             "selection token 等敏感值只通过结构化参数传递，不得猜测、复述或替换。"
@@ -1030,6 +1181,10 @@ def main():
     parser.add_argument("--blueprint-version")
     parser.add_argument("--template-id")
     parser.add_argument("--session-id")
+    parser.add_argument(
+        "--user-input",
+        help="Exact user text for an existing workflow step, such as submitting a creation card.",
+    )
     args = parser.parse_args()
     if args.command == "start":
         start(args.directory, args.port)
@@ -1050,6 +1205,7 @@ def main():
             args.write,
             args.template_id,
             args.session_id,
+            args.user_input,
         )
     elif args.command == "report":
         report(args.directory)

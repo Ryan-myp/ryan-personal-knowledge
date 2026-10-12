@@ -80,6 +80,7 @@ function installLookupEnvironment(options) {
     context.URLSearchParams = URLSearchParams;
     context.crypto = { randomUUID: () => 'lookup-session' };
     context.sessionId = '';
+    context.lookupRequests = [];
     context.authenticatedFetch = async () => ({
         ok: true,
         status: 200,
@@ -226,5 +227,82 @@ test('lookup query does not authorize a prefilled value missing from current res
     assert.equal(selected.value, 'stale-resource');
     assert.equal(selected.tokens, undefined);
     assert.equal(selectionTokens.asset_id, undefined);
+    assert.match(picker.querySelector('.lookup-picker-status').textContent, /未匹配/);
+});
+
+test('template-prefilled asset selection resolves automatically by its exact ID', async () => {
+    installLookupEnvironment([]);
+    context.authenticatedFetch = async url => {
+        context.lookupRequests.push(String(url));
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                options: [{
+                    value: 'customers/9055507554/assets/7',
+                    label: 'Current image',
+                    selection_token: 'fresh-template-token',
+                }],
+            }),
+        };
+    };
+    const selectionTokens = {};
+    let selected;
+    context.renderLookupPicker({
+        value: ['customers/9055507554/assets/7'],
+        lookup_multiple: true,
+        lookup: {
+            tool: 'google_list_assets',
+            query_field: 'asset_id',
+        },
+    }, {
+        platform: 'google-ads',
+        accountId: '9055507554',
+        fieldName: 'images',
+        targetToolName: 'google_create_ad',
+        selectionTokens,
+        autoResolvePrefill: true,
+        onSelection: value => { selected = value; },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(context.lookupRequests.length, 1);
+    const requested = new URL(context.lookupRequests[0], 'http://localhost');
+    assert.equal(requested.searchParams.get('query'), '7');
+    assert.deepEqual(JSON.parse(JSON.stringify(selectionTokens.images)), [
+        'fresh-template-token',
+    ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(selected.value)), [
+        'customers/9055507554/assets/7',
+    ]);
+});
+
+test('template-prefilled asset selection stays unresolved when lookup misses', async () => {
+    installLookupEnvironment([]);
+    const selectionTokens = {};
+    let selected;
+    const picker = context.renderLookupPicker({
+        value: ['customers/9055507554/assets/404'],
+        lookup_multiple: true,
+        lookup: {
+            tool: 'google_list_assets',
+            query_field: 'asset_id',
+        },
+    }, {
+        platform: 'google-ads',
+        accountId: '9055507554',
+        fieldName: 'images',
+        targetToolName: 'google_create_ad',
+        selectionTokens,
+        autoResolvePrefill: true,
+        onSelection: value => { selected = value; },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(selectionTokens.images, undefined);
+    assert.equal(selected.tokens, undefined);
+    assert.deepEqual(JSON.parse(JSON.stringify(selected.value)), [
+        'customers/9055507554/assets/404',
+    ]);
     assert.match(picker.querySelector('.lookup-picker-status').textContent, /未匹配/);
 });

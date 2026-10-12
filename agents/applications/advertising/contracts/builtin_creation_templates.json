@@ -130,84 +130,119 @@
     {
       "key": "google.test.performance-max",
       "name": "Google 测试账号 · Performance Max",
-      "description": "Google Ads 受控测试账号的 Performance Max 基线。默认最大化转化价值，素材和落地页通过创建卡补齐。",
+      "description": "Google 测试账号的零售型 Performance Max 模板；Campaign、Asset Group、商品来源、素材和全量商品过滤均预填。当前账号实测有 Desktop、Mobile、Tablet、Connected TV 设备定向，未发现地域、语言或受众定向；仅需补 Campaign 名称、投放时间与日预算。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.performance_max",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "PERFORMANCE_MAX",
       "account_id": "9055507554",
       "verification_status": "live_verified_with_provider_limits",
-      "verified_scope": "Campaign 和 Asset Group 已创建并回读；商品筛选状态受 Google 平台限制",
+      "verified_scope": "测试账号 9055507554 live E2E：Campaign、预算、Asset Group、10 个 AssetGroupAsset 和 UNIT_INCLUDED 商品过滤器均创建并按 ID 回读；Campaign/Asset Group 为 PAUSED，素材当前处于 Google 审核态 NOT_ELIGIBLE。google_list_campaign_criteria live 回读到 4 条 ENABLED 设备定向：DESKTOP、MOBILE、TABLET、CONNECTED_TV；未返回地域、语言或受众条件。",
       "required_inputs": [
-        "投放时间",
-        "campaign.daily_budget",
-        "asset_group.final_urls",
-        "asset_group.headlines",
-        "asset_group.long_headlines",
-        "asset_group.descriptions",
-        "asset_group.images",
-        "asset_group.square_marketing_images",
-        "asset_group.logos",
-        "asset_group.business_names"
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算"
       ],
-      "tags": ["内置", "测试账号", "Google Ads", "Performance Max", "已验证"],
+      "tags": ["内置", "测试账号", "Google Ads", "Performance Max", "已实测", "素材审核中"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.advertising_channel_type": "PERFORMANCE_MAX",
         "campaign.brand_guidelines_enabled": false,
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE"
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE",
+        "campaign.shopping_setting": {
+          "merchant_id": 115791065,
+          "enable_local": true
+        },
+        "campaign.status": "PAUSED",
+        "asset_group.name": "PMax Asset Group",
+        "asset_group.asset_group_type": "PERFORMANCE_MAX",
+        "asset_group.final_urls": ["https://shopee.tw/11"],
+        "asset_group.headlines": [
+          {"text": "Shopee Choice miễn phí vận c"},
+          {"text": "Shopee Choice miễn phí vận chu"},
+          {"text": "Mua sắm dễ dàng trên Shopee"}
+        ],
+        "asset_group.long_headlines": [
+          {"text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời"}
+        ],
+        "asset_group.descriptions": [
+          {"text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời, lại còn freeship"},
+          {"text": "Khám phá sản phẩm được tuyển chọn, giá tốt và miễn phí vận chuyển trên Shopee."}
+        ],
+        "asset_group.images": [
+          "customers/9055507554/assets/194802085984"
+        ],
+        "asset_group.square_marketing_images": [
+          "customers/9055507554/assets/194802072931"
+        ],
+        "asset_group.logos": [
+          "customers/9055507554/assets/194784955410"
+        ],
+        "asset_group.business_names": [
+          {"text": "蝦皮購物"}
+        ],
+        "asset_group.status": "PAUSED",
+        "listing_group_filter.filter_type": "UNIT_INCLUDED",
+        "listing_group_filter.listing_source": "SHOPPING"
       }
     },
     {
       "key": "google.test.shopping",
       "name": "Google 测试账号 · Shopping",
-      "description": "Google Ads 受控测试账号的 Shopping 基线，预填已查询 Merchant ID。账户资源值仍需按当前查询结果确认。",
+      "description": "Google 测试账号的 Shopping 模板；Merchant Center、Campaign 策略、广告组、全量商品分组和商品广告均预填。当前账号实测有 Desktop、Mobile、Tablet 设备定向，未发现地域、语言或受众定向；仅需补 Campaign 名称、投放时间与日预算。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.shopping",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "SHOPPING",
       "account_id": "9055507554",
       "verification_status": "live_verified_with_provider_limits",
-      "verified_scope": "Campaign、Ad Group 和 Shopping Ad 已创建并回读；Product Group 请求设为 PAUSED 后读回仍为 ENABLED，父 Campaign 保持 PAUSED",
+      "verified_scope": "测试账号 9055507554 live E2E：Campaign、预算、Ad Group、all_products Product Group 和 Shopping Ad 均创建并按 ID 回读；Campaign/Ad Group/Ad 为 PAUSED。Product Group 虽请求 PAUSED，Google 回读为 ENABLED；父级暂停。重复 Shopping Ad 调用被幂等门禁拦截，仅创建一条。google_list_campaign_criteria live 回读到 3 条 ENABLED 设备定向：DESKTOP、MOBILE、TABLET；未返回地域、语言或受众条件。",
       "required_inputs": [
-        "投放时间",
-        "campaign.daily_budget",
-        "campaign.shopping_setting.merchant_id",
-        "product_group.cpc_bid_micros"
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算"
       ],
-      "tags": ["内置", "测试账号", "Google Ads", "Shopping", "已验证"],
+      "tags": ["内置", "测试账号", "Google Ads", "Shopping", "已实测", "Product Group 状态限制"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.advertising_channel_type": "SHOPPING",
-        "campaign.shopping_setting.merchant_id": "115791065",
+        "campaign.shopping_setting.merchant_id": 115791065,
         "campaign.shopping_setting.campaign_priority": 0,
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE",
+        "campaign.shopping_setting.enable_local": true,
+        "campaign.bidding_strategy": "MAXIMIZE_CLICKS",
+        "campaign.status": "PAUSED",
+        "ad_group.name": "Shopping Ad Group",
         "ad_group.type": "SHOPPING_PRODUCT_ADS",
+        "ad_group.cpc_bid_micros": 500000,
+        "ad_group.status": "PAUSED",
         "product_group.product_group_type": "all_products",
         "product_group.partition_type": "UNIT",
-        "product_group.status": "PAUSED"
+        "product_group.cpc_bid_micros": 500000,
+        "product_group.status": "PAUSED",
+        "ad.name": "Shopping Product Ad",
+        "ad.status": "PAUSED"
       }
     },
     {
       "key": "google.test.app",
       "name": "Google 测试账号 · App",
-      "description": "Google Ads 受控测试账号的 App 广告基线，预填已查询应用与商店配置。账户资源值仍需按当前查询结果确认。",
+      "description": "Google 测试账号的 App Campaign 模板；应用、转化目标、目标 CPA、广告组、标题、描述和图片均预填。当前账号实测有 Desktop、Mobile、Tablet 设备定向，未发现地域、语言或受众定向；仅需补 Campaign 名称、投放时间与日预算。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.app",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "APP",
       "account_id": "9055507554",
       "verification_status": "live_verified_with_provider_limits",
-      "verified_scope": "Campaign、Ad Group 和 Ad 已创建并回读；部分 App 广告资源不接受暂停更新",
+      "verified_scope": "测试账号 9055507554 live E2E：Campaign、预算、App Ad Group 和 App Ad 均创建并按 ID 回读；Campaign/Ad Group 为 PAUSED。Google App Ad 实际状态为 ENABLED，但父 Ad Group 保持 PAUSED，因此不会投放。App ID、转化目标、文案和图片来自该账户现存资源。google_list_campaign_criteria live 回读到 3 条 ENABLED 设备定向：DESKTOP、MOBILE、TABLET；未返回地域、语言或受众条件。",
       "required_inputs": [
-        "投放时间",
-        "campaign.daily_budget",
-        "campaign.app_campaign_setting",
-        "ad.headlines",
-        "ad.descriptions",
-        "ad.images 或 ad.videos"
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算"
       ],
-      "tags": ["内置", "测试账号", "Google Ads", "App", "已验证"],
+      "tags": ["内置", "测试账号", "Google Ads", "App", "已实测", "App Ad 需父级暂停"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.campaign_type": "APP",
@@ -218,7 +253,30 @@
           "app_store": "APPLE_APP_STORE",
           "bidding_strategy_goal_type": "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
         },
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
+        "campaign.selective_optimization": {
+          "conversion_actions": [
+            "customers/9055507554/conversionActions/453201534",
+            "customers/9055507554/conversionActions/6497810605"
+          ]
+        },
+        "campaign.bidding_strategy": "TARGET_CPA",
+        "campaign.target_cpa_micros": 11010000,
+        "campaign.status": "PAUSED",
+        "ad_group.name": "App Ad Group",
+        "ad_group.status": "PAUSED",
+        "ad.name": "App Ad",
+        "ad.headlines": [
+          "Shopee Choice",
+          "Mua sắm dễ dàng trên Shopee"
+        ],
+        "ad.descriptions": [
+          "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời, lại còn freeship.",
+          "Mua sắm tiện lợi, khám phá nhiều sản phẩm trên Shopee."
+        ],
+        "ad.images": [
+          "customers/9055507554/assets/312078053811"
+        ],
+        "ad.status": "PAUSED"
       }
     },
     {

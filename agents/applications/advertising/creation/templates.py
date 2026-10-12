@@ -32,7 +32,7 @@ _FORBIDDEN_KEY = re.compile(
     r"client[_-]?(?:id|secret)|"
     r"app[_-]?secret|developer[_-]?token|private[_-]?key|authorization|"
     r"credentials?|partner[_-]?id|perter[_-]?id|bc[_-]?id|mcc|password|"
-    r"script|command|entrypoint|mcp)",
+    r"(?:^|[._-])(?:scripts?|javascript|commands?|entrypoint|mcp)(?:$|[._-]))",
     re.IGNORECASE,
 )
 _SELECTION_TOKEN_VALUE = re.compile(r"ps1\.[A-Za-z0-9_-]+\.[a-f0-9]{64}")

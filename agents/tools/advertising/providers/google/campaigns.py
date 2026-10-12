@@ -89,12 +89,22 @@ class GoogleGetCampaignHandler(ToolHandler):
                         limit=input_data.get("limit", 100),
                         parameter_names=("page_size", "limit"),
                     )
-                    name_lower = campaign_name.lower()
-                    for c in campaigns:
-                        cname = (c.get("campaign_name") or "").lower()
-                        if cname == name_lower or name_lower in cname or cname in name_lower:
-                            campaign_id = str(c.get("id", ""))
-                            break
+                    requested_name = str(campaign_name).strip().casefold()
+                    matches = [
+                        campaign
+                        for campaign in campaigns
+                        if str(
+                            campaign.get("name")
+                            or campaign.get("campaign_name")
+                            or ""
+                        ).strip().casefold() == requested_name
+                    ]
+                    if len(matches) > 1:
+                        return ToolResult.error(
+                            "Campaign name is not unique; use campaign_id for an exact read"
+                        )
+                    if matches:
+                        campaign_id = str(matches[0].get("id", ""))
                 if not campaign_id:
                     return ToolResult.error(f"未找到名为 '{campaign_name}' 的 Campaign，请先列出 Campaign 列表获取准确 ID")
             except Exception as e:
@@ -155,6 +165,7 @@ class GoogleCreateCampaignHandler(ToolHandler):
                     status=input_data.get("status"),
                     networks=input_data.get("networks"),
                     app_campaign_setting=input_data.get("app_campaign_setting"),
+                    selective_optimization=input_data.get("selective_optimization"),
                     advertising_channel_sub_type=input_data.get("advertising_channel_sub_type"),
                     shopping_setting=input_data.get("shopping_setting"),
                     campaign_goal_setting=input_data.get("campaign_goal_setting"),

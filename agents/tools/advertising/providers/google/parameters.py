@@ -296,7 +296,9 @@ def _google_responsive_search_payload_schema() -> dict[str, Any]:
     )
 
 
-def _google_asset_ref_item(description: str) -> dict[str, Any]:
+def _google_asset_ref_item(
+    description: str, *, asset_types: list[str] | None = None,
+) -> dict[str, Any]:
     """A reusable Asset reference that can be selected or pasted explicitly.
 
     Google ad payloads accept either an Asset resource name/object or, in the
@@ -304,28 +306,44 @@ def _google_asset_ref_item(description: str) -> dict[str, Any]:
     on the item as well as on the surrounding array is important for nested
     editors such as Demand Gen carousel cards.
     """
+    metadata: dict[str, Any] = {
+        "lookup_tool": "google_list_assets",
+        "lookup_result_key": "assets",
+        "lookup_account_required": True,
+        "lookup_query_field": "asset_id",
+        "selection_value_fields": ["resource_name", "asset_id", "id"],
+        "selection_label_fields": ["name", "text", "resource_name", "id"],
+        "presentation": "asset_picker",
+    }
+    if asset_types:
+        metadata["lookup_asset_types"] = list(asset_types)
     return _field(
         ["string", "object"], description,
         additionalProperties=True,
-        lookup_tool="google_list_assets",
-        lookup_result_key="assets",
-        lookup_account_required=True,
-        selection_value_fields=["resource_name", "asset_id", "id"],
-        selection_label_fields=["name", "text", "resource_name", "id"],
-        presentation="asset_picker",
+        **metadata,
     )
 
 
-def _google_asset_refs(description: str, *, min_items: int = 1) -> dict[str, Any]:
+def _google_asset_refs(
+    description: str, *, min_items: int = 1,
+    asset_types: list[str] | None = None,
+) -> dict[str, Any]:
     """Build an account-scoped, multi-select Asset reference field."""
+    metadata: dict[str, Any] = {
+        "lookup_tool": "google_list_assets",
+        "lookup_result_key": "assets",
+        "lookup_account_required": True,
+        "lookup_query_field": "asset_id",
+        "selection_value_fields": ["resource_name", "asset_id", "id"],
+        "selection_label_fields": ["name", "text", "resource_name", "id"],
+        "presentation": "asset_picker",
+    }
+    if asset_types:
+        metadata["lookup_asset_types"] = list(asset_types)
     return _field(
         "array", description, minItems=min_items,
-        items=_google_asset_ref_item(description),
-        lookup_tool="google_list_assets", lookup_result_key="assets",
-        lookup_account_required=True,
-        selection_value_fields=["resource_name", "asset_id", "id"],
-        selection_label_fields=["name", "text", "resource_name", "id"],
-        presentation="asset_picker",
+        items=_google_asset_ref_item(description, asset_types=asset_types),
+        **metadata,
     )
 
 
@@ -644,17 +662,23 @@ def google_app_campaign_setting_schema() -> dict[str, Any]:
                 "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS": "最大化总转化价值",
             },
         ),
-        "selective_optimization": _field(
-            "array", "Conversion action resource names used for App Engagement",
+    }, "Google App Campaign settings", required=[
+        "app_id", "app_store", "bidding_strategy_goal_type",
+    ])
+
+
+def google_selective_optimization_schema() -> dict[str, Any]:
+    """Campaign-level conversion actions selected for App campaign bidding."""
+    return _object({
+        "conversion_actions": _field(
+            "array", "Google conversion action resource names used for App optimization",
             minItems=1, items={"type": "string", "minLength": 1},
             lookup_tool="google_list_conversion_actions",
             lookup_result_key="conversion_actions",
             selection_value_fields=["resource_name", "conversion_action_id", "id"],
             selection_label_fields=["name", "resource_name", "id"],
         ),
-    }, "Google App Campaign settings", required=[
-        "app_id", "app_store", "bidding_strategy_goal_type",
-    ])
+    }, "Google Campaign selective optimization", required=["conversion_actions"])
 
 
 def google_shopping_setting_schema() -> dict[str, Any]:
@@ -712,7 +736,7 @@ def google_shopping_setting_schema() -> dict[str, Any]:
         ),
         "priority": _field("integer", "Shopping campaign priority (legacy alias)", minimum=0, maximum=2, ui_hidden=True),
         "exclude_offline_store_locations": _field("boolean", "Exclude offline store locations", ui_hidden=True),
-    }, "Google Shopping settings", required=["merchant_id", "campaign_priority"])
+    }, "Google Shopping settings", required=["merchant_id"])
 
 
 def google_video_setting_schema() -> dict[str, Any]:
@@ -933,6 +957,10 @@ def google_campaign_schema() -> dict[str, Any]:
                 **google_app_campaign_setting_schema(),
                 **_ui_when("advertising_channel_type", "MULTI_CHANNEL"),
             },
+            "selective_optimization": {
+                **google_selective_optimization_schema(),
+                **_ui_when("advertising_channel_type", "MULTI_CHANNEL"),
+            },
             "shopping_setting": {
                 **google_shopping_setting_schema(),
                 **_ui_when("advertising_channel_type", "SHOPPING", "PERFORMANCE_MAX"),
@@ -1018,11 +1046,24 @@ def google_campaign_schema() -> dict[str, Any]:
              "allowed": {"advertising_channel_type": ["MULTI_CHANNEL"]},
              "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires advertising_channel_type=MULTI_CHANNEL"},
             {"id": "app_engagement_selective_optimization", "if": {"advertising_channel_sub_type": "APP_CAMPAIGN_FOR_ENGAGEMENT"},
-             "required": ["app_campaign_setting.selective_optimization"],
-             "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires app_campaign_setting.selective_optimization"},
+             "required": ["selective_optimization.conversion_actions"],
+             "message": "APP_CAMPAIGN_FOR_ENGAGEMENT requires a selected conversion action"},
+            {"id": "app_conversion_goal_selective_optimization",
+             "if": {"app_campaign_setting.bidding_strategy_goal_type": {"in": [
+                 "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
+                 "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
+                 "OPTIMIZE_IN_APP_CONVERSIONS_WITHOUT_TARGET_CPA",
+                 "OPTIMIZE_RETURN_ON_ADVERTISING_SPEND",
+                 "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS",
+             ]}},
+             "required": ["selective_optimization.conversion_actions"],
+             "message": "App conversion goals require selective_optimization.conversion_actions"},
             {"id": "shopping_setting_dependency", "if": {"advertising_channel_type": "SHOPPING"},
              "required": ["shopping_setting"],
              "message": "SHOPPING requires shopping_setting with Merchant Center fields"},
+            {"id": "shopping_campaign_priority_dependency", "if": {"advertising_channel_type": "SHOPPING"},
+             "required": ["shopping_setting.campaign_priority"],
+             "message": "SHOPPING requires shopping_setting.campaign_priority"},
             {"id": "video_setting_dependency", "if": {"advertising_channel_type": "VIDEO"},
              "required": ["video_setting"],
              "message": "VIDEO requires video_setting"},
@@ -1128,7 +1169,17 @@ def google_app_ad_group_schema() -> dict[str, Any]:
 
 def google_app_ad_schema() -> dict[str, Any]:
     """Dry-run contract for the Google ``Ad.appAd`` asset payload."""
-    asset = _google_asset_refs("Existing Google Asset references")
+    image_assets = _google_asset_refs(
+        "Existing Google image Asset references", asset_types=["IMAGE"],
+    )
+    video_assets = _google_asset_refs(
+        "Existing Google YouTube video Asset references",
+        asset_types=["YOUTUBE_VIDEO"],
+    )
+    bundle_assets = _google_asset_refs(
+        "Existing Google media bundle Asset references",
+        asset_types=["MEDIA_BUNDLE"],
+    )
     return {
         "required": ["ad_group_id", "name", "headlines", "descriptions"],
         "requires": ["headlines", "descriptions"],
@@ -1145,9 +1196,9 @@ def google_app_ad_schema() -> dict[str, Any]:
                 items={"type": ["string", "object"], "additionalProperties": True},
                 presentation="text_list",
             ),
-            "images": asset,
-            "videos": asset,
-            "html5_media_bundles": asset,
+            "images": image_assets,
+            "videos": video_assets,
+            "html5_media_bundles": bundle_assets,
             "status": _field(
                 "string",
                 "Requested state; App Ads require an ENABLED ad under a PAUSED Ad Group",
@@ -2320,7 +2371,10 @@ def google_asset_schema() -> dict[str, Any]:
     return {
         "properties": {
             "customer_id": _field("string", "Google Ads customer ID"),
-            "asset_id": _field("string", "Google Asset ID", minLength=1),
+            "asset_id": _field(
+                "string", "Google numeric Asset ID", minLength=1, maxLength=30,
+                pattern=r"^\d+$",
+            ),
             "limit": _field("integer", "Maximum number of assets", minimum=1, maximum=10000),
         },
     }
@@ -2439,12 +2493,17 @@ def google_asset_group_schema() -> dict[str, Any]:
             "headlines": _google_text_assets("Text headline assets or existing Asset references", min_items=3, max_items=15),
             "long_headlines": _google_text_assets("Long headline assets or existing Asset references", min_items=1, max_items=5),
             "descriptions": _google_text_assets("Description assets", min_items=2, max_items=5),
-            "images": _google_asset_refs("Performance Max marketing image assets"),
+            "images": _google_asset_refs(
+                "Performance Max marketing image assets", asset_types=["IMAGE"],
+            ),
             "square_marketing_images": _google_asset_refs(
-                "Performance Max square marketing image assets"
+                "Performance Max square marketing image assets",
+                asset_types=["IMAGE"],
             ),
             "videos": _google_asset_refs("Performance Max video assets"),
-            "logos": _google_asset_refs("Performance Max logo assets"),
+            "logos": _google_asset_refs(
+                "Performance Max logo assets", asset_types=["IMAGE"],
+            ),
             "business_names": _google_text_assets(
                 "Performance Max business name text assets", min_items=1, max_items=5
             ),

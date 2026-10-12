@@ -44,7 +44,7 @@ def test_explicit_blueprint_still_requires_the_selected_workflow_inputs():
     )
 
 
-def test_selected_creation_template_is_materialized_into_declared_tool_arguments():
+def test_template_and_structured_values_override_model_tool_suggestions():
     definition = ToolDefinition(
         name="example_create_campaign",
         skill="example",
@@ -52,12 +52,16 @@ def test_selected_creation_template_is_materialized_into_declared_tool_arguments
         description="Create a campaign",
         action="create",
         resource_type="campaign",
+        parent_resource_id_field="campaign_id",
         intent_types=["create_campaign"],
         input_schema=ToolSchema(
             properties={
                 "name": {"type": "string"},
                 "daily_budget": {"type": "number"},
                 "status": {"type": "string"},
+                "bidding_strategy": {"type": "string"},
+                "product_dimension": {"type": "string"},
+                "campaign_id": {"type": "string"},
             }
         ),
     )
@@ -79,10 +83,30 @@ def test_selected_creation_template_is_materialized_into_declared_tool_arguments
                 intent.scoped_parameters["example"]["example_create_campaign"]
             )
 
+    blueprint = SimpleNamespace(
+        provider="example",
+        selector={},
+        fields=[
+            {
+                "path": f"campaign.{field}",
+                "tool_ref": f"example_create_campaign.{field}",
+            }
+            for field in (
+                "name",
+                "daily_budget",
+                "status",
+                "bidding_strategy",
+                "product_dimension",
+            )
+        ],
+    )
+
     class Runtime:
         _sessions = {}
         input_builder = InputBuilder()
-        creation_blueprints = SimpleNamespace(get=lambda *_args: None)
+        creation_blueprints = SimpleNamespace(
+            get=lambda *_args: blueprint,
+        )
 
         @staticmethod
         def _canonical_platform(value):
@@ -95,6 +119,7 @@ def test_selected_creation_template_is_materialized_into_declared_tool_arguments
                 **dict(values.get("example_create_campaign") or {}),
                 "name": "from-template",
                 "status": "PAUSED",
+                "bidding_strategy": "MAXIMIZE_CLICKS",
                 "not_in_schema": "must-not-reach-tool",
             }
             return ParsedIntent(
@@ -115,7 +140,14 @@ def test_selected_creation_template_is_materialized_into_declared_tool_arguments
             session_id="test-session",
         ),
         tool_call=SimpleNamespace(
-            arguments={"daily_budget": 30},
+            arguments={
+                "name": "from-model",
+                "daily_budget": 30,
+                "status": "ENABLED",
+                "bidding_strategy": "MAXIMIZE_CONVERSIONS",
+                "product_dimension": "PRODUCT_TYPE",
+                "campaign_id": "from-parent-tool",
+            },
         ),
         tool_definition=definition,
     )
@@ -126,7 +158,9 @@ def test_selected_creation_template_is_materialized_into_declared_tool_arguments
     assert resolved == {
         "name": "from-template",
         "status": "PAUSED",
-        "daily_budget": 30,
+        "daily_budget": 12,
+        "bidding_strategy": "MAXIMIZE_CLICKS",
+        "campaign_id": "from-parent-tool",
     }
 
 
@@ -160,3 +194,43 @@ def test_pmax_campaign_does_not_require_optional_optimization_goals():
         "contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
     }
     assert validate_tool_input(tool.input_schema, values) == []
+
+
+def test_pmax_retail_setting_does_not_require_shopping_campaign_priority():
+    tool = next(
+        binding.definition
+        for binding in create_tool_source("google-ads").list_bindings()
+        if binding.definition.name == "google_create_campaign"
+    )
+    base = {
+        "customer_id": "test",
+        "campaign_name": "QA_PMAX",
+        "advertising_channel_type": "PERFORMANCE_MAX",
+        "bidding_strategy": "MAXIMIZE_CONVERSION_VALUE",
+        "daily_budget": 5,
+        "status": "PAUSED",
+        "contains_eu_political_advertising": (
+            "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+        ),
+        "shopping_setting": {
+            "merchant_id": 115791065,
+            "enable_local": True,
+        },
+    }
+
+    assert validate_tool_input(
+        tool.input_schema,
+        base,
+        include_tool_requirements=True,
+    ) == []
+
+    shopping = {
+        **base,
+        "advertising_channel_type": "SHOPPING",
+    }
+    errors = validate_tool_input(
+        tool.input_schema,
+        shopping,
+        include_tool_requirements=True,
+    )
+    assert any("shopping_setting.campaign_priority" in error for error in errors)

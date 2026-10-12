@@ -72,7 +72,8 @@ class GoogleCreateAssetGroupHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         if not self.client or not ctx.account_id:
             return ToolResult.error("Google Ads client not configured or customer_id missing")
-        creator = getattr(self.client, "create_pmax_asset_group", None)
+        client = for_customer(self.client, ctx.account_id)
+        creator = getattr(client, "create_pmax_asset_group", None)
         if not creator:
             return ToolResult.error("Google PMax Asset Group adapter is unavailable")
         try:

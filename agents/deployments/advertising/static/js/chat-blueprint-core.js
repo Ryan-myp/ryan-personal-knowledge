@@ -267,9 +267,18 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
 
         function lookupOptionValueText(value) {
             if (value && typeof value === 'object') {
-                return String(value.id ?? value.audience_id ?? value.value ?? JSON.stringify(value));
+                return String(
+                    value.id ?? value.asset_id ?? value.resource_name
+                    ?? value.audience_id ?? value.value ?? JSON.stringify(value)
+                );
             }
             return String(value ?? '');
+        }
+
+        function lookupQueryForValue(value) {
+            const text = lookupOptionValueText(value).trim();
+            const asset = text.match(/(?:^|\/)assets\/(\d+)$/);
+            return asset ? asset[1] : text;
         }
 
         function lookupOptionMatches(option, query) {
@@ -421,7 +430,7 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                 renderResults();
             }
 
-            async function queryOptions() {
+            async function queryOptions(queryValue, mergeOptions = false) {
                 const account = accountId();
                 if (!account && accountRequired) {
                     status.textContent = '请先填写广告账户 ID，再查询该账户下的可用项。';
@@ -435,6 +444,10 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                 searchButton.disabled = true;
                 status.textContent = '正在查询该账户的可用项…';
                 try {
+                    const effectiveQuery = String(
+                        queryValue === undefined ? searchInput.value : queryValue
+                    ).trim();
+                    if (queryValue !== undefined) searchInput.value = effectiveQuery;
                     ensureLookupSessionId();
                     const lookupContext = lookupContextValues(context);
                     const lookupContextSnapshot = JSON.stringify(lookupContext);
@@ -444,7 +457,7 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                     });
                     if (account) params.set('account_id', account);
                     if (Object.keys(lookupContext).length) params.set('lookup_context', JSON.stringify(lookupContext));
-                    if (field?.lookup?.query_field && searchInput.value.trim()) params.set('query', searchInput.value.trim());
+                    if (field?.lookup?.query_field && effectiveQuery) params.set('query', effectiveQuery);
                     const response = await authenticatedFetch(`/parameter-options/resolve?${params.toString()}`);
                     const body = await response.text();
                     let data = {};
@@ -457,7 +470,13 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                         status.textContent = '账户或关联参数已变化，未采用旧查询结果，请重新查询。';
                         return;
                     }
-                    options = Array.isArray(data.options) ? data.options : [];
+                    const resultOptions = Array.isArray(data.options) ? data.options : [];
+                    options = mergeOptions
+                        ? [...options, ...resultOptions.filter(option => !options.some(
+                            existing => lookupValueKey(lookupOptionValue(existing))
+                                === lookupValueKey(lookupOptionValue(option))
+                        ))]
+                        : resultOptions;
                     optionsStore[optionsKey] = options;
                     const selectedValues = getSelected();
                     if (selectedValues.length) {
@@ -482,13 +501,25 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                 }
             }
 
+            async function resolvePrefilledSelection() {
+                if (
+                    !context.autoResolvePrefill
+                    || !field?.lookup?.query_field
+                ) return;
+                const values = getSelected();
+                for (const value of values) {
+                    await queryOptions(lookupQueryForValue(value), true);
+                }
+            }
+
             searchInput.addEventListener('input', renderResults);
-            searchButton.addEventListener('click', queryOptions);
+            searchButton.addEventListener('click', () => queryOptions());
             picker.dataset.accountRequired = accountRequired ? 'true' : 'false';
             picker.dataset.accountValue = accountId();
             refreshLookupAccountState(picker);
             renderSelected();
             renderResults();
+            resolvePrefilledSelection();
             return picker;
         }
 

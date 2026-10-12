@@ -11,11 +11,148 @@ from scripts.advertising.campaign_service_e2e import (
     classify_evidence,
     readback_checks,
     chat,
+    _e2e_request_case,
     paused_payload,
+    resolve_selection_tokens,
     safe_evidence,
     summarize_chat,
 )
 
+
+def test_parameter_lookup_e2e_scope_requires_confirmed_provider_account():
+    from types import SimpleNamespace
+
+    request = SimpleNamespace(
+        url=SimpleNamespace(path="/parameter-options/resolve"),
+        headers={
+            "x-e2e-case": "google-template-assets",
+            "x-e2e-provider": "google-ads",
+            "x-e2e-account": "9055507554",
+        },
+        query_params={
+            "platform": "google-ads",
+            "account_id": "9055507554",
+            "tool_name": "google_create_asset_group",
+        },
+    )
+
+    assert _e2e_request_case(request) == {
+        "case_id": "google-template-assets",
+        "provider": "google-ads",
+        "account": "9055507554",
+    }
+
+
+def test_parameter_lookup_e2e_scope_rejects_unconfirmed_account():
+    from types import SimpleNamespace
+
+    request = SimpleNamespace(
+        url=SimpleNamespace(path="/parameter-options/resolve"),
+        headers={},
+        query_params={
+            "platform": "google-ads",
+            "account_id": "9999999999",
+            "tool_name": "google_create_asset_group",
+        },
+    )
+
+    assert _e2e_request_case(request) == {}
+
+
+def test_selection_token_helper_resolves_only_exact_requested_values(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(
+        driver,
+        "_load_state",
+        lambda _directory: (
+            tmp_path,
+            {
+                "base_url": "http://localhost",
+                "accounts": {"google-ads": ["9055507554"]},
+            },
+            {"X-API-Key": "test-key"},
+        ),
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({
+        "options": [
+            {
+                "value": "customers/9055507554/assets/194802085984",
+                "label": "PMax image",
+                "selection_token": "ps1.private.signature",
+            },
+            {
+                "value": "customers/9055507554/assets/194802072931",
+                "label": "Other image",
+                "selection_token": "ps1.other.signature",
+            },
+        ],
+    }).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests,
+        "get",
+        lambda *args, **kwargs: (calls.append((args, kwargs)) or response),
+    )
+
+    resolved = resolve_selection_tokens(
+        tmp_path,
+        "google-ads",
+        "google_create_asset_group",
+        {"images": ["customers/9055507554/assets/194802085984"]},
+        "google-template-assets",
+        "google-template-session",
+        lookup_queries={"images": ["194802085984"]},
+    )
+
+    assert resolved == {"images": ["ps1.private.signature"]}
+    assert calls[0][1]["params"] == {
+        "platform": "google-ads",
+        "field": "images",
+        "tool_name": "google_create_asset_group",
+        "account_id": "9055507554",
+        "session_id": "google-template-session",
+        "query": "194802085984",
+    }
+    assert calls[0][1]["headers"]["X-E2E-Case"] == "google-template-assets"
+    assert calls[0][1]["headers"]["X-E2E-Provider"] == "google-ads"
+    assert calls[0][1]["headers"]["X-E2E-Account"] == "9055507554"
+
+
+def test_selection_token_helper_fails_closed_for_wrong_account_or_missing_value(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    state = {
+        "base_url": "http://localhost",
+        "accounts": {"google-ads": ["9999999999"]},
+    }
+    monkeypatch.setattr(
+        driver, "_load_state", lambda _directory: (tmp_path, state, {})
+    )
+    calls = []
+    monkeypatch.setattr(
+        driver.requests,
+        "get",
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+
+    with pytest.raises(ValueError, match="confirmed test account"):
+        resolve_selection_tokens(
+            tmp_path,
+            "google-ads",
+            "google_create_asset_group",
+            {"images": ["customers/9055507554/assets/194802085984"]},
+            "google-template-assets",
+            "google-template-session",
+        )
+
+    assert calls == []
 
 def test_chat_text_is_not_provider_execution_evidence():
     assert (
@@ -38,6 +175,55 @@ def test_only_matching_successful_tool_result_counts_as_execution():
     }
     assert summarize_chat(result, "google_create_campaign")["passed"] is True
     assert summarize_chat(result, "meta_create_campaign")["passed"] is False
+
+
+def test_chat_can_submit_a_creation_card_without_widening_tool_scope(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(
+        driver,
+        "_load_state",
+        lambda _directory: (
+            tmp_path,
+            {
+                "base_url": "http://localhost",
+                "accounts": {"google-ads": ["9055507554"]},
+            },
+            {"X-API-Key": "test-key"},
+        ),
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({
+        "status": "awaiting_input",
+        "reply": "submit the form",
+        "results": [],
+    }).encode()
+    calls = []
+
+    def post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return response
+
+    monkeypatch.setattr(driver.requests, "post", post)
+    driver.chat(
+        tmp_path,
+        "google-ads",
+        "google_create_campaign",
+        {"campaign_name": "QA Google Template"},
+        "google-template-submit",
+        template_id="builtin-template",
+        session_id="google-template-session",
+        user_input="提交 Google Campaign 创建计划",
+    )
+
+    body = calls[0][1]["json"]
+    assert "提交 Google Campaign 创建计划" in body["user_input"]
+    assert body["tool_allowlist"] == ["google_create_campaign"]
+    assert body["creation_template_id"] == "builtin-template"
+    assert body["session_id"] == "google-template-session"
 
 
 def test_coalesced_duplicate_tool_calls_count_as_one_effective_execution():
@@ -484,6 +670,36 @@ def test_google_product_group_is_approved_for_template_e2e():
     assert "google_create_product_group" in _approved_tools()
 
 
+def test_google_pmax_listing_filter_is_approved_for_template_e2e():
+    assert "google_create_asset_group_listing_group_filter" in _approved_tools()
+
+
+def test_google_pmax_listing_filter_requires_verified_paused_asset_group(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    request_data = {
+        "operations": [{
+            "create": {
+                "assetGroup": "customers/9055507554/assetGroups/77",
+                "type": "UNIT_INCLUDED",
+                "listingSource": "SHOPPING",
+            }
+        }]
+    }
+    path = (
+        "/v24/customers/9055507554/"
+        "assetGroupListingGroupFilters:mutate"
+    )
+
+    with pytest.raises(PermissionError, match="verified PAUSED Asset Group"):
+        recorder._guard_google(request_data, path)
+
+    recorder._capture_google_paused_resources(
+        {"results": [{"assetGroup": {"id": "77", "status": "PAUSED"}}]}
+    )
+    assert recorder.paused_asset_groups == {"77"}
+    recorder._guard_google(request_data, path)
+
+
 @pytest.mark.parametrize("status", [None, "ENABLED"])
 def test_google_product_group_creation_requires_explicit_paused_status(
     tmp_path, status
@@ -552,7 +768,7 @@ def test_google_app_ad_requires_a_previously_read_paused_parent(tmp_path):
             "/v24/customers/123/googleAds:mutate",
         )
 
-    recorder._capture_google_ad_group_statuses(
+    recorder._capture_google_paused_resources(
         {"results": [{"adGroup": {"id": "77", "status": "PAUSED"}}]}
     )
     assert recorder.paused_ad_groups == {"77"}

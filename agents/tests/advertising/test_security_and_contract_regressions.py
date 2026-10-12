@@ -1540,7 +1540,7 @@ def test_live_creation_chain_trusts_parent_id_from_prior_runtime_result():
     assert errors == []
 
 
-def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
+def test_live_app_conversion_lookup_rejects_unattested_raw_value():
     runtime = AdvertisingComposition(
         require_llm=False,
         whitelist_validator=whitelist(**{"google-ads": ["g1"]}),
@@ -1556,11 +1556,13 @@ def test_live_nested_dynamic_parameter_rejects_unattested_raw_value():
     )
     errors = runtime.input_builder.parameter_selection.apply_selection_tokens(
         definition,
-        {"app_campaign_setting": {"selective_optimization": ["customers/1/conversionActions/2"]}},
+        {"selective_optimization": {"conversion_actions": [
+            "customers/1/conversionActions/2",
+        ]}},
         {},
         ToolContext(session_id="s1", user_id="u1", account_id="g1"),
     )
-    assert any("selective_optimization" in error for error in errors)
+    assert any("selective_optimization.conversion_actions" in error for error in errors)
 
 
 def test_provider_native_status_values_are_preserved_in_dry_run_plan():

@@ -29,7 +29,13 @@ class AdvertisingRunProjection:
             runtime_signals = item.get("runtime_signals")
             if (
                 isinstance(runtime_signals, Mapping)
-                and runtime_signals.get("duplicate_read_coalesced") is True
+                and any(
+                    runtime_signals.get(signal) is True
+                    for signal in (
+                        "duplicate_read_coalesced",
+                        "duplicate_write_coalesced",
+                    )
+                )
             ):
                 continue
             name = str(item.get("name") or "").strip()

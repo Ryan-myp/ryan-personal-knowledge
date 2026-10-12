@@ -1,6 +1,6 @@
 {
   "id": "google-ads.performance_max",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "provider": "google-ads",
   "ad_format": "PERFORMANCE_MAX",
   "title": "Google Performance Max 广告",
@@ -10,6 +10,8 @@
   "resources": ["campaign", "asset_group", "listing_group_filter"],
   "fields": [
     {"path": "campaign.campaign_name", "tool_ref": "google_create_campaign.campaign_name", "label": "Campaign 名称", "required": true},
+    {"path": "campaign.start_date", "tool_ref": "google_create_campaign.start_date", "label": "投放开始日期", "required": true, "source": "tool_schema"},
+    {"path": "campaign.end_date", "tool_ref": "google_create_campaign.end_date", "label": "投放结束日期", "required": true, "source": "tool_schema"},
     {"path": "campaign.contains_eu_political_advertising", "tool_ref": "google_create_campaign.contains_eu_political_advertising", "label": "欧盟政治广告声明", "required": true, "source": "enum", "options": ["DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING", "CONTAINS_EU_POLITICAL_ADVERTISING"]},
     {"path": "campaign.advertising_channel_type", "tool_ref": "google_create_campaign.advertising_channel_type", "label": "广告系列类型（已根据入口匹配）", "required": true, "source": "enum", "options": ["PERFORMANCE_MAX"], "presentation": "derived_readonly"},
     {"path": "campaign.campaign_goal_setting.optimization_goal_types", "tool_ref": "google_create_campaign.campaign_goal_setting.optimization_goal_types", "label": "优化目标（可选）", "required": false, "source": "enum", "options": ["CALL_CLICKS", "DRIVING_DIRECTIONS", "APP_PRE_REGISTRATION"]},
@@ -19,6 +21,7 @@
     {"path": "campaign.target_cpa_micros", "tool_ref": "google_create_campaign.target_cpa_micros", "label": "目标 CPA", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_CPA"}},
     {"path": "campaign.target_roas", "tool_ref": "google_create_campaign.target_roas", "label": "目标 ROAS", "visible_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}, "required_when": {"field": "campaign.bidding_strategy", "equals": "TARGET_ROAS"}},
     {"path": "campaign.daily_budget", "tool_ref": "google_create_campaign.daily_budget", "label": "日预算", "required": true},
+    {"path": "campaign.status", "tool_ref": "google_create_campaign.status", "label": "Campaign 状态（受控创建固定暂停）", "required": true, "source": "enum", "options": ["PAUSED"], "default": "PAUSED"},
     {"path": "asset_group.name", "tool_ref": "google_create_asset_group.name", "label": "Asset Group 名称", "required": true},
     {"path": "asset_group.asset_group_type", "tool_ref": "google_create_asset_group.asset_group_type", "label": "Asset Group 类型（自动匹配）", "required": true, "source": "enum", "options": ["PERFORMANCE_MAX"], "presentation": "derived_readonly"},
     {"path": "asset_group.final_urls", "tool_ref": "google_create_asset_group.final_urls", "label": "落地页网址（每行一条）", "required": true, "presentation": "text_list"},
@@ -29,6 +32,7 @@
     {"path": "asset_group.square_marketing_images", "tool_ref": "google_create_asset_group.square_marketing_images", "label": "方形营销图片素材", "required": true, "presentation": "asset_picker", "accept": "image/*"},
     {"path": "asset_group.logos", "tool_ref": "google_create_asset_group.logos", "label": "品牌 Logo 素材", "required": true, "presentation": "asset_picker", "accept": "image/*"},
     {"path": "asset_group.business_names", "tool_ref": "google_create_asset_group.business_names", "label": "商家名称素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
+    {"path": "asset_group.status", "tool_ref": "google_create_asset_group.status", "label": "Asset Group 状态（受控创建固定暂停）", "required": true, "source": "enum", "options": ["PAUSED"], "default": "PAUSED"},
     {"path": "asset_group.videos", "tool_ref": "google_create_asset_group.videos", "label": "视频素材", "required": false, "presentation": "asset_picker", "accept": "video/*"},
     {"path": "listing_group_filter.filter_type", "tool_ref": "google_create_asset_group_listing_group_filter.filter_type", "label": "商品筛选节点类型", "required": false, "source": "enum", "options": ["SUBDIVISION", "UNIT_INCLUDED", "UNIT_EXCLUDED"], "option_labels": {"SUBDIVISION": "细分节点", "UNIT_INCLUDED": "包含商品", "UNIT_EXCLUDED": "排除商品"}},
     {"path": "listing_group_filter.listing_source", "tool_ref": "google_create_asset_group_listing_group_filter.listing_source", "label": "商品来源", "required": false, "source": "enum", "options": ["SHOPPING", "WEBPAGE", "RETAIL"], "option_labels": {"SHOPPING": "Merchant Center 商品", "WEBPAGE": "网页/页面 Feed", "RETAIL": "Retail Product Tags"}},

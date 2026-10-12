@@ -1283,6 +1283,7 @@
                         targetToolName: field.tool,
                         fieldName: field.provider_field || field.path,
                         selectionTokens: card.selection_tokens,
+                        autoResolvePrefill: Boolean(card.template_id),
                         optionsStore: card.lookup_options || (card.lookup_options = {}),
                         onSelection: ({ value, tokens }) => {
                             const key = field.provider_field || field.path;

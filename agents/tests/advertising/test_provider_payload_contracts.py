@@ -24,7 +24,11 @@ from agents.tools.advertising.providers.tiktok.campaigns import (
 )
 from agents.tools.advertising.providers.google.campaigns import (
     GoogleCreateCampaignHandler,
+    GoogleGetCampaignHandler,
     GoogleListCampaignsHandler,
+)
+from agents.tools.advertising.providers.google.assets import (
+    GoogleCreateAssetGroupHandler,
 )
 from agents.tools.advertising.providers.meta.provider import _meta_update_adapter
 from agents.tools.advertising.providers.tiktok.provider import _tiktok_update_adapter
@@ -174,6 +178,161 @@ def test_google_campaign_handler_passes_typed_campaign_id_to_client():
 
     assert result.success
     assert "WHERE campaign.id = 456" in " ".join(queries[0].split())
+
+
+def test_google_create_asset_group_uses_trusted_customer_scoped_client():
+    calls = []
+
+    class ScopedClient:
+        def __init__(self, customer_id):
+            self.customer_id = customer_id
+
+        def create_pmax_asset_group(self, **_kwargs):
+            calls.append(self.customer_id)
+            return {
+                "mode": "live",
+                "asset_group_id": "789",
+                "asset_group_resource_name": (
+                    f"customers/{self.customer_id}/assetGroups/789"
+                ),
+                "status": "PAUSED",
+            }
+
+    class FakeClient:
+        def for_customer(self, customer_id):
+            return ScopedClient(customer_id)
+
+    context = ToolContext(
+        session_id="s1",
+        user_id="u1",
+        account_id="9055507554",
+        metadata={"execution_mode": "live"},
+    )
+    result = GoogleCreateAssetGroupHandler(FakeClient()).execute(
+        context,
+        {
+            "campaign_id": "456",
+            "name": "QA Asset Group",
+            "headlines": [{"text": "One"}, {"text": "Two"}, {"text": "Three"}],
+            "long_headlines": [{"text": "Long headline"}],
+            "descriptions": [{"text": "One"}, {"text": "Two"}],
+            "images": ["customers/9055507554/assets/11"],
+            "square_marketing_images": ["customers/9055507554/assets/12"],
+            "logos": ["customers/9055507554/assets/13"],
+            "business_names": [{"text": "Test shop"}],
+            "final_urls": ["https://example.test"],
+            "status": "PAUSED",
+        },
+    )
+
+    assert result.success
+    assert result.data["asset_group_id"] == "789"
+    assert calls == ["9055507554"]
+
+
+def test_google_get_campaign_resolves_exact_name_from_normalized_list_result():
+    class FakeClient:
+        def for_customer(self, customer_id):
+            assert customer_id == "123"
+            return self
+
+        def list_campaigns(self, page_size=100):
+            return [{"id": "456", "name": "QA PMax 20261014"}]
+
+        def get_campaign(self, campaign_id):
+            assert campaign_id == "456"
+            return {"id": campaign_id, "name": "QA PMax 20261014"}
+
+    result = GoogleGetCampaignHandler(FakeClient()).execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="123"),
+        {"campaign_name": "QA PMax 20261014"},
+    )
+
+    assert result.success
+    assert result.data["campaign"]["id"] == "456"
+    assert result.data["campaign"]["name"] == "QA PMax 20261014"
+
+
+def test_google_campaign_readback_returns_schedule_fields():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search = lambda query: (
+        queries.append(query)
+        or {
+            "results": [{
+                "campaign": {
+                    "id": "456",
+                    "name": "QA PMax 20261014",
+                    "startDateTime": "2026-10-14 00:00:00",
+                    "endDateTime": "2026-10-21 23:59:59",
+                }
+            }]
+        }
+    )
+
+    campaign = client.get_campaign("456")
+
+    assert campaign["start_date_time"] == "2026-10-14 00:00:00"
+    assert campaign["end_date_time"] == "2026-10-21 23:59:59"
+    assert "campaign.start_date_time" in queries[0]
+    assert "campaign.end_date_time" in queries[0]
+
+
+def test_google_campaign_date_inputs_map_to_v24_datetime_fields():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation))
+        or {"results": [{"resourceName": f"customers/123/{resource}/7"}]}
+    )
+
+    client.create_campaign(
+        "Dated campaign",
+        "SEARCH",
+        "MAXIMIZE_CONVERSIONS",
+        20,
+        start_date="2026-10-14",
+        end_date="2026-10-21",
+        live=True,
+    )
+
+    campaign = operations[1][1]["create"]
+    assert campaign["startDateTime"] == "2026-10-14 00:00:00"
+    assert campaign["endDateTime"] == "2026-10-21 23:59:59"
+    assert "startDate" not in campaign
+    assert "endDate" not in campaign
+
+
+@pytest.mark.parametrize(
+    ("start_date", "end_date"),
+    [
+        ("2026-02-30", "2026-03-01"),
+        ("2026-02-01", "2026/03/01"),
+        ("2026-03-02", "2026-03-01"),
+    ],
+)
+def test_google_campaign_rejects_invalid_date_range_before_any_mutation(
+    start_date, end_date
+):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation))
+        or {"results": [{"resourceName": f"customers/123/{resource}/7"}]}
+    )
+
+    with pytest.raises(ValueError, match="date"):
+        client.create_campaign(
+            "Invalid date campaign",
+            "SEARCH",
+            "MAXIMIZE_CONVERSIONS",
+            20,
+            start_date=start_date,
+            end_date=end_date,
+            live=True,
+        )
+
+    assert operations == []
 
 
 def test_creation_tools_publish_provider_payload_requirements():
@@ -2611,6 +2770,21 @@ def test_google_asset_reads_are_customer_scoped_and_normalized():
     }]
     assert captured[0][1:] == (25, "111")
     assert client.customer_id == "111"
+
+
+def test_google_asset_list_can_filter_by_a_numeric_asset_id():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "111"})
+    captured = []
+    client._search_all = lambda query, page_size=100: (
+        captured.append((query, page_size))
+        or [{"asset": {"id": "7", "type": "IMAGE"}}]
+    )
+
+    assets = client.list_assets("222", page_size=5, asset_id="7")
+
+    assert assets[0]["id"] == "7"
+    assert "WHERE asset.id = 7" in captured[0][0]
+    assert captured[0][1] == 5
 
 
 def test_google_get_asset_uses_numeric_id_and_customer_scope():
@@ -5880,8 +6054,8 @@ def test_google_creation_options_are_mapped_to_rest_resources():
     )
     campaign = operations[1][1]["create"]
     assert operations[0][1]["create"]["explicitlyShared"] is False
-    assert campaign["startDate"] == "2026-08-28"
-    assert campaign["endDate"] == "2026-09-04"
+    assert campaign["startDateTime"] == "2026-08-28 00:00:00"
+    assert campaign["endDateTime"] == "2026-09-04 23:59:59"
     assert campaign["networkSettings"]["targetGoogleSearch"] is True
     assert campaign["networkSettings"]["targetSearchNetwork"] is True
     assert campaign["targetRoas"] == {"targetRoas": 3.5}
@@ -6011,6 +6185,46 @@ def test_google_shopping_product_ad_is_created_paused_and_has_readback_tool():
     assert tool.input_schema.properties["status"]["enum"] == ["PAUSED"]
 
 
+def test_google_app_ad_group_mutation_omits_generic_ad_group_type_and_cpc():
+    client = GoogleAdsAPIClient({"customer_id": "123"}, customer_id="123")
+    operations = []
+    client._mutate = lambda resource, operation: (
+        operations.append((resource, operation))
+        or {"results": [{"resourceName": "customers/123/adGroups/456"}]}
+    )
+    source = create_google_tool_source(client)
+    app_tool, app_handler = next(
+        (definition, handler)
+        for definition, handler in source.register_tools()
+        if definition.name == "google_create_app_ad_group"
+    )
+
+    assert "type" not in app_tool.input_schema.properties
+    result = app_handler.execute(
+        ToolContext(
+            session_id="google-app-ad-group",
+            user_id="test-user",
+            account_id="123",
+            metadata={"execution_mode": "live"},
+        ),
+        {
+            "campaign_id": "100",
+            "name": "App group",
+            "status": "PAUSED",
+        },
+    )
+
+    assert result.success is True
+    assert operations == [(
+        "adGroups",
+        {"create": {
+            "name": "App group",
+            "status": "PAUSED",
+            "campaign": "customers/123/campaigns/100",
+        }},
+    )]
+
+
 def test_google_shopping_product_ad_rejects_non_paused_live_creation():
     client = GoogleAdsAPIClient({"customer_id": "123"})
     with pytest.raises(ValueError, match="PAUSED"):
@@ -6099,6 +6313,43 @@ def test_google_campaign_handler_forwards_all_optimization_parameters():
     assert captured["target_cpv_micros"] == 3_500_000
 
 
+def test_google_campaign_handler_forwards_app_selective_optimization():
+    captured = {}
+
+    class FakeGoogleClient:
+        def create_campaign(self, **kwargs):
+            captured.update(kwargs)
+            return "campaign-1"
+
+    handler = GoogleCreateCampaignHandler(FakeGoogleClient())
+    result = handler.execute(
+        ToolContext(session_id="s1", user_id="u1", account_id="customer-1"),
+        {
+            "campaign_name": "App conversion",
+            "advertising_channel_type": "MULTI_CHANNEL",
+            "advertising_channel_sub_type": "APP_CAMPAIGN",
+            "bidding_strategy": "TARGET_CPA",
+            "daily_budget": 20,
+            "target_cpa_micros": 11_010_000,
+            "app_campaign_setting": {
+                "app_id": "959841107",
+                "app_store": "APPLE_APP_STORE",
+                "bidding_strategy_goal_type": (
+                    "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
+                ),
+            },
+            "selective_optimization": {
+                "conversion_actions": ["customers/customer-1/conversionActions/9"]
+            },
+        },
+    )
+
+    assert result.success is True
+    assert captured["selective_optimization"] == {
+        "conversion_actions": ["customers/customer-1/conversionActions/9"]
+    }
+
+
 def test_google_core_hierarchy_delete_methods_use_customer_mutate_remove():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
@@ -6177,10 +6428,28 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
     assert any("selective_optimization" in error for error in validate_tool_input(
         schema, engagement, include_tool_requirements=True,
     ))
-    engagement["app_campaign_setting"]["selective_optimization"] = [
-        "customers/123/conversionActions/9"
-    ]
+    engagement["selective_optimization"] = {
+        "conversion_actions": ["customers/123/conversionActions/9"]
+    }
     assert validate_tool_input(schema, engagement, include_tool_requirements=True) == []
+    assert "selective_optimization" not in schema.properties[
+        "app_campaign_setting"
+    ]["properties"]
+
+    app_conversion = {
+        **engagement,
+        "advertising_channel_sub_type": "APP_CAMPAIGN",
+        "bidding_strategy": "TARGET_CPA",
+        "target_cpa_micros": 11_010_000,
+    }
+    app_conversion.pop("selective_optimization")
+    assert any("selective_optimization" in error for error in validate_tool_input(
+        schema, app_conversion, include_tool_requirements=True,
+    ))
+    app_conversion["selective_optimization"] = {
+        "conversion_actions": ["customers/123/conversionActions/9"]
+    }
+    assert validate_tool_input(schema, app_conversion, include_tool_requirements=True) == []
 
     shopping = {
         "customer_id": "123", "campaign_name": "Shopping", "daily_budget": 10,
@@ -6216,6 +6485,68 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
     campaign = operations[1][1]["create"]
     assert campaign["targetCpm"] == {"targetCpmMicros": 2500000}
     assert campaign["networkSettings"] == {"targetContentNetwork": True}
+
+
+def test_google_app_campaign_mutation_includes_account_scoped_conversion_actions():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    operations = []
+
+    def fake_mutate(resource, operation):
+        operations.append((resource, operation))
+        resource_id = "7" if resource == "campaignBudgets" else "42"
+        return {"results": [{
+            "resourceName": f"customers/123/{resource}/{resource_id}"
+        }]}
+
+    client._mutate = fake_mutate
+    client.create_campaign(
+        name="App conversion",
+        advertising_channel_type="MULTI_CHANNEL",
+        advertising_channel_sub_type="APP_CAMPAIGN",
+        bidding_strategy="TARGET_CPA",
+        daily_budget=20,
+        target_cpa_micros=11_010_000,
+        status="PAUSED",
+        app_campaign_setting={
+            "app_id": "959841107",
+            "app_store": "APPLE_APP_STORE",
+            "bidding_strategy_goal_type": (
+                "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
+            ),
+        },
+        selective_optimization={
+            "conversion_actions": ["customers/123/conversionActions/9"]
+        },
+        live=True,
+    )
+
+    campaign = operations[1][1]["create"]
+    assert campaign["selectiveOptimization"] == {
+        "conversionActions": ["customers/123/conversionActions/9"]
+    }
+    assert "selectiveOptimization" not in campaign["appCampaignSetting"]
+
+    operations.clear()
+    with pytest.raises(ValueError, match="current customer"):
+        client.create_campaign(
+            name="Cross-account App conversion",
+            advertising_channel_type="MULTI_CHANNEL",
+            advertising_channel_sub_type="APP_CAMPAIGN",
+            bidding_strategy="TARGET_CPA",
+            daily_budget=20,
+            app_campaign_setting={
+                "app_id": "959841107",
+                "app_store": "APPLE_APP_STORE",
+                "bidding_strategy_goal_type": (
+                    "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
+                ),
+            },
+            selective_optimization={
+                "conversion_actions": ["customers/999/conversionActions/9"]
+            },
+            live=True,
+        )
+    assert operations == []
 
 
 def test_google_pmax_campaign_defaults_brand_guidelines_to_disabled():
@@ -6810,6 +7141,11 @@ def test_google_campaign_detail_includes_template_relevant_settings():
                         "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
                     ),
                 },
+                "selectiveOptimization": {
+                    "conversionActions": [
+                        "customers/123/conversionActions/9"
+                    ]
+                },
             },
         }]}
     )
@@ -6825,13 +7161,19 @@ def test_google_campaign_detail_includes_template_relevant_settings():
         "OPTIMIZE_CONVERSIONS",
     ]
     assert campaign["app_campaign_setting"]["app_id"] == "app-1"
+    assert campaign["selective_optimization"] == {
+        "conversion_actions": ["customers/123/conversionActions/9"]
+    }
     query = " ".join(queries[0].split())
     assert "campaign.campaign_budget" in query
     assert "campaign.contains_eu_political_advertising" in query
     assert "campaign.optimization_goal_setting.optimization_goal_types" in query
     assert "campaign.target_cpa.target_cpa_micros" in query
-    assert "campaign.start_date" not in query
-    assert "campaign.end_date" not in query
+    assert "campaign.start_date_time" in query
+    assert "campaign.end_date_time" in query
+    assert "campaign.selective_optimization.conversion_actions" in query
+    assert "campaign.start_date," not in query
+    assert "campaign.end_date," not in query
     assert "campaign.campaign_goal_setting" not in query
 
 
@@ -7413,8 +7755,8 @@ def test_google_provider_resolver_uses_client_injected_after_tool_registration()
             scoped.customer_id = customer_id
             return scoped
 
-        def list_assets(self, customer_id, page_size=100):
-            seen.append((self.customer_id, customer_id, page_size))
+        def list_assets(self, customer_id, page_size=100, asset_id=None):
+            seen.append((self.customer_id, customer_id, page_size, asset_id))
             return [{"id": "asset-1"}]
 
     tool_source = create_google_tool_source()
@@ -7427,12 +7769,12 @@ def test_google_provider_resolver_uses_client_injected_after_tool_registration()
 
     result = handler.execute(
         ToolContext(session_id="s1", user_id="u1", account_id="customer-2"),
-        {"customer_id": "customer-2", "limit": 5},
+        {"customer_id": "customer-2", "limit": 5, "asset_id": "asset-1"},
     )
 
     assert result.success
     assert result.data["assets"] == [{"id": "asset-1"}]
-    assert seen == [("customer-2", "customer-2", 5)]
+    assert seen == [("customer-2", "customer-2", 5, "asset-1")]
 
 
 def test_google_feed_and_conversion_goal_methods_build_explicit_operations():

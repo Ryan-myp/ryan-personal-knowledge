@@ -622,6 +622,39 @@ def test_google_search_blueprint_exposes_format_specific_bidding_catalog():
     assert field["option_labels"]["MAXIMIZE_CLICKS"] == "最大化点击次数"
 
 
+def test_google_shopping_blueprint_exposes_its_template_bidding_strategy():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_google_tool_source())
+    blueprint = runtime.creation_blueprints.get("google-ads.shopping")
+    field = next(
+        item for item in blueprint.fields
+        if item["path"] == "campaign.bidding_strategy"
+    )
+
+    assert "MAXIMIZE_CLICKS" in field["options"]
+
+
+def test_google_template_image_fields_are_account_scoped_lookups():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_google_tool_source())
+    definitions = {
+        item.name: item
+        for item in runtime.registry.list_all()
+    }
+
+    pmax = definitions["google_create_asset_group"].input_schema.properties
+    app = definitions["google_create_app_ad"].input_schema.properties
+    for schema in (
+        pmax["images"],
+        pmax["square_marketing_images"],
+        pmax["logos"],
+        app["images"],
+    ):
+        assert schema["lookup_tool"] == "google_list_assets"
+        assert schema["lookup_query_field"] == "asset_id"
+        assert schema["lookup_asset_types"] == ["IMAGE"]
+
+
 def test_google_entry_type_is_not_repeated_at_ad_group_level():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
@@ -653,6 +686,70 @@ def test_provider_applicability_hides_unrelated_google_fields_and_keeps_derived_
     assert fields["campaign.shopping_setting"]["visible"] is False
     assert fields["campaign.app_campaign_setting"]["visible"] is False
     assert fields["campaign.target_cpa_micros"]["visible"] is False
+
+
+def test_google_pmax_retail_card_shows_merchant_center_setting():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_google_tool_source())
+    blueprint = runtime.creation_blueprints.get("google-ads.performance_max")
+    expanded = runtime.creation_card_builder.expand_blueprint(blueprint)
+    setting = next(
+        field for field in expanded.fields
+        if field["path"] == "campaign.shopping_setting"
+    )
+
+    assert setting["visible_when"] == {
+        "field": "campaign.advertising_channel_type",
+        "in": ["SHOPPING", "PERFORMANCE_MAX"],
+    }
+    assert setting["required_when"] == {
+        "all": [{
+            "field": "campaign.advertising_channel_type",
+            "equals": "SHOPPING",
+        }],
+    }
+
+    card = runtime.build_creation_ui(ParsedIntent(
+        "create_campaign",
+        "创建 Google Performance Max 商品广告",
+        ["google-ads"],
+        scoped_parameters={"google-ads": {"ad_format": "PERFORMANCE_MAX"}},
+        metadata={"creation_blueprint_id": "google-ads.performance_max"},
+    ))["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+
+    assert card["blueprint_id"] == "google-ads.performance_max"
+    assert fields["campaign.shopping_setting"]["visible"] is True
+
+
+def test_auto_exposed_google_merchant_setting_keeps_provider_visibility():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_google_tool_source())
+    blueprint = runtime.creation_blueprints.get("google-ads.performance_max")
+    document = blueprint.to_dict()
+    document["fields"] = [
+        field for field in document["fields"]
+        if field["path"] != "campaign.shopping_setting"
+    ]
+
+    expanded = runtime.creation_card_builder.expand_blueprint(
+        AdCreationBlueprint.from_dict(document)
+    )
+    setting = next(
+        field for field in expanded.fields
+        if field["path"] == "campaign.shopping_setting"
+    )
+
+    assert setting["visible_when"] == {
+        "field": "campaign.advertising_channel_type",
+        "in": ["SHOPPING", "PERFORMANCE_MAX"],
+    }
+    assert setting["required_when"] == {
+        "all": [{
+            "field": "campaign.advertising_channel_type",
+            "equals": "SHOPPING",
+        }],
+    }
 
 
 def test_provider_applicability_switches_tiktok_asset_controls_by_selected_format():
@@ -1161,7 +1258,7 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
         account_id="123",
         platform_params={"google-ads": {"campaign_type": "APP"}},
         creation_blueprint_id="google-ads.app",
-        creation_blueprint_version="1.0.0",
+        creation_blueprint_version="1.1.0",
     )
 
     assert result["results"] == []
@@ -1227,7 +1324,7 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
             },
         }},
         creation_blueprint_id="google-ads.app",
-        creation_blueprint_version="1.0.0",
+        creation_blueprint_version="1.1.0",
     )
 
     assert result["results"] == []
@@ -1310,7 +1407,7 @@ def test_creation_cards_publish_outer_shape_for_advanced_provider_payloads():
     assert fields["payload.array"]["json_shape"] == "array"
 
 
-def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
+def test_google_app_campaign_conversion_lookup_is_declared_at_campaign_level():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_google_tool_source())
     intent = ParsedIntent(
@@ -1323,12 +1420,24 @@ def test_google_app_nested_dynamic_field_exposes_lookup_metadata():
         field for field in card["fields"]
         if field["path"] == "campaign.app_campaign_setting"
     )
-    selective = settings["object_properties"]["selective_optimization"]
-    assert selective["lookup_tool"] == "google_list_conversion_actions"
-    assert selective["type"] == "array"
+    assert "selective_optimization" not in settings["object_properties"]
+    selective = next(
+        field for field in card["fields"]
+        if field["path"] == "campaign.selective_optimization"
+    )
+    assert selective["control"] == "object_editor"
+    assert selective["object_properties"]["conversion_actions"][
+        "lookup_tool"
+    ] == "google_list_conversion_actions"
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.1.0")
+    blueprint_field = next(
+        field for field in blueprint.fields
+        if field["path"] == "campaign.selective_optimization"
+    )
+    assert blueprint_field["tool_ref"] == "google_create_campaign.selective_optimization"
 
     catalog = runtime.list_parameter_options(
-        "google-ads", "app_campaign_setting.selective_optimization",
+        "google-ads", "selective_optimization.conversion_actions",
         "google_create_campaign",
     )
     assert catalog[0]["source"] == "lookup"
@@ -1829,7 +1938,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
         "google-ads": ["9055507554"],
     }
     runtime.register_tool_source(create_google_tool_source())
-    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.0.0")
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.1.0")
 
     class SelectedBlueprintModel:
         def __init__(self):
@@ -1870,7 +1979,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
             user_id="template-user",
             account_id="9055507554",
             creation_blueprint_id="google-ads.app",
-            creation_blueprint_version="1.0.0",
+            creation_blueprint_version="1.1.0",
             creation_template_id=template["template_id"],
         )
 
@@ -1898,6 +2007,297 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
         }
     finally:
         runtime.close(wait=True)
+
+
+def test_google_builtin_templates_only_need_name_dates_and_daily_budget():
+    from agents.applications.advertising.persistence.store import AdAgentStore
+
+    account_id = "9055507554"
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {"google-ads": [account_id]}
+    runtime.register_tool_source(create_google_tool_source())
+    expected_blueprints = {
+        "google-ads.performance_max",
+        "google-ads.shopping",
+        "google-ads.app",
+    }
+    user_fields = {
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget",
+    }
+    required_before_submit = {
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget",
+    }
+
+    try:
+        templates = runtime.list_creation_templates(
+            provider="google-ads",
+            account_id=account_id,
+            user_id="google-template-acceptance",
+            tenant_id="default",
+            account_scope={"google-ads": [account_id]},
+        )
+        selected = {
+            item["blueprint_id"]: item
+            for item in templates
+            if item["blueprint_id"] in expected_blueprints
+        }
+        assert set(selected) == expected_blueprints
+
+        for index, blueprint_id in enumerate(sorted(expected_blueprints)):
+            template = selected[blueprint_id]
+            intent = ParsedIntent(
+                "create_campaign",
+                f"创建 Google {blueprint_id}",
+                ["google-ads"],
+                scoped_parameters={"google-ads": {"account_id": account_id}},
+            )
+            draft = runtime.apply_creation_template_to_intent(
+                intent,
+                template["template_id"],
+                account_id=account_id,
+                account_scope={"google-ads": [account_id]},
+                tenant_id="default",
+                user_id="google-template-acceptance",
+            )
+            card = runtime.build_creation_ui(
+                draft,
+                account_scope={"google-ads": [account_id]},
+                tenant_id="default",
+                user_id="google-template-acceptance",
+                account_id=account_id,
+            )["cards"][0]
+
+            assert card["blueprint_id"] == blueprint_id
+            assert set(card["missing_fields"]) == required_before_submit, (
+                blueprint_id,
+                card["missing_fields"],
+            )
+            assert card["ready"] is False
+            assert not card["invalid_fields"], (
+                blueprint_id,
+                card["invalid_fields"],
+            )
+            campaign_name = next(
+                field for field in card["fields"]
+                if field["path"] == "campaign.campaign_name"
+            )
+            assert campaign_name["value"]
+            assert campaign_name["path"] in user_fields
+
+            completed_intent = ParsedIntent(
+                "create_campaign",
+                f"创建 Google {blueprint_id}",
+                ["google-ads"],
+                scoped_parameters={
+                    "google-ads": {
+                        "account_id": account_id,
+                        "campaign.campaign_name": f"Template acceptance {index}",
+                        "campaign.start_date": "2030-01-01",
+                        "campaign.end_date": "2030-01-07",
+                        "campaign.daily_budget": 20,
+                    },
+                },
+            )
+            completed = runtime.apply_creation_template_to_intent(
+                completed_intent,
+                template["template_id"],
+                account_id=account_id,
+                account_scope={"google-ads": [account_id]},
+                tenant_id="default",
+                user_id="google-template-acceptance",
+            )
+            ready_card = runtime.build_creation_ui(
+                completed,
+                account_scope={"google-ads": [account_id]},
+                tenant_id="default",
+                user_id="google-template-acceptance",
+                account_id=account_id,
+            )["cards"][0]
+
+            assert ready_card["missing_fields"] == [], (
+                blueprint_id,
+                ready_card["missing_fields"],
+            )
+            assert ready_card["invalid_fields"] == [], (
+                blueprint_id,
+                ready_card["invalid_fields"],
+            )
+            assert ready_card["ready"] is True, blueprint_id
+    finally:
+        runtime.close(wait=True)
+
+
+def test_google_template_values_materialize_for_every_declared_creation_tool():
+    from agents.applications.advertising.persistence.store import AdAgentStore
+
+    account_id = "9055507554"
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {"google-ads": [account_id]}
+    runtime.register_tool_source(create_google_tool_source())
+    expected_tools = {
+        "google-ads.performance_max": {
+            "google_create_campaign": {
+                "campaign_name", "start_date", "end_date", "daily_budget",
+                "status", "shopping_setting",
+            },
+            "google_create_asset_group": {
+                "name", "asset_group_type", "final_urls", "headlines",
+                "long_headlines", "descriptions", "images",
+                "square_marketing_images", "logos", "business_names", "status",
+            },
+            "google_create_asset_group_listing_group_filter": {
+                "filter_type", "listing_source",
+            },
+        },
+        "google-ads.shopping": {
+            "google_create_campaign": {
+                "campaign_name", "start_date", "end_date", "daily_budget",
+                "status", "shopping_setting",
+            },
+            "google_create_ad_group": {"name", "type", "status"},
+            "google_create_product_group": {
+                "product_group_type", "partition_type", "cpc_bid_micros",
+                "status",
+            },
+            "google_create_shopping_product_ad": {"name", "status"},
+        },
+        "google-ads.app": {
+            "google_create_campaign": {
+                "campaign_name", "start_date", "end_date", "daily_budget",
+                "status", "app_campaign_setting", "selective_optimization",
+            },
+            "google_create_app_ad_group": {"name", "status"},
+            "google_create_app_ad": {
+                "name", "headlines", "descriptions", "images", "status",
+            },
+        },
+    }
+
+    try:
+        templates = runtime.list_creation_templates(
+            provider="google-ads",
+            account_id=account_id,
+            user_id="google-template-payloads",
+            tenant_id="default",
+            account_scope={"google-ads": [account_id]},
+        )
+        for index, (blueprint_id, tool_fields) in enumerate(expected_tools.items()):
+            template = next(
+                item for item in templates
+                if item["blueprint_id"] == blueprint_id
+            )
+            intent = ParsedIntent(
+                "create_campaign",
+                f"使用 Google 模板 {blueprint_id} 创建",
+                ["google-ads"],
+                scoped_parameters={"google-ads": {
+                    "campaign.campaign_name": f"Payload acceptance {index}",
+                    "campaign.start_date": "2030-01-01",
+                    "campaign.end_date": "2030-01-07",
+                    "campaign.daily_budget": 20,
+                }},
+            )
+            intent = runtime.apply_creation_template_to_intent(
+                intent,
+                template["template_id"],
+                account_id=account_id,
+                account_scope={"google-ads": [account_id]},
+                tenant_id="default",
+                user_id="google-template-payloads",
+            )
+            blueprint = runtime.creation_blueprints.get(blueprint_id)
+            assert blueprint is not None
+            tool_plan, error = runtime._creation_blueprint_tool_plan(
+                blueprint_id, blueprint.version, intent,
+            )
+            assert error is None
+            registered = {
+                definition.name: definition
+                for definition in tool_plan["google-ads"]
+            }
+            assert set(registered) == set(tool_fields)
+
+            for tool_name, required_fields in tool_fields.items():
+                payload = runtime.input_builder.build(
+                    registered[tool_name],
+                    intent,
+                    "google-ads",
+                )
+                assert required_fields <= set(payload), (
+                    blueprint_id, tool_name, required_fields - set(payload),
+                )
+                assert all(
+                    payload[field] not in (None, "", [])
+                    for field in required_fields
+                ), (blueprint_id, tool_name, payload)
+    finally:
+        runtime.close(wait=True)
+
+
+def test_google_template_schema_changes_publish_contract_version_1_5():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    runtime.register_tool_source(create_google_tool_source())
+
+    try:
+        for tool_name in (
+            "google_create_campaign",
+            "google_create_asset_group",
+            "google_create_app_ad",
+            "google_create_ad_group",
+            "google_create_product_group",
+            "google_create_shopping_product_ad",
+        ):
+            definition, _handler = runtime.registry.get(tool_name)
+            assert definition.contract_version == "1.5.0"
+    finally:
+        runtime.close(wait=True)
+
+
+def test_google_templates_disclose_live_verified_device_targeting_scope():
+    from agents.applications.advertising.creation.templates import (
+        load_builtin_template_definitions,
+    )
+
+    expected_devices = {
+        "google.test.performance-max": {
+            "DESKTOP", "MOBILE", "TABLET", "CONNECTED_TV",
+        },
+        "google.test.shopping": {"DESKTOP", "MOBILE", "TABLET"},
+        "google.test.app": {"DESKTOP", "MOBILE", "TABLET"},
+    }
+    templates = {
+        item["key"]: item
+        for item in load_builtin_template_definitions()
+        if item["key"] in expected_devices
+    }
+
+    assert set(templates) == set(expected_devices)
+    for key, devices in expected_devices.items():
+        description = templates[key]["description"]
+        verification = templates[key]["verified_scope"]
+        assert "设备定向" in description
+        assert "未发现" in description and "地域" in description
+        assert all(device in verification for device in devices)
+        assert "语言" in verification and "受众" in verification
 
 
 def test_all_builtin_test_account_templates_seed_their_declared_creation_cards():

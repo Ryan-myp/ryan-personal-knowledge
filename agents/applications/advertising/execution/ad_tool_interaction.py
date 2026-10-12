@@ -123,8 +123,10 @@ class AdvertisingToolInteractionProvider:
                 if isinstance(tool_values, Mapping):
                     values.update(tool_values)
                 break
-        values.update(arguments)
         blueprint_id = metadata["creation_blueprint_id"]
+        template_id = metadata["creation_template_id"]
+        if not template_id:
+            values.update(arguments)
         if blueprint_id:
             blueprint = self.runtime.creation_blueprints.get(
                 blueprint_id,
@@ -145,7 +147,6 @@ class AdvertisingToolInteractionProvider:
             scoped_parameters={namespace: values},
             metadata=metadata,
         )
-        template_id = metadata["creation_template_id"]
         if template_id:
             principal = getattr(request, "principal", None)
             intent = self.runtime.apply_creation_template_to_intent(
@@ -243,7 +244,17 @@ class AdvertisingToolInteractionProvider:
             for name, value in (resolved or {}).items()
             if name in properties and value is not None and value != ""
         }
-        effective.update(original)
+        parent_field = str(
+            getattr(definition, "parent_resource_id_field", "") or ""
+        )
+        if not parent_field:
+            resolver = getattr(
+                self.runtime, "_parent_resource_id_field_for_tool", None,
+            )
+            if callable(resolver):
+                parent_field = str(resolver(definition) or "")
+        if parent_field in properties and parent_field in original:
+            effective.setdefault(parent_field, original[parent_field])
         return effective
 
     def _creation_ui(

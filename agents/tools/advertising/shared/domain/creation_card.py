@@ -501,6 +501,7 @@ def _lookup_metadata(
         ("lookup_dependencies", "dependencies"),
         ("lookup_query_field", "query_field"),
         ("lookup_defaults", "lookup_defaults"),
+        ("lookup_asset_types", "asset_types"),
     ):
         value = schema.get(source_key)
         if value is None and isinstance(lookup, Mapping):
@@ -1077,7 +1078,8 @@ class CreationCardBuilder:
                         if len(required_conditions) == 1
                         else {"any": required_conditions}
                     )
-                    field["visible_when"] = _copy_json(required_when)
+                    if not field.get("visible_when"):
+                        field["visible_when"] = _copy_json(required_when)
                     field["required_when"] = _copy_json(required_when)
                     field["options_from"] = sorted({
                         path for condition in required_conditions
@@ -1193,7 +1195,8 @@ class CreationCardBuilder:
                         if len(required_conditions) == 1
                         else {"any": required_conditions}
                     )
-                    field["visible_when"] = _copy_json(required_when)
+                    if not field.get("visible_when"):
+                        field["visible_when"] = _copy_json(required_when)
                     field["required_when"] = _copy_json(required_when)
                     field["options_from"] = sorted({
                         path for condition in required_conditions

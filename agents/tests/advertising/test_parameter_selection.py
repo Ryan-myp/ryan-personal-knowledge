@@ -81,6 +81,46 @@ def test_lookup_options_are_signed_for_target_and_account_scope():
     assert signer.issued[0]["tool_name"] == "google_create_ad"
 
 
+def test_google_asset_lookup_excludes_resources_with_the_wrong_asset_type():
+    signer = _Signer()
+    source = _tool("google_list_assets")
+    target = _tool(
+        "google_create_ad",
+        properties={"images": {
+            "type": "array",
+            "lookup_tool": "google_list_assets",
+            "lookup_asset_types": ["IMAGE"],
+            "items": {"type": ["string", "object"]},
+        }},
+        action="create",
+    )
+    services = SimpleNamespace(
+        registry=SimpleNamespace(list_all=lambda: [source, target]),
+        selection_signer=signer,
+    )
+    selection = ParameterSelectionService(
+        services, scope_value_resolver=lambda context: context.account_id,
+    )
+    result = ToolResult.ok({
+        "assets": [
+            {"id": "text-1", "name": "Not an image", "type": "TEXT"},
+            {"id": "image-1", "name": "Approved image", "type": "IMAGE"},
+        ],
+        "data_status": "live",
+    })
+
+    decorated = selection.decorate_lookup_result(
+        source, result, _context(), "google-ads",
+    )
+
+    assert decorated.data["parameter_selections"][0]["options"] == [{
+        "value": "image-1",
+        "label": "Approved image",
+        "selection_token": "selection-token",
+    }]
+    assert [item["value"] for item in signer.issued] == ["image-1"]
+
+
 def test_valid_selection_token_resolves_declared_tool_input():
     signer = _Signer()
     services = SimpleNamespace(

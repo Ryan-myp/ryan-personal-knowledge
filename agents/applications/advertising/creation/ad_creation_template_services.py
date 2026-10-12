@@ -13,6 +13,50 @@ from agents.applications.advertising.creation.templates import (
 
 
 class AdCreationTemplateServicesMixin:
+    @staticmethod
+    def _creation_path_value(
+        source: Any, path: str,
+    ) -> tuple[bool, Any]:
+        if not isinstance(source, Mapping):
+            return False, None
+        if path in source:
+            return True, source[path]
+        value = source
+        for part in path.split("."):
+            if not isinstance(value, Mapping) or part not in value:
+                return False, None
+            value = value[part]
+        return True, value
+
+    @staticmethod
+    def _set_creation_path(
+        target: dict[str, Any], path: str, value: Any,
+    ) -> None:
+        parts = [part for part in path.split(".") if part]
+        if not parts:
+            return
+        current = target
+        for part in parts[:-1]:
+            child = current.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                current[part] = child
+            current = child
+        current[parts[-1]] = copy.deepcopy(value)
+
+    @classmethod
+    def _deep_merge_creation_values(
+        cls, base: Mapping[str, Any], overrides: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        merged = copy.deepcopy(dict(base))
+        for key, value in overrides.items():
+            existing = merged.get(key)
+            if isinstance(existing, Mapping) and isinstance(value, Mapping):
+                merged[str(key)] = cls._deep_merge_creation_values(existing, value)
+            else:
+                merged[str(key)] = copy.deepcopy(value)
+        return merged
+
     def _creation_template_manager_for_request(
         self, account_scope: Any = None,
     ) -> Any:
@@ -94,37 +138,66 @@ class AdCreationTemplateServicesMixin:
             str(template.get("blueprint_id") or ""),
             str(template.get("blueprint_version") or "") or None,
         )
-        for field in getattr(blueprint, "fields", ()) if blueprint else ():
+        blueprint_fields = [
+            field for field in (getattr(blueprint, "fields", ()) if blueprint else ())
+            if isinstance(field, Mapping)
+            and "." in str(field.get("tool_ref") or "")
+        ]
+        leaf_counts: dict[str, int] = {}
+        for field in blueprint_fields:
+            _tool_name, schema_path = str(field["tool_ref"]).split(".", 1)
+            leaf = schema_path.rsplit(".", 1)[-1]
+            leaf_counts[leaf] = leaf_counts.get(leaf, 0) + 1
+
+        for field in blueprint_fields:
             if not isinstance(field, Mapping):
                 continue
             path = str(field.get("path") or "")
             if path not in template_values:
                 continue
             tool_ref = str(field.get("tool_ref") or "")
-            if "." not in tool_ref:
-                continue
             tool_name, schema_path = tool_ref.split(".", 1)
-            parts = [item for item in schema_path.split(".") if item]
-            target = normalized_values
-            for part in parts[:-1]:
-                child = target.get(part)
-                if not isinstance(child, Mapping):
-                    child = {}
-                    target[part] = child
-                target = child
-            if parts:
-                target[parts[-1]] = copy.deepcopy(template_values[path])
             scoped_tool = normalized_values.setdefault(tool_name, {})
-            target = scoped_tool
-            for part in parts[:-1]:
-                child = target.get(part)
-                if not isinstance(child, Mapping):
-                    child = {}
-                    target[part] = child
-                target = child
-            if parts:
-                target[parts[-1]] = copy.deepcopy(template_values[path])
-        scoped[provider] = {**normalized_values, **existing}
+            self._set_creation_path(normalized_values, path, template_values[path])
+            self._set_creation_path(scoped_tool, schema_path, template_values[path])
+
+        for field in blueprint_fields:
+            path = str(field.get("path") or "")
+            tool_name, schema_path = str(field["tool_ref"]).split(".", 1)
+            resource, separator, resource_path = path.partition(".")
+            tool_found, tool_specific = self._creation_path_value(
+                existing.get(tool_name), schema_path,
+            )
+            resource_found, resource_specific = self._creation_path_value(
+                existing.get(resource), resource_path if separator else "",
+            )
+            flat_found, flat_path = self._creation_path_value(existing, path)
+            leaf = schema_path.rsplit(".", 1)[-1]
+            leaf_found, direct_leaf = self._creation_path_value(existing, leaf)
+            candidates = (
+                (tool_found, tool_specific),
+                (resource_found, resource_specific),
+                (flat_found, flat_path),
+                (leaf_found and leaf_counts.get(leaf) == 1, direct_leaf),
+            )
+            found, value = next(
+                (
+                    (is_found, candidate)
+                    for is_found, candidate in candidates
+                    if is_found and candidate not in (None, "")
+                ),
+                (False, None),
+            )
+            if not found:
+                continue
+            normalized_values[path] = copy.deepcopy(value)
+            self._set_creation_path(normalized_values, path, value)
+            scoped_tool = normalized_values.setdefault(tool_name, {})
+            self._set_creation_path(scoped_tool, schema_path, value)
+
+        scoped[provider] = self._deep_merge_creation_values(
+            normalized_values, existing,
+        )
         metadata = dict(getattr(intent, "metadata", {}) or {})
         metadata.update({
             "creation_template_id": str(template.get("template_id") or template_id),

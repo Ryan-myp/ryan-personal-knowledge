@@ -634,6 +634,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             SELECT campaign.id, campaign.name, campaign.status,
                    campaign.advertising_channel_type, campaign.advertising_channel_sub_type,
                    campaign.bidding_strategy, campaign.bidding_strategy_type,
+                   campaign.start_date_time, campaign.end_date_time,
                    campaign.campaign_budget,
                    campaign.contains_eu_political_advertising,
                    campaign.brand_guidelines_enabled,
@@ -653,6 +654,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                    campaign.app_campaign_setting.app_id,
                    campaign.app_campaign_setting.app_store,
                    campaign.app_campaign_setting.bidding_strategy_goal_type,
+                   campaign.selective_optimization.conversion_actions,
                    campaign.shopping_setting.merchant_id,
                    campaign.shopping_setting.feed_label,
                    campaign.shopping_setting.campaign_priority,
@@ -683,6 +685,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             goal_setting = camp.get("optimizationGoalSetting", {}) or {}
             network_settings = camp.get("networkSettings", {}) or {}
             shopping_setting = camp.get("shoppingSetting", {}) or {}
+            selective_optimization = camp.get("selectiveOptimization", {}) or {}
             return {
                 'id': camp.get('id'),
                 'resource_name': camp.get('resourceName'),
@@ -692,6 +695,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'advertising_channel_sub_type': camp.get('advertisingChannelSubType'),
                 'bidding_strategy': camp.get('biddingStrategy'),
                 'bidding_strategy_type': camp.get('biddingStrategyType'),
+                'start_date_time': camp.get('startDateTime'),
+                'end_date_time': camp.get('endDateTime'),
                 'campaign_budget_resource_name': budget_resource_name,
                 'campaign_budget_id': (
                     str(budget_resource_name).rsplit("/", 1)[-1]
@@ -739,6 +744,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
                         ("appId", "app_id"), ("appStore", "app_store"),
                         ("biddingStrategyGoalType", "bidding_strategy_goal_type"),
                     ) if source in camp.get("appCampaignSetting", {})
+                },
+                'selective_optimization': {
+                    "conversion_actions": list(
+                        selective_optimization.get("conversionActions") or []
+                    )
                 },
                 'shopping_setting': {
                     target: shopping_setting.get(source)
@@ -2212,12 +2222,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
         resource_name = self._mutation_resource_name(response)
         if not resource_name:
             raise APIError(f"Product group mutate returned no resource name: {response}")
+        resource_id = str(resource_name).rsplit("/", 1)[-1].rsplit("~", 1)[-1]
         # ``AdGroupCriterion`` resource names use the composite
         # ``ad_group_id~criterion_id`` key.  The Tool contract exposes the
         # criterion ID separately because the parent ad group is already an
         # explicit input to get/update/delete, matching keyword lifecycle
         # methods and the GAQL ``criterion_id`` field.
-        return str(resource_name).rsplit("/", 1)[-1].rsplit("~", 1)[-1]
+        return resource_id
 
     def _product_group_query(self, where: str = "") -> str:
         """Return the GAQL projection for Standard Shopping listing groups."""
@@ -3363,7 +3374,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
             ) or [],
         }
 
-    def list_assets(self, customer_id: str = None, page_size: int = 100) -> list[dict]:
+    def list_assets(
+        self,
+        customer_id: str = None,
+        page_size: int = 100,
+        asset_id: str = None,
+    ) -> list[dict]:
         """List reusable customer-level Assets through GAQL."""
         scoped = self.for_customer(customer_id) if customer_id else self
         query = (
@@ -3372,6 +3388,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "asset.youtube_video_asset.youtube_video_id, asset.final_urls, "
             "asset.final_mobile_urls FROM asset"
         )
+        if asset_id not in (None, ""):
+            numeric_asset_id = self._numeric_id(asset_id, "asset_id")
+            query += f" WHERE asset.id = {numeric_asset_id}"
         return [
             scoped._normalize_asset(row)
             for row in scoped._search_all(query, page_size=page_size)
@@ -3801,6 +3820,20 @@ class GoogleAdsAPIClient(BasePlatformClient):
         resource_name = f"customers/{self.customer_id}/campaignBudgets/{budget_id}"
         self._mutate("campaignBudgets", {"remove": resource_name})
         return {"success": True, "budget_id": budget_id}
+
+    @staticmethod
+    def _parse_campaign_schedule_date(value: Optional[str], field_name: str):
+        if value in (None, ""):
+            return None
+        if not isinstance(value, str):
+            raise ValueError(f"{field_name} must use YYYY-MM-DD")
+        try:
+            parsed = datetime.strptime(value, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must use YYYY-MM-DD") from exc
+        if parsed.isoformat() != value:
+            raise ValueError(f"{field_name} must use YYYY-MM-DD")
+        return parsed
     
     def create_campaign(
         self,
@@ -3819,6 +3852,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         live: bool = False,
         networks: list[str] = None,
         app_campaign_setting: dict = None,
+        selective_optimization: dict = None,
         advertising_channel_sub_type: str = None,
         shopping_setting: dict = None,
         campaign_goal_setting: dict = None,
@@ -3848,6 +3882,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("daily_budget must be a positive number") from exc
         if daily_budget <= 0:
             raise ValueError("daily_budget must be greater than 0")
+        start_day = self._parse_campaign_schedule_date(start_date, "start_date")
+        end_day = self._parse_campaign_schedule_date(end_date, "end_date")
+        if start_day and end_day and end_day < start_day:
+            raise ValueError("end_date must not precede start_date")
         advertising_channel_type = self.CHANNEL_TYPE_ALIASES.get(
             str(advertising_channel_type or "").upper(),
             str(advertising_channel_type or "").upper(),
@@ -4021,9 +4059,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             campaign_data['finalUrlSuffix'] = final_url_suffix
 
         if start_date:
-            campaign_data['startDate'] = start_date
+            campaign_data['startDateTime'] = f"{start_day.isoformat()} 00:00:00"
         if end_date:
-            campaign_data['endDate'] = end_date
+            campaign_data['endDateTime'] = f"{end_day.isoformat()} 23:59:59"
         if network_setting is not None:
             if not isinstance(network_setting, dict):
                 raise ValueError("network_setting must be an object")
@@ -4062,6 +4100,69 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 key: value for key, value in app_campaign_setting.items()
                 if key in allowed_app_fields and value is not None
             })
+
+        app_goal_type = str(
+            (app_campaign_setting or {}).get("bidding_strategy_goal_type") or ""
+        ).upper()
+        conversion_goals = {
+            "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_INSTALL_COST",
+            "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
+            "OPTIMIZE_IN_APP_CONVERSIONS_WITHOUT_TARGET_CPA",
+            "OPTIMIZE_RETURN_ON_ADVERTISING_SPEND",
+            "OPTIMIZE_TOTAL_VALUE_WITHOUT_TARGET_ROAS",
+        }
+        requires_conversion_action = (
+            app_goal_type in conversion_goals
+            or str(advertising_channel_sub_type or "").upper()
+            == "APP_CAMPAIGN_FOR_ENGAGEMENT"
+        )
+        if requires_conversion_action and selective_optimization is None:
+            raise ValueError(
+                "App conversion goals require selective_optimization.conversion_actions"
+            )
+        if selective_optimization is not None:
+            if advertising_channel_type != "MULTI_CHANNEL":
+                raise ValueError(
+                    "selective_optimization is only supported for App campaigns"
+                )
+            if not isinstance(selective_optimization, dict):
+                raise ValueError("selective_optimization must be an object")
+            unknown_fields = set(selective_optimization) - {"conversion_actions"}
+            if unknown_fields:
+                raise ValueError(
+                    "Unsupported selective_optimization fields: "
+                    + ", ".join(sorted(unknown_fields))
+                )
+            conversion_actions = selective_optimization.get("conversion_actions")
+            if (
+                not isinstance(conversion_actions, list)
+                or not conversion_actions
+            ):
+                raise ValueError(
+                    "selective_optimization.conversion_actions must be a non-empty list"
+                )
+            customer_id = self._numeric_id(customer, "customer_id")
+            resource_prefix = (
+                f"customers/{customer_id}/conversionActions/"
+            )
+            normalized_actions = []
+            for action in conversion_actions:
+                resource_name = str(action or "").strip()
+                if not resource_name.startswith(resource_prefix):
+                    raise ValueError(
+                        "selective_optimization conversion actions must reference "
+                        "the current customer"
+                    )
+                action_id = resource_name[len(resource_prefix):]
+                self._numeric_id(action_id, "conversion_action_id")
+                normalized_actions.append(resource_name)
+            if len(set(normalized_actions)) != len(normalized_actions):
+                raise ValueError(
+                    "selective_optimization conversion actions must be unique"
+                )
+            campaign_data["selectiveOptimization"] = {
+                "conversionActions": normalized_actions,
+            }
 
         # Retail Performance Max campaigns can also be bound to Merchant
         # Center.  Listing-group filters are only meaningful when this
