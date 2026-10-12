@@ -68,6 +68,72 @@ from .ad_application_components import (
 logger = logging.getLogger(__name__)
 
 
+def _select_blueprint_tools(
+    runtime: Any,
+    context: Mapping[str, Any],
+    tools: Any,
+) -> Optional[list[Any]]:
+    blueprint_id = str(context.get("creation_blueprint_id") or "").strip()
+    if not blueprint_id:
+        return None
+    version = context.get("creation_blueprint_version") or None
+    blueprint = runtime.creation_blueprints.get(blueprint_id, version)
+    if blueprint is None and not context.get("creation_template_id"):
+        blueprint = runtime.creation_blueprints.get(blueprint_id)
+    if blueprint is None:
+        return []
+
+    available = {
+        str(getattr(tool, "name", "") or ""): tool
+        for tool in tools
+        if getattr(tool, "name", None)
+    }
+    selected = []
+    for name in blueprint.tools:
+        tool = available.get(str(name))
+        if (
+            tool is None
+            or str(getattr(tool, "action", "")).lower() != "create"
+            or runtime._canonical_platform(
+                str(getattr(tool, "namespace", "") or "")
+            ) != runtime._canonical_platform(blueprint.provider)
+        ):
+            return []
+        selected.append(tool)
+    return selected
+
+
+def _creation_blueprint_request_error(
+    runtime: Any,
+    context: Mapping[str, Any],
+) -> Optional[str]:
+    blueprint_id = str(context.get("creation_blueprint_id") or "").strip()
+    if not blueprint_id:
+        return None
+    version = context.get("creation_blueprint_version") or None
+    blueprint = runtime.creation_blueprints.get(blueprint_id, version)
+    if blueprint is None and not context.get("creation_template_id"):
+        blueprint = runtime.creation_blueprints.get(blueprint_id)
+    if blueprint is None:
+        return (
+            None if context.get("creation_template_id")
+            else "广告创建蓝图不存在或版本不可用，请重新选择创建类型。"
+        )
+    for name in blueprint.tools:
+        try:
+            definition, _handler = runtime.registry.get(str(name))
+        except (KeyError, LookupError):
+            return "广告创建蓝图依赖的 Tool 暂不可用，请稍后重试。"
+        if (
+            str(getattr(definition, "action", "")).lower() != "create"
+            or runtime._canonical_platform(
+                str(getattr(definition, "namespace", "") or "")
+            ) != runtime._canonical_platform(blueprint.provider)
+        ):
+            return "广告创建蓝图的 Tool 契约与当前注册能力不一致。"
+    return None
+
+
 class AdApplicationAssembly:
     """Build the advertising application graph over generic runtime ports."""
 
@@ -350,11 +416,18 @@ class AdApplicationAssembly:
         selector: ToolSelector,
     ) -> Callable[[TurnRequest, Any], list[Any]]:
         def select_tools(request: TurnRequest, tools: Any) -> list[Any]:
-            selected = selector.select_relevant(
-                request.user_input,
-                tools,
-                limit=max(1, min(int(runtime.max_tool_calls), 64)),
+            request_context = (
+                request.context if isinstance(request.context, Mapping) else {}
             )
+            selected = _select_blueprint_tools(
+                runtime, request_context, tools,
+            )
+            if selected is None:
+                selected = selector.select_relevant(
+                    request.user_input,
+                    tools,
+                    limit=max(1, min(int(runtime.max_tool_calls), 64)),
+                )
             if isinstance(request.context, dict):
                 request.context["_agent_tool_namespaces"] = list(dict.fromkeys(
                     str(getattr(item, "namespace", "") or "")
@@ -371,6 +444,9 @@ class AdApplicationAssembly:
     ) -> Callable[[TurnRequest], str | None]:
         def validate_request(request: TurnRequest) -> str | None:
             context = request.context if isinstance(request.context, Mapping) else {}
+            blueprint_error = _creation_blueprint_request_error(runtime, context)
+            if blueprint_error:
+                return blueprint_error
             platform_params = context.get("platform_params")
             limit_error = runtime._validate_request_limits(
                 request.user_input, platform_params,

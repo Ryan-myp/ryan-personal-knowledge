@@ -68,6 +68,9 @@ class AdvertisingRunService:
             tool_allowlist=(
                 tuple(tool_allowlist) if tool_allowlist is not None else None
             ),
+            initial_tool_choice=(
+                "required" if creation_blueprint_id else None
+            ),
             task_id=task_id,
         ))
         application_state = dict(getattr(result, "application_data", None) or {})
@@ -119,6 +122,28 @@ class AdvertisingRunService:
         for key in ("resource_results", "clarification", "creation_validation"):
             if key in completed:
                 payload.setdefault(key, completed[key])
+        if creation_template_id:
+            ui = payload.get("ui")
+            cards = ui.get("cards") if isinstance(ui, Mapping) else None
+            if isinstance(cards, list):
+                for card in cards:
+                    if (
+                        not isinstance(card, dict)
+                        or card.get("type") != "ad_creation_form"
+                    ):
+                        continue
+                    if (
+                        creation_blueprint_id
+                        and card.get("blueprint_id") != creation_blueprint_id
+                    ):
+                        continue
+                    if (
+                        account_id
+                        and card.get("account_id")
+                        and str(card["account_id"]) != str(account_id)
+                    ):
+                        continue
+                    card.setdefault("template_id", str(creation_template_id))
         if completed.get("error_type"):
             payload.setdefault("run_metadata", {
                 "error_type": str(completed["error_type"]),

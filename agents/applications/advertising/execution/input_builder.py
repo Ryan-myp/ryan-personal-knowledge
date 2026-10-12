@@ -147,8 +147,22 @@ class ToolInputBuilder:
         properties = getattr(tool_def.input_schema, "properties", {}) or {}
         specific_params = platform_params.get(tool_def.name, {})
         unknown_specific_params: list[str] = []
-        if isinstance(specific_params, dict):
+        metadata = getattr(intent, "metadata", {}) or {}
+        has_creation_scope = isinstance(metadata, dict) and bool(
+            metadata.get("creation_blueprint_id")
+            or metadata.get("creation_template_id")
+        )
+        if has_creation_scope:
+            # Blueprint fields belong to their declared Tool; provider-root
+            # fallbacks can otherwise leak campaign values into child Tools.
+            platform_params = (
+                copy.deepcopy(specific_params)
+                if isinstance(specific_params, dict) else {}
+            )
+        elif isinstance(specific_params, dict):
             platform_params = {**platform_params, **specific_params}
+
+        if isinstance(specific_params, dict):
             accepted = set(tool_def.input_schema.properties)
             accepted.update(self.scope_field_names + ("selection_tokens",))
             for field_name, schema in tool_def.input_schema.properties.items():

@@ -1014,6 +1014,22 @@ def test_creation_cards_are_declared_as_a_right_side_workbench_contract():
     assert "message-card-launcher" in html
 
 
+def test_template_creation_context_survives_chat_followup_and_confirmation():
+    static = api_server.STATIC_PATH / "js"
+    blueprint_editor = (static / "chat-blueprint-editor.js").read_text(
+        encoding="utf-8",
+    )
+    creation = (static / "chat-creation.js").read_text(encoding="utf-8")
+    messages = (static / "chat-messages.js").read_text(encoding="utf-8")
+    requests = (static / "chat-requests.js").read_text(encoding="utf-8")
+
+    assert "creation_template_id: blueprintState.templates.find(" in blueprint_editor
+    assert "pendingBlueprintRequest = creationContextForCard(card)" in creation
+    assert "creation_template_id: card.template_id || null" in creation
+    assert "creation_template_id: requestParams.creation_template_id || null" in requests
+    assert "creation_template_id: originalRequest?.creation_template_id || null" in messages
+
+
 def test_history_cards_restore_as_launchers_without_opening_workbench():
     html = _chat_page_javascript()
     assert "function renderUiCards(ui, options = {})" in html
@@ -1280,11 +1296,13 @@ def test_chat_stream_forwards_creation_blueprint_context(fake_server):
                 "account_id": "test-account",
                 "creation_blueprint_id": "google-ads.search",
                 "creation_blueprint_version": "1.0.0",
+                "creation_template_id": "google-test-search",
             },
         )
     assert response.status_code == 200
     assert fake_server.calls[-1]["creation_blueprint_id"] == "google-ads.search"
     assert fake_server.calls[-1]["creation_blueprint_version"] == "1.0.0"
+    assert fake_server.calls[-1]["creation_template_id"] == "google-test-search"
 
 
 def test_chat_stream_exposes_runtime_error_event(fake_server):

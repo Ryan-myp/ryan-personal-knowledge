@@ -87,6 +87,7 @@ def test_llm_client_implements_generic_harness_model_tool_call_contract():
         ),
     )
     request = completions.requests[0]
+    assert request["tool_choice"] == "auto"
     assert request["messages"] == [
         {"role": "system", "content": "Use declared tools only."},
         {"role": "user", "content": "Find record r-17."},
@@ -104,6 +105,21 @@ def test_llm_client_implements_generic_harness_model_tool_call_contract():
     }
     assert result.usage["input_tokens"] == 11
     assert result.usage["output_tokens"] == 7
+
+
+def test_llm_client_honors_required_initial_tool_choice():
+    client, completions = _client(SimpleNamespace(content="", tool_calls=[]))
+
+    client.complete(
+        [AgentMessage.user("Create from the selected blueprint.")],
+        [_tool()],
+        TurnRequest(
+            user_input="Create from the selected blueprint.",
+            initial_tool_choice="required",
+        ),
+    )
+
+    assert completions.requests[0]["tool_choice"] == "required"
 
 
 def test_llm_client_round_trips_assistant_tool_call_and_tool_result_messages():

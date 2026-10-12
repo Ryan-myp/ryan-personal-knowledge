@@ -1744,6 +1744,213 @@ def test_template_selection_is_applied_to_creation_draft_without_execution():
     assert selected_card["account_id"] == "7397068114548195329"
 
 
+def test_google_app_test_template_prefills_required_campaign_configuration():
+    from agents.applications.advertising.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "google-ads": ["9055507554"],
+    }
+    runtime.register_tool_source(create_google_tool_source())
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.0.0")
+
+    class SelectedBlueprintModel:
+        def __init__(self):
+            self.initial_tool_choice = None
+            self.tool_names = ()
+            self.prompt = ""
+
+        def complete(self, messages, tools, request):
+            self.initial_tool_choice = getattr(
+                request, "initial_tool_choice", None,
+            )
+            self.tool_names = tuple(item.name for item in tools)
+            self.prompt = "\n".join(
+                str(item.content or "")
+                for item in messages
+                if getattr(item, "role", "") == "system"
+            )
+            return ModelTurn(
+                tool_calls=(call("google_create_campaign", {}),),
+            )
+
+    model = SelectedBlueprintModel()
+    runtime.platform_application.agent.model = model
+    template = next(
+        item for item in runtime.list_creation_templates(
+            provider="google-ads",
+            account_id="9055507554",
+            user_id="template-user",
+            tenant_id="default",
+        )
+        if item["blueprint_id"] == "google-ads.app"
+    )
+
+    try:
+        result = runtime.run(
+            "使用 Google App 测试账号模板创建广告",
+            session_id="google-app-template-selection",
+            user_id="template-user",
+            account_id="9055507554",
+            creation_blueprint_id="google-ads.app",
+            creation_blueprint_version="1.0.0",
+            creation_template_id=template["template_id"],
+        )
+
+        card = result["ui"]["cards"][0]
+        values = {
+            field["path"]: field.get("value")
+            for field in card["fields"]
+                if field.get("path")
+        }
+        assert result["results"] == []
+        assert card["type"] == "ad_creation_form"
+        assert card["template_id"] == template["template_id"]
+        assert card["account_id"] == "9055507554"
+        assert model.initial_tool_choice == "required"
+        assert model.tool_names == tuple(blueprint.tools)
+        assert template["template_id"] in model.prompt
+        assert values["campaign.advertising_channel_type"] == "MULTI_CHANNEL"
+        assert values["campaign.advertising_channel_sub_type"] == "APP_CAMPAIGN"
+        assert values["campaign.app_campaign_setting"] == {
+            "app_id": "959841107",
+            "app_store": "APPLE_APP_STORE",
+            "bidding_strategy_goal_type": (
+                "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
+            ),
+        }
+    finally:
+        runtime.close(wait=True)
+
+
+def test_all_builtin_test_account_templates_seed_their_declared_creation_cards():
+    from agents.applications.advertising.creation.templates import (
+        load_builtin_template_definitions,
+    )
+    from agents.applications.advertising.persistence.store import AdAgentStore
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {
+        "google-ads": ["9055507554"],
+        "meta": ["2806375919473667"],
+        "tiktok": ["7397068114548195329"],
+    }
+    for source in (
+        create_google_tool_source(),
+        create_meta_tool_source(),
+        create_tiktok_tool_source(),
+    ):
+        runtime.register_tool_source(source)
+
+    class TemplateMatrixModel:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, messages, tools, request):
+            blueprint_id = request.context["creation_blueprint_id"]
+            blueprint_version = request.context["creation_blueprint_version"]
+            blueprint = runtime.creation_blueprints.get(
+                blueprint_id, blueprint_version,
+            )
+            names = tuple(item.name for item in tools)
+            prompt = "\n".join(
+                str(item.content or "")
+                for item in messages
+                if getattr(item, "role", "") == "system"
+            )
+            self.calls.append({
+                "tool_choice": getattr(request, "initial_tool_choice", None),
+                "tool_names": names,
+                "prompt": prompt,
+            })
+            assert blueprint is not None
+            return ModelTurn(
+                tool_calls=(call(blueprint.tools[0], {}),),
+            )
+
+    model = TemplateMatrixModel()
+    runtime.platform_application.agent.model = model
+
+    try:
+        definitions = [
+            item for item in load_builtin_template_definitions()
+            if item["provider"] in runtime.whitelist_validator.allowed_accounts
+        ]
+        assert len(definitions) == 11
+        selected_template_ids = []
+
+        for index, definition in enumerate(definitions):
+            account_id = str(definition["account_id"])
+            template = next(
+                item for item in runtime.list_creation_templates(
+                    provider=definition["provider"],
+                    account_id=account_id,
+                    user_id="template-matrix-user",
+                    tenant_id="default",
+                )
+                if item["blueprint_id"] == definition["blueprint_id"]
+            )
+            selected_template_ids.append(template["template_id"])
+            blueprint = runtime.creation_blueprints.get(
+                definition["blueprint_id"],
+                definition["blueprint_version"],
+            )
+
+            result = runtime.run(
+                f"使用模板“{definition['name']}”创建广告表单",
+                session_id=f"builtin-template-matrix-{index}",
+                user_id="template-matrix-user",
+                account_id=account_id,
+                creation_blueprint_id=definition["blueprint_id"],
+                creation_blueprint_version=definition["blueprint_version"],
+                creation_template_id=template["template_id"],
+                execution_mode="dry_run",
+            )
+
+            assert blueprint is not None
+            assert result["status"] == "awaiting_input"
+            assert result["results"] == []
+            assert result["needs_input"] is True
+            card = result["ui"]["cards"][0]
+            assert card["type"] == "ad_creation_form"
+            assert card["blueprint_id"] == definition["blueprint_id"]
+            assert card["template_id"] == template["template_id"]
+            assert card["account_id"] == account_id
+            values = {
+                field["path"]: field.get("value")
+                for field in card["fields"]
+                if field.get("path")
+            }
+            for path, expected in template["values"].items():
+                assert values.get(path) == expected, (
+                    definition["template_id"], path, values.get(path),
+                )
+
+        assert len(model.calls) == len(definitions)
+        for call_record, definition, template_id in zip(
+            model.calls, definitions, selected_template_ids,
+        ):
+            blueprint = runtime.creation_blueprints.get(
+                definition["blueprint_id"],
+                definition["blueprint_version"],
+            )
+            assert call_record["tool_choice"] == "required"
+            assert call_record["tool_names"] == tuple(blueprint.tools)
+            assert template_id in call_record["prompt"]
+    finally:
+        runtime.close(wait=True)
+
+
 def test_blueprint_tool_ref_supports_nested_schema_paths():
     blueprint = AdCreationBlueprint.from_dict({
         "id": "test.nested",

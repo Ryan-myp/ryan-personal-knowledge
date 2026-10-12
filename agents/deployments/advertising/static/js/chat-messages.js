@@ -277,6 +277,7 @@
                     confirmation_payload: payload,
                     creation_blueprint_id: originalRequest?.creation_blueprint_id || null,
                     creation_blueprint_version: originalRequest?.creation_blueprint_version || null,
+                    creation_template_id: originalRequest?.creation_template_id || null,
                 };
 
                 // 如果有额外参数，添加到对应平台的 params 中

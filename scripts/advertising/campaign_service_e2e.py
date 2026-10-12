@@ -888,7 +888,9 @@ def serve(directory, port):
     uvicorn.run(app, host="127.0.0.1", port=port, log_config=None)
 
 
-def chat(directory, provider, tool, params, case_id, write=False):
+def chat(
+    directory, provider, tool, params, case_id, write=False, template_id=None,
+):
     root, state, headers = _load_state(directory)
     account = str(state["accounts"][provider][0])
     headers = {
@@ -915,6 +917,8 @@ def chat(directory, provider, tool, params, case_id, write=False):
     }
     blueprint_id = params.pop("_e2e_blueprint_id", None)
     blueprint_version = params.pop("_e2e_blueprint_version", None)
+    if template_id:
+        body["creation_template_id"] = str(template_id)
     if blueprint_id:
         body["creation_blueprint_id"] = blueprint_id
     if blueprint_version:
@@ -923,6 +927,7 @@ def chat(directory, provider, tool, params, case_id, write=False):
         "provider": provider,
         "account": account,
         "tool": tool,
+        "template_id": template_id,
         "blueprint_id": blueprint_id,
         "blueprint_version": blueprint_version,
         "params": params,
@@ -984,6 +989,7 @@ def main():
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--blueprint-id")
     parser.add_argument("--blueprint-version")
+    parser.add_argument("--template-id")
     args = parser.parse_args()
     if args.command == "start":
         start(args.directory, args.port)
@@ -1002,6 +1008,7 @@ def main():
             params,
             args.case_id,
             args.write,
+            args.template_id,
         )
     elif args.command == "report":
         report(args.directory)

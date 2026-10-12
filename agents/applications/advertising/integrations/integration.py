@@ -42,6 +42,27 @@ class AdvertisingContextProvider:
         account_id = request_context.get("account_id")
         if account_id in (None, ""):
             account_id = self._account_from_platform_params(request_context)
+        session = self._prepare_context_session(
+            request, request_context, account_id,
+        )
+        skill_context = session.ctx.metadata.get("skill_context", {})
+        if not isinstance(skill_context, dict):
+            skill_context = {}
+        structured_input = self._structured_input(request_context, account_id)
+        result = {
+            "skill_context": dict(skill_context),
+            "structured_input": structured_input,
+            "prompt": self._render_prompt(skill_context, structured_input),
+        }
+        self._contexts[run_id] = result
+        return dict(result)
+
+    def _prepare_context_session(
+        self,
+        request: Any,
+        request_context: Mapping[str, Any],
+        account_id: Any,
+    ) -> Any:
         session = self.owner._sessions.get(str(request.session_id or ""))
         if session is None:
             session = self.owner._ensure_session(
@@ -65,9 +86,13 @@ class AdvertisingContextProvider:
             safe_user_input=safe_input,
             trace=_ContextTrace(),
         )
-        skill_context = session.ctx.metadata.get("skill_context", {})
-        if not isinstance(skill_context, dict):
-            skill_context = {}
+        return session
+
+    def _structured_input(
+        self,
+        request_context: Mapping[str, Any],
+        account_id: Any,
+    ) -> dict[str, Any]:
         structured_input: dict[str, Any] = {}
         if account_id not in (None, ""):
             structured_input["account_id"] = str(account_id)
@@ -76,13 +101,10 @@ class AdvertisingContextProvider:
             safe_params = self.owner._redact_for_persistence(dict(platform_params))
             if isinstance(safe_params, Mapping):
                 structured_input["platform_params"] = dict(safe_params)
-        result = {
-            "skill_context": dict(skill_context),
-            "structured_input": structured_input,
-            "prompt": self._render_prompt(skill_context, structured_input),
-        }
-        self._contexts[run_id] = result
-        return dict(result)
+        creation_selection = self._creation_selection(request_context)
+        if creation_selection:
+            structured_input["creation_selection"] = creation_selection
+        return structured_input
 
     def cleanup(self, request: Any, _state: Any = None) -> None:
         """Release the bounded context snapshot owned by one Run."""
@@ -113,6 +135,41 @@ class AdvertisingContextProvider:
         # multi-platform request must keep account IDs namespace-scoped.
         return next(iter(scoped_accounts.values())) if len(scoped_accounts) == 1 else None
 
+    def _creation_selection(
+        self, request_context: Mapping[str, Any],
+    ) -> dict[str, Any] | None:
+        blueprint_id = str(
+            request_context.get("creation_blueprint_id") or ""
+        ).strip()
+        if not blueprint_id:
+            return None
+        blueprint = self.owner.creation_blueprints.get(
+            blueprint_id,
+            request_context.get("creation_blueprint_version") or None,
+        )
+        if blueprint is None and not request_context.get("creation_template_id"):
+            blueprint = self.owner.creation_blueprints.get(blueprint_id)
+        if blueprint is None:
+            return {
+                "blueprint_id": blueprint_id,
+                "available": False,
+                "template_id": str(
+                    request_context.get("creation_template_id") or ""
+                ),
+            }
+        return {
+            "blueprint_id": blueprint.blueprint_id,
+            "blueprint_version": blueprint.version,
+            "provider": blueprint.provider,
+            "title": blueprint.title,
+            "ad_format": blueprint.ad_format,
+            "create_tools": list(blueprint.tools),
+            "template_id": str(
+                request_context.get("creation_template_id") or ""
+            ),
+            "available": True,
+        }
+
     @staticmethod
     def _render_prompt(
         skill_context: Mapping[str, Any],
@@ -123,6 +180,23 @@ class AdvertisingContextProvider:
             "用户意图或当前注册 Tool 的参数与权限契约。"
         ]
         remaining = 16_000
+        remaining = AdvertisingContextProvider._append_structured_input(
+            parts, structured_input, remaining,
+        )
+        AdvertisingContextProvider._append_creation_selection(
+            parts, structured_input,
+        )
+        AdvertisingContextProvider._append_advisory_context(
+            parts, skill_context, remaining,
+        )
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _append_structured_input(
+        parts: list[str],
+        structured_input: Mapping[str, Any] | None,
+        remaining: int,
+    ) -> int:
         if structured_input:
             values = json.dumps(
                 structured_input,
@@ -142,6 +216,44 @@ class AdvertisingContextProvider:
                 )
             parts.append(block)
             remaining -= len(block)
+        return remaining
+
+    @staticmethod
+    def _append_creation_selection(
+        parts: list[str],
+        structured_input: Mapping[str, Any] | None,
+    ) -> None:
+        selection = (
+            structured_input.get("creation_selection")
+            if isinstance(structured_input, Mapping) else None
+        )
+        if isinstance(selection, Mapping):
+            selection_json = json.dumps(
+                dict(selection),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            if selection.get("available") is True:
+                parts.append(
+                    "已选择的创建流程（来自服务端蓝图注册表）：\n"
+                    + selection_json
+                    + "\n用户已明确选择此广告创建蓝图/模板。必须通过列出的"
+                    "已注册创建 Tool 继续该流程，不得改为查询 Tool，也不得只用文字"
+                    "虚构创建计划。Tool schema、账户范围、权限、确认和幂等门禁始终有效。"
+                )
+            else:
+                parts.append(
+                    "请求选择的创建蓝图当前不可用：\n"
+                    + selection_json
+                    + "\n不得改用其他广告类型或查询 Tool，应说明该蓝图不可用。"
+                )
+
+    @staticmethod
+    def _append_advisory_context(
+        parts: list[str],
+        skill_context: Mapping[str, Any],
+        remaining: int,
+    ) -> None:
         for key, label, limit in (
             ("expert_knowledge", "Skill guidance", 5000),
             ("publisher_context", "Creation blueprints and templates", 3500),
@@ -165,7 +277,6 @@ class AdvertisingContextProvider:
             block = f"{label}:\n{str(value)[:min(limit, remaining)]}"
             parts.append(block)
             remaining -= len(block)
-        return "\n\n".join(parts)
 
 
 

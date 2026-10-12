@@ -149,7 +149,13 @@ class LLMClient:
         }
         if provider_tools:
             kwargs["tools"] = provider_tools
-            kwargs["tool_choice"] = "auto"
+            kwargs["tool_choice"] = (
+                getattr(request, "initial_tool_choice", None) or "auto"
+            )
+        elif getattr(request, "initial_tool_choice", None) == "required":
+            raise LLMStructuredOutputError(
+                "A Tool call was required, but no Tools are available"
+            )
         context = getattr(request, "context", None)
         if isinstance(context, dict):
             max_tokens = context.get("max_output_tokens")

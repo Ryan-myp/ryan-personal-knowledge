@@ -7,7 +7,7 @@
       "description": "Meta 受控测试账号的流量广告基线，预填已查询 Page。资源值只是账户偏好，使用时需重新查询确认。",
       "provider": "meta",
       "blueprint_id": "meta.traffic_link",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.2.0",
       "ad_format": "link_traffic",
       "account_id": "2806375919473667",
       "verification_status": "live_verified",

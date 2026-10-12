@@ -1539,6 +1539,10 @@
                 platform_params: blueprintDraftPlatformParams(blueprint),
                 creation_blueprint_id: blueprint.id,
                 creation_blueprint_version: blueprint.version,
+                creation_template_id: blueprintState.templates.find(
+                    item => item.template_id === blueprintState.selectedTemplateId
+                        && item.status === 'active'
+                )?.template_id || null,
             };
             setInput(`请按“${blueprint.title || blueprint.id}”继续创建广告。参数草稿已带入，请先检查并确认后提交。`);
             closeBlueprintManager();

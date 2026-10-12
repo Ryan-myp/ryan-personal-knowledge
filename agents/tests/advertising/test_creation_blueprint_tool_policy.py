@@ -1,0 +1,202 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+from agents.applications.advertising.execution.ad_tool_policy_factory import (
+    AdvertisingToolPolicyFactory,
+)
+from agents.applications.advertising.persistence.errors import PersistenceError
+from agents.tools.advertising.providers.source_factory import create_tool_source
+from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
+
+
+ROOT = Path(__file__).resolve().parents[3]
+BLUEPRINT = load_blueprint_file(
+    ROOT
+    / "agents"
+    / "tools"
+    / "advertising"
+    / "providers"
+    / "meta"
+    / "blueprints"
+    / "traffic_link.v1.json"
+)
+TEST_ACCOUNT = "2806375919473667"
+
+
+class _Security:
+    @staticmethod
+    def validate_input_redline(_arguments):
+        return []
+
+
+class _BlueprintRegistry:
+    @staticmethod
+    def get(blueprint_id, version=None):
+        if blueprint_id != BLUEPRINT.blueprint_id:
+            return None
+        if version and version != BLUEPRINT.version:
+            return None
+        return BLUEPRINT
+
+
+class _TemplateManager:
+    @staticmethod
+    def get(*_args, **_kwargs):
+        return {
+            "template_id": "builtin-meta-traffic",
+            "status": "active",
+            "provider": "meta",
+            "blueprint_id": BLUEPRINT.blueprint_id,
+            "blueprint_version": BLUEPRINT.version,
+            "account_id": TEST_ACCOUNT,
+        }
+
+
+def _factory():
+    runtime = SimpleNamespace(
+        _granted_permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
+        _live_approved_tools=frozenset(),
+        allow_live_writes=False,
+        write_guard=None,
+        enforce_account_scope=True,
+        security=_Security(),
+        creation_blueprints=_BlueprintRegistry(),
+        registry=SimpleNamespace(list_all=lambda: []),
+        _canonical_platform=lambda value: str(value).lower(),
+        _resolve_platform_identifier=lambda value: str(value).lower(),
+        _validate_account_for_tool=lambda *_args: (True, ""),
+        _creation_template_manager_for_request=lambda *_args: _TemplateManager(),
+        _parent_resource_id_field_for_tool=lambda tool: (
+            {
+                "meta_create_adset": "campaign_id",
+                "meta_create_traffic_ad": "adset_id",
+            }.get(tool.name)
+        ),
+    )
+    factory = AdvertisingToolPolicyFactory(runtime)
+    factory.interactions = SimpleNamespace(
+        creation_input_required=lambda _context: False,
+    )
+    return factory
+
+
+def _adset_tool():
+    return next(
+        binding.definition
+        for binding in create_tool_source("meta").list_bindings()
+        if binding.definition.name == "meta_create_adset"
+    )
+
+
+def _traffic_ad_tool():
+    return next(
+        binding.definition
+        for binding in create_tool_source("meta").list_bindings()
+        if binding.definition.name == "meta_create_traffic_ad"
+    )
+
+
+def _request(context):
+    return SimpleNamespace(
+        context={"account_id": TEST_ACCOUNT, **context},
+        execution_mode="dry_run",
+        principal=SimpleNamespace(account_scope=None),
+        tenant_id="test-tenant",
+        user_id="test-user",
+        session_id="test-session",
+    )
+
+
+def _valid_adset_arguments():
+    return {
+        "campaign_id": "campaign-test-id",
+        "name": "QA_TEMPLATE_ADSET",
+        "optimization_goal": "LANDING_PAGE_VIEWS",
+        "billing_event": "IMPRESSIONS",
+        "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "start_time": "2026-10-13T00:00:00+08:00",
+        "end_time": "2026-10-20T00:00:00+08:00",
+        "targeting": {"geo_locations": {"countries": ["US"]}},
+        "status": "PAUSED",
+    }
+
+
+def test_selected_blueprint_blocks_schema_valid_fields_owned_by_another_tool():
+    arguments = {
+        **_valid_adset_arguments(),
+        "daily_budget": 1,
+    }
+
+    result = _factory().check_scope_and_confirmation(
+        _adset_tool(),
+        _request({"creation_blueprint_id": BLUEPRINT.blueprint_id}),
+        arguments,
+    )
+
+    assert result is not None
+    assert result[0] == "creation_input_required"
+    assert "daily_budget" in result[1]
+
+
+def test_blueprint_fields_parent_reference_and_paused_status_are_allowed():
+    result = _factory().check_scope_and_confirmation(
+        _adset_tool(),
+        _request({"creation_blueprint_id": BLUEPRINT.blueprint_id}),
+        _valid_adset_arguments(),
+    )
+
+    assert result is None
+
+
+def test_template_only_request_resolves_its_blueprint_before_tool_validation():
+    result = _factory().check_scope_and_confirmation(
+        _adset_tool(),
+        _request({"creation_template_id": "builtin-meta-traffic"}),
+        {**_valid_adset_arguments(), "daily_budget": 1},
+    )
+
+    assert result is not None
+    assert result[0] == "creation_input_required"
+    assert "daily_budget" in result[1]
+
+
+def test_template_store_failure_fails_closed_before_creation():
+    factory = _factory()
+
+    def unavailable(_scope):
+        raise PersistenceError("store unavailable")
+
+    factory.runtime._creation_template_manager_for_request = unavailable
+    result = factory.check_scope_and_confirmation(
+        _adset_tool(),
+        _request({"creation_template_id": "builtin-meta-traffic"}),
+        _valid_adset_arguments(),
+    )
+
+    assert result is not None
+    assert result[0] == "creation_input_required"
+    assert "模板存储暂不可用" in result[1]
+
+
+def test_traffic_blueprint_allows_optional_copy_and_call_to_action_fields():
+    arguments = {
+        "adset_id": "adset-test-id",
+        "name": "QA_TEMPLATE_TRAFFIC_AD",
+        "page_id": "page-test-id",
+        "link": "https://example.com/",
+        "media_type": "IMAGE",
+        "image_hash": "image-hash-test",
+        "message": "Paused QA test creative.",
+        "headline": "Template verification",
+        "description": "Optional template-backed description.",
+        "call_to_action_type": "LEARN_MORE",
+        "status": "PAUSED",
+    }
+
+    result = _factory().check_scope_and_confirmation(
+        _traffic_ad_tool(),
+        _request({"creation_blueprint_id": BLUEPRINT.blueprint_id}),
+        arguments,
+    )
+
+    assert result is None

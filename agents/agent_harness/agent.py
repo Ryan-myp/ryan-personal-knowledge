@@ -842,7 +842,14 @@ class Agent:
                 if turn_index > 0:
                     self._emit("turn_start", request, turn_index=turn_index)
                 tool_results = []
-                model_turn = self._models.complete(request, state, abort_event)
+                model_request = (
+                    replace(request, initial_tool_choice=None)
+                    if turn_index > 0 and request.initial_tool_choice
+                    else request
+                )
+                model_turn = self._models.complete(
+                    model_request, state, abort_event,
+                )
                 if model_turn.context_updates and isinstance(request.context, dict):
                     request.context.update(dict(model_turn.context_updates))
                 assistant = AgentMessage.assistant(

@@ -120,6 +120,16 @@
             return { [card.provider]: values };
         }
 
+        function creationContextForCard(card) {
+            return {
+                account_id: String(card.account_id || '').trim() || null,
+                platform_params: creationCardParams(card),
+                creation_blueprint_id: card.blueprint_id || null,
+                creation_blueprint_version: card.blueprint_version || null,
+                creation_template_id: card.template_id || null,
+            };
+        }
+
         function creationCardDraftValues(card) {
             const values = {};
             (card.fields || []).forEach(field => {
@@ -886,6 +896,7 @@
                 platform_params: creationCardParams(card),
                 creation_blueprint_id: card.blueprint_id || null,
                 creation_blueprint_version: card.blueprint_version || null,
+                creation_template_id: card.template_id || null,
             };
             addMessage('确认创建', 'user');
             addLoading();
@@ -1469,6 +1480,7 @@
             const card = creationCardState.get(cardId);
             if (!card) return;
             if (action === 'continue_chat') {
+                pendingBlueprintRequest = creationContextForCard(card);
                 setInput(`请继续完善“${card.title || '广告创建'}”，我可以直接在输入框里补充参数。`);
                 return;
             }

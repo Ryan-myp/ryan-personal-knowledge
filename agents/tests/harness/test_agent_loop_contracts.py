@@ -132,6 +132,37 @@ def test_agent_loop_owns_transcript_tool_turns_and_events():
     ]
 
 
+def test_initial_tool_choice_applies_only_to_first_model_turn():
+    class InitialToolChoiceModel:
+        def __init__(self):
+            self.choices = []
+
+        def complete(self, _messages, _tools, request):
+            self.choices.append(getattr(request, "initial_tool_choice", None))
+            if len(self.choices) == 1:
+                return ModelTurn(
+                    tool_calls=(
+                        ToolCall("call-1", "echo", {"text": "hi"}),
+                    ),
+                )
+            return ModelTurn(content="finished")
+
+    model = InitialToolChoiceModel()
+    catalog = InMemoryToolCatalog()
+    catalog.register_source(
+        StaticToolSource("local", [ToolBinding({"name": "echo"}, EchoTool())])
+    )
+    agent = Agent(model=model, tool_catalog=catalog, max_turns=3)
+
+    result = agent.run(TurnRequest(
+        user_input="say hi",
+        initial_tool_choice="required",
+    ))
+
+    assert result.status.value == "succeeded"
+    assert model.choices == ["required", None]
+
+
 def test_agent_loop_can_block_tool_and_cancel_before_next_model_turn():
     events = []
     model = ScriptedModel()

@@ -69,6 +69,7 @@
                     platform_params: requestParams.platform_params || {},
                     creation_blueprint_id: requestParams.creation_blueprint_id || null,
                     creation_blueprint_version: requestParams.creation_blueprint_version || null,
+                    creation_template_id: requestParams.creation_template_id || null,
                 });
                 return;
             }
