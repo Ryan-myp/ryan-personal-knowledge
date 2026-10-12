@@ -899,7 +899,7 @@ def meta_campaign_schema() -> dict[str, Any]:
                 lookup_tool="meta_list_catalogs", lookup_result_key="catalogs",
                 selection_value_fields=["id", "catalog_id"],
                 selection_label_fields=["name", "id"],
-                **_ui_when("objective", "PRODUCT_CATALOG_SALES"),
+                **_ui_when("objective", "OUTCOME_SALES", "PRODUCT_CATALOG_SALES"),
             ),
             "conversion_specs": _field(
                 "array", "Conversion event specifications",
@@ -979,7 +979,12 @@ def meta_adset_schema() -> dict[str, Any]:
                 lookup_tool="meta_list_product_sets", lookup_result_key="product_sets",
                 selection_value_fields=["id", "product_set_id"],
                 selection_label_fields=["name", "id"],
-                **_ui_when("optimization_goal", "PRODUCT_CATALOG_SALES", "CATALOG_SALES"),
+                **_ui_when(
+                    "optimization_goal",
+                    "VALUE",
+                    "PRODUCT_CATALOG_SALES",
+                    "CATALOG_SALES",
+                ),
             ),
             "messaging_apps": _field(
                 "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},

@@ -190,6 +190,72 @@ def test_meta_creation_card_materializes_objective_dependent_defaults():
     assert fields["ad.link"]["user_required"] is True
 
 
+def test_meta_catalog_outcome_sales_exposes_catalog_lookup_dependencies():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_meta_tool_source())
+
+    intent = ParsedIntent(
+        "create_campaign",
+        "创建 Meta 商品目录销售广告",
+        ["meta"],
+        scoped_parameters={
+            "meta": {
+                "objective": "OUTCOME_SALES",
+                "optimization_goal": "VALUE",
+            }
+        },
+    )
+    card = runtime.build_creation_ui(
+        intent, account_id="2806375919473667"
+    )["cards"][0]
+    fields = {item["path"]: item for item in card["fields"]}
+
+    assert fields["campaign.catalog_id"]["visible"] is True
+    assert fields["campaign.catalog_id"]["required"] is True
+    assert fields["ad_set.product_set_id"]["visible"] is True
+    assert fields["campaign.catalog_id"]["lookup"]["tool"] == "meta_list_catalogs"
+    product_set_lookup = fields["ad_set.product_set_id"]["lookup"]
+    assert product_set_lookup["tool"] == "meta_list_product_sets"
+    assert product_set_lookup["dependencies"] == [
+        {
+            "input_field": "catalog_id",
+            "value_path": "catalog_id",
+            "label": "所属商品目录",
+            "required": True,
+        }
+    ]
+
+
+def test_meta_catalog_ad_activation_requires_explicit_catalog_intent():
+    from agents.agent_harness.core.intent import SimpleIntentRouter
+
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_meta_tool_source())
+    catalog_ad, _handler = runtime.registry.get("meta_create_catalog_ad")
+
+    generic_sales = ParsedIntent(
+        "create_campaign",
+        "创建 Meta 销售广告",
+        ["meta"],
+        scoped_parameters={"meta": {"objective": "OUTCOME_SALES"}},
+    )
+    catalog_sales = ParsedIntent(
+        "create_campaign",
+        "创建 Meta 商品目录销售广告",
+        ["meta"],
+        scoped_parameters={
+            "meta": {"objective": "OUTCOME_SALES", "ad_format": "CATALOG"}
+        },
+    )
+
+    assert not SimpleIntentRouter._matches_activation(
+        catalog_ad, generic_sales, "meta", narrow_candidates=True
+    )
+    assert SimpleIntentRouter._matches_activation(
+        catalog_ad, catalog_sales, "meta", narrow_candidates=True
+    )
+
+
 def test_tiktok_spark_blueprint_uses_current_all_in_one_surface():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())

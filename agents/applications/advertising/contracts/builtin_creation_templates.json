@@ -38,7 +38,7 @@
       "description": "Meta 受控测试账号的目录销售基线。默认销售目标、转化价值、最低成本和轮播目录样式。",
       "provider": "meta",
       "blueprint_id": "meta.catalog_sales",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "catalog_sales",
       "account_id": "2806375919473667",
       "verification_status": "live_verified",
@@ -46,6 +46,7 @@
       "required_inputs": [
         "投放时间",
         "campaign.daily_budget",
+        "campaign.catalog_id",
         "ad_set.targeting",
         "ad_set.product_set_id",
         "ad.page_id",

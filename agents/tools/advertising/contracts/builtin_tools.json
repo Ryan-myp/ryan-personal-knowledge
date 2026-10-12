@@ -1,5 +1,5 @@
 {
-  "digest": "199bdef29ecdbd00b23daa27e922f80d8502bef04c97635f3719452944f9a470",
+  "digest": "24ce20e9e62536545a7afe8ea54f6cc20daef9b98da7fac4d36d2a70640054d5",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -18417,7 +18417,7 @@
       ]
     },
     "meta": {
-      "digest": "835a75d6c5626b60b312168d40bc74fc840ffc03ec17a6282ed7baa57b9b70e3",
+      "digest": "83d2c4636bf3f7d3ae2c550cec56d9d74e6627ece6358b4e125dbc70374154fb",
       "tool_count": 80,
       "tools": [
         {
@@ -19184,7 +19184,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "05bcc2720ed2bf370666f86581df911f2dea75ed21f0a6d6875dce3d8d465cd8",
+          "contract_hash": "61de3fe664aca48c3647d06953748f4f95463d177edefe2a977e4167ce1dc7ad",
           "contract_version": "1.5.0",
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
@@ -19573,6 +19573,7 @@
                 "ui_visible_when": {
                   "field": "optimization_goal",
                   "in": [
+                    "VALUE",
                     "PRODUCT_CATALOG_SALES",
                     "CATALOG_SALES"
                   ]
@@ -21123,7 +21124,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f1399903ab1187b4f1f84bda8d61bf41b1106489eb326038e1088b699e20f05d",
+          "contract_hash": "7933d88608352dadd5123be93c260f9205bffaa3dc2de87a16724fa38c886494",
           "contract_version": "1.5.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
@@ -21193,6 +21194,7 @@
                 "ui_visible_when": {
                   "field": "objective",
                   "in": [
+                    "OUTCOME_SALES",
                     "PRODUCT_CATALOG_SALES"
                   ]
                 }
