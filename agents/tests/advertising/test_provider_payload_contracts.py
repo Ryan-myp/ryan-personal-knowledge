@@ -6783,6 +6783,124 @@ def test_google_reads_accept_raw_and_extracted_search_payloads():
     assert client.get_campaign("42")["id"] == "42"
 
 
+def test_google_campaign_detail_includes_template_relevant_settings():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    queries = []
+    client._search = lambda query: (
+        queries.append(query)
+        or {"results": [{
+            "campaign": {
+                "id": "42",
+                "resourceName": "customers/123/campaigns/42",
+                "name": "App installs",
+                "status": "PAUSED",
+                "advertisingChannelType": "MULTI_CHANNEL",
+                "advertisingChannelSubType": "APP_CAMPAIGN",
+                "biddingStrategyType": "TARGET_CPA",
+                "campaignBudget": "customers/123/campaignBudgets/7",
+                "containsEuPoliticalAdvertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+                "optimizationGoalSetting": {
+                    "optimizationGoalTypes": ["OPTIMIZE_CONVERSIONS"],
+                },
+                "targetCpa": {"targetCpaMicros": "42000000"},
+                "appCampaignSetting": {
+                    "appId": "app-1",
+                    "appStore": "APPLE_APP_STORE",
+                    "biddingStrategyGoalType": (
+                        "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
+                    ),
+                },
+            },
+        }]}
+    )
+
+    campaign = client.get_campaign("42")
+
+    assert campaign["campaign_budget_id"] == "7"
+    assert campaign["contains_eu_political_advertising"] == (
+        "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+    )
+    assert campaign["target_cpa_micros"] == "42000000"
+    assert campaign["campaign_goal_setting"]["optimization_goal_types"] == [
+        "OPTIMIZE_CONVERSIONS",
+    ]
+    assert campaign["app_campaign_setting"]["app_id"] == "app-1"
+    query = " ".join(queries[0].split())
+    assert "campaign.campaign_budget" in query
+    assert "campaign.contains_eu_political_advertising" in query
+    assert "campaign.optimization_goal_setting.optimization_goal_types" in query
+    assert "campaign.target_cpa.target_cpa_micros" in query
+    assert "campaign.start_date" not in query
+    assert "campaign.end_date" not in query
+    assert "campaign.campaign_goal_setting" not in query
+
+
+def test_google_ad_group_detail_includes_bid_and_targeting_fields():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    queries = []
+    client._search = lambda query: (
+        queries.append(query)
+        or {"results": [{
+            "adGroup": {
+                "id": "456",
+                "name": "Shopping group",
+                "status": "PAUSED",
+                "type": "SHOPPING_PRODUCT_ADS",
+                "cpcBidMicros": "10000",
+                "cpmBidMicros": "0",
+                "cpvBidMicros": "0",
+                "targetingSetting": {
+                    "targetRestrictions": [{
+                        "targetingDimension": "AUDIENCE",
+                        "bidOnly": True,
+                    }],
+                },
+            },
+        }]}
+    )
+
+    ad_group = client.get_ad_group("456")
+
+    assert ad_group["cpc_bid_micros"] == "10000"
+    assert ad_group["targeting_setting"]["targetRestrictions"][0]["bidOnly"] is True
+    query = " ".join(queries[0].split())
+    assert "ad_group.cpc_bid_micros" in query
+    assert "ad_group.targeting_setting.target_restrictions" in query
+
+
+def test_google_asset_group_detail_includes_landing_page_configuration():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    queries = []
+    client._search = lambda query: (
+        queries.append(query)
+        or {"results": [{
+            "assetGroup": {
+                "id": "789",
+                "name": "Retail assets",
+                "status": "PAUSED",
+                "finalUrls": ["https://shop.example.test/"],
+                "finalMobileUrls": ["https://m.shop.example.test/"],
+                "path1": "shop",
+                "path2": "offers",
+                "primaryStatus": "ELIGIBLE",
+                "primaryStatusReasons": [],
+            },
+        }]}
+    )
+
+    asset_group = client.get_asset_group("789")
+
+    assert asset_group["final_urls"] == ["https://shop.example.test/"]
+    assert asset_group["final_mobile_urls"] == ["https://m.shop.example.test/"]
+    assert asset_group["primary_status"] == "ELIGIBLE"
+    query = " ".join(queries[0].split())
+    assert "asset_group.final_urls" in query
+    assert "asset_group.primary_status" in query
+    assert "asset_group.asset_group_type" not in query
+    assert "asset_group.final_url_suffix" not in query
+    assert "asset_group.final_url_expansion_opt_out" not in query
+
+
 def test_dv360_io_and_line_item_options_are_not_replaced_by_defaults():
     client = DV360APIClient({"access_token": "test", "partner_id": "p1"})
     payloads = []

@@ -596,7 +596,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             page_size = 100
         query = (
             "SELECT campaign.id, campaign.name, campaign.status, "
-            "campaign.advertising_channel_type, campaign.bidding_strategy "
+            "campaign.advertising_channel_type, "
+            "campaign.advertising_channel_sub_type, "
+            "campaign.bidding_strategy, campaign.bidding_strategy_type "
             "FROM campaign"
         )
         if campaign_id not in (None, ""):
@@ -619,7 +621,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'name': camp.get('name'),
                 'status': camp.get('status'),
                 'advertising_channel_type': camp.get('advertisingChannelType'),
+                'advertising_channel_sub_type': camp.get('advertisingChannelSubType'),
                 'bidding_strategy': camp.get('biddingStrategy'),
+                'bidding_strategy_type': camp.get('biddingStrategyType'),
             })
         return campaigns
     
@@ -630,12 +634,30 @@ class GoogleAdsAPIClient(BasePlatformClient):
             SELECT campaign.id, campaign.name, campaign.status,
                    campaign.advertising_channel_type, campaign.advertising_channel_sub_type,
                    campaign.bidding_strategy, campaign.bidding_strategy_type,
+                   campaign.campaign_budget,
+                   campaign.contains_eu_political_advertising,
+                   campaign.brand_guidelines_enabled,
+                   campaign.optimization_goal_setting.optimization_goal_types,
+                   campaign.network_settings.target_google_search,
+                   campaign.network_settings.target_search_network,
+                   campaign.network_settings.target_content_network,
+                   campaign.network_settings.target_partner_search_network,
+                   campaign.target_cpa.target_cpa_micros,
+                   campaign.maximize_conversions.target_cpa_micros,
+                   campaign.target_roas.target_roas,
+                   campaign.maximize_conversion_value.target_roas,
+                   campaign.target_spend.cpc_bid_ceiling_micros,
+                   campaign.target_impression_share.location,
+                   campaign.target_impression_share.location_fraction_micros,
+                   campaign.target_impression_share.cpc_bid_ceiling_micros,
                    campaign.app_campaign_setting.app_id,
                    campaign.app_campaign_setting.app_store,
                    campaign.app_campaign_setting.bidding_strategy_goal_type,
                    campaign.shopping_setting.merchant_id,
                    campaign.shopping_setting.feed_label,
-                   campaign.shopping_setting.campaign_priority
+                   campaign.shopping_setting.campaign_priority,
+                   campaign.shopping_setting.enable_local,
+                   campaign.shopping_setting.use_vehicle_inventory
             FROM campaign
             WHERE campaign.id = {campaign_id}
         """
@@ -643,6 +665,24 @@ class GoogleAdsAPIClient(BasePlatformClient):
         items = self._response_payload(results).get('results', [])
         if items:
             camp = items[0].get('campaign', {})
+            budget_resource_name = camp.get("campaignBudget")
+            target_cpa = camp.get("targetCpa", {}).get("targetCpaMicros")
+            if target_cpa is None:
+                target_cpa = camp.get(
+                    "maximizeConversions", {}
+                ).get("targetCpaMicros")
+            target_roas = camp.get("targetRoas", {}).get("targetRoas")
+            if target_roas is None:
+                target_roas = camp.get(
+                    "maximizeConversionValue", {}
+                ).get("targetRoas")
+            target_spend = camp.get("targetSpend", {}) or {}
+            target_impression_share = camp.get(
+                "targetImpressionShare", {}
+            ) or {}
+            goal_setting = camp.get("optimizationGoalSetting", {}) or {}
+            network_settings = camp.get("networkSettings", {}) or {}
+            shopping_setting = camp.get("shoppingSetting", {}) or {}
             return {
                 'id': camp.get('id'),
                 'resource_name': camp.get('resourceName'),
@@ -652,6 +692,47 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'advertising_channel_sub_type': camp.get('advertisingChannelSubType'),
                 'bidding_strategy': camp.get('biddingStrategy'),
                 'bidding_strategy_type': camp.get('biddingStrategyType'),
+                'campaign_budget_resource_name': budget_resource_name,
+                'campaign_budget_id': (
+                    str(budget_resource_name).rsplit("/", 1)[-1]
+                    if budget_resource_name
+                    else None
+                ),
+                'contains_eu_political_advertising': camp.get(
+                    "containsEuPoliticalAdvertising"
+                ),
+                'brand_guidelines_enabled': camp.get("brandGuidelinesEnabled"),
+                'campaign_goal_setting': {
+                    "optimization_goal_types": goal_setting.get(
+                        "optimizationGoalTypes", []
+                    )
+                },
+                'network_settings': {
+                    target: network_settings.get(source)
+                    for source, target in (
+                        ("targetGoogleSearch", "target_google_search"),
+                        ("targetSearchNetwork", "target_search_network"),
+                        ("targetContentNetwork", "target_content_network"),
+                        ("targetPartnerSearchNetwork", "target_partner_search_network"),
+                    )
+                    if source in network_settings
+                },
+                'target_cpa_micros': target_cpa,
+                'target_roas': target_roas,
+                'target_spend': {
+                    "cpc_bid_ceiling_micros": target_spend.get(
+                        "cpcBidCeilingMicros"
+                    )
+                } if target_spend else {},
+                'target_impression_share': {
+                    target: target_impression_share.get(source)
+                    for source, target in (
+                        ("location", "location"),
+                        ("locationFractionMicros", "location_fraction_micros"),
+                        ("cpcBidCeilingMicros", "cpc_bid_ceiling_micros"),
+                    )
+                    if source in target_impression_share
+                },
                 'app_campaign_setting': {
                     target: camp.get("appCampaignSetting", {}).get(source)
                     for source, target in (
@@ -660,11 +741,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
                     ) if source in camp.get("appCampaignSetting", {})
                 },
                 'shopping_setting': {
-                    target: camp.get("shoppingSetting", {}).get(source)
+                    target: shopping_setting.get(source)
                     for source, target in (
                         ("merchantId", "merchant_id"), ("feedLabel", "feed_label"),
                         ("campaignPriority", "campaign_priority"),
-                    ) if source in camp.get("shoppingSetting", {})
+                        ("enableLocal", "enable_local"),
+                        ("useVehicleInventory", "use_vehicle_inventory"),
+                    ) if source in shopping_setting
                 },
             }
         raise APIError(f"Google campaign {campaign_id} was not found")
@@ -1787,7 +1870,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
             page_size = 100
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
-                   ad_group.type
+                   ad_group.type, ad_group.cpc_bid_micros,
+                   ad_group.cpm_bid_micros, ad_group.cpv_bid_micros,
+                   ad_group.effective_target_cpa_micros,
+                   ad_group.effective_target_roas,
+                   ad_group.targeting_setting.target_restrictions
             FROM ad_group
             WHERE campaign.id = {campaign_id}
             LIMIT {page_size}
@@ -1803,6 +1890,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'name': ag.get('name'),
                 'status': ag.get('status'),
                 'type': ag.get('type'),
+                'cpc_bid_micros': ag.get('cpcBidMicros'),
+                'cpm_bid_micros': ag.get('cpmBidMicros'),
+                'cpv_bid_micros': ag.get('cpvBidMicros'),
+                'effective_target_cpa_micros': ag.get('effectiveTargetCpaMicros'),
+                'effective_target_roas': ag.get('effectiveTargetRoas'),
+                'targeting_setting': ag.get('targetingSetting', {}),
             })
         return ad_groups
     
@@ -1811,7 +1904,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
-                   ad_group.type
+                   ad_group.type, ad_group.cpc_bid_micros,
+                   ad_group.cpm_bid_micros, ad_group.cpv_bid_micros,
+                   ad_group.effective_target_cpa_micros,
+                   ad_group.effective_target_roas,
+                   ad_group.targeting_setting.target_restrictions
             FROM ad_group
             WHERE ad_group.id = {ad_group_id}
         """
@@ -1825,6 +1922,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'name': ag.get('name'),
                 'status': ag.get('status'),
                 'type': ag.get('type'),
+                'cpc_bid_micros': ag.get('cpcBidMicros'),
+                'cpm_bid_micros': ag.get('cpmBidMicros'),
+                'cpv_bid_micros': ag.get('cpvBidMicros'),
+                'effective_target_cpa_micros': ag.get('effectiveTargetCpaMicros'),
+                'effective_target_roas': ag.get('effectiveTargetRoas'),
+                'targeting_setting': ag.get('targetingSetting', {}),
             }
         raise APIError(f"Google ad group {ad_group_id} was not found")
     
@@ -3180,40 +3283,58 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """获取 PMax Campaign 的 Asset Group 列表"""
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
         query = f"""
-            SELECT asset_group.id, asset_group.name, asset_group.status
+            SELECT asset_group.id, asset_group.resource_name,
+                   asset_group.campaign, asset_group.name, asset_group.status,
+                   asset_group.primary_status, asset_group.primary_status_reasons,
+                   asset_group.final_urls, asset_group.final_mobile_urls,
+                   asset_group.path1, asset_group.path2
             FROM asset_group
             WHERE campaign.id = {campaign_id}
         """
         results = self._search_all(query, page_size=page_size)
-        asset_groups = []
-        for r in results:
-            ag = r.get('assetGroup', {})
-            asset_groups.append({
-                'id': ag.get('id'),
-                'resource_name': ag.get('resourceName'),
-                'name': ag.get('name'),
-                'status': ag.get('status'),
-            })
-        return asset_groups
+        return [self._normalize_asset_group(r) for r in results]
+
+    @staticmethod
+    def _normalize_asset_group(row: dict) -> dict[str, Any]:
+        group = row.get("assetGroup", row.get("asset_group", {})) or {}
+        return {
+            "id": group.get("id"),
+            "resource_name": group.get(
+                "resourceName", group.get("resource_name")
+            ),
+            "campaign": group.get("campaign"),
+            "name": group.get("name"),
+            "status": group.get("status"),
+            "primary_status": group.get(
+                "primaryStatus", group.get("primary_status")
+            ),
+            "primary_status_reasons": group.get(
+                "primaryStatusReasons", group.get("primary_status_reasons", [])
+            ) or [],
+            "final_urls": group.get("finalUrls", group.get("final_urls", [])) or [],
+            "final_mobile_urls": group.get(
+                "finalMobileUrls", group.get("final_mobile_urls", [])
+            ) or [],
+            "path1": group.get("path1"),
+            "path2": group.get("path2"),
+        }
     
     def get_asset_group(self, asset_group_id: str) -> dict:
         """获取 PMax Asset Group 详情"""
         asset_group_id = self._numeric_id(asset_group_id, "asset_group_id")
         query = f"""
-            SELECT asset_group.id, asset_group.name, asset_group.status
+            SELECT asset_group.id, asset_group.resource_name,
+                   asset_group.campaign, asset_group.name, asset_group.status,
+                   asset_group.primary_status, asset_group.primary_status_reasons,
+                   asset_group.final_urls, asset_group.final_mobile_urls,
+                   asset_group.path1, asset_group.path2
             FROM asset_group
             WHERE asset_group.id = {asset_group_id}
         """
         results = self._search(query)
         items = self._response_payload(results).get('results', [])
         if items:
-            ag = items[0].get('assetGroup', {})
-            return {
-                'id': ag.get('id'),
-                'resource_name': ag.get('resourceName'),
-                'name': ag.get('name'),
-                'status': ag.get('status'),
-            }
+            return self._normalize_asset_group(items[0])
         raise APIError(f"Google asset group {asset_group_id} was not found")
 
     @staticmethod
