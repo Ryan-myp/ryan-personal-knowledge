@@ -931,6 +931,7 @@ def chat(
     tool_params = dict(params)
     blueprint_id = tool_params.pop("_e2e_blueprint_id", None)
     blueprint_version = tool_params.pop("_e2e_blueprint_version", None)
+    prompt_params = safe_evidence(tool_params)
     headers = {
         **headers,
         "X-E2E-Case": case_id,
@@ -940,12 +941,13 @@ def chat(
     body = {
         "user_input": (
             f"这是受控测试。仅使用 {provider} 测试账户 {account}。请只调用工具 {tool} 一次，"
-            "不得调用任何其他 Tool，不得启用广告。严格原样使用下方 JSON 作为工具参数，"
-            "不能额外添加 JSON 里没有的字段（尤其 customer_id、account_id）；账户范围已由请求上下文提供。"
+            "不得调用任何其他 Tool，不得启用广告。工具参数以本请求的结构化 platform_params 为准，"
+            "不能额外添加字段（尤其 customer_id、account_id）；账户范围已由请求上下文提供。"
+            "selection token 等敏感值只通过结构化参数传递，不得猜测、复述或替换。"
             "账号所有者已授权本轮暂停资源功能测试。需要确认时先调用工具，让平台返回结构化确认凭证，"
             "不要只用文字询问确认；平台门禁仍必须完整执行。"
-            "缺少必需参数时明确指出，不得猜测。参数："
-            + json.dumps(tool_params, ensure_ascii=False)
+            "缺少必需参数时明确指出，不得猜测。脱敏参数概览："
+            + json.dumps(prompt_params, ensure_ascii=False)
         ),
         "session_id": effective_session_id,
         "account_id": account,

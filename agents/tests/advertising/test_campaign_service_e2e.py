@@ -328,6 +328,56 @@ def test_chat_can_continue_an_existing_template_session(monkeypatch, tmp_path):
     )
 
 
+def test_chat_keeps_selection_tokens_structured_and_redacts_prompt(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(
+        driver,
+        "_load_state",
+        lambda _: (
+            tmp_path,
+            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {},
+        ),
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"status": "succeeded"}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests,
+        "post",
+        lambda *args, **kwargs: (calls.append(kwargs) or response),
+    )
+    token = "ps1.private.signature"
+
+    chat(
+        tmp_path,
+        "meta",
+        "meta_create_campaign",
+        {
+            "meta_create_campaign": {
+                "catalog_id": "catalog-1",
+                "selection_tokens": {"catalog_id": token},
+            }
+        },
+        "selection-token-prompt",
+        write=True,
+    )
+
+    body = calls[0]["json"]
+    assert token not in body["user_input"]
+    assert body["platform_params"]["meta"]["meta_create_campaign"][
+        "selection_tokens"
+    ]["catalog_id"] == token
+    evidence = json.loads(
+        (tmp_path / "cases/selection-token-prompt.json").read_text()
+    )
+    assert token not in json.dumps(evidence)
+
+
 def test_chat_keeps_blueprint_metadata_out_of_tool_arguments(
     monkeypatch, tmp_path
 ):
