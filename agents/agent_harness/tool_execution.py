@@ -600,6 +600,7 @@ class ToolExecutionCoordinator:
                             else decision[key]
                         )
                 return result
+            call = context.tool_call
         try:
             if self.tool_catalog is None:
                 raise KeyError(f"Tool '{call.name}' not found")

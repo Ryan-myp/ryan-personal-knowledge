@@ -77,6 +77,93 @@ def test_missing_required_value_still_requires_user_input():
     assert blocked["terminate"] is True
 
 
+def test_trusted_argument_resolver_runs_before_schema_and_executor():
+    executed = []
+
+    class Model:
+        called = False
+
+        def complete(self, _messages, _tools, _request):
+            if not self.called:
+                self.called = True
+                return ModelTurn(tool_calls=(ToolCall("resolved", "read", {}),))
+            return ModelTurn(content="done")
+
+    def resolve_arguments(context):
+        return {
+            **dict(context.tool_call.arguments),
+            "value": "resolved-from-trusted-context",
+        }
+
+    app = AgentApplication.create(
+        model=Model(),
+        max_turns=3,
+        tool_policy=ToolExecutionPolicy(argument_resolver=resolve_arguments),
+    )
+    app.register_tool_source(
+        StaticToolSource(
+            "read-source",
+            [
+                ToolBinding(
+                    {
+                        "name": "read",
+                        "effect_class": "read",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"value": {"type": "string"}},
+                            "required": ["value"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    lambda _ctx, values: executed.append(values) or {"success": True},
+                ),
+            ],
+        )
+    )
+    try:
+        result = app.prompt("read using selected context")
+        assert result.status.value == "succeeded"
+        assert executed == [{"value": "resolved-from-trusted-context"}]
+    finally:
+        app.close()
+
+
+def test_argument_resolution_failure_blocks_execution_and_emits_safe_audit():
+    audit_events = []
+
+    def fail_resolution(_context):
+        raise RuntimeError("private template detail")
+
+    policy = ToolExecutionPolicy(
+        argument_resolver=fail_resolution,
+        audit_sink=audit_events.append,
+    )
+    call_context = context(
+        "read",
+        schema={
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+            "additionalProperties": False,
+        },
+    )
+
+    blocked = policy.before_tool_call(call_context)
+
+    assert blocked["block"] is True
+    assert blocked["terminate"] is True
+    assert blocked["runtime_signals"]["tool_argument_resolution_error"] is True
+    assert blocked["runtime_signals"]["tool_argument_resolution_error_type"] == "RuntimeError"
+    assert "private template detail" not in repr(blocked)
+    assert audit_events == [{
+        "run_id": "r",
+        "turn_id": "t",
+        "tool_name": "test_tool",
+        "decision": "blocked",
+        "reason_code": "argument_resolution_failed",
+    }]
+
+
 def test_harness_reenters_model_after_extra_argument_without_executing_invalid_call():
     executed = []
 

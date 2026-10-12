@@ -13,7 +13,7 @@ class AdvertisingToolInteractionProvider:
 
     _INPUT_REASONS = frozenset({
         "input_schema", "scope_required", "confirmation_required",
-        "creation_input_required",
+        "creation_input_required", "argument_resolution_failed",
     })
 
     def __init__(self, runtime: Any) -> None:
@@ -188,17 +188,63 @@ class AdvertisingToolInteractionProvider:
         arguments = getattr(context.tool_call, "arguments", {})
         if validate_tool_input(definition.input_schema, dict(arguments)):
             return False
-        provider_required = getattr(definition.input_schema, "requires", ()) or ()
-        if any(arguments.get(field) in (None, "", []) for field in provider_required):
-            return True
         request_context = context.request.context
         selected_workflow = isinstance(request_context, Mapping) and (
             request_context.get("creation_blueprint_id")
             or request_context.get("creation_template_id")
         )
         if not selected_workflow:
+            provider_required = getattr(definition.input_schema, "requires", ()) or ()
+            if any(arguments.get(field) in (None, "", []) for field in provider_required):
+                return True
             return False
         return bool(self._creation_ui(context, definition).get("needs_input"))
+
+    def resolve_tool_arguments(self, context: Any) -> Mapping[str, Any]:
+        """Materialize trusted template/form values before the Harness policy gate."""
+        definition = getattr(context, "tool_definition", None)
+        original = dict(getattr(context.tool_call, "arguments", {}) or {})
+        if str(getattr(definition, "action", "") or "").lower() != "create":
+            return original
+        request = context.request
+        request_context = (
+            request.context if isinstance(request.context, Mapping) else {}
+        )
+        selected_workflow = bool(
+            request_context.get("creation_blueprint_id")
+            or request_context.get("creation_template_id")
+        )
+        if not selected_workflow:
+            return original
+
+        intent, _tool_plan, _request_context = self._intent(
+            context, definition, original,
+        )
+        input_builder = getattr(self.runtime, "input_builder", None)
+        build = getattr(input_builder, "build", None)
+        if not callable(build):
+            return original
+        namespace = str(getattr(definition, "namespace", "") or "")
+        session = self.runtime._sessions.get(
+            str(getattr(request, "session_id", "") or "")
+        )
+        session_context = getattr(session, "ctx", None)
+        resolved = build(
+            definition,
+            intent,
+            namespace,
+            session_context,
+        )
+        properties = getattr(
+            getattr(definition, "input_schema", None), "properties", {},
+        ) or {}
+        effective = {
+            str(name): value
+            for name, value in (resolved or {}).items()
+            if name in properties and value is not None and value != ""
+        }
+        effective.update(original)
+        return effective
 
     def _creation_ui(
         self,

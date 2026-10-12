@@ -31,6 +31,7 @@ class AdvertisingToolPolicyFactory:
             write_guard_configured=True,
             require_confirmation_for_writes=True,
             before_check=self.check_scope_and_confirmation,
+            argument_resolver=self.interactions.resolve_tool_arguments,
             scope_resolver=self.resolve_scope,
             confirmation_builder=self.build_confirmation,
             interaction_builder=self.interactions.build,

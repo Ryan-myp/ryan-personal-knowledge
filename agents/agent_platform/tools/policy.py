@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import time
@@ -123,6 +123,9 @@ class ToolExecutionPolicy:
     before_check: Optional[
         Callable[[Any, Any, Mapping[str, Any]], Optional[tuple[str, str]]]
     ] = None
+    argument_resolver: Optional[
+        Callable[[ToolCallContext], Mapping[str, Any]]
+    ] = None
     scope_resolver: Optional[Callable[[Any, Any, Mapping[str, Any]], Any]] = None
     confirmation_builder: Optional[
         Callable[[ToolCallContext, Any, Mapping[str, Any]], Mapping[str, Any] | None]
@@ -167,6 +170,9 @@ class ToolExecutionPolicy:
         )
 
     def before_tool_call(self, context: ToolCallContext) -> Optional[dict[str, Any]]:
+        resolution_failure = self._resolve_call_arguments(context)
+        if resolution_failure is not None:
+            return resolution_failure
         definition = context.tool_definition
         request = context.request
         call = context.tool_call
@@ -211,6 +217,64 @@ class ToolExecutionPolicy:
             result["recovery_required"] = True
         elif reason_code == "idempotency_store_error":
             result["runtime_signals"] = {"idempotency_store_error": True}
+            result["recovery_required"] = True
+        return result
+
+    def _resolve_call_arguments(
+        self, context: ToolCallContext
+    ) -> Optional[dict[str, Any]]:
+        resolver = self.argument_resolver
+        if not callable(resolver):
+            return None
+        try:
+            resolved = resolver(context)
+            if not isinstance(resolved, Mapping):
+                raise TypeError("argument resolver must return an object")
+            context.tool_call = replace(
+                context.tool_call,
+                arguments=dict(resolved),
+            )
+        except Exception as error:
+            return self._argument_resolution_failure(context, error)
+        return None
+
+    def _argument_resolution_failure(
+        self, context: ToolCallContext, error: Exception
+    ) -> dict[str, Any]:
+        call = context.tool_call
+        result = {
+            "block": True,
+            "reason": (
+                "Tool input could not be resolved from the selected "
+                "template and request context"
+            ),
+            "terminate": True,
+            "needs_input": True,
+            "runtime_signals": {
+                "tool_argument_resolution_error": True,
+                "tool_argument_resolution_error_type": type(error).__name__,
+            },
+        }
+        audit_ok = self._audit(
+            context.request,
+            call.name,
+            decision="blocked",
+            reason_code="argument_resolution_failed",
+        )
+        if callable(self.interaction_builder):
+            try:
+                interaction = self.interaction_builder(
+                    context, "argument_resolution_failed", result["reason"],
+                )
+            except Exception as interaction_error:
+                result["runtime_signals"]["tool_interaction_error_type"] = (
+                    type(interaction_error).__name__
+                )
+            else:
+                if isinstance(interaction, Mapping):
+                    result["interaction"] = dict(interaction)
+        if not audit_ok:
+            result["runtime_signals"]["audit_error"] = True
             result["recovery_required"] = True
         return result
 
