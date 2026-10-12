@@ -74,11 +74,20 @@ Max。每个 Blueprint 仍只引用同一渠道已注册的 Tool schema，动态
 make ad-agent-install
 ```
 
+安装会在仓库根目录创建 `.venv`，并且只向该隔离环境安装 `requirements.txt`；不会修改
+macOS 或其他系统 Python 的全局包。此环境为本机生成文件，已加入 Git 忽略规则。
+
 ## 快速开始
 
 本项目统一使用 Python 3.13。请从仓库根目录执行 Make 命令，或使用
-scripts/ad-agent-python；不要直接使用 macOS 系统的 python3。包装器会在启动前校验
-解释器版本，避免 3.9/3.11 环境导入代码时出现难以定位的语法错误。
+scripts/ad-agent-python；不要直接使用 macOS 系统的 python3。包装器只使用仓库 `.venv`
+（除非显式设置 `AD_AGENT_PYTHON`），不会回退到缺少项目依赖的全局 Python，并校验解释器
+版本；执行项目命令前会先检查依赖，缺项时列出包名并提示运行
+`make ad-agent-install`，避免启动时才遇到 `No module named fastapi`。`--version`、
+`--help` 和 pip 安装命令可在依赖尚未安装时使用。
+
+只有显式设置 `AD_AGENT_PYTHON` 时才会覆盖仓库 `.venv`。依赖安装始终写入项目 `.venv`；
+覆盖解释器时，请确认该解释器自身也安装了 `requirements.txt` 中的依赖。
 
 常用命令：
 

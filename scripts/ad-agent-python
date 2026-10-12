@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The ad-agent source uses Python 3.10+ syntax and is tested against 3.13.
-# Do not silently run it with macOS's system Python (often 3.9).
+# Resolve the project environment relative to this script, not the caller's cwd.
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project_python="${script_dir}/../.venv/bin/python"
+
+# Explicit overrides are useful for CI and isolated test environments. Otherwise,
+# only run from the repository environment; never silently use global packages.
 python_bin="${AD_AGENT_PYTHON:-}"
 if [ -z "$python_bin" ]; then
-    python_bin="$(command -v python3.13 || true)"
+    if [ -x "$project_python" ]; then
+        python_bin="$project_python"
+    else
+        echo "The project Python environment is not initialized (.venv/bin/python is missing)." >&2
+        echo "Run 'make ad-agent-install' after installing Python 3.13; set AD_AGENT_BOOTSTRAP_PYTHON if it is not named python3.13." >&2
+        exit 127
+    fi
 fi
 
 if [ -z "$python_bin" ]; then
-    echo "ad-agent requires Python 3.13. Install it or set AD_AGENT_PYTHON to a Python 3.13 executable." >&2
+    echo "ad-agent requires Python 3.13. Set AD_AGENT_PYTHON to a Python 3.13 executable." >&2
     exit 127
 fi
 
@@ -20,8 +30,37 @@ fi
 
 if [ "$version" != "3.13" ]; then
     echo "ad-agent requires Python 3.13, got Python $version ($python_bin)." >&2
-    echo "Use ./scripts/ad-agent-python ... or set AD_AGENT_PYTHON to a Python 3.13 executable." >&2
+    if [ "$python_bin" = "$project_python" ]; then
+        echo "The repository .venv uses the wrong Python version; recreate it with Python 3.13, then run 'make ad-agent-install'." >&2
+    else
+        echo "Use the repository .venv via 'make ad-agent-install', or set AD_AGENT_PYTHON to a Python 3.13 executable." >&2
+    fi
     exit 2
+fi
+
+skip_dependency_check=false
+case "${1:-}" in
+    --version|-V|--help|-h)
+        skip_dependency_check=true
+        ;;
+    -m)
+        if [ "${2:-}" = "pip" ]; then
+            skip_dependency_check=true
+        fi
+        ;;
+    "${script_dir}/check_ad_agent_dependencies.py"|scripts/check_ad_agent_dependencies.py)
+        skip_dependency_check=true
+        ;;
+esac
+
+if [ "$skip_dependency_check" != true ]; then
+    if "$python_bin" "${script_dir}/check_ad_agent_dependencies.py" \
+        --requirements "${script_dir}/../requirements.txt"; then
+        :
+    else
+        dependency_status=$?
+        exit "$dependency_status"
+    fi
 fi
 
 exec "$python_bin" "$@"

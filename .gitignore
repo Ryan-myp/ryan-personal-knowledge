@@ -28,6 +28,7 @@ config.local.json
 *.tmp
 *.swp
 *~
+.venv/
 __pycache__/
 *.py[cod]
 .DS_Store

@@ -4,8 +4,10 @@
 
 Agent 运行时、测试、评测、审计和知识库维护脚本统一使用 Python 3.13。请从仓库根目录
 使用 `make ad-agent-*`，或使用 `./scripts/ad-agent-python` 包装器；不要直接调用系统
-`python`/`python3`。包装器会在真正导入 Agent 代码前拒绝错误版本，`.python-version`
-则为 pyenv/asdf 等本地工具提供默认版本提示。
+`python`/`python3`。包装器只使用仓库 `.venv`，只有显式设置 `AD_AGENT_PYTHON` 时才覆盖；
+如果 `.venv` 未初始化就提示运行 `make ad-agent-install`，不会回退到全局 Python。
+安装目标只向该隔离环境安装 `requirements.txt`，不会改动系统 Python。部署、测试、审计
+入口会先检查依赖并提示安装命令；`.python-version` 为 pyenv/asdf 等本地工具提供默认版本提示。
 
 ## 不可改变的模型
 
