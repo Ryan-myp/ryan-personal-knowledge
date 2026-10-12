@@ -1,12 +1,14 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from agents.agent_harness.core.tool_registry import SimpleToolRegistry
 from agents.applications.advertising.execution.ad_tool_policy_factory import (
     AdvertisingToolPolicyFactory,
 )
 from agents.applications.advertising.persistence.errors import PersistenceError
 from agents.tools.advertising.providers.source_factory import create_tool_source
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
+from agents.tools.advertising.shared.domain.creation_card import CreationCardBuilder
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -53,6 +55,9 @@ class _TemplateManager:
 
 
 def _factory():
+    card_tools = SimpleToolRegistry()
+    card_tools.register_source(create_tool_source("meta"))
+    card_builder = CreationCardBuilder(_BlueprintRegistry(), card_tools)
     runtime = SimpleNamespace(
         _granted_permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
         _live_approved_tools=frozenset(),
@@ -61,6 +66,7 @@ def _factory():
         enforce_account_scope=True,
         security=_Security(),
         creation_blueprints=_BlueprintRegistry(),
+        creation_card_builder=card_builder,
         registry=SimpleNamespace(list_all=lambda: []),
         _canonical_platform=lambda value: str(value).lower(),
         _resolve_platform_identifier=lambda value: str(value).lower(),
@@ -85,6 +91,14 @@ def _adset_tool():
         binding.definition
         for binding in create_tool_source("meta").list_bindings()
         if binding.definition.name == "meta_create_adset"
+    )
+
+
+def _campaign_tool():
+    return next(
+        binding.definition
+        for binding in create_tool_source("meta").list_bindings()
+        if binding.definition.name == "meta_create_campaign"
     )
 
 
@@ -121,10 +135,10 @@ def _valid_adset_arguments():
     }
 
 
-def test_selected_blueprint_blocks_schema_valid_fields_owned_by_another_tool():
+def test_selected_blueprint_blocks_nested_fields_owned_by_another_tool():
     arguments = {
         **_valid_adset_arguments(),
-        "daily_budget": 1,
+        "campaign": {"daily_budget": 1},
     }
 
     result = _factory().check_scope_and_confirmation(
@@ -135,7 +149,37 @@ def test_selected_blueprint_blocks_schema_valid_fields_owned_by_another_tool():
 
     assert result is not None
     assert result[0] == "creation_input_required"
-    assert "daily_budget" in result[1]
+    assert "campaign" in result[1]
+
+
+def test_template_accepts_schema_fields_exposed_by_the_creation_card():
+    factory = _factory()
+    expanded = factory.runtime.creation_card_builder.expand_blueprint(BLUEPRINT)
+    assert any(
+        field.get("tool_ref") == "meta_create_campaign.bid_strategy"
+        for field in expanded.fields
+    )
+    arguments = {
+        "account_id": TEST_ACCOUNT,
+        "name": "QA_TEMPLATE_CAMPAIGN",
+        "objective": "OUTCOME_TRAFFIC",
+        "special_ad_categories": ["NONE"],
+        "buying_type": "AUCTION",
+        "daily_budget": 1000,
+        "bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "status": "PAUSED",
+    }
+
+    result = factory.check_scope_and_confirmation(
+        _campaign_tool(),
+        _request({
+            "creation_blueprint_id": BLUEPRINT.blueprint_id,
+            "creation_template_id": "builtin-meta-traffic",
+        }),
+        arguments,
+    )
+
+    assert result is None
 
 
 def test_blueprint_fields_parent_reference_and_paused_status_are_allowed():
@@ -152,12 +196,12 @@ def test_template_only_request_resolves_its_blueprint_before_tool_validation():
     result = _factory().check_scope_and_confirmation(
         _adset_tool(),
         _request({"creation_template_id": "builtin-meta-traffic"}),
-        {**_valid_adset_arguments(), "daily_budget": 1},
+        {**_valid_adset_arguments(), "campaign": {"daily_budget": 1}},
     )
 
     assert result is not None
     assert result[0] == "creation_input_required"
-    assert "daily_budget" in result[1]
+    assert "campaign" in result[1]
 
 
 def test_template_store_failure_fails_closed_before_creation():

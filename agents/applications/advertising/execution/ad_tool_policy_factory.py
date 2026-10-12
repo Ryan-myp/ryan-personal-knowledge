@@ -209,6 +209,12 @@ class AdvertisingToolPolicyFactory:
         blueprint = self.runtime.creation_blueprints.get(
             blueprint_id, blueprint_version or None,
         )
+        card_builder = getattr(self.runtime, "creation_card_builder", None)
+        expand_blueprint = getattr(card_builder, "expand_blueprint", None)
+        if blueprint is not None and callable(expand_blueprint):
+            # The creation card exposes safe Tool-schema fields in addition
+            # to hand-authored fields; enforce ownership against that same set.
+            blueprint = expand_blueprint(blueprint)
         blueprint_error = self._creation_blueprint_tool_error(
             blueprint, tool, platform,
         )
