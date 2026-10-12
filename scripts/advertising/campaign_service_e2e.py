@@ -893,6 +893,9 @@ def chat(
 ):
     root, state, headers = _load_state(directory)
     account = str(state["accounts"][provider][0])
+    tool_params = dict(params)
+    blueprint_id = tool_params.pop("_e2e_blueprint_id", None)
+    blueprint_version = tool_params.pop("_e2e_blueprint_version", None)
     headers = {
         **headers,
         "X-E2E-Case": case_id,
@@ -907,16 +910,14 @@ def chat(
             "账号所有者已授权本轮暂停资源功能测试。需要确认时先调用工具，让平台返回结构化确认凭证，"
             "不要只用文字询问确认；平台门禁仍必须完整执行。"
             "缺少必需参数时明确指出，不得猜测。参数："
-            + json.dumps(params, ensure_ascii=False)
+            + json.dumps(tool_params, ensure_ascii=False)
         ),
         "session_id": f"qa-{provider}-{case_id}",
         "account_id": account,
-        "platform_params": {provider: params},
+        "platform_params": {provider: tool_params},
         "tool_allowlist": [tool],
         "execution_mode": "live" if write else "dry_run",
     }
-    blueprint_id = params.pop("_e2e_blueprint_id", None)
-    blueprint_version = params.pop("_e2e_blueprint_version", None)
     if template_id:
         body["creation_template_id"] = str(template_id)
     if blueprint_id:
@@ -930,7 +931,7 @@ def chat(
         "template_id": template_id,
         "blueprint_id": blueprint_id,
         "blueprint_version": blueprint_version,
-        "params": params,
+        "params": tool_params,
         "phases": [],
     }
     case_path = root / "cases" / f"{case_id}.json"

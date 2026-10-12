@@ -271,6 +271,51 @@ def test_chat_forwards_template_without_selecting_the_full_blueprint(
     assert evidence["template_id"] == "builtin-meta-traffic"
 
 
+def test_chat_keeps_blueprint_metadata_out_of_tool_arguments(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(
+        driver,
+        "_load_state",
+        lambda _: (
+            tmp_path,
+            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {},
+        ),
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"status": "succeeded"}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests,
+        "post",
+        lambda *args, **kwargs: (calls.append(kwargs) or response),
+    )
+
+    chat(
+        tmp_path,
+        "meta",
+        "meta_create_campaign",
+        {
+            "_e2e_blueprint_id": "meta.traffic_link",
+            "_e2e_blueprint_version": "1.2.0",
+            "name": "QA_TEMPLATE_CAMPAIGN",
+        },
+        "template-blueprint-metadata",
+        template_id="builtin-meta-traffic",
+    )
+
+    body = calls[0]["json"]
+    assert body["creation_blueprint_id"] == "meta.traffic_link"
+    assert body["creation_blueprint_version"] == "1.2.0"
+    assert body["platform_params"]["meta"] == {"name": "QA_TEMPLATE_CAMPAIGN"}
+    assert "_e2e_blueprint_id" not in body["user_input"]
+    assert "_e2e_blueprint_version" not in body["user_input"]
+
+
 def test_test_deployment_blocks_other_meta_account_paths(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     recorder.case = {"case_id": "cross-account", "provider": "meta", "account": "123"}
