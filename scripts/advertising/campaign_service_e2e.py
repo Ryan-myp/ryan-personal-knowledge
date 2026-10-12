@@ -37,7 +37,15 @@ HOSTS = {
     "meta": "graph.facebook.com",
     "tiktok": "business-api.tiktok.com",
 }
-RESOURCES = {"campaign", "ad_group", "ad_set", "ad", "creative", "asset_group"}
+RESOURCES = {
+    "campaign",
+    "ad_group",
+    "ad_set",
+    "ad",
+    "creative",
+    "asset_group",
+    "product_group",
+}
 SENSITIVE = re.compile(
     r"token|secret|api[_-]?key|private_key|password|bc_id|partner_id|perter_id|mcc",
     re.I,
@@ -679,6 +687,7 @@ class ProviderRecorder:
         serving_resources = {
             "campaigns": "Campaign",
             "adGroups": "Ad Group",
+            "adGroupCriteria": "Product Group",
             "adGroupAds": "Ad",
             "assetGroups": "Asset Group",
         }

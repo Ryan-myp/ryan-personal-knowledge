@@ -7,6 +7,7 @@ from scripts.advertising.campaign_service_e2e import (
     ProviderRecorder,
     SafeFormatter,
     _private_directory,
+    _approved_tools,
     classify_evidence,
     readback_checks,
     chat,
@@ -371,6 +372,60 @@ def test_google_customer_mutate_requires_paused_campaign_operations(tmp_path):
 
     with pytest.raises(PermissionError, match="PAUSED"):
         recorder._guard(request, "google-ads", json.loads(request.body))
+
+
+def test_google_product_group_is_approved_for_template_e2e():
+    assert "google_create_product_group" in _approved_tools()
+
+
+@pytest.mark.parametrize("status", [None, "ENABLED"])
+def test_google_product_group_creation_requires_explicit_paused_status(
+    tmp_path, status
+):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {
+        "case_id": "google-product-group-status",
+        "provider": "google-ads",
+        "account": "123",
+    }
+    create = {
+        "adGroup": "customers/123/adGroups/456",
+        "listingGroup": {"type": "SUBDIVISION"},
+    }
+    if status is not None:
+        create["status"] = status
+    request = requests.Request(
+        "POST",
+        "https://googleads.googleapis.com/v24/customers/123/adGroupCriteria:mutate",
+        json={"operations": [{"create": create}]},
+    ).prepare()
+
+    with pytest.raises(PermissionError, match="Product Group.*PAUSED"):
+        recorder._guard(request, "google-ads", json.loads(request.body))
+
+
+def test_google_product_group_creation_accepts_explicit_paused_status(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {
+        "case_id": "google-product-group-status",
+        "provider": "google-ads",
+        "account": "123",
+    }
+    request = requests.Request(
+        "POST",
+        "https://googleads.googleapis.com/v24/customers/123/adGroupCriteria:mutate",
+        json={
+            "operations": [{
+                "create": {
+                    "adGroup": "customers/123/adGroups/456",
+                    "status": "PAUSED",
+                    "listingGroup": {"type": "SUBDIVISION"},
+                }
+            }]
+        },
+    ).prepare()
+
+    recorder._guard(request, "google-ads", json.loads(request.body))
 
 
 def test_google_app_ad_requires_a_previously_read_paused_parent(tmp_path):
