@@ -156,6 +156,24 @@ def test_evidence_redacts_credential_fields_regardless_of_scalar_type():
     assert set(safe.values()) == {"<redacted>"}
 
 
+def test_evidence_redacts_signed_media_urls():
+    signed_url = (
+        "https://cdn.example.test/image.jpg?"
+        "x-expires=1799999999&x-signature=private-signature"
+    )
+
+    safe = safe_evidence(
+        {
+            "preview_url": signed_url,
+            "image_web_uris": [signed_url],
+        }
+    )
+
+    assert safe["preview_url"] == "<redacted>"
+    assert safe["image_web_uris"] == ["<redacted>"]
+    assert "private-signature" not in json.dumps(safe)
+
+
 def test_transport_timeout_is_recorded_without_credential_url(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     recorder.case = {"case_id": "timeout", "provider": "meta", "account": "123"}

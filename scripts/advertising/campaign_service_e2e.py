@@ -50,6 +50,14 @@ SENSITIVE = re.compile(
     r"token|secret|api[_-]?key|private_key|password|bc_id|partner_id|perter_id|mcc",
     re.I,
 )
+SIGNED_URL_QUERY_KEYS = {
+    "signature",
+    "x-signature",
+    "x-amz-signature",
+    "x-goog-signature",
+    "sign",
+    "sig",
+}
 
 
 def paused_payload(provider, values):
@@ -150,10 +158,24 @@ def _scrub_evidence(value):
     if isinstance(value, list):
         return [_scrub_evidence(item) for item in value]
     if isinstance(value, str):
+        scrubbed = re.sub(
+            r"https?://[^\s\"'<>]+",
+            _redact_signed_url,
+            redact_for_persistence(value),
+        )
         return re.sub(
-            r"ps1\.[A-Za-z0-9_.-]+", "<redacted>", redact_for_persistence(value)
+            r"ps1\.[A-Za-z0-9_.-]+", "<redacted>", scrubbed
         )
     return value
+
+
+def _redact_signed_url(match):
+    url = match.group(0).rstrip(".,;)")
+    query_keys = {
+        key.casefold()
+        for key in parse_qs(urlsplit(url).query, keep_blank_values=True)
+    }
+    return "<redacted>" if query_keys & SIGNED_URL_QUERY_KEYS else match.group(0)
 
 
 def compact_summary(payload, tool):
