@@ -232,6 +232,9 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     assert templates_by_key["google.test.shopping"]["values"][
         "campaign.shopping_setting.merchant_id"
     ] == "115791065"
+    assert templates_by_key["google.test.shopping"]["values"][
+        "product_group.partition_type"
+    ] == "UNIT"
     assert templates_by_key["meta.test.traffic"]["values"]["ad.page_id"] == "1266166123254225"
     assert templates_by_key["tiktok.test.traffic"]["values"]["ad.video_id"] == (
         "v10033g50000d8nltv7og65nd6868v7g"
@@ -240,11 +243,17 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
         "15efada4-8fb9-54aa-b5c6-3b82529b947d"
     )
     assert templates_by_key["tiktok.test.traffic"]["values"]["ad.identity_type"] == "BC_AUTH_TT"
-    assert templates_by_key["tiktok.test.sales"]["values"]["campaign.sales_destination"] == "WEBSITE"
-    assert templates_by_key["tiktok.test.sales"]["values"]["campaign.catalog_enabled"] is False
-    assert "ad_group.catalog_id" not in templates_by_key["tiktok.test.sales"]["values"]
-    assert "ad_group.product_set_id" not in templates_by_key["tiktok.test.sales"]["values"]
-    assert "campaign.app_id" not in templates_by_key["tiktok.test.app-promotion"]["values"]
+    tiktok_sales = templates_by_key["tiktok.test.sales"]["values"]
+    assert tiktok_sales["campaign.objective_type"] == "PRODUCT_SALES"
+    assert tiktok_sales["campaign.catalog_enabled"] is True
+    assert tiktok_sales["campaign.sales_destination"] == "WEBSITE"
+    assert tiktok_sales["ad_group.promotion_type"] == "CATALOG"
+    assert tiktok_sales["ad_group.catalog_id"] == "6964618698963289858"
+    assert tiktok_sales["ad_group.product_set_id"] == "3229"
+    assert "ad_group.pixel_id" not in tiktok_sales
+    tiktok_app = templates_by_key["tiktok.test.app-promotion"]["values"]
+    assert tiktok_app["campaign.app_id"] == "6734587026957402118"
+    assert tiktok_app["ad_group.app_id"] == tiktok_app["campaign.app_id"]
     assert all(
         "selection_token" not in json.dumps(item["values"])
         for item in definitions

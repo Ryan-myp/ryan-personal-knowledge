@@ -487,11 +487,15 @@ def test_requested_ad_type_blueprints_have_registered_create_and_readback_tools(
         "application_id"
     ]["lookup_tool"] == "meta_list_apps"
     tiktok_product_sales = blueprints["tiktok.product_sales_video"]
-    product_set = next(
-        field for field in tiktok_product_sales.fields
-        if field["path"] == "ad_group.product_set_id"
-    )
+    product_sales_fields = {
+        field["path"]: field for field in tiktok_product_sales.fields
+    }
+    product_set = product_sales_fields["ad_group.product_set_id"]
     assert product_set["lookup_tool"] == "tiktok_list_product_sets"
+    assert product_sales_fields["ad.landing_page_url"]["required_when"] == {
+        "field": "ad_group.promotion_type",
+        "equals": "WEBSITE",
+    }
     for blueprint_id in (
         "tiktok.product_sales_video",
         "tiktok.app_conversion_video",
