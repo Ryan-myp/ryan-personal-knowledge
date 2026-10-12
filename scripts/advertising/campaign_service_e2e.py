@@ -921,9 +921,13 @@ def serve(directory, port):
 
 def chat(
     directory, provider, tool, params, case_id, write=False, template_id=None,
+    session_id=None,
 ):
     root, state, headers = _load_state(directory)
     account = str(state["accounts"][provider][0])
+    effective_session_id = str(
+        session_id or f"qa-{provider}-{case_id}"
+    )
     tool_params = dict(params)
     blueprint_id = tool_params.pop("_e2e_blueprint_id", None)
     blueprint_version = tool_params.pop("_e2e_blueprint_version", None)
@@ -943,7 +947,7 @@ def chat(
             "缺少必需参数时明确指出，不得猜测。参数："
             + json.dumps(tool_params, ensure_ascii=False)
         ),
-        "session_id": f"qa-{provider}-{case_id}",
+        "session_id": effective_session_id,
         "account_id": account,
         "platform_params": {provider: tool_params},
         "tool_allowlist": [tool],
@@ -959,6 +963,7 @@ def chat(
         "provider": provider,
         "account": account,
         "tool": tool,
+        "session_id": effective_session_id,
         "template_id": template_id,
         "blueprint_id": blueprint_id,
         "blueprint_version": blueprint_version,
@@ -1022,6 +1027,7 @@ def main():
     parser.add_argument("--blueprint-id")
     parser.add_argument("--blueprint-version")
     parser.add_argument("--template-id")
+    parser.add_argument("--session-id")
     args = parser.parse_args()
     if args.command == "start":
         start(args.directory, args.port)
@@ -1041,6 +1047,7 @@ def main():
             args.case_id,
             args.write,
             args.template_id,
+            args.session_id,
         )
     elif args.command == "report":
         report(args.directory)

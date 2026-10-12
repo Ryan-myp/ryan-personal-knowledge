@@ -290,6 +290,44 @@ def test_chat_forwards_template_without_selecting_the_full_blueprint(
     assert evidence["template_id"] == "builtin-meta-traffic"
 
 
+def test_chat_can_continue_an_existing_template_session(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(
+        driver,
+        "_load_state",
+        lambda _: (
+            tmp_path,
+            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {},
+        ),
+    )
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"status": "succeeded"}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests,
+        "post",
+        lambda *args, **kwargs: (calls.append(kwargs) or response),
+    )
+
+    chat(
+        tmp_path,
+        "meta",
+        "meta_list_catalogs",
+        {"limit": 10},
+        "template-session-follow-up",
+        session_id="template-session-1",
+        template_id="builtin-meta-catalog-sales",
+    )
+
+    assert calls[0]["json"]["session_id"] == "template-session-1"
+    assert calls[0]["json"]["creation_template_id"] == (
+        "builtin-meta-catalog-sales"
+    )
+
+
 def test_chat_keeps_blueprint_metadata_out_of_tool_arguments(
     monkeypatch, tmp_path
 ):

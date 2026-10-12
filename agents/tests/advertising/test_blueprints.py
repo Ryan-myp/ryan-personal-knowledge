@@ -1429,7 +1429,7 @@ def test_creation_ui_builds_tiktok_app_card_from_registered_blueprint():
     assert ui["needs_input"] is True
 
 
-def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous():
+def test_creation_ui_returns_form_with_frontend_identity_and_provider():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     runtime.register_tool_source(create_tiktok_tool_source())
     intent = ParsedIntent(
@@ -1437,6 +1437,8 @@ def test_creation_ui_returns_selector_card_when_creation_dimension_is_ambiguous(
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     assert card["type"] == "ad_creation_form"
+    assert card["id"]
+    assert card["provider"] == "tiktok"
     assert card["blueprint_id"] == "tiktok.product_sales_video"
 
 
