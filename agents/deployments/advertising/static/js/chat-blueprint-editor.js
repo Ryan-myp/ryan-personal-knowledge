@@ -1087,7 +1087,15 @@
                 accountInput.placeholder = `请输入本次要操作的${creationAccountLabel(blueprint.provider)}`;
                 accountInput.value = blueprintState.accountId || '';
                 accountInput.oninput = () => {
-                    blueprintState.accountId = accountInput.value.trim();
+                    const nextAccountId = accountInput.value.trim();
+                    const accountChanged = nextAccountId !== blueprintState.accountId;
+                    blueprintState.accountId = nextAccountId;
+                    if (accountChanged) {
+                        blueprintState.selectionTokens = {};
+                        blueprintState.selectionTokenTools = {};
+                        blueprintState.lookupOptions = {};
+                        renderBlueprintFields(blueprintState.evaluation);
+                    }
                     refreshLookupAccountState(document.getElementById('blueprintFields'));
                     renderBlueprintSummary(blueprint, blueprintState.evaluation);
                 };

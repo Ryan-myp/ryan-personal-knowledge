@@ -28,12 +28,14 @@ _SCOPE_TYPES = {"general", "account", "region"}
 _STATUSES = {"active", "inactive", "archived"}
 _MAX_VALUES_BYTES = 120_000
 _FORBIDDEN_KEY = re.compile(
-    r"(?:access[_-]?token|refresh[_-]?token|client[_-]?(?:id|secret)|"
+    r"(?:selection[_-]?tokens?(?:[_-]?tools?)?|access[_-]?token|refresh[_-]?token|"
+    r"client[_-]?(?:id|secret)|"
     r"app[_-]?secret|developer[_-]?token|private[_-]?key|authorization|"
     r"credentials?|partner[_-]?id|perter[_-]?id|bc[_-]?id|mcc|password|"
     r"script|command|entrypoint|mcp)",
     re.IGNORECASE,
 )
+_SELECTION_TOKEN_VALUE = re.compile(r"ps1\.[A-Za-z0-9_-]+\.[a-f0-9]{64}")
 _BUILTIN_TEMPLATE_PATH = (
     Path(__file__).resolve().parents[1]
     / "contracts"
@@ -110,6 +112,8 @@ def _tags(value: Any) -> list[str]:
 def _safe_json(value: Any, depth: int = 0) -> Any:
     if depth > 8:
         raise CreationTemplateError("模板参数嵌套层级过深")
+    if isinstance(value, str) and _SELECTION_TOKEN_VALUE.search(value):
+        raise CreationTemplateError("模板不能保存凭证或可执行配置")
     if value is None or isinstance(value, (str, int, float, bool)):
         if isinstance(value, float) and (value != value or abs(value) == float("inf")):
             raise CreationTemplateError("模板参数不能包含无效数字")
@@ -325,39 +329,64 @@ class CreationTemplateManager:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         if not isinstance(payload, Mapping):
             raise CreationTemplateError("模板必须是对象")
-        blueprint_id = str(payload.get("blueprint_id") or (existing.blueprint_id if existing else "")).strip()
-        blueprint_version = str(payload.get("blueprint_version") or (existing.blueprint_version if existing else "")).strip() or None
+        blueprint_id_value = payload.get("blueprint_id") or (
+            existing.blueprint_id if existing else ""
+        )
+        blueprint_id = str(blueprint_id_value).strip()
+        version_value = payload.get("blueprint_version") or (
+            existing.blueprint_version if existing else ""
+        )
+        blueprint_version = str(version_value).strip() or None
         if not blueprint_id:
             raise CreationTemplateError("blueprint_id 不能为空")
         blueprint = self._blueprint(blueprint_id, blueprint_version)
         actual_version = str(blueprint.get("version") or blueprint_version or "")
         if blueprint_version and actual_version != blueprint_version:
             raise CreationTemplateError("模板引用的蓝图版本不可用，请重新从向导保存")
-        provider = str(payload.get("provider") or (existing.provider if existing else "")).strip()
-        ad_format = str(payload.get("ad_format") or (existing.ad_format if existing else "")).strip()
+        provider_value = payload.get("provider") or (existing.provider if existing else "")
+        ad_format_value = payload.get("ad_format") or (existing.ad_format if existing else "")
+        provider = str(provider_value).strip()
+        ad_format = str(ad_format_value).strip()
         if provider and provider != str(blueprint.get("provider") or ""):
             raise CreationTemplateError("模板渠道与创建蓝图不一致")
         if ad_format and ad_format != str(blueprint.get("ad_format") or ""):
             raise CreationTemplateError("模板广告类型与创建蓝图不一致")
-        scope_type = str(payload.get("scope_type") or (existing.scope_type if existing else "general")).strip().lower()
+        scope_value = payload.get("scope_type") or (
+            existing.scope_type if existing else "general"
+        )
+        scope_type = str(scope_value).strip().lower()
         if scope_type not in _SCOPE_TYPES:
             raise CreationTemplateError("scope_type 必须是 general、account 或 region")
-        account_id = _text(payload.get("account_id", existing.account_id if existing else ""), "account_id", 200)
+        account_value = payload.get(
+            "account_id", existing.account_id if existing else "",
+        )
+        account_id = _text(account_value, "account_id", 200)
         region = _text(payload.get("region", existing.region if existing else ""), "region", 120)
         if scope_type == "account" and not account_id:
             raise CreationTemplateError("指定账户模板必须填写 account_id")
         if scope_type == "region" and not region:
             raise CreationTemplateError("指定地区模板必须填写 region")
-        status = str(payload.get("status") or (existing.status if existing else "active")).strip().lower()
+        status_value = payload.get("status") or (existing.status if existing else "active")
+        status = str(status_value).strip().lower()
         if status not in _STATUSES:
             raise CreationTemplateError("模板状态不合法")
-        values = self._values(blueprint, payload.get("values", existing.values if existing else {}))
+        values_value = payload.get("values", existing.values if existing else {})
+        values = self._values(blueprint, values_value)
         is_default = bool(payload.get("is_default", existing.is_default if existing else False))
         if status != "active":
             is_default = False
         return {
-            "name": _text(payload.get("name", existing.name if existing else ""), "name", 120, required=True),
-            "description": _text(payload.get("description", existing.description if existing else ""), "description", 500),
+            "name": _text(
+                payload.get("name", existing.name if existing else ""),
+                "name",
+                120,
+                required=True,
+            ),
+            "description": _text(
+                payload.get("description", existing.description if existing else ""),
+                "description",
+                500,
+            ),
             "provider": str(blueprint.get("provider") or provider),
             "blueprint_id": blueprint_id,
             "blueprint_version": actual_version,
@@ -385,18 +414,13 @@ class CreationTemplateManager:
             raise CreationTemplateError("模板保存冲突，请稍后重试") from exc
         return self._public(saved)
 
-    def list(
+    def _visible_user_records(
         self,
-        tenant_id: str,
-        user_id: str,
+        records: list[Any],
         *,
-        account_id: Optional[str] = None,
-        account_scope: Any = _UNSET,
-        **filters: Any,
+        account_id: Optional[str],
+        account_scope: Any,
     ) -> list[dict[str, Any]]:
-        records = self.store.list_creation_templates(
-            str(tenant_id), str(user_id), **filters,
-        )
         visible_records = []
         for record in records:
             public = self._public(record)
@@ -412,17 +436,28 @@ class CreationTemplateManager:
             ):
                 continue
             visible_records.append(public)
-        builtin_records = []
-        for record in self._builtin_records(
-            account_scope=account_scope, account_id=account_id,
-        ):
+        return visible_records
+
+    def _filtered_builtin_records(
+        self,
+        *,
+        account_scope: Any,
+        account_id: Optional[str],
+        filters: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        records = self._builtin_records(
+            account_scope=account_scope,
+            account_id=account_id,
+        )
+        filtered_records = []
+        query = str(filters.get("query") or "").strip().casefold()
+        for record in records:
             if filters.get("provider") and record["provider"] != str(filters["provider"]):
                 continue
             if filters.get("blueprint_id") and record["blueprint_id"] != str(filters["blueprint_id"]):
                 continue
             if filters.get("status") and record["status"] != str(filters["status"]):
                 continue
-            query = str(filters.get("query") or "").strip().casefold()
             if query:
                 searchable = " ".join([
                     str(record.get("name") or ""),
@@ -434,7 +469,30 @@ class CreationTemplateManager:
                 ]).casefold()
                 if query not in searchable:
                     continue
-            builtin_records.append(record)
+            filtered_records.append(record)
+        return filtered_records
+
+    def list(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        account_id: Optional[str] = None,
+        account_scope: Any = _UNSET,
+        **filters: Any,
+    ) -> list[dict[str, Any]]:
+        records = self.store.list_creation_templates(
+            str(tenant_id), str(user_id), **filters,
+        )
+        visible_records = self._visible_user_records(
+            records,
+            account_id=account_id,
+            account_scope=account_scope,
+        )
+        builtin_records = self._filtered_builtin_records(
+            account_scope=account_scope, account_id=account_id,
+            filters=filters,
+        )
         limit = max(1, min(int(filters.get("limit", 100)), 200))
         return [*builtin_records, *visible_records][:limit]
 
@@ -447,7 +505,11 @@ class CreationTemplateManager:
         account_id: Optional[str] = None,
         account_scope: Any = _UNSET,
     ) -> Optional[dict[str, Any]]:
-        record = self.store.get_creation_template(template_id, tenant_id=str(tenant_id), user_id=str(user_id))
+        record = self.store.get_creation_template(
+            template_id,
+            tenant_id=str(tenant_id),
+            user_id=str(user_id),
+        )
         if record:
             public = self._public(record)
             if account_id and (
@@ -466,28 +528,55 @@ class CreationTemplateManager:
             template_id, account_scope=account_scope, account_id=account_id,
         )
 
-    def update(self, tenant_id: str, user_id: str, template_id: str, payload: Mapping[str, Any]) -> Optional[dict[str, Any]]:
+    def update(
+        self,
+        tenant_id: str,
+        user_id: str,
+        template_id: str,
+        payload: Mapping[str, Any],
+    ) -> Optional[dict[str, Any]]:
         if self._builtin_by_id(template_id):
             raise CreationTemplateError("内置模板不可修改，请先复制为个人模板")
-        existing = self.store.get_creation_template(template_id, tenant_id=str(tenant_id), user_id=str(user_id))
+        existing = self.store.get_creation_template(
+            template_id,
+            tenant_id=str(tenant_id),
+            user_id=str(user_id),
+        )
         if not existing:
             return None
         if payload.get("blueprint_id") and str(payload["blueprint_id"]) != existing.blueprint_id:
             raise CreationTemplateError("模板创建类型不可修改，请复制为新模板")
         data, _ = self._payload({**existing.to_dict(), **dict(payload)}, existing=existing)
         updated = self.store.update_creation_template(
-            template_id, tenant_id=str(tenant_id), user_id=str(user_id), data=data
+            template_id,
+            tenant_id=str(tenant_id),
+            user_id=str(user_id),
+            data=data,
         )
         return self._public(updated) if updated else None
 
     def delete(self, tenant_id: str, user_id: str, template_id: str) -> Optional[dict[str, Any]]:
         if self._builtin_by_id(template_id):
             raise CreationTemplateError("内置模板不可删除，请先复制为个人模板")
-        record = self.store.delete_creation_template(template_id, tenant_id=str(tenant_id), user_id=str(user_id))
+        record = self.store.delete_creation_template(
+            template_id,
+            tenant_id=str(tenant_id),
+            user_id=str(user_id),
+        )
         return self._public(record) if record else None
 
-    def duplicate(self, tenant_id: str, user_id: str, template_id: str, name: Optional[str] = None) -> Optional[dict[str, Any]]:
-        record = self.store.get_creation_template(template_id, tenant_id=str(tenant_id), user_id=str(user_id))
+    def duplicate(
+        self,
+        tenant_id: str,
+        user_id: str,
+        template_id: str,
+        name: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        record = self.store.get_creation_template(
+            template_id,
+            tenant_id=str(tenant_id),
+            user_id=str(user_id),
+        )
         builtin = self._builtin_by_id(template_id)
         if record:
             payload = record.to_dict()

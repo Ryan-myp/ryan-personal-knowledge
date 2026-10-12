@@ -1,3 +1,32 @@
+function reconcileLookupSelection(selectedValue, options, multiple) {
+    const selected = multiple
+        ? (Array.isArray(selectedValue) ? selectedValue : [])
+        : (selectedValue === undefined || selectedValue === null || selectedValue === ''
+            ? [] : [selectedValue]);
+    const availableOptions = Array.isArray(options) ? options : [];
+    const optionsByValue = new Map();
+    availableOptions.forEach(option => {
+        const key = lookupValueKey(option?.value);
+        const matches = optionsByValue.get(key) || [];
+        matches.push(option);
+        optionsByValue.set(key, matches);
+    });
+    let matchedCount = 0;
+    const tokens = selected.map(value => {
+        const matches = optionsByValue.get(lookupValueKey(value)) || [];
+        if (matches.length !== 1) return '';
+        const token = matches[0]?.selection_token;
+        if (typeof token !== 'string' || !token.trim() || token !== token.trim()) return '';
+        matchedCount += 1;
+        return token;
+    });
+    return {
+        tokens,
+        matchedCount,
+        unresolvedCount: selected.length - matchedCount,
+    };
+}
+
         function openBlueprintManager(provider = null, selectorValue = null, blueprintId = null, mode = 'wizard') {
             blueprintState.mode = mode === 'templates' ? 'templates' : 'wizard';
             closeWorkspacePopovers();
@@ -169,7 +198,15 @@
 
         function lookupValueKey(value) {
             if (value === undefined || value === null) return '';
-            return JSON.stringify(value, (_, item) => item, 0);
+            return JSON.stringify(normalizeLookupValue(value));
+        }
+
+        function normalizeLookupValue(value) {
+            if (Array.isArray(value)) return value.map(normalizeLookupValue);
+            if (!value || typeof value !== 'object') return value;
+            return Object.fromEntries(
+                Object.keys(value).sort().map(key => [key, normalizeLookupValue(value[key])]),
+            );
         }
 
         function lookupFieldValue(field, context = {}) {
@@ -304,6 +341,13 @@
                     chip.className = 'lookup-selection-chip';
                     const label = document.createElement('span');
                     label.textContent = `${lookupOptionLabel(option)} · ${lookupOptionValueText(value)}`;
+                    const verified = typeof tokens[index] === 'string' && Boolean(tokens[index].trim());
+                    const verification = document.createElement('small');
+                    verification.className = `lookup-selection-verification ${verified ? 'verified' : 'unverified'}`;
+                    verification.textContent = verified ? '已校验' : '未验证';
+                    verification.title = verified
+                        ? '此值已获得当前账户下的查询授权'
+                        : '模板预填值尚未由当前查询结果确认；移除后可从查询结果重新选择。';
                     const remove = document.createElement('button');
                     remove.type = 'button';
                     remove.setAttribute('aria-label', `移除 ${lookupOptionLabel(option)}`);
@@ -313,7 +357,7 @@
                         const nextTokens = multiple ? tokens.filter((_, tokenIndex) => tokenIndex !== index) : [];
                         commitSelection(next, nextTokens, null);
                     };
-                    chip.append(label, remove);
+                    chip.append(label, verification, remove);
                     selected.appendChild(chip);
                 });
                 if (!values.length) {
@@ -363,7 +407,10 @@
 
             function commitSelection(values, tokens, option) {
                 const nextValue = multiple ? values : (values[0] ?? undefined);
-                const nextTokens = multiple ? tokens : (tokens[0] || undefined);
+                const hasFreshToken = tokens.some(token => typeof token === 'string' && token.trim());
+                const nextTokens = hasFreshToken
+                    ? (multiple ? tokens : (tokens[0] || undefined))
+                    : undefined;
                 const key = lookupFieldName(field, context);
                 if (nextTokens) tokenStore[key] = nextTokens;
                 else delete tokenStore[key];
@@ -389,12 +436,13 @@
                 status.textContent = '正在查询该账户的可用项…';
                 try {
                     ensureLookupSessionId();
+                    const lookupContext = lookupContextValues(context);
+                    const lookupContextSnapshot = JSON.stringify(lookupContext);
                     const params = new URLSearchParams({
                         platform: String(context.platform), field: fieldName,
                         tool_name: toolName, session_id: sessionId,
                     });
                     if (account) params.set('account_id', account);
-                    const lookupContext = lookupContextValues(context);
                     if (Object.keys(lookupContext).length) params.set('lookup_context', JSON.stringify(lookupContext));
                     if (field?.lookup?.query_field && searchInput.value.trim()) params.set('query', searchInput.value.trim());
                     const response = await authenticatedFetch(`/parameter-options/resolve?${params.toString()}`);
@@ -402,10 +450,30 @@
                     let data = {};
                     try { data = body ? JSON.parse(body) : {}; } catch (_) { data = {}; }
                     if (!response.ok) throw new Error(data.detail || data.error || `查询失败（${response.status}）`);
+                    if (
+                        accountId() !== account
+                        || JSON.stringify(lookupContextValues(context)) !== lookupContextSnapshot
+                    ) {
+                        status.textContent = '账户或关联参数已变化，未采用旧查询结果，请重新查询。';
+                        return;
+                    }
                     options = Array.isArray(data.options) ? data.options : [];
                     optionsStore[optionsKey] = options;
-                    renderResults();
-                    renderSelected();
+                    const selectedValues = getSelected();
+                    if (selectedValues.length) {
+                        const reconciliation = reconcileLookupSelection(
+                            multiple ? selectedValues : selectedValues[0],
+                            options,
+                            multiple,
+                        );
+                        commitSelection(selectedValues, reconciliation.tokens, null);
+                        if (reconciliation.unresolvedCount) {
+                            status.textContent = `有 ${reconciliation.unresolvedCount} 个预填值未匹配本次查询结果，请移除后重新选择。`;
+                        }
+                    } else {
+                        renderResults();
+                        renderSelected();
+                    }
                 } catch (error) {
                     status.textContent = error.message || '暂时无法查询可用项，请稍后重试。';
                 } finally {

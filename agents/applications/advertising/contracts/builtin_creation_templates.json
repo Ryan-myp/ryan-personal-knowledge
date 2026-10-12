@@ -4,7 +4,7 @@
     {
       "key": "meta.test.traffic",
       "name": "Meta 测试账号 · 流量链接",
-      "description": "Meta 受控测试账号的流量广告基线。默认竞价、最低成本、落地页浏览和图片素材入口。",
+      "description": "Meta 受控测试账号的流量广告基线，预填已查询 Page。资源值只是账户偏好，使用时需重新查询确认。",
       "provider": "meta",
       "blueprint_id": "meta.traffic_link",
       "blueprint_version": "1.0.0",
@@ -28,6 +28,7 @@
         "ad_set.optimization_goal": "LANDING_PAGE_VIEWS",
         "ad_set.billing_event": "IMPRESSIONS",
         "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.page_id": "1266166123254225",
         "ad.media_type": "IMAGE"
       }
     },
@@ -159,7 +160,7 @@
     {
       "key": "google.test.shopping",
       "name": "Google 测试账号 · Shopping",
-      "description": "Google Ads 受控测试账号的 Shopping 基线。默认全商品分组、暂停商品组和最大化转化价值。",
+      "description": "Google Ads 受控测试账号的 Shopping 基线，预填已查询 Merchant ID。账户资源值仍需按当前查询结果确认。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.shopping",
       "blueprint_version": "1.0.0",
@@ -177,6 +178,7 @@
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.advertising_channel_type": "SHOPPING",
+        "campaign.shopping_setting.merchant_id": "115791065",
         "campaign.shopping_setting.campaign_priority": 0,
         "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE",
         "ad_group.type": "SHOPPING_PRODUCT_ADS",
@@ -188,7 +190,7 @@
     {
       "key": "google.test.app",
       "name": "Google 测试账号 · App",
-      "description": "Google Ads 受控测试账号的 App 广告基线。默认 App 安装、最大化转化，应用设置和素材由账户上下文补齐。",
+      "description": "Google Ads 受控测试账号的 App 广告基线，预填已查询应用与商店配置。账户资源值仍需按当前查询结果确认。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.app",
       "blueprint_version": "1.0.0",
@@ -210,13 +212,18 @@
         "campaign.campaign_type": "APP",
         "campaign.advertising_channel_type": "MULTI_CHANNEL",
         "campaign.advertising_channel_sub_type": "APP_CAMPAIGN",
+        "campaign.app_campaign_setting": {
+          "app_id": "959841107",
+          "app_store": "APPLE_APP_STORE",
+          "bidding_strategy_goal_type": "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST"
+        },
         "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
       }
     },
     {
       "key": "tiktok.test.traffic",
       "name": "TikTok 测试账号 · 流量",
-      "description": "TikTok 受控测试账号的 Website 流量基线。默认日预算、从现在开始、落地页浏览和自动探索出价。",
+      "description": "TikTok 受控测试账号的流量基线，预填已查询视频与身份。资源值只是账户偏好，使用时需重新查询确认。",
       "provider": "tiktok",
       "blueprint_id": "tiktok.traffic_video",
       "blueprint_version": "3.0.1",
@@ -243,7 +250,10 @@
         "ad_group.optimization_goal": "TRAFFIC_LANDING_PAGE_VIEW",
         "ad_group.bid_type": "BID_TYPE_NO_BID",
         "ad_group.gender": "GENDER_UNLIMITED",
-        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"]
+        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"],
+        "ad.video_id": "v10033g50000d8nltv7og65nd6868v7g",
+        "ad.identity_type": "BC_AUTH_TT",
+        "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d"
       }
     },
     {

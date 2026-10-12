@@ -86,6 +86,28 @@ def test_template_rejects_unknown_or_sensitive_fields():
         )
 
 
+@pytest.mark.parametrize("token_key", ["selection_token", "selection_tokens"])
+def test_template_rejects_lookup_authorization_tokens_at_any_depth(token_key):
+    templates = manager()
+    with pytest.raises(CreationTemplateError, match="凭证"):
+        templates.create(
+            "tenant-a",
+            "user-a",
+            payload(values={"campaign.objective": {"nested": {token_key: "signed-token"}}}),
+        )
+
+
+def test_template_rejects_signed_selection_token_embedded_in_a_value():
+    templates = manager()
+    token = f"ps1.eyJ2IjoxfQ.{('a' * 64)}"
+    with pytest.raises(CreationTemplateError, match="凭证"):
+        templates.create(
+            "tenant-a",
+            "user-a",
+            payload(values={"campaign.objective": token}),
+        )
+
+
 def test_account_and_region_scopes_require_their_matching_selector():
     templates = manager()
     with pytest.raises(CreationTemplateError, match="account_id"):
@@ -201,6 +223,32 @@ def test_builtin_template_is_account_bound_read_only_and_duplicable():
 def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     definitions = load_builtin_template_definitions()
     assert len(definitions) == 13
+    templates_by_key = {item["key"]: item for item in definitions}
+    assert templates_by_key["google.test.app"]["values"]["campaign.app_campaign_setting"] == {
+        "app_id": "959841107",
+        "app_store": "APPLE_APP_STORE",
+        "bidding_strategy_goal_type": "OPTIMIZE_IN_APP_CONVERSIONS_TARGET_CONVERSION_COST",
+    }
+    assert templates_by_key["google.test.shopping"]["values"][
+        "campaign.shopping_setting.merchant_id"
+    ] == "115791065"
+    assert templates_by_key["meta.test.traffic"]["values"]["ad.page_id"] == "1266166123254225"
+    assert templates_by_key["tiktok.test.traffic"]["values"]["ad.video_id"] == (
+        "v10033g50000d8nltv7og65nd6868v7g"
+    )
+    assert templates_by_key["tiktok.test.traffic"]["values"]["ad.identity_id"] == (
+        "15efada4-8fb9-54aa-b5c6-3b82529b947d"
+    )
+    assert templates_by_key["tiktok.test.traffic"]["values"]["ad.identity_type"] == "BC_AUTH_TT"
+    assert templates_by_key["tiktok.test.sales"]["values"]["campaign.sales_destination"] == "WEBSITE"
+    assert templates_by_key["tiktok.test.sales"]["values"]["campaign.catalog_enabled"] is False
+    assert "ad_group.catalog_id" not in templates_by_key["tiktok.test.sales"]["values"]
+    assert "ad_group.product_set_id" not in templates_by_key["tiktok.test.sales"]["values"]
+    assert "campaign.app_id" not in templates_by_key["tiktok.test.app-promotion"]["values"]
+    assert all(
+        "selection_token" not in json.dumps(item["values"])
+        for item in definitions
+    )
     assert {item["provider"] for item in definitions} == {
         "meta", "google-ads", "tiktok", "dv360",
     }
