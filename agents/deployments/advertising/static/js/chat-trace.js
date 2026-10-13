@@ -352,10 +352,6 @@
             return raw;
         }
 
-        function shouldOpenTraceForEvent(event) {
-            return ['plan', 'stage_started', 'stage_status', 'node_discovered', 'node_started', 'node_status', 'confirmation'].includes(event.type);
-        }
-
         function upsertTraceToolNode(event) {
             const identity = traceToolIdentity(event);
             const id = String(event.node_id || `tool:${event.tool_call_id || identity.tool || traceState.orderCounter + 1}`);
@@ -439,9 +435,6 @@
             event = normalizeExecutionEvent(event);
             if (!event.type) return null;
             const duplicateStart = event.type === 'start' && traceState.events.some(item => item.type === 'start');
-            if (shouldOpenTraceForEvent(event) && typeof openAgentWorkbench === 'function') {
-                openAgentWorkbench('trace');
-            }
             if (event.type === 'start') {
                 traceState.traceId = event.trace_id || traceState.traceId;
                 if (event.turn_id) traceState.activeTurn = event.turn_id;

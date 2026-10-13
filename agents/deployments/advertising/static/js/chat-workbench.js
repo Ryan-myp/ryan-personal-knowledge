@@ -35,6 +35,10 @@
             setWorkbenchView(view);
         }
 
+        function openTraceWorkbench() {
+            openAgentWorkbench('trace');
+        }
+
         function closeAgentWorkbench() {
             const panel = document.querySelector('.right-panel');
             workbenchState.open = false;

@@ -138,6 +138,20 @@ def test_chat_routes_are_owned_by_a_dedicated_route_module():
     }
 
 
+def test_execution_trace_is_opt_in_while_creation_workbench_remains_available():
+    javascript = _chat_page_javascript()
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    assert "function shouldOpenTraceForEvent" not in javascript
+    assert "function applyExecutionEvent(event)" in javascript
+    event_handler = javascript.split("function applyExecutionEvent(event)", 1)[1]
+    assert "openAgentWorkbench" not in event_handler
+    assert 'onclick="openTraceWorkbench()"' in template
+    assert "function openTraceWorkbench()" in javascript
+    assert "function openCreationWorkbench" in javascript
+    assert "function openConfirmationWorkbench" in javascript
+
+
 def test_chat_request_preparation_does_not_block_the_event_loop():
     main_thread = threading.get_ident()
     callback_threads = []
@@ -1066,7 +1080,9 @@ def test_workbench_is_on_demand_and_normalizes_generic_harness_events():
     assert "tool_execution_start" in html
     assert "tool_execution_end" in html
     assert "function normalizeExecutionEvent" in html
-    assert "shouldOpenTraceForEvent" in html
+    assert "shouldOpenTraceForEvent" not in html
+    assert "function openTraceWorkbench()" in html
+    assert 'onclick="openTraceWorkbench()"' in html
 
 
 def test_chat_renders_scoped_account_choices_and_avoids_false_creation_fallback():

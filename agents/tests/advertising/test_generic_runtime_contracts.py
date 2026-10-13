@@ -201,13 +201,30 @@ def test_meta_account_discovery_runs_without_selecting_an_account():
         def __init__(self):
             self.calls = []
 
-        def list_accounts(self, business_id=None, limit=100):
-            self.calls.append((business_id, limit))
+        def list_accounts(
+            self,
+            business_id=None,
+            limit=100,
+            authorized_account_ids=None,
+        ):
+            self.calls.append(
+                (business_id, limit, tuple(authorized_account_ids or ()))
+            )
+            records = {
+                "meta-test-a": {"id": "act_meta-test-a", "name": "Test A"},
+                "meta-test-b": {"id": "act_meta-test-b", "name": "Test B"},
+                "unapproved-live-account": {
+                    "id": "act_unapproved-live-account",
+                    "name": "Not approved",
+                },
+            }
+            if authorized_account_ids is None:
+                return list(records.values())
             return [
-                {"id": "act_meta-test-a", "name": "Test A"},
-                {"id": "act_meta-test-b", "name": "Test B"},
-                {"id": "act_unapproved-live-account", "name": "Not approved"},
-            ]
+                records[item]
+                for item in authorized_account_ids
+                if item in records
+            ][:limit]
 
     client = MetaClient()
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -245,7 +262,7 @@ def test_meta_account_discovery_runs_without_selecting_an_account():
         ]
         assert result["results"][0]["data"]["total_count"] == 1
         assert result["results"][0]["data"]["has_more"] is False
-        assert client.calls == [(None, 100)]
+        assert client.calls == [(None, 100, ("meta-test-a",))]
     finally:
         runtime.close(wait=True)
 

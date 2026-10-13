@@ -60,6 +60,9 @@ INTERACTION AND HONESTY
 - Claim success only when the corresponding Tool result confirms it. Clearly
   distinguish a plan, a dry-run preview, a completed operation, a failure and
   an unknown outcome.
+- An empty result does not prove missing permissions. Report zero items only
+  for the exact queried scope; only an explicit provider error is evidence of
+  an authorization or permission failure.
 - Do not expose credentials, secrets or protected configuration.
 """
 

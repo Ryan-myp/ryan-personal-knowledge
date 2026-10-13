@@ -81,6 +81,20 @@ def _meta_lookup(tool: str, result_key: str, values: list[str], labels: list[str
     return metadata
 
 
+def _meta_list_accounts_arguments(
+    context: Any,
+    data: dict[str, Any],
+) -> tuple[tuple[Any, ...], dict[str, Any]]:
+    business_id = data.get("business_id")
+    kwargs = {"limit": data.get("limit", 100)}
+    metadata = getattr(context, "metadata", {})
+    if not business_id and isinstance(metadata, dict):
+        authorized_account_ids = metadata.get("authorized_account_ids")
+        if authorized_account_ids is not None:
+            kwargs["authorized_account_ids"] = authorized_account_ids
+    return (business_id,), kwargs
+
+
 def _scope_meta_reads_to_context(
     tools: list[tuple[ToolDefinition, ToolHandler]],
 ) -> list[tuple[ToolDefinition, ToolHandler]]:
@@ -789,7 +803,12 @@ class MetaToolSource(BaseProviderToolSource):
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_list_accounts",
-                description="列出 Meta 可访问的广告账户。", method_name="list_accounts",
+                description=(
+                    "列出当前请求获准访问的 Meta 广告账户。未指定 business_id "
+                    "时只读取 Runtime 授权范围内的账户；显式指定时查询该 Business 自有账户。"
+                    "空列表只表示当前查询范围没有返回账户，不能单独据此判断权限缺失。"
+                ),
+                method_name="list_accounts",
                 result_key="accounts", properties={
                     "business_id": {"type": "string"},
                     "limit": {
@@ -797,19 +816,21 @@ class MetaToolSource(BaseProviderToolSource):
                         "description": "Maximum total number of ad accounts",
                     },
                 },
-                argument_builder=lambda _ctx, data: (
-                    (data.get("business_id"),),
-                    {"limit": data.get("limit", 100)},
-                ),
+                argument_builder=_meta_list_accounts_arguments,
                 action="list", resource_type="account", intent_types=["list_accounts"],
                 traits=["read", "account"],
                 result_items_key="accounts",
                 result_id_fields=["id", "account_id"],
                 scope_required=False,
+                timeout_seconds=300.0,
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_list_businesses",
-                description="查询当前 Meta 用户可访问的 Business Manager 列表。",
+                description=(
+                    "查询当前 Meta 用户可访问的 Business Manager 列表。"
+                    "空列表只表示当前用户可见的 Business 列表为空，"
+                    "不能单独据此判断广告账户无授权。"
+                ),
                 method_name="list_businesses", result_key="businesses",
                 properties=business_schema["properties"],
                 action="list", resource_type="business",
@@ -1367,6 +1388,7 @@ class MetaToolSource(BaseProviderToolSource):
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "campaign"],
+            timeout_seconds=300.0,
         ), MetaListCampaignsHandler(api_client)))
 
         # Get Campaign

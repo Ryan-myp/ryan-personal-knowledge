@@ -2624,7 +2624,7 @@ def test_meta_list_accounts_uses_bounded_business_ad_account_edge():
 
     client._list_graph_pages = list_pages
 
-    accounts = client.list_accounts(limit=40)
+    accounts = client.list_accounts(business_id="business-1", limit=40)
 
     assert accounts == [{"id": "act-1", "account_id": "1"}]
     assert calls == [(
@@ -2635,6 +2635,29 @@ def test_meta_list_accounts_uses_bounded_business_ad_account_edge():
             "fields": "id,account_id,name,account_status,currency,timezone_name",
         },
         {},
+    )]
+
+
+def test_meta_list_accounts_uses_authorized_user_edge_when_business_is_not_explicit():
+    client = MetaAPIClient({
+        "access_token": "test",
+        "business_id": "configured-business-not-requested",
+    })
+    calls = []
+    client._list_graph_pages = lambda scope_id, endpoint, params, **kwargs: (
+        calls.append((scope_id, endpoint, params)) or [{"id": "act-test"}]
+    )
+
+    accounts = client.list_accounts(limit=20)
+
+    assert accounts == [{"id": "act-test"}]
+    assert calls == [(
+        "me",
+        "/me/adaccounts",
+        {
+            "limit": 20,
+            "fields": "id,account_id,name,account_status,currency,timezone_name",
+        },
     )]
 
 
@@ -2654,6 +2677,100 @@ def test_meta_list_accounts_defaults_to_user_ad_accounts_edge_without_business()
             "fields": "id,account_id,name,account_status,currency,timezone_name",
         },
     )]
+
+
+def test_meta_list_accounts_reads_only_runtime_authorized_accounts_when_scoped():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def get_account(account_id, fields=None):
+        calls.append((account_id, fields))
+        return {
+            "id": f"act_{account_id}",
+            "account_id": account_id,
+            "name": f"Test {account_id}",
+        }
+
+    client.get_account = get_account
+    client._list_graph_pages = lambda *_args, **_kwargs: pytest.fail(
+        "scoped account listing must not scan an unrelated first page"
+    )
+
+    accounts = client.list_accounts(
+        limit=10,
+        authorized_account_ids=["act_1", "1", "2"],
+    )
+
+    assert [item["account_id"] for item in accounts] == ["1", "2"]
+    assert calls == [
+        ("1", [
+            "id", "account_id", "name", "account_status", "currency",
+            "timezone_name",
+        ]),
+        ("2", [
+            "id", "account_id", "name", "account_status", "currency",
+            "timezone_name",
+        ]),
+    ]
+
+
+def test_meta_list_accounts_empty_runtime_scope_does_not_fall_back_to_user_edge():
+    client = MetaAPIClient({"access_token": "test"})
+    client._list_graph_pages = lambda *_args, **_kwargs: pytest.fail(
+        "an empty trusted account scope must not trigger broad enumeration"
+    )
+    client.get_account = lambda *_args, **_kwargs: pytest.fail(
+        "an empty trusted account scope must not query any account"
+    )
+
+    assert client.list_accounts(authorized_account_ids=[]) == []
+
+
+def test_meta_list_accounts_tool_uses_trusted_context_scope_not_model_input():
+    source = create_meta_tool_source()
+    definition, handler = next(
+        (definition, handler)
+        for definition, handler in source.register_tools()
+        if definition.name == "meta_list_accounts"
+    )
+    context = ToolContext(
+        session_id="session-test",
+        user_id="operator-test",
+        metadata={"authorized_account_ids": ["meta-test-a"]},
+    )
+
+    args, kwargs = handler.argument_builder(context, {"limit": 25})
+    assert args == (None,)
+    assert kwargs == {
+        "limit": 25,
+        "authorized_account_ids": ["meta-test-a"],
+    }
+    assert validate_tool_input(
+        definition.input_schema,
+        {"authorized_account_ids": ["unapproved-account"]},
+    )
+
+
+def test_meta_list_accounts_business_query_keeps_explicit_business_semantics():
+    source = create_meta_tool_source()
+    _definition, handler = next(
+        (definition, handler)
+        for definition, handler in source.register_tools()
+        if definition.name == "meta_list_accounts"
+    )
+    context = ToolContext(
+        session_id="session-test",
+        user_id="operator-test",
+        metadata={"authorized_account_ids": ["meta-test-a"]},
+    )
+
+    args, kwargs = handler.argument_builder(
+        context,
+        {"business_id": "business-test", "limit": 10},
+    )
+
+    assert args == ("business-test",)
+    assert kwargs == {"limit": 10}
 
 
 def test_meta_list_accounts_does_not_turn_provider_errors_into_empty_success():

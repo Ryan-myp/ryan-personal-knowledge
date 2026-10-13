@@ -376,6 +376,29 @@ class AdvertisingToolExecutor:
         self.owner = owner
         self.definition = definition
 
+    def _execution_metadata(self, request: Any) -> dict[str, Any]:
+        metadata = {
+            "execution_mode": str(request.execution_mode or "dry_run"),
+            "run_id": str(request.run_id or ""),
+            "turn_id": str(request.turn_id or ""),
+        }
+        if (
+            str(getattr(self.definition, "action", "") or "").lower() == "list"
+            and str(getattr(self.definition, "resource_type", "") or "").lower()
+            == "account"
+        ):
+            platform = self.owner._canonical_platform(
+                str(getattr(self.definition, "namespace", "") or "")
+            )
+            principal = getattr(request, "principal", None)
+            metadata["authorized_account_ids"] = (
+                self.owner._available_accounts_for_request(
+                    platform,
+                    getattr(principal, "account_scope", None),
+                )
+            )
+        return metadata
+
     def replay_key(self, context: Any, input_data: dict[str, Any]) -> Any:
         request = context.request
         request_context = (
@@ -389,9 +412,7 @@ class AdvertisingToolExecutor:
             tool_context.scope["account_id"] = str(account_id)
         tool_context.metadata = {
             **getattr(session.ctx, "metadata", {}),
-            "execution_mode": str(request.execution_mode or "dry_run"),
-            "run_id": str(request.run_id or ""),
-            "turn_id": str(request.turn_id or ""),
+            **self._execution_metadata(request),
         }
         _definition, handler = self.owner._get_registered_tool(
             self.definition.name
@@ -488,9 +509,7 @@ class AdvertisingToolExecutor:
         tool_context.scope = dict(session.ctx.scope)
         tool_context.metadata = {
             **session.ctx.metadata,
-            "execution_mode": str(request.execution_mode or "dry_run"),
-            "run_id": str(request.run_id or ""),
-            "turn_id": str(request.turn_id or ""),
+            **self._execution_metadata(request),
             "cancellation_event": request.cancellation_event,
             "lease_lost_event": request.lease_lost_event,
         }

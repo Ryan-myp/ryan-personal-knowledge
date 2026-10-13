@@ -76,6 +76,21 @@ def test_core_agent_contract_forbids_inventing_model_identity():
     assert "invent or claim a personal name, model identity, provider, or developer" in prompt
 
 
+def test_core_agent_contract_distinguishes_empty_results_from_permission_errors():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    try:
+        prompt = runtime.platform_application.agent.system_prompt
+    finally:
+        runtime.close(wait=True)
+
+    assert "An empty result does not prove missing permissions" in prompt
+    assert "only an explicit provider error" in prompt
+
+
 def test_capability_catalog_uses_scenario_registry_and_respects_tool_allowlist():
     skills = [
         SkillBinding(

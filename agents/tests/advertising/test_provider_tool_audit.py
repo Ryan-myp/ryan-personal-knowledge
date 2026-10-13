@@ -11,10 +11,17 @@ from scripts.advertising.validate_contracts import (
     build_runtime,
     verify_snapshot,
 )
-from agents.agent_harness.core.interfaces import ToolDefinition, ToolEffect, ToolSchema
-
 import copy
 import json
+import time
+
+from agents.agent_harness.core.interfaces import (
+    ToolContext,
+    ToolDefinition,
+    ToolEffect,
+    ToolSchema,
+)
+from agents.applications.advertising.execution.tool_executor import ToolExecutor
 
 
 def test_tool_source_audit_can_detect_registered_tools_missing_from_coverage():
@@ -44,6 +51,33 @@ def test_tool_source_audit_discovers_all_installed_channels_without_issues():
         for details in report["platforms"].values()
         for item in details["creation_chain"]
     )
+
+
+def test_meta_account_listing_has_five_minute_timeout_without_widening_other_tools():
+    runtime = build_runtime()
+    account_list, _handler = runtime.registry.get("meta_list_accounts")
+    campaign_list, _handler = runtime.registry.get("meta_list_campaigns")
+    business_list, _handler = runtime.registry.get("meta_list_businesses")
+
+    assert account_list.timeout_seconds == 300
+    assert campaign_list.timeout_seconds == 300
+    assert business_list.timeout_seconds == 30
+    now = time.monotonic()
+    deadline, error = ToolExecutor._deadline(
+        ToolContext("timeout-test", "user-test"),
+        account_list,
+        account_list.name,
+    )
+    assert error is None
+    assert 299.9 <= deadline - now <= 300.01
+    now = time.monotonic()
+    campaign_deadline, error = ToolExecutor._deadline(
+        ToolContext("campaign-timeout-test", "user-test"),
+        campaign_list,
+        campaign_list.name,
+    )
+    assert error is None
+    assert 299.9 <= campaign_deadline - now <= 300.01
 
 
 def test_provider_evidence_errors_do_not_pollute_code_contract_issues(tmp_path):

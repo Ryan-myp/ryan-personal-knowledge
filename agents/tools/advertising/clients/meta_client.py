@@ -225,9 +225,52 @@ class MetaAPIClient(BasePlatformClient):
         return None
     
     # ==================== 账户管理 ====================
+
+    @classmethod
+    def _normalize_authorized_account_ids(
+        cls,
+        account_ids: list[str],
+    ) -> list[str]:
+        if not isinstance(account_ids, (list, tuple)):
+            raise ValueError("authorized account scope must be a bounded ID list")
+        if len(account_ids) > 1000:
+            raise ValueError("authorized account scope exceeds the 1000 ID limit")
+        normalized = []
+        seen_ids = set()
+        for account_id in account_ids:
+            clean_id = cls._clean_meta_id(account_id, "account_id")
+            if clean_id not in seen_ids:
+                seen_ids.add(clean_id)
+                normalized.append(clean_id)
+        return normalized
+
+    def _list_authorized_accounts(
+        self,
+        account_ids: list[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        fields = [
+            "id", "account_id", "name", "account_status", "currency",
+            "timezone_name",
+        ]
+        accounts = []
+        for account_id in self._normalize_authorized_account_ids(account_ids)[:limit]:
+            account = self.get_account(account_id, fields=fields)
+            if not isinstance(account, dict) or not any(
+                account.get(field) not in (None, "")
+                for field in ("id", "account_id")
+            ):
+                raise APIError(
+                    "Meta account lookup returned an invalid account record"
+                )
+            accounts.append(account)
+        return accounts
     
     def list_accounts(
-        self, business_id: str | None = None, limit: int = 100
+        self,
+        business_id: str | None = None,
+        limit: int = 100,
+        authorized_account_ids: Optional[list[str]] = None,
     ) -> list[dict[str, Any]]:
         """List accessible Meta ad accounts without masking Graph API failures."""
         if isinstance(limit, bool):
@@ -241,7 +284,10 @@ class MetaAPIClient(BasePlatformClient):
         if not 1 <= limit <= 1000:
             raise ValueError("account list limit must be between 1 and 1000")
 
-        selected_business_id = business_id or self.credentials.get("business_id")
+        if authorized_account_ids is not None and not business_id:
+            return self._list_authorized_accounts(authorized_account_ids, limit)
+
+        selected_business_id = business_id
         fields = "id,account_id,name,account_status,currency,timezone_name"
         if selected_business_id:
             clean_business_id = self._clean_meta_id(

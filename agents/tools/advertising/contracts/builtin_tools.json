@@ -1,5 +1,5 @@
 {
-  "digest": "85da4a8a6754fcb612de02e7f64242ea7a79a5ccbc9acea4de5ac0a9ca856cfb",
+  "digest": "36d417a15108857a5667476dbd78bfe188a19869fcecbae98531f4979ee3e6bd",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -18585,7 +18585,7 @@
       ]
     },
     "meta": {
-      "digest": "25a198975083bbfb8b0c77eaa6da40a21c4032956fbf6315a38103ec4fe3b759",
+      "digest": "ff7b66b8f7c68dd45289426f4cb35db8ea10bb1705dce916fd6ebcc3fa3881b4",
       "tool_count": 80,
       "tools": [
         {
@@ -26101,7 +26101,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "4f50bd2ab4576a2af05a6076b8614344ca53265297776b4fa2a2f52d57e8bbab",
           "contract_version": "1.5.0",
-          "description": "列出 Meta 可访问的广告账户。",
+          "description": "列出当前请求获准访问的 Meta 广告账户。未指定 business_id 时只读取 Runtime 授权范围内的账户；显式指定时查询该 Business 自有账户。空列表只表示当前查询范围没有返回账户，不能单独据此判断权限缺失。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -26170,7 +26170,7 @@
           "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
-          "timeout_seconds": 30.0,
+          "timeout_seconds": 300.0,
           "traits": [
             "read",
             "account"
@@ -26469,7 +26469,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "fd48219e91a1af38fd726b443ef9db1e361ba6638efdd084087ca581aaf862ca",
           "contract_version": "1.5.0",
-          "description": "查询当前 Meta 用户可访问的 Business Manager 列表。",
+          "description": "查询当前 Meta 用户可访问的 Business Manager 列表。空列表只表示当前用户可见的 Business 列表为空，不能单独据此判断广告账户无授权。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -26618,7 +26618,7 @@
           "scope_type": null,
           "skill": "meta-marketing-api",
           "skill_refs": [],
-          "timeout_seconds": 30.0,
+          "timeout_seconds": 300.0,
           "traits": [
             "read",
             "campaign"

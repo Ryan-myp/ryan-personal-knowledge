@@ -485,7 +485,11 @@
     <section class="activity-dock" aria-label="活动日志">
         <div class="activity-dock-header">
             <div><strong>活动日志</strong><span>全部</span><span class="activity-chevron">⌄</span></div>
-            <div class="activity-dock-actions"><span><i></i>自动滚动</span><button type="button" onclick="resetExecutionTrace()">清空</button></div>
+            <div class="activity-dock-actions">
+                <span><i></i>自动滚动</span>
+                <button class="open-trace-button" type="button" onclick="openTraceWorkbench()" aria-label="查看完整执行轨迹">查看轨迹</button>
+                <button type="button" onclick="resetExecutionTrace()">清空</button>
+            </div>
         </div>
         <div class="trace-ticker dock-ticker" id="globalTraceTicker"></div>
     </section>
