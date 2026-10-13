@@ -15,6 +15,7 @@ import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
+from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
 from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
 from .model_execution import (
     ModelExecutionCoordinator,
@@ -180,7 +181,14 @@ class Agent:
         self.model = model
         self.tool_catalog = tool_catalog
         self.skill_catalog = skill_catalog
-        self._system_prompt = str(system_prompt or "")
+        application_prompt = str(system_prompt or "").strip()
+        self._system_prompt = "\n\n".join(
+            part for part in (
+                CORE_AGENT_SYSTEM_PROMPT.strip(),
+                application_prompt,
+            )
+            if part
+        )
         self.max_turns = int(max_turns)
         self.max_tool_calls_per_run = int(max_tool_calls_per_run)
         self.tool_execution = tool_execution
@@ -221,9 +229,9 @@ class Agent:
         self.context_provider = context_provider
         self.input_sanitizer = input_sanitizer
         self.request_validator = request_validator
-        self._system_messages = (
-            [AgentMessage.system(system_prompt)] if system_prompt else []
-        )
+        # Stable policy is added to model inputs per turn, never stored as
+        # conversation history or counted against the transcript window.
+        self._system_messages: tuple[AgentMessage, ...] = ()
         self._session_states: dict[str, AgentState] = {}
         self._session_locks: dict[str, threading.RLock] = {}
         self._session_guard = threading.RLock()
@@ -302,7 +310,7 @@ class Agent:
             self._evict_sessions_locked()
             return self._session_states.setdefault(
                 key,
-                AgentState(messages=list(self._system_messages)),
+                AgentState(),
             )
 
     def _lock_for(
@@ -335,7 +343,7 @@ class Agent:
 
     @property
     def system_prompt(self) -> str:
-        """Return the immutable prompt used to seed a fresh transcript."""
+        """Return the immutable policy prompt supplied to every model turn."""
         return self._system_prompt
 
     @property
@@ -395,7 +403,7 @@ class Agent:
                         raise TranscriptPersistenceError(
                             "transcript clear failed",
                         ) from error
-            state.messages = list(self._system_messages)
+            state.messages = []
             state.error_message = None
             state.usage = {}
             state.hydrated = False
@@ -615,6 +623,27 @@ class Agent:
         request: TurnRequest,
         state: AgentState,
     ) -> tuple[list[Any], list[Any], TurnRequest]:
+        tools = self._tools_for_turn(request)
+        transcript = state.snapshot()
+        context_messages, model_request = self._context_messages_for_turn(
+            request, transcript,
+        )
+        messages = [
+            AgentMessage.system(self._system_prompt),
+            *(
+                message for message in transcript
+                if message.role == "system"
+            ),
+            *context_messages,
+            *(
+                message for message in transcript
+                if message.role != "system"
+            ),
+        ]
+        model_request = self._apply_model_limits(model_request)
+        return messages, tools, model_request
+
+    def _tools_for_turn(self, request: TurnRequest) -> list[Any]:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
         if callable(self.tool_selector):
             tools = list(self.tool_selector(request, tuple(tools)))
@@ -626,28 +655,35 @@ class Agent:
             request.context["_harness_visible_tool_names"] = tuple(
                 name for name in (self._tool_name(tool) for tool in tools) if name
             )
-        messages = state.snapshot()
+
+        return tools
+
+    def _context_messages_for_turn(
+        self,
+        request: TurnRequest,
+        transcript: Sequence[AgentMessage],
+    ) -> tuple[list[AgentMessage], TurnRequest]:
+        context_messages: list[AgentMessage] = []
         model_request = request
         if self.context_provider is not None:
             build_context = getattr(self.context_provider, "build_context", None)
             if not callable(build_context):
                 raise TypeError("context_provider must expose build_context()")
-            value = build_context(request, messages)
+            value = build_context(request, transcript)
             if isinstance(value, Mapping):
                 context = dict(request.context or {})
                 context["agent_context"] = dict(value)
                 model_request = replace(request, context=context)
                 prompt = context_prompt(value)
                 if prompt:
-                    messages = [
+                    context_messages.append(
                         AgentMessage.system(
                             prompt,
                             run_id=str(request.run_id or ""),
                             turn_id=str(request.turn_id or ""),
                             metadata={"context_type": "provider"},
-                        ),
-                        *messages,
-                    ]
+                        )
+                    )
         if self.skill_catalog is not None:
             source_ids = None
             if isinstance(request.context, Mapping):
@@ -659,15 +695,17 @@ class Agent:
                 source_ids=source_ids,
             )
             if skill_context:
-                messages = [
+                context_messages.append(
                     AgentMessage.system(
                         skill_context,
                         run_id=str(request.run_id or ""),
                         turn_id=str(request.turn_id or ""),
                         metadata={"context_type": "skills"},
-                    ),
-                    *messages,
-                ]
+                    )
+                )
+        return context_messages, model_request
+
+    def _apply_model_limits(self, model_request: TurnRequest) -> TurnRequest:
         context = dict(model_request.context or {})
         if self.model_timeout_seconds is not None:
             context["model_timeout_seconds"] = self.model_timeout_seconds
@@ -681,7 +719,7 @@ class Agent:
         context = redact_for_persistence(context)
         if context != dict(model_request.context or {}):
             model_request = replace(model_request, context=context)
-        return messages, tools, model_request
+        return model_request
 
     @staticmethod
     def _tool_name(tool: Any) -> str:

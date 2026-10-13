@@ -72,6 +72,10 @@ def test_advertising_skills_are_exportable_without_ad_runtime():
     assert "meta" in names
     assert "cross-channel" in names
     assert "creative-strategy" in names
+    assert "account-diagnostics" in names
+    assert "experimentation-design" in names
+    assert "measurement-attribution" in names
+    assert "measurement-instrumentation" in names
 
     context = catalog.build_context(
         "设计广告创意路线图，按客户证据和账户表现安排 production tier"
@@ -79,6 +83,31 @@ def test_advertising_skills_are_exportable_without_ad_runtime():
 
     assert "Skill: creative-strategy" in context
     assert "references/creative-roadmap.md" in context
+
+    diagnostics_context = catalog.build_context(
+        "Google Ads search terms report disclosed-click coverage and omitted queries"
+    )
+
+    assert "Skill: account-diagnostics" in diagnostics_context
+    assert "references/google-report-interpretation.md" in diagnostics_context
+
+    experiment_context = catalog.build_context(
+        "设计广告 A/B test hypothesis、MDE、power 和停止规则"
+    )
+    assert "Skill: experimentation-design" in experiment_context
+    assert "references/test-design.md" in experiment_context
+
+    attribution_context = catalog.build_context(
+        "平台转化和业务结果差异，MTA MMM incrementality holdout"
+    )
+    assert "Skill: measurement-attribution" in attribution_context
+    assert "references/attribution-and-incrementality.md" in attribution_context
+
+    instrumentation_context = catalog.build_context(
+        "广告 conversion event tracking plan、UTM、deduplication 和 PII 校验"
+    )
+    assert "Skill: measurement-instrumentation" in instrumentation_context
+    assert "references/event-measurement-contract.md" in instrumentation_context
 
 
 def test_harness_has_no_business_package_or_tool_source_runtime_concept():

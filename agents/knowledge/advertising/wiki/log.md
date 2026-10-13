@@ -10,6 +10,19 @@
   与增量评估的适用边界。
 - 增加创意路线图、审计覆盖率、实验统计边界和归因/增量问题的检索回归用例。
 - 标明 `marketingskills` 等上游来源与许可；未复制集成脚本、资源文件或任何可执行入口。
+- 增强 Google Ads 报表诊断：说明搜索词报告可能因隐私标准省略低活动查询，并要求用口径兼容的总点击量计算可见覆盖率；不将可见查询推算成完整搜索需求。
+- 明确转化列语义、按转化动作分段后的行粒度和全零行省略，以及数据延迟和日期口径边界。
+- 记录无 Provider client 返回的 simulated/offline 报表不是测试账户的真实证据；缺少可信来源时归为 Unknown。
+- 新增 `account-diagnostics` advisory Skill，在 Skill 正文提供通用审计规则，并按请求加载 Google 报表解读 reference；不增加 Tool/API。
+- 将本地 `ab-testing`、`attribution`、`analytics` 方法蒸馏为
+  `experimentation-design`、`measurement-attribution`、`measurement-instrumentation`
+  三个标准广告 advisory Skills；Scenario 自动发现、references 按请求加载，均不增加 Tool、
+  外部集成或账户权限。
+- 为三类测量 Skills 增加运行时召回、reference 选择、内置目录版本和零 Tool 权限回归测试；
+  Wiki 索引补充问题路由，保留 Wiki 作为细节知识来源。
+- 增加账户诊断 Skill 行为测试与 Google 报表知识检索回归用例。
+- 扩展 `account-diagnostics` 到 Meta Insights，补充 Campaign/Ad Set/Ad 粒度、actions/action_values、数据完整性和归因解释；明确当前 Meta report Tools 尚未暴露 breakdown 与自定义 attribution-window 参数。
+- 将 `account-diagnostics` 从 `1.0.0` 升至 `1.1.0`，新增 Meta 报表触发词、按需 reference 和真实 Tool 契约回归测试。
 
 ## 2026-09-20
 

@@ -16,8 +16,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Mapping
 
-from agents.agent_harness.core.agent_profile import AgentProfile
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
+from agents.scenarios.advertising import advertising_agent_profile
 from agents.tools.advertising.shared.features.factory import discover_features
 from agents.agent_harness.core.interfaces import EffectReconciler, ExecutionMode
 from agents.agent_harness.core.plugins import (
@@ -115,21 +115,7 @@ class AdApplicationBootstrap:
         for name in ("metrics", "trace_sink", "alert_sink",
                      "credential_provider", "quota_provider"):
             setattr(runtime, name, options.get(name))
-        runtime.agent_profile = AgentProfile(
-            name="ad-agent",
-            role="广告投放与分析助手",
-            domain_guidance=(
-                "广告业务知识只来自当前注册的 Skills、Tools、Blueprints "
-                "和受控知识源。"
-            ),
-            response_guidance=(
-                "面向广告运营人员回答，必须区分预览、已执行、失败和状态未知。"
-            ),
-            structured_fields=(
-                "仅使用当前注册的 Skill、Tool、Tool Source 和 Blueprint 契约中声明的字段；"
-                "缺少必填信息时先澄清，不从业务常识猜测"
-            ),
-        )
+        runtime.agent_profile = advertising_agent_profile()
         runtime.write_guard = options.get("write_guard")
         skill_roots = options.get("skill_roots")
         if skill_roots is None:

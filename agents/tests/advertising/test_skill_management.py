@@ -28,7 +28,8 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
 
     assert {item["skill_name"] for item in items} >= {
         "google-ads-api-expert", "meta-marketing-api-expert", "tiktok-ads-expert",
-        "creative-strategy",
+        "creative-strategy", "account-diagnostics", "experimentation-design",
+        "measurement-attribution", "measurement-instrumentation",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.0")
@@ -37,6 +38,19 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     creative = catalog.get_version("creative-strategy", "1.0.0")
     assert creative["location"] == "practices/creative-strategy"
     assert "references/creative-roadmap.md" in creative["files"]
+    diagnostics = catalog.get_version("account-diagnostics", "1.1.0")
+    assert diagnostics["location"] == "practices/account-diagnostics"
+    assert "references/google-report-interpretation.md" in diagnostics["files"]
+    assert "references/meta-insights-interpretation.md" in diagnostics["files"]
+    experimentation = catalog.get_version("experimentation-design", "1.0.0")
+    assert experimentation["location"] == "practices/experimentation-design"
+    assert "references/test-design.md" in experimentation["files"]
+    attribution = catalog.get_version("measurement-attribution", "1.0.0")
+    assert attribution["location"] == "practices/measurement-attribution"
+    assert "references/attribution-and-incrementality.md" in attribution["files"]
+    instrumentation = catalog.get_version("measurement-instrumentation", "1.0.0")
+    assert instrumentation["location"] == "practices/measurement-instrumentation"
+    assert "references/event-measurement-contract.md" in instrumentation["files"]
 
 
 def _files(name="business-growth"):
@@ -129,6 +143,100 @@ def test_builtin_creative_strategy_is_context_only_and_uses_relevant_references(
 
         assert "[skill guidance: creative-strategy]" in hook_context
         assert "references/hook-diagnosis.md" in hook_context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        skill = runtime.skill_loader.get("account-diagnostics")
+        assert skill is not None
+        assert skill.get_tools() == []
+
+        report_context = runtime.tool_selector._triggered_skill_context(
+            "Google Ads search terms report disclosed-click coverage and omitted queries"
+        )
+        assert "[skill guidance: account-diagnostics]" in report_context
+        assert "references/google-report-interpretation.md" in report_context
+        assert "disclosed-click coverage" in report_context
+        assert "simulated" in report_context
+
+        audit_context = runtime.tool_selector._triggered_skill_context(
+            "对 Meta 广告账户做审计，区分 Pass Fail Unknown N/A 和证据覆盖率"
+        )
+        assert "[skill guidance: account-diagnostics]" in audit_context
+        assert "Unknown** 表示缺少证据" in audit_context
+        assert "standard `search_term_view` does not cover Performance Max" not in audit_context
+
+        meta_context = runtime.tool_selector._triggered_skill_context(
+            "Meta Insights 报表 breakdown action_breakdowns attribution window "
+            "action_values 分层 report"
+        )
+        assert "[skill guidance: account-diagnostics]" in meta_context
+        assert "references/meta-insights-interpretation.md" in meta_context
+        assert "The report Tools do not expose" in meta_context
+        assert "offline_no_client" in meta_context
+
+        from agents.tools.advertising.providers.meta.provider import create_meta_tool_source
+
+        report_tools = {
+            definition.name: definition
+            for definition, _handler in create_meta_tool_source().register_tools()
+            if definition.action == "report"
+        }
+        expected_report_tools = {
+            "meta_get_campaign_report",
+            "meta_get_adset_report",
+            "meta_get_ad_report",
+        }
+        assert expected_report_tools <= set(report_tools)
+        for tool_name in expected_report_tools:
+            properties = report_tools[tool_name].input_schema.properties
+            assert not {
+                "breakdowns",
+                "action_breakdowns",
+                "time_increment",
+                "attribution_setting",
+            } & set(properties), tool_name
+    finally:
+        runtime.close(wait=True)
+
+
+def test_builtin_measurement_skills_are_advisory_and_select_relevant_references():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        cases = (
+            (
+                "experimentation-design",
+                "设计广告 A/B experiment，定义假设、MDE、power、多重比较和停止规则",
+                "references/test-design.md",
+                "不能判断统计胜出",
+            ),
+            (
+                "measurement-attribution",
+                "Google 和 Meta 的 attribution conversions 对不上，比较 MTA、MMM、incrementality 和 holdout",
+                "references/attribution-and-incrementality.md",
+                "不能把平台归因解释为增量",
+            ),
+            (
+                "measurement-instrumentation",
+                "制定广告 conversion event tracking plan，校验 GA4、UTM、deduplication 和 PII",
+                "references/event-measurement-contract.md",
+                "不配置或执行外部 tracking",
+            ),
+        )
+
+        for name, request, reference, boundary in cases:
+            skill = runtime.skill_loader.get(name)
+            assert skill is not None, name
+            assert skill.get_tools() == [], name
+
+            context = runtime.tool_selector._triggered_skill_context(request)
+
+            assert f"[skill guidance: {name}]" in context
+            assert reference in context
+            assert boundary in context
     finally:
         runtime.close(wait=True)
 

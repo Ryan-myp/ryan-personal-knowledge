@@ -58,14 +58,17 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | 本地来源 | 系统落点 | 不导入的部分 |
 |---|---|---|
 | `ad-creative` 2.10.0 | `practices/creative-strategy` 与 Wiki 的创意路线图、Hook 漏斗诊断 | 生成素材的外部服务、抓取/上传脚本和特定平台规格副本 |
-| `ads` 2.4.6 | Wiki 的审计证据状态、覆盖率与建议安全边界 | 未取得对应报表时的固定审计清单与硬编码基准 |
-| `ab-testing` 2.0.1 | Wiki 的 MDE、样本/功效、提前停止与多重比较边界 | 将通用样本量表当作本项目统计计算结果 |
-| `attribution` 1.1.4 | Wiki 的 MTA、MMM、增量评估选择原则 | 未接入数据源时声称运行 GA4、CRM 或 MMM |
-| `analytics` 2.0.3 | 仅吸收适用于广告事件质量和测量口径的原则 | GA4/GTM 部署步骤；当前未注册对应执行 Tool 时不宣称可实施 |
+| `ads` 2.4.6 | Wiki 的审计证据状态与覆盖率，以及 `practices/account-diagnostics` 的通用审计、Google Search Terms/转化和 Meta Insights 解读 | 未注册报表能力对应的审计项、外部抓取流程和固定表现阈值 |
+| `ab-testing` 2.0.1 | `practices/experimentation-design`、Wiki 的实验方法；触发后按需加载实验设计 reference | 上游固定样本量表、统计计算器或自动平台实验执行 |
+| `attribution` 1.1.4 | `practices/measurement-attribution`、Wiki 的归因/增量方法；触发后按需加载对账 reference | 未接入数据源时声称运行 GA4、CRM、MTA 或 MMM |
+| `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约；触发后按需加载事件契约 reference | GA4/GTM/Pixel/CAPI 配置代码、外部集成和未注册的实施 Tool |
 
 这些是本机读取到的来源包版本，用于追踪本次蒸馏输入，不代表远端最新版本或 Runtime
 插件版本。来源包中与已发布广告 Wiki 重合的基础内容不重复导入。上游 Skill 只作为
-知识来源，不会被当作可执行扩展；所有查询和变更仍须通过当前注册 Tool 与 Harness 门禁。
+知识来源；上表对应的项目内 Skill 均为独立 advisory 包，由广告 Scenario 的标准目录
+Source 自动发现。其 `SKILL.md`、references 和 provenance 可进入受限上下文，但不会被
+当作可执行扩展，也不增加 Tool、凭证或账户权限；所有查询和变更仍须通过当前注册 Tool
+与 Harness 门禁。
 
 ## 跨渠道 Campaign 管理
 

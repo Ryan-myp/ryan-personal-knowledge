@@ -10,7 +10,9 @@ _REFERENCE_STOPWORDS = frozenset({
     "a", "an", "and", "are", "as", "at", "based", "by", "can", "for",
     "from", "guidance", "guide", "how", "in", "into", "is", "it", "of",
     "on", "or", "should", "the", "then", "this", "to", "use", "using",
-    "via", "when", "with",
+    "via", "when", "with", "account", "audit", "coverage", "diagnosis",
+    "diagnostic", "diagnostics", "evidence", "fail", "inferred", "pass",
+    "performance", "report", "status", "stale", "unknown", "verified",
 })
 
 

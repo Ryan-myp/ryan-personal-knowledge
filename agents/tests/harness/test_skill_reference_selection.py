@@ -63,7 +63,7 @@ def test_triggered_skill_context_uses_relevant_reference_instead_of_first_file()
         reference_documents={
             "references/billing.md": "Billing profile and invoice settings.",
             "references/attribution.md": (
-                "Attribution discrepancies and conversion drop diagnosis."
+                "转化归因 attribution discrepancies and conversion drop diagnosis."
             ),
         },
     )
@@ -104,6 +104,43 @@ def test_skill_reference_selection_does_not_let_skill_body_dilute_request_releva
 
     assert "references/creative-roadmap.md" in context
     assert "references/hook-diagnosis.md" not in context
+
+
+def test_skill_description_does_not_select_unrelated_provider_reference():
+    skill = SimpleNamespace(
+        name="account-diagnostics",
+        description="Ad account report diagnostics and performance guidance.",
+        triggers=[SimpleNamespace(keywords=["广告账户做审计"], patterns=[])],
+        raw_markdown="Use current evidence and label unknowns.",
+        reference_documents={
+            "references/google-report-interpretation.md": (
+                "GOOGLE_SPECIFIC_MARKER Search terms and conversion reporting."
+            ),
+        },
+    )
+    selector = DynamicToolSelector(
+        SimpleNamespace(list_all=lambda: {"account-diagnostics": skill})
+    )
+
+    context = selector._triggered_skill_context("对 Meta 广告账户做审计")
+
+    assert "[skill guidance: account-diagnostics]" in context
+    assert "GOOGLE_SPECIFIC_MARKER" not in context
+
+
+def test_generic_audit_terms_do_not_select_provider_specific_reference():
+    selected = select_reference_excerpts(
+        "Meta account audit Pass Fail Unknown evidence coverage",
+        {
+            "references/google-report-interpretation.md": (
+                "Google Ads report coverage and account evidence may be Unknown."
+            ),
+        },
+        max_documents=1,
+        max_chars=600,
+    )
+
+    assert selected == ""
 
 
 def test_markdown_skill_source_loads_advisory_text_references_only(tmp_path):

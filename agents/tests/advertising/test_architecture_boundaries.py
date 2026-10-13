@@ -54,7 +54,8 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "parameter_selection.py", "security.py", "tool_executor.py",
         },
         "integrations": {
-            "ad_provider_runtime_services.py", "ad_skill_discovery.py",
+                "ad_capability_catalog.py", "ad_provider_runtime_services.py",
+                "ad_skill_discovery.py",
             "ad_skill_lifecycle.py", "ad_skill_plugins.py",
             "ad_tool_source_registration.py", "ad_tool_source_services.py",
             "ad_turn_context.py", "integration.py", "provider_bindings.py",

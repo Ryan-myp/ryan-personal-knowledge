@@ -287,7 +287,10 @@ def test_platform_composes_a_generic_agent_from_definition_and_scenario():
     try:
         assert isinstance(application, PlatformApplication)
         assert application.runtime is not None
-        assert application.agent.system_prompt == "Answer with sourced context."
+        assert "[STABLE AGENT CONTRACT]" in application.agent.system_prompt
+        assert application.agent.system_prompt.endswith(
+            "Answer with sourced context."
+        )
         assert application.skills.list_skills() == []
         assert application.tools.list_tools() == []
     finally:

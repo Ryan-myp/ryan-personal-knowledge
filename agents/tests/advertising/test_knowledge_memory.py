@@ -132,6 +132,26 @@ def test_builtin_wiki_retrieves_audit_evidence_coverage_guidance():
     assert "证据覆盖率" in evidence_doc.excerpt
 
 
+def test_builtin_wiki_retrieves_google_search_term_coverage_caveat():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    result = provider.query(
+        "Google Ads 搜索词报告 disclosed clicks total clicks 查询覆盖率，"
+        "未展示搜索词不能代表真实搜索需求分布",
+        limit=4,
+    )
+
+    assert any(
+        item.document_id == "google-ads-measurement-and-diagnostics"
+        for item in result
+    )
+    google_doc = next(
+        item for item in result
+        if item.document_id == "google-ads-measurement-and-diagnostics"
+    )
+    assert "已披露点击覆盖率" in google_doc.excerpt
+
+
 def test_builtin_wiki_retrieves_creative_roadmap_and_capacity_guidance():
     provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
 
