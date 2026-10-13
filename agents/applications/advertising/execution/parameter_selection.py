@@ -198,6 +198,8 @@ class ParameterSelectionService:
                 continue
             result_key = self._lookup_result_key(tool_def.name, field_schema)
             values = result.data.get(result_key)
+            if isinstance(values, dict):
+                values = [values] if values else []
             if not isinstance(values, list):
                 continue
             options: list[dict[str, Any]] = []
@@ -244,7 +246,7 @@ class ParameterSelectionService:
                     "label": label,
                     "selection_token": token,
                 })
-            if options:
+            if options or (target_tool_name and target_field):
                 selections.append({
                     "tool_name": target_tool.name,
                     "platform": target_tool.namespace,

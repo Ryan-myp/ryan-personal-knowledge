@@ -81,6 +81,15 @@ def load_builtin_template_definitions(path: Optional[Path] = None) -> list[dict[
             _text(value, f"内置模板 {key} 的 required_inputs", 200)
             for value in (definition.get("required_inputs") or [])
         ]
+        required_fields = definition.get("required_input_fields") or []
+        if not isinstance(required_fields, list):
+            raise CreationTemplateError(
+                f"内置模板 {key} 的 required_input_fields 必须是数组"
+            )
+        definition["required_input_fields"] = list(dict.fromkeys(
+            _text(value, f"内置模板 {key} 的 required_input_fields", 240, required=True)
+            for value in required_fields
+        ))
         definitions.append(definition)
     return definitions
 
@@ -294,6 +303,9 @@ class CreationTemplateManager:
             "verification_status": str(definition.get("verification_status") or "dry_run_only"),
             "verified_scope": str(definition.get("verified_scope") or ""),
             "required_inputs": list(definition.get("required_inputs") or []),
+            "required_input_fields": list(
+                definition.get("required_input_fields") or []
+            ),
         }
         return self._public(value)
 

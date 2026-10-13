@@ -122,6 +122,7 @@ class Agent:
         max_total_tokens: int | None = None,
         max_stream_delta_chars: int = 4096,
         max_tool_result_chars: int = 32_000,
+        max_interaction_chars: int = 256_000,
         tool_timeout_seconds: float | None = None,
         tool_max_retries: int = 0,
         tool_retry_delay_seconds: float = 0.0,
@@ -168,6 +169,8 @@ class Agent:
             raise ValueError("max_stream_delta_chars must be positive")
         if max_tool_result_chars <= 0:
             raise ValueError("max_tool_result_chars must be positive")
+        if max_interaction_chars <= 0:
+            raise ValueError("max_interaction_chars must be positive")
         if tool_timeout_seconds is not None and tool_timeout_seconds <= 0:
             raise ValueError("tool_timeout_seconds must be positive")
         if tool_max_retries < 0:
@@ -200,6 +203,7 @@ class Agent:
         self.max_total_tokens = max_total_tokens
         self.max_stream_delta_chars = int(max_stream_delta_chars)
         self.max_tool_result_chars = int(max_tool_result_chars)
+        self.max_interaction_chars = int(max_interaction_chars)
         self.tool_timeout_seconds = (
             float(tool_timeout_seconds) if tool_timeout_seconds is not None else None
         )
@@ -270,6 +274,7 @@ class Agent:
             tool_retry_delay_seconds=self.tool_retry_delay_seconds,
             tool_circuit=self._tool_circuit,
             max_tool_result_chars=self.max_tool_result_chars,
+            max_interaction_chars=self.max_interaction_chars,
         )
 
     @staticmethod

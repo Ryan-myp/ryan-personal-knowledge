@@ -177,6 +177,7 @@ class ToolExecutionCoordinator:
         tool_retry_delay_seconds: float = 0.0,
         tool_circuit: Optional[ToolCircuitBreaker] = None,
         max_tool_result_chars: int = 32_000,
+        max_interaction_chars: int = 256_000,
     ) -> None:
         if tool_execution not in {"sequential", "parallel"}:
             raise ValueError("tool_execution must be sequential or parallel")
@@ -192,6 +193,8 @@ class ToolExecutionCoordinator:
             raise ValueError("tool_retry_delay_seconds must be non-negative")
         if max_tool_result_chars <= 0:
             raise ValueError("max_tool_result_chars must be positive")
+        if max_interaction_chars <= 0:
+            raise ValueError("max_interaction_chars must be positive")
         self.tool_catalog = tool_catalog
         self.emit = emit
         self.interrupt_reason = interrupt_reason
@@ -208,6 +211,7 @@ class ToolExecutionCoordinator:
         self.tool_retry_delay_seconds = float(tool_retry_delay_seconds)
         self.tool_circuit = tool_circuit or ToolCircuitBreaker()
         self.max_tool_result_chars = int(max_tool_result_chars)
+        self.max_interaction_chars = int(max_interaction_chars)
 
     @staticmethod
     def _tool_value(definition: Any, name: str, default: Any = None) -> Any:
@@ -417,6 +421,16 @@ class ToolExecutionCoordinator:
             }
         return bounded
 
+    def _bound_interaction_value(self, value: Any) -> tuple[Any, bool]:
+        """Keep complete interaction contracts separate from model context limits."""
+        if len(self._serialized_tool_value(value)) <= self.max_interaction_chars:
+            return value, False
+        return {
+            "type": "interaction_error",
+            "error_code": "interaction_payload_too_large",
+            "max_chars": self.max_interaction_chars,
+        }, True
+
     def _invoke_tool(
         self,
         binding: Any,
@@ -588,17 +602,32 @@ class ToolExecutionCoordinator:
                     "is_error": True,
                     "terminate": bool(decision.get("terminate")),
                 }
+                interaction_too_large = False
                 for key in (
                     "needs_input", "needs_confirmation", "confirmation_payload",
                     "interaction", "runtime_signals", "recovery_required",
                     "success", "effect_state", "data", "execution_status",
                 ):
                     if key in decision:
-                        result[key] = (
-                            self._bound_tool_value(decision[key])
-                            if key == "interaction"
-                            else decision[key]
-                        )
+                        if key == "interaction":
+                            result[key], interaction_too_large = (
+                                self._bound_interaction_value(decision[key])
+                            )
+                        else:
+                            result[key] = decision[key]
+                if interaction_too_large:
+                    result.update({
+                        "content": (
+                            "Interactive payload exceeds the Runtime limit; "
+                            "no partial interaction was returned."
+                        ),
+                        "terminate": True,
+                        "needs_input": True,
+                        "runtime_signals": {
+                            **dict(result.get("runtime_signals") or {}),
+                            "interaction_payload_too_large": True,
+                        },
+                    })
                 return result
             call = context.tool_call
         try:
@@ -656,6 +685,7 @@ class ToolExecutionCoordinator:
                 "retry_count": retry_count,
             }
             if isinstance(safe_output, Mapping):
+                interaction_too_large = False
                 for key in (
                     "needs_input", "needs_confirmation", "confirmation_payload",
                     "requires_confirmation", "interaction", "card_payload",
@@ -663,11 +693,31 @@ class ToolExecutionCoordinator:
                     "effect_state", "data", "execution_status",
                 ):
                     if key in safe_output:
-                        result[key] = (
-                            self._bound_tool_value(safe_output[key])
-                            if key in {"data", "interaction", "card_payload"}
-                            else safe_output[key]
-                        )
+                        if key == "interaction":
+                            result[key], interaction_too_large = (
+                                self._bound_interaction_value(
+                                    safe_output[key],
+                                )
+                            )
+                        elif key in {"data", "card_payload"}:
+                            result[key] = self._bound_tool_value(
+                                safe_output[key],
+                            )
+                        else:
+                            result[key] = safe_output[key]
+                if interaction_too_large:
+                    result.update({
+                        "content": (
+                            "Interactive payload exceeds the Runtime limit; "
+                            "no partial interaction was returned."
+                        ),
+                        "terminate": True,
+                        "needs_input": True,
+                        "runtime_signals": {
+                            **dict(result.get("runtime_signals") or {}),
+                            "interaction_payload_too_large": True,
+                        },
+                    })
                 if result.get("requires_confirmation"):
                     result["needs_confirmation"] = True
             if coalesced == "read":
@@ -823,6 +873,330 @@ class ToolExecutionCoordinator:
             current = child
         current[parts[-1]] = value
 
+    @staticmethod
+    def _resource_id_from_output(value: Any, field_name: str) -> Any:
+        """Find one unambiguous value for a Tool-declared resource ID field."""
+        pending = [value]
+        identifiers: dict[str, Any] = {}
+        visited = 0
+        while pending and visited < 10_000:
+            current = pending.pop()
+            visited += 1
+            if isinstance(current, Mapping):
+                candidate = current.get(field_name)
+                if (
+                    isinstance(candidate, (str, int))
+                    and not isinstance(candidate, bool)
+                    and str(candidate).strip()
+                ):
+                    identifiers.setdefault(str(candidate), candidate)
+                pending.extend(current.values())
+            elif isinstance(current, (list, tuple)):
+                pending.extend(current)
+        if len(identifiers) != 1:
+            return None
+        return next(iter(identifiers.values()))
+
+    @classmethod
+    def _resource_scope_matches(
+        cls,
+        parent_call: ToolCall,
+        parent_definition: Any,
+        child_call: ToolCall,
+        child_definition: Any,
+    ) -> bool:
+        parent_fields = {
+            str(item).strip()
+            for item in cls._tool_value(parent_definition, "scope_fields", ()) or ()
+            if str(item).strip()
+        }
+        child_fields = {
+            str(item).strip()
+            for item in cls._tool_value(child_definition, "scope_fields", ()) or ()
+            if str(item).strip()
+        }
+        shared_fields = parent_fields & child_fields
+        if (parent_fields or child_fields) and not shared_fields:
+            return False
+        for field in shared_fields:
+            parent_scope = cls._value_at_path(parent_call.arguments, field)
+            child_scope = cls._value_at_path(child_call.arguments, field)
+            if (
+                parent_scope not in (None, "")
+                and child_scope not in (None, "")
+                and str(parent_scope) != str(child_scope)
+            ):
+                return False
+        return True
+
+    @classmethod
+    def _tool_definitions_for_calls(
+        cls, calls: Sequence[ToolCall], tool_catalog: Any
+    ) -> dict[str, Any]:
+        definitions: dict[str, Any] = {}
+        for call in calls:
+            try:
+                binding = tool_catalog.get_binding(call.name)
+            except (AttributeError, KeyError, TypeError):
+                continue
+            definitions[str(call.id)] = getattr(binding, "definition", None)
+        return definitions
+
+    @classmethod
+    def _resource_producers(
+        cls,
+        calls: Sequence[ToolCall],
+        definitions: Mapping[str, Any],
+    ) -> dict[tuple[str, str], list[tuple[ToolCall, Any]]]:
+        producers: dict[tuple[str, str], list[tuple[ToolCall, Any]]] = {}
+        for call in calls:
+            definition = definitions.get(str(call.id))
+            contract = {
+                key: str(cls._tool_value(definition, key, "") or "").strip().lower()
+                for key in ("action", "namespace", "resource_type", "resource_id_field")
+            }
+            if (
+                contract["action"] != "create"
+                or not contract["namespace"]
+                or not contract["resource_type"]
+                or not contract["resource_id_field"]
+            ):
+                continue
+            producers.setdefault(
+                (contract["namespace"], contract["resource_type"]), []
+            ).append(
+                (call, definition)
+            )
+        return producers
+
+    @classmethod
+    def _resource_candidates(
+        cls,
+        call: ToolCall,
+        definition: Any,
+        resource_type: str,
+        producers: Mapping[tuple[str, str], Sequence[tuple[ToolCall, Any]]],
+    ) -> tuple[list[tuple[ToolCall, Any]], str | None]:
+        namespace = str(cls._tool_value(definition, "namespace", "") or "").strip().lower()
+        candidates = [
+            item for item in producers.get((namespace, resource_type), ())
+            if item[0].id != call.id
+        ]
+        explicit = [item for item in candidates if item[0].id in set(call.depends_on)]
+        if explicit:
+            candidates = explicit
+        scoped = [
+            item for item in candidates
+            if cls._resource_scope_matches(item[0], item[1], call, definition)
+        ]
+        if candidates and not scoped:
+            return [], "scope_mismatch"
+        return scoped, None
+
+    @staticmethod
+    def _add_call_dependency(call: ToolCall, dependency_id: str) -> ToolCall:
+        return ToolCall(
+            id=call.id,
+            name=call.name,
+            arguments=call.arguments,
+            depends_on=tuple(dict.fromkeys((*call.depends_on, dependency_id))),
+            argument_bindings=call.argument_bindings,
+        )
+
+    @classmethod
+    def _bind_parent_resource(
+        cls,
+        call: ToolCall,
+        definition: Any,
+        producers: Mapping[tuple[str, str], Sequence[tuple[ToolCall, Any]]],
+    ) -> tuple[ToolCall, tuple[str, str, str] | None, str | None, str | None]:
+        if str(cls._tool_value(definition, "action", "") or "").lower() != "create":
+            return call, None, None, None
+        parent_type = str(
+            cls._tool_value(definition, "parent_resource_type", "") or ""
+        ).strip().lower()
+        parent_field = str(
+            cls._tool_value(definition, "parent_resource_id_field", "") or ""
+        ).strip()
+        if not parent_type or not parent_field:
+            return call, None, None, None
+        has_value = cls._value_at_path(call.arguments, parent_field) not in (None, "")
+        has_argument_binding = any(
+            item.target_field == parent_field for item in call.argument_bindings
+        )
+        if has_value or has_argument_binding:
+            return call, None, None, None
+        if not cls._declares_input_path(definition, parent_field):
+            return call, None, None, "invalid_parent_contract"
+
+        candidates, rejection = cls._resource_candidates(
+            call, definition, parent_type, producers,
+        )
+        if rejection:
+            return call, None, None, rejection
+        if len(candidates) > 1:
+            return call, None, None, "ambiguous_parent"
+        if not candidates:
+            return call, None, "missing_parent", None
+        parent_call, parent_definition = candidates[0]
+        source_field = str(
+            cls._tool_value(parent_definition, "resource_id_field", "") or ""
+        ).strip()
+        if not source_field:
+            return call, None, None, "invalid_parent_contract"
+        return (
+            cls._add_call_dependency(call, str(parent_call.id)),
+            (parent_field, str(parent_call.id), source_field),
+            None,
+            None,
+        )
+
+    @classmethod
+    def _related_resource_fields(cls, definition: Any) -> list[str]:
+        if str(cls._tool_value(definition, "action", "") or "").lower() != "create":
+            return []
+        related_type = str(
+            cls._tool_value(definition, "related_resource_type", "") or ""
+        ).strip().lower()
+        raw_fields = cls._tool_value(
+            definition, "related_resource_id_fields", (),
+        ) or ()
+        if not related_type or not isinstance(raw_fields, (list, tuple, set)):
+            return []
+        return list(dict.fromkeys(
+            str(item).strip() for item in raw_fields if str(item).strip()
+        ))
+
+    @classmethod
+    def _bind_related_resource(
+        cls,
+        call: ToolCall,
+        definition: Any,
+        target_field: str,
+        producers: Mapping[tuple[str, str], Sequence[tuple[ToolCall, Any]]],
+    ) -> tuple[tuple[str, str, str] | None, str | None, str | None]:
+        if not cls._declares_input_path(definition, target_field):
+            return None, None, "invalid_parent_contract"
+        related_type = str(
+            cls._tool_value(definition, "related_resource_type", "") or ""
+        ).strip().lower()
+        candidates, rejection = cls._resource_candidates(
+            call, definition, related_type, producers,
+        )
+        if rejection:
+            return None, None, rejection
+        if len(candidates) > 1:
+            return None, None, "ambiguous_parent"
+        if not candidates:
+            return None, "missing_parent", None
+        parent_call, parent_definition = candidates[0]
+        source_field = str(
+            cls._tool_value(parent_definition, "resource_id_field", "") or ""
+        ).strip()
+        if not source_field:
+            return None, None, "invalid_parent_contract"
+        return (
+            (target_field, str(parent_call.id), source_field),
+            str(parent_call.id),
+            None,
+        )
+
+    @classmethod
+    def _bind_related_resources(
+        cls,
+        calls: Sequence[ToolCall],
+        definitions: Mapping[str, Any],
+        producers: Mapping[tuple[str, str], Sequence[tuple[ToolCall, Any]]],
+        resource_bindings: dict[str, list[tuple[str, str, str]]],
+    ) -> tuple[dict[str, list[str]], dict[str, str], str | None]:
+        dependencies: dict[str, list[str]] = {}
+        unresolved: dict[str, str] = {}
+        rejection = None
+        for call in calls:
+            definition = definitions.get(str(call.id))
+            for target_field in cls._related_resource_fields(definition):
+                already_bound = any(
+                    item.target_field == target_field for item in call.argument_bindings
+                ) or any(
+                    item[0] == target_field
+                    for item in resource_bindings.get(str(call.id), [])
+                )
+                if (
+                    already_bound
+                    or cls._value_at_path(call.arguments, target_field) not in (None, "")
+                ):
+                    continue
+                binding, dependency, reason = cls._bind_related_resource(
+                    call, definition, target_field, producers,
+                )
+                if binding:
+                    resource_bindings.setdefault(str(call.id), []).append(binding)
+                if binding and dependency:
+                    dependencies.setdefault(str(call.id), []).append(dependency)
+                elif dependency:
+                    unresolved[str(call.id)] = dependency
+                if reason:
+                    rejection = reason
+        return dependencies, unresolved, rejection
+
+    @classmethod
+    def _extend_resource_dependencies(
+        cls, calls: Sequence[ToolCall], dependencies: Mapping[str, Sequence[str]]
+    ) -> list[ToolCall]:
+        updated = []
+        for call in calls:
+            for dependency_id in dependencies.get(str(call.id), ()):
+                call = cls._add_call_dependency(call, dependency_id)
+            updated.append(call)
+        return updated
+
+    @classmethod
+    def _declared_resource_dependencies(
+        cls,
+        calls: Sequence[ToolCall],
+        tool_catalog: Any,
+    ) -> tuple[
+        list[ToolCall],
+        dict[str, list[tuple[str, str, str]]],
+        dict[str, str],
+        str | None,
+    ]:
+        """Bind child resource IDs using Tool-declared parent contracts."""
+        definitions = cls._tool_definitions_for_calls(calls, tool_catalog)
+        producers = cls._resource_producers(calls, definitions)
+        bound_calls: list[ToolCall] = []
+        resource_bindings: dict[str, list[tuple[str, str, str]]] = {}
+        unresolved: dict[str, str] = {}
+        rejection = None
+        for call in calls:
+            updated, binding, missing, reason = cls._bind_parent_resource(
+                call, definitions.get(str(call.id)), producers,
+            )
+            bound_calls.append(updated)
+            if binding:
+                resource_bindings.setdefault(str(call.id), []).append(binding)
+            if missing:
+                unresolved[str(call.id)] = missing
+            if reason:
+                rejection = reason
+
+        related_dependencies, related_unresolved, related_rejection = (
+            cls._bind_related_resources(
+                calls, definitions, producers, resource_bindings,
+            )
+        )
+        unresolved.update(related_unresolved)
+        rejection = related_rejection or rejection
+        bound_calls = cls._extend_resource_dependencies(
+            bound_calls, related_dependencies,
+        )
+        return (
+            bound_calls,
+            resource_bindings,
+            unresolved,
+            rejection,
+        )
+
     def _resolve_argument_bindings(
         self,
         call: ToolCall,
@@ -856,6 +1230,34 @@ class ToolExecutionCoordinator:
             argument_bindings=call.argument_bindings,
         ), None
 
+    def _resolve_resource_bindings(
+        self,
+        call: ToolCall,
+        completed: Mapping[str, Mapping[str, Any]],
+        bindings: Sequence[tuple[str, str, str]],
+    ) -> tuple[ToolCall | None, str | None]:
+        resolved, error = self._resolve_argument_bindings(call, completed)
+        if error or resolved is None or not bindings:
+            return resolved, error
+        arguments = dict(resolved.arguments)
+        for target_field, source_call_id, resource_id_field in bindings:
+            source = completed.get(source_call_id)
+            if not isinstance(source, Mapping):
+                return None, "declared parent Tool result is unavailable"
+            value = self._resource_id_from_output(
+                source.get("data"), resource_id_field,
+            )
+            if value in (None, ""):
+                return None, "declared parent Tool result did not contain one resource ID"
+            self._set_input_path(arguments, target_field, value)
+        return ToolCall(
+            id=resolved.id,
+            name=resolved.name,
+            arguments=arguments,
+            depends_on=resolved.depends_on,
+            argument_bindings=resolved.argument_bindings,
+        ), None
+
     def execute_tools(
         self,
         request: TurnRequest,
@@ -875,6 +1277,40 @@ class ToolExecutionCoordinator:
                 "content": "duplicate tool call id",
                 "is_error": True,
                 "terminate": True,
+            } for call in calls]
+        calls, resource_bindings, unresolved_dependencies, batch_rejection = (
+            self._declared_resource_dependencies(calls, self.tool_catalog)
+        )
+        if batch_rejection:
+            signal = {
+                "scope_mismatch": "tool_resource_scope_mismatch",
+                "ambiguous_parent": "tool_resource_dependency_ambiguous",
+                "invalid_parent_contract": "tool_resource_dependency_contract_invalid",
+            }[batch_rejection]
+            content = {
+                "scope_mismatch": (
+                    "Tool batch rejected: declared parent and child resources "
+                    "have different scopes; no Tool was executed."
+                ),
+                "ambiguous_parent": (
+                    "Tool batch rejected: multiple declared parent resources "
+                    "could supply a required input; no Tool was executed."
+                ),
+                "invalid_parent_contract": (
+                    "Tool batch rejected: declared parent Tool has no resource "
+                    "ID contract; no Tool was executed."
+                ),
+            }[batch_rejection]
+            return [{
+                "tool_call_id": str(call.id),
+                "name": call.name,
+                "content": content,
+                "is_error": True,
+                "terminate": True,
+                "needs_input": True,
+                "runtime_signals": {
+                    signal: True,
+                },
             } for call in calls]
         pending = list(calls)
         completed: dict[str, dict[str, Any]] = {}
@@ -941,22 +1377,46 @@ class ToolExecutionCoordinator:
                     }
                     completed[str(call.id)] = result
                     results[str(call.id)] = result
+                elif str(call.id) in unresolved_dependencies:
+                    reason = unresolved_dependencies[str(call.id)]
+                    result = {
+                        "tool_call_id": call.id,
+                        "name": call.name,
+                        "content": (
+                            "Required parent resource ID is missing; provide an "
+                            "existing parent ID or include its create Tool."
+                        ),
+                        "is_error": True,
+                        "terminate": False,
+                        "needs_input": True,
+                        "runtime_signals": {
+                            f"tool_resource_dependency_{reason}": True,
+                        },
+                    }
+                    completed[str(call.id)] = result
+                    results[str(call.id)] = result
                 else:
                     runnable.append(call)
             resolved_calls: list[ToolCall] = []
             batch_read_cache = read_cache or ToolReadCache()
             binding_errors: dict[str, dict[str, Any]] = {}
             for call in runnable:
-                resolved, error = self._resolve_argument_bindings(
-                    call, completed,
+                resolved, error = self._resolve_resource_bindings(
+                    call,
+                    completed,
+                    resource_bindings.get(str(call.id), ()),
                 )
                 if error:
                     binding_errors[str(call.id)] = {
                         "tool_call_id": call.id,
                         "name": call.name,
-                        "content": "Tool dependency argument could not be resolved",
+                        "content": (
+                            "Parent Tool completed without one concrete resource "
+                            "ID; dependent Tool was not executed."
+                        ),
                         "is_error": True,
                         "terminate": False,
+                        "needs_input": True,
                         "runtime_signals": {
                             "tool_argument_binding_error": True,
                         },

@@ -541,6 +541,125 @@ def test_generic_policy_interaction_survives_run_result_without_executing_tool()
         app.close()
 
 
+def test_large_interaction_is_not_truncated_by_model_tool_result_limit():
+    executed = []
+    interaction = {
+        "type": "input_form",
+        "payload": {
+            "fields": [
+                {"name": f"field_{index}", "description": "x" * 900}
+                for index in range(80)
+            ],
+        },
+    }
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(ToolCall("call-1", "update_record", {}),))
+
+    policy = ToolExecutionPolicy(
+        interaction_builder=lambda _context, reason, _message: (
+            interaction if reason == "input_schema" else None
+        ),
+    )
+    app = AgentApplication.create(
+        model=Model(),
+        tool_policy=policy,
+        tool_execution="sequential",
+        max_tool_result_chars=240,
+    )
+    definition = _definition(
+        "update_record",
+        namespace="records",
+        action="update",
+        resource="record",
+        description="Update a record",
+        properties={"record_id": {"type": "string"}},
+    )
+    definition.input_schema.required = ["record_id"]
+    app.register_tool_source(StaticToolSource(
+        "records",
+        [ToolBinding(definition, lambda *_args: executed.append(True))],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="Update a record",
+            session_id="large-interaction-session",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        ))
+
+        payload = result.to_dict()
+        assert len(str(interaction)) > 32_000
+        assert result.status.value == "awaiting_input"
+        assert payload["interactions"] == [interaction]
+        assert payload["tool_results"][0]["interaction"] == interaction
+        assert executed == []
+    finally:
+        app.close()
+
+
+def test_oversized_interaction_is_rejected_without_returning_a_partial_form():
+    interaction = {
+        "type": "input_form",
+        "payload": {
+            "fields": [
+                {"name": f"field_{index}", "description": "x" * 900}
+                for index in range(8)
+            ],
+        },
+    }
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=(ToolCall("call-1", "update_record", {}),))
+
+    policy = ToolExecutionPolicy(
+        interaction_builder=lambda _context, reason, _message: (
+            interaction if reason == "input_schema" else None
+        ),
+    )
+    app = AgentApplication.create(
+        model=Model(),
+        tool_policy=policy,
+        tool_execution="sequential",
+        max_interaction_chars=1024,
+    )
+    definition = _definition(
+        "update_record",
+        namespace="records",
+        action="update",
+        resource="record",
+        description="Update a record",
+        properties={"record_id": {"type": "string"}},
+    )
+    definition.input_schema.required = ["record_id"]
+    app.register_tool_source(StaticToolSource(
+        "records",
+        [ToolBinding(definition, lambda *_args: None)],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="Update a record",
+            session_id="oversized-interaction-session",
+            user_id="user-1",
+            tenant_id="tenant-1",
+        ))
+
+        payload = result.to_dict()
+        bounded = payload["tool_results"][0]["interaction"]
+        assert result.status.value == "awaiting_input"
+        assert bounded == {
+            "type": "interaction_error",
+            "error_code": "interaction_payload_too_large",
+            "max_chars": 1024,
+        }
+        assert result.runtime_signals["interaction_payload_too_large"] is True
+        assert "no partial interaction" in result.reply.lower()
+    finally:
+        app.close()
+
+
 def test_generic_policy_enforces_nested_schema_constraints_before_execution():
     executed = []
     interactions = []

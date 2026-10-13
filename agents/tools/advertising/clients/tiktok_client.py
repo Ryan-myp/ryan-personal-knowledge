@@ -3867,23 +3867,64 @@ class TikTokAPIClient(BasePlatformClient):
             public_rows.append(self._public_provider_data(row))
         return public_rows
 
-    def get_identity(self, advertiser_id: str, identity_id: str) -> dict:
-        """Get one advertiser identity through the existing identity/get endpoint."""
+    def get_identity(
+        self, advertiser_id: str, identity_id: str, identity_type: str
+    ) -> dict:
+        """Get one advertiser identity without scanning the account identity list."""
         advertiser_id = str(advertiser_id or "").strip()
         identity_id = str(identity_id or "").strip()
+        identity_type = str(identity_type or "").strip().upper()
         if not advertiser_id.isdigit():
             raise ValueError("advertiser_id must contain digits only")
         if not identity_id:
             raise ValueError("identity_id is required")
-        identities = self.list_identities(advertiser_id, page_size=100)
-        return next(
-            (
-                item for item in identities
-                if isinstance(item, dict)
-                and str(item.get("identity_id") or item.get("id") or "") == identity_id
-            ),
-            {},
+        if identity_type not in {
+            "CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT",
+        }:
+            raise ValueError("unsupported identity_type")
+
+        identity = self._fetch_identity_info(
+            advertiser_id, identity_id, identity_type,
         )
+        if not isinstance(identity, dict):
+            return {}
+
+        returned_id = str(identity.get("identity_id") or identity.get("id") or "")
+        returned_type = str(identity.get("identity_type") or "").upper()
+        if returned_id and returned_id != identity_id:
+            raise ValueError("TikTok returned a different identity than requested")
+        if returned_type and returned_type != identity_type:
+            raise ValueError("TikTok returned a different identity type than requested")
+        if not returned_id:
+            return {}
+
+        authorization = self._business_center_value(identity)
+        if authorization:
+            self._identity_authorization[
+                (advertiser_id, identity_type, identity_id)
+            ] = authorization
+        return self._public_provider_data(identity)
+
+    def _fetch_identity_info(
+        self, advertiser_id: str, identity_id: str, identity_type: str
+    ) -> Any:
+        params = {
+            "advertiser_id": advertiser_id,
+            "identity_id": identity_id,
+            "identity_type": identity_type,
+        }
+        if identity_type == "BC_AUTH_TT":
+            params["identity_authorized_bc_id"] = (
+                self._resolve_identity_authorization(
+                    advertiser_id, identity_type, identity_id,
+                )
+            )
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("GET", "identity/info/", params=params)
+        payload = self._data_section(result)
+        if not isinstance(payload, dict):
+            return None
+        return payload.get("identity_info", payload.get("identity"))
 
     def get_identity_video_info(
         self, advertiser_id: str, identity_type: str, identity_id: str, item_id: str

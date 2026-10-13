@@ -3672,7 +3672,7 @@ def test_tiktok_ad_contract_exposes_lookup_backed_assets_and_provider_creative_f
         if definition.name == "tiktok_create_ad"
     )
     schema = definition.input_schema
-    assert schema.properties["video_id"]["lookup_tool"] == "tiktok_list_videos"
+    assert schema.properties["video_id"]["lookup_tool"] == "tiktok_get_video"
     assert schema.properties["image_ids"]["lookup_tool"] == "tiktok_list_images"
     assert schema.properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
     assert schema.properties["identity_id"]["lookup_tool"] == "tiktok_list_identities"
@@ -7953,20 +7953,74 @@ def test_tiktok_account_reader_reuses_account_get_endpoint():
     assert seen == [["7397068114548195329"]]
 
 
-def test_tiktok_identity_reader_reuses_identity_get_endpoint():
+def test_tiktok_identity_reader_uses_exact_info_endpoint_and_keeps_bc_id_private():
     client = TikTokAPIClient({"access_token": "test"})
     seen = []
 
-    def list_identities(advertiser_id, identity_type=None, page=1, page_size=20):
-        seen.append((advertiser_id, identity_type, page, page_size))
-        return [{"identity_id": "identity-1", "display_name": "Demo"}]
+    def request(method, endpoint, params=None, data=None, **kwargs):
+        seen.append((method, endpoint, params, data))
+        return {"code": 0, "data": {"identity_info": {
+            "identity_id": "identity-1",
+            "identity_type": "BC_AUTH_TT",
+            "display_name": "Demo",
+            "identity_authorized_bc_id": "private-bc-1",
+        }}}
 
-    client.list_identities = list_identities
+    def unexpected_list(*args, **kwargs):
+        raise AssertionError("single identity lookup must not scan the identity list")
+
+    client.request = request
+    client.list_identities = unexpected_list
+    client._identity_authorization[
+        ("7397068114548195329", "BC_AUTH_TT", "identity-1")
+    ] = "private-bc-1"
 
     assert client.get_identity(
-        "7397068114548195329", "identity-1"
-    )["display_name"] == "Demo"
-    assert seen == [("7397068114548195329", None, 1, 100)]
+        "7397068114548195329", "identity-1", "BC_AUTH_TT"
+    ) == {
+        "identity_id": "identity-1",
+        "identity_type": "BC_AUTH_TT",
+        "display_name": "Demo",
+    }
+    assert seen == [(
+        "GET",
+        "identity/info/",
+        {
+            "advertiser_id": "7397068114548195329",
+            "identity_id": "identity-1",
+            "identity_type": "BC_AUTH_TT",
+            "identity_authorized_bc_id": "private-bc-1",
+        },
+        None,
+    )]
+
+
+def test_tiktok_get_identity_contract_requires_type_without_bc_authorization_input():
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_tool_source().register_tools()
+    }
+    schema = definitions["tiktok_get_identity"].input_schema
+
+    assert set(schema.required) == {"account_id", "identity_id", "identity_type"}
+    assert schema.properties["identity_type"]["enum"] == [
+        "CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT",
+    ]
+    assert "identity_authorized_bc_id" not in schema.properties
+
+
+def test_tiktok_identity_info_rejects_a_different_identity_response():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *args, **kwargs: {
+        "code": 0,
+        "data": {"identity_info": {
+            "identity_id": "another-identity",
+            "identity_type": "AUTH_CODE",
+        }},
+    }
+
+    with pytest.raises(ValueError, match="different identity"):
+        client.get_identity("7397068114548195329", "identity-1", "AUTH_CODE")
 
 
 def test_google_live_campaign_defaults_required_eu_political_declaration():

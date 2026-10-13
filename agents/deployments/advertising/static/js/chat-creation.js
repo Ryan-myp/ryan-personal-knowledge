@@ -1199,7 +1199,7 @@
                         scheduleCreationCardEvaluation(card, field.path);
                     });
                     control.append(idInput, fileInput, note);
-                } else if (field.control === 'asset_picker') {
+                } else if (field.control === 'asset_picker' && !field.lookup?.tool) {
                     control = document.createElement('div');
                     control.className = 'asset-picker';
                     const fileInput = document.createElement('input');
@@ -1271,7 +1271,10 @@
                         control.appendChild(node);
                     });
                     }
-                } else if (field.control === 'lookup') {
+                } else if (
+                    field.control === 'lookup'
+                    || (field.control === 'asset_picker' && field.lookup?.tool)
+                ) {
                     if (!card.selection_tokens) card.selection_tokens = {};
                     if (!card.selection_token_tools) card.selection_token_tools = {};
                     control = renderLookupPicker(field, {

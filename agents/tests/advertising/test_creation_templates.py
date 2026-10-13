@@ -20,6 +20,12 @@ from agents.applications.advertising.creation.templates import (
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.execution.input_builder import ToolInputBuilder
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
+from agents.applications.advertising.composition.ad_application import (
+    AdvertisingComposition,
+)
+from agents.tools.advertising.providers.tiktok.provider import (
+    create_tiktok_tool_source,
+)
 
 
 BLUEPRINT = {
@@ -304,7 +310,7 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     assert tiktok_sales["ad_group.product_set_id"] == "3229"
     assert "ad_group.pixel_id" not in tiktok_sales
     tiktok_app = templates_by_key["tiktok.test.app-promotion"]["values"]
-    assert tiktok_app["campaign.app_id"] == "6734587026957402118"
+    assert tiktok_app["campaign.app_id"] == "6816285226570924038"
     assert tiktok_app["ad_group.app_id"] == tiktok_app["campaign.app_id"]
     assert all(
         "selection_token" not in json.dumps(item["values"])
@@ -680,3 +686,252 @@ def test_google_template_user_inputs_are_projected_into_campaign_tool_arguments(
         "campaign.selective_optimization"
     ]
     assert arguments["status"] == "PAUSED"
+
+
+def test_tiktok_template_blueprints_bind_registered_smart_plus_tools_by_resource():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_tiktok_tool_source())
+
+    expected_tools = (
+        "tiktok_smart_plus_create_campaign",
+        "tiktok_smart_plus_create_adgroup",
+        "tiktok_smart_plus_create_ad",
+    )
+    for blueprint_id in (
+        "tiktok.traffic_video",
+        "tiktok.product_sales_video",
+        "tiktok.app_conversion_video",
+    ):
+        blueprint = runtime.creation_blueprints.get(blueprint_id)
+        assert blueprint is not None
+        assert blueprint.tools == expected_tools
+
+        for field in blueprint.fields:
+            tool_name, schema_path = field["tool_ref"].split(".", 1)
+            definition, _handler = runtime.registry.get(tool_name)
+            assert tool_name in expected_tools
+            assert definition.resource_type == field["path"].split(".", 1)[0]
+
+            schema = definition.input_schema.properties
+            parts = schema_path.split(".")
+            for index, part in enumerate(parts):
+                assert part in schema, (blueprint_id, field["tool_ref"])
+                child = schema[part]
+                if index < len(parts) - 1:
+                    schema = child.get("properties", {})
+
+
+def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
+    account_id = "7397068114548195329"
+    expected_inputs = {
+        "Campaign 名称",
+        "开始时间（UTC）",
+        "结束时间（UTC）",
+        "总预算（USD）",
+    }
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+    )
+    runtime.whitelist_validator.allowed_accounts = {"tiktok": [account_id]}
+    runtime.register_tool_source(create_tiktok_tool_source())
+    templates = {
+        item["key"]: item
+        for item in load_builtin_template_definitions()
+        if item["key"] in {
+            "tiktok.test.traffic",
+            "tiktok.test.sales",
+            "tiktok.test.app-promotion",
+        }
+    }
+    assert set(templates) == {
+        "tiktok.test.traffic",
+        "tiktok.test.sales",
+        "tiktok.test.app-promotion",
+    }
+
+    for template in templates.values():
+        assert template["account_id"] == account_id
+        assert set(template["required_inputs"]) == expected_inputs
+        values = template["values"]
+        assert values["ad_group.budget_mode"] == "BUDGET_MODE_TOTAL"
+        assert values["ad_group.schedule_type"] == "SCHEDULE_START_END"
+        assert values["campaign.operation_status"] == "DISABLE"
+        assert values["ad_group.operation_status"] == "DISABLE"
+        assert values["ad.operation_status"] == "DISABLE"
+        assert "campaign.budget" not in values
+        assert "ad_group.budget" not in values
+
+        blueprint = runtime.creation_blueprints.get(template["blueprint_id"])
+        assert blueprint is not None
+        required_paths = {
+            field["path"]
+            for field in blueprint.fields
+            if field.get("required") is True
+        }
+        user_paths = {
+            "campaign.campaign_name",
+            "ad_group.budget",
+            "ad_group.schedule_start_time",
+            "ad_group.schedule_end_time",
+        }
+        assert user_paths <= required_paths
+        generated_paths = {
+            field["path"]
+            for field in blueprint.fields
+            if field.get("default_strategy") == "generated_name"
+        }
+        assert required_paths - user_paths <= set(values) | generated_paths
+
+        template_id = runtime._creation_template_manager_for_request(
+            {"tiktok": {account_id}},
+        )._builtin_id(template)
+        intent = ParsedIntent(
+            "create_campaign",
+            f"创建 {template['name']}",
+            ["tiktok"],
+            scoped_parameters={"tiktok": {"account_id": account_id}},
+        )
+        applied = runtime.apply_creation_template_to_intent(
+            intent,
+            template_id,
+            account_id=account_id,
+            account_scope={"tiktok": {account_id}},
+        )
+        card = runtime.build_creation_ui(
+            applied,
+            account_id=account_id,
+            account_scope={"tiktok": {account_id}},
+        )["cards"][0]
+        assert set(card["user_input_fields"]) == user_paths
+        assert card["ready"] is False
+        assert card["template_id"] == template_id
+        fields = {field["path"]: field for field in card["fields"]}
+        for path, value in values.items():
+            assert fields[path]["value"] == value, (template["key"], path)
+            assert fields[path]["user_required"] is False, (
+                template["key"],
+                path,
+            )
+        assert fields["campaign.campaign_name"]["user_required"] is True
+        assert fields["ad.video_id"]["input_mode"] == "auto_default"
+        assert fields["ad.video_id"]["lookup"]["tool"] == "tiktok_get_video"
+        assert fields["ad.video_id"]["lookup"]["query_field"] == "video_id"
+        assert fields["ad_group.bid_price"]["required"] is False
+        assert fields["ad_group.conversion_bid_price"]["required"] is False
+
+        # A template ID by itself is not enough to suppress required inputs.
+        # The server-side apply operation must carry the actual covered paths.
+        unproven_template_intent = ParsedIntent(
+            applied.intent_type,
+            applied.raw_input,
+            applied.namespaces,
+            attributes=applied.attributes,
+            parameters=applied.parameters,
+            scoped_parameters=applied.scoped_parameters,
+            metadata={
+                key: value
+                for key, value in applied.metadata.items()
+                if key != "creation_template_prefilled_fields"
+            },
+        )
+        unproven_card = runtime.build_creation_ui(
+            unproven_template_intent,
+            account_id=account_id,
+            account_scope={"tiktok": {account_id}},
+        )["cards"][0]
+        unproven_fields = {
+            field["path"]: field for field in unproven_card["fields"]
+        }
+        assert unproven_fields["ad.identity_id"]["user_required"] is True
+        assert unproven_fields["ad.ad_text"]["user_required"] is True
+
+    traffic = templates["tiktok.test.traffic"]
+    sales = templates["tiktok.test.sales"]
+    app = templates["tiktok.test.app-promotion"]
+    assert traffic["values"]["ad_group.location_ids"] == ["1880251"]
+    assert traffic["values"]["ad_group.optimization_goal"] == "CLICK"
+    assert traffic["values"]["ad_group.billing_event"] == "CPC"
+    assert traffic["values"]["ad.call_to_action"] == "LEARN_MORE"
+    assert traffic["values"]["ad.landing_page_url"] == "https://shopee.sg/"
+    assert sales["values"]["ad_group.catalog_id"] == "6964618698963289858"
+    assert sales["values"]["ad_group.product_set_id"] == "3229"
+    assert app["values"]["campaign.app_id"] == "6816285226570924038"
+    assert app["values"]["ad_group.app_id"] == "6816285226570924038"
+
+    for template in templates.values():
+        values = template["values"]
+        assert values["ad.video_id"] == "v10033g50000d8nltv7og65nd6868v7g"
+        assert values["ad.image_web_uris"]
+        assert values["ad.identity_type"] == "BC_AUTH_TT"
+        assert values["ad.identity_id"] == "15efada4-8fb9-54aa-b5c6-3b82529b947d"
+
+        intent = ParsedIntent(
+            "create_campaign",
+            "创建测试广告",
+            ["tiktok"],
+            scoped_parameters={
+                "tiktok": {
+                    "account_id": account_id,
+                    "campaign": {"campaign_name": "QA TikTok 20261012"},
+                    "ad_group": {
+                        "budget": 50,
+                        "schedule_start_time": "2026-10-13 00:00:00",
+                        "schedule_end_time": "2026-10-15 00:00:00",
+                    },
+                }
+            },
+        )
+        template_id = runtime._creation_template_manager_for_request(
+            {"tiktok": {account_id}},
+        )._builtin_id(template)
+        applied = runtime.apply_creation_template_to_intent(
+            intent,
+            template_id,
+            account_id=account_id,
+            account_scope={"tiktok": {account_id}},
+        )
+        definitions = {
+            tool_name: runtime.registry.get(tool_name)[0]
+            for tool_name in (
+                "tiktok_smart_plus_create_campaign",
+                "tiktok_smart_plus_create_adgroup",
+                "tiktok_smart_plus_create_ad",
+            )
+        }
+        ctx = SimpleNamespace(
+            account_id=account_id,
+            session_id="tiktok-template-test",
+            user_id="test-user",
+            protected_state={},
+        )
+        campaign_args = runtime.input_builder.build(
+            definitions["tiktok_smart_plus_create_campaign"],
+            applied,
+            "tiktok",
+            ctx,
+        )
+        adgroup_args = runtime.input_builder.build(
+            definitions["tiktok_smart_plus_create_adgroup"],
+            applied,
+            "tiktok",
+            ctx,
+        )
+        ad_args = runtime.input_builder.build(
+            definitions["tiktok_smart_plus_create_ad"],
+            applied,
+            "tiktok",
+            ctx,
+        )
+
+        assert campaign_args["campaign_name"] == "QA TikTok 20261012"
+        assert campaign_args["operation_status"] == "DISABLE"
+        assert "budget" not in campaign_args
+        assert adgroup_args["budget"] == 50
+        assert adgroup_args["budget_mode"] == "BUDGET_MODE_TOTAL"
+        assert adgroup_args["schedule_type"] == "SCHEDULE_START_END"
+        assert adgroup_args["schedule_start_time"] == "2026-10-13 00:00:00"
+        assert adgroup_args["schedule_end_time"] == "2026-10-15 00:00:00"
+        assert adgroup_args["operation_status"] == "DISABLE"
+        assert ad_args["operation_status"] == "DISABLE"

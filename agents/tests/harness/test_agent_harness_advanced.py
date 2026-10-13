@@ -111,6 +111,410 @@ def test_dependency_binding_uses_prior_tool_output_without_domain_runtime():
         app.close()
 
 
+def test_declared_resource_parent_ids_are_inherited_across_a_tool_chain():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            if not hasattr(self, "called"):
+                self.called = True
+                return ModelTurn(tool_calls=(
+                    ToolCall("campaign", "create_campaign", {"name": "Campaign"}),
+                    ToolCall("adgroup", "create_adgroup", {"name": "Ad group"}),
+                    ToolCall("ad", "create_ad", {"name": "Ad"}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {"name": {}}},
+                },
+                lambda _ctx, value: executed.append(("campaign", value)) or {
+                    "success": True,
+                    "data": {"campaign": {"campaign_id": "campaign-42"}},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "adgroup_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {
+                        "name": {}, "campaign_id": {},
+                    }},
+                },
+                lambda _ctx, value: executed.append(("adgroup", value)) or {
+                    "success": True,
+                    "data": {"adgroup": {"adgroup_id": "adgroup-42"}},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_ad",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "ad",
+                    "parent_resource_type": "ad_group",
+                    "resource_id_field": "ad_id",
+                    "parent_resource_id_field": "adgroup_id",
+                    "related_resource_type": "campaign",
+                    "related_resource_id_fields": ["campaign_id"],
+                    "input_schema": {"properties": {
+                        "name": {}, "campaign_id": {}, "adgroup_id": {},
+                    }},
+                },
+                lambda _ctx, value: executed.append(("ad", value)) or {
+                    "success": True, "data": {"ad": {"ad_id": "ad-42"}},
+                },
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("create campaign, ad group and ad")
+
+        assert result.status.value == "succeeded"
+        assert executed == [
+            ("campaign", {"name": "Campaign"}),
+            ("adgroup", {"name": "Ad group", "campaign_id": "campaign-42"}),
+            (
+                "ad",
+                {
+                    "name": "Ad",
+                    "campaign_id": "campaign-42",
+                    "adgroup_id": "adgroup-42",
+                },
+            ),
+        ]
+    finally:
+        app.close()
+
+
+def test_ambiguous_resource_parent_rejects_the_batch_before_any_write():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            if not hasattr(self, "called"):
+                self.called = True
+                return ModelTurn(tool_calls=(
+                    ToolCall("campaign-1", "create_campaign", {"name": "One"}),
+                    ToolCall("campaign-2", "create_campaign", {"name": "Two"}),
+                    ToolCall("adgroup", "create_adgroup", {"name": "Ad group"}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {"name": {}}},
+                },
+                lambda _ctx, value: executed.append(("campaign", value)) or {
+                    "success": True,
+                    "data": {"campaign": {"campaign_id": "campaign-42"}},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "adgroup_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {
+                        "name": {}, "campaign_id": {},
+                    }},
+                },
+                lambda _ctx, value: executed.append(("adgroup", value)),
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("create two campaigns and an ad group")
+        tool_results = result.data["tool_results"]
+
+        assert executed == []
+        assert all(item["is_error"] for item in tool_results)
+        assert any(
+            item.get("runtime_signals", {}).get(
+                "tool_resource_dependency_ambiguous"
+            )
+            for item in tool_results
+        )
+    finally:
+        app.close()
+
+
+def test_resource_scope_mismatch_rejects_the_batch_before_any_write():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            if not hasattr(self, "called"):
+                self.called = True
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "campaign",
+                        "create_campaign",
+                        {"account_id": "account-a"},
+                    ),
+                    ToolCall(
+                        "adgroup",
+                        "create_adgroup",
+                        {"account_id": "account-b"},
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "scope_fields": ["account_id"],
+                    "input_schema": {"properties": {"account_id": {}}},
+                },
+                lambda _ctx, value: executed.append(("campaign", value)) or {
+                    "success": True,
+                    "data": {"campaign_id": "campaign-42"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "adgroup_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "scope_fields": ["account_id"],
+                    "input_schema": {"properties": {
+                        "account_id": {},
+                        "campaign_id": {},
+                    }},
+                },
+                lambda _ctx, value: executed.append(("adgroup", value)),
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("create campaign and ad group in separate accounts")
+
+        assert executed == []
+        assert all(item["is_error"] for item in result.data["tool_results"])
+        assert any(
+            item.get("runtime_signals", {}).get(
+                "tool_resource_scope_mismatch"
+            )
+            for item in result.data["tool_results"]
+        )
+    finally:
+        app.close()
+
+
+def test_child_create_without_declared_parent_result_is_not_executed():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            if not hasattr(self, "called"):
+                self.called = True
+                return ModelTurn(tool_calls=(
+                    ToolCall("adgroup", "create_adgroup", {"name": "Ad group"}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [ToolBinding(
+            {
+                "name": "create_adgroup",
+                "namespace": "example",
+                "action": "create",
+                "resource_type": "ad_group",
+                "parent_resource_type": "campaign",
+                "resource_id_field": "adgroup_id",
+                "parent_resource_id_field": "campaign_id",
+                "input_schema": {"properties": {
+                    "name": {},
+                    "campaign_id": {},
+                }},
+            },
+            lambda _ctx, value: executed.append(value) or {"success": True},
+        )],
+    ))
+    try:
+        result = app.prompt("create an ad group")
+
+        assert executed == []
+        child_result = result.data["tool_results"][0]
+        assert child_result["is_error"] is True
+        assert child_result["needs_input"] is True
+        assert child_result["runtime_signals"].get(
+            "tool_resource_dependency_missing_parent"
+        )
+    finally:
+        app.close()
+
+
+def test_invalid_parent_input_contract_rejects_the_batch_before_any_write():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            if not hasattr(self, "called"):
+                self.called = True
+                return ModelTurn(tool_calls=(
+                    ToolCall("campaign", "create_campaign", {}),
+                    ToolCall("adgroup", "create_adgroup", {}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model())
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {}},
+                },
+                lambda _ctx, value: executed.append(("campaign", value)) or {
+                    "success": True,
+                    "data": {"campaign_id": "campaign-42"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "adgroup_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {"name": {}}},
+                },
+                lambda _ctx, value: executed.append(("adgroup", value)),
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("create a campaign and ad group")
+
+        assert executed == []
+        assert all(item["is_error"] for item in result.data["tool_results"])
+        assert any(
+            item.get("runtime_signals", {}).get(
+                "tool_resource_dependency_contract_invalid"
+            )
+            for item in result.data["tool_results"]
+        )
+    finally:
+        app.close()
+
+
+def test_dry_run_parent_without_resource_id_does_not_execute_child():
+    executed = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            if not hasattr(self, "called"):
+                self.called = True
+                return ModelTurn(tool_calls=(
+                    ToolCall("campaign", "create_campaign", {}),
+                    ToolCall("adgroup", "create_adgroup", {}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model(), tool_execution="sequential")
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {}},
+                },
+                lambda _ctx, _value: executed.append("campaign") or {
+                    "success": True,
+                    "data": {
+                        "campaign_id": None,
+                        "execution_status": "planned",
+                    },
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "adgroup_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {"campaign_id": {}}},
+                },
+                lambda _ctx, value: executed.append(("adgroup", value)) or {
+                    "success": True,
+                },
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("create a campaign and its ad group")
+
+        assert executed == ["campaign"]
+        child_result = next(
+            item for item in result.data["tool_results"]
+            if item["tool_call_id"] == "adgroup"
+        )
+        assert child_result["is_error"] is True
+        assert child_result["runtime_signals"].get(
+            "tool_argument_binding_error"
+        )
+    finally:
+        app.close()
+
+
 def test_unresolved_dependency_binding_fails_closed_before_child_execution():
     child_calls = []
 

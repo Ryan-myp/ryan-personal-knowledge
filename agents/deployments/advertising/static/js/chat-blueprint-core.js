@@ -502,11 +502,12 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
             }
 
             async function resolvePrefilledSelection() {
-                if (
-                    !context.autoResolvePrefill
-                    || !field?.lookup?.query_field
-                ) return;
+                if (!context.autoResolvePrefill) return;
                 const values = getSelected();
+                if (!field?.lookup?.query_field) {
+                    if (values.length) await queryOptions('', false);
+                    return;
+                }
                 for (const value of values) {
                     await queryOptions(lookupQueryForValue(value), true);
                 }

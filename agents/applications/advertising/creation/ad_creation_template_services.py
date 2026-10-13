@@ -143,6 +143,9 @@ class AdCreationTemplateServicesMixin:
             if isinstance(field, Mapping)
             and "." in str(field.get("tool_ref") or "")
         ]
+        blueprint_paths = {
+            str(field.get("path") or "") for field in blueprint_fields
+        }
         leaf_counts: dict[str, int] = {}
         for field in blueprint_fields:
             _tool_name, schema_path = str(field["tool_ref"]).split(".", 1)
@@ -199,11 +202,26 @@ class AdCreationTemplateServicesMixin:
             normalized_values, existing,
         )
         metadata = dict(getattr(intent, "metadata", {}) or {})
+        required_input_paths = template.get("required_input_fields")
+        template_required_paths = (
+            [
+                str(path) for path in required_input_paths
+                if str(path) in blueprint_paths
+            ]
+            if isinstance(required_input_paths, list)
+            else []
+        )
         metadata.update({
             "creation_template_id": str(template.get("template_id") or template_id),
             "creation_template_source": str(template.get("source") or "user"),
             "creation_blueprint_id": str(template.get("blueprint_id") or ""),
             "creation_blueprint_version": str(template.get("blueprint_version") or ""),
+            "creation_template_required_input_fields": template_required_paths,
+            "creation_template_prefilled_fields": [
+                str(field.get("path"))
+                for field in blueprint_fields
+                if str(field.get("path") or "") in template_values
+            ],
             "creation_template_account_id": str(
                 template.get("account_id") or account_id or ""
             ),

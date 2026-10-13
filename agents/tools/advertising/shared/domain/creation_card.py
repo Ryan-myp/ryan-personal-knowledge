@@ -413,10 +413,21 @@ def _safe_default(
     return None, None, None
 
 
-def _input_mode(field: Mapping[str, Any], schema: Mapping[str, Any], default_source: Optional[str]) -> str:
+def _input_mode(
+    field: Mapping[str, Any],
+    schema: Mapping[str, Any],
+    default_source: Optional[str],
+    *,
+    required: Optional[bool] = None,
+) -> str:
     declared = str(field.get("input_mode") or schema.get("input_mode") or "").strip().lower()
     if declared in _INPUT_MODES:
         return declared
+    is_required = bool(
+        field.get("required") or field.get("required_when")
+        if required is None
+        else required
+    )
     if field.get("presentation") == "derived_readonly":
         return "auto_derived"
     if default_source:
@@ -425,8 +436,8 @@ def _input_mode(field: Mapping[str, Any], schema: Mapping[str, Any], default_sou
         schema.get("lookup", {}).get("tool") if isinstance(schema.get("lookup"), Mapping) else None
     )
     if lookup_tool or field.get("source") == "lookup":
-        return "context_required" if field.get("required") or field.get("required_when") else "user_optional"
-    return "user_required" if field.get("required") or field.get("required_when") else "user_optional"
+        return "context_required" if is_required else "user_optional"
+    return "user_required" if is_required else "user_optional"
 
 
 def _control_for(field: Mapping[str, Any], schema: Mapping[str, Any], options: list[Any]) -> str:
@@ -970,13 +981,22 @@ class CreationCardBuilder:
 
             parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
             resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
+            related_resource_fields = {
+                str(item).strip()
+                for item in (
+                    getattr(definition, "related_resource_id_fields", []) or []
+                )
+                if str(item).strip()
+            } if str(getattr(definition, "action", "") or "").lower() == "create" else set()
             for field_name, raw_schema in properties.items():
                 if not isinstance(raw_schema, Mapping):
                     continue
                 field_name = str(field_name)
                 if (
                     field_name in _CONTEXT_FIELDS
-                    or field_name in {parent_field, resource_id_field}
+                    or field_name in {
+                        parent_field, resource_id_field, *related_resource_fields,
+                    }
                     or raw_schema.get("ui_hidden") is True
                 ):
                     continue
@@ -1013,12 +1033,24 @@ class CreationCardBuilder:
             parent_field = str(getattr(definition, "parent_resource_id_field", "") or "")
             resource_id_field = str(getattr(definition, "resource_id_field", "") or "")
             conditional_rules = getattr(schema_object, "conditional_rules", []) or []
+            related_resource_fields = {
+                str(item).strip()
+                for item in (
+                    getattr(definition, "related_resource_id_fields", []) or []
+                )
+                if str(item).strip()
+            } if str(getattr(definition, "action", "") or "").lower() == "create" else set()
 
             for field_name, raw_schema in properties.items():
                 field_name = str(field_name)
                 if not isinstance(raw_schema, Mapping):
                     continue
-                if field_name in _CONTEXT_FIELDS or field_name in {parent_field, resource_id_field}:
+                if (
+                    field_name in _CONTEXT_FIELDS
+                    or field_name in {
+                        parent_field, resource_id_field, *related_resource_fields,
+                    }
+                ):
                     continue
                 if raw_schema.get("ui_hidden") is True:
                     continue
@@ -1851,6 +1883,35 @@ class CreationCardBuilder:
         provider_values: Mapping[str, Any], selector_value: Any,
     ) -> dict[str, Any]:
         blueprint = self.expand_blueprint(blueprint)
+        metadata = getattr(intent, "metadata", {}) or {}
+        template_id = str(metadata.get("creation_template_id") or "").strip()
+        declared_template_paths = metadata.get("creation_template_prefilled_fields")
+        declared_required_paths = metadata.get(
+            "creation_template_required_input_fields",
+        )
+        blueprint_paths = {
+            str(field.get("path") or "")
+            for field in blueprint.fields[:_MAX_FIELDS]
+            if isinstance(field, Mapping)
+        }
+        template_prefilled_paths = (
+            {
+                str(path)
+                for path in declared_template_paths[:_MAX_FIELDS]
+                if str(path) in blueprint_paths
+            }
+            if template_id and isinstance(declared_template_paths, list)
+            else set()
+        )
+        template_required_paths = (
+            {
+                str(path)
+                for path in declared_required_paths[:_MAX_FIELDS]
+                if str(path) in blueprint_paths
+            }
+            if template_id and isinstance(declared_required_paths, list)
+            else set()
+        )
         values: dict[str, Any] = {}
         for field in blueprint.fields[:_MAX_FIELDS]:
             if _SENSITIVE_FIELD.search(str(field.get("path"))):
@@ -1947,15 +2008,43 @@ class CreationCardBuilder:
                 intent, provider_values, field, schema,
                 options_override=options,
             )
-            input_mode = _input_mode(field, schema, default_source)
+            template_prefilled = (
+                path in template_prefilled_paths
+                and value not in (None, "", {}, [])
+            )
+            if template_prefilled:
+                default_source = "template"
+                default_reason = (
+                    "由所选模板预填；提交前仍需通过当前账户的资源查询校验。"
+                )
+            input_mode = (
+                "auto_default"
+                if template_prefilled
+                else _input_mode(
+                    field,
+                    schema,
+                    default_source,
+                    required=bool(item["required"]),
+                )
+            )
+            if path in template_required_paths:
+                input_mode = "user_required"
             item["input_mode"] = input_mode
             item["user_required"] = input_mode in _USER_INPUT_MODES
             item["advanced"] = bool(
                 field.get("advanced", input_mode in {"auto_default", "auto_derived", "user_optional"})
             )
             item["auto_filled"] = bool(
-                default_source and value is not None
-                and self._provided_field_value(intent, provider_values, field) is None
+                value not in (None, "", {}, [])
+                and (
+                    template_prefilled
+                    or (
+                        default_source
+                        and self._provided_field_value(
+                            intent, provider_values, field,
+                        ) is None
+                    )
+                )
             )
             if default_source:
                 item["default_source"] = default_source
@@ -2073,9 +2162,10 @@ class CreationCardBuilder:
                 # Preserve nested controls even when the collection itself is
                 # rendered by a specialized asset picker.
                 item["item_properties"] = _copy_json(schema["items"]["properties"])
-            if item["control"] == "lookup":
+            lookup = _lookup_metadata(self.tools, schema, field)
+            if lookup:
                 item["lookup"] = {
-                    **_lookup_metadata(self.tools, schema, field),
+                    **lookup,
                     "status": "available_without_call",
                 }
             elif isinstance(field.get("manual_entry"), Mapping):

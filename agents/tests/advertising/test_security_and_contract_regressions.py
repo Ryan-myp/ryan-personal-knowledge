@@ -1348,6 +1348,43 @@ def test_parameter_options_resolver_reuses_lookup_tool_boundaries():
     assert selection["options"][0]["selection_token"].startswith("ps1.")
 
 
+def test_tiktok_prefilled_video_uses_exact_account_scoped_lookup_for_token():
+    calls = []
+
+    class LookupClient:
+        platform = "tiktok"
+
+        def get_video(self, advertiser_id, video_id):
+            calls.append((advertiser_id, video_id))
+            return {
+                "video_id": video_id,
+                "file_name": "template-video.mp4",
+            }
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        whitelist_validator=whitelist(tiktok=["t1"]),
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
+
+    selection = runtime.resolve_parameter_options(
+        "tiktok",
+        "video_id",
+        "tiktok_smart_plus_create_ad",
+        "t1",
+        session_id="video-template-session",
+        user_id="u1",
+        query="video-42",
+    )
+
+    assert calls == [("t1", "video-42")]
+    assert selection["source_tool"] == "tiktok_get_video"
+    assert selection["options"][0]["value"] == "video-42"
+    assert selection["options"][0]["label"] == "template-video.mp4"
+    assert selection["options"][0]["selection_token"].startswith("ps1.")
+
+
 def test_tiktok_adgroup_lookup_populates_specialized_ad_creation_picker():
     class LookupClient:
         platform = "tiktok"
@@ -1491,6 +1528,44 @@ def test_lookup_dependency_context_is_forwarded_to_google_provider_tool():
     )
     assert selection["options"][0]["value"] == "ag-1"
     assert calls == [("c-1", 100)]
+
+
+def test_tiktok_identity_lookup_forwards_identity_type_before_provider_query():
+    calls = []
+
+    class LookupClient:
+        platform = "tiktok"
+
+        def list_identities(
+            self, advertiser_id, identity_type=None, page=1, page_size=20
+        ):
+            calls.append((advertiser_id, identity_type, page, page_size))
+            return [{
+                "identity_id": "identity-1",
+                "identity_type": identity_type,
+                "display_name": "Test identity",
+            }]
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        whitelist_validator=whitelist(tiktok=["7397068114548195329"]),
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
+
+    selection = runtime.resolve_parameter_options(
+        "tiktok",
+        "identity_id",
+        "tiktok_smart_plus_create_ad",
+        "7397068114548195329",
+        lookup_context={"identity_type": "BC_AUTH_TT"},
+        session_id="tiktok-identity-dependency",
+        user_id="u1",
+    )
+
+    assert calls == [("7397068114548195329", "BC_AUTH_TT", 1, 20)]
+    assert selection["options"][0]["value"] == "identity-1"
+    assert selection["options"][0]["selection_token"]
 
 
 def test_live_dynamic_parameter_rejects_unattested_raw_value():

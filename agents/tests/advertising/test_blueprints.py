@@ -63,10 +63,10 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
-    assert versions["tiktok.app_conversion_video"] == "2.0.2"
-    assert versions["tiktok.lead_generation"] == "2.0.0"
-    assert versions["tiktok.product_sales_video"] == "2.0.2"
-    assert versions["tiktok.traffic_video"] == "3.0.1"
+    assert versions["tiktok.app_conversion_video"] == "2.1.0"
+    assert versions["tiktok.lead_generation"] == "2.0.1"
+    assert versions["tiktok.product_sales_video"] == "2.1.0"
+    assert versions["tiktok.traffic_video"] == "3.1.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 
@@ -129,7 +129,7 @@ def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():
     blueprint = runtime.creation_blueprints.get("tiktok.lead_generation")
 
     assert blueprint is not None
-    assert blueprint.version == "2.0.0"
+    assert blueprint.version == "2.0.1"
     assert blueprint.tools == (
         "tiktok_smart_plus_create_campaign",
         "tiktok_smart_plus_create_adgroup",
@@ -168,7 +168,7 @@ def test_creation_card_separates_safe_defaults_from_account_context_inputs():
     assert card["auto_filled_count"] >= 8
     assert fields["campaign.campaign_name"]["input_mode"] == "auto_default"
     assert fields["campaign.campaign_name"]["user_required"] is False
-    assert fields["ad_group.budget_mode"]["value"] == "BUDGET_MODE_DYNAMIC_DAILY_BUDGET"
+    assert fields["ad_group.budget_mode"]["value"] == "BUDGET_MODE_TOTAL"
     assert fields["ad_group.location_ids"]["input_mode"] == "context_required"
     assert fields["ad_group.location_ids"]["user_required"] is True
     assert fields["ad_group.budget"]["user_required"] is True
@@ -511,7 +511,7 @@ def test_requested_ad_type_blueprints_have_registered_create_and_readback_tools(
         }
     tiktok_traffic = blueprints["tiktok.traffic_video"]
     fields = {field["path"]: field for field in tiktok_traffic.fields}
-    assert fields["ad.video_id"]["lookup_tool"] == "tiktok_list_videos"
+    assert fields["ad.video_id"]["lookup_tool"] == "tiktok_get_video"
     assert fields["ad.tiktok_item_id"].get("required", False) is False
 
 
@@ -2405,7 +2405,7 @@ def test_all_builtin_test_account_templates_seed_their_declared_creation_cards()
             }
             for path, expected in template["values"].items():
                 assert values.get(path) == expected, (
-                    definition["template_id"], path, values.get(path),
+                    definition["key"], path, values.get(path),
                 )
 
         assert len(model.calls) == len(definitions)

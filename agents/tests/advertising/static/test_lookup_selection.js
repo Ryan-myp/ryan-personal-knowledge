@@ -306,3 +306,174 @@ test('template-prefilled asset selection stays unresolved when lookup misses', a
     ]);
     assert.match(picker.querySelector('.lookup-picker-status').textContent, /未匹配/);
 });
+
+test('template-prefilled selection refreshes a token when lookup has no query field', async () => {
+    installLookupEnvironment([]);
+    context.authenticatedFetch = async url => {
+        context.lookupRequests.push(String(url));
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                options: [{
+                    value: 'video-42',
+                    label: 'Current video',
+                    selection_token: 'fresh-video-token',
+                }],
+            }),
+        };
+    };
+    const selectionTokens = {};
+    let selected;
+    context.renderLookupPicker({
+        value: 'video-42',
+        lookup: { tool: 'tiktok_list_videos' },
+    }, {
+        platform: 'tiktok',
+        accountId: 'advertiser-test',
+        fieldName: 'video_id',
+        targetToolName: 'tiktok_smart_plus_create_ad',
+        selectionTokens,
+        autoResolvePrefill: true,
+        onSelection: value => { selected = value; },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(context.lookupRequests.length, 1);
+    const requested = new URL(context.lookupRequests[0], 'http://localhost');
+    assert.equal(requested.searchParams.get('field'), 'video_id');
+    assert.equal(requested.searchParams.has('query'), false);
+    assert.equal(selectionTokens.video_id, 'fresh-video-token');
+    assert.equal(selected.tokens, 'fresh-video-token');
+    assert.equal(selected.value, 'video-42');
+});
+
+test('template-prefilled exact lookup sends the selected ID to the lookup query field', async () => {
+    installLookupEnvironment([]);
+    context.authenticatedFetch = async url => {
+        context.lookupRequests.push(String(url));
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                options: [{
+                    value: 'video-42',
+                    label: 'Current video',
+                    selection_token: 'fresh-video-token',
+                }],
+            }),
+        };
+    };
+    const selectionTokens = {};
+    let selected;
+    context.renderLookupPicker({
+        value: 'video-42',
+        lookup: {
+            tool: 'tiktok_get_video',
+            query_field: 'video_id',
+        },
+    }, {
+        platform: 'tiktok',
+        accountId: 'advertiser-test',
+        fieldName: 'video_id',
+        targetToolName: 'tiktok_smart_plus_create_ad',
+        selectionTokens,
+        autoResolvePrefill: true,
+        onSelection: value => { selected = value; },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(context.lookupRequests.length, 1);
+    const requested = new URL(context.lookupRequests[0], 'http://localhost');
+    assert.equal(
+        requested.searchParams.get('tool_name'),
+        'tiktok_smart_plus_create_ad',
+    );
+    assert.equal(requested.searchParams.get('query'), 'video-42');
+    assert.equal(selectionTokens.video_id, 'fresh-video-token');
+    assert.equal(selected.value, 'video-42');
+});
+
+test('template-prefilled asset-picker video resolves by exact ID before submission', async () => {
+    installLookupEnvironment([]);
+    context.authenticatedFetch = async url => {
+        context.lookupRequests.push(String(url));
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                options: [{
+                    value: 'video-42',
+                    label: 'Current video',
+                    selection_token: 'fresh-video-token',
+                }],
+            }),
+        };
+    };
+    const selectionTokens = {};
+    let selected;
+    context.renderLookupPicker({
+        control: 'asset_picker',
+        source: 'lookup',
+        value: 'video-42',
+        lookup: {
+            tool: 'tiktok_get_video',
+            query_field: 'video_id',
+        },
+    }, {
+        platform: 'tiktok',
+        accountId: 'advertiser-test',
+        fieldName: 'video_id',
+        targetToolName: 'tiktok_smart_plus_create_ad',
+        selectionTokens,
+        autoResolvePrefill: true,
+        onSelection: value => { selected = value; },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(context.lookupRequests.length, 1);
+    const requested = new URL(context.lookupRequests[0], 'http://localhost');
+    assert.equal(requested.searchParams.get('field'), 'video_id');
+    assert.equal(requested.searchParams.get('query'), 'video-42');
+    assert.equal(selectionTokens.video_id, 'fresh-video-token');
+    assert.equal(selected.tokens, 'fresh-video-token');
+    assert.equal(selected.value, 'video-42');
+});
+
+test('template-prefilled selection without query field stays unverified when lookup misses', async () => {
+    installLookupEnvironment([]);
+    context.authenticatedFetch = async url => {
+        context.lookupRequests.push(String(url));
+        return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                options: [{
+                    value: 'different-video',
+                    label: 'Different video',
+                    selection_token: 'fresh-video-token',
+                }],
+            }),
+        };
+    };
+    const selectionTokens = {};
+    let selected;
+    const picker = context.renderLookupPicker({
+        value: 'video-42',
+        lookup: { tool: 'tiktok_list_videos' },
+    }, {
+        platform: 'tiktok',
+        accountId: 'advertiser-test',
+        fieldName: 'video_id',
+        targetToolName: 'tiktok_smart_plus_create_ad',
+        selectionTokens,
+        autoResolvePrefill: true,
+        onSelection: value => { selected = value; },
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.equal(context.lookupRequests.length, 1);
+    assert.equal(selectionTokens.video_id, undefined);
+    assert.equal(selected.tokens, undefined);
+    assert.match(picker.querySelector('.lookup-picker-status').textContent, /未匹配/);
+});

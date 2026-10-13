@@ -187,6 +187,8 @@ class ToolDefinition:
     # integration result key or identifier spelling from its Tool name.
     result_items_key: Optional[str] = None
     result_id_fields: list[str] = field(default_factory=list)
+    # A Tool may require ancestor IDs in addition to its immediate parent.
+    # Runtime can bind these from matching create Tools in the same batch.
     related_resource_type: Optional[str] = None
     related_resource_id_fields: list[str] = field(default_factory=list)
     # External-system cancellation contract. ``cooperative`` means the

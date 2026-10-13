@@ -664,6 +664,19 @@ def tiktok_identity_list_schema() -> dict[str, Any]:
     }
 
 
+def tiktok_identity_info_schema() -> dict[str, Any]:
+    """Schema for an exact TikTok identity detail lookup."""
+    return {
+        "required": ["account_id", "identity_id", "identity_type"],
+        "requires": ["account_id", "identity_id", "identity_type"],
+        "properties": {
+            "account_id": _field("string", "TikTok advertiser ID"),
+            "identity_id": _field("string", "TikTok identity ID", minLength=1, maxLength=128),
+            "identity_type": _field("string", "Identity type", enum=TIKTOK_IDENTITY_TYPES),
+        },
+    }
+
+
 def tiktok_identity_video_info_schema() -> dict[str, Any]:
     """Schema for TikTok owned-post information lookup by identity."""
     return {
@@ -2114,7 +2127,7 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "video_id": _field("string", "Uploaded TikTok video ID", minLength=1, lookup_tool="tiktok_list_videos", lookup_result_key="videos"),
             "video_file_name": _field("string", "Optional uploaded video file name"),
             "image_ids": _field("array", "Uploaded TikTok image IDs", items={"type": "string"}, lookup_tool="tiktok_list_images", lookup_result_key="images"),
-            "image_web_uris": _field("array", "Image web URIs returned by the TikTok image library", minItems=1, items={"type": "string", "minLength": 1}, lookup_tool="tiktok_list_images", lookup_result_key="images", selection_value_fields=["web_uri", "image_url", "image_id"], selection_label_fields=["file_name", "image_name", "web_uri", "image_id"]),
+            "image_web_uris": _field("array", "Stable image URI returned by the TikTok image library", minItems=1, items={"type": "string", "minLength": 1}, lookup_tool="tiktok_list_images", lookup_result_key="images", selection_value_fields=["web_uri", "image_id", "image_url"], selection_label_fields=["file_name", "image_name", "web_uri", "image_id"]),
             "ad_text": _field("string", "Primary ad text", minLength=1, maxLength=100),
             "ad_text_list": _field("array", "Smart+ ad text list", minItems=1, items={"type": "object", "required": ["ad_text"], "properties": {"ad_text": _field("string", "Ad text", minLength=1, maxLength=100)}, "additionalProperties": False}),
             "identity_type": _field("string", "Identity type", enum=["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]),

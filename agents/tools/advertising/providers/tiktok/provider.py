@@ -56,6 +56,7 @@ from .parameters import (
     tiktok_creative_portfolio_get_schema,
     tiktok_creative_portfolio_preview_schema,
     tiktok_identity_create_schema,
+    tiktok_identity_info_schema,
     tiktok_identity_list_schema,
     tiktok_identity_video_info_schema,
     tiktok_single_video_ad_schema,
@@ -85,6 +86,7 @@ def _tiktok_lookup(
     tool: str, result_key: str, values: list[str], labels: list[str], *,
     depends_on: list[dict] | None = None,
     account_required: bool | None = None,
+    query_field: str | None = None,
     lookup_defaults: dict | None = None,
 ) -> dict:
     metadata = {
@@ -97,6 +99,8 @@ def _tiktok_lookup(
         metadata["lookup_dependencies"] = depends_on
     if account_required is not None:
         metadata["lookup_account_required"] = account_required
+    if query_field:
+        metadata["lookup_query_field"] = query_field
     if lookup_defaults:
         metadata["lookup_defaults"] = dict(lookup_defaults)
     return metadata
@@ -178,8 +182,9 @@ TIKTOK_LOOKUP_CONTRACTS = {
             ["carrier_name", "name", "id"],
         ),
         "video_id": _tiktok_lookup(
-            "tiktok_list_videos", "videos", ["video_id", "id"],
+            "tiktok_get_video", "video", ["video_id", "id"],
             ["file_name", "video_name", "name", "id"],
+            query_field="video_id",
         ),
         "image_ids": _tiktok_lookup(
             "tiktok_list_images", "images", ["image_id", "id"],
@@ -187,7 +192,10 @@ TIKTOK_LOOKUP_CONTRACTS = {
         ),
         "identity_id": _tiktok_lookup(
             "tiktok_list_identities", "identities", ["identity_id", "id"],
-            ["display_name", "name", "id"],
+            ["display_name", "name", "id"], depends_on=[{
+                "input_field": "identity_type", "value_path": "identity_type",
+                "label": "身份类型", "required": True,
+            }],
         ),
         "catalog_id": _tiktok_lookup(
             "tiktok_list_catalogs", "catalogs", ["catalog_id", "id"],
@@ -421,6 +429,7 @@ class TikTokToolSource(BaseProviderToolSource):
         creative_portfolio_preview = tiktok_creative_portfolio_preview_schema()
         identity_create = tiktok_identity_create_schema()
         identity_list = tiktok_identity_list_schema()
+        identity_info = tiktok_identity_info_schema()
         identity_video_info = tiktok_identity_video_info_schema()
         tools = [
             method_tool(
@@ -907,17 +916,14 @@ class TikTokToolSource(BaseProviderToolSource):
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_identity",
                 description="查询 TikTok 广告身份详情。",
                 method_name="get_identity", result_key="identity",
-                properties={
-                    "account_id": identity_list["properties"]["account_id"],
-                    "identity_id": identity_list["properties"]["identity_id"],
-                },
-                required=["account_id", "identity_id"],
-                requires=["account_id", "identity_id"],
+                properties=identity_info["properties"],
+                required=identity_info["required"],
+                requires=identity_info["requires"],
                 action="get", resource_type="identity",
                 resource_id_field="identity_id",
                 intent_types=["get_identity"], traits=["read", "identity", "creative"],
                 argument_builder=lambda ctx, data: ((
-                    account(ctx, data), data["identity_id"]
+                    account(ctx, data), data["identity_id"], data["identity_type"]
                 ), {}),
             ),
             method_tool(
@@ -1704,6 +1710,8 @@ class TikTokToolSource(BaseProviderToolSource):
             requires_any_of=smart_plus_ad["requires_any_of"],
             action="create", resource_type="ad", parent_resource_type="ad_group",
             resource_id_field="smart_plus_ad_id", parent_resource_id_field="adgroup_id",
+            related_resource_type="campaign",
+            related_resource_id_fields=["campaign_id"],
             intent_types=["create_smart_plus_ad", "create_campaign", "create_ad"],
             activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
             traits=["write", "ad", "smart_plus", "smart_plus/ad/create"],
