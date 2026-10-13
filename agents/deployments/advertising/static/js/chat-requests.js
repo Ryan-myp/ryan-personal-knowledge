@@ -46,21 +46,63 @@
             return finalResult;
         }
 
+        function isChatTransportFailure(error) {
+            return error instanceof TypeError
+                || /failed to fetch|load failed|networkerror|network request failed/i
+                    .test(String(error?.message || error || ''));
+        }
+
+        function chatRequestFailureMessage(error) {
+            if (isChatTransportFailure(error)) {
+                return '连接中断，暂时无法确认本次执行结果。请先查看最新执行轨迹；创建或更新操作不要直接重试，以免重复提交。';
+            }
+            return `请求失败：${String(error?.message || error || '请稍后重试。')}`;
+        }
+
+        function markChatRequestFailure(error) {
+            if (isChatTransportFailure(error)) markTraceConnectionUnknown();
+            else markTraceFailed(error?.message || '');
+            return chatRequestFailureMessage(error);
+        }
+
+        function streamResultFallback(data) {
+            const accountPrompt = data.ui?.account_selection?.prompt;
+            if (accountPrompt) return accountPrompt;
+
+            const clarification = data.ui?.clarification;
+            if (clarification?.question) return clarification.question;
+
+            if (data.ui?.cards?.length) {
+                return '已打开广告创建草稿，尚未提交。请在卡片中补充标记项后继续。';
+            }
+
+            if (data.status === 'failed') return '本次处理未完成，请查看执行轨迹中的失败步骤。';
+            if (data.status === 'recovery_required') {
+                return '本次处理需要核实后恢复，请先查看执行轨迹，不要重复提交。';
+            }
+            if (data.status === 'unknown') return '本次处理状态暂时无法确认，请先检查执行记录。';
+            if (data.status === 'awaiting_input') return '还需要补充一项信息才能继续。';
+            return '本回合没有返回文字说明，请查看右侧的实际执行状态。';
+        }
+
         function renderStreamResult(data, requestParams) {
             sessionId = data.session_id || sessionId;
             selectedConversationId = sessionId;
             const results = data.results || [];
+            const runFailed = ['failed', 'partially_failed', 'recovery_required', 'unknown', 'cancelled']
+                .includes(String(data.status || '').toLowerCase());
             const creationNeedsCorrection = data.response_source === 'creation_card' || data.response_source === 'creation_validation';
             const hasCreationCards = Boolean(data.ui?.cards?.length) && (!requestParams?.creation_blueprint_id || creationNeedsCorrection);
-            if (data.needs_confirmation && data.confirmation_payload && !hasCreationCards) {
+            if (!runFailed && data.needs_confirmation && data.confirmation_payload && !hasCreationCards) {
                 addMessage(
-                    data.content || '这次操作需要确认后才能继续。',
+                    data.content || streamResultFallback(data),
                     'agent',
                     results.map(item => ({ tool: item.tool, success: item.success })),
                     false,
                     '',
                     null,
                     data.ui || null,
+                    { originalRequest: requestParams },
                 );
                 showConfirm(data.confirmation_payload, {
                     user_input: requestParams.user_input,
@@ -74,7 +116,19 @@
                 return;
             }
             const tools = results.map(item => ({ tool: item.tool, success: item.success }));
-            addMessage(data.content || '我已经整理好这次广告创建需要的参数，请在卡片中确认或继续用文字补充。', 'agent', tools, false, '', null, data.ui || null);
+            const content = String(data.content || '').trim() || streamResultFallback(data);
+            addMessage(
+                runFailed && data.status !== 'partially_failed'
+                    ? `本次处理未成功：${content}`
+                    : content,
+                'agent',
+                tools,
+                runFailed,
+                '',
+                null,
+                data.ui || null,
+                { originalRequest: requestParams },
+            );
         }
 
         function requestHeaders(extra = {}) {
@@ -493,16 +547,26 @@
                 if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
                 const container = document.getElementById('chatContainer');
                 container.replaceChildren();
+                let precedingUserInput = '';
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
+                    const role = message.role === 'user' ? 'user' : 'agent';
+                    if (role === 'user') {
+                        precedingUserInput = String(message.content || '');
+                    }
                     addMessage(
                         message.content || '',
-                        message.role === 'user' ? 'user' : 'agent',
+                        role,
                         null,
                         false,
                         '',
                         message.created_at,
                         message.ui || null,
-                        { openWorkbench: false },
+                        {
+                            openWorkbench: false,
+                            originalRequest: role === 'agent' && precedingUserInput
+                                ? { user_input: precedingUserInput, session_id: sessionId }
+                                : null,
+                        },
                     );
                 }
                 if (!data.messages?.length) {

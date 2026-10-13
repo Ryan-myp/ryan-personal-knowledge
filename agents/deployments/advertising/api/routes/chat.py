@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -17,6 +17,18 @@ from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.models import ChatRequest, ChatStreamRequest
+
+_STREAM_RUN_STATUSES = frozenset({
+    "awaiting_confirmation",
+    "awaiting_input",
+    "cancelled",
+    "failed",
+    "partially_failed",
+    "recovery_required",
+    "succeeded",
+    "unknown",
+})
+_STREAM_TERMINAL_STATUSES = _STREAM_RUN_STATUSES - {"succeeded"}
 
 
 def _confirmation_payload_for_response(context: ApiContext, value: Any) -> Any:
@@ -42,6 +54,41 @@ def _chat_result_for_response(context: ApiContext, result: Any) -> Any:
             context, result["confirmation_payload"],
         )
     return safe_result
+
+
+def _stream_run_status(
+    result: Mapping[str, Any],
+    final_event: Optional[Mapping[str, Any]],
+) -> str:
+    """Use the completed Run result as the terminal status source of truth."""
+    result_status = str(result.get("status") or "").strip().lower()
+    if result_status in _STREAM_TERMINAL_STATUSES:
+        return result_status
+    if result.get("needs_confirmation"):
+        return "awaiting_confirmation"
+    if result.get("needs_input"):
+        return "awaiting_input"
+
+    items = [
+        item for item in (result.get("results") or [])
+        if isinstance(item, Mapping)
+        and not item.get("skipped")
+        and not item.get("needs_input")
+        and not item.get("needs_confirmation")
+    ]
+    failures = sum(item.get("success") is False for item in items)
+    successes = sum(item.get("success") is True for item in items)
+    if failures and successes:
+        return "partially_failed"
+    if failures:
+        return "failed"
+    if result.get("success") is False:
+        return "failed"
+    if result_status == "succeeded":
+        return result_status
+
+    event_status = str((final_event or {}).get("status") or "").strip().lower()
+    return event_status if event_status in _STREAM_RUN_STATUSES else "succeeded"
 
 
 def create_chat_router(context: ApiContext) -> APIRouter:
@@ -231,6 +278,8 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                         if key in item
                     })
                 run_id = result.get("run_id") if isinstance(result, dict) else None
+                run_result = result if isinstance(result, Mapping) else {}
+                run_status = _stream_run_status(run_result, final_event)
                 get_latest_run = getattr(runtime, "get_latest_run", None)
                 if (
                     not run_id
@@ -250,11 +299,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                     "event_type": "reply",
                     "trace_id": (reply_marker or {}).get("trace_id"),
                     "seq": (reply_marker or {}).get("seq"),
-                    "status": (
-                        "awaiting_confirmation"
-                        if result.get("needs_confirmation")
-                        else "succeeded"
-                    ),
+                    "status": run_status,
                     "content": context.redact(result.get("reply", "")),
                     "session_id": result.get("session_id"),
                     "turn_id": result.get("turn_id"),
@@ -268,15 +313,13 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                     "results": safe_results,
                     "ui": context.redact(result.get("ui") or {}),
                 })
-                yield event(final_event or {
+                terminal_event = dict(final_event or {})
+                terminal_event.update({
                     "type": "done",
                     "event_type": "done",
-                    "status": (
-                        "awaiting_confirmation"
-                        if result.get("needs_confirmation")
-                        else "succeeded"
-                    ),
+                    "status": run_status,
                 })
+                yield event(terminal_event)
 
             return StreamingResponse(
                 generate(),

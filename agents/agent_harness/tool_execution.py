@@ -672,6 +672,18 @@ class ToolExecutionCoordinator:
                     or output_data.get("requires_reconciliation") is True
                 )
             )
+            error_detail = (
+                safe_output.get("error_detail")
+                if isinstance(safe_output, Mapping)
+                else None
+            )
+            non_retriable_error = (
+                isinstance(safe_output, Mapping)
+                and safe_output.get("success") is False
+                and isinstance(error_detail, Mapping)
+                and str(error_detail.get("category") or "").strip().lower()
+                == "non_retriable"
+            )
             result = {
                 "tool_call_id": call.id,
                 "name": call.name,
@@ -681,9 +693,13 @@ class ToolExecutionCoordinator:
                     and safe_output.get("success") is False
                     and not uncertain_effect
                 ),
-                "terminate": False,
+                "terminate": non_retriable_error,
                 "retry_count": retry_count,
             }
+            if non_retriable_error:
+                result["runtime_signals"] = {
+                    "non_retriable_tool_error": True,
+                }
             if isinstance(safe_output, Mapping):
                 interaction_too_large = False
                 for key in (

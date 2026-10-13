@@ -580,6 +580,27 @@ class Agent:
         return str(fallback or "")
 
     @staticmethod
+    def _non_retriable_error_reply(
+        tool_results: Sequence[Mapping[str, Any]],
+        fallback: str,
+    ) -> str:
+        for item in tool_results:
+            signals = item.get("runtime_signals")
+            if not (
+                isinstance(signals, Mapping)
+                and signals.get("non_retriable_tool_error")
+            ):
+                continue
+            content = item.get("content")
+            if isinstance(content, Mapping):
+                error = str(content.get("error") or "").strip()
+                if error:
+                    return error
+            elif isinstance(content, str) and content.strip():
+                return content.strip()
+        return str(fallback or "")
+
+    @staticmethod
     def _run_interactions(
         tool_results: Sequence[Mapping[str, Any]],
     ) -> tuple[Mapping[str, Any], ...]:
@@ -623,11 +644,19 @@ class Agent:
         request: TurnRequest,
         state: AgentState,
     ) -> tuple[list[Any], list[Any], TurnRequest]:
-        tools = self._tools_for_turn(request)
         transcript = state.snapshot()
+        tools, require_tool_call = self._tools_for_turn(request, transcript)
         context_messages, model_request = self._context_messages_for_turn(
             request, transcript,
         )
+        if (
+            require_tool_call
+            and model_request.initial_tool_choice != "required"
+        ):
+            model_request = replace(
+                model_request,
+                initial_tool_choice="required",
+            )
         messages = [
             AgentMessage.system(self._system_prompt),
             *(
@@ -643,20 +672,72 @@ class Agent:
         model_request = self._apply_model_limits(model_request)
         return messages, tools, model_request
 
-    def _tools_for_turn(self, request: TurnRequest) -> list[Any]:
+    @staticmethod
+    def _recent_user_inputs(
+        request: TurnRequest,
+        transcript: Sequence[AgentMessage],
+        *,
+        max_messages: int = 4,
+        max_chars: int = 1200,
+    ) -> tuple[str, ...]:
+        """Extract bounded prior user turns for resolving short follow-ups."""
+        recent: list[str] = []
+        remaining = max_chars
+        for message in reversed(transcript):
+            if message.role != "user":
+                continue
+            if request.turn_id and message.turn_id == request.turn_id:
+                continue
+            content = str(message.content or "").strip()
+            if not content:
+                continue
+            content = content[-remaining:]
+            if content:
+                recent.append(content)
+                remaining -= len(content)
+            if len(recent) >= max_messages or remaining <= 0:
+                break
+        return tuple(reversed(recent))
+
+    def _tools_for_turn(
+        self,
+        request: TurnRequest,
+        transcript: Sequence[AgentMessage] = (),
+    ) -> tuple[list[Any], bool]:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
+        require_tool_call = False
         if callable(self.tool_selector):
-            tools = list(self.tool_selector(request, tuple(tools)))
+            selection_context = dict(request.context or {})
+            recent_inputs = self._recent_user_inputs(request, transcript)
+            if recent_inputs:
+                selection_context["_agent_tool_selection_context"] = recent_inputs
+            selection_request = replace(request, context=selection_context)
+            tools = list(self.tool_selector(selection_request, tuple(tools)))
+            require_tool_call = bool(
+                selection_context.pop("_agent_tool_choice_required", False)
+            )
+            require_tool_call = require_tool_call and not any(
+                message.role == "assistant"
+                and message.turn_id == request.turn_id
+                for message in transcript
+            )
+            selection_context.pop("_agent_tool_selection_context", None)
+            if isinstance(request.context, dict):
+                request.context.update({
+                    key: value
+                    for key, value in selection_context.items()
+                })
         if request.tool_allowlist is not None:
             allowed = set(request.tool_allowlist)
             tools = [tool for tool in tools if self._tool_name(tool) in allowed]
         tools = list(tools[: self.max_tools])
+        require_tool_call = require_tool_call and bool(tools)
         if isinstance(request.context, dict):
             request.context["_harness_visible_tool_names"] = tuple(
                 name for name in (self._tool_name(tool) for tool in tools) if name
             )
 
-        return tools
+        return tools, require_tool_call
 
     def _context_messages_for_turn(
         self,
@@ -988,12 +1069,18 @@ class Agent:
                     turn_index=turn_index,
                     tool_results=tool_results,
                 )
+                non_retriable_tool_failure = any(
+                    bool(signals.get("non_retriable_tool_error"))
+                    for item in tool_results
+                    if isinstance((signals := item.get("runtime_signals")), Mapping)
+                )
                 if (
                     not model_turn.tool_calls
                     or any(
                         bool(item.get("needs_input") or item.get("needs_confirmation"))
                         for item in tool_results
                     )
+                    or non_retriable_tool_failure
                     or all(bool(item.get("terminate")) for item in tool_results)
                     or any(bool(item.get("recovery_required")) for item in tool_results)
                     or tool_budget_exceeded
@@ -1043,6 +1130,7 @@ class Agent:
                         else RunStatus.FAILED
                         if tool_budget_exceeded
                         or model_turn.stop_reason in {"error", "policy_blocked"}
+                        or non_retriable_tool_failure
                         or any(
                             isinstance(item.get("runtime_signals"), Mapping)
                             and item["runtime_signals"].get(
@@ -1061,6 +1149,11 @@ class Agent:
                         if awaiting_input
                         else last_reply
                     )
+                    if non_retriable_tool_failure:
+                        terminal_reply = self._non_retriable_error_reply(
+                            tool_results,
+                            terminal_reply,
+                        )
                     result = RunResult(
                         run_id=str(request.run_id or ""),
                         turn_id=str(request.turn_id or ""),

@@ -741,8 +741,7 @@
                 await refreshConversationHistory({ silent: true });
             } catch (error) {
                 removeLoading();
-                markTraceFailed(error.message);
-                addMessage('继续创建失败：' + error.message, 'agent', null, true);
+                addMessage(markChatRequestFailure(error), 'agent', null, true);
             }
         }
 
@@ -908,8 +907,7 @@
                 await refreshConversationHistory({ silent: true });
             } catch (error) {
                 removeLoading();
-                markTraceFailed(error.message);
-                addMessage('提交失败：' + error.message, 'agent', null, true);
+                addMessage(markChatRequestFailure(error), 'agent', null, true);
             }
         }
 

@@ -123,7 +123,13 @@ class AdvertisingToolPolicyFactory:
         account = request_account or argument_account
         is_write = bool(getattr(tool, "is_write_tool", False))
         runtime = self.runtime
-        if not account and (is_write or runtime.enforce_account_scope):
+        scope_required = getattr(tool, "scope_required", None)
+        requires_account = (
+            is_write
+            or scope_required is True
+            or (runtime.enforce_account_scope and scope_required is None)
+        )
+        if not account and requires_account:
             if is_write:
                 return (
                     "confirmation_required",

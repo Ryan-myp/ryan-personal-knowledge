@@ -155,7 +155,9 @@ class ToolDefinition:
     # application adapter decides how to resolve and authorize it.
     scope_type: Optional[str] = None
     scope_fields: list[str] = field(default_factory=list)
-    scope_required: bool = False
+    # None lets an application apply its configured default; True/False are
+    # explicit publisher declarations for scoped and scope-free Tools.
+    scope_required: Optional[bool] = None
     # A live effect may require an application-specific permission. Keeping it
     # on the Tool contract prevents the generic Runtime from inventing a
     # domain permission such as ``ads.write``.
@@ -223,7 +225,8 @@ class ToolDefinition:
             str(item).strip() for item in (self.scope_fields or [])
             if str(item).strip()
         ))
-        self.scope_required = bool(self.scope_required)
+        if self.scope_required is not None:
+            self.scope_required = bool(self.scope_required)
         self.live_permission = (
             str(self.live_permission).strip()
             if self.live_permission is not None and str(self.live_permission).strip()

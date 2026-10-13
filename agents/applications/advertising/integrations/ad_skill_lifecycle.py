@@ -111,7 +111,8 @@ class AdSkillLifecycleMixin:
                 tool_def.scope_fields = [
                     "account_id", "ad_account_id", "advertiser_id", "customer_id",
                 ]
-                tool_def.scope_required = True
+                if tool_def.scope_required is None:
+                    tool_def.scope_required = True
             if tool_def.is_write_tool and not tool_def.live_permission:
                 tool_def.live_permission = "ads.write"
             if not tool_def.required_permissions:

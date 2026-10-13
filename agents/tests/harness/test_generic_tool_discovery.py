@@ -144,6 +144,113 @@ def test_read_intent_with_negative_write_constraints_selects_reads_only():
     assert [item.name for item in selected] == ["list_campaigns"]
 
 
+def test_explicit_current_namespace_overrides_conversation_history():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="列出 Meta 广告系列",
+        ),
+        _definition(
+            "google_list_campaigns",
+            namespace="google-ads",
+            action="list",
+            resource="campaign",
+            description="列出 Google Ads 广告系列",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "列出 Google Ads campaigns",
+        tools,
+        conversation_context=("帮我查询 Meta campaign",),
+    )
+
+    assert [item.name for item in selected] == ["google_list_campaigns"]
+
+
+def test_cross_channel_request_keeps_tools_when_namespace_alias_is_not_registered():
+    tools = [
+        _definition(
+            "meta_delete_campaign",
+            namespace="meta",
+            action="delete",
+            resource="campaign",
+            description="Delete a Meta campaign",
+        ),
+        _definition(
+            "google_delete_campaign",
+            namespace="google-ads",
+            action="delete",
+            resource="campaign",
+            description="Delete a Google Ads campaign",
+        ),
+        _definition(
+            "tiktok_delete_campaign",
+            namespace="tiktok",
+            action="delete",
+            resource="campaign",
+            description="Delete a TikTok campaign",
+        ),
+        _definition(
+            "dv360_delete_campaign",
+            namespace="dv360",
+            action="delete",
+            resource="campaign",
+            description="Delete a DV360 campaign",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "跨渠道删除 Meta、Google、TikTok、DV360 campaign",
+        tools,
+        limit=64,
+    )
+
+    assert {
+        item.name for item in selected
+        if item.action == "delete" and item.resource_type == "campaign"
+    } == {
+        "meta_delete_campaign",
+        "google_delete_campaign",
+        "tiktok_delete_campaign",
+        "dv360_delete_campaign",
+    }
+
+
+def test_write_tool_call_is_required_only_for_explicit_matching_write():
+    selector = ToolSelector()
+    create_campaign = _definition(
+        "meta_create_campaign",
+        namespace="meta",
+        action="create",
+        resource="campaign",
+        description="Create a Meta campaign",
+    )
+    list_campaigns = _definition(
+        "meta_list_campaigns",
+        namespace="meta",
+        action="list",
+        resource="campaign",
+        description="List Meta campaigns",
+    )
+
+    assert selector.requires_tool_call(
+        "创建 Meta campaign", [create_campaign],
+    )
+    assert not selector.requires_tool_call(
+        "不要创建 Meta campaign", [create_campaign],
+    )
+    assert not selector.requires_tool_call(
+        "创建 Meta campaign", [list_campaigns],
+    )
+    assert not selector.requires_tool_call(
+        "你好，你有什么能力？", [create_campaign],
+    )
+
+
 def test_relevant_tool_selection_returns_empty_for_unmatched_request():
     tools = [
         _definition(
@@ -203,6 +310,206 @@ def test_relevant_tool_selection_rejects_non_positive_limit():
         assert "limit" in str(error)
     else:
         raise AssertionError("non-positive limit should be rejected")
+
+
+def test_default_tool_subset_stays_bounded():
+    tools = [
+        _definition(
+            f"lookup_record_{index}",
+            namespace="records",
+            action="get",
+            resource="record",
+            description="Look up a record",
+        )
+        for index in range(24)
+    ]
+
+    selected = ToolSelector().select_relevant("record", tools)
+
+    assert len(selected) == 16
+
+
+def test_channel_context_from_recent_user_turns_routes_short_followup():
+    class Model:
+        def __init__(self):
+            self.visible_tools = []
+            self.model_contexts = []
+            self.turn = 0
+
+        def complete(self, _messages, tools, request):
+            self.visible_tools.append([
+                item.get("name") if isinstance(item, dict) else item.name
+                for item in tools
+            ])
+            self.model_contexts.append(dict(request.context))
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(content="你要查询哪个渠道？")
+            if self.turn == 2:
+                return ModelTurn(content="要查询哪个广告账户？")
+            if self.turn == 3:
+                return ModelTurn(tool_calls=(
+                    ToolCall("accounts", "meta_list_accounts", {}),
+                ))
+            return ModelTurn(content="当前授权的 Meta 账户已列出。")
+
+    definitions = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="列出 Meta 广告系列",
+        ),
+        _definition(
+            "meta_list_accounts",
+            namespace="meta",
+            action="list",
+            resource="account",
+            description="列出 Meta 可访问的广告账户",
+        ),
+        _definition(
+            "meta_create_campaign",
+            namespace="meta",
+            action="create",
+            resource="campaign",
+            description="创建 Meta 广告系列",
+        ),
+        _definition(
+            "google_list_accounts",
+            namespace="google-ads",
+            action="list",
+            resource="account",
+            description="List Google Ads accounts",
+        ),
+    ]
+    model = Model()
+    selector = ToolSelector()
+    selection_histories = []
+
+    def select_tools(request, tools):
+        history = request.context.get("_agent_tool_selection_context", ())
+        selection_histories.append(tuple(history))
+        return selector.select_relevant(
+            request.user_input,
+            tools,
+            conversation_context=history,
+        )
+
+    app = AgentApplication.create(
+        model=model,
+        tool_selector=select_tools,
+        tool_execution="sequential",
+    )
+    app.register_tool_source(StaticToolSource(
+        "advertising",
+        [
+            ToolBinding(
+                definition,
+                lambda _context, _values: {
+                    "success": True,
+                    "data": {"accounts": ["test-account"]},
+                },
+            )
+            for definition in definitions
+        ],
+    ))
+    try:
+        for user_input in (
+            "帮我查一下 campaign",
+            "Meta",
+            "有哪些 account 呢",
+        ):
+            result = app.runtime.run(TurnRequest(
+                user_input=user_input,
+                session_id="clarification-session",
+                user_id="operator",
+            ))
+
+        assert len(model.visible_tools) >= 3, (
+            model.visible_tools, selection_histories, result.to_dict()
+        )
+        assert "meta_list_accounts" in model.visible_tools[2], (
+            model.visible_tools, selection_histories, result.to_dict()
+        )
+        assert result.status.value == "succeeded", result.to_dict()
+        assert selection_histories[0] == ()
+        assert selection_histories[1] == ("帮我查一下 campaign",)
+        assert selection_histories[2] == (
+            "帮我查一下 campaign",
+            "Meta",
+        )
+        assert "meta_list_campaigns" in model.visible_tools[1]
+        assert "google_list_accounts" not in model.visible_tools[1]
+        assert "meta_list_accounts" in model.visible_tools[2]
+        assert "google_list_accounts" not in model.visible_tools[2]
+        assert "meta_create_campaign" not in model.visible_tools[2]
+        assert "meta_list_accounts" in model.visible_tools[3]
+        assert "google_list_accounts" not in model.visible_tools[3]
+        assert all(
+            "_agent_tool_selection_context" not in context
+            for context in model.model_contexts
+        )
+    finally:
+        app.close()
+
+
+def test_explicit_write_uses_required_tool_choice_only_for_initial_model_turn():
+    class Model:
+        def __init__(self):
+            self.tool_choices = []
+            self.turn = 0
+
+        def complete(self, _messages, _tools, request):
+            self.tool_choices.append(request.initial_tool_choice)
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall("create", "meta_create_campaign", {}),
+                ))
+            return ModelTurn(content="已生成 dry-run 计划。")
+
+    selector = ToolSelector()
+    definition = _definition(
+        "meta_create_campaign",
+        namespace="meta",
+        action="create",
+        resource="campaign",
+        description="Create a Meta campaign",
+    )
+    model = Model()
+
+    def select_tools(request, tools):
+        selected = selector.select_relevant(
+            request.user_input,
+            tools,
+            conversation_context=request.context.get(
+                "_agent_tool_selection_context", (),
+            ),
+        )
+        if selector.requires_tool_call(request.user_input, selected):
+            request.context["_agent_tool_choice_required"] = True
+        return selected
+
+    app = AgentApplication.create(
+        model=model,
+        tool_selector=select_tools,
+        tool_execution="sequential",
+    )
+    app.register_tool_source(StaticToolSource(
+        "advertising",
+        [ToolBinding(definition, lambda _context, _values: {"success": True})],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="创建 Meta campaign",
+            user_id="operator",
+        ))
+
+        assert result.status.value == "succeeded"
+        assert model.tool_choices == ["required", None]
+    finally:
+        app.close()
 
 
 class _Completions:

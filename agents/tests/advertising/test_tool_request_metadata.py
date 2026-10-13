@@ -26,8 +26,12 @@ def test_provider_executor_receives_trusted_run_mode_and_identity():
     selection = SimpleNamespace(
         decorate_lookup_result=lambda _tool, result, *_args: result
     )
+    security = SimpleNamespace(
+        filter_account_discovery_result=lambda _tool, result, _scope: result
+    )
     owner = SimpleNamespace(
         tool_executor=SimpleNamespace(execute=execute),
+        security=security,
         write_guard=None,
         input_builder=SimpleNamespace(parameter_selection=selection),
         _build_request_clients=lambda *_: {},

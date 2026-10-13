@@ -548,7 +548,13 @@ class ToolExecutor:
         ):
             return ToolResult.error(
                 f"{tool_name} 没有配置 Provider Client；当前未启用 offline_mode，"
-                "不会返回模拟查询数据"
+                "不会返回模拟查询数据",
+                detail=ToolError(
+                    "non_retriable",
+                    "PROVIDER_UNAVAILABLE",
+                    "The required Provider Client is not configured",
+                    "Check trusted provider credentials and Tool Source startup binding before retrying",
+                ),
             )
         return None
 

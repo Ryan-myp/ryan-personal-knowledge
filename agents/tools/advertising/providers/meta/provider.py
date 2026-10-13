@@ -803,6 +803,9 @@ class MetaToolSource(BaseProviderToolSource):
                 ),
                 action="list", resource_type="account", intent_types=["list_accounts"],
                 traits=["read", "account"],
+                result_items_key="accounts",
+                result_id_fields=["id", "account_id"],
+                scope_required=False,
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_list_businesses",
@@ -811,6 +814,7 @@ class MetaToolSource(BaseProviderToolSource):
                 properties=business_schema["properties"],
                 action="list", resource_type="business",
                 intent_types=["list_businesses"], traits=["read", "business"],
+                scope_required=False,
                 argument_builder=lambda _ctx, data: ((), {
                     "fields": data.get("fields"),
                     "limit": data.get("limit", 25),

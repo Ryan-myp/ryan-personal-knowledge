@@ -185,6 +185,197 @@ def test_account_resolver_does_not_propagate_global_account_across_namespaces():
     ) == "google-test-account"
 
 
+def test_meta_account_discovery_runs_without_selecting_an_account():
+    from agents.agent_harness.messages import ModelTurn
+    from agents.agent_platform.governance.identity.principal import RequestPrincipal
+    from agents.applications.advertising.execution.account_policy import (
+        AccountWhitelistValidator,
+    )
+    from agents.applications.advertising.persistence.store import AdAgentStore
+    from agents.tests.advertising.harness_models import call, install
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    class MetaClient:
+        platform = "meta"
+
+        def __init__(self):
+            self.calls = []
+
+        def list_accounts(self, business_id=None, limit=100):
+            self.calls.append((business_id, limit))
+            return [
+                {"id": "act_meta-test-a", "name": "Test A"},
+                {"id": "act_meta-test-b", "name": "Test B"},
+                {"id": "act_unapproved-live-account", "name": "Not approved"},
+            ]
+
+    client = MetaClient()
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["meta-test-a", "meta-test-b"]}
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        persistence_store=AdAgentStore(":memory:"),
+        whitelist_validator=validator,
+    )
+    runtime.register_tool_source(create_meta_tool_source(client))
+    install(
+        runtime,
+        ModelTurn(tool_calls=(call("meta_list_accounts"),)),
+        ModelTurn(content="已列出可访问的 Meta 广告账户。"),
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        permissions=frozenset({"ads.read"}),
+        account_scope={"meta": frozenset({"meta-test-a"})},
+    )
+
+    try:
+        result = runtime.run(
+            "列出 Meta 可访问的广告账户",
+            user_id="operator-1",
+            principal=principal,
+        )
+
+        assert result["status"] == "succeeded", result
+        assert result["needs_input"] is False
+        assert result["results"][0]["tool"] == "meta_list_accounts"
+        assert result["results"][0]["success"] is True
+        assert result["results"][0]["data"]["accounts"] == [
+            {"id": "act_meta-test-a", "name": "Test A"},
+        ]
+        assert result["results"][0]["data"]["total_count"] == 1
+        assert result["results"][0]["data"]["has_more"] is False
+        assert client.calls == [(None, 100)]
+    finally:
+        runtime.close(wait=True)
+
+
+def test_missing_meta_campaign_client_stops_repeated_model_calls():
+    from agents.agent_harness.messages import ModelTurn
+    from agents.agent_platform.governance.identity.principal import RequestPrincipal
+    from agents.applications.advertising.execution.account_policy import (
+        AccountWhitelistValidator,
+    )
+    from agents.applications.advertising.persistence.store import AdAgentStore
+    from agents.tests.advertising.harness_models import call, install
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["meta-test-a"]}
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        persistence_store=AdAgentStore(":memory:"),
+        whitelist_validator=validator,
+    )
+    runtime.register_tool_source(create_meta_tool_source())
+    model = install(
+        runtime,
+        ModelTurn(tool_calls=(call(
+            "meta_list_campaigns", {"account_id": "meta-test-a"},
+        ),)),
+        ModelTurn(tool_calls=(call(
+            "meta_list_campaigns", {"account_id": "meta-test-a"},
+        ),)),
+        ModelTurn(content="查询已完成。"),
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        permissions=frozenset({"ads.read"}),
+        account_scope={"meta": frozenset({"meta-test-a"})},
+    )
+
+    try:
+        result = runtime.run(
+            "查询 Meta campaign",
+            user_id="operator-1",
+            account_id="meta-test-a",
+            principal=principal,
+        )
+
+        assert len(model.messages) == 1
+        assert result["status"] == "failed"
+        assert result["results"][0]["success"] is False
+        assert result["results"][0]["error_detail"]["category"] == "non_retriable"
+        assert result["tool_call_count"] == 1
+    finally:
+        runtime.close(wait=True)
+
+
+def test_meta_startup_credentials_bind_campaign_query_client():
+    from pathlib import Path
+
+    from agents.agent_harness.messages import ModelTurn
+    from agents.agent_platform.governance.identity.principal import RequestPrincipal
+    from agents.applications.advertising.execution.account_policy import (
+        AccountWhitelistValidator,
+    )
+    from agents.applications.advertising.persistence.store import AdAgentStore
+    from agents.tests.advertising.harness_models import call, install
+
+    class MetaClient:
+        platform = "meta"
+
+        def __init__(self):
+            self.queried_accounts = []
+
+        def list_campaigns(self, account_id, limit=25):
+            self.queried_accounts.append(account_id)
+            return [{"id": "campaign-test-1", "name": "Test campaign"}]
+
+    client = MetaClient()
+    validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
+    validator.allowed_accounts = {"meta": ["meta-test-a"]}
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        persistence_store=AdAgentStore(":memory:"),
+        whitelist_validator=validator,
+    )
+    runtime.provider_bindings.create_client = (
+        lambda platform, _credentials: client if platform == "meta" else None
+    )
+    skills_root = (
+        Path(__file__).resolve().parents[3]
+        / "agents" / "skills" / "advertising" / "channels" / "meta"
+    )
+    runtime.auto_load_skills(
+        str(skills_root),
+        {"meta": {"access_token": "test-only-placeholder"}},
+        allow_provider_tool_discovery=True,
+    )
+    account_tool = runtime._get_registered_tool("meta_list_accounts")
+    campaign_tool = runtime._get_registered_tool("meta_list_campaigns")
+    install(
+        runtime,
+        ModelTurn(tool_calls=(call(
+            "meta_list_campaigns", {"account_id": "meta-test-a"},
+        ),)),
+        ModelTurn(content="已查询 Meta campaign。"),
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        permissions=frozenset({"ads.read"}),
+        account_scope={"meta": frozenset({"meta-test-a"})},
+    )
+
+    try:
+        assert account_tool[1].client is client
+        assert campaign_tool[1].client is client
+
+        result = runtime.run(
+            "查询 Meta campaign",
+            user_id="operator-1",
+            account_id="meta-test-a",
+            principal=principal,
+        )
+
+        assert result["status"] == "succeeded", result
+        assert result["results"][0]["tool"] == "meta_list_campaigns"
+        assert result["results"][0]["success"] is True
+        assert client.queried_accounts == ["meta-test-a"]
+    finally:
+        runtime.close(wait=True)
+
+
 def test_live_permission_is_declared_by_tool_not_inferred_as_ads_write():
     runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
     runtime.execution_mode = "live"

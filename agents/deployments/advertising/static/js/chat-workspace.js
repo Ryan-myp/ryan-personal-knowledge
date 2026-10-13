@@ -358,17 +358,27 @@
             const toggleLabel = document.getElementById('modeToggleLabel');
             const toggleIcon = document.getElementById('modeToggleIcon');
             const select = document.getElementById('executionModeSelect');
+            const liveSelected = workspaceMode.mode === 'live';
+            const liveAvailable = Boolean(workspaceMode.liveAvailable);
+            const liveExecutable = liveSelected && liveAvailable;
             if (workspaceMode.loading) {
                 title.textContent = '正在读取服务模式…';
                 description.textContent = '正在读取当前 Runtime 的执行策略。';
                 if (select) select.disabled = true;
                 return;
             }
-            if (workspaceMode.mode === 'live') {
+            if (liveExecutable) {
                 title.textContent = 'live 模式 · 受控执行';
                 description.textContent = '受控写入；仍需权限、测试账户白名单和二次确认。';
                 if (toggleLabel) toggleLabel.textContent = 'live';
                 if (toggleIcon) toggleIcon.textContent = '●';
+            } else if (liveSelected && !workspaceMode.liveAvailable) {
+                const reason = workspaceMode.liveReason || '服务端未开放 live 写入';
+                title.textContent = 'live 偏好已保存 · 当前不可用';
+                description.textContent =
+                    `live 写入当前不可用：${reason}。服务端执行门禁仍然有效，请切换到 dry-run 预览。`;
+                if (toggleLabel) toggleLabel.textContent = 'live · 不可用';
+                if (toggleIcon) toggleIcon.textContent = '⚠';
             } else {
                 title.textContent = 'dry-run 模式 · 安全预览';
                 description.textContent = '只生成计划与预览，不修改线上广告账户。';
@@ -376,14 +386,19 @@
                 if (toggleIcon) toggleIcon.textContent = '◈';
             }
             const welcomeDescription = document.getElementById('welcomeModeDescription');
-            if (welcomeDescription) welcomeDescription.textContent = workspaceMode.mode === 'live'
-                ? '从账户查询、效果分析到广告创建，当前处于受控 live 模式；写操作仍需确认并通过全部安全门禁。'
-                : '从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。';
+            if (welcomeDescription) {
+                welcomeDescription.textContent = liveExecutable
+                    ? '从账户查询、效果分析到广告创建，当前处于受控 live 模式；写操作仍需确认并通过全部安全门禁。'
+                    : liveSelected
+                        ? `live 写入当前不可用：${workspaceMode.liveReason || '服务端未开放 live 写入'}。服务端门禁不会因此放行写操作。`
+                        : '从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。';
+            }
             const blueprintModeBadge = document.querySelector('.blueprint-dry-run-badge');
             if (blueprintModeBadge) {
-                const live = workspaceMode.mode === 'live';
-                blueprintModeBadge.textContent = live ? 'LIVE · 确认后提交' : 'DRY-RUN';
-                blueprintModeBadge.classList.toggle('live', live);
+                blueprintModeBadge.textContent = liveExecutable
+                    ? 'LIVE · 确认后提交'
+                    : liveSelected ? 'LIVE 不可用' : 'DRY-RUN';
+                blueprintModeBadge.classList.toggle('live', liveExecutable);
             }
             if (select) {
                 select.disabled = workspaceMode.saving;
@@ -395,17 +410,21 @@
                 }
                 const liveOption = select.querySelector('option[value="live"]');
                 if (liveOption) {
-                    liveOption.disabled = false;
-                    liveOption.textContent = workspaceMode.liveAvailable
+                    liveOption.disabled = !liveAvailable;
+                    liveOption.textContent = liveAvailable
                         ? 'live · 受控执行'
-                        : 'live · 受控执行（写入需授权）';
-                    liveOption.title = workspaceMode.liveAvailable ? '' : (workspaceMode.liveReason || 'live 当前不可用');
+                        : 'live · 不可用';
+                    liveOption.title = liveAvailable ? '' : (workspaceMode.liveReason || 'live 当前不可用');
                 }
             }
             const traceMode = document.getElementById('traceMode');
-            if (traceMode) traceMode.textContent = workspaceMode.mode === 'live'
-                ? 'live · 受控执行，写操作需确认'
-                : 'dry-run · 不调用线上写 API';
+            if (traceMode) {
+                traceMode.textContent = liveExecutable
+                    ? 'live · 受控执行，写操作需确认'
+                    : liveSelected
+                        ? `live 不可用 · ${workspaceMode.liveReason || '服务端写入门禁未开放'}`
+                        : 'dry-run · 不调用线上写 API';
+            }
         }
 
         async function refreshWorkspaceMode() {
@@ -448,6 +467,15 @@
             clearWorkspaceModeStatus();
             const select = document.getElementById('executionModeSelect');
             if (!select || select.value === workspaceMode.mode || workspaceMode.saving) return;
+            if (select.value === 'live' && !workspaceMode.liveAvailable) {
+                select.value = workspaceMode.mode || 'dry_run';
+                const status = document.getElementById('workspaceModeStatus');
+                if (status) {
+                    status.textContent = workspaceMode.liveReason || '服务端当前未开放 live 写入';
+                    status.className = 'workspace-mode-status warning';
+                }
+                return;
+            }
             // The select is the action: changing it persists the scoped mode
             // immediately, so the next run uses the new policy without a
             // second confirmation click.

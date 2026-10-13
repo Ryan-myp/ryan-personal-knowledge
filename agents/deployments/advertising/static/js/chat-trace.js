@@ -421,6 +421,19 @@
             renderExecutionTrace();
         }
 
+        function markTraceConnectionUnknown() {
+            pushTraceEvent({
+                type: 'connection_lost',
+                status: 'unknown',
+                safe_metadata: { reason: 'client_connection_lost' },
+            });
+            updateTraceHeader(
+                'unknown',
+                '浏览器连接已中断，服务端执行结果尚未核实；写操作请勿直接重试。',
+            );
+            renderExecutionTrace();
+        }
+
         function applyExecutionEvent(event) {
             if (!event || !(event.type || event.event_type)) return null;
             event = normalizeExecutionEvent(event);

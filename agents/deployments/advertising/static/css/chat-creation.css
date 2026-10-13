@@ -68,6 +68,14 @@
         /* Creation card polish: keep the existing design tokens, but give
            dense provider forms a clearer visual hierarchy. */
         .message-ui-cards { width: min(100%, 860px); margin-top: 16px; }
+        .message-account-selection { display: grid; gap: 10px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--border); }
+        .account-selection-prompt { color: var(--text-secondary); font-size: 12px; }
+        .account-selection-options { display: flex; flex-wrap: wrap; gap: 7px; }
+        .account-selection-option { min-height: 36px; padding: 7px 10px; border: 1px solid var(--border-light); border-radius: 6px; color: var(--text-primary); background: var(--bg-hover); cursor: pointer; font: inherit; font-size: 11px; }
+        .account-selection-option:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-light); }
+        .account-selection-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+        .account-selection-option:disabled { opacity: .55; cursor: not-allowed; }
+        .account-selection-empty { color: var(--text-muted); font-size: 11px; }
         .message-clarification-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
         .clarification-option { padding: 8px 13px; border: 1px solid rgba(99, 102, 241, .45); border-radius: 999px; color: var(--text-primary); background: var(--accent-light); cursor: pointer; font: inherit; font-size: 11px; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
         .clarification-option:hover { border-color: var(--accent); background: rgba(99, 102, 241, .2); transform: translateY(-1px); }

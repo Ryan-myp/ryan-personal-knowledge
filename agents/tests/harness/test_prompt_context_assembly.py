@@ -45,6 +45,12 @@ def test_model_messages_keep_stable_instructions_ahead_of_dynamic_context():
         if message.role == "system"
     ]
     assert "[STABLE AGENT CONTRACT]" in system_messages[0]
+    assert (
+        "invent or claim a personal name, model identity, provider, or developer"
+        in system_messages[0]
+    )
+    assert "latest unresolved question" in system_messages[0]
+    assert "do not ask for the same choice again" in system_messages[0]
     assert "STABLE AGENT POLICY" in system_messages[0]
     assert system_messages[1] == "APPLICATION CONTEXT"
     assert "SKILL GUIDANCE" in system_messages[2]

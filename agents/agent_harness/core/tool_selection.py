@@ -23,7 +23,9 @@ _TOKEN_STOPWORDS = frozenset({
 })
 _READ_CUES = (
     "get", "list", "read", "search", "query", "fetch", "retrieve", "show",
-    "查一下", "查询", "列出", "查看", "获取", "检索",
+    "which", "what", "available",
+    "查一下", "查询", "列出", "查看", "获取", "检索", "有哪些", "有啥",
+    "哪几个", "哪些",
 )
 _WRITE_CUES = (
     "create", "update", "delete", "pause", "enable", "disable", "launch",
@@ -107,6 +109,27 @@ def _is_read_only_request(user_input: str) -> bool:
             ):
                 return False
     return True
+
+
+def _has_unnegated_write_cue(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    for cue in _WRITE_CUES:
+        for match in re.finditer(re.escape(cue), text):
+            prefix = text[max(0, match.start() - 32):match.start()]
+            negation_positions = [
+                prefix.rfind(negation)
+                for negation in _WRITE_NEGATIONS
+                if prefix.rfind(negation) >= 0
+            ]
+            if not negation_positions:
+                return True
+            last_negation = max(negation_positions)
+            if any(
+                reversal in prefix[last_negation + 1:]
+                for reversal in _INTENT_REVERSALS
+            ):
+                return True
+    return False
 
 
 def _is_read_tool(tool: Any) -> bool:
@@ -218,16 +241,38 @@ class ToolSelector:
         available_tools: Sequence[Any],
         *,
         limit: int = 16,
+        conversation_context: Sequence[str] = (),
     ) -> list[Any]:
         """Rank a bounded Tool subset using only publisher-owned metadata.
 
         A zero-score request receives no executable Tool definitions. This
         keeps unrelated Tools out of model context instead of falling back to
-        an arbitrary prefix of the registry.
+        an arbitrary prefix of the registry. Recent user turns may resolve a
+        short follow-up, but the current utterance alone determines whether a
+        request is read-only.
         """
         if limit <= 0:
             raise ValueError("limit must be positive")
         text = str(user_input or "").casefold()
+        prior_inputs = [
+            str(item or "").strip()
+            for item in (conversation_context or ())
+            if str(item or "").strip()
+        ][-4:]
+        prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
+        active_namespaces = self.detect_namespaces(
+            user_input, available_tools,
+        )
+        if active_namespaces:
+            prior_inputs = []
+        else:
+            for prior_input in reversed(prior_inputs):
+                active_namespaces = self.detect_namespaces(
+                    prior_input, available_tools,
+                )
+                if active_namespaces:
+                    break
+
         explicitly_named = [
             tool for tool in (available_tools or ())
             if (name := str(_tool_field(tool, "name", "") or "").strip())
@@ -235,9 +280,19 @@ class ToolSelector:
         ]
         if explicitly_named:
             candidates = explicitly_named
+        elif active_namespaces:
+            namespace_set = {
+                normalize_namespace(item) for item in active_namespaces
+            }
+            candidates = [
+                tool for tool in (available_tools or ())
+                if normalize_namespace(
+                    _tool_field(tool, "namespace", "")
+                ) in namespace_set
+            ]
         else:
             candidates = list(available_tools or ())
-        query_terms = _terms(user_input)
+        query_terms = _terms(" ".join((*prior_inputs, str(user_input or ""))))
         if not query_terms:
             return []
         ranked = [
@@ -245,13 +300,39 @@ class ToolSelector:
             for index, tool in enumerate(candidates)
         ]
         relevant = [item for item in ranked if item[0] > 0]
-        if _is_read_only_request(user_input):
+        if _is_read_only_request(text):
             relevant = [
                 item for item in relevant
                 if _is_read_tool(item[2])
             ]
         relevant.sort(key=lambda item: (-item[0], item[1]))
         return [tool for _score, _index, tool in relevant[:limit]]
+
+    def requires_tool_call(
+        self,
+        user_input: str,
+        selected_tools: Sequence[Any],
+    ) -> bool:
+        """Require execution for explicit writes with a matching Tool target."""
+        if not _has_unnegated_write_cue(user_input):
+            return False
+        terms = _terms(user_input)
+        for cue in _WRITE_CUES:
+            terms.difference_update(_terms(cue))
+        if not terms:
+            return False
+        return any(
+            not _is_read_tool(tool)
+            and bool(
+                terms & (
+                    _terms(_tool_field(tool, "name"))
+                    | _terms(_tool_field(tool, "resource_type"))
+                    | _terms(_tool_field(tool, "intent_types", ()))
+                    | _terms(_tool_field(tool, "intent_aliases", ()))
+                )
+            )
+            for tool in (selected_tools or ())
+        )
 
     def registered_namespaces(
         self, available_tools: Sequence[ToolDefinition]
@@ -275,6 +356,10 @@ class ToolSelector:
                 namespace.replace("-", " "),
                 namespace.replace("_", " "),
             }
+            aliases.update(
+                term for term in _terms(namespace)
+                if len(term) >= 4
+            )
             positions = [
                 text.find(alias.casefold())
                 for alias in aliases
@@ -296,6 +381,24 @@ class ToolSelector:
             if intent_type in (getattr(tool, "intent_types", None) or [])
         ]
         return exact[: self.max_tools_per_namespace]
+
+
+def _bounded_context_inputs(
+    values: Sequence[str],
+    *,
+    max_chars: int,
+) -> list[str]:
+    """Keep the newest conversational hints within a small selection budget."""
+    selected: list[str] = []
+    remaining = max(0, int(max_chars))
+    for value in reversed(values):
+        if remaining <= 0:
+            break
+        bounded = str(value or "").strip()[-remaining:]
+        if bounded:
+            selected.append(bounded)
+            remaining -= len(bounded)
+    return list(reversed(selected))
 
 
 class PromptRenderer:

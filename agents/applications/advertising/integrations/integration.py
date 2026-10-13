@@ -497,6 +497,11 @@ class AdvertisingToolExecutor:
         result = self.owner.tool_executor.execute(
             tool_context, self.definition.name, dict(input_data), clients,
         )
+        result = self.owner.security.filter_account_discovery_result(
+            self.definition,
+            result,
+            getattr(getattr(request, "principal", None), "account_scope", None),
+        )
         if self.definition.is_write_tool and result.success:
             result.data = {
                 "execution_status": "executed",

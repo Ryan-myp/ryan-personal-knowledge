@@ -13,7 +13,7 @@ from agents.agent_platform import AgentDefinition, ScenarioDefinition
 def advertising_agent_profile() -> AgentProfile:
     """Return the stable advertising behavior profile shared by composition."""
     return AgentProfile(
-        name="ad-agent",
+        name="AI Ops Agent",
         role="广告投放与分析助手",
         domain_guidance=(
             "广告业务知识只来自当前注册的 Skills、Tools、Blueprints "
@@ -21,9 +21,13 @@ def advertising_agent_profile() -> AgentProfile:
             "大模型预训练知识扩展或虚构系统能力。"
         ),
         response_guidance=(
-            "面向广告运营人员回答；问候时简洁回应，询问能力时只介绍当前能力目录中"
-            "已注册的 Skill 与 Tool；没有对应执行结果时不得声称操作完成，必须区分"
-            "预览、已执行、失败和状态未知。"
+            "面向广告运营人员回答；普通问候（包括只说“你好”）时，以 AI Ops Agent "
+            "自我介绍，并从本轮服务端能力目录概括 2-3 项已注册的代表能力；不得只做"
+            "通用寒暄，不得自称底层模型、模型提供方或开发方，也不得虚构个人姓名。"
+            "询问能力时只介绍当前目录中的 Skill 与 Tool；没有对应执行结果时不得声称"
+            "操作完成，必须区分预览、已执行、失败和状态未知。创建请求优先使用"
+            "本轮已注册的 create Tool/Blueprint；缺少类型或目标时只询问必要选择。"
+            "不得自行编造字段清单；没有返回创建卡片时不得声称已生成创建表单。"
         ),
         structured_fields=(
             "仅使用当前注册的 Skill、Tool、Tool Source 和 Blueprint 契约中声明的字段；"
@@ -53,8 +57,8 @@ def advertising_agent_definition(
     return AgentDefinition(
         agent_id="default-agent",
         version="1.0.0",
-        display_name="General Agent",
-        description="One general Agent configured for the advertising scenario.",
+        display_name="AI Ops Agent",
+        description="AI Ops Agent configured for advertising operations.",
         system_prompt=advertising_agent_profile().prompt_block(),
         skill_sources=(advertising_skill_source(source_id=skill_source_id),),
         tool_sources=tuple(tool_sources),

@@ -1034,7 +1034,7 @@ def test_history_cards_restore_as_launchers_without_opening_workbench():
     html = _chat_page_javascript()
     assert "function renderUiCards(ui, options = {})" in html
     assert "const openWorkbench = options.openWorkbench !== false;" in html
-    assert "{ openWorkbench: false }" in html
+    assert "openWorkbench: false" in html
 
 
 def test_creation_card_uses_provider_resource_hierarchy_for_all_field_groups():
@@ -1067,6 +1067,37 @@ def test_workbench_is_on_demand_and_normalizes_generic_harness_events():
     assert "tool_execution_end" in html
     assert "function normalizeExecutionEvent" in html
     assert "shouldOpenTraceForEvent" in html
+
+
+def test_chat_renders_scoped_account_choices_and_avoids_false_creation_fallback():
+    javascript = _chat_page_javascript()
+
+    assert "function renderAccountSelection" in javascript
+    assert "ui?.account_selection" in javascript
+    assert "data-account-id" in javascript
+    assert "account_id: selectedId" in javascript
+    assert "暂时无法确认本次执行结果" in javascript
+    assert "已整理好这次广告创建需要的参数" not in javascript
+
+
+def test_workspace_does_not_present_unavailable_live_preference_as_executable():
+    javascript = _chat_page_javascript()
+
+    assert "liveSelected && !workspaceMode.liveAvailable" in javascript
+    assert "live · 不可用" in javascript
+    assert "live 写入当前不可用" in javascript
+    assert "liveOption.disabled = !liveAvailable" in javascript
+
+
+def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    bootstrap = (
+        api_server.STATIC_PATH / "js" / "chat.js"
+    ).read_text(encoding="utf-8")
+
+    assert "chat.css?v=20261013-conversation-quality-v1" in template
+    assert "chat.js?v=20261013-conversation-quality-v1" in template
+    assert "v=20261013-conversation-quality-v1" in bootstrap
 
 
 def test_api_key_principal_replaces_request_user_id(monkeypatch, fake_server):
@@ -1235,6 +1266,67 @@ def test_chat_stream_returns_sse_lifecycle_events(fake_server):
     assert '"type": "start"' in body
     assert '"type": "reply"' in body
     assert '"type": "done"' in body
+
+
+def test_chat_stream_reports_runtime_failure_instead_of_success(fake_server):
+    def run(**kwargs):
+        kwargs["event_callback"]({
+            "type": "done",
+            "event_type": "done",
+            "status": "succeeded",
+        })
+        return {
+            "status": "failed",
+            "success": False,
+            "reply": "账户范围校验未通过。",
+            "results": [],
+        }
+
+    fake_server.run = run
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "创建 Meta campaign"},
+        )
+
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    reply = next(item for item in events if item["type"] == "reply")
+    done = next(item for item in events if item["type"] == "done")
+    assert reply["status"] == "failed"
+    assert done["status"] == "failed"
+
+
+def test_chat_stream_does_not_hide_failed_tool_behind_succeeded_run(fake_server):
+    fake_server.run = lambda **_kwargs: {
+        "status": "succeeded",
+        "reply": "已完成。",
+        "results": [{
+            "tool": "meta_list_campaigns",
+            "success": False,
+            "error": "account scope denied",
+        }],
+    }
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "查询 Meta campaign"},
+        )
+
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    reply = next(item for item in events if item["type"] == "reply")
+    done = next(item for item in events if item["type"] == "done")
+    assert reply["status"] == "failed"
+    assert done["status"] == "failed"
 
 
 def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server):

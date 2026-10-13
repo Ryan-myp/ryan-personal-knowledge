@@ -58,7 +58,8 @@
         const TRACE_STATUS_LABELS = {
             planned: '计划中', running: '运行中', succeeded: '已成功',
             failed: '失败', skipped: '已跳过', awaiting_confirmation: '待确认',
-            unknown: '待命', recovery_required: '需恢复'
+            awaiting_input: '等待补充', partially_failed: '部分失败',
+            cancelled: '已取消', unknown: '待核实', recovery_required: '需恢复'
         };
         let traceState = { nodes: [], events: [], selectedId: null, collapsed: false, expanded: false, activeTurn: 0, traceId: null, status: 'unknown', orderCounter: 0 };
         let durableRunPollTimer = null;
@@ -83,6 +84,7 @@
                 node_status: 'Tool 状态更新', confirmation: '等待用户确认', reply: '回复已准备',
                 stage_started: '阶段开始', stage_status: '阶段状态更新',
                 done: '回合结束', error: '执行异常',
+                connection_lost: '浏览器连接中断',
                 agent_start: 'Agent 回合开始', agent_end: '回合结束',
                 tool_execution_start: 'Tool 开始执行', tool_execution_end: 'Tool 执行完成',
                 turn_start: 'Agent Turn 开始', turn_end: 'Agent Turn 完成',

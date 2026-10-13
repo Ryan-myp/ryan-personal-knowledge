@@ -7,6 +7,10 @@ from agents.agent_harness.core.interfaces import (
     ToolEffect,
     ToolSchema,
 )
+from agents.agent_harness.core.tool_selection import ToolSelector
+from agents.applications.advertising.composition.ad_application_assembly import (
+    AdApplicationAssembly,
+)
 from agents.applications.advertising.composition.ad_application import (
     AdvertisingComposition,
 )
@@ -44,11 +48,32 @@ def _tool(
 def test_advertising_system_prompt_grounds_capability_claims_in_registered_sources():
     prompt = advertising_agent_definition().system_prompt
 
+    assert "AI Ops Agent" in prompt
     assert "能力目录" in prompt
     assert "Skills" in prompt
     assert "Tools" in prompt
     assert "预训练知识" in prompt
     assert "执行结果" in prompt
+    assert "普通问候" in prompt
+    assert "2-3 项" in prompt
+    assert "不得自称底层模型" in prompt
+    assert "不得自行编造字段清单" in prompt
+    assert "没有返回创建卡片时不得声称已生成创建表单" in prompt
+
+
+def test_core_agent_contract_forbids_inventing_model_identity():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    try:
+        prompt = runtime.platform_application.agent.system_prompt
+    finally:
+        runtime.close(wait=True)
+
+    assert "Do not" in prompt
+    assert "invent or claim a personal name, model identity, provider, or developer" in prompt
 
 
 def test_capability_catalog_uses_scenario_registry_and_respects_tool_allowlist():
@@ -269,14 +294,16 @@ def test_capability_catalog_is_injected_into_the_application_context():
     assert "only" in prompt.lower() or "仅" in prompt
 
 
-def test_live_run_receives_registered_capabilities_even_when_no_tool_is_selected():
+def test_plain_greeting_receives_registered_capabilities_and_intro_policy():
     class Model:
         def __init__(self):
             self.calls = []
 
         def complete(self, messages, tools, _request):
             self.calls.append((list(messages), list(tools)))
-            return ModelTurn(content="你好，我可以帮助处理已注册的广告能力。")
+            return ModelTurn(
+                content="你好，我是 AI Ops Agent，可以介绍当前已接入的能力。"
+            )
 
     class Executor:
         @staticmethod
@@ -299,7 +326,7 @@ def test_live_run_receives_registered_capabilities_even_when_no_tool_is_selected
         Executor(),
     )
     try:
-        result = runtime.run("你好，你有什么能力？", user_id="operator")
+        result = runtime.run("你好", user_id="operator")
     finally:
         runtime.close(wait=True)
 
@@ -311,4 +338,31 @@ def test_live_run_receives_registered_capabilities_even_when_no_tool_is_selected
     )
     assert "google-ads: campaign -> list(" in system_text
     assert "Skills (advisory guidance only" in system_text
+    assert "AI Ops Agent" in system_text
+    assert "普通问候" in system_text
+    assert "2-3 项" in system_text
+    assert "不得自称底层模型" in system_text
     assert tools == []
+
+
+def test_ad_selector_exposes_specific_tools_beyond_the_old_sixteen_tool_prefix():
+    from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+
+    tools = [
+        definition
+        for definition, _handler in create_tiktok_tool_source().register_tools()
+    ]
+    select_tools = AdApplicationAssembly._tool_selector(
+        SimpleNamespace(),
+        ToolSelector(),
+    )
+    request = TurnRequest(
+        user_input="创建一个 TikTok App 转化广告，使用我的 App",
+        context={},
+    )
+
+    visible = select_tools(request, tools)
+
+    assert "tiktok_smart_plus_create_campaign" in {
+        item.name for item in visible
+    }

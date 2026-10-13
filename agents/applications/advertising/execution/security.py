@@ -19,6 +19,7 @@ from agents.tools.advertising.shared.domain.security import (
     request_hash,
     sha256_json,
 )
+from agents.tools.advertising.shared.domain.auth import normalize_account_id
 from agents.agent_harness.redaction import redact_for_persistence
 
 
@@ -313,8 +314,85 @@ class RuntimeSecurity:
         ):
             return ToolResult.error(
                 f"{tool_name} 没有配置 Provider Client；当前未启用 offline_mode，"
-                "不会返回模拟查询数据"
+                "不会返回模拟查询数据",
+                detail=ToolError(
+                    "non_retriable",
+                    "PROVIDER_UNAVAILABLE",
+                    "The required Provider Client is not configured",
+                    "Check trusted provider credentials and Tool Source startup binding before retrying",
+                ),
             )
+        return result
+
+    def filter_account_discovery_result(
+        self,
+        tool_def: Any,
+        result: ToolResult,
+        account_scope: Optional[dict[str, Any]],
+    ) -> ToolResult:
+        """Expose only configured and principal-authorized account records."""
+        if (
+            not result
+            or not result.success
+            or not tool_def.is_read_tool
+            or str(getattr(tool_def, "action", "") or "").lower() != "list"
+            or str(getattr(tool_def, "resource_type", "") or "").lower() != "account"
+        ):
+            return result
+
+        item_key = str(getattr(tool_def, "result_items_key", "") or "").strip()
+        id_fields = tuple(getattr(tool_def, "result_id_fields", ()) or ())
+        data = result.data if isinstance(result.data, dict) else {}
+        records = data.get(item_key) if item_key else None
+        if not item_key or not id_fields or not isinstance(records, list):
+            return ToolResult.error(
+                f"{tool_def.name} 的账户目录结果不符合安全契约，已拒绝返回",
+                detail=ToolError(
+                    "non_retriable",
+                    "INVALID_ACCOUNT_DIRECTORY_RESULT",
+                    "The account directory response does not match its declared result schema",
+                    "Verify the provider Tool result_items_key and result_id_fields contract",
+                ),
+            )
+
+        platform = self.runtime._canonical_platform(
+            str(getattr(tool_def, "namespace", "") or "")
+        )
+        validator = getattr(self.runtime, "whitelist_validator", None)
+        get_allowed = getattr(validator, "get_allowed_accounts", None)
+        allowed = {
+            normalize_account_id(value)
+            for value in (get_allowed(platform) if callable(get_allowed) else ())
+        }
+        principal_accounts = self.runtime._principal_accounts(
+            platform, account_scope,
+        )
+        if principal_accounts is not None:
+            allowed.intersection_update(principal_accounts)
+
+        filtered = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            account_id = next(
+                (
+                    record.get(field)
+                    for field in id_fields
+                    if record.get(field) not in (None, "")
+                ),
+                None,
+            )
+            if normalize_account_id(account_id) in allowed:
+                filtered.append(record)
+
+        safe_data = dict(data)
+        safe_data[item_key] = filtered
+        safe_data.pop("paging", None)
+        safe_data.pop("next_page", None)
+        safe_data.pop("page_info", None)
+        safe_data["total_count"] = len(filtered)
+        safe_data["has_more"] = False
+        result.data = safe_data
         return result
 
     @staticmethod

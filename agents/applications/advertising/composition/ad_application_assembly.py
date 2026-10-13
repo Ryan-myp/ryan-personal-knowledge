@@ -67,6 +67,8 @@ from .ad_application_components import (
 
 logger = logging.getLogger(__name__)
 
+MAX_RELEVANT_TOOLS_PER_TURN = 32
+
 
 def _select_blueprint_tools(
     runtime: Any,
@@ -426,8 +428,17 @@ class AdApplicationAssembly:
                 selected = selector.select_relevant(
                     request.user_input,
                     tools,
-                    limit=max(1, min(int(runtime.max_tool_calls), 64)),
+                    limit=MAX_RELEVANT_TOOLS_PER_TURN,
+                    conversation_context=(
+                        request_context.get(
+                            "_agent_tool_selection_context", (),
+                        )
+                    ),
                 )
+                if selected and selector.requires_tool_call(
+                    request.user_input, selected,
+                ):
+                    request_context["_agent_tool_choice_required"] = True
             if isinstance(request.context, dict):
                 request.context["_agent_tool_namespaces"] = list(dict.fromkeys(
                     str(getattr(item, "namespace", "") or "")

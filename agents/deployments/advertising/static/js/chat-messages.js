@@ -1,3 +1,44 @@
+        function renderAccountSelection(selection, originalRequest) {
+            const section = document.createElement('section');
+            section.className = 'message-account-selection';
+
+            const prompt = document.createElement('div');
+            prompt.className = 'account-selection-prompt';
+            prompt.textContent = selection.prompt || '请选择一个当前身份可用的广告账户。';
+            section.appendChild(prompt);
+
+            const options = Array.isArray(selection.account_options)
+                ? selection.account_options.slice(0, 20)
+                : [];
+            if (!options.length) {
+                const empty = document.createElement('div');
+                empty.className = 'account-selection-empty';
+                empty.textContent = '当前身份没有可用于此渠道的授权账户。';
+                section.appendChild(empty);
+                return section;
+            }
+
+            const actions = document.createElement('div');
+            actions.className = 'account-selection-options';
+            options.forEach(option => {
+                if (!option || option.value == null || String(option.value).trim() === '') return;
+                const accountId = String(option.value);
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'account-selection-option';
+                button.dataset.accountId = accountId;
+                button.setAttribute('data-account-id', accountId);
+                button.textContent = `使用账户 ${String(option.label || accountId)}`;
+                button.disabled = !String(originalRequest?.user_input || '').trim();
+                button.addEventListener('click', () => {
+                    continueWithSelectedAccount(accountId, originalRequest || {});
+                });
+                actions.appendChild(button);
+            });
+            section.appendChild(actions);
+            return section;
+        }
+
         function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null, uiOptions = null) {
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
@@ -12,6 +53,9 @@
                 : parsedTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
             let bodyHtml = `<div class="message-content-text">${formatContent(content)}</div>`;
+            if (ui?.account_selection) {
+                bodyHtml += '<div class="message-account-selection-host"></div>';
+            }
             if (toolSummaryHtml) {
                 bodyHtml += toolSummaryHtml;
             } else if (tools && tools.length > 0) {
@@ -71,6 +115,14 @@
                 msg.classList.add('has-ui-cards');
                 msg.querySelector('.message-ui-cards').appendChild(
                     renderUiCards(ui, uiOptions || {}),
+                );
+            }
+            if (ui?.account_selection) {
+                msg.querySelector('.message-account-selection-host')?.appendChild(
+                    renderAccountSelection(
+                        ui.account_selection,
+                        uiOptions?.originalRequest || null,
+                    ),
                 );
             }
             const confirmationButton = msg.querySelector('.message-confirmation-button');
@@ -302,8 +354,49 @@
 
             } catch (error) {
                 removeLoading();
-                markTraceFailed(error.message);
-                addMessage('❌ 请求失败: ' + error.message, 'agent', null, true);
+                addMessage(markChatRequestFailure(error), 'agent', null, true);
+            }
+        }
+
+        async function continueWithSelectedAccount(accountId, originalRequest) {
+            if (isSending || accountId == null) return;
+            const sourceText = String(originalRequest?.user_input || '').trim();
+            const selectedId = String(accountId).trim();
+            if (!sourceText || !selectedId) return;
+
+            const userInput = `${sourceText}\n使用账户 ${selectedId} 继续`;
+            const requestParams = {
+                ...(originalRequest || {}),
+                user_input: userInput,
+                user_id: 'web_user',
+                session_id: sessionId,
+                account_id: selectedId,
+            };
+            isSending = true;
+            const sendButton = document.getElementById('sendBtn');
+            if (sendButton) {
+                sendButton.disabled = true;
+                sendButton.classList.add('is-sending');
+                sendButton.setAttribute('aria-busy', 'true');
+            }
+            addMessage(userInput, 'user');
+            addLoading();
+            startExecutionTrace(userInput);
+            try {
+                const data = await streamChatRequest(requestParams);
+                removeLoading();
+                renderStreamResult(data, requestParams);
+                await refreshConversationHistory({ silent: true });
+            } catch (error) {
+                removeLoading();
+                addMessage(markChatRequestFailure(error), 'agent', null, true);
+            } finally {
+                isSending = false;
+                if (sendButton) {
+                    sendButton.disabled = false;
+                    sendButton.classList.remove('is-sending');
+                    sendButton.removeAttribute('aria-busy');
+                }
             }
         }
 
@@ -352,8 +445,7 @@
 
             } catch (error) {
                 removeLoading();
-                markTraceFailed(error.message);
-                addMessage('请求失败: ' + error.message, 'agent', null, true);
+                addMessage(markChatRequestFailure(error), 'agent', null, true);
             } finally {
                 isSending = false;
                 if (sendButton) {
