@@ -1,7 +1,7 @@
 # LLM Wiki 索引
 
-> **版本**: v2.3.0
-> **更新时间**: 2026-09-18
+> **版本**: v2.4.0
+> **更新时间**: 2026-10-13
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
@@ -65,7 +65,9 @@ knowledge_base/
 | “怎么创建/修改广告？” | 对应平台 `constraints-and-workflows` + 当前 Tool schema |
 | “预算/出价怎么设？” | `bidding-and-budget` + 对应平台优化文档 |
 | “素材、受众怎么测？” | `creative-testing` + `targeting-and-audiences` |
+| “下一批创意应该做什么，如何按证据和产能排优先级？” | `creative-testing` + `agents/skills/advertising/practices/creative-strategy/` |
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
+| “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “平台数据能不能代表真实增量？” | `measurement-and-attribution` + `experimentation-and-learning` |
 | “四个平台整体怎么设计和排查？” | `four-platform-ad-agent-handbook` + 对应平台 Canonical Runbook |
 | “这个操作系统支持吗？” | 先查当前 Registry/Tool Source，不以知识文档代替能力审计 |
@@ -80,7 +82,7 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-09-17，Runtime 实际加载 **69 个发布 Markdown 文档**：
+截至 2026-10-13，Runtime 实际加载 **69 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
@@ -92,7 +94,7 @@ knowledge_base/
 | 经验方法 | 4 | 诊断、实验、最佳实践、错误模式 |
 | 对比页 | 1 | 四个平台的对象、强项和优先核对项 |
 
-平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
+平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。跨平台创意知识新增了证据驱动路线图、探索/扩量状态、制作产能和 Hook 到业务结果的诊断；审计知识区分健康度与证据覆盖率；实验与归因知识明确统计结论和因果边界。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
 
 `ARCHITECTURE.md`、`SCHEMA.md`、`QUALITY_STANDARD.md`、`UPGRADE_SUMMARY.md`、`USAGE_GUIDE.md`、`index.md` 和 `log.md` 是维护文档，不进入 Agent 业务检索和前端知识目录；它们只用于解释知识库自身如何维护。
 

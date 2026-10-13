@@ -5,17 +5,17 @@ title: 跨平台创意策略与测试体系
 layer: business
 knowledge_type: creative_guide
 platform: all
-source: 四平台创意规范 + 广告创意测试方法论
-source_ref: "internal://ad-agent/playbook/cross-platform-creative-testing"
-version: "1.0.0"
-confidence: 0.82
-updated_at: "2026-09-08"
+source: 四平台创意规范 + 内部广告创意测试方法论 + marketingskills creative strategy
+source_ref: "https://github.com/coreyhaines31/marketingskills/blob/main/skills/ad-creative/references/creative-roadmap.md"
+version: "1.1.0"
+confidence: 0.85
+updated_at: "2026-10-13"
 tags: [creative, video, image, copy, hook, fatigue, testing, policy]
 status: published
 source_kind: "internal"
 authority: "operator"
 evidence_level: "provisional"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-13"
 ---
 
 # 跨平台创意策略与测试体系
@@ -35,15 +35,26 @@ last_verified_at: "2026-09-08"
 
 首轮测试固定目标、预算、优化事件和落地页，只改一个主变量。记录素材版本、平台规格、首发时间、主要角度、审核状态、花费/样本门槛和淘汰理由。
 
+## 从创意产出转成路线图
+
+确定“下一条做什么”前，尽量合并三类信号：账户内按概念/角度/格式拆分的成熟表现、客户原话与异议、以及有来源的自然内容或市场观察。每个洞察都记录来源、样本/日期窗口和置信度；来源不可用就标 Unknown，不能假装已查账户或补造客户反馈。客户表达可以支持问题或动机，但不能单独证明产品效果、数字或证言。
+
+把创意概念写成“具体受众情境 × 动机/问题 × 表达角度 × 格式”，并把证据强弱与制作成本分开排序。自己的成熟账户结果、重复出现的客户语言通常比跨行业类比或团队直觉更强；证据弱的想法可以保留，但先做低成本验证。路线图分为待验证概念池、近期主题和有日期/负责人/制作工时的当期清单，不预设脱离产能的素材数量。
+
+账户处于探索期时优先覆盖不同的人群、动机和角度，避免对同一想法堆大量近似文案；扩量期可以围绕经成熟业务结果验证的概念做实质不同的表达，同时保留新概念探索容量。概念优先级不等于制作优先级：后者还要考虑现有素材、成本、交付周期、风险、审核和团队产能（production capacity）。
+
 ## 漏斗诊断
 
 | 位置 | 观察指标 | 常见问题 |
 |---|---|---|
 | 注意 | 前段观看、停留、曝光分布 | 首帧、Hook、格式或受众错位 |
-| 兴趣 | CTR、互动、完整观看 | 卖点、证明、字幕或 CTA 弱 |
+| 留存 | 持续观看或完播 | Hook 后的内容没有兑现开场承诺 |
+| 点击 | CTR、互动、完整观看 | 卖点、证明、字幕或 CTA 弱 |
 | 到站 | LPV、加载、跳出 | 页面慢、追踪丢失、承诺不一致 |
 | 转化 | CVR、CPA、价值 | 页面、报价、事件、信任和人群质量 |
 | 留存/价值 | 复购、留存、合格率、毛利 | 短期承诺带来低质量用户 |
+
+先找出有证据支持的漏斗断点，再选下一次只改变一个主变量。前段注意力提升但点击/转化或业务质量变差，可能是吸引错人或承诺错配，不得单独判为赢家。平台不提供某个视频指标时要标明不可得，不能用相近指标冒充。
 
 ## 素材疲劳
 
@@ -65,3 +76,10 @@ last_verified_at: "2026-09-08"
 | 业务 | 订单、合格率、毛利或留存是否改善 | 不能只看平台归因 |
 
 素材测试要避免样本倾斜：高预算素材、先上线素材和大受众素材天然更容易积累数据。若不能随机或近似随机分流，应把结果标为观察性证据。winner 发布前保留原素材和版本，逐步替换而不是一次删除全部基线。
+
+每轮复盘要分别判断概念与单次执行：一个变体失败不一定否定整个概念，多个执行在足够成熟的数据下都失败才是重新排序概念的更强证据。把学习落实为概念池中的保留、降级、改写或淘汰项，并带入下一期清单。
+
+方法参考：创意信号整合、账户状态分支、按证据与制作成本分别排序、制作产能约束和复盘闭环，参考并重新表述自
+[marketingskills creative roadmap](https://github.com/coreyhaines31/marketingskills/blob/main/skills/ad-creative/references/creative-roadmap.md)
+及其 [hook system](https://github.com/coreyhaines31/marketingskills/blob/main/skills/ad-creative/references/hook-system.md)；
+本条保留现有跨平台创意契约与实验边界，不复制上游渠道工具或自动化流程。

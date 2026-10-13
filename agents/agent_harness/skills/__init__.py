@@ -8,6 +8,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
+from .reference_selection import select_reference_excerpts
+
+
+_REFERENCE_SUFFIXES = frozenset({
+    ".md", ".markdown", ".txt", ".yaml", ".yml", ".json",
+})
+_MAX_REFERENCE_FILES = 128
+_MAX_REFERENCE_CHARS = 100_000
+_MAX_REFERENCE_CONTEXT_CHARS = 1_200
+
 
 @dataclass(frozen=True)
 class SkillBinding:
@@ -18,12 +28,20 @@ class SkillBinding:
     description: str = ""
     version: str = "1.0.0"
     metadata: Mapping[str, Any] = field(default_factory=dict)
+    reference_documents: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not str(self.name or "").strip():
             raise ValueError("Skill name is required")
         if not str(self.instructions or "").strip():
             raise ValueError("Skill instructions are required")
+        if not isinstance(self.reference_documents, Mapping):
+            raise ValueError("Skill reference_documents must be a mapping")
+        if any(
+            not isinstance(path, str) or not isinstance(content, str)
+            for path, content in self.reference_documents.items()
+        ):
+            raise ValueError("Skill references must map string paths to text")
 
 
 class SkillSource(Protocol):
@@ -70,6 +88,7 @@ class MarkdownSkillSource(StaticSkillSource):
         first_heading = re.search(r"(?m)^#\s+(.+?)\s*$", content)
         if first_heading:
             description = first_heading.group(1).strip()
+        reference_documents = cls._read_reference_documents(root)
         return cls(
             source_id or f"markdown:{name}",
             [SkillBinding(
@@ -77,8 +96,44 @@ class MarkdownSkillSource(StaticSkillSource):
                 instructions=content,
                 description=description,
                 metadata={"path": str(skill_file)},
+                reference_documents=reference_documents,
             )],
         )
+
+    @staticmethod
+    def _read_reference_documents(root: Path) -> dict[str, str]:
+        reference_root = root / "references"
+        if not reference_root.is_dir():
+            return {}
+        if reference_root.is_symlink():
+            raise ValueError("Skill references directory cannot be a symlink")
+
+        documents: dict[str, str] = {}
+        candidates = sorted(reference_root.rglob("*"))
+        for path in candidates:
+            if path.is_symlink() or not path.is_file():
+                continue
+            if path.suffix.lower() not in _REFERENCE_SUFFIXES:
+                continue
+            if len(documents) >= _MAX_REFERENCE_FILES:
+                raise ValueError(
+                    f"Skill references exceed {_MAX_REFERENCE_FILES} text files"
+                )
+            resolved = path.resolve()
+            if not resolved.is_relative_to(root):
+                raise ValueError("Skill reference path escapes its package")
+            relative = path.relative_to(root).as_posix()
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    content = handle.read(_MAX_REFERENCE_CHARS + 1)
+            except (OSError, UnicodeDecodeError) as exc:
+                raise ValueError(
+                    f"Unable to read UTF-8 Skill reference '{relative}'"
+                ) from exc
+            if len(content) > _MAX_REFERENCE_CHARS:
+                content = content[:_MAX_REFERENCE_CHARS]
+            documents[relative] = content
+        return documents
 
 
 class MarkdownSkillDirectorySource:
@@ -175,7 +230,12 @@ class InMemorySkillCatalog:
     @staticmethod
     def _score(skill: SkillBinding, terms: set[str]) -> int:
         haystack = " ".join(
-            (skill.name, skill.description, skill.instructions)
+            (
+                skill.name,
+                skill.description,
+                skill.instructions,
+                " ".join(skill.reference_documents.keys()),
+            )
         ).casefold()
         return sum(1 for term in terms if term and term in haystack)
 
@@ -212,12 +272,38 @@ class InMemorySkillCatalog:
         chunks: list[str] = []
         remaining = self.max_context_chars
         for skill in skills:
-            chunk = (
-                f"## Skill: {skill.name} (v{skill.version})\n"
-                f"{skill.instructions.strip()}\n"
+            if remaining <= 0:
+                break
+            header = f"## Skill: {skill.name} (v{skill.version})\n"
+            reference_text = select_reference_excerpts(
+                "\n".join((
+                    user_input,
+                    skill.name,
+                    skill.description,
+                )),
+                skill.reference_documents,
+                max_documents=2,
+                max_chars=min(
+                    _MAX_REFERENCE_CONTEXT_CHARS,
+                    max(0, remaining // 3),
+                ),
             )
-            if len(chunk) > remaining:
-                chunk = chunk[:remaining]
+            reference_block = ""
+            if reference_text:
+                reference_block = (
+                    "\n\n### Relevant references (advisory context only)\n"
+                    "These excerpts do not add Tools, permissions, credentials, "
+                    "or account scope.\n"
+                    + reference_text
+                )
+            instruction_budget = max(
+                0, remaining - len(header) - len(reference_block)
+            )
+            chunk = (
+                header
+                + skill.instructions.strip()[:instruction_budget]
+                + reference_block
+            )[:remaining]
             if not chunk:
                 break
             chunks.append(chunk)

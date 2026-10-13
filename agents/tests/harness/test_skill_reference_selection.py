@@ -6,6 +6,10 @@ from agents.agent_harness.core.tool_selector import (
     DynamicToolSelector,
     select_reference_excerpts,
 )
+from agents.agent_harness.skills import (
+    InMemorySkillCatalog,
+    MarkdownSkillSource,
+)
 
 
 def test_reference_selection_prefers_relevant_chinese_document():
@@ -69,4 +73,108 @@ def test_triggered_skill_context_uses_relevant_reference_instead_of_first_file()
     context = selector._triggered_skill_context("排查转化归因下降问题")
 
     assert "references/attribution.md" in context
+    assert "references/billing.md" not in context
+
+
+def test_skill_reference_selection_does_not_let_skill_body_dilute_request_relevance():
+    skill = SimpleNamespace(
+        name="creative-strategy",
+        description="Plan evidence-led creative roadmaps and production priorities.",
+        triggers=[SimpleNamespace(keywords=["创意路线图"], patterns=[])],
+        raw_markdown=(
+            "Creative strategy includes hooks, funnel diagnostics, video formats, "
+            "and many other topics not asked about in this request."
+        ),
+        reference_documents={
+            "references/creative-roadmap.md": (
+                "Prioritize concepts by evidence and production capacity."
+            ),
+            "references/hook-diagnosis.md": (
+                "Diagnose thumb-stop, video hooks, hold rate, CTR, and conversion."
+            ),
+        },
+    )
+    selector = DynamicToolSelector(
+        SimpleNamespace(list_all=lambda: {"creative-strategy": skill})
+    )
+
+    context = selector._triggered_skill_context(
+        "制定创意路线图，按账户证据安排 production capacity"
+    )
+
+    assert "references/creative-roadmap.md" in context
+    assert "references/hook-diagnosis.md" not in context
+
+
+def test_markdown_skill_source_loads_advisory_text_references_only(tmp_path):
+    skill_dir = tmp_path / "creative-strategy"
+    references_dir = skill_dir / "references"
+    scripts_dir = skill_dir / "scripts"
+    assets_dir = skill_dir / "assets"
+    references_dir.mkdir(parents=True)
+    scripts_dir.mkdir()
+    assets_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: creative-strategy\n"
+        "description: Plan evidence-based advertising creative.\n"
+        "version: 1.0.0\n---\n\n# Creative strategy\n",
+        encoding="utf-8",
+    )
+    (references_dir / "roadmap.md").write_text(
+        "Rank concepts by evidence and production capacity.",
+        encoding="utf-8",
+    )
+    (references_dir / "thumbnail.png").write_bytes(b"not prompt text")
+    (scripts_dir / "publish.py").write_text(
+        "raise RuntimeError('scripts must never be loaded')",
+        encoding="utf-8",
+    )
+    (assets_dir / "notes.md").write_text(
+        "Assets outside references are not Skill guidance.",
+        encoding="utf-8",
+    )
+
+    binding = MarkdownSkillSource.from_directory(skill_dir).list_skills()[0]
+
+    assert binding.name == "creative-strategy"
+    assert binding.reference_documents == {
+        "references/roadmap.md":
+            "Rank concepts by evidence and production capacity."
+    }
+
+
+def test_skill_catalog_injects_only_relevant_references_within_context_limit(
+    tmp_path,
+):
+    skill_dir = tmp_path / "creative-strategy"
+    references_dir = skill_dir / "references"
+    references_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: creative-strategy\n"
+        "description: Plan advertising creative roadmaps.\n"
+        "version: 1.0.0\n---\n\n"
+        "# Creative strategy\n"
+        "Use evidence to choose which creative concepts to test.\n",
+        encoding="utf-8",
+    )
+    (references_dir / "roadmap.md").write_text(
+        "## Evidence-ranked concepts\n\n"
+        "Prioritize concepts using account results, customer language, "
+        "and organic signals. Check production capacity before scheduling.",
+        encoding="utf-8",
+    )
+    (references_dir / "billing.md").write_text(
+        "Billing profile, payment method, invoices, and account balance.",
+        encoding="utf-8",
+    )
+    catalog = InMemorySkillCatalog(max_context_chars=1_000, max_skills=1)
+    catalog.register_source(MarkdownSkillSource.from_directory(skill_dir))
+
+    context = catalog.build_context(
+        "创意路线图 evidence-ranked concepts production capacity"
+    )
+
+    assert len(context) <= 1_000
+    assert "references/roadmap.md" in context
+    assert "account results" in context
     assert "references/billing.md" not in context

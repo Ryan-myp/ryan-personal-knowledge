@@ -1,5 +1,16 @@
 # LLM Wiki 更新日志
 
+## 2026-10-13
+
+- 将创意路线图、按探索/扩量状态规划、制作产能约束、Hook 漏斗诊断和复盘闭环
+  蒸馏进 `creative-strategy` advisory Skill 与现有跨平台创意 Wiki；原有 channel Skill
+  与 Tool schema 仍是格式/执行能力来源。
+- 补全账户审计 Pass/Fail/Unknown/N/A、健康度与证据覆盖率分离，以及不完整来源不计零分的规则。
+- 补充实验 MDE/统计功效、效应大小、重复查看和多重比较边界；补充平台归因、MTA、MMM
+  与增量评估的适用边界。
+- 增加创意路线图、审计覆盖率、实验统计边界和归因/增量问题的检索回归用例。
+- 标明 `marketingskills` 等上游来源与许可；未复制集成脚本、资源文件或任何可执行入口。
+
 ## 2026-09-20
 
 - 为历史页面补齐 `source_kind`、`authority`、`evidence_level`、`last_verified_at`，

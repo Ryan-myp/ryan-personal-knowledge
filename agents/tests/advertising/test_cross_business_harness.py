@@ -71,6 +71,14 @@ def test_advertising_skills_are_exportable_without_ad_runtime():
     assert names
     assert "meta" in names
     assert "cross-channel" in names
+    assert "creative-strategy" in names
+
+    context = catalog.build_context(
+        "设计广告创意路线图，按客户证据和账户表现安排 production tier"
+    )
+
+    assert "Skill: creative-strategy" in context
+    assert "references/creative-roadmap.md" in context
 
 
 def test_harness_has_no_business_package_or_tool_source_runtime_concept():

@@ -5,17 +5,17 @@ title: 跨平台事件、归因与增量评估
 layer: business
 knowledge_type: general
 platform: all
-source: 四平台测量文档 + 广告归因方法论
-source_ref: "internal://ad-agent/playbook/cross-platform-measurement-attribution"
-version: "1.0.0"
-confidence: 0.86
-updated_at: "2026-09-08"
+source: 四平台测量文档 + 内部广告归因方法论 + marketingskills attribution
+source_ref: "https://github.com/coreyhaines31/marketingskills/blob/main/skills/attribution/references/measurement-paradigms.md"
+version: "1.1.0"
+confidence: 0.88
+updated_at: "2026-10-13"
 tags: [measurement, attribution, conversion, incrementality, mmp, crm, privacy]
 status: published
 source_kind: "internal"
 authority: "operator"
 evidence_level: "provisional"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-13"
 ---
 
 # 跨平台事件、归因与增量评估
@@ -34,6 +34,15 @@ last_verified_at: "2026-09-08"
 | 业务结果 | 订单、毛利、MQL、留存、增量 | 最终决策 |
 
 四层数据不能直接当成同一个数字。报告中注明平台、资源 level、日期/时区、归因窗口、币种、数据延迟、维度和是否建模。
+
+## 平台归因、路径分配与增量不是同一件事
+
+- **平台归因**回答平台按自己的窗口和规则给广告分配了多少转化，不回答没有广告时这些转化是否仍会发生。
+- **MTA/规则模型**在被观测到的用户路径上分配触点信用；路径缺失、隐私限制和身份拼接会改变结果，也不自动建立因果关系。
+- **MMM**用汇总时间序列估算渠道贡献和饱和趋势，适合有足够历史与支出的组合决策；模型结果依赖数据、控制变量和规格，不能当作逐条 Campaign 的即时真值。
+- **增量实验/准实验**在设计、分组、样本、污染和执行符合要求时，估计某次投放变化造成的结果差异；报告仍须给出不确定性和适用范围。
+
+各平台采用的转化定义、窗口、跨设备规则和建模口径不同，同一转化可能被多个平台归因。因此平台转化、平台 ROAS 默认并列呈现，不能直接相加，也不能乘固定倍数当“真实值”或增量。预算迁移的重要决策应尽量用实验/准实验校准平台归因和 MMM；数据不足时明确只能给方向性判断。
 
 ## 归因差异拆解
 
@@ -62,3 +71,9 @@ App 使用 MMP/平台事件时保持 install、post-install event、广告点击
 | 大额预算迁移 | 增量实验 + 边际效率 | 容量、供给和预算可回退 |
 
 归因模型不是越复杂越准确。路径缺失、身份不稳定、事件重复或样本稀疏时，复杂模型只会制造更精确的错觉。每份结论要写模型、窗口、覆盖率、假设、不可观测部分和适用边界。
+
+选择方法要匹配决策成本：日常运营可以把平台报表/MTA 当方向性信号；跨渠道组合预算且有足够时间序列时评估 MMM；高金额或争议大的预算迁移优先设计可信的增量实验。不要用观察性归因结果构造未经验证的平台“校正倍数”。
+
+方法参考：MTA、MMM 与增量评估的适用边界参考并重新表述自本地
+[marketingskills measurement paradigms](https://github.com/coreyhaines31/marketingskills/blob/main/skills/attribution/references/measurement-paradigms.md)；
+实际选择仍需根据当前数据可用性和决策成本判断。

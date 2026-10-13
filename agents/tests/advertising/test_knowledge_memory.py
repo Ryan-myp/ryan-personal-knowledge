@@ -113,6 +113,85 @@ def test_builtin_wiki_exposes_navigation_categories_for_each_platform():
     assert "campaign_operations" in categories["dv360"]
 
 
+def test_builtin_wiki_retrieves_audit_evidence_coverage_guidance():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    result = provider.query(
+        "广告审计 Pass Fail Unknown N/A 健康分和证据覆盖率分开",
+        limit=4,
+    )
+
+    assert any(
+        item.document_id == "evidence-driven-performance-diagnosis"
+        for item in result
+    )
+    evidence_doc = next(
+        item for item in result
+        if item.document_id == "evidence-driven-performance-diagnosis"
+    )
+    assert "证据覆盖率" in evidence_doc.excerpt
+
+
+def test_builtin_wiki_retrieves_creative_roadmap_and_capacity_guidance():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    result = provider.query(
+        "创意路线图 account performance customer language exploration scaling "
+        "production capacity monthly retro",
+        limit=4,
+    )
+
+    assert any(
+        item.document_id == "cross-platform-creative-testing"
+        for item in result
+    )
+    creative_doc = next(
+        item for item in result
+        if item.document_id == "cross-platform-creative-testing"
+    )
+    assert "production capacity" in creative_doc.excerpt.lower()
+
+
+def test_builtin_wiki_retrieves_experiment_mde_and_multiple_comparison_limits():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    result = provider.query(
+        "A/B 实验 MDE statistical power p-value repeated looks "
+        "multiple comparisons practical significance",
+        limit=4,
+    )
+
+    assert any(
+        item.document_id == "advertising-experimentation-and-learning"
+        for item in result
+    )
+    experiment_doc = next(
+        item for item in result
+        if item.document_id == "advertising-experimentation-and-learning"
+    )
+    assert "多重比较" in experiment_doc.excerpt
+
+
+def test_builtin_wiki_retrieves_attribution_vs_incrementality_boundary():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    result = provider.query(
+        "MTA MMM platform-attributed conversions are not incremental lift "
+        "causal holdout",
+        limit=4,
+    )
+
+    assert any(
+        item.document_id == "cross-platform-measurement-attribution"
+        for item in result
+    )
+    attribution_doc = next(
+        item for item in result
+        if item.document_id == "cross-platform-measurement-attribution"
+    )
+    assert "MTA" in attribution_doc.excerpt
+
+
 def test_markdown_wiki_retrieves_the_matching_heading_from_long_documents(tmp_path):
     (tmp_path / "namespaces").mkdir()
     (tmp_path / "namespaces" / "bidding.md").write_text(

@@ -19,6 +19,8 @@ skills/
 │   └── dv360/SKILL.md
 ├── businesses/             # 业务 Skill：业务规则与适用渠道
 │   └── <business>/SKILL.md
+├── practices/              # 横切工作方法：策略、诊断、实验等 advisory Skills
+│   └── <practice>/SKILL.md
 └── cross-channel/          # 跨渠道 Skill：业务 SOP 与统一模型说明
     └── SKILL.md
 
@@ -45,6 +47,25 @@ Runtime 自动导入或执行；`workflow.yaml` 不是上传、编辑或执行�
 SKILL.md 的 frontmatter 只建议声明 Skill 身份和版本等元数据；专家知识、流程和
 安全边界使用自然语言 Markdown 编写。渠道 Tool、参数 schema 和 handler 不写入
 SKILL.md，而由对应 Tool Source 在 Registry 中注册。
+
+`practices/` 用于广告类型和渠道之外的可复用工作方法，例如创意策略与诊断。它们
+补充而不复制渠道 Skill、知识 Wiki 或 Tool contract；references 按请求相关性限量
+加载。没有对应注册 Tool 时，Skill 只能给出分析、草案或待查询项，不能暗示已取数、
+抓取外部素材、修改广告或执行自动化。
+
+## 已吸收的营销方法
+
+| 本地来源 | 系统落点 | 不导入的部分 |
+|---|---|---|
+| `ad-creative` 2.10.0 | `practices/creative-strategy` 与 Wiki 的创意路线图、Hook 漏斗诊断 | 生成素材的外部服务、抓取/上传脚本和特定平台规格副本 |
+| `ads` 2.4.6 | Wiki 的审计证据状态、覆盖率与建议安全边界 | 未取得对应报表时的固定审计清单与硬编码基准 |
+| `ab-testing` 2.0.1 | Wiki 的 MDE、样本/功效、提前停止与多重比较边界 | 将通用样本量表当作本项目统计计算结果 |
+| `attribution` 1.1.4 | Wiki 的 MTA、MMM、增量评估选择原则 | 未接入数据源时声称运行 GA4、CRM 或 MMM |
+| `analytics` 2.0.3 | 仅吸收适用于广告事件质量和测量口径的原则 | GA4/GTM 部署步骤；当前未注册对应执行 Tool 时不宣称可实施 |
+
+这些是本机读取到的来源包版本，用于追踪本次蒸馏输入，不代表远端最新版本或 Runtime
+插件版本。来源包中与已发布广告 Wiki 重合的基础内容不重复导入。上游 Skill 只作为
+知识来源，不会被当作可执行扩展；所有查询和变更仍须通过当前注册 Tool 与 Harness 门禁。
 
 ## 跨渠道 Campaign 管理
 

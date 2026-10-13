@@ -7,17 +7,17 @@ knowledge_type: best_practice
 category: diagnostics
 subcategory: evidence-driven-performance-diagnosis
 platform: all
-source: 跨平台广告测量与运营方法论
-source_ref: "internal://ad-agent/playbook/evidence-driven-performance-diagnosis"
-version: "1.0.0"
+source: 跨平台广告测量与运营方法论 + marketingskills audit guardrails
+source_ref: "https://github.com/coreyhaines31/marketingskills/blob/main/skills/ads/references/audit-guardrails.md"
+version: "1.1.0"
 confidence: 0.9
-updated_at: "2026-09-08"
+updated_at: "2026-10-13"
 tags: [diagnostics, evidence, funnel, marginal-efficiency, causal-inference, decision-card, cross-platform]
 status: published
 source_kind: "internal"
 authority: "operator"
 evidence_level: "provisional"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-13"
 ---
 
 # 广告效果证据驱动诊断与决策卡
@@ -37,6 +37,27 @@ last_verified_at: "2026-09-08"
 | causal | 是否有实验或准实验设计 | 表述增量结论 |
 
 缺少标签时，结论应明确降级为“待验证”。不能用图表有数据替代数据完整性，也不能用平台归因替代因果证据。
+
+## 审计健康度与证据覆盖率
+
+账户审计的每个适用检查必须标为以下一种状态：
+
+| 状态 | 含义 | 计分处理 |
+|---|---|---|
+| Pass | 已取得足够证据且检查通过 | 进入已核验项 |
+| Fail | 已取得足够证据且检查失败 | 进入已核验项 |
+| Unknown | 所需报表、权限、时间窗或来源不可用 | 降低覆盖率，不降低健康度 |
+| N/A | 该检查对当前账户或投放目标不适用 | 从分子、分母都排除 |
+
+健康度和证据覆盖率必须分开报告：
+
+- **健康度** = `Pass / (Pass + Fail)`，仅代表已核验的适用检查。
+- **证据覆盖率** = `(Pass + Fail) / 全部适用检查`；Unknown 留在分母，N/A 不计入。
+- 已知来源访问失败、授权失败或查询失败时，不得将该平台或数据源当作 0 分并混入汇总。
+
+本项目的默认呈现规则是：覆盖率至少 80% 才给出完整健康分；60%–79% 标为暂定并列明未知项；低于 60% 只报告已确认发现和缺失证据，不给单一健康分。这些比例是审计报告的呈现约定，不是平台标准或跨行业基准。没有搜索词、Pixel/CAPI、商品源或转化报表证据时，应标 Unknown 并指出需要的具体来源，不能据经验猜 Fail。
+
+分数衡量已观察到的健康检查结果，不衡量 Agent 拿到多少数据。回答前应先说明适用检查数量、已核验数量、覆盖率，以及被排除的 N/A 项。
 
 ## 统一指标口径
 
@@ -112,6 +133,8 @@ last_verified_at: "2026-09-08"
 
 不要把“平台报告显示”写成“广告造成”；不要把“单日变化”写成“策略失效”；不要把“接口成功”写成“线上生效”。
 
+固定 CPA 倍数、跨目标预算比率和宽泛行业基准都不能单独触发暂停或打分。先核对样本量、转化延迟、目标、毛利、学习状态和适用人群；阈值只能作为待验证的预警信号。
+
 ## Agent 输出模板
 
 ```text
@@ -125,3 +148,8 @@ last_verified_at: "2026-09-08"
 ```
 
 涉及写入时只生成 dry-run 计划；真实 live 执行仍必须经过账户范围、权限、测试白名单、确认、幂等和审计门禁。知识库不能替代当前 Tool schema。
+
+方法参考：本审计状态模型与证据覆盖率的呈现原则参考并重新表述自
+[marketingskills 的 ads audit guardrails](https://github.com/coreyhaines31/marketingskills/blob/main/skills/ads/references/audit-guardrails.md)；
+该上游文件另行注明部分原则源自 claude-ads。此处的覆盖率区间是本项目的报告约定，
+不是广告平台官方规则。

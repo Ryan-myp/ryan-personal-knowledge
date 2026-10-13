@@ -28,11 +28,15 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
 
     assert {item["skill_name"] for item in items} >= {
         "google-ads-api-expert", "meta-marketing-api-expert", "tiktok-ads-expert",
+        "creative-strategy",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.0")
     assert detail["files"]["SKILL.md"]["encoding"] == "base64"
     assert detail["location"] == "channels/google-ads"
+    creative = catalog.get_version("creative-strategy", "1.0.0")
+    assert creative["location"] == "practices/creative-strategy"
+    assert "references/creative-roadmap.md" in creative["files"]
 
 
 def _files(name="business-growth"):
@@ -99,6 +103,32 @@ def test_channel_skill_body_is_available_to_model_context():
                 [tool],
             )
             assert marker in selection.expert_knowledge, platform
+    finally:
+        runtime.close(wait=True)
+
+
+def test_builtin_creative_strategy_is_context_only_and_uses_relevant_references():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        skill = runtime.skill_loader.get("creative-strategy")
+        assert skill is not None
+        assert skill.get_tools() == []
+
+        context = runtime.tool_selector._triggered_skill_context(
+            "制定广告创意路线图，按账户证据排序并规划制作产能"
+        )
+
+        assert "[skill guidance: creative-strategy]" in context
+        assert "references/creative-roadmap.md" in context
+        assert "production capacity" in context.lower()
+        assert "不会新增 Tool、权限或账户范围" in context
+
+        hook_context = runtime.tool_selector._triggered_skill_context(
+            "帮我诊断广告 Hook 和前三秒留存为什么下降"
+        )
+
+        assert "[skill guidance: creative-strategy]" in hook_context
+        assert "references/hook-diagnosis.md" in hook_context
     finally:
         runtime.close(wait=True)
 

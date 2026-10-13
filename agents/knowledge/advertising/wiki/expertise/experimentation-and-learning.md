@@ -5,17 +5,17 @@ title: 广告实验设计、学习期与放量方法
 layer: experience
 knowledge_type: best_practice
 platform: all
-source: 广告实验方法论 + 四渠道运营 Skill
-source_ref: "agents/skills/advertising/channels/*/SKILL.md"
-version: "1.0.0"
+source: 广告实验方法论 + 四渠道运营 Skill + marketingskills ab-testing
+source_ref: "https://github.com/coreyhaines31/marketingskills/blob/main/skills/ab-testing/references/sample-size-guide.md"
+version: "1.1.0"
 confidence: 0.82
-updated_at: "2026-09-08"
+updated_at: "2026-10-13"
 tags: [experiment, learning-phase, hypothesis, holdout, scaling, statistics]
 status: published
 source_kind: "code"
 authority: "repository"
 evidence_level: "reviewed"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-13"
 ---
 
 # 广告实验设计、学习期与放量方法
@@ -46,4 +46,18 @@ last_verified_at: "2026-09-08"
 
 实验开始前写明最小可检测差异、预期基线、显著性或不确定性口径、实验单位、分流比例、运行周期和停止条件。不要每小时查看并在偶然领先时停止；如果有强烈业务风险，可提前停止，但要标记为安全停止而非统计胜出。
 
+### 统计结论的解释边界
+
+- **MDE（最小可检测差异）**应是业务上值得采取行动的最小差异，不是为了更容易显著而事后调大的数字。样本规划要匹配目标指标、基线率、随机化单位、分流比例、显著性水平、统计功效和预期窗口。
+- **统计显著**不等于效果足够大或值得投入；同时报告效果量和置信区间，并与 MDE、毛利/质量等业务护栏比较。
+- **p 值不是“结果纯属偶然的概率”**，也不表示零假设为真的概率。多变体、多指标或重复查看结果会增加误报；分析前要限定主指标/比较，采用有控制的序贯方案或适当的多重比较处理。
+- 达到预先约定的样本/停止条件之前，不因短期领先就提前宣布胜出。因政策、成本或业务风险提前停止时，标成安全停止/无结论，而不是统计胜出。
+- 若流量不足以检测有业务意义的差异，应明确报告功效不足，改用更大的 MDE、减少变体、延长测试或采用定性/探索性学习；不得用低样本的名次制造确定性。
+
 当不能做随机实验时，使用匹配市场、Geo、时间序列或分层前后对比，并列出季节、促销、库存、价格、版本和媒体竞争等混杂因素。实验结束保留原始分组、变更日志和未成熟数据，防止只保存结论不保存证据。
+
+本节是决策纪律，不提供固定样本量表或统计计算器。实际设计应按指标分布和随机化单位使用经验证的方法；用户没有提供基线、MDE、分配和样本信息时，先说明不能可靠判断，不要臆造样本门槛。
+
+方法参考：统计解释、重复观察和多重比较的边界参考并重新表述自本地
+[marketingskills sample-size guide](https://github.com/coreyhaines31/marketingskills/blob/main/skills/ab-testing/references/sample-size-guide.md)；
+此处不复制固定样本量表，不替代统计分析或平台实验能力。
