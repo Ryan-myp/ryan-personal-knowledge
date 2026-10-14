@@ -171,11 +171,13 @@ class ParameterSelectionService:
         platform: str,
         target_tool_name: Optional[str] = None,
         target_field: Optional[str] = None,
+        query: Optional[str] = None,
     ) -> ToolResult:
         if not result.success or not isinstance(result.data, dict):
             return result
         if str(result.data.get("data_status", "")).lower() != "live":
             return result
+        search = str(query or "").strip().casefold()
         selections: list[dict[str, Any]] = []
         for target_tool, field_name, field_schema in self._lookup_targets_for_tool(
             tool_def.name
@@ -225,6 +227,10 @@ class ParameterSelectionService:
                 if extracted is None:
                     continue
                 value, label = extracted
+                if search and not any(
+                    search in str(part).casefold() for part in (value, label)
+                ):
+                    continue
                 identity = json.dumps(
                     value, ensure_ascii=False, sort_keys=True, default=str,
                 )

@@ -1128,7 +1128,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             },
         }
 
-    def list_conversion_actions(self, page_size: int = 100) -> list[dict]:
+    def list_conversion_actions(
+        self, page_size: int = 100, conversion_action_id: str = None,
+    ) -> list[dict]:
         """List conversion actions configured for the selected customer."""
         query = (
             "SELECT conversion_action.id, conversion_action.resource_name, "
@@ -1142,6 +1144,18 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "conversion_action.value_settings.always_use_default_value "
             "FROM conversion_action"
         )
+        if conversion_action_id not in (None, ""):
+            resource = re.fullmatch(
+                r"customers/([0-9]+)/conversionActions/([0-9]+)",
+                str(conversion_action_id).strip(),
+            )
+            if resource and resource.group(1) != str(self.customer_id):
+                raise ValueError("Conversion Action does not belong to the selected customer")
+            identifier = self._numeric_id(
+                resource.group(2) if resource else conversion_action_id,
+                "conversion_action_id",
+            )
+            query += f" WHERE conversion_action.id = {identifier}"
         return [
             self._normalize_conversion_action(row)
             for row in self._search_all(query, page_size=page_size)
@@ -2584,6 +2598,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         parent_filter_id: str = None,
         webpage_conditions: list[dict[str, Any]] = None,
         retail_filter_shared_set: str = None,
+        live: bool = False,
     ) -> str:
         """Create one node in a PMax AssetGroup listing filter tree.
 
@@ -2664,6 +2679,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
             payload["caseValue"] = case_value
         if parent_resource is not None:
             payload["parentListingGroupFilter"] = parent_resource
+        if live:
+            parent = self.get_asset_group(str(asset_group).rsplit("/", 1)[-1])
+            if str(parent.get("status") or "").upper() != "PAUSED":
+                raise ValueError("Google listing filter creation requires a PAUSED parent Asset Group")
         response = self._mutate(
             "assetGroupListingGroupFilters", {"create": payload}
         )
@@ -3404,7 +3423,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "asset.final_mobile_urls FROM asset"
         )
         if asset_id not in (None, ""):
-            numeric_asset_id = self._numeric_id(asset_id, "asset_id")
+            resource = re.fullmatch(
+                r"customers/([0-9]+)/assets/([0-9]+)", str(asset_id).strip(),
+            )
+            if resource and resource.group(1) != str(scoped.customer_id):
+                raise ValueError("Asset resource name does not belong to the selected customer")
+            numeric_asset_id = self._numeric_id(
+                resource.group(2) if resource else asset_id, "asset_id",
+            )
             query += f" WHERE asset.id = {numeric_asset_id}"
         return [
             scoped._normalize_asset(row)
@@ -4962,7 +4988,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         status = str(status or "PAUSED").upper()
         if status != "PAUSED":
             raise ValueError("App Ad creation must request PAUSED status")
-        provider_status = "ENABLED"
+        provider_status = status
         delivery_guard = {
             "resource": "ad_group",
             "required_status": "PAUSED",

@@ -675,6 +675,7 @@ def google_selective_optimization_schema() -> dict[str, Any]:
             minItems=1, items={"type": "string", "minLength": 1},
             lookup_tool="google_list_conversion_actions",
             lookup_result_key="conversion_actions",
+            lookup_query_field="conversion_action_id",
             selection_value_fields=["resource_name", "conversion_action_id", "id"],
             selection_label_fields=["name", "resource_name", "id"],
         ),
@@ -1201,7 +1202,7 @@ def google_app_ad_schema() -> dict[str, Any]:
             "html5_media_bundles": bundle_assets,
             "status": _field(
                 "string",
-                "Requested state; App Ads require an ENABLED ad under a PAUSED Ad Group",
+                "Submit PAUSED unchanged; provider rejection must not enable the ad",
                 enum=["PAUSED"],
                 default="PAUSED",
             ),

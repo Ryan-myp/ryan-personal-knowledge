@@ -534,7 +534,7 @@ def test_meta_objective_cascade_resolves_optimization_and_billing_options():
 
     result = runtime.evaluate_creation_blueprint(
         "meta.conversion_link",
-        {"campaign.objective": "OUTCOME_CONVERSIONS"},
+        {"campaign.objective": "OUTCOME_SALES"},
     )
     states = {item["path"]: item for item in result["fields"]}
     assert states["ad_set.optimization_goal"]["options"] == [
@@ -546,7 +546,7 @@ def test_meta_objective_cascade_resolves_optimization_and_billing_options():
     result = runtime.evaluate_creation_blueprint(
         "meta.conversion_link",
         {
-            "campaign.objective": "OUTCOME_CONVERSIONS",
+            "campaign.objective": "OUTCOME_SALES",
             "ad_set.optimization_goal": "OFFSITE_CONVERSIONS",
         },
     )
@@ -569,7 +569,7 @@ def test_meta_blueprint_lookup_declarations_are_carried_to_creation_card():
     conversion_intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
         scoped_parameters={"meta": {
-            "objective": "OUTCOME_CONVERSIONS",
+            "objective": "OUTCOME_SALES",
             "optimization_goal": "OFFSITE_CONVERSIONS",
         }},
     )
@@ -873,7 +873,7 @@ def test_meta_nested_targeting_and_app_event_guidance_are_renderable():
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
         scoped_parameters={"meta": {
-            "objective": "OUTCOME_CONVERSIONS",
+            "objective": "OUTCOME_SALES",
             "optimization_goal": "OFFSITE_CONVERSIONS",
         }},
     )
@@ -893,7 +893,7 @@ def test_creation_contracts_expose_provider_resource_sources_and_fixed_placement
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
-        scoped_parameters={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
+        scoped_parameters={"meta": {"objective": "OUTCOME_SALES"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     targeting = next(item for item in card["fields"] if item["path"] == "ad_set.targeting")
@@ -918,7 +918,7 @@ def test_provider_and_blueprint_visibility_conditions_are_deduplicated():
     runtime.register_tool_source(create_meta_tool_source())
     intent = ParsedIntent(
         "create_campaign", "创建 Meta 转化广告", ["meta"],
-        scoped_parameters={"meta": {"objective": "OUTCOME_CONVERSIONS"}},
+        scoped_parameters={"meta": {"objective": "OUTCOME_SALES"}},
     )
     card = runtime.build_creation_ui(intent)["cards"][0]
     visibility = next(
@@ -1138,7 +1138,9 @@ def test_creation_follow_up_adopts_persisted_selector_and_then_shows_full_form()
         user_id="test-user",
         account_id="test-account",
         creation_blueprint_id="tiktok.traffic_video",
-        creation_blueprint_version="3.0.0",
+        creation_blueprint_version=runtime.creation_blueprints.get(
+            "tiktok.traffic_video"
+        ).version,
     )
 
     assert first["ui"]["cards"][0]["type"] == "ad_creation_selector"
@@ -2267,7 +2269,10 @@ def test_google_template_schema_changes_publish_contract_version_1_5():
             "google_create_shopping_product_ad",
         ):
             definition, _handler = runtime.registry.get(tool_name)
-            assert definition.contract_version == "1.5.0"
+            assert definition.contract_version == (
+                "1.5.1" if tool_name in {"google_create_campaign", "google_create_app_ad"}
+                else "1.5.0"
+            )
     finally:
         runtime.close(wait=True)
 

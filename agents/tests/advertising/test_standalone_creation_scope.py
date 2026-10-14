@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import pytest
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolDefinition, ToolSchema
 from agents.applications.advertising.execution.ad_tool_interaction import (
     AdvertisingToolInteractionProvider,
@@ -161,6 +162,58 @@ def test_template_and_structured_values_override_model_tool_suggestions():
         "daily_budget": 12,
         "bidding_strategy": "MAXIMIZE_CLICKS",
         "campaign_id": "from-parent-tool",
+    }
+
+
+@pytest.mark.parametrize("error_key", ["_selection_errors", "_unknown_params"])
+def test_selected_template_does_not_discard_input_builder_validation_errors(error_key):
+    context = _context({"creation_blueprint_id": "example.standard"})
+    context.request.session_id = "validation-session"
+    runtime = SimpleNamespace(
+        _sessions={},
+        input_builder=SimpleNamespace(
+            build=lambda *_: {"name": "QA_campaign", error_key: ["invalid-input"]},
+        ),
+    )
+    interaction = AdvertisingToolInteractionProvider(runtime)
+    interaction._intent = lambda *_: (
+        ParsedIntent("create_campaign", "create", ["example"]), {}, context.request.context,
+    )
+    with pytest.raises(ValueError, match="invalid-input"):
+        interaction.resolve_tool_arguments(context)
+
+
+def test_template_arguments_preserve_declared_parent_and_related_resource_bindings():
+    definition = ToolDefinition(
+        name="example_create_ad", namespace="example", skill="example", description="Create ad",
+        action="create", resource_type="ad", parent_resource_type="ad_group",
+        parent_resource_id_field="adgroup_id", related_resource_type="campaign",
+        related_resource_id_fields=["campaign_id"],
+        input_schema=ToolSchema(properties={
+            "name": {"type": "string"}, "campaign_id": {"type": "string"},
+            "adgroup_id": {"type": "string"},
+        }),
+    )
+    context = SimpleNamespace(
+        request=SimpleNamespace(
+            session_id="chain", context={"creation_blueprint_id": "example.chain"},
+        ),
+        tool_definition=definition,
+        tool_call=SimpleNamespace(arguments={
+            "campaign_id": "created-campaign", "adgroup_id": "created-group",
+            "name": "model-name", "undeclared_id": "must-not-survive",
+        }),
+    )
+    runtime = SimpleNamespace(
+        _sessions={},
+        input_builder=SimpleNamespace(build=lambda *_: {"name": "template-name"}),
+    )
+    interaction = AdvertisingToolInteractionProvider(runtime)
+    interaction._intent = lambda *_: (
+        ParsedIntent("create_campaign", "create", ["example"]), {}, context.request.context,
+    )
+    assert interaction.resolve_tool_arguments(context) == {
+        "name": "template-name", "campaign_id": "created-campaign", "adgroup_id": "created-group",
     }
 
 

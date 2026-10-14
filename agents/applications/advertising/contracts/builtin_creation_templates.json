@@ -25,11 +25,22 @@
         "campaign.objective": "OUTCOME_TRAFFIC",
         "campaign.special_ad_categories": ["NONE"],
         "campaign.buying_type": "AUCTION",
+        "campaign.status": "PAUSED",
+        "ad_set.name": "Template Traffic Ad Set",
+        "ad_set.status": "PAUSED",
+        "ad_set.targeting": {"geo_locations": {"countries": ["US"]}, "age_min": 18, "age_max": 65, "targeting_automation": {"advantage_audience": 1}},
         "ad_set.optimization_goal": "LANDING_PAGE_VIEWS",
         "ad_set.billing_event": "IMPRESSIONS",
         "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
         "ad.page_id": "1266166123254225",
-        "ad.media_type": "IMAGE"
+        "ad.media_type": "IMAGE",
+        "ad.name": "Template Traffic Ad",
+        "ad.status": "PAUSED",
+        "ad.link": "https://example.com/",
+        "ad.image_hash": "b707bf6d5750b95dcd78775d971655b7",
+        "ad.message": "Test account traffic creative",
+        "ad.headline": "Test account traffic",
+        "ad.call_to_action_type": "LEARN_MORE"
       }
     },
     {
@@ -58,9 +69,23 @@
         "campaign.objective": "OUTCOME_SALES",
         "campaign.special_ad_categories": ["NONE"],
         "campaign.buying_type": "AUCTION",
-        "ad_set.optimization_goal": "VALUE",
+        "campaign.status": "PAUSED",
+        "campaign.catalog_id": "584715368753247",
+        "ad_set.name": "Template Catalog Ad Set",
+        "ad_set.status": "PAUSED",
+        "ad_set.targeting": {"geo_locations": {"countries": ["SG"]}, "age_min": 18, "age_max": 65},
+        "ad_set.product_set_id": "720759025118418",
+        "ad_set.promoted_object": {"product_set_id": "720759025118418", "custom_event_type": "PURCHASE"},
+        "ad_set.optimization_goal": "OFFSITE_CONVERSIONS",
         "ad_set.billing_event": "IMPRESSIONS",
-        "ad.ad_style": "CAROUSEL"
+        "ad.ad_style": "CAROUSEL",
+        "ad.name": "Template Catalog Ad",
+        "ad.status": "PAUSED",
+        "ad.page_id": "1266166123254225",
+        "ad.product_set_id": "720759025118418",
+        "ad.link": "https://shopee.sg/",
+        "ad.message": "Test account catalog creative",
+        "ad.call_to_action_type": "SHOP_NOW"
       }
     },
     {
@@ -69,7 +94,7 @@
       "description": "Meta 网站转化广告基线。转化对象、事件、定向和素材需从当前测试账户已配置资源中选择。",
       "provider": "meta",
       "blueprint_id": "meta.conversion_link",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "link_conversion",
       "account_id": "2806375919473667",
       "verification_status": "provider_limited",
@@ -85,11 +110,26 @@
       ],
       "tags": ["内置", "测试账号", "Meta", "转化", "待账户资源核验"],
       "values": {
-        "campaign.objective": "OUTCOME_CONVERSIONS",
+        "campaign.objective": "OUTCOME_SALES",
+        "campaign.special_ad_categories": ["NONE"],
         "campaign.buying_type": "AUCTION",
+        "campaign.status": "PAUSED",
+        "ad_set.name": "Template Conversion Ad Set",
+        "ad_set.status": "PAUSED",
+        "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad_set.targeting": {"geo_locations": {"countries": ["SG"]}, "age_min": 25, "age_max": 60},
+        "ad_set.promoted_object": {"pixel_id": "815121266900148", "custom_event_type": "PURCHASE"},
         "ad_set.optimization_goal": "OFFSITE_CONVERSIONS",
         "ad_set.billing_event": "IMPRESSIONS",
-        "ad.media_type": "IMAGE"
+        "ad.media_type": "IMAGE",
+        "ad.name": "Template Conversion Ad",
+        "ad.status": "PAUSED",
+        "ad.page_id": "1266166123254225",
+        "ad.link": "https://example.com/",
+        "ad.image_hash": "b707bf6d5750b95dcd78775d971655b7",
+        "ad.message": "Test account conversion creative",
+        "ad.headline": "Test account conversion",
+        "ad.call_to_action_type": "SHOP_NOW"
       }
     },
     {
@@ -121,10 +161,24 @@
         "campaign.objective": "OUTCOME_APP_PROMOTION",
         "campaign.special_ad_categories": ["NONE"],
         "campaign.buying_type": "AUCTION",
+        "campaign.status": "PAUSED",
+        "ad_set.name": "Template App Ad Set",
+        "ad_set.status": "PAUSED",
+        "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad_set.targeting": {"geo_locations": {"countries": ["SG"]}, "age_min": 21, "age_max": 65, "user_os": ["Android"]},
+        "ad_set.promoted_object.application_id": "1574354049466790",
+        "ad_set.promoted_object.object_store_url": "http://play.google.com/store/apps/details?id=com.shopee.sg",
         "ad_set.optimization_goal": "APP_INSTALLS",
         "ad_set.billing_event": "IMPRESSIONS",
         "ad.media_type": "IMAGE",
-        "ad.status": "PAUSED"
+        "ad.status": "PAUSED",
+        "ad.name": "Template App Ad",
+        "ad.page_id": "1266166123254225",
+        "ad.application_id": "1574354049466790",
+        "ad.object_store_url": "http://play.google.com/store/apps/details?id=com.shopee.sg",
+        "ad.image_hash": "b707bf6d5750b95dcd78775d971655b7",
+        "ad.message": "Test account app install creative",
+        "ad.headline": "Test account app install"
       }
     },
     {
@@ -137,7 +191,7 @@
       "ad_format": "PERFORMANCE_MAX",
       "account_id": "9055507554",
       "verification_status": "live_verified_with_provider_limits",
-      "verified_scope": "测试账号 9055507554 live E2E：Campaign、预算、Asset Group、10 个 AssetGroupAsset 和 UNIT_INCLUDED 商品过滤器均创建并按 ID 回读；Campaign/Asset Group 为 PAUSED，素材当前处于 Google 审核态 NOT_ELIGIBLE。google_list_campaign_criteria live 回读到 4 条 ENABLED 设备定向：DESKTOP、MOBILE、TABLET、CONNECTED_TV；未返回地域、语言或受众条件。",
+      "verified_scope": "2026-10-14 测试账号 9055507554 对话 E2E：全新会话选择内置模板，仅覆盖名称、预算和排期，经签名确认创建 Campaign、Asset Group、10 个 AssetGroupAsset 和 UNIT_INCLUDED 商品过滤器并按 ID 回读；Campaign/Asset Group 为 PAUSED。另验证失败会话只补齐过滤器，不重复创建父资源。素材回读为 NOT_ELIGIBLE，不能据此声称审核通过。历史 google_list_campaign_criteria 回读到 DESKTOP、MOBILE、TABLET、CONNECTED_TV 设备定向；未返回地域、语言或受众条件。",
       "required_inputs": [
         "广告系列名称",
         "投放开始日期",
@@ -234,15 +288,15 @@
       "blueprint_version": "1.1.0",
       "ad_format": "APP",
       "account_id": "9055507554",
-      "verification_status": "live_verified_with_provider_limits",
-      "verified_scope": "测试账号 9055507554 live E2E：Campaign、预算、App Ad Group 和 App Ad 均创建并按 ID 回读；Campaign/Ad Group 为 PAUSED。Google App Ad 实际状态为 ENABLED，但父 Ad Group 保持 PAUSED，因此不会投放。App ID、转化目标、文案和图片来自该账户现存资源。google_list_campaign_criteria live 回读到 3 条 ENABLED 设备定向：DESKTOP、MOBILE、TABLET；未返回地域、语言或受众条件。",
+      "verification_status": "partial_live_verified",
+      "verified_scope": "2026-10-14 测试账号 9055507554 对话 E2E：模板转化目标、素材查询成功，签名确认后创建 Campaign 和 App Ad Group 并回读为 PAUSED。App Ad 按请求提交 PAUSED，真实 Google API 返回 HTTP 400 / adGroupAdError：Cannot pause an adgroup ad with this ad type.；本轮 Ad 未创建成功，未重试为 ENABLED。历史 ENABLED App Ad 不能作为全层级 PAUSED 创建通过证据。App ID、转化目标、文案和图片来自该账户现存资源。历史 google_list_campaign_criteria 回读到 DESKTOP、MOBILE、TABLET 设备定向；未返回地域、语言或受众条件。",
       "required_inputs": [
         "广告系列名称",
         "投放开始日期",
         "投放结束日期",
         "日预算"
       ],
-      "tags": ["内置", "测试账号", "Google Ads", "App", "已实测", "App Ad 需父级暂停"],
+      "tags": ["内置", "测试账号", "Google Ads", "App", "部分验证", "渠道拒绝暂停 App Ad"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.campaign_type": "APP",
@@ -298,6 +352,7 @@
         "campaign.sales_destination": "WEBSITE",
         "campaign.operation_status": "DISABLE",
         "ad_group.promotion_type": "WEBSITE",
+        "ad_group.adgroup_name": "Template Traffic Ad Group",
         "ad_group.operation_status": "DISABLE",
         "ad_group.location_ids": ["1880251"],
         "ad_group.budget_mode": "BUDGET_MODE_TOTAL",
@@ -308,6 +363,7 @@
         "ad_group.gender": "GENDER_UNLIMITED",
         "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"],
         "ad.ad_format": "SINGLE_VIDEO",
+        "ad.ad_name": "Template Traffic Ad",
         "ad.operation_status": "DISABLE",
         "ad.video_id": "v10033g50000d8nltv7og65nd6868v7g",
         "ad.identity_type": "BC_AUTH_TT",
@@ -379,6 +435,7 @@
         "campaign.campaign_type": "REGULAR_CAMPAIGN",
         "campaign.operation_status": "DISABLE",
         "ad_group.promotion_type": "CATALOG",
+        "ad_group.adgroup_name": "Template Product Sales Ad Group",
         "ad_group.optimization_goal": "CLICK",
         "ad_group.catalog_id": "6964618698963289858",
         "ad_group.product_set_id": "3229",
@@ -396,6 +453,7 @@
         "ad.identity_type": "BC_AUTH_TT",
         "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d",
         "ad.ad_text": "Explore our featured products.",
+        "ad.ad_name": "Template Product Sales Ad",
         "ad.call_to_action": "SHOP_NOW"
       }
     },
@@ -420,6 +478,7 @@
         "campaign.campaign_type": "REGULAR_CAMPAIGN",
         "campaign.operation_status": "DISABLE",
         "ad_group.promotion_type": "APP_ANDROID",
+        "ad_group.adgroup_name": "Template App Ad Group",
         "ad_group.app_id": "6816285226570924038",
         "ad_group.optimization_goal": "INSTALL",
         "ad_group.location_ids": ["1880251"],
@@ -438,6 +497,7 @@
         "ad.identity_type": "BC_AUTH_TT",
         "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d",
         "ad.ad_text": "Install the app to explore more.",
+        "ad.ad_name": "Template App Ad",
         "ad.call_to_action": "INSTALL_NOW"
       }
     },

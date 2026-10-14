@@ -7,7 +7,7 @@ from typing import Any
 
 META_OBJECTIVES = [
     "OUTCOME_SALES", "OUTCOME_LEADS", "OUTCOME_TRAFFIC", "OUTCOME_AWARENESS",
-    "OUTCOME_ENGAGEMENT", "OUTCOME_APP_PROMOTION", "OUTCOME_CONVERSIONS",
+    "OUTCOME_ENGAGEMENT", "OUTCOME_APP_PROMOTION",
     "OUTCOME_MESSAGES", "APP_INSTALLS",
     "PRODUCT_CATALOG_SALES", "CONVERSIONS", "TRAFFIC", "LINK_CLICKS",
 ]
@@ -854,13 +854,12 @@ def meta_campaign_schema() -> dict[str, Any]:
             "objective": _field(
                 "string", "Campaign objective", enum=META_OBJECTIVES,
                 option_aliases={
-                    "OUTCOME_SALES": ["sales campaign", "product sales", "销售广告", "商品销售"],
+                    "OUTCOME_SALES": ["sales campaign", "product sales", "销售广告", "商品销售", "conversion campaign", "转化广告", "网站转化"],
                     "OUTCOME_LEADS": ["lead generation", "lead gen", "潜在客户", "线索获客"],
                     "OUTCOME_TRAFFIC": ["traffic campaign", "website traffic", "流量广告", "网站流量"],
                     "OUTCOME_AWARENESS": ["brand awareness", "awareness campaign", "品牌曝光", "品牌认知"],
                     "OUTCOME_ENGAGEMENT": ["engagement campaign", "互动广告"],
                     "OUTCOME_APP_PROMOTION": ["app promotion", "app conversion", "app install", "App 转化", "App 广告", "应用推广", "应用转化"],
-                    "OUTCOME_CONVERSIONS": ["conversion campaign", "转化广告", "网站转化"],
                     "OUTCOME_MESSAGES": ["messaging campaign", "message ads", "消息广告", "私信广告"],
                     "PRODUCT_CATALOG_SALES": ["catalog sales", "catalog ad", "商品目录销售", "目录广告"],
                 },
@@ -911,7 +910,7 @@ def meta_campaign_schema() -> dict[str, Any]:
                         ["id", "pixel_id"], ["name", "id"],
                     ),
                 }, "Meta conversion specification", additional_properties=True),
-                **_ui_when("objective", "OUTCOME_CONVERSIONS", "CONVERSIONS"),
+                **_ui_when("objective", "OUTCOME_SALES", "CONVERSIONS"),
             ),
             "messaging_apps": _field(
                 "array", "Messaging destinations", items={"type": "string", "enum": ["MESSENGER", "WHATSAPP", "INSTAGRAM_DIRECT"]},
@@ -1531,7 +1530,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "coverage": "partial_dry_run",
             "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_conversion_ad"],
             "dependencies": ["promoted_object", "conversion_specs", "pixel_or_capi"],
-            "supported_fields": ["OUTCOME_CONVERSIONS", "OFFSITE_CONVERSIONS", "CONVERSIONS", "promoted_object"],
+            "supported_fields": ["OUTCOME_SALES", "OFFSITE_CONVERSIONS", "CONVERSIONS", "promoted_object"],
             "gaps": ["conversion event lookup/validation"],
             "source_document": source_document,
         },

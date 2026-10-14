@@ -236,6 +236,13 @@ class AdvertisingToolInteractionProvider:
             namespace,
             session_context,
         )
+        validation_errors = [
+            str(error)
+            for key in ("_selection_errors", "_unknown_params")
+            for error in (resolved or {}).get(key, ())
+        ]
+        if validation_errors:
+            raise ValueError("创建参数校验失败：" + "；".join(validation_errors[:10]))
         properties = getattr(
             getattr(definition, "input_schema", None), "properties", {},
         ) or {}
@@ -253,8 +260,12 @@ class AdvertisingToolInteractionProvider:
             )
             if callable(resolver):
                 parent_field = str(resolver(definition) or "")
-        if parent_field in properties and parent_field in original:
-            effective.setdefault(parent_field, original[parent_field])
+        reference_fields = [parent_field, *(
+            getattr(definition, "related_resource_id_fields", ()) or ()
+        )]
+        for field in reference_fields:
+            if field in properties and field in original:
+                effective.setdefault(field, original[field])
         return effective
 
     def _creation_ui(

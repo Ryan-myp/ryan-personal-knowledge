@@ -1464,7 +1464,7 @@ class MetaAPIClient(BasePlatformClient):
             'TRAFFIC', 'LINK_CLICKS', 'OUTCOME_SALES', 
             'OUTCOME_APP_PROMOTION', 'OUTCOME_TRAFFIC',
             'OUTCOME_AWARENESS', 'OUTCOME_LEADS', 'OUTCOME_ENGAGEMENT',
-            'OUTCOME_CONVERSIONS', 'OUTCOME_MESSAGES'
+            'OUTCOME_MESSAGES'
         ]
         objective = campaign.get('objective', 'OUTCOME_SALES')
         if objective not in valid_objectives:

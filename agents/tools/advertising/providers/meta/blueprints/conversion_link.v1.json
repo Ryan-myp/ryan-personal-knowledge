@@ -1,6 +1,6 @@
 {
   "id": "meta.conversion_link",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "provider": "meta",
   "ad_format": "link_conversion",
   "title": "Meta 转化链接广告",
@@ -9,10 +9,10 @@
   "selector": {
     "dimension": "objective",
     "field": "campaign.objective",
-    "values": ["OUTCOME_CONVERSIONS", "CONVERSIONS"],
+    "values": ["OUTCOME_SALES", "CONVERSIONS"],
     "label": "Meta 推广目标",
     "options": [
-      {"value": "OUTCOME_CONVERSIONS", "label": "转化"},
+      {"value": "OUTCOME_SALES", "label": "网站销售转化"},
       {"value": "CONVERSIONS", "label": "网站转化（旧目标）"}
     ]
   },
@@ -20,11 +20,12 @@
   "resources": ["campaign", "ad_set", "ad"],
   "fields": [
     {"path": "campaign.name", "tool_ref": "meta_create_campaign.name", "label": "Campaign 名称", "required": true},
-    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["OUTCOME_CONVERSIONS", "CONVERSIONS"], "presentation": "derived_readonly"},
+    {"path": "campaign.objective", "tool_ref": "meta_create_campaign.objective", "label": "推广目标（已根据入口匹配）", "required": true, "source": "enum", "options": ["OUTCOME_SALES", "CONVERSIONS"], "presentation": "derived_readonly"},
+    {"path": "campaign.special_ad_categories", "tool_ref": "meta_create_campaign.special_ad_categories", "label": "特殊广告类别", "required": true, "source": "enum"},
     {"path": "campaign.buying_type", "tool_ref": "meta_create_campaign.buying_type", "label": "购买类型", "required": true, "source": "enum"},
     {"path": "campaign.daily_budget", "tool_ref": "meta_create_campaign.daily_budget", "label": "日预算", "required": true},
     {"path": "ad_set.name", "tool_ref": "meta_create_adset.name", "label": "广告组名称", "required": true},
-    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "description": "只展示当前推广目标支持的优化方式。", "required": true, "source": "enum", "options_from": ["campaign.objective"], "option_rules": [{"when": {"field": "campaign.objective", "in": ["OUTCOME_CONVERSIONS", "CONVERSIONS"]}, "options": ["OFFSITE_CONVERSIONS", "CONVERSIONS"]}], "option_labels": {"OFFSITE_CONVERSIONS": "网站转化", "CONVERSIONS": "转化事件"}},
+    {"path": "ad_set.optimization_goal", "tool_ref": "meta_create_adset.optimization_goal", "label": "优化目标", "description": "只展示当前推广目标支持的优化方式。", "required": true, "source": "enum", "options_from": ["campaign.objective"], "option_rules": [{"when": {"field": "campaign.objective", "in": ["OUTCOME_SALES", "CONVERSIONS"]}, "options": ["OFFSITE_CONVERSIONS", "CONVERSIONS"]}], "option_labels": {"OFFSITE_CONVERSIONS": "网站转化", "CONVERSIONS": "转化事件"}},
     {"path": "ad_set.billing_event", "tool_ref": "meta_create_adset.billing_event", "label": "计费事件", "description": "计费事件会随优化目标自动收敛到可用选项。", "required": true, "source": "enum", "options_from": ["ad_set.optimization_goal"], "option_rules": [{"when": {"field": "ad_set.optimization_goal", "in": ["OFFSITE_CONVERSIONS", "CONVERSIONS"]}, "options": ["IMPRESSIONS"]}], "option_labels": {"IMPRESSIONS": "展示（按展示计费）"}},
     {"path": "ad_set.targeting", "tool_ref": "meta_create_adset.targeting", "label": "定向", "required": true},
     {

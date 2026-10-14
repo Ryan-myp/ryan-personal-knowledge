@@ -257,6 +257,7 @@ class AdCreationContractServicesMixin:
             definition, result, session.ctx, actual_platform,
             target_tool_name=tool_name,
             target_field=field,
+            query=query if not query_field else None,
         )
         result = self.security.enforce_result_limit(result, definition)
         if not result.success:

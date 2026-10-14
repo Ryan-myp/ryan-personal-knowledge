@@ -525,6 +525,95 @@ def test_chat_forwards_template_without_selecting_the_full_blueprint(
     assert evidence["template_id"] == "builtin-meta-traffic"
 
 
+def test_template_workflow_uses_normal_agent_planning_and_signed_confirmations(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    template = {
+        "template_id": "builtin-shopping", "provider": "google-ads",
+        "blueprint_id": "google-ads.shopping", "blueprint_version": "1.1.0",
+        "account_id": "9055507554", "status": "active",
+    }
+
+    def response(value):
+        result = requests.Response()
+        result.status_code = 200
+        result._content = json.dumps(value).encode()
+        return result
+
+    monkeypatch.setattr(driver.requests, "get", lambda *_args, **_kwargs: response(template))
+    approval = {"confirmation_token": "test-only-confirmation", "type": "confirm_write_plan"}
+    phases = iter([
+        {"status": "awaiting_input", "needs_confirmation": True, "confirmation_payload": approval},
+        {"status": "succeeded", "results": [{"tool": "google_create_campaign", "success": True}]},
+    ])
+    calls = []
+
+    def post(*_args, **kwargs):
+        calls.append(json.loads(json.dumps(kwargs["json"])))
+        return response(next(phases))
+
+    monkeypatch.setattr(driver.requests, "post", post)
+    driver.template_chat(
+        tmp_path, "google-ads", "builtin-shopping",
+        {"campaign": {"campaign_name": "QA normal workflow", "daily_budget": 5}},
+        "native-shopping", write=True, session_id="template-session",
+    )
+    assert len(calls) == 2
+    assert "tool_allowlist" not in calls[0]
+    assert "google_create_campaign" not in calls[0]["user_input"]
+    assert calls[0]["creation_blueprint_id"] == "google-ads.shopping"
+    assert calls[0]["creation_template_id"] == "builtin-shopping"
+    assert calls[0]["platform_params"] == {
+        "google-ads": {"campaign": {"campaign_name": "QA normal workflow", "daily_budget": 5}},
+    }
+    assert calls[1]["confirmed"] is True
+    assert calls[1]["confirmation_payload"] == approval
+    evidence = json.loads((tmp_path / "cases/native-shopping.json").read_text())
+    assert "test-only-confirmation" not in json.dumps(evidence)
+
+
+def test_template_workflow_rejects_a_different_account_before_chat(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({
+        "provider": "google-ads", "account_id": "outside-test-account", "status": "active",
+    }).encode()
+    monkeypatch.setattr(driver.requests, "get", lambda *_args, **_kwargs: response)
+    with pytest.raises(ValueError, match="account"):
+        driver.template_chat(tmp_path, "google-ads", "wrong-account", {}, "blocked", write=True)
+
+
+def test_selection_resolution_forwards_declared_parent_lookup_context(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({
+        "options": [{"value": "product-set", "selection_token": "signed-test-option"}],
+    }).encode()
+    calls = []
+    monkeypatch.setattr(driver.requests, "get", lambda *_args, **kwargs: (
+        calls.append(kwargs) or response
+    ))
+    result = driver.resolve_selection_tokens(
+        tmp_path, "meta", "meta_create_catalog_ad", {"product_set_id": ["product-set"]},
+        "catalog-lookup", "catalog-session", lookup_context={"catalog_id": "test-catalog"},
+    )
+    assert result == {"product_set_id": ["signed-test-option"]}
+    assert json.loads(calls[0]["params"]["lookup_context"]) == {"catalog_id": "test-catalog"}
+
+
 def test_chat_can_continue_an_existing_template_session(monkeypatch, tmp_path):
     from scripts.advertising import campaign_service_e2e as driver
 
@@ -799,13 +888,13 @@ def test_google_product_group_creation_accepts_explicit_paused_status(tmp_path):
     recorder._guard(request, "google-ads", json.loads(request.body))
 
 
-def test_google_app_ad_requires_a_previously_read_paused_parent(tmp_path):
+def test_google_app_ad_requires_a_paused_ad_and_previously_read_paused_parent(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     data = {"mutateOperations": [{
         "adGroupAdOperation": {
             "create": {
                 "adGroup": "customers/123/adGroups/77",
-                "status": "ENABLED",
+                "status": "PAUSED",
                 "ad": {"appAd": {"headlines": [{"text": "Install"}]}},
             }
         }
@@ -825,6 +914,9 @@ def test_google_app_ad_requires_a_previously_read_paused_parent(tmp_path):
         data,
         "/v24/customers/123/googleAds:mutate",
     )
+    data["mutateOperations"][0]["adGroupAdOperation"]["create"]["status"] = "ENABLED"
+    with pytest.raises(PermissionError, match="PAUSED"):
+        recorder._guard_google(data, "/v24/customers/123/googleAds:mutate")
 
 
 def test_service_restart_reuses_private_persistence_directory(tmp_path):

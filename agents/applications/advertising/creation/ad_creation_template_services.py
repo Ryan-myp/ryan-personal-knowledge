@@ -138,6 +138,9 @@ class AdCreationTemplateServicesMixin:
             str(template.get("blueprint_id") or ""),
             str(template.get("blueprint_version") or "") or None,
         )
+        expand = getattr(getattr(self, "creation_card_builder", None), "expand_blueprint", None)
+        if blueprint is not None and callable(expand):
+            blueprint = expand(blueprint)
         blueprint_fields = [
             field for field in (getattr(blueprint, "fields", ()) if blueprint else ())
             if isinstance(field, Mapping)

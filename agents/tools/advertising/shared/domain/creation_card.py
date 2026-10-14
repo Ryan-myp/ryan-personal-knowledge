@@ -1574,6 +1574,20 @@ class CreationCardBuilder:
 
     def _resolve(self, intent: ParsedIntent, provider: str) -> tuple[Optional[AdCreationBlueprint], Any, dict[str, Any]]:
         provider_values = _provider_values(intent, provider)
+        metadata = getattr(intent, "metadata", {}) or {}
+        selected_id = metadata.get("creation_blueprint_id")
+        if selected_id:
+            selected = self.blueprints.get(
+                str(selected_id), metadata.get("creation_blueprint_version") or None,
+            )
+            if selected is None or normalize_platform(selected.provider) != normalize_platform(provider):
+                return None, provider_values, None
+            selector = selected.selector or {}
+            selector_field = next((
+                field for field in selected.fields if field.get("path") == selector.get("field")
+            ), None)
+            value = self._field_value(intent, provider_values, selector_field) if selector_field else None
+            return selected, provider_values, value
         candidates = self.blueprints.list(provider=provider)
         # A caller may already know the provider-owned format (for example
         # ``DEMAND_GEN_CAROUSEL``).  This is more specific than the campaign
@@ -1630,7 +1644,10 @@ class CreationCardBuilder:
         for blueprint in candidates:
             selector = blueprint.selector or {}
             selector_options = _selector_options(selector)
-            selector_value = None
+            selector_value = next((
+                value for matched, value in matching
+                if matched.blueprint_id == blueprint.blueprint_id
+            ), None)
             selector_scores: list[int] = []
             for option in selector_options:
                 for phrase in (option.get("value"), option.get("label")):

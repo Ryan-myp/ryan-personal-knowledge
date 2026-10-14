@@ -284,7 +284,7 @@ class MetaToolSource(BaseProviderToolSource):
     platform_name = "meta"
     provider_client_class = MetaAPIClient
     provider_method_exclusions = {"resource_belongs_to_account"}
-    tool_source_version = "1.5.0"
+    tool_source_version = "1.5.1"
     integration_api_version = MetaAPIClient.API_VERSION
     # Provider endpoint -> executable Tool(s).  This lives with the provider
     # package and is consumed only by the release audit, never by Runtime
@@ -1150,7 +1150,7 @@ class MetaToolSource(BaseProviderToolSource):
             ),
             (
                 "meta_create_conversion_ad", "create_conversion_ad",
-                ["OUTCOME_CONVERSIONS", "CONVERSIONS"],
+                ["OUTCOME_SALES", "CONVERSIONS"],
                 ["CONVERSIONS", "OFFSITE_CONVERSIONS", "VALUE"],
                 ["write", "ad", "conversion"],
             ),

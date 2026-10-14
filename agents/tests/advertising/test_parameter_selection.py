@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import pytest
 
 from agents.agent_harness.core.interfaces import ToolContext, ToolResult
 from agents.applications.advertising.execution.parameter_selection import (
@@ -79,6 +80,50 @@ def test_lookup_options_are_signed_for_target_and_account_scope():
     assert signer.issued[0]["user_id"] == "test-user"
     assert signer.issued[0]["scope_key"] == "test-account"
     assert signer.issued[0]["tool_name"] == "google_create_ad"
+
+
+@pytest.mark.parametrize(
+    ("query", "expected_count"),
+    [
+        ("customers/123/assets/24", 1),
+        ("asset 24", 1),
+        ("  ASSET 24  ", 1),
+        ("not-present", 0),
+        (None, 20),
+    ],
+)
+def test_lookup_search_filters_before_the_twenty_option_limit(query, expected_count):
+    signer = _Signer()
+    source = _tool("google_list_assets")
+    target = _tool("google_create_ad", action="create", properties={"asset_id": {
+        "type": "string",
+        "lookup_tool": source.name,
+        "selection_value_fields": ["resource_name"],
+    }})
+    services = SimpleNamespace(
+        registry=SimpleNamespace(list_all=lambda: [source, target]),
+        selection_signer=signer,
+    )
+    selection = ParameterSelectionService(
+        services, scope_value_resolver=lambda context: context.account_id,
+    )
+    result = ToolResult.ok({
+        "assets": [
+            {"resource_name": f"customers/123/assets/{index}", "name": f"Asset {index}"}
+            for index in range(30)
+        ],
+        "data_status": "live",
+    })
+    decorated = selection.decorate_lookup_result(
+        source, result, _context(), "google-ads",
+        target_tool_name=target.name, target_field="asset_id", query=query,
+    )
+    options = decorated.data["parameter_selections"][0]["options"]
+    assert len(options) == expected_count
+    assert len(signer.issued) == expected_count
+    if expected_count == 1:
+        assert options[0]["value"] == "customers/123/assets/24"
+        assert signer.issued[0]["scope_key"] == "test-account"
 
 
 def test_google_asset_lookup_excludes_resources_with_the_wrong_asset_type():

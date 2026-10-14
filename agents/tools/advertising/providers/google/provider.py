@@ -587,8 +587,9 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_app_ad",
                 description=(
-                    "创建 Google App Campaign AppAd。v24 要求 Ad 使用 ENABLED；"
-                    "只有实时查询确认父 Ad Group 为 PAUSED 时才允许创建。"
+                    "创建 Google App Campaign AppAd，按请求提交 PAUSED，"
+                    "不得替换为 ENABLED。只有实时查询确认父 Ad Group 为 PAUSED "
+                    "时才允许创建；渠道不接受暂停状态时明确返回失败。"
                 ),
                 method_name="create_app_ad", result_key="app_ad_plan",
                 properties=app_ad_schema["properties"],
@@ -608,6 +609,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     },
                 }],
                 traits=["write", "ad", "app"], write=True, live_support=True,
+                contract_version="1.5.1",
                 readback_tool="google_get_ad",
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["name"], data["headlines"], data["descriptions"],
@@ -649,7 +651,16 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_assets", description="查询 Google Ads 客户级可复用 Asset 列表。",
                 method_name="list_assets", result_key="assets",
-                properties=asset_schema["properties"],
+                properties={
+                    **asset_schema["properties"],
+                    "asset_id": {
+                        **asset_schema["properties"]["asset_id"],
+                        "pattern": r"^(?:customers/[0-9]+/assets/)?[0-9]+$",
+                        "maxLength": 160,
+                        "description": "Numeric Asset ID or a resource name in the selected customer",
+                    },
+                },
+                contract_version="1.5.1",
                 action="list", resource_type="asset", intent_types=["list_assets"],
                 traits=["read", "asset"],
                 argument_builder=lambda ctx, data: ((
@@ -971,10 +982,21 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_conversion_actions", description="查询 Google Ads 转化动作列表。",
                 method_name="list_conversion_actions", result_key="conversion_actions",
-                properties={"customer_id": {"type": "string"}, "limit": {"type": "integer"}},
+                properties={
+                    "customer_id": {"type": "string"}, "limit": {"type": "integer"},
+                    "conversion_action_id": {
+                        "type": "string",
+                        "pattern": r"^(?:customers/[0-9]+/conversionActions/)?[0-9]+$",
+                        "maxLength": 160,
+                    },
+                },
+                contract_version="1.5.1",
                 required=["customer_id"], action="list", resource_type="conversion_action",
                 intent_types=["list_conversion_actions"], traits=["read", "conversion"],
-                argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
+                argument_builder=lambda _ctx, data: ((), {
+                    "page_size": data.get("limit", 100),
+                    "conversion_action_id": data.get("conversion_action_id"),
+                }),
             ),
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
@@ -1449,7 +1471,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     "in": ["PERFORMANCE_MAX", "MAX"],
                 }],
                 traits=["write", "listing_group_filter", "pmax"], write=True,
-                live_support=True,
+                live_support=True, contract_version="1.5.1",
                 readback_tool="google_get_asset_group_listing_group_filter",
                 argument_builder=lambda _ctx, data: ((data["asset_group_id"],), {
                     "filter_type": data.get("filter_type", "SUBDIVISION"),
@@ -2073,6 +2095,7 @@ class GoogleToolSource(BaseProviderToolSource):
             namespace="google-ads",
             description="创建 Google Ads Campaign。",
             input_schema=ToolSchema(**google_campaign_schema()),
+            contract_version="1.5.1",
             action="create", resource_type="campaign",
             intent_types=["create_campaign", "create_campaign_only"],
             intent_aliases=[

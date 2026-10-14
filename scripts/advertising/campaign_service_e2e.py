@@ -509,6 +509,7 @@ def resolve_selection_tokens(
     session_id,
     *,
     lookup_queries=None,
+    lookup_context=None,
 ):
     """Resolve exact lookup values into tokens bound to the E2E session."""
     root, state, headers = _load_state(directory)
@@ -524,6 +525,8 @@ def resolve_selection_tokens(
         raise ValueError("selection lookup requires field values")
     if lookup_queries is not None and not isinstance(lookup_queries, dict):
         raise ValueError("lookup_queries must be an object")
+    if lookup_context is not None and not isinstance(lookup_context, dict):
+        raise ValueError("lookup_context must be an object")
 
     resolved = {}
     for field, values in field_values.items():
@@ -544,16 +547,15 @@ def resolve_selection_tokens(
         for expected_value, query in zip(values, queries):
             if expected_value in (None, "") or query in (None, ""):
                 raise ValueError(f"selection lookup values must not be empty for {field}")
+            query_params = {
+                "platform": provider, "field": field, "tool_name": tool_name,
+                "account_id": account_ids[0], "session_id": session_id, "query": str(query),
+            }
+            if lookup_context is not None:
+                query_params["lookup_context"] = json.dumps(lookup_context, ensure_ascii=False)
             response = requests.get(
                 state["base_url"] + "/parameter-options/resolve",
-                params={
-                    "platform": provider,
-                    "field": field,
-                    "tool_name": tool_name,
-                    "account_id": account_ids[0],
-                    "session_id": session_id,
-                    "query": str(query),
-                },
+                params=query_params,
                 headers={
                     **headers,
                     "X-E2E-Case": case_id,
@@ -884,12 +886,12 @@ class ProviderRecorder:
                     parent = str(create.get("adGroup") or "")
                     match = re.search(r"/adGroups/(\d+)$", parent)
                     if (
-                        str(create.get("status") or "").upper() != "ENABLED"
+                        str(create.get("status") or "").upper() != "PAUSED"
                         or match is None
                         or match.group(1) not in self.paused_ad_groups
                     ):
                         raise PermissionError(
-                            "Google App Ad requires a verified PAUSED parent Ad Group"
+                            "Google App Ad must be PAUSED under a verified PAUSED parent Ad Group"
                         )
                     continue
                 if label and str(create.get("status") or "").upper() != "PAUSED":
@@ -1221,10 +1223,94 @@ def conversation_chat(directory, provider, user_input, case_id, session_id=None)
     return payload
 
 
+def template_chat(
+    directory, provider, template_id, params, case_id, *,
+    write=False, session_id=None, user_input=None,
+):
+    """Exercise the selected template without restricting the model to one Tool."""
+    root, state, headers = _load_state(directory)
+    if provider not in PROVIDERS or state.get("accounts") != CONFIRMED_ACCOUNTS:
+        raise ValueError("template creation requires the confirmed test accounts")
+    if not template_id or not isinstance(params, dict):
+        raise ValueError("template creation requires a template and JSON parameters")
+    account = state["accounts"][provider][0]
+    response = requests.get(
+        state["base_url"] + f"/creation-templates/{template_id}",
+        headers=headers, timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    template = response.json()
+    if (
+        template.get("provider") != provider or template.get("account_id") != account
+        or template.get("status") != "active"
+    ):
+        raise ValueError("template provider/account is outside the confirmed test scope")
+    headers = {
+        **headers, "X-E2E-Case": case_id,
+        "X-E2E-Provider": provider, "X-E2E-Account": account,
+    }
+    body = {
+        "user_input": user_input or (
+            "使用已选内置模板和表单参数创建完整的广告系列，包含模板声明的全部下层级。"
+            "保持所有可投放父级和子级暂停，不要启动投放。"
+            "不要修改表单参数；缺少参数时明确指出；需要确认时返回平台的确认计划。"
+        ),
+        "session_id": session_id or f"template-{provider}-{case_id}",
+        "account_id": account,
+        "creation_template_id": template_id,
+        "creation_blueprint_id": template["blueprint_id"],
+        "creation_blueprint_version": template["blueprint_version"],
+        "platform_params": {provider: params},
+        "execution_mode": "live" if write else "dry_run",
+    }
+    evidence = {
+        "provider": provider, "account": account, "template_id": template_id,
+        "blueprint_id": template["blueprint_id"],
+        "session_id": body["session_id"], "params": params, "phases": [],
+        "native_planning": True,
+    }
+    payload = {}
+    for index in range(5):
+        try:
+            response = requests.post(
+                state["base_url"] + "/chat", json=body, headers=headers,
+                timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as error:
+            evidence["phases"].append({"transport_error": type(error).__name__})
+            _json_write(root / "cases" / f"{case_id}.json", evidence)
+            raise
+        evidence["phases"].append({"phase": index, "response": payload})
+        evidence["response"] = payload
+        _json_write(root / "cases" / f"{case_id}.json", evidence)
+        approval = payload.get("confirmation_payload")
+        if not (write and payload.get("needs_confirmation") and isinstance(approval, dict)):
+            break
+        body["confirmed"] = True
+        body["confirmation_payload"] = approval
+        body["user_input"] = (
+            "确认刚才平台返回的暂停创建计划。继续完成已选模板的全部层级，"
+            "复用已创建的父资源，不重复创建，不启用投放。"
+        )
+    print(json.dumps({
+        "case_id": case_id, "status": payload.get("status"),
+        "phases": len(evidence["phases"]),
+        "tools": [
+            {"name": item.get("tool"), "success": item.get("success"), "error": item.get("error")}
+            for item in payload.get("results") or ()
+        ],
+        "needs_input": payload.get("needs_input"),
+        "needs_confirmation": payload.get("needs_confirmation"),
+    }, ensure_ascii=False))
+    return payload
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=("start", "serve", "chat", "conversation", "catalog", "stop", "report")
+        "command", choices=("start", "serve", "chat", "conversation", "template", "catalog", "stop", "report")
     )
     parser.add_argument("--directory", required=True)
     parser.add_argument("--port", type=int, default=8765)
@@ -1267,6 +1353,12 @@ def main():
     elif args.command == "conversation":
         conversation_chat(
             args.directory, args.provider, args.user_input, args.case_id, args.session_id,
+        )
+    elif args.command == "template":
+        template_chat(
+            args.directory, args.provider, args.template_id,
+            json.loads(args.params), args.case_id, write=args.write,
+            session_id=args.session_id, user_input=args.user_input,
         )
     elif args.command == "report":
         report(args.directory)

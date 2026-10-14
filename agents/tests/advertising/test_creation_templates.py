@@ -87,6 +87,52 @@ def test_template_crud_is_scoped_to_authenticated_user():
     assert templates.apply("tenant-a", "user-a", created["template_id"]) is None
 
 
+def test_template_applies_schema_fields_exposed_by_the_expanded_blueprint():
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store)
+    runtime.register_tool_source(create_meta_tool_source())
+    account = "2806375919473667"
+    scope = {"meta": {account}}
+    template = runtime._creation_template_manager_for_request(scope).create(
+        "default", "template-user", {
+            "name": "Paused traffic",
+            "provider": "meta",
+            "blueprint_id": "meta.traffic_link",
+            "scope_type": "account",
+            "account_id": account,
+            "values": {"campaign.status": "PAUSED", "ad_set.status": "PAUSED", "ad.status": "PAUSED"},
+        },
+    )
+    try:
+        intent = runtime.apply_creation_template_to_intent(
+            ParsedIntent("create_campaign", "Create", ["meta"]),
+            template["template_id"],
+            account_id=account,
+            account_scope=scope,
+            user_id="template-user",
+        )
+        values = intent.scoped_parameters["meta"]
+        assert values["meta_create_campaign"]["status"] == "PAUSED"
+        assert values["meta_create_adset"]["status"] == "PAUSED"
+        assert values["meta_create_traffic_ad"]["status"] == "PAUSED"
+    finally:
+        runtime.close(wait=True)
+        store.close()
+
+
+def test_meta_conversion_template_uses_a_real_sales_objective():
+    from agents.tools.advertising.providers.meta.parameters import meta_campaign_schema
+
+    template = next(
+        item for item in load_builtin_template_definitions() if item["key"] == "meta.test.conversion"
+    )
+    objective = template["values"]["campaign.objective"]
+    assert objective == "OUTCOME_SALES"
+    assert "OUTCOME_CONVERSIONS" not in meta_campaign_schema()["properties"]["objective"]["enum"]
+
+
 def test_template_rejects_unknown_or_sensitive_fields():
     templates = manager()
     with pytest.raises(CreationTemplateError, match="不支持的字段"):
@@ -402,18 +448,13 @@ def test_requested_ad_type_templates_bind_only_to_the_confirmed_test_account():
 
 
 def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
-    blueprint_paths = glob.glob("agents/tools/advertising/providers/*/blueprints/*.json")
-    blueprints = {
-        load_blueprint_file(path).blueprint_id: load_blueprint_file(path)
-        for path in blueprint_paths
-    }
+    from agents.tools.advertising.providers.source_factory import create_tool_source
 
-    class Registry:
-        def get(self, blueprint_id, version=None):
-            blueprint = blueprints.get(blueprint_id)
-            return blueprint if blueprint and (
-                version is None or version == blueprint.version
-            ) else None
+    composition = AdvertisingComposition(
+        require_llm=False, offline_mode=True, persistence_store=AdAgentStore(":memory:"),
+    )
+    for provider in ("meta", "google-ads", "tiktok", "dv360"):
+        composition.register_tool_source(create_tool_source(provider))
 
     class Validator:
         allowed_accounts = {
@@ -425,8 +466,8 @@ def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
 
     class Runtime:
         persistence_store = AdAgentStore(":memory:")
-        creation_blueprints = Registry()
-        creation_card_builder = None
+        creation_blueprints = composition.creation_blueprints
+        creation_card_builder = composition.creation_card_builder
         whitelist_validator = Validator()
         _granted_permissions = {"ads.read", "ads.plan"}
 
@@ -512,9 +553,13 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
         }, key
         assert template["values"]["campaign.status"] == "PAUSED", key
 
-    expected_live_status = "live_verified_with_provider_limits"
-    for template in definitions.values():
-        assert template["verification_status"] == expected_live_status
+    expected_statuses = {
+        "google.test.performance-max": "live_verified_with_provider_limits",
+        "google.test.shopping": "live_verified_with_provider_limits",
+        "google.test.app": "partial_live_verified",
+    }
+    for key, template in definitions.items():
+        assert template["verification_status"] == expected_statuses[key]
         assert template["account_id"] == "9055507554"
 
     assert "AssetGroupAsset" in definitions[

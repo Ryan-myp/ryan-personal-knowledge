@@ -3160,7 +3160,7 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     create = plan["operation"]["adGroupAds"]["create"]
     assert create["resourceName"] == "customers/123/ads/-1"
     assert create["adGroup"] == "customers/123/adGroups/42"
-    assert create["status"] == "ENABLED"
+    assert create["status"] == "PAUSED"
     assert plan["delivery_guard"] == {
         "resource": "ad_group",
         "required_status": "PAUSED",
@@ -3310,7 +3310,7 @@ def test_google_customer_mutate_posts_cross_service_operations_and_normalizes_re
     ]
 
 
-def test_google_app_live_chain_enables_ad_only_under_paused_ad_group():
+def test_google_app_live_chain_preserves_paused_ad_and_parent_status():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
 
@@ -3337,7 +3337,7 @@ def test_google_app_live_chain_enables_ad_only_under_paused_ad_group():
     assert result == {
         "mode": "live", "execution_status": "executed", "live_support": True,
         "ad_resource_name": "customers/123/adGroupAds/77~88",
-        "ad_id": "88", "ad_group_id": "77", "status": "ENABLED",
+        "ad_id": "88", "ad_group_id": "77", "status": "PAUSED",
         "requested_status": "PAUSED",
         "delivery_guard": {
             "resource": "ad_group",
@@ -3346,7 +3346,7 @@ def test_google_app_live_chain_enables_ad_only_under_paused_ad_group():
     }
     assert [resource for resource, _operation in calls] == ["adGroupAds"]
     ad_create = calls[-1][1]["create"]
-    assert ad_create["status"] == "ENABLED"
+    assert ad_create["status"] == "PAUSED"
     assert "cpcBidMicros" not in ad_create["ad"]["appAd"]
     assert ad_create["adGroup"] == "customers/123/adGroups/77"
     assert ad_create["ad"]["appAd"]["headlines"] == [
@@ -3372,6 +3372,26 @@ def test_google_app_live_ad_creation_refuses_an_unpaused_parent_group():
         )
 
     assert calls == []
+
+
+def test_google_app_paused_rejection_never_falls_back_to_enabled():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    statuses = []
+    client.get_ad_group = lambda _identifier: {"id": "77", "status": "PAUSED"}
+
+    def reject_status(_resource, operation):
+        statuses.append(operation["create"]["status"])
+        raise APIError("Provider rejected paused App Ad")
+
+    client._mutate = reject_status
+    with pytest.raises(APIError, match="rejected paused App Ad"):
+        client.create_app_ad(
+            "77", "Paused App Ad",
+            headlines=["Install now", "Shop in the app"],
+            descriptions=["Fast checkout", "Download today"],
+            status="PAUSED", live=True,
+        )
+    assert statuses == ["PAUSED"]
 
 
 def test_google_specialized_ad_live_creation_rejects_enabled_status():
@@ -5542,7 +5562,7 @@ def test_meta_traffic_and_conversion_tools_route_link_creatives():
             "OUTCOME_TRAFFIC", "LINK_CLICKS", "meta_create_traffic_ad",
         ),
         (
-            "OUTCOME_CONVERSIONS", "CONVERSIONS", "meta_create_conversion_ad",
+            "OUTCOME_SALES", "CONVERSIONS", "meta_create_conversion_ad",
         ),
     ]
     for objective, optimization_goal, expected in cases:
@@ -6958,6 +6978,60 @@ def test_google_pmax_listing_group_filter_create_uses_asset_group_resource():
             "456", "UNIT_INCLUDED", parent_filter_id="customers/999/assetGroupListingGroupFilters/456~7",
             product_dimension="PRODUCT_BRAND", value="Acme",
         )
+
+
+def test_google_live_listing_filter_reads_paused_parent_before_mutating():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+
+    def get_parent(resource_id):
+        calls.append(("read", resource_id))
+        return {"id": resource_id, "status": "PAUSED"}
+
+    def mutate(resource, operation):
+        calls.append(("write", resource, operation))
+        return {"data": {"results": [{
+            "resourceName": "customers/123/assetGroupListingGroupFilters/456~7"
+        }]}}
+
+    client.get_asset_group = get_parent
+    client._mutate = mutate
+
+    assert client.create_asset_group_listing_group_filter(
+        "456", "UNIT_INCLUDED", live=True,
+    ) == "7"
+    assert calls[0] == ("read", "456")
+    assert calls[1][1] == "assetGroupListingGroupFilters"
+
+
+@pytest.mark.parametrize("parent", [{}, {"status": "ENABLED"}, {"status": "REMOVED"}])
+def test_google_live_listing_filter_rejects_unpaused_or_unknown_parent(parent):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    writes = []
+    client.get_asset_group = lambda _resource_id: parent
+    client._mutate = lambda *args: writes.append(args)
+
+    with pytest.raises(ValueError, match="PAUSED parent Asset Group"):
+        client.create_asset_group_listing_group_filter(
+            "456", "UNIT_INCLUDED", live=True,
+        )
+    assert writes == []
+
+
+def test_google_live_listing_filter_parent_read_failure_does_not_mutate():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    writes = []
+
+    def missing_parent(_resource_id):
+        raise ValueError("parent lookup failed")
+
+    client.get_asset_group = missing_parent
+    client._mutate = lambda *args: writes.append(args)
+    with pytest.raises(ValueError, match="parent lookup failed"):
+        client.create_asset_group_listing_group_filter(
+            "456", "UNIT_INCLUDED", live=True,
+        )
+    assert writes == []
 
 
 def test_google_pmax_listing_group_filter_normalizes_all_tree_metadata():

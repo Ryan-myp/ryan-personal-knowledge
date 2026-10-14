@@ -50,7 +50,7 @@ class AdvertisingContextProvider:
         skill_context = session.ctx.metadata.get("skill_context", {})
         if not isinstance(skill_context, dict):
             skill_context = {}
-        structured_input = self._structured_input(request_context, account_id)
+        structured_input = self._structured_input(request_context, account_id, request)
         capability_catalog = self._capability_catalog(request)
         read_accounts = AdvertisingCapabilityCatalog(self.owner).read_account_candidates(request)
         result = {
@@ -113,6 +113,7 @@ class AdvertisingContextProvider:
         self,
         request_context: Mapping[str, Any],
         account_id: Any,
+        request: Any,
     ) -> dict[str, Any]:
         structured_input: dict[str, Any] = {}
         if account_id not in (None, ""):
@@ -122,7 +123,7 @@ class AdvertisingContextProvider:
             safe_params = self.owner._redact_for_persistence(dict(platform_params))
             if isinstance(safe_params, Mapping):
                 structured_input["platform_params"] = dict(safe_params)
-        creation_selection = self._creation_selection(request_context)
+        creation_selection = self._creation_selection(request_context, request)
         if creation_selection:
             structured_input["creation_selection"] = creation_selection
         return structured_input
@@ -157,7 +158,7 @@ class AdvertisingContextProvider:
         return next(iter(scoped_accounts.values())) if len(scoped_accounts) == 1 else None
 
     def _creation_selection(
-        self, request_context: Mapping[str, Any],
+        self, request_context: Mapping[str, Any], request: Any,
     ) -> dict[str, Any] | None:
         blueprint_id = str(
             request_context.get("creation_blueprint_id") or ""
@@ -178,7 +179,7 @@ class AdvertisingContextProvider:
                     request_context.get("creation_template_id") or ""
                 ),
             }
-        return {
+        selection = {
             "blueprint_id": blueprint.blueprint_id,
             "blueprint_version": blueprint.version,
             "provider": blueprint.provider,
@@ -190,6 +191,31 @@ class AdvertisingContextProvider:
             ),
             "available": True,
         }
+        template_id = selection["template_id"]
+        if template_id:
+            account_scope = getattr(getattr(request, "principal", None), "account_scope", None)
+            manager = self.owner._creation_template_manager_for_request(account_scope)
+            template = manager.get(
+                str(request.tenant_id or "default"),
+                str(request.user_id or "anonymous"),
+                template_id,
+                account_id=request_context.get("account_id"),
+                account_scope=account_scope,
+            )
+            if not template:
+                return {**selection, "available": False}
+            values = self.owner._redact_for_persistence(template.get("values") or {})
+            presets = {}
+            remaining = 8000
+            for path, value in values.items():
+                size = len(json.dumps({path: value}, ensure_ascii=False))
+                if size <= remaining:
+                    presets[path] = value
+                    remaining -= size
+            selection["preset_values"] = presets
+            selection["preset_fields"] = list(values)[:128]
+            selection["preset_values_truncated"] = len(presets) != len(values)
+        return selection
 
     @staticmethod
     def _render_prompt(
@@ -269,7 +295,9 @@ class AdvertisingContextProvider:
         )
         if isinstance(selection, Mapping):
             selection_json = json.dumps(
-                dict(selection),
+                {key: value for key, value in selection.items() if key not in {
+                    "preset_values", "preset_fields",
+                }},
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
@@ -280,6 +308,11 @@ class AdvertisingContextProvider:
                     + "\n用户已明确选择此广告创建蓝图/模板。必须通过列出的"
                     "已注册创建 Tool 继续该流程，不得改为查询 Tool，也不得只用文字"
                     "虚构创建计划。Tool schema、账户范围、权限、确认和幂等门禁始终有效。"
+                    "结构化输入中的 preset_values 是服务端已保存的模板参数，"
+                    "preset_fields 列出的字段已预填，不能要求用户重复填写。"
+                    "参数解析器会在执行前合并模板与用户表单；仅在实际工具校验"
+                    "报告缺失或无效时要求补充。必须完成蓝图声明的全部层级，"
+                    "不能只创建 Campaign 后就宣称完整流程完成。"
                 )
             else:
                 parts.append(
