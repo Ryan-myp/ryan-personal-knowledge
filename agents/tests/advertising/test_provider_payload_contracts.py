@@ -8133,7 +8133,7 @@ def test_tiktok_single_resource_readers_reuse_existing_list_endpoints():
     client.list_images = lambda advertiser_id, filtering=None, page_size=20: [
         {"image_id": "image-1"}
     ]
-    client.list_catalogs = lambda advertiser_id, filtering=None, page_size=20: [
+    client.list_catalogs = lambda advertiser_id, filtering=None, page_size=20, catalog_id=None: [
         {"catalog_id": "catalog-1"}
     ]
     client.list_product_sets = (

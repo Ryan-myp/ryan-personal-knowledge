@@ -220,12 +220,7 @@ class TikTokAPIClient(BasePlatformClient):
             return cached
         self.list_catalogs(
             key[0],
-            filtering=[{
-                "field": "CATALOG_IDS",
-                "operator": "IN",
-                "values": [key[1]],
-            }],
-            page_size=100,
+            catalog_id=key[1], page_size=1,
         )
         cached = self._catalog_authorization.get(key)
         if not cached:
@@ -976,7 +971,7 @@ class TikTokAPIClient(BasePlatformClient):
         age_groups = normalized.get("age_groups")
         allowed_age_groups = {
             "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44",
-            "AGE_45_54", "AGE_55_64", "AGE_65+",
+            "AGE_45_54", "AGE_55_100",
         }
         if age_groups and any(str(value) not in allowed_age_groups for value in age_groups):
             raise ValueError(
@@ -1097,7 +1092,7 @@ class TikTokAPIClient(BasePlatformClient):
                 return False
             return (
                 not wanted_ad_ids
-                or str(row.get('ad_id') or row.get('id') or '')
+                or str(row.get('ad_id') or row.get('smart_plus_ad_id') or row.get('id') or '')
                 in wanted_ad_ids
             )
 
@@ -1108,6 +1103,21 @@ class TikTokAPIClient(BasePlatformClient):
             max_items=max_results,
             item_filter=matches_requested_ad,
         )
+        if not rows:
+            smart_filter = {"adgroup_ids": [str(adgroup_id)]}
+            if normalized_ad_ids:
+                smart_filter["smart_plus_ad_ids"] = normalized_ad_ids
+            rows = self._list_pages(
+                "smart_plus/ad/get/",
+                {**data, "filtering": json.dumps(smart_filter, separators=(",", ":"))},
+                max_pages=1 if wanted_ad_ids else 100,
+                max_items=max_results,
+                item_filter=matches_requested_ad,
+            )
+            rows = [
+                {**row, "ad_id": row.get("smart_plus_ad_id") or row.get("ad_id")}
+                for row in rows
+            ]
         return self._public_provider_data(rows)
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
@@ -1553,12 +1563,12 @@ class TikTokAPIClient(BasePlatformClient):
             uri = next(
                 (
                     str(image.get(key) or "").strip()
-                    for key in ("web_uri", "image_url", "url")
+                    for key in ("web_uri", "image_id", "image_url", "url")
                     if isinstance(image, dict) and str(image.get(key) or "").strip()
                 ),
                 "",
             )
-            if not uri or urlsplit(uri).scheme not in {"http", "https"}:
+            if not uri:
                 raise ValueError(
                     f"TikTok image {value} lookup did not return a valid web_uri"
                 )
@@ -1761,7 +1771,7 @@ class TikTokAPIClient(BasePlatformClient):
 
         targeting_fields = {
             "location_ids", "saved_audience_id", "gender", "age_groups",
-            "operating_systems", "placement_type", "placements",
+            "operating_systems",
             "targeting_optimization_mode", "frequency", "frequency_schedule",
         }
         targeting_spec = dict(adgroup.get("targeting_spec") or {})
@@ -1772,13 +1782,14 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("TikTok Smart+ ad group requires targeting_spec")
 
         wire_fields = {
-            "request_id", "operation_status", "adgroup_name", "catalog_id", "product_set_id",
+            "request_id", "operation_status", "adgroup_name", "catalog_id", "product_source",
             "promotion_type", "promotion_target_type", "optimization_goal", "optimization_event",
             "app_attribution_source", "app_data_source", "app_id", "bid_type", "bid_price",
             "conversion_bid_price", "deep_bid_type", "roas_bid", "billing_event", "budget_mode",
             "budget", "schedule_type", "schedule_start_time", "schedule_end_time", "frequency",
             "identity_type", "identity_id",
             "pixel_id", "tracking_pixel_id",
+            "placement_type", "placements",
         }
         data = {"advertiser_id": str(advertiser_id), "campaign_id": str(campaign_id)}
         data.update({
@@ -1965,6 +1976,8 @@ class TikTokAPIClient(BasePlatformClient):
             configuration = dict(configuration)
         if ad.get("call_to_action_id") not in (None, ""):
             configuration.setdefault("call_to_action_id", ad["call_to_action_id"])
+        if ad.get("product_set_id") not in (None, ""):
+            configuration.setdefault("product_set_id", ad["product_set_id"])
         # Smart+ keeps the identity in the ad configuration as well as in
         # the creative metadata.  The provider rejects a non-Spark ad when
         # ``ad_configuration.identity_id`` is absent, even if the same
@@ -2048,6 +2061,7 @@ class TikTokAPIClient(BasePlatformClient):
         if cta_list not in (None, "", []):
             if not isinstance(cta_list, list):
                 raise ValueError("TikTok Smart+ call_to_action_list must be an array")
+            normalized_ctas = []
             for index, item in enumerate(cta_list):
                 if not isinstance(item, dict):
                     raise ValueError(f"call_to_action_list[{index}] must be an object")
@@ -2057,8 +2071,10 @@ class TikTokAPIClient(BasePlatformClient):
                         f"call_to_action_list[{index}].call_to_action must be one of "
                         f"{sorted(TIKTOK_SMART_PLUS_CTA_VALUES)}"
                     )
-                item["call_to_action"] = cta
-            data["call_to_action_list"] = cta_list
+                normalized_ctas.append({
+                    **item, "call_to_action": cta,
+                })
+            data["call_to_action_list"] = normalized_ctas
         # The Smart+ API requires one cover image for uploaded video
         # materials. A video library ID alone is not enough; fail locally
         # with the field the creation card must collect instead of forwarding
@@ -3974,7 +3990,10 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("page_size must be between 1 and 100")
         return advertiser_id, filtering, page_size
     
-    def list_catalogs(self, advertiser_id: str, filtering: list = None, page_size: int = 20) -> list:
+    def list_catalogs(
+        self, advertiser_id: str, filtering: list = None, page_size: int = 20,
+        catalog_id: Optional[str] = None,
+    ) -> list:
         """List TikTok Catalogs through the official v1.3 read endpoint."""
         advertiser_id, filtering, page_size = self._validate_catalog_query(
             advertiser_id, filtering, page_size
@@ -3984,6 +4003,8 @@ class TikTokAPIClient(BasePlatformClient):
             'advertiser_id': advertiser_id,
             'page_size': page_size,
         }
+        if catalog_id:
+            data["catalog_id"] = str(catalog_id)
         # Catalog discovery is Business Center scoped in TikTok v1.3.  The
         # Business Center ID is trusted credential/configuration data, not a
         # user-editable Tool field and therefore never comes from request
@@ -4020,12 +4041,7 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("catalog_id must not be empty")
         catalogs = self.list_catalogs(
             advertiser_id,
-            filtering=[{
-                "field": "CATALOG_IDS",
-                "operator": "IN",
-                "values": [catalog_id],
-            }],
-            page_size=1,
+            catalog_id=catalog_id, page_size=1,
         )
         return next(
             (

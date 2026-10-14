@@ -47,7 +47,7 @@ TIKTOK_SHOPPING_ADS_TYPES = ["UNSET", "VIDEO", "LIVE", "CATALOG_LISTING_ADS"]
 TIKTOK_APP_PROMOTION_TYPES = ["APP_ACQUISITION", "APP_RETARGETING"]
 TIKTOK_AGE_GROUPS = [
     "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44",
-    "AGE_45_54", "AGE_55_64", "AGE_65+",
+    "AGE_45_54", "AGE_55_100",
 ]
 TIKTOK_GENDERS = ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]
 TIKTOK_OPERATING_SYSTEMS = ["ANDROID", "IOS"]
@@ -96,6 +96,9 @@ TIKTOK_SMART_PLUS_OBJECTIVES = [
 TIKTOK_SMART_PLUS_OPTIMIZATION_GOALS = [
     "CLICK", "INSTALL", "IN_APP_EVENT", "VALUE", "CONVERT",
     "TRAFFIC_LANDING_PAGE_VIEW", "CONVERSATION", "LEAD_GENERATION",
+]
+TIKTOK_SMART_PLUS_AGE_GROUPS = [
+    "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_100",
 ]
 
 
@@ -1627,14 +1630,18 @@ def tiktok_lead_ad_schema() -> dict[str, Any]:
 
 def tiktok_app_ad_schema() -> dict[str, Any]:
     """Create contract for a TikTok App Promotion install/event ad."""
+    video_properties = tiktok_single_video_ad_schema()["properties"]
     return {
         "required": [
             "campaign_id", "adgroup_id", "name", "app_id", "promotion_type",
             "operating_systems",
         ],
         "requires": ["campaign_id", "app_id", "promotion_type"],
-        "requires_any_of": [["media", "creatives"]],
+        "requires_any_of": [["video_id", "media", "creatives"]],
         "properties": {
+            **{key: video_properties[key] for key in (
+                "ad_format", "video_id", "image_ids", "identity_type",
+            )},
             "campaign_id": _field("string", "Parent campaign ID"),
             "adgroup_id": _field("string", "Parent ad group ID"),
             "name": _field("string", "Ad name"),
@@ -2008,7 +2015,8 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             ),
             "adgroup_name": _field("string", "Ad group name", minLength=1, maxLength=512),
             "operation_status": _field("string", "Create status", enum=["DISABLE", "ENABLE"], default="DISABLE"),
-            "promotion_type": _field("string", "Optimization location", enum=["APP_ANDROID", "APP_IOS", "WEBSITE", "CATALOG", "TIKTOK_SHOP", "MINI_APP", "MINI_GAME", "NATIVE_SERIES", "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE", "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"]),
+            "promotion_type": _field("string", "Optimization location", enum=["APP_ANDROID", "APP_IOS", "WEBSITE", "TIKTOK_SHOP", "MINI_APP", "MINI_GAME", "NATIVE_SERIES", "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE", "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"]),
+            "product_source": _field("string", "Catalog or Shop product source", enum=TIKTOK_PRODUCT_SOURCES),
             "promotion_target_type": _field("string", "Lead optimization location", enum=["INSTANT_PAGE", "EXTERNAL_WEBSITE"]),
             "optimization_goal": _field("string", "Optimization goal", enum=TIKTOK_SMART_PLUS_OPTIMIZATION_GOALS),
             "optimization_event": _manual_conversion_field(
@@ -2023,16 +2031,6 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 selection_label_fields=["app_name", "name", "display_name", "id"],
             ),
             "catalog_id": _field("string", "Catalog ID returned by tiktok_list_catalogs", minLength=1, lookup_tool="tiktok_list_catalogs", lookup_result_key="catalogs"),
-            "product_set_id": _field(
-                "string", "Product set ID returned by tiktok_list_product_sets", minLength=1,
-                lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
-                lookup_dependencies=[{
-                    "input_field": "catalog_id", "value_path": "catalog_id",
-                    "label": "所属商品目录", "required": True,
-                }],
-                selection_value_fields=["product_set_id", "id"],
-                selection_label_fields=["product_set_name", "name", "id"],
-            ),
             "location_ids": _field("array", "TikTok location IDs", minItems=1, items={"type": "string"}, lookup_tool="tiktok_list_regions", lookup_result_key="regions", selection_value_fields=["location_id", "id", "country_code", "code"], selection_label_fields=["location_name", "name", "country_name", "country_code"]),
             "targeting_spec": _field(
                 "object", "Advanced targeting payload; the Provider builds this from the targeting fields above",
@@ -2046,7 +2044,7 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                         selection_label_fields=["audience_name", "name", "display_name", "id"],
                     ),
                     "gender": _field("string", "Gender", enum=TIKTOK_GENDERS),
-                    "age_groups": _field("array", "Age groups", items={"type": "string", "enum": TIKTOK_AGE_GROUPS}),
+                    "age_groups": _field("array", "Age groups", items={"type": "string", "enum": TIKTOK_SMART_PLUS_AGE_GROUPS}),
                     "operating_systems": _field("array", "Operating systems", items={"type": "string", "enum": TIKTOK_OPERATING_SYSTEMS}),
                     "placement_type": _field("string", "Placement mode", enum=TIKTOK_PLACEMENT_TYPES),
                     "placements": _field("array", "Placements", items={"type": "string", "enum": TIKTOK_PLACEMENTS}),
@@ -2064,7 +2062,7 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 selection_label_fields=["audience_name", "name", "display_name", "id"],
             ),
             "gender": _field("string", "Gender", enum=TIKTOK_GENDERS),
-            "age_groups": _field("array", "Age groups", items={"type": "string", "enum": TIKTOK_AGE_GROUPS}),
+            "age_groups": _field("array", "Age groups", items={"type": "string", "enum": TIKTOK_SMART_PLUS_AGE_GROUPS}),
             "operating_systems": _field("array", "Operating systems", items={"type": "string", "enum": TIKTOK_OPERATING_SYSTEMS}),
             "placement_type": _field("string", "Placement mode", enum=TIKTOK_PLACEMENT_TYPES),
             "placements": _field("array", "Placements", items={"type": "string", "enum": TIKTOK_PLACEMENTS}),
@@ -2072,7 +2070,7 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             "bid_type": _field("string", "Bid type", enum=["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"]),
             "bid_price": _field("number", "Bid price", minimum=0),
             "conversion_bid_price": _field("number", "Conversion bid price", minimum=0),
-            "deep_bid_type": _field("string", "Deep bid type", enum=["AEO", "OCC", "ROAS", "VO_HIGHEST_VALUE", "VO_MIN_ROAS"]),
+            "deep_bid_type": _field("string", "Deep bid type", enum=["AEO", "DEFAULT", "MIN", "PACING", "VO_HIGHEST_VALUE", "VO_MIN", "VO_MIN_ROAS"]),
             "roas_bid": _field("number", "ROAS bid", minimum=0),
             "billing_event": _field("string", "Billing event", enum=["CPM", "CPC", "OCPM", "CPV"]),
             "budget_mode": _field("string", "Ad group budget mode", enum=["BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL", "BUDGET_MODE_INFINITE"]),
@@ -2128,6 +2126,14 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "video_file_name": _field("string", "Optional uploaded video file name"),
             "image_ids": _field("array", "Uploaded TikTok image IDs", items={"type": "string"}, lookup_tool="tiktok_list_images", lookup_result_key="images"),
             "image_web_uris": _field("array", "Stable image URI returned by the TikTok image library", minItems=1, items={"type": "string", "minLength": 1}, lookup_tool="tiktok_list_images", lookup_result_key="images", selection_value_fields=["web_uri", "image_id", "image_url"], selection_label_fields=["file_name", "image_name", "web_uri", "image_id"]),
+            "product_set_id": _field(
+                "string", "Optional product subset in the selected catalog", minLength=1,
+                lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
+                lookup_dependencies=[{
+                    "input_field": "catalog_id", "value_path": "catalog_id",
+                    "label": "所属商品目录", "required": True,
+                }],
+            ),
             "ad_text": _field("string", "Primary ad text", minLength=1, maxLength=100),
             "ad_text_list": _field("array", "Smart+ ad text list", minItems=1, items={"type": "object", "required": ["ad_text"], "properties": {"ad_text": _field("string", "Ad text", minLength=1, maxLength=100)}, "additionalProperties": False}),
             "identity_type": _field("string", "Identity type", enum=["CUSTOMIZED_USER", "AUTH_CODE", "TT_USER", "BC_AUTH_TT"]),
@@ -2216,6 +2222,14 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "ad_configuration": _field(
                 "object", "TikTok Smart+ CTA and tracking configuration",
                 properties={
+                    "product_set_id": _field(
+                        "string", "Optional product subset in the selected catalog", minLength=1,
+                        lookup_tool="tiktok_list_product_sets", lookup_result_key="product_sets",
+                        lookup_dependencies=[{
+                            "input_field": "catalog_id", "value_path": "catalog_id",
+                            "label": "所属商品目录", "required": True,
+                        }],
+                    ),
                     "call_to_action_id": _field("string", "TikTok CTA ID", minLength=1),
                     "tracking_info": _field(
                         "object", "Tracking configuration",

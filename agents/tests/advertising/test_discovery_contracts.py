@@ -1056,7 +1056,8 @@ def test_tiktok_smart_plus_product_fields_publish_lookup_contracts():
 
     assert properties["app_id"]["lookup_tool"] == "tiktok_list_apps"
     assert properties["catalog_id"]["lookup_tool"] == "tiktok_list_catalogs"
-    assert properties["product_set_id"]["lookup_tool"] == "tiktok_list_product_sets"
-    assert properties["product_set_id"]["lookup_dependencies"][0]["input_field"] == "catalog_id"
+    ad_properties = runtime.registry.get("tiktok_smart_plus_create_ad")[0].input_schema.properties
+    assert ad_properties["product_set_id"]["lookup_tool"] == "tiktok_list_product_sets"
+    assert ad_properties["product_set_id"]["lookup_dependencies"][0]["input_field"] == "catalog_id"
     assert "lookup_tool" not in properties["optimization_event"]
     assert properties["optimization_event"]["manual_entry"]

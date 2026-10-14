@@ -1,6 +1,6 @@
 {
   "id": "tiktok.lead_generation",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "provider": "tiktok",
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok Smart+ 潜在客户广告",
@@ -38,7 +38,7 @@
     {"path": "ad_group.schedule_end_time", "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_end_time", "label": "结束投放时间", "required_when": {"field": "ad_group.schedule_type", "equals": "SCHEDULE_START_END"}},
     {"path": "ad_group.location_ids", "tool_ref": "tiktok_smart_plus_create_adgroup.location_ids", "label": "投放地区", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_regions", "presentation": "asset_picker"},
     {"path": "ad_group.gender", "tool_ref": "tiktok_smart_plus_create_adgroup.gender", "label": "性别", "source": "enum", "options": ["GENDER_UNLIMITED", "GENDER_MALE", "GENDER_FEMALE"]},
-    {"path": "ad_group.age_groups", "tool_ref": "tiktok_smart_plus_create_adgroup.age_groups", "label": "年龄段", "source": "enum", "options": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_64", "AGE_65+"]},
+    {"path": "ad_group.age_groups", "tool_ref": "tiktok_smart_plus_create_adgroup.age_groups", "label": "年龄段", "source": "enum", "options": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_100"]},
     {"path": "ad_group.placement_type", "tool_ref": "tiktok_smart_plus_create_adgroup.placement_type", "label": "版位模式", "source": "enum", "options": ["PLACEMENT_TYPE_NORMAL", "PLACEMENT_TYPE_AUTOMATIC"]},
     {"path": "ad_group.bid_type", "tool_ref": "tiktok_smart_plus_create_adgroup.bid_type", "label": "出价方式", "required": true, "source": "enum", "options": ["BID_TYPE_NO_BID", "BID_TYPE_CUSTOM"]},
     {"path": "ad_group.bid_price", "tool_ref": "tiktok_smart_plus_create_adgroup.bid_price", "label": "出价", "required_when": {"field": "ad_group.bid_type", "equals": "BID_TYPE_CUSTOM"}},

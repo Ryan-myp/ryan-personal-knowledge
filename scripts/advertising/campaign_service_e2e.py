@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -754,7 +755,9 @@ def _request_data(request):
     body = request.body or b""
     text = body.decode() if isinstance(body, bytes) else str(body)
     if not text:
-        return {}
+        return {
+            key: values[0] for key, values in parse_qs(urlsplit(request.url).query).items()
+        }
     try:
         return json.loads(text)
     except ValueError:
@@ -786,7 +789,7 @@ class ProviderRecorder:
 
     def __init__(self, directory):
         self.root = Path(directory)
-        self.case = {}
+        self._case_context = ContextVar("provider_recorder_case", default=None)
         owned_path = self.root / "created-resource-ids.json"
         self.created = (
             set(json.loads(owned_path.read_text())) if owned_path.is_file() else set()
@@ -797,6 +800,14 @@ class ProviderRecorder:
         self.ad_group_campaigns = {}
         self.lock = threading.RLock()
         self.original = requests.Session.send
+
+    @property
+    def case(self):
+        return self._case_context.get() or {}
+
+    @case.setter
+    def case(self, value):
+        self._case_context.set(dict(value))
 
     def install(self):
         recorder = self
@@ -931,6 +942,7 @@ class ProviderRecorder:
             "campaign_id",
             "adgroup_id",
             "ad_id",
+            "smart_plus_ad_id",
             "campaign_ids",
             "adgroup_ids",
             "ad_ids",
@@ -1029,6 +1041,7 @@ class ProviderRecorder:
             "adset_id",
             "ad_id",
             "ad_ids",
+            "smart_plus_ad_id",
             "creative_id",
             "asset_group_id",
             "listing_group_filter_id",
@@ -1086,8 +1099,11 @@ def serve(directory, port):
 
     @app.middleware("http")
     async def scope(request, call_next):
-        recorder.case = _e2e_request_case(request)
-        return await call_next(request)
+        token = recorder._case_context.set(_e2e_request_case(request))
+        try:
+            return await call_next(request)
+        finally:
+            recorder._case_context.reset(token)
 
     uvicorn.run(app, host="127.0.0.1", port=port, log_config=None)
 

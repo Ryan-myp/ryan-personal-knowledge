@@ -265,6 +265,10 @@ class AdvertisingToolPolicyFactory:
         if parent_field:
             fields.add(str(parent_field))
         fields.update(
+            str(field) for field in (getattr(tool, "related_resource_id_fields", ()) or ())
+            if str(field) in properties
+        )
+        fields.update(
             name for name in ("status", "operation_status")
             if name in properties
         )

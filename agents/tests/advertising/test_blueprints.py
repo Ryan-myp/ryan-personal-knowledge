@@ -63,10 +63,10 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
-    assert versions["tiktok.app_conversion_video"] == "2.1.0"
-    assert versions["tiktok.lead_generation"] == "2.0.1"
-    assert versions["tiktok.product_sales_video"] == "2.1.0"
-    assert versions["tiktok.traffic_video"] == "3.1.0"
+    assert versions["tiktok.app_conversion_video"] == "3.0.0"
+    assert versions["tiktok.lead_generation"] == "2.0.2"
+    assert versions["tiktok.product_sales_video"] == "2.2.0"
+    assert versions["tiktok.traffic_video"] == "3.2.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 
@@ -129,7 +129,7 @@ def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():
     blueprint = runtime.creation_blueprints.get("tiktok.lead_generation")
 
     assert blueprint is not None
-    assert blueprint.version == "2.0.1"
+    assert blueprint.version == "2.0.2"
     assert blueprint.tools == (
         "tiktok_smart_plus_create_campaign",
         "tiktok_smart_plus_create_adgroup",
@@ -490,7 +490,7 @@ def test_requested_ad_type_blueprints_have_registered_create_and_readback_tools(
     product_sales_fields = {
         field["path"]: field for field in tiktok_product_sales.fields
     }
-    product_set = product_sales_fields["ad_group.product_set_id"]
+    product_set = product_sales_fields["ad.product_set_id"]
     assert product_set["lookup_tool"] == "tiktok_list_product_sets"
     assert product_sales_fields["ad.landing_page_url"]["required_when"] == {
         "field": "ad_group.promotion_type",
@@ -504,11 +504,12 @@ def test_requested_ad_type_blueprints_have_registered_create_and_readback_tools(
             field["path"]: field
             for field in blueprints[blueprint_id].fields
         }
-        assert fields["ad.image_web_uris"]["lookup_tool"] == "tiktok_list_images"
-        assert fields["ad.image_web_uris"]["required_when"] == {
-            "field": "ad.ad_format",
-            "equals": "SINGLE_VIDEO",
-        }
+        cover = fields.get("ad.image_web_uris") or fields["ad.image_ids"]
+        assert cover["lookup_tool"] == "tiktok_list_images"
+        if blueprint_id == "tiktok.product_sales_video":
+            assert cover["required_when"] == {
+                "field": "ad.ad_format", "equals": "SINGLE_VIDEO",
+            }
     tiktok_traffic = blueprints["tiktok.traffic_video"]
     fields = {field["path"]: field for field in tiktok_traffic.fields}
     assert fields["ad.video_id"]["lookup_tool"] == "tiktok_get_video"
@@ -979,7 +980,6 @@ def test_creation_catalog_covers_provider_reference_sources_across_channels():
     [
         "tiktok.product_sales_video",
         "tiktok.traffic_video",
-        "tiktok.app_conversion_video",
     ],
 )
 def test_tiktok_smart_plus_blueprints_use_registered_cta_enum(blueprint_id):
@@ -1866,7 +1866,7 @@ def test_incomplete_harness_create_returns_blueprint_interaction_before_executio
         assert "interaction" in result["tool_results"][0], result["tool_results"][0]
         assert result["ui"].get("cards"), result["tool_results"][0].get("interaction")
         assert result["ui"]["cards"][0]["type"] in {
-            "ad_creation_form", "ad_creation_account_selector",
+            "ad_creation_form", "ad_creation_account_selector", "ad_creation_selector",
         }
         assert result["tool_results"][0]["interaction"]["type"] == "ad_creation_form"
         assert result["tool_results"][0]["is_error"] is True

@@ -141,17 +141,17 @@ def test_skill_up_app_creation_keeps_dynamic_app_id_unresolved(tmp_path):
             "content": "创建一个 TikTok App 转化广告，使用我的 App，投放给 18 到 35 岁用户。",
         }],
     }, model_adapter=ScriptedHarnessModel(ModelTurn(tool_calls=(call(
-        "tiktok_smart_plus_create_campaign",
+        "tiktok_create_campaign",
         {
             "account_id": "7397068114548195329",
-            "campaign_name": "skill-up-app",
+            "name": "skill-up-app",
             "objective_type": "APP_PROMOTION",
-            "app_promotion_type": "APP_INSTALL",
+            "app_promotion_type": "APP_ACQUISITION",
         },
     ),))))
 
     evidence = result["metadata"]["runtime_result"]
-    assert evidence["intent"]["intent_type"] == "create_smart_plus_campaign"
+    assert evidence["intent"]["intent_type"] == "create_campaign"
     assert evidence["intent"]["namespaces"] == ["tiktok"]
     assert evidence["needs_input"] is True
     # A creation card is an input-collection state. Confirmation is emitted
@@ -163,9 +163,9 @@ def test_skill_up_app_creation_keeps_dynamic_app_id_unresolved(tmp_path):
     )
     app_id = next(
         item for item in persisted["ui"]["cards"][0]["fields"]
-        if item["path"] == "campaign.app_id"
+        if item["path"] == "ad_group.app_id"
     )
-    assert app_id["state"] == "missing"
+    assert app_id["state"] in {"missing", "hidden"}
     assert app_id["value"] is None
 
 

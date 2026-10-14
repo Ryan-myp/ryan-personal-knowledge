@@ -204,6 +204,12 @@ TIKTOK_LOOKUP_CONTRACTS = {
         "image_ids": _tiktok_lookup(
             "tiktok_list_images", "images", ["image_id", "id"],
             ["file_name", "image_name", "name", "id"],
+            query_field="image_id",
+        ),
+        "image_web_uris": _tiktok_lookup(
+            "tiktok_list_images", "images", ["image_id", "web_uri", "id"],
+            ["file_name", "image_name", "name", "image_id"],
+            query_field="image_id",
         ),
         "identity_id": _tiktok_lookup(
             "tiktok_list_identities", "identities", ["identity_id", "id"],
@@ -215,6 +221,7 @@ TIKTOK_LOOKUP_CONTRACTS = {
         "catalog_id": _tiktok_lookup(
             "tiktok_list_catalogs", "catalogs", ["catalog_id", "id"],
             ["catalog_name", "name", "id"],
+            query_field="catalog_id",
         ),
         "product_set_id": _tiktok_lookup(
             "tiktok_list_product_sets", "product_sets", ["product_set_id", "id"],
@@ -1005,6 +1012,8 @@ class TikTokToolSource(BaseProviderToolSource):
                     {"field": "app_id", "exists": True},
                 ],
                 traits=["write", "ad", "app", "app_promotion"], write=True,
+                live_support=True, contract_version="1.5.0", readback_tool="tiktok_get_ad",
+                related_resource_type="campaign", related_resource_id_fields=["campaign_id"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
                     key: data[key] for key in tiktok_app_ad_schema()["properties"] if key in data
                 }), {}),
@@ -1013,8 +1022,10 @@ class TikTokToolSource(BaseProviderToolSource):
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_catalogs",
                 description="查询 TikTok 商品目录；Catalog/Product Set 的创建、更新和删除当前没有经过验证的 Ads API Tool。",
                 method_name="list_catalogs", result_key="catalogs",
+                contract_version="1.5.0",
                 properties={
                     "account_id": {"type": "string"},
+                    "catalog_id": {"type": "string", "minLength": 1, "pattern": "^[0-9]+$"},
                     "filtering": {"type": "array"},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
@@ -1024,6 +1035,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "filtering": data.get("filtering"),
                     "page_size": data.get("limit", 20),
+                    "catalog_id": data.get("catalog_id"),
                 }),
             ),
             method_tool(
@@ -1269,6 +1281,7 @@ class TikTokToolSource(BaseProviderToolSource):
             skill="tiktok-ads-api-expert",
             namespace="tiktok",
             description="创建 TikTok Ads Campaign。",
+            contract_version="1.5.0",
             input_schema=ToolSchema(**tiktok_campaign_schema()),
             action="create", resource_type="campaign", intent_types=["create_campaign", "create_campaign_only"],
             intent_aliases=[
@@ -1291,6 +1304,11 @@ class TikTokToolSource(BaseProviderToolSource):
                         "APP_PROMOTION", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
                         *all_in_one_objectives,
                     ]},
+                },
+            }, {
+                "if": {
+                    "objective_type": {"aliases": ["objective"], "in": ["APP_PROMOTION"]},
+                    "app_promotion_type": {"in": ["APP_RETARGETING", "APP_ACQUISITION"]},
                 },
             }],
         ), TikTokCreateCampaignHandler(api_client)))
@@ -1673,6 +1691,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "Sales 和 Product Sales，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_campaign", result_key="campaign",
+            contract_version="1.5.0",
             properties={"account_id": {"type": "string"}, **smart_plus_campaign["properties"]},
             required=["account_id"] + smart_plus_campaign["required"],
             requires=smart_plus_campaign["requires"],
@@ -1697,6 +1716,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_adgroup", result_key="adgroup",
+            contract_version="1.5.0",
             properties={"account_id": {"type": "string"}, **smart_plus_adgroup["properties"]},
             required=["account_id"] + smart_plus_adgroup["required"],
             requires=smart_plus_adgroup["requires"],
@@ -1723,6 +1743,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
+            contract_version="1.5.0",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
             required=["account_id"] + smart_plus_ad["required"],
             requires=smart_plus_ad["requires"],
@@ -1799,6 +1820,8 @@ class TikTokToolSource(BaseProviderToolSource):
                         "account_id": {"type": "string"},
                         "filtering": {"type": "array"},
                         "limit": {"type": "integer"},
+                        **({"image_id": {"type": "string", "minLength": 1}}
+                           if resource_name == "images" else {}),
                     },
                 ),
                 action="list", resource_type={
@@ -1812,6 +1835,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 effect_class=ToolEffect.READ,
                 replay_policy=ReplayPolicy.SAFE,
                 traits=["read", "creative", resource_name],
+                **({"contract_version": "1.5.0"} if resource_name == "images" else {}),
             ), handler))
 
         tools.append(method_tool(
