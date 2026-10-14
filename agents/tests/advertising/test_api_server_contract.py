@@ -47,6 +47,31 @@ def _chat_page_styles() -> str:
     )
 
 
+def test_streamed_model_failure_after_tool_execution_does_not_offer_blind_retry():
+    from agents.deployments.advertising.api.routes.chat import _chat_reply_content
+
+    text = _chat_reply_content({
+        "status": "failed",
+        "error": "RateLimitError",
+        "results": [{"tool": "create_resource", "success": True}],
+    })
+    assert "限流" in text
+    assert "不要直接重试" in text
+
+
+@pytest.mark.parametrize("result,expected", [
+    ({"reply": "A real reply", "error": "RateLimitError"}, "A real reply"),
+    ({}, ""),
+    ({"error": "model_timeout"}, "模型响应超时"),
+    ({"error": "model_not_configured"}, "模型服务未配置"),
+    ({"error": "model_token_budget_exceeded"}, "预算"),
+    ({"error": "UnknownError"}, "执行失败"),
+])
+def test_chat_failure_copy_uses_safe_codes_and_preserves_existing_replies(result, expected):
+    from agents.deployments.advertising.api.routes.chat import _chat_reply_content
+
+    assert expected in _chat_reply_content(result)
+
 def test_local_env_file_is_loaded_without_overriding_process_environment(tmp_path, monkeypatch):
     env_file = tmp_path / ".env"
     env_file.write_text(

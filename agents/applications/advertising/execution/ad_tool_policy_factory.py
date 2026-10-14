@@ -10,6 +10,7 @@ from agents.applications.advertising.creation.templates import CreationTemplateE
 from agents.applications.advertising.persistence.errors import PersistenceError
 from agents.applications.advertising.persistence.adapters import PersistenceIdempotencyStore
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
+from agents.tools.advertising.shared.domain.account_scope import tool_call_accounts
 from .ad_tool_interaction import AdvertisingToolInteractionProvider
 
 logger = logging.getLogger(__name__)
@@ -147,30 +148,10 @@ class AdvertisingToolPolicyFactory:
         arguments: Mapping[str, Any],
         request_context: Mapping[str, Any],
     ) -> tuple[Any, Any]:
-        runtime = self.runtime
-        scoped_account = self._scoped_account(tool, platform, request_context)
-        platform_params = request_context.get("platform_params")
-        namespaces = (
-            list(platform_params) if isinstance(platform_params, Mapping) and platform_params
-            else request_context.get("_agent_tool_namespaces", ())
+        return tool_call_accounts(
+            tool, platform, arguments, request_context,
+            normalize_namespace=self.runtime._resolve_platform_identifier,
         )
-        multiple_namespaces = len({
-            runtime._canonical_platform(namespace)
-            for namespace in (namespaces or ())
-        }) > 1
-        request_account = scoped_account or (
-            None if multiple_namespaces else request_context.get("account_id")
-        )
-        fields = tuple(
-            getattr(tool, "scope_fields", ()) or (
-                "account_id", "ad_account_id", "advertiser_id", "customer_id",
-            )
-        )
-        argument_account = next((
-            arguments.get(field) for field in fields
-            if arguments.get(field) not in (None, "")
-        ), None)
-        return request_account, argument_account
 
     def _account_authorization_error(
         self,
@@ -665,30 +646,5 @@ class AdvertisingToolPolicyFactory:
             expected,
             create=not bool(request_context.get("confirmed")),
         )
-
-    def _scoped_account(
-        self,
-        tool: Any,
-        platform: str,
-        request_context: Mapping[str, Any],
-    ) -> Any:
-        platform_params = request_context.get("platform_params")
-        if not isinstance(platform_params, Mapping):
-            return None
-        for key, values in platform_params.items():
-            if (
-                self.runtime._resolve_platform_identifier(str(key))
-                != self.runtime._resolve_platform_identifier(platform)
-                or not isinstance(values, Mapping)
-            ):
-                continue
-            for field in getattr(tool, "scope_fields", ()) or (
-                "account_id", "ad_account_id", "advertiser_id", "customer_id",
-            ):
-                if values.get(field) not in (None, ""):
-                    return values[field]
-        return None
-
-
 
 __all__ = ["AdvertisingToolPolicyFactory"]

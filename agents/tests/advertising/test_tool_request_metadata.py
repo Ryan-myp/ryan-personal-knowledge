@@ -35,6 +35,8 @@ def test_provider_executor_receives_trusted_run_mode_and_identity():
         write_guard=None,
         input_builder=SimpleNamespace(parameter_selection=selection),
         _build_request_clients=lambda *_: {},
+        _canonical_platform=lambda value: value,
+        _resolve_platform_identifier=lambda value: value,
     )
     tool = ToolDefinition(
         name="test_create",

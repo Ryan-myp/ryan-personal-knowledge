@@ -499,6 +499,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 description="列出 TikTok 广告主账户。", method_name="list_accounts", result_key="accounts",
                 properties={"advertiser_ids": {"type": "array", "items": {"type": "string"}}},
                 required=["advertiser_ids"], action="list", resource_type="account",
+                scope_required=False, contract_version="1.3.1",
                 intent_types=["list_accounts"], traits=["read", "account"],
                 intent_aliases=["账户列表", "账号列表", "account list"],
                 result_items_key="accounts",

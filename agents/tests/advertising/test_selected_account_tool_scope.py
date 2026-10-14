@@ -7,7 +7,7 @@ from agents.applications.advertising.composition.ad_application_assembly import 
 from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
-def _selection(account, text, scope):
+def _selection(account, text, scope, read_scopes=None):
     tools = [
         binding.definition
         for namespace in ("google-ads", "meta", "tiktok")
@@ -25,6 +25,7 @@ def _selection(account, text, scope):
         principal=SimpleNamespace(account_scope=scope),
         context={
             "account_id": account,
+            "_agent_read_account_scopes": read_scopes or {},
             "_agent_tool_selection_context": (
                 "查询 campaign 123 的详情", "查询 campaign 123 的详情",
             ),
@@ -61,3 +62,24 @@ def test_unauthorized_or_ambiguous_account_does_not_invent_channel_authority():
         selected, context = _selection(account, "查询 campaign 列表", scope)
         assert selected
         assert len(context["_agent_tool_namespaces"]) > 1
+
+
+def test_successful_read_scope_keeps_channel_when_http_account_was_never_selected():
+    selected, context = _selection(
+        None, "列出广告组 123 下的 ad 列表",
+        {"google-ads": {"google-test"}, "meta": {"meta-test"}, "tiktok": {"tiktok-test"}},
+        read_scopes={"tiktok": "tiktok-test"},
+    )
+    assert selected
+    assert {tool.namespace for tool in selected} == {"tiktok"}
+    assert "tiktok_list_ads" in {tool.name for tool in selected}
+    assert context["_agent_tool_namespaces"] == ["tiktok"]
+
+
+def test_explicit_channel_switch_overrides_remembered_read_scope():
+    selected, _ = _selection(
+        None, "查询 Google campaign 列表",
+        {"google-ads": {"google-test"}, "tiktok": {"tiktok-test"}},
+        read_scopes={"tiktok": "tiktok-test"},
+    )
+    assert {tool.namespace for tool in selected} == {"google-ads"}

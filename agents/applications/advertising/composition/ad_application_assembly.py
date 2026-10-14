@@ -429,17 +429,28 @@ class AdApplicationAssembly:
         context = request.context if isinstance(request.context, Mapping) else {}
         account = context.get("account_id")
         scope = getattr(request.principal, "account_scope", None)
-        if account in (None, "") or scope is None:
+        if scope is None:
             return None
         namespaces = {
             runtime._canonical_platform(str(getattr(tool, "namespace", "") or ""))
             for tool in tools
             if getattr(tool, "namespace", None)
         }
+        if account not in (None, ""):
+            candidates = {namespace: account for namespace in namespaces}
+        else:
+            remembered = context.get("_agent_read_account_scopes")
+            if not isinstance(remembered, Mapping) or not remembered:
+                sessions = getattr(runtime, "_sessions", {})
+                session = sessions.get(str(request.session_id or ""))
+                metadata = getattr(getattr(session, "ctx", None), "metadata", {})
+                remembered = metadata.get("read_account_scopes", {})
+            candidates = remembered if isinstance(remembered, Mapping) else {}
         matches = [
             namespace for namespace in namespaces
-            if runtime._validate_account_with_principal(
-                namespace, str(account), False, scope,
+            if candidates.get(namespace) not in (None, "")
+            and runtime._validate_account_with_principal(
+                namespace, str(candidates[namespace]), False, scope,
             )[0]
         ]
         return matches[0] if len(matches) == 1 else None

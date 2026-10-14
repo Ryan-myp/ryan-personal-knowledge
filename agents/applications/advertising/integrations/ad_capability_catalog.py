@@ -21,6 +21,27 @@ class AdvertisingCapabilityCatalog:
         lines.extend(self._execution_lines(request, has_live_adapter))
         return self._redact_and_bound("\n".join(lines), max_chars)
 
+    def read_account_candidates(
+        self, request: Any, *, max_accounts: int = 20,
+    ) -> dict[str, list[str]]:
+        """Expose a bounded discovery scope, not write selection or credentials."""
+        scope = getattr(getattr(request, "principal", None), "account_scope", None)
+        available = getattr(self.owner, "_available_accounts_for_request", None)
+        registry = getattr(self.owner, "registry", None)
+        namespaces = getattr(registry, "list_all_namespaces", None)
+        if scope is None or not callable(available) or not callable(namespaces):
+            return {}
+        candidates: dict[str, list[str]] = {}
+        remaining = max(0, int(max_accounts))
+        for namespace in sorted(namespaces()):
+            if not remaining:
+                break
+            accounts = list(available(namespace, scope))[:remaining]
+            if accounts:
+                candidates[str(namespace)] = [str(value) for value in accounts]
+                remaining -= len(accounts)
+        return candidates
+
     def _registered_skills(
         self, application: Any, request: Any,
     ) -> dict[str, tuple[str, Any]]:

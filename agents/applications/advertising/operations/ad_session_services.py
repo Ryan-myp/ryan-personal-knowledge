@@ -73,6 +73,11 @@ class AdSessionServices:
             stored_action_draft = persisted_metadata.get("action_draft")
             if isinstance(stored_action_draft, dict):
                 ctx.metadata["action_draft"] = stored_action_draft
+            stored_read_scopes = persisted_metadata.get("read_account_scopes")
+            if isinstance(stored_read_scopes, dict):
+                ctx.metadata["read_account_scopes"] = dict(
+                    list(stored_read_scopes.items())[-32:],
+                )
             stored_digest = persisted_metadata.get("conversation_digest")
             if isinstance(stored_digest, str):
                 ctx.metadata["conversation_digest"] = stored_digest[:2400]

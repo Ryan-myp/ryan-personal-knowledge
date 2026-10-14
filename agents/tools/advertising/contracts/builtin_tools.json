@@ -1,5 +1,5 @@
 {
-  "digest": "a6196dcd77717e7c933d0fa57da2f5a1aa1f63d77964d7e5019f2a15a4596775",
+  "digest": "b84ea18d63d1dcb868da5447027570e5d6c36d94741ec574e58fd694bd86aed9",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -30114,7 +30114,7 @@
       ]
     },
     "tiktok": {
-      "digest": "35b6df32088518e788c1940c5a29667ae4d542bb1be2b8c273a0fa7b9f8531d2",
+      "digest": "5e35c2d1d0f08bd3325d918439293f13e850e2e0a572d39ef1a3fee1c0e20386",
       "tool_count": 85,
       "tools": [
         {
@@ -40937,7 +40937,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "add1fe8203a52d9ee94555643b0ee2e8cf1afd18d8de4b7cd115ade0131fa061",
-          "contract_version": "1.3.0",
+          "contract_version": "1.3.1",
           "description": "列出 TikTok 广告主账户。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -40993,7 +40993,7 @@
           "result_items_key": "accounts",
           "risk_level": "low",
           "scope_fields": [],
-          "scope_required": null,
+          "scope_required": false,
           "scope_type": null,
           "skill": "tiktok-ads-api-expert",
           "skill_refs": [],
