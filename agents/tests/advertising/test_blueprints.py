@@ -1260,7 +1260,7 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
         account_id="123",
         platform_params={"google-ads": {"campaign_type": "APP"}},
         creation_blueprint_id="google-ads.app",
-        creation_blueprint_version="1.1.0",
+        creation_blueprint_version="1.2.0",
     )
 
     assert result["results"] == []
@@ -1278,10 +1278,11 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
     install(runtime, ModelTurn(tool_calls=(call(
         "google_create_app_ad",
         {
-            "ad_group_id": "ad-group-1",
+            "ad_group_id": "456",
             "name": "App ad",
             "headlines": ["Only one headline"],
             "descriptions": ["Only one description"],
+            "status": "ENABLED",
         },
     ),)))
 
@@ -1323,10 +1324,11 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
                 "name": "App ad",
                 "headlines": ["Only one headline"],
                 "descriptions": ["Only one description"],
+                "status": "ENABLED",
             },
         }},
         creation_blueprint_id="google-ads.app",
-        creation_blueprint_version="1.1.0",
+        creation_blueprint_version="1.2.0",
     )
 
     assert result["results"] == []
@@ -1431,7 +1433,7 @@ def test_google_app_campaign_conversion_lookup_is_declared_at_campaign_level():
     assert selective["object_properties"]["conversion_actions"][
         "lookup_tool"
     ] == "google_list_conversion_actions"
-    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.1.0")
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.2.0")
     blueprint_field = next(
         field for field in blueprint.fields
         if field["path"] == "campaign.selective_optimization"
@@ -1940,7 +1942,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
         "google-ads": ["9055507554"],
     }
     runtime.register_tool_source(create_google_tool_source())
-    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.1.0")
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.2.0")
 
     class SelectedBlueprintModel:
         def __init__(self):
@@ -1981,7 +1983,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
             user_id="template-user",
             account_id="9055507554",
             creation_blueprint_id="google-ads.app",
-            creation_blueprint_version="1.1.0",
+            creation_blueprint_version="1.2.0",
             creation_template_id=template["template_id"],
         )
 
@@ -2269,10 +2271,10 @@ def test_google_template_schema_changes_publish_contract_version_1_5():
             "google_create_shopping_product_ad",
         ):
             definition, _handler = runtime.registry.get(tool_name)
-            assert definition.contract_version == (
-                "1.5.1" if tool_name in {"google_create_campaign", "google_create_app_ad"}
-                else "1.5.0"
-            )
+            assert definition.contract_version == {
+                "google_create_campaign": "1.5.1",
+                "google_create_app_ad": "1.6.0",
+            }.get(tool_name, "1.5.0")
     finally:
         runtime.close(wait=True)
 

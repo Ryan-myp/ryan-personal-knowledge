@@ -1,5 +1,5 @@
 {
-  "digest": "d495555cef0722922b56997ddb8989bca8edbbf38a619dc181389a29d2bb71f0",
+  "digest": "f834a889e417c4cf3e5f547faab29322aeff9e63d0424e208346518afc67bc38",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2444,7 +2444,7 @@
       ]
     },
     "google-ads": {
-      "digest": "83fe925cc698caa5b761564f03b441aec58f02999c6a39168cd9b90609431bc9",
+      "digest": "7654c027da33a054f22f40fd3bd6f0af3d17292950b1740ddc1908a5bb8d79c9",
       "tool_count": 104,
       "tools": [
         {
@@ -3089,9 +3089,9 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "e5f1f7a8ce90420a33682b08f4f52be4adc98acb9cd8572170e05c6a457afc1a",
-          "contract_version": "1.5.1",
-          "description": "创建 Google App Campaign AppAd，按请求提交 PAUSED，不得替换为 ENABLED。只有实时查询确认父 Ad Group 为 PAUSED 时才允许创建；渠道不接受暂停状态时明确返回失败。",
+          "contract_hash": "97680023370336b51a00be62a4885fe3ab07e810ab801162b7f75b3cb57245fa",
+          "contract_version": "1.6.0",
+          "description": "新建 Google App Ad 并绑定到 Ad Group，不更新旧 Ad 的创意字段。必须显式确认 Ad 状态 ENABLED；创建前实时核验所属 Campaign 和 Ad Group 均为 PAUSED。父级状态未知或启用时拒绝写入，不得将 Ad 实际状态描述为 PAUSED，也不得自动启用父级。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -3100,7 +3100,7 @@
             "conditional_rules": [],
             "properties": {
               "ad_group_id": {
-                "description": "Parent App campaign Ad Group ID",
+                "description": "Numeric parent App Ad Group ID returned by the creation Tool",
                 "lookup_dependencies": [
                   {
                     "input_field": "campaign_id",
@@ -3112,6 +3112,7 @@
                 "lookup_result_key": "ad_groups",
                 "lookup_tool": "google_list_ad_groups",
                 "minLength": 1,
+                "pattern": "^[0-9]+$",
                 "selection_label_fields": [
                   "name",
                   "ad_group_name",
@@ -3260,10 +3261,9 @@
                 "type": "string"
               },
               "status": {
-                "default": "PAUSED",
-                "description": "Submit PAUSED unchanged; provider rejection must not enable the ad",
+                "description": "Explicit ENABLED App Ad; its Ad Group and Campaign must both remain PAUSED",
                 "enum": [
-                  "PAUSED"
+                  "ENABLED"
                 ],
                 "type": "string"
               },
@@ -3323,11 +3323,13 @@
               "ad_group_id",
               "name",
               "headlines",
-              "descriptions"
+              "descriptions",
+              "status"
             ],
             "requires": [
               "headlines",
-              "descriptions"
+              "descriptions",
+              "status"
             ],
             "requires_any_of": [],
             "type": "object"
@@ -3393,8 +3395,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "20df59f32e12358d84b232510a58efed001bd30ea3bc35e135ea53056342bfb0",
-          "contract_version": "1.5.0",
+          "contract_hash": "b9413468af17663a292a7af4b026480486d5c5f3170493689857c340c6b8e40f",
+          "contract_version": "1.6.0",
           "description": "创建 Google App Campaign Ad Group；live 仅在受控测试账号和确认后执行。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -3404,10 +3406,11 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
-                "description": "Parent App Campaign ID",
+                "description": "Numeric parent App Campaign ID returned by the creation Tool",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
+                "pattern": "^[0-9]+$",
                 "selection_label_fields": [
                   "name",
                   "campaign_name",
@@ -12567,8 +12570,8 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "f5c53e0edcaddace22b57c9d37413edd8c85ce591dc4fc84e2cac1170e1b501d",
-          "contract_version": "1.5.0",
-          "description": "查询 Google Ads Ad 详情。",
+          "contract_version": "1.5.1",
+          "description": "查询 Google Ad（含 App）创意详情和实际父级状态；ENABLED 不等于正在投放。delivery_state 是根据真实父级状态的本地判定，不是 Google 原生投放枚举。BLOCKED_BY_PARENT 表示被暂停或已移除父级阻止投放；NOT_VERIFIED 不代表已确认投放。账户已由请求上下文提供，不能额外添加 customer_id。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -12670,8 +12673,8 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "089e4a896e47f6b425bc7d150a46df3f0e95069fa5c3f597387aec5f3908a0d6",
-          "contract_version": "1.5.0",
-          "description": "查询 Google Ads Ad Group 详情。",
+          "contract_version": "1.5.1",
+          "description": "查询 Google Ads Ad Group 详情，以及实际所属 Campaign 和父级状态。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {

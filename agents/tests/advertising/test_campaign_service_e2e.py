@@ -888,35 +888,61 @@ def test_google_product_group_creation_accepts_explicit_paused_status(tmp_path):
     recorder._guard(request, "google-ads", json.loads(request.body))
 
 
-def test_google_app_ad_requires_a_paused_ad_and_previously_read_paused_parent(tmp_path):
+def test_google_app_ad_requires_explicit_enabled_and_both_verified_paused_parents(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     data = {"mutateOperations": [{
         "adGroupAdOperation": {
             "create": {
                 "adGroup": "customers/123/adGroups/77",
-                "status": "PAUSED",
+                "status": "ENABLED",
                 "ad": {"appAd": {"headlines": [{"text": "Install"}]}},
             }
         }
     }]}
 
-    with pytest.raises(PermissionError, match="verified PAUSED parent"):
+    with pytest.raises(PermissionError, match="verified PAUSED"):
         recorder._guard_google(
             data,
             "/v24/customers/123/googleAds:mutate",
         )
 
     recorder._capture_google_paused_resources(
-        {"results": [{"adGroup": {"id": "77", "status": "PAUSED"}}]}
+        {"results": [{
+            "adGroup": {
+                "id": "77", "status": "PAUSED", "campaign": "customers/123/campaigns/99",
+            },
+            "campaign": {"id": "99", "status": "ENABLED"},
+        }]}
     )
     assert recorder.paused_ad_groups == {"77"}
+    with pytest.raises(PermissionError, match="verified PAUSED"):
+        recorder._guard_google(data, "/v24/customers/123/googleAds:mutate")
+    recorder._capture_google_paused_resources(
+        {"results": [{"campaign": {"id": "99", "status": "PAUSED"}}]}
+    )
     recorder._guard_google(
         data,
         "/v24/customers/123/googleAds:mutate",
     )
-    data["mutateOperations"][0]["adGroupAdOperation"]["create"]["status"] = "ENABLED"
-    with pytest.raises(PermissionError, match="PAUSED"):
+    recorder._capture_google_paused_resources(
+        {"results": [{"campaign": {"id": "99", "status": "ENABLED"}}]}
+    )
+    with pytest.raises(PermissionError, match="verified PAUSED"):
         recorder._guard_google(data, "/v24/customers/123/googleAds:mutate")
+    data["mutateOperations"][0]["adGroupAdOperation"]["create"]["status"] = "PAUSED"
+    with pytest.raises(PermissionError, match="explicit ENABLED"):
+        recorder._guard_google(data, "/v24/customers/123/googleAds:mutate")
+
+
+def test_enabled_exception_does_not_apply_to_other_google_ad_types(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    data = {"operations": [{"create": {
+        "adGroup": "customers/123/adGroups/77",
+        "status": "ENABLED",
+        "ad": {"responsiveSearchAd": {"headlines": [{"text": "Search"}]}},
+    }}]}
+    with pytest.raises(PermissionError, match="PAUSED"):
+        recorder._guard_google(data, "/v24/customers/123/adGroupAds:mutate")
 
 
 def test_service_restart_reuses_private_persistence_directory(tmp_path):

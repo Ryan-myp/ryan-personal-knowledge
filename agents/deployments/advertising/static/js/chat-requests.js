@@ -459,7 +459,7 @@
                     title.textContent = conversation.title || '新对话';
                     const preview = document.createElement('span');
                     preview.className = 'chat-history-preview';
-                    preview.textContent = conversation.preview || '暂无消息预览';
+                    preview.textContent = markdownPreview(conversation.preview) || '暂无消息预览';
                     copy.append(title, preview);
                     const time = document.createElement('span');
                     time.className = 'chat-history-time';
@@ -549,6 +549,7 @@
                 container.replaceChildren();
                 let precedingUserInput = '';
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
+                    if (!['user', 'assistant'].includes(message.role)) continue;
                     const role = message.role === 'user' ? 'user' : 'agent';
                     if (role === 'user') {
                         precedingUserInput = String(message.content || '');

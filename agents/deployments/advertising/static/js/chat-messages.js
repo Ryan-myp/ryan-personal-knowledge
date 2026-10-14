@@ -475,67 +475,6 @@
             return div.innerHTML;
         }
 
-        // Format markdown-like content: bold, tables, code, line breaks
-        function formatContent(content) {
-            if (!content) return '';
-            let html = escapeHtml(content);
-
-            // Bold
-            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-            // Inline code
-            html = html.replace(/`(.+?)`/g, '<code>$1</code>');
-
-            // Markdown tables: detect table blocks and convert
-            const lines = html.split('\n');
-            let inTable = false;
-            let tableLines = [];
-            let result = [];
-
-            function flushTable() {
-                if (tableLines.length > 0) {
-                    try {
-                        const rows = tableLines.map(row => row.split('|').map(c => c.trim()).filter(Boolean));
-                        if (rows.length >= 2) {
-                            const headerRow = rows[0];
-                            const dataRows = rows.slice(1).filter(r => !r.every(c => /^[-:]+$/.test(c)));
-                            let thHtml = '<tr>' + headerRow.map(c => `<th>${c}</th>`).join('') + '</tr>';
-                            let tdHtml = dataRows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('');
-                            result.push(`<table class="data-table"><thead>${thHtml}</thead><tbody>${tdHtml}</tbody></table>`);
-                        } else {
-                            result.push(tableLines.join('<br>'));
-                        }
-                    } catch (e) {
-                        result.push(tableLines.join('<br>'));
-                    }
-                    tableLines = [];
-                    inTable = false;
-                }
-            }
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                // Detect table rows (starts and ends with |)
-                if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
-                    inTable = true;
-                    tableLines.push(trimmed);
-                } else {
-                    flushTable();
-                    if (trimmed) {
-                        result.push(trimmed);
-                    }
-                }
-            }
-            flushTable();
-
-            return result.join('<br>');
-        }
-
-        // Format reply content (legacy, kept for compatibility)
-        function formatReply(content) {
-            return formatContent(content);
-        }
-
         // New chat
         function newChat() {
             stopDurableRunPolling();

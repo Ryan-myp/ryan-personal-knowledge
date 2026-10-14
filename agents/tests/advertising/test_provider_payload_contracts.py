@@ -3152,6 +3152,7 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
         descriptions=[{"text": "Fast mobile shopping"}, {"text": "Download today"}],
         images=[{"resource_name": "customers/123/assets/88"}],
         videos=[{"asset_id": "99"}],
+        status="ENABLED",
     )
 
     assert plan["mode"] == "dry_run"
@@ -3160,10 +3161,11 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     create = plan["operation"]["adGroupAds"]["create"]
     assert create["resourceName"] == "customers/123/ads/-1"
     assert create["adGroup"] == "customers/123/adGroups/42"
-    assert create["status"] == "PAUSED"
+    assert create["status"] == "ENABLED"
     assert plan["delivery_guard"] == {
         "resource": "ad_group",
         "required_status": "PAUSED",
+        "campaign_required_status": "PAUSED",
     }
     assert create["ad"]["appAd"]["headlines"] == [
         {"text": "Install the app"}, {"text": "Shop anywhere"}
@@ -3186,9 +3188,9 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
     assert "type" not in app_group.input_schema.properties
     assert app_ad.live_support is True
     assert app_ad.input_schema.required == [
-        "ad_group_id", "name", "headlines", "descriptions"
+        "ad_group_id", "name", "headlines", "descriptions", "status",
     ]
-    assert app_ad.input_schema.properties["status"]["enum"] == ["PAUSED"]
+    assert app_ad.input_schema.properties["status"]["enum"] == ["ENABLED"]
 
 
 def test_google_pmax_live_chain_uses_one_atomic_customer_mutate():
@@ -3310,7 +3312,7 @@ def test_google_customer_mutate_posts_cross_service_operations_and_normalizes_re
     ]
 
 
-def test_google_app_live_chain_preserves_paused_ad_and_parent_status():
+def test_google_app_live_chain_preserves_enabled_ad_and_paused_parent_status():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
 
@@ -3324,29 +3326,34 @@ def test_google_app_live_chain_preserves_paused_ad_and_parent_status():
 
     client._mutate = fake_mutate
     client._search = lambda _query: {
-        "results": [{"adGroup": {"id": "77", "status": "PAUSED"}}]
+        "results": [{
+            "adGroup": {"id": "77", "status": "PAUSED", "campaign": "customers/123/campaigns/99"},
+            "campaign": {"id": "99", "status": "PAUSED"},
+        }]
     }
     result = client.create_app_ad(
         "77", "Live App Ad",
         headlines=[{"text": "Install now"}, {"text": "Shop in the app"}],
         descriptions=[{"text": "Fast checkout"}, {"text": "Download today"}],
         images=[{"resource_name": "customers/123/assets/88"}],
-        status="PAUSED", live=True,
+        status="ENABLED", live=True,
     )
 
     assert result == {
         "mode": "live", "execution_status": "executed", "live_support": True,
         "ad_resource_name": "customers/123/adGroupAds/77~88",
-        "ad_id": "88", "ad_group_id": "77", "status": "PAUSED",
-        "requested_status": "PAUSED",
+        "ad_id": "88", "ad_group_id": "77", "status": "ENABLED",
+        "requested_status": "ENABLED",
         "delivery_guard": {
             "resource": "ad_group",
             "required_status": "PAUSED",
+            "campaign_required_status": "PAUSED",
+            "campaign_id": "99",
         },
     }
     assert [resource for resource, _operation in calls] == ["adGroupAds"]
     ad_create = calls[-1][1]["create"]
-    assert ad_create["status"] == "PAUSED"
+    assert ad_create["status"] == "ENABLED"
     assert "cpcBidMicros" not in ad_create["ad"]["appAd"]
     assert ad_create["adGroup"] == "customers/123/adGroups/77"
     assert ad_create["ad"]["appAd"]["headlines"] == [
@@ -3362,36 +3369,39 @@ def test_google_app_live_ad_creation_refuses_an_unpaused_parent_group():
     }
     client._mutate = lambda *args, **kwargs: calls.append((args, kwargs))
 
-    with pytest.raises(ValueError, match="parent Ad Group must be PAUSED"):
+    with pytest.raises(ValueError, match="PAUSED parent Ad Group"):
         client.create_app_ad(
             "77", "Live App Ad",
             headlines=[{"text": "Install now"}, {"text": "Shop in the app"}],
             descriptions=[{"text": "Fast checkout"}, {"text": "Download today"}],
-            status="PAUSED",
+            status="ENABLED",
             live=True,
         )
 
     assert calls == []
 
 
-def test_google_app_paused_rejection_never_falls_back_to_enabled():
+def test_google_app_provider_rejection_never_changes_the_confirmed_status():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     statuses = []
-    client.get_ad_group = lambda _identifier: {"id": "77", "status": "PAUSED"}
+    client.get_ad_group = lambda _identifier: {
+        "id": "77", "status": "PAUSED", "campaign": "customers/123/campaigns/99",
+        "campaign_id": "99", "campaign_status": "PAUSED",
+    }
 
     def reject_status(_resource, operation):
         statuses.append(operation["create"]["status"])
-        raise APIError("Provider rejected paused App Ad")
+        raise APIError("Provider rejected App Ad")
 
     client._mutate = reject_status
-    with pytest.raises(APIError, match="rejected paused App Ad"):
+    with pytest.raises(APIError, match="rejected App Ad"):
         client.create_app_ad(
             "77", "Paused App Ad",
             headlines=["Install now", "Shop in the app"],
             descriptions=["Fast checkout", "Download today"],
-            status="PAUSED", live=True,
+            status="ENABLED", live=True,
         )
-    assert statuses == ["PAUSED"]
+    assert statuses == ["ENABLED"]
 
 
 def test_google_specialized_ad_live_creation_rejects_enabled_status():
@@ -6270,7 +6280,7 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
     assert "maximizeClicks" not in clicks_campaign
 
     client.create_ad_group(
-        "c1", "Group", cpc_bid_micros=123456,
+        "42", "Group", cpc_bid_micros=123456,
         type="SEARCH_STANDARD", targeting={"target_restrictions": []},
         live=True,
     )
@@ -6279,7 +6289,7 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
     assert ad_group["type"] == "SEARCH_STANDARD"
     assert ad_group["targetingSetting"] == {"targetRestrictions": []}
 
-    client.create_ad_group("c1", "Shopping group", type="SHOPPING_PRODUCT", live=True)
+    client.create_ad_group("42", "Shopping group", type="SHOPPING_PRODUCT", live=True)
     assert operations[-1][1]["create"]["type"] == "SHOPPING_PRODUCT_ADS"
 
     client.create_search_ad(

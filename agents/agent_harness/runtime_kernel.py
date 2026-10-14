@@ -91,13 +91,26 @@ class TurnRequest:
     execution_mode: Optional[str] = None
     task_id: Optional[str] = None
     tool_allowlist: Optional[tuple[str, ...]] = None
-    initial_tool_choice: Optional[Literal["auto", "required"]] = None
+    initial_tool_choice: Optional[Literal["auto", "required"] | Mapping[str, Any]] = None
     run_id: Optional[str] = None
     turn_id: Optional[str] = None
     streaming: bool = False
 
     def __post_init__(self) -> None:
-        if self.initial_tool_choice not in (None, "auto", "required"):
+        choice = self.initial_tool_choice
+        if isinstance(choice, Mapping):
+            function = choice.get("function")
+            if (
+                set(choice) != {"type", "function"}
+                or choice.get("type") != "function"
+                or not isinstance(function, Mapping)
+                or set(function) != {"name"}
+                or not isinstance(function.get("name"), str)
+                or not function["name"].strip()
+                or len(function["name"]) > 256
+            ):
+                raise ValueError("initial_tool_choice must name one function")
+        elif choice not in (None, "auto", "required"):
             raise ValueError(
                 "initial_tool_choice must be 'auto', 'required', or None"
             )

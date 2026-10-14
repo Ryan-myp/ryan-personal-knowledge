@@ -1,4 +1,4 @@
-"""Explicitly authorized, paused-only test-account checks through the HTTP Agent."""
+"""Authorized, delivery-paused test-account checks through the HTTP Agent."""
 
 from __future__ import annotations
 
@@ -429,7 +429,7 @@ def report(directory):
         "All cases use the real /chat endpoint, model, Harness and registered Tools.",
         "Verified means matching non-simulated Tool success plus successful provider transport.",
         "It does not mean every advertising type, update field, or conversation workflow has passed.",
-        "Writes are paused-only; updates are restricted to resources created in this test.",
+        "Delivery parents remain paused; App Ad ENABLED requires verified paused parents. Updates target only resources created by this test.",
         "",
         "Transport success alone is not functional success. Updates are also checked against subsequent reads.",
         "| Case | Provider | Tool | Transport Evidence | Update Readback | Agent Status |",
@@ -793,6 +793,8 @@ class ProviderRecorder:
         )
         self.paused_ad_groups = set()
         self.paused_asset_groups = set()
+        self.paused_campaigns = set()
+        self.ad_group_campaigns = {}
         self.lock = threading.RLock()
         self.original = requests.Session.send
 
@@ -883,16 +885,7 @@ class ProviderRecorder:
                     dict,
                 )
                 if is_app_ad:
-                    parent = str(create.get("adGroup") or "")
-                    match = re.search(r"/adGroups/(\d+)$", parent)
-                    if (
-                        str(create.get("status") or "").upper() != "PAUSED"
-                        or match is None
-                        or match.group(1) not in self.paused_ad_groups
-                    ):
-                        raise PermissionError(
-                            "Google App Ad must be PAUSED under a verified PAUSED parent Ad Group"
-                        )
+                    self._guard_google_app_ad(create, path)
                     continue
                 if label and str(create.get("status") or "").upper() != "PAUSED":
                     raise PermissionError(
@@ -910,6 +903,28 @@ class ProviderRecorder:
                     raise PermissionError(
                         "update is not a resource created by this test"
                     )
+
+    def _guard_google_app_ad(self, create, path):
+        if str(create.get("status") or "").upper() != "ENABLED":
+            raise PermissionError("Google App Ad requires explicit ENABLED status")
+        group = re.fullmatch(
+            r"customers/(\d+)/adGroups/(\d+)", str(create.get("adGroup") or ""),
+        )
+        customer = re.search(r"/customers/(\d+)/", path)
+        campaign = re.fullmatch(
+            r"customers/(\d+)/campaigns/(\d+)",
+            self.ad_group_campaigns.get(group.group(2), "") if group else "",
+        )
+        if (
+            group is None or customer is None or campaign is None
+            or group.group(1) != customer.group(1)
+            or campaign.group(1) != customer.group(1)
+            or group.group(2) not in self.paused_ad_groups
+            or campaign.group(2) not in self.paused_campaigns
+        ):
+            raise PermissionError(
+                "Google App Ad requires verified PAUSED Ad Group and Campaign"
+            )
 
     def _guard_tiktok_update(self, data):
         fields = (
@@ -1033,6 +1048,7 @@ class ProviderRecorder:
             for keys, known_paused in (
                 (("adGroup", "ad_group"), self.paused_ad_groups),
                 (("assetGroup", "asset_group"), self.paused_asset_groups),
+                (("campaign",), self.paused_campaigns),
             ):
                 resource = next(
                     (
@@ -1045,6 +1061,12 @@ class ProviderRecorder:
                 if not isinstance(resource, dict) or resource.get("id") is None:
                     continue
                 resource_id = str(resource["id"])
+                if keys[0] == "adGroup":
+                    campaign = resource.get("campaign")
+                    if isinstance(campaign, str):
+                        self.ad_group_campaigns[resource_id] = campaign
+                    else:
+                        self.ad_group_campaigns.pop(resource_id, None)
                 if str(resource.get("status") or "").upper() == "PAUSED":
                     known_paused.add(resource_id)
                 else:
@@ -1252,7 +1274,9 @@ def template_chat(
     body = {
         "user_input": user_input or (
             "使用已选内置模板和表单参数创建完整的广告系列，包含模板声明的全部下层级。"
-            "保持所有可投放父级和子级暂停，不要启动投放。"
+            "严格按模板声明的各层级状态执行，所有可控制投放的父级保持暂停。"
+            "如模板明确声明子级 ENABLED，只创建该子级，不启用 Campaign 或广告组；"
+            "回复必须如实区分子级状态与整体暂停投放，不得自行转换状态。"
             "不要修改表单参数；缺少参数时明确指出；需要确认时返回平台的确认计划。"
         ),
         "session_id": session_id or f"template-{provider}-{case_id}",
@@ -1291,8 +1315,8 @@ def template_chat(
         body["confirmed"] = True
         body["confirmation_payload"] = approval
         body["user_input"] = (
-            "确认刚才平台返回的暂停创建计划。继续完成已选模板的全部层级，"
-            "复用已创建的父资源，不重复创建，不启用投放。"
+            "确认刚才平台返回的创建计划，包含模板明确声明的各层级状态。"
+            "继续完成全部层级，复用已创建的父资源，不重复创建，不启用父级或投放。"
         )
     print(json.dumps({
         "case_id": case_id, "status": payload.get("status"),

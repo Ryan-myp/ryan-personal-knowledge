@@ -244,3 +244,21 @@ def test_traffic_blueprint_allows_optional_copy_and_call_to_action_fields():
     )
 
     assert result is None
+
+
+def test_selected_blueprint_confirmation_only_includes_its_registered_write_tools():
+    factory = _factory()
+    registry = SimpleToolRegistry()
+    registry.register_source(create_tool_source("meta"))
+    factory.runtime.registry = registry
+    factory.runtime.security = SimpleNamespace(
+        confirmation_chain_plan=lambda *_args, **kwargs: {"preview": kwargs["preview"]},
+        prepare_confirmation=lambda expected, **_kwargs: expected,
+    )
+    request = _request({"creation_blueprint_id": BLUEPRINT.blueprint_id})
+    context = SimpleNamespace(request=request)
+    confirmation = factory.build_confirmation(
+        context, _campaign_tool(), {"name": "Demo", "status": "PAUSED"},
+    )
+    assert set(confirmation["preview"]["tools"]) == set(BLUEPRINT.tools)
+    assert "meta_create_conversion_ad" not in confirmation["preview"]["tools"]

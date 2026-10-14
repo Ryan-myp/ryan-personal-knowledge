@@ -545,6 +545,7 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
         }
 
         assert set(template["required_inputs"]) == expected_input_labels, key
+        assert set(template["required_input_fields"]) == user_inputs, key
         assert required_paths - user_inputs <= set(template["values"]), key
         assert user_inputs <= {
             field["path"]
@@ -556,7 +557,7 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
     expected_statuses = {
         "google.test.performance-max": "live_verified_with_provider_limits",
         "google.test.shopping": "live_verified_with_provider_limits",
-        "google.test.app": "partial_live_verified",
+        "google.test.app": "live_verified_with_provider_limits",
     }
     for key, template in definitions.items():
         assert template["verification_status"] == expected_statuses[key]
@@ -630,7 +631,7 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
     assert app["ad_group.name"]
     assert app["ad_group.status"] == "PAUSED"
     assert app["ad.name"]
-    assert app["ad.status"] == "PAUSED"
+    assert app["ad.status"] == "ENABLED"
 
 
 def test_google_template_user_inputs_are_projected_into_campaign_tool_arguments():

@@ -1943,6 +1943,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         ad_group_id = self._numeric_id(ad_group_id, "ad_group_id")
         query = f"""
             SELECT ad_group.id, ad_group.name, ad_group.status,
+                   ad_group.campaign, campaign.id, campaign.status,
                    ad_group.type, ad_group.cpc_bid_micros,
                    ad_group.cpm_bid_micros, ad_group.cpv_bid_micros,
                    ad_group.effective_target_cpa_micros,
@@ -1954,10 +1955,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
         results = self._search(query)
         items = self._response_payload(results).get('results', [])
         if items:
-            ag = items[0].get('adGroup', {})
+            ag = items[0].get('adGroup', items[0].get('ad_group', {}))
+            campaign = items[0].get('campaign', {})
             return {
                 'id': ag.get('id'),
                 'resource_name': ag.get('resourceName'),
+                'campaign': ag.get('campaign'),
+                'campaign_id': campaign.get('id'),
+                'campaign_status': campaign.get('status'),
                 'name': ag.get('name'),
                 'status': ag.get('status'),
                 'type': ag.get('type'),
@@ -3278,12 +3283,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
     def get_ad(self, ad_id: str) -> dict:
         """获取 Ad 详情"""
         raw_ad_id = str(ad_id or "").strip()
+        ad_group_id = None
         if re.fullmatch(r"\d+~\d+", raw_ad_id):
-            numeric_ad_id = raw_ad_id.rsplit("~", 1)[-1]
+            ad_group_id, numeric_ad_id = raw_ad_id.split("~", 1)
         else:
             numeric_ad_id = self._numeric_id(raw_ad_id, "ad_id")
         query = f"""
             SELECT ad_group_ad.ad.id, ad_group_ad.ad.resource_name,
+                   ad_group.id, ad_group.status, campaign.id, campaign.status,
                    ad_group_ad.resource_name, ad_group_ad.ad.name, ad_group_ad.status,
                    ad_group_ad.ad.type, ad_group_ad.ad.final_urls,
                    ad_group_ad.ad.responsive_search_ad.headlines,
@@ -3298,6 +3305,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
             FROM ad_group_ad
             WHERE ad_group_ad.ad.id = {numeric_ad_id}
         """
+        if ad_group_id is not None:
+            query += f" AND ad_group.id = {ad_group_id}"
         results = self._search(query)
         items = self._response_payload(results).get('results', [])
         if items:
@@ -3305,6 +3314,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'adGroupAd', items[0].get('ad_group_ad', {})
             ) or {}
             ad = association.get('ad', {}) or {}
+            group = items[0].get('adGroup', items[0].get('ad_group', {})) or {}
+            campaign = items[0].get('campaign', {}) or {}
+            parent_statuses = (group.get('status'), campaign.get('status'))
+            blocked = any(str(status or "").upper() in {"PAUSED", "REMOVED"} for status in parent_statuses)
+            parents_known = all(status not in (None, "") for status in parent_statuses)
             association_resource_name = association.get('resourceName')
             association_id = (
                 str(association_resource_name).rsplit('/', 1)[-1]
@@ -3315,6 +3329,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'resource_name': ad.get('resourceName'),
                 'name': ad.get('name'),
                 'status': association.get('status'),
+                'ad_group_id': str(group['id']) if group.get('id') is not None else None,
+                'campaign_id': str(campaign['id']) if campaign.get('id') is not None else None,
+                'ad_group_status': group.get('status'),
+                'campaign_status': campaign.get('status'),
+                'delivery_blocked_by_parent': blocked if blocked or parents_known else None,
+                'delivery_state': 'BLOCKED_BY_PARENT' if blocked else 'NOT_VERIFIED',
                 'ad_type': ad.get('type'),
                 'final_urls': ad.get('finalUrls', []),
                 'responsive_search_ad': ad.get('responsiveSearchAd'),
@@ -4653,6 +4673,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         live: bool = False,
     ) -> str:
         """创建 Ad Group"""
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
         requested_status = str(status or 'PAUSED').upper()
         if requested_status not in {'PAUSED', 'ENABLED'}:
             raise ValueError("Google Ad Group status must be PAUSED or ENABLED")
@@ -4985,22 +5006,38 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("App Ad requires 2 to 5 headlines")
         if not isinstance(descriptions, list) or not 2 <= len(descriptions) <= 5:
             raise ValueError("App Ad requires 2 to 5 descriptions")
-        status = str(status or "PAUSED").upper()
-        if status != "PAUSED":
-            raise ValueError("App Ad creation must request PAUSED status")
+        status = str(status or "").strip().upper()
+        if status != "ENABLED":
+            raise ValueError("App Ad creation requires explicit ENABLED status under PAUSED parents")
         provider_status = status
         delivery_guard = {
             "resource": "ad_group",
             "required_status": "PAUSED",
+            "campaign_required_status": "PAUSED",
         }
 
         if live:
             customer = self._numeric_id(self.customer_id, "customer_id")
             parent_group = self.get_ad_group(ad_group_id)
-            if str(parent_group.get("status") or "").upper() != "PAUSED":
+            if (
+                str(parent_group.get("id") or "") != ad_group_id
+                or str(parent_group.get("status") or "").upper() != "PAUSED"
+            ):
                 raise ValueError(
-                    "Google App Ad creation requires the parent Ad Group must be PAUSED"
+                    "Google App Ad creation requires a verified PAUSED parent Ad Group"
                 )
+            campaign_resource = self._customer_resource_name(
+                parent_group.get("campaign"), "campaigns", "campaign_id",
+            )
+            campaign_id = campaign_resource.rsplit("/", 1)[-1]
+            if (
+                str(parent_group.get("campaign_id") or "") != campaign_id
+                or str(parent_group.get("campaign_status") or "").upper() != "PAUSED"
+            ):
+                raise ValueError(
+                    "Google App Ad creation requires a verified PAUSED parent Campaign"
+                )
+            delivery_guard["campaign_id"] = campaign_id
             app_ad: dict[str, Any] = {
                 "headlines": [
                     self._app_text_asset(item, "headline") for item in headlines
@@ -5074,6 +5111,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
         return {
             "ad_resource_name": ad_resource_name,
             "ad_group_id": ad_group_id,
+            "status": status,
+            "requested_status": status,
             "operation": operation,
             "execution_status": "planned",
             "mode": "dry_run",

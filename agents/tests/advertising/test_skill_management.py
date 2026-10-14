@@ -32,7 +32,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "measurement-attribution", "measurement-instrumentation",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
-    detail = catalog.get_version("google-ads-api-expert", "2.0.0")
+    detail = catalog.get_version("google-ads-api-expert", "2.0.1")
     assert detail["files"]["SKILL.md"]["encoding"] == "base64"
     assert detail["location"] == "channels/google-ads"
     creative = catalog.get_version("creative-strategy", "1.0.0")

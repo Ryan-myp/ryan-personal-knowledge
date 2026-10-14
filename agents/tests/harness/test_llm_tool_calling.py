@@ -122,6 +122,17 @@ def test_llm_client_honors_required_initial_tool_choice():
     assert completions.requests[0]["tool_choice"] == "required"
 
 
+def test_llm_client_honors_an_explicit_named_initial_tool_choice():
+    client, completions = _client(SimpleNamespace(content="", tool_calls=[]))
+    choice = {"type": "function", "function": {"name": "lookup_record"}}
+    client.complete(
+        [AgentMessage.user("Resume the confirmed action.")],
+        [_tool()],
+        TurnRequest(user_input="Resume the confirmed action.", initial_tool_choice=choice),
+    )
+    assert completions.requests[0]["tool_choice"] == choice
+
+
 def test_llm_client_round_trips_assistant_tool_call_and_tool_result_messages():
     client, completions = _client(SimpleNamespace(content="Done.", tool_calls=[]))
     messages = [

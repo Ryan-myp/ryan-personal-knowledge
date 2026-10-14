@@ -1161,7 +1161,10 @@ def google_app_ad_group_schema() -> dict[str, Any]:
         # leak into the App mutation.
         "requires": [],
         "properties": {
-            "campaign_id": _field("string", "Parent App Campaign ID", minLength=1),
+            "campaign_id": _field(
+                "string", "Numeric parent App Campaign ID returned by the creation Tool",
+                minLength=1, pattern=r"^[0-9]+$",
+            ),
             "name": _field("string", "App campaign ad group name", maxLength=255),
             "status": _field("string", "Ad group status", enum=GOOGLE_STATUSES),
         },
@@ -1182,10 +1185,13 @@ def google_app_ad_schema() -> dict[str, Any]:
         asset_types=["MEDIA_BUNDLE"],
     )
     return {
-        "required": ["ad_group_id", "name", "headlines", "descriptions"],
-        "requires": ["headlines", "descriptions"],
+        "required": ["ad_group_id", "name", "headlines", "descriptions", "status"],
+        "requires": ["headlines", "descriptions", "status"],
         "properties": {
-            "ad_group_id": _field("string", "Parent App campaign Ad Group ID", minLength=1),
+            "ad_group_id": _field(
+                "string", "Numeric parent App Ad Group ID returned by the creation Tool",
+                minLength=1, pattern=r"^[0-9]+$",
+            ),
             "name": _field("string", "App ad name", maxLength=255),
             "headlines": _field(
                 "array", "App ad headline text assets", minItems=2, maxItems=5,
@@ -1202,9 +1208,8 @@ def google_app_ad_schema() -> dict[str, Any]:
             "html5_media_bundles": bundle_assets,
             "status": _field(
                 "string",
-                "Submit PAUSED unchanged; provider rejection must not enable the ad",
-                enum=["PAUSED"],
-                default="PAUSED",
+                "Explicit ENABLED App Ad; its Ad Group and Campaign must both remain PAUSED",
+                enum=["ENABLED"],
             ),
         },
     }

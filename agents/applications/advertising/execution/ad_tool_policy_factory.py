@@ -523,7 +523,7 @@ class AdvertisingToolPolicyFactory:
                 "platform": str(getattr(tool, "namespace", "") or ""),
                 "question": "请提供要操作的广告账户 ID。",
             }
-        related_tools = self._related_write_tools(tool)
+        related_tools = self._related_write_tools(tool, request, arguments)
         if self._is_chain_creation(tool, related_tools):
             return self._build_chain_confirmation(
                 request, request_context, tool, arguments, account, related_tools,
@@ -563,11 +563,25 @@ class AdvertisingToolPolicyFactory:
             if arguments.get(field) not in (None, "")
         ), None)
 
-    def _related_write_tools(self, tool: Any) -> list[Any]:
+    def _related_write_tools(
+        self, tool: Any, request: Any, arguments: Mapping[str, Any],
+    ) -> list[Any]:
         runtime = self.runtime
         namespace = runtime._canonical_platform(
             str(getattr(tool, "namespace", "") or "")
         )
+        request_context = request.context if isinstance(request.context, Mapping) else {}
+        blueprint_id, version, error = self._creation_blueprint_reference(
+            tool, request, arguments, request_context, namespace,
+        )
+        if error:
+            raise CreationTemplateError(error)
+        selected_names = None
+        if blueprint_id:
+            blueprint = runtime.creation_blueprints.get(blueprint_id, version or None)
+            if blueprint is None or getattr(tool, "name", "") not in blueprint.tools:
+                raise CreationTemplateError("所选创建蓝图不可用或不包含当前工具")
+            selected_names = set(blueprint.tools)
         intent_types = set(getattr(tool, "intent_types", ()) or ())
         return [
             candidate for candidate in runtime.registry.list_all()
@@ -576,7 +590,10 @@ class AdvertisingToolPolicyFactory:
                 and runtime._canonical_platform(
                     str(getattr(candidate, "namespace", "") or "")
                 ) == namespace
-                and set(getattr(candidate, "intent_types", ()) or ()) & intent_types
+                and (
+                    candidate.name in selected_names if selected_names is not None
+                    else bool(set(getattr(candidate, "intent_types", ()) or ()) & intent_types)
+                )
             )
         ]
 
@@ -614,7 +631,10 @@ class AdvertisingToolPolicyFactory:
             str(getattr(tool, "namespace", "") or ""),
             related_tools,
             dict(arguments),
-            preview={"tools": [candidate.name for candidate in related_tools]},
+            preview={
+                "tools": [candidate.name for candidate in related_tools],
+                "pending_tool": str(tool.name),
+            },
         )
         return runtime.security.prepare_confirmation(
             expected,

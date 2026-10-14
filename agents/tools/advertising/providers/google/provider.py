@@ -560,6 +560,7 @@ class GoogleToolSource(BaseProviderToolSource):
                 properties=app_ad_group_schema["properties"],
                 required=app_ad_group_schema["required"],
                 requires=app_ad_group_schema["requires"],
+                contract_version="1.6.0",
                 action="create", resource_type="ad_group", parent_resource_type="campaign",
                 resource_id_field="ad_group_id", parent_resource_id_field="campaign_id",
                 intent_types=["create_app_ad_group", "create_campaign"],
@@ -587,9 +588,10 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_app_ad",
                 description=(
-                    "创建 Google App Campaign AppAd，按请求提交 PAUSED，"
-                    "不得替换为 ENABLED。只有实时查询确认父 Ad Group 为 PAUSED "
-                    "时才允许创建；渠道不接受暂停状态时明确返回失败。"
+                    "新建 Google App Ad 并绑定到 Ad Group，不更新旧 Ad 的创意字段。"
+                    "必须显式确认 Ad 状态 ENABLED；创建前实时核验所属 Campaign "
+                    "和 Ad Group 均为 PAUSED。父级状态未知或启用时拒绝写入，"
+                    "不得将 Ad 实际状态描述为 PAUSED，也不得自动启用父级。"
                 ),
                 method_name="create_app_ad", result_key="app_ad_plan",
                 properties=app_ad_schema["properties"],
@@ -609,7 +611,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     },
                 }],
                 traits=["write", "ad", "app"], write=True, live_support=True,
-                contract_version="1.5.1",
+                contract_version="1.6.0",
                 readback_tool="google_get_ad",
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["name"], data["headlines"], data["descriptions"],
@@ -2137,7 +2139,8 @@ class GoogleToolSource(BaseProviderToolSource):
             name="google_get_ad_group",
             skill="google-ads-api-expert",
             namespace="google-ads",
-            description="查询 Google Ads Ad Group 详情。",
+            description="查询 Google Ads Ad Group 详情，以及实际所属 Campaign 和父级状态。",
+            contract_version="1.5.1",
             input_schema=ToolSchema(
                 required=["ad_group_id"],
                 properties={
@@ -2214,7 +2217,14 @@ class GoogleToolSource(BaseProviderToolSource):
             name="google_get_ad",
             skill="google-ads-api-expert",
             namespace="google-ads",
-            description="查询 Google Ads Ad 详情。",
+            description=(
+                "查询 Google Ad（含 App）创意详情和实际父级状态；"
+                "ENABLED 不等于正在投放。delivery_state 是根据真实父级状态的本地判定，"
+                "不是 Google 原生投放枚举。BLOCKED_BY_PARENT "
+                "表示被暂停或已移除父级阻止投放；NOT_VERIFIED 不代表已确认投放。"
+                "账户已由请求上下文提供，不能额外添加 customer_id。"
+            ),
+            contract_version="1.5.1",
             input_schema=ToolSchema(
                 required=["ad_id"],
                 properties={

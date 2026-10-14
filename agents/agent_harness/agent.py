@@ -652,7 +652,7 @@ class Agent:
         )
         if (
             require_tool_call
-            and model_request.initial_tool_choice != "required"
+            and model_request.initial_tool_choice in (None, "auto")
         ):
             model_request = replace(
                 model_request,

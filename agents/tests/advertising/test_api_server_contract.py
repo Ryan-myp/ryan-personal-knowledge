@@ -24,7 +24,7 @@ from agents.agent_platform.governance.identity.principal import RequestPrincipal
 def _chat_page_javascript() -> str:
     """Read the bootstrap and split bundles as one browser contract."""
     names = [
-        "chat.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat.js", "chat-markdown.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
         "chat-blueprint-editor.js", "chat-skills.js", "chat-creation.js",
         "chat-messages.js",
@@ -1136,9 +1136,27 @@ def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
         api_server.STATIC_PATH / "js" / "chat.js"
     ).read_text(encoding="utf-8")
 
-    assert "chat.css?v=20261013-conversation-quality-v1" in template
-    assert "chat.js?v=20261013-conversation-quality-v1" in template
-    assert "v=20261013-conversation-quality-v1" in bootstrap
+    assert "chat.css?v=20261014-markdown-v2" in template
+    assert "chat.js?v=20261014-markdown-v2" in template
+    assert "v=20261014-markdown-v2" in bootstrap
+
+
+def test_chat_markdown_dependencies_load_before_messages_and_history():
+    bootstrap = (api_server.STATIC_PATH / "js" / "chat.js").read_text(encoding="utf-8")
+    assert bootstrap.index("vendor/marked-18.1.1.umd.js") < bootstrap.index("chat-markdown.js")
+    assert bootstrap.index("vendor/purify-3.4.17.min.js") < bootstrap.index("chat-markdown.js")
+    assert bootstrap.index("chat-markdown.js") < bootstrap.index("chat-requests.js")
+    messages = (api_server.STATIC_PATH / "js" / "chat-messages.js").read_text(encoding="utf-8")
+    history = (api_server.STATIC_PATH / "js" / "chat-requests.js").read_text(encoding="utf-8")
+    assert "formatContent(content)" in messages
+    assert "function formatContent(" not in messages
+    assert "markdownPreview(conversation.preview)" in history
+
+
+def test_conversation_replay_does_not_render_internal_tool_or_system_messages():
+    history = (api_server.STATIC_PATH / "js" / "chat-requests.js").read_text(encoding="utf-8")
+    assert "if (!['user', 'assistant'].includes(message.role)) continue;" in history
+    assert "restoreExecutionTrace(data.execution_traces)" in history
 
 
 def test_api_key_principal_replaces_request_user_id(monkeypatch, fake_server):
@@ -1659,7 +1677,7 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
         assert any(item["source"] == "builtin" for item in response.json()["builtin_skills"])
 
         response = client.get(
-            "/skills/builtin/google-ads-api-expert/versions/2.0.0",
+            "/skills/builtin/google-ads-api-expert/versions/2.0.1",
             headers=headers,
         )
         assert response.status_code == 200

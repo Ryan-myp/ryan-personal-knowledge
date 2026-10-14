@@ -8,6 +8,7 @@ The web UI is split by responsibility and loaded in a stable order:
 - `css/chat-workspaces.css` contains Skills and Blueprint workspace styles.
 - `css/chat-creation.css` contains conversational creation and confirmation card styles.
 - `css/chat-overrides.css` contains theme, responsive, and final product-polish overrides.
+- `css/chat-markdown.css` contains bounded message typography, code blocks, and scrollable tables.
 - `js/chat.js` is the compatibility entrypoint and loads the ordered classic scripts.
 - `js/chat-state.js` owns shared state and trace labels.
 - `js/chat-workbench.js` owns the shared right-side artifact workspace for
@@ -21,6 +22,22 @@ The web UI is split by responsibility and loaded in a stable order:
 - `js/chat-skills.js` owns Skills management and evaluation UI.
 - `js/chat-creation.js` owns ad creation card fields, lookups, validation, and review.
 - `js/chat-messages.js` owns chat rendering, send flow, and page initialization.
+- `js/chat-markdown.js` renders sanitized GFM and derives plain-text conversation previews.
+
+Markdown dependencies are pinned and served locally from `js/vendor/`:
+Marked 18.1.1 (MIT) and DOMPurify 3.4.17 (Apache-2.0 OR MPL-2.0).
+The unmodified npm distribution files and upstream licenses are checked in;
+there is no browser CDN dependency. Markdown HTML is escaped before final
+allowlist sanitization. Fenced code remains literal, and history previews use
+plain text rather than injecting HTML. Tool/system records are replayed in the
+execution trace, not as chat bubbles. Only the frontend rendering changes;
+stored messages, provider contracts and write gates are unchanged.
+
+Run message-rendering and lookup regressions with:
+
+```bash
+node --test agents/tests/advertising/static/test_*.js
+```
 
 The scripts remain classic scripts rather than ES modules so existing inline handlers and global
 actions continue to work. Keep provider behavior and API contracts in Python modules; the browser

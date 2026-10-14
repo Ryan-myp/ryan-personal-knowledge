@@ -23,6 +23,18 @@ class AdvertisingRunService:
         self.runtime = runtime
         self.memory_recorder = AdvertisingRunMemoryRecorder(runtime)
 
+    def _initial_tool_choice(
+        self, blueprint_id: Any, version: Any, confirmed: bool, payload: Any,
+    ) -> Any:
+        if not blueprint_id:
+            return None
+        blueprint = self.runtime.creation_blueprints.get(blueprint_id, version or None)
+        preview = payload.get("preview") if isinstance(payload, Mapping) else None
+        pending = preview.get("pending_tool") if isinstance(preview, Mapping) else None
+        if confirmed and blueprint is not None and pending in blueprint.tools:
+            return {"type": "function", "function": {"name": pending}}
+        return "required"
+
     def run(
         self,
         user_input: str,
@@ -68,8 +80,9 @@ class AdvertisingRunService:
             tool_allowlist=(
                 tuple(tool_allowlist) if tool_allowlist is not None else None
             ),
-            initial_tool_choice=(
-                "required" if creation_blueprint_id else None
+            initial_tool_choice=self._initial_tool_choice(
+                creation_blueprint_id, creation_blueprint_version,
+                confirmed, confirmation_payload,
             ),
             task_id=task_id,
         ))

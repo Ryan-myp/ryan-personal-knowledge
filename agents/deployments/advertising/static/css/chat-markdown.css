@@ -1,0 +1,42 @@
+body .message .message-content-text {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+body .message .message-content-text :is(h1, h2, h3, h4, h5, h6) {
+    margin: 20px 0 8px;
+    font-weight: 650;
+    line-height: 1.4;
+    letter-spacing: 0;
+    text-wrap: balance;
+}
+
+body .message .message-content-text h1 { font-size: 20px; }
+body .message .message-content-text h2 { font-size: 18px; }
+body .message .message-content-text h3 { font-size: 16px; }
+body .message .message-content-text :is(h4, h5, h6) { font-size: 14px; }
+body .message .message-content-text > :first-child { margin-top: 0; }
+body .message .message-content-text > :last-child { margin-bottom: 0; }
+
+.message-content-text p { margin: 0 0 10px; text-wrap: pretty; }
+.message-content-text hr { margin: 20px 0; border: 0; border-top: 1px solid var(--border); }
+.message-content-text pre { white-space: pre; }
+.message-content-text pre code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-size: inherit;
+    white-space: inherit;
+}
+.message-content-text li > input[type="checkbox"] { margin-right: 6px; accent-color: var(--accent); }
+
+.markdown-table-scroll {
+    max-width: 100%;
+    margin: 12px 0;
+    overflow-x: auto;
+    border-radius: 8px;
+}
+.markdown-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.markdown-table-scroll > .data-table { margin: 0; }
+.markdown-table-scroll > .data-table:has(th:nth-child(3)) { min-width: 560px; }

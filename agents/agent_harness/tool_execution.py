@@ -1081,6 +1081,15 @@ class ToolExecutionCoordinator:
         has_argument_binding = any(
             item.target_field == parent_field for item in call.argument_bindings
         )
+        schema = cls._tool_value(definition, "input_schema", None)
+        properties = cls._tool_value(schema, "properties", {}) or {}
+        if has_value and parent_field in properties:
+            from .core.interfaces import ToolSchema
+            from .core.tool_registry import validate_tool_input
+            has_value = not validate_tool_input(
+                ToolSchema(properties={parent_field: properties[parent_field]}),
+                {parent_field: cls._value_at_path(call.arguments, parent_field)},
+            )
         if has_value or has_argument_binding:
             return call, None, None, None
         if not cls._declares_input_path(definition, parent_field):

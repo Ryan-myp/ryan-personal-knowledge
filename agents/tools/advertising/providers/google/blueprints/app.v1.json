@@ -1,10 +1,10 @@
 {
   "id": "google-ads.app",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "provider": "google-ads",
   "ad_format": "APP",
   "title": "Google App 广告",
-  "description": "Google App Campaign 使用专属的 App 设置、广告组和素材字段。",
+  "description": "Google App Campaign 使用专属应用与素材字段。新建 App Ad 并绑定到广告组，Ad 明确为 ENABLED；Campaign 和广告组必须保持 PAUSED，避免实际投放。创意变更需要新建 Ad，不更新旧 App Ad。",
   "match_terms": ["App 广告", "App 转化", "app campaign", "app conversion", "app install"],
   "selector": {"dimension": "ad_format", "field": "campaign.campaign_type", "values": ["APP"], "label": "Google 广告系列类型", "options": [{"value": "APP", "label": "应用"}]},
   "tools": ["google_create_campaign", "google_create_app_ad_group", "google_create_app_ad"],
@@ -30,7 +30,7 @@
     {"path": "ad.headlines", "tool_ref": "google_create_app_ad.headlines", "label": "标题素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
     {"path": "ad.descriptions", "tool_ref": "google_create_app_ad.descriptions", "label": "描述素材（每行一条）", "required": true, "presentation": "text_list", "value_shape": "object_text"},
     {"path": "ad.images", "tool_ref": "google_create_app_ad.images", "label": "图片素材", "required": true, "presentation": "asset_picker", "accept": "image/*"},
-    {"path": "ad.status", "tool_ref": "google_create_app_ad.status", "label": "广告状态（提交暂停请求；Google 要求父广告组暂停）", "required": true, "source": "enum", "options": ["PAUSED"], "default": "PAUSED"},
+    {"path": "ad.status", "tool_ref": "google_create_app_ad.status", "label": "App Ad 状态（ENABLED；Campaign 和广告组保持暂停）", "required": true, "source": "enum", "options": ["ENABLED"], "default": "ENABLED", "presentation": "derived_readonly"},
     {"path": "ad.videos", "tool_ref": "google_create_app_ad.videos", "label": "视频素材", "required": false, "presentation": "asset_picker", "accept": "video/*"}
   ],
   "rules": [

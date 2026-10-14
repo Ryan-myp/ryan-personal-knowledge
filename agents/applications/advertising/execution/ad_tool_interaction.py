@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.tool_registry import validate_tool_input
+from agents.agent_harness.tool_execution import ToolExecutionCoordinator
 
 
 class AdvertisingToolInteractionProvider:
@@ -263,10 +264,56 @@ class AdvertisingToolInteractionProvider:
         reference_fields = [parent_field, *(
             getattr(definition, "related_resource_id_fields", ()) or ()
         )]
+        bind_parent = bool(
+            parent_field
+            and request_context.get("creation_template_id")
+            and str(getattr(request, "execution_mode", "")) == "live"
+            and getattr(request, "run_id", "")
+            and getattr(context, "state", None) is not None
+            and request_context.get("account_id")
+        )
+        if bind_parent and parent_field in properties and parent_field not in effective:
+            parent_id = self._created_parent_id(context, definition)
+            if parent_id is not None:
+                effective[parent_field] = parent_id
         for field in reference_fields:
             if field in properties and field in original:
                 effective.setdefault(field, original[field])
         return effective
+
+    def _created_parent_id(self, context: Any, definition: Any) -> Any:
+        parent_type = str(getattr(definition, "parent_resource_type", "") or "")
+        namespace = self.runtime._canonical_platform(definition.namespace)
+        ids = {}
+        for message in list(getattr(context.state, "messages", ()))[-128:]:
+            if (
+                getattr(message, "role", "") != "tool"
+                or getattr(message, "run_id", "") != context.request.run_id
+            ):
+                continue
+            payload = getattr(message, "content", None)
+            if not isinstance(payload, Mapping) or payload.get("success") is not True:
+                continue
+            if payload.get("simulated"):
+                continue
+            try:
+                producer, _handler = self.runtime.registry.get(message.name)
+            except KeyError:
+                continue
+            if (
+                producer.action != "create"
+                or producer.resource_type != parent_type
+                or self.runtime._canonical_platform(producer.namespace) != namespace
+            ):
+                continue
+            identifier = ToolExecutionCoordinator._resource_id_from_output(
+                payload.get("data"), producer.resource_id_field,
+            )
+            if identifier is not None:
+                ids[str(identifier)] = identifier
+        if len(ids) > 1:
+            raise ValueError("创建父级结果不唯一，请明确选择正确父级")
+        return next(iter(ids.values())) if ids else None
 
     def _creation_ui(
         self,

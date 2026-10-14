@@ -198,6 +198,7 @@
         "投放结束日期",
         "日预算"
       ],
+      "required_input_fields": ["campaign.campaign_name", "campaign.start_date", "campaign.end_date", "campaign.daily_budget"],
       "tags": ["内置", "测试账号", "Google Ads", "Performance Max", "已实测", "素材审核中"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
@@ -258,6 +259,7 @@
         "投放结束日期",
         "日预算"
       ],
+      "required_input_fields": ["campaign.campaign_name", "campaign.start_date", "campaign.end_date", "campaign.daily_budget"],
       "tags": ["内置", "测试账号", "Google Ads", "Shopping", "已实测", "Product Group 状态限制"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
@@ -282,21 +284,22 @@
     {
       "key": "google.test.app",
       "name": "Google 测试账号 · App",
-      "description": "Google 测试账号的 App Campaign 模板；应用、转化目标、目标 CPA、广告组、标题、描述和图片均预填。当前账号实测有 Desktop、Mobile、Tablet 设备定向，未发现地域、语言或受众定向；仅需补 Campaign 名称、投放时间与日预算。",
+      "description": "Google 测试账号的 App Campaign 演示模板；应用、转化目标、目标 CPA、广告组、标题、描述和图片均预填。App Ad 新建并绑定，状态明确为 ENABLED；Campaign 和广告组保持 PAUSED，不启动投放。历史回读有设备定向，未发现地域、语言或受众条件；回读信息不是新增定向预设。仅需补 Campaign 名称、投放时间与日预算。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.app",
-      "blueprint_version": "1.1.0",
+      "blueprint_version": "1.2.0",
       "ad_format": "APP",
       "account_id": "9055507554",
-      "verification_status": "partial_live_verified",
-      "verified_scope": "2026-10-14 测试账号 9055507554 对话 E2E：模板转化目标、素材查询成功，签名确认后创建 Campaign 和 App Ad Group 并回读为 PAUSED。App Ad 按请求提交 PAUSED，真实 Google API 返回 HTTP 400 / adGroupAdError：Cannot pause an adgroup ad with this ad type.；本轮 Ad 未创建成功，未重试为 ENABLED。历史 ENABLED App Ad 不能作为全层级 PAUSED 创建通过证据。App ID、转化目标、文案和图片来自该账户现存资源。历史 google_list_campaign_criteria 回读到 DESKTOP、MOBILE、TABLET 设备定向；未返回地域、语言或受众条件。",
+      "verification_status": "live_verified_with_provider_limits",
+      "verified_scope": "2026-10-14 测试账号 9055507554 完整对话 E2E：选内置模板，只覆盖名称、开始/结束日期和日预算，经签名确认后新建 Campaign、App Ad Group、App Ad 并绑定。实际 API 回读核实应用、转化目标、目标 CPA、标题、描述、图片与模板一致；Ad 为 ENABLED，Campaign/Ad Group 均为 PAUSED。delivery_state 是根据真实父级状态判定的 BLOCKED_BY_PARENT，不代表审核通过。新层级 ID 动态生成，不放入模板 values。历史回读有 DESKTOP、MOBILE、TABLET 设备定向；未返回地域、语言或受众条件。",
       "required_inputs": [
         "广告系列名称",
         "投放开始日期",
         "投放结束日期",
         "日预算"
       ],
-      "tags": ["内置", "测试账号", "Google Ads", "App", "部分验证", "渠道拒绝暂停 App Ad"],
+      "required_input_fields": ["campaign.campaign_name", "campaign.start_date", "campaign.end_date", "campaign.daily_budget"],
+      "tags": ["内置", "测试账号", "Google Ads", "App", "已实测", "演示", "Ad 启用但父级暂停"],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.campaign_type": "APP",
@@ -330,7 +333,7 @@
         "ad.images": [
           "customers/9055507554/assets/312078053811"
         ],
-        "ad.status": "PAUSED"
+        "ad.status": "ENABLED"
       }
     },
     {

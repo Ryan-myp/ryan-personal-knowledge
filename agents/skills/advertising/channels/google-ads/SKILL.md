@@ -1,7 +1,7 @@
 ---
 name: google-ads-api-expert
 description: "Google Ads 专家 Skill：负责账户层级、广告类型、出价、素材、GAQL 报表、变更验证和故障诊断的业务判断与 SOP"
-version: 2.0.0
+version: 2.0.1
 author: Ryan
 created: 2026-09-08
 tags: [google, google-ads, search, shopping, performance-max, gaql, bidding, reporting]
@@ -78,6 +78,17 @@ headlines/descriptions 数量与重复度。关键词意图、落地页和广告
 先确认 Merchant Center/feed 或商品资源是否可用，再选择商品分组或 AssetGroup。PMax 的
 文字资产、图片、Logo、视频、最终 URL 和 business name 是组合契约；缺少必需资产时要列出
 缺口。商品/素材资源 ID 不能由文件名或 URL 猜测，必须使用已注册的上传或 lookup 能力。
+
+### App
+
+App Ad 创意修改使用新建并绑定到目标 Ad Group，不原地更新旧 App Ad，也不自动删除或替换旧广告。
+Google App 演示模板明确声明 Ad 为 ENABLED；这不表示启用整个广告系列。必须在确认计划中
+展示实际子级状态，并实时核验其所属 Campaign 和 Ad Group 均为 PAUSED。任何父级启用、
+状态未知或关联未核实，都应停止创建；不能仅凭请求参数声称投放已经暂停。
+
+使用内置模板时保留已验证的应用、转化目标、出价和素材参数，只向用户收集名称、排期和预算。
+每个新层级的 ID 来自本次成功创建或只读回验，不将旧 Campaign/Ad Group/Ad ID 固化为创建参数。
+完成后回查父子归属、各级实际状态、创意字段和素材引用，不把 ENABLED 的 Ad 描述为 PAUSED。
 
 ### Experiment
 
