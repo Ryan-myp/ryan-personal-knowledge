@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.agent_harness.redaction import redact_for_persistence
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.deployments.advertising.local_config import load_default_local_env
 from agents.tools.advertising.providers.source_factory import create_tool_source
 
@@ -559,7 +560,7 @@ def resolve_selection_tokens(
                     "X-E2E-Provider": provider,
                     "X-E2E-Account": account_ids[0],
                 },
-                timeout=60,
+                timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
             )
             if not response.ok:
                 raise RuntimeError(
@@ -614,29 +615,30 @@ def _approved_tools():
     return sorted(names)
 
 
-def start(directory, port):
+def build_service_config(accounts, *, read_only=False):
+    if accounts != CONFIRMED_ACCOUNTS:
+        raise ValueError("configured accounts differ from the user-confirmed test accounts")
+    return {
+        "execution_mode": "read_only" if read_only else "dry_run",
+        "execution_timeout_seconds": DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+        "allow_live_writes": not read_only,
+        "allowed_accounts": {name: list(values) for name, values in accounts.items()},
+        "live_approved_tools": [] if read_only else _approved_tools(),
+        "granted_permissions": (
+            ["ads.read", "knowledge.read"] if read_only else [
+                "ads.read", "ads.plan", "ads.write", "ads.reconcile", "knowledge.read",
+            ]
+        ),
+    }
+
+
+def start(directory, port, *, read_only=False):
     load_default_local_env()
     root = Path(directory).resolve()
     root.mkdir(parents=True, exist_ok=True)
     original = yaml.safe_load((ROOT / "agents/ad_agent/config.yaml").read_text()) or {}
     accounts = {p: original["allowed_accounts"][p] for p in PROVIDERS}
-    if accounts != CONFIRMED_ACCOUNTS:
-        raise ValueError(
-            "configured accounts differ from the user-confirmed test accounts"
-        )
-    config = {
-        "execution_mode": "dry_run",
-        "allow_live_writes": True,
-        "allowed_accounts": accounts,
-        "live_approved_tools": _approved_tools(),
-        "granted_permissions": [
-            "ads.read",
-            "ads.plan",
-            "ads.write",
-            "ads.reconcile",
-            "knowledge.read",
-        ],
-    }
+    config = build_service_config(accounts, read_only=read_only)
     config_path = root / "test-config.yaml"
     config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     private_root = _private_directory(root)
@@ -647,7 +649,7 @@ def start(directory, port):
     env = {
         **os.environ,
         "AD_AGENT_API_KEY": key,
-        "AD_AGENT_ENABLE_LIVE": "1",
+        "AD_AGENT_ENABLE_LIVE": "0" if read_only else "1",
         "AD_AGENT_CONFIG_PATH": str(config_path),
         "AD_AGENT_DB_PATH": str(private_root / "test.db"),
         "AD_AGENT_SERVICE_PRINCIPAL": "campaign-e2e",
@@ -1128,7 +1130,8 @@ def chat(
     def request_phase(phase):
         try:
             response = requests.post(
-                state["base_url"] + "/chat", json=body, headers=headers, timeout=180
+                state["base_url"] + "/chat", json=body, headers=headers,
+                timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
             payload = response.json()
@@ -1165,10 +1168,63 @@ def chat(
     return payload
 
 
+def conversation_chat(directory, provider, user_input, case_id, session_id=None):
+    """Test original user text through the model with only registered reads."""
+    root, state, headers = _load_state(directory)
+    if state.get("accounts") != CONFIRMED_ACCOUNTS or provider not in PROVIDERS:
+        raise ValueError("conversation queries require the confirmed test accounts")
+    if not str(user_input or "").strip():
+        raise ValueError("conversation queries require user text")
+    account = state["accounts"][provider][0]
+    body = {
+        "user_input": user_input,
+        "session_id": session_id or f"qa-conversation-{provider}",
+        "account_id": account,
+        "execution_mode": "dry_run",
+        "tool_allowlist": [
+            binding.definition.name
+            for binding in create_tool_source(provider).list_bindings()
+            if not binding.definition.is_write_tool
+        ],
+    }
+    started = time.monotonic()
+    response = requests.post(
+        state["base_url"] + "/chat", json=body,
+        headers={
+            **headers, "X-E2E-Case": case_id,
+            "X-E2E-Provider": provider, "X-E2E-Account": account,
+        },
+        timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    _json_write(root / "cases" / f"{case_id}.json", {
+        "provider": provider, "account": account, "user_input": user_input,
+        "session_id": body["session_id"], "http_status": response.status_code,
+        "elapsed_seconds": round(time.monotonic() - started, 3),
+        "response": payload,
+    })
+    print(json.dumps({
+        "case_id": case_id, "run_id": payload.get("run_id"),
+        "status": payload.get("status"), "tool_call_count": payload.get("tool_call_count"),
+        "tools": [{
+            "name": row.get("tool"), "success": row.get("success"),
+            "data_status": (row.get("data") or {}).get("data_status"),
+            "error": row.get("error"),
+            "counts": {
+                key: len(value) for key, value in (row.get("data") or {}).items()
+                if isinstance(value, list)
+            },
+        } for row in payload.get("results") or ()],
+        "reply": payload.get("reply"),
+    }, ensure_ascii=False))
+    return payload
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=("start", "serve", "chat", "catalog", "stop", "report")
+        "command", choices=("start", "serve", "chat", "conversation", "catalog", "stop", "report")
     )
     parser.add_argument("--directory", required=True)
     parser.add_argument("--port", type=int, default=8765)
@@ -1177,6 +1233,7 @@ def main():
     parser.add_argument("--params", default="{}")
     parser.add_argument("--case-id", default="probe")
     parser.add_argument("--write", action="store_true")
+    parser.add_argument("--read-only", action="store_true")
     parser.add_argument("--blueprint-id")
     parser.add_argument("--blueprint-version")
     parser.add_argument("--template-id")
@@ -1187,7 +1244,7 @@ def main():
     )
     args = parser.parse_args()
     if args.command == "start":
-        start(args.directory, args.port)
+        start(args.directory, args.port, read_only=args.read_only)
     elif args.command == "serve":
         serve(args.directory, args.port)
     elif args.command == "chat":
@@ -1207,13 +1264,18 @@ def main():
             args.session_id,
             args.user_input,
         )
+    elif args.command == "conversation":
+        conversation_chat(
+            args.directory, args.provider, args.user_input, args.case_id, args.session_id,
+        )
     elif args.command == "report":
         report(args.directory)
     else:
         root, state, headers = _load_state(args.directory)
         if args.command == "catalog":
             response = requests.get(
-                state["base_url"] + "/tools", headers=headers, timeout=30
+                state["base_url"] + "/tools", headers=headers,
+                timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
             )
             response.raise_for_status()
             tools = [

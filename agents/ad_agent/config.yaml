@@ -16,6 +16,7 @@ allowed_accounts:
 # dry_run: 支持完整规划与参数校验，但不调用线上写 API
 # live 还必须由 AD_AGENT_ENABLE_LIVE=1 显式解锁，并命中下方工具白名单。
 execution_mode: dry_run
+execution_timeout_seconds: 500
 read_only_mode: false
 # Second, deployment-level fuse for provider mutations. Keep false until a
 # manually selected test-account run is approved.

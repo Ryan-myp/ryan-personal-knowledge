@@ -21,6 +21,7 @@ from agents.agent_harness import (
     TurnRequest,
 )
 from agents.agent_harness.core.tool_selection import ToolSelector
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.agent_platform import (
     AgentPlatform,
     PlatformDependencies,
@@ -410,7 +411,38 @@ class AdApplicationAssembly:
             "max_turns": max(4, int(runtime.max_tool_calls) + 2),
             "max_tool_calls_per_run": int(runtime.max_tool_calls),
             "tool_execution": "sequential",
+            "model_timeout_seconds": getattr(
+                runtime, "turn_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+            ),
+            "tool_timeout_seconds": getattr(
+                runtime, "turn_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+            ),
+            "tool_max_retries": 0,
         }
+
+    @staticmethod
+    def _authorized_account_namespace(
+        runtime: Any,
+        request: TurnRequest,
+        tools: Any,
+    ) -> Optional[str]:
+        context = request.context if isinstance(request.context, Mapping) else {}
+        account = context.get("account_id")
+        scope = getattr(request.principal, "account_scope", None)
+        if account in (None, "") or scope is None:
+            return None
+        namespaces = {
+            runtime._canonical_platform(str(getattr(tool, "namespace", "") or ""))
+            for tool in tools
+            if getattr(tool, "namespace", None)
+        }
+        matches = [
+            namespace for namespace in namespaces
+            if runtime._validate_account_with_principal(
+                namespace, str(account), False, scope,
+            )[0]
+        ]
+        return matches[0] if len(matches) == 1 else None
 
     @staticmethod
     def _tool_selector(
@@ -425,15 +457,19 @@ class AdApplicationAssembly:
                 runtime, request_context, tools,
             )
             if selected is None:
+                conversation_context = tuple(
+                    request_context.get("_agent_tool_selection_context", ()) or ()
+                )
+                account_namespace = AdApplicationAssembly._authorized_account_namespace(
+                    runtime, request, tools,
+                )
+                if account_namespace:
+                    conversation_context = (*conversation_context, account_namespace)
                 selected = selector.select_relevant(
                     request.user_input,
                     tools,
                     limit=MAX_RELEVANT_TOOLS_PER_TURN,
-                    conversation_context=(
-                        request_context.get(
-                            "_agent_tool_selection_context", (),
-                        )
-                    ),
+                    conversation_context=conversation_context,
                 )
                 if selected and selector.requires_tool_call(
                     request.user_input, selected,

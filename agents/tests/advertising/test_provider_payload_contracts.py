@@ -7264,12 +7264,21 @@ def test_google_campaign_detail_includes_template_relevant_settings():
                     ]
                 },
             },
+            "campaignBudget": {
+                "id": "7", "resourceName": "customers/123/campaignBudgets/7",
+                "name": "App budget", "amountMicros": "24000000",
+                "deliveryMethod": "STANDARD", "explicitlyShared": False,
+                "status": "ENABLED",
+            },
         }]}
     )
 
     campaign = client.get_campaign("42")
 
     assert campaign["campaign_budget_id"] == "7"
+    assert campaign["daily_budget"] == 24.0
+    assert campaign["daily_budget_micros"] == "24000000"
+    assert campaign["budget"]["id"] == "7"
     assert campaign["contains_eu_political_advertising"] == (
         "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
     )
@@ -7283,6 +7292,7 @@ def test_google_campaign_detail_includes_template_relevant_settings():
     }
     query = " ".join(queries[0].split())
     assert "campaign.campaign_budget" in query
+    assert "campaign_budget.amount_micros" in query
     assert "campaign.contains_eu_political_advertising" in query
     assert "campaign.optimization_goal_setting.optimization_goal_types" in query
     assert "campaign.target_cpa.target_cpa_micros" in query
@@ -8003,12 +8013,12 @@ def test_tiktok_get_creative_reuses_the_scoped_creative_list_contract():
 
     def list_creatives(advertiser_id, filtering=None, page_size=20):
         seen.append((advertiser_id, filtering, page_size))
-        return [{"creative_id": "creative-1", "name": "Demo"}]
+        return [{"creative_id": "1878640221222289", "name": "Demo"}]
 
     client.list_creatives = list_creatives
 
-    assert client.get_creative("7397068114548195329", "creative-1") == {
-        "creative_id": "creative-1",
+    assert client.get_creative("7397068114548195329", "1878640221222289") == {
+        "creative_id": "1878640221222289",
         "name": "Demo",
     }
     assert seen == [(
@@ -8016,7 +8026,7 @@ def test_tiktok_get_creative_reuses_the_scoped_creative_list_contract():
         [{
             "field": "CREATIVE_IDS",
             "operator": "IN",
-            "values": ["creative-1"],
+            "values": ["1878640221222289"],
         }],
         1,
     )]

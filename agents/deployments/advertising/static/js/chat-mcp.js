@@ -173,7 +173,7 @@
                 document.getElementById('mcpAuthTypeInput').value = server.auth_type || 'none';
                 document.getElementById('mcpCredentialRefInput').value = server.credential_ref || '';
                 document.getElementById('mcpAuthHeaderInput').value = server.auth_header || '';
-                document.getElementById('mcpTimeoutInput').value = server.timeout_seconds || 20;
+                document.getElementById('mcpTimeoutInput').value = server.timeout_seconds || 500;
                 document.getElementById('mcpDescriptionInput').value = server.description || '';
                 document.getElementById('mcpEnableButton').disabled = server.validation_status !== 'passed' && !server.enabled;
                 document.getElementById('mcpEnableButton').textContent = server.enabled ? '停用 Server' : '启用 Server';
@@ -460,7 +460,7 @@
                 auth_type: document.getElementById('mcpAuthTypeInput').value,
                 credential_ref: document.getElementById('mcpCredentialRefInput').value.trim() || null,
                 auth_header: document.getElementById('mcpAuthHeaderInput').value.trim(),
-                timeout_seconds: Number(document.getElementById('mcpTimeoutInput').value || 20),
+                timeout_seconds: Number(document.getElementById('mcpTimeoutInput').value || 500),
                 description: document.getElementById('mcpDescriptionInput').value.trim(),
                 transport: 'streamable_http',
             };

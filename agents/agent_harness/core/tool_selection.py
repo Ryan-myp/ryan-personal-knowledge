@@ -82,10 +82,31 @@ def _schema_terms(tool: Any) -> set[str]:
     return terms
 
 
-def _contains_cue(text: str, cue: str) -> bool:
+def _cue_matches(text: str, cue: str):
     if re.fullmatch(r"[a-z]+", cue):
-        return re.search(rf"\b{re.escape(cue)}(?:s|ed|ing)?\b", text) is not None
-    return cue in text
+        stem = re.escape(cue)
+        variants = [f"{stem}(?:s|d|ed|ing)?", f"{stem}{cue[-1]}ing"]
+        if cue.endswith("e"):
+            variants.append(f"{re.escape(cue[:-1])}ing")
+        return re.finditer(r"\b(?:" + "|".join(variants) + r")\b", text)
+    return re.finditer(re.escape(cue), text)
+
+
+def _contains_cue(text: str, cue: str) -> bool:
+    return next(_cue_matches(text, cue), None) is not None
+
+
+def _request_verbs(user_input: str, tools: Sequence[Any]) -> str:
+    """Remove compound resource nouns before classifying request verbs."""
+    text = str(user_input or "").casefold()
+    for resource in {
+        str(_tool_field(tool, "resource_type")).casefold() for tool in tools
+    }:
+        parts = re.findall(r"[a-z0-9]+", resource)
+        if len(parts) > 1:
+            pattern = r"\b" + r"[\s_-]*".join(map(re.escape, parts)) + r"s?\b"
+            text = re.sub(pattern, " ", text)
+    return text
 
 
 def _is_read_only_request(user_input: str) -> bool:
@@ -93,7 +114,7 @@ def _is_read_only_request(user_input: str) -> bool:
     if not any(_contains_cue(text, cue) for cue in _READ_CUES):
         return False
     for cue in _WRITE_CUES:
-        for match in re.finditer(re.escape(cue), text):
+        for match in _cue_matches(text, cue):
             prefix = text[max(0, match.start() - 32):match.start()]
             negation_positions = [
                 prefix.rfind(negation)
@@ -114,7 +135,7 @@ def _is_read_only_request(user_input: str) -> bool:
 def _has_unnegated_write_cue(user_input: str) -> bool:
     text = str(user_input or "").casefold()
     for cue in _WRITE_CUES:
-        for match in re.finditer(re.escape(cue), text):
+        for match in _cue_matches(text, cue):
             prefix = text[max(0, match.start() - 32):match.start()]
             negation_positions = [
                 prefix.rfind(negation)
@@ -157,6 +178,58 @@ def _relevance_score(query_terms: set[str], tool: Any) -> int:
         overlap = query_terms & _terms(value)
         score += weight * min(len(overlap), 3)
     return score + len(query_terms & _schema_terms(tool))
+
+
+def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
+    """Honor explicit publisher query aliases without a domain vocabulary."""
+    text = str(user_input or "").casefold()
+    matched = [
+        tool for tool in tools if _is_read_tool(tool)
+        and any(
+            len(str(alias).strip()) >= 3
+            and str(alias).strip().casefold() in text
+            for alias in _tool_field(tool, "intent_aliases", ()) or ()
+        )
+    ]
+    if not matched:
+        return list(tools)
+    namespaces = {str(_tool_field(tool, "namespace")) for tool in tools}
+    matched_namespaces = {str(_tool_field(tool, "namespace")) for tool in matched}
+    if len(namespaces) > 1 and matched_namespaces != namespaces:
+        return list(tools)
+    matched_resources = {
+        str(_tool_field(tool, "resource_type")) for tool in matched
+    }
+    namespace_terms = set().union(*(
+        _terms(_tool_field(tool, "namespace")) for tool in tools
+    ))
+    query_terms = _terms(user_input) - namespace_terms
+    shared_terms = namespace_terms | _terms(" ".join((*_READ_CUES, *_WRITE_CUES))) | set().union(*(
+        _terms(_tool_field(tool, "intent_aliases", ()))
+        | _terms(_tool_field(tool, "description"))
+        for tool in matched
+    ))
+    explicit_details = [
+        tool for tool in tools if _is_read_tool(tool)
+        and str(_tool_field(tool, "resource_type")) in matched_resources
+        and bool(query_terms & (
+            (
+                _terms(_tool_field(tool, "intent_aliases", ()))
+                | _terms(_tool_field(tool, "description"))
+            ) - shared_terms
+        ))
+    ]
+    other_targets = any(
+        resource not in matched_resources
+        and bool(terms := _terms(resource))
+        and terms <= query_terms
+        for tool in tools
+        if (resource := str(_tool_field(tool, "resource_type")))
+    )
+    if other_targets:
+        return list(tools)
+    selected_ids = {id(tool) for tool in (*matched, *explicit_details)}
+    return [tool for tool in tools if id(tool) in selected_ids]
 
 
 @dataclass
@@ -254,6 +327,7 @@ class ToolSelector:
         if limit <= 0:
             raise ValueError("limit must be positive")
         text = str(user_input or "").casefold()
+        verb_text = _request_verbs(user_input, available_tools)
         prior_inputs = [
             str(item or "").strip()
             for item in (conversation_context or ())
@@ -292,6 +366,8 @@ class ToolSelector:
             ]
         else:
             candidates = list(available_tools or ())
+        if not explicitly_named and _is_read_only_request(verb_text):
+            candidates = _alias_scoped_reads(user_input, candidates)
         query_terms = _terms(" ".join((*prior_inputs, str(user_input or ""))))
         if not query_terms:
             return []
@@ -300,7 +376,7 @@ class ToolSelector:
             for index, tool in enumerate(candidates)
         ]
         relevant = [item for item in ranked if item[0] > 0]
-        if _is_read_only_request(text):
+        if _is_read_only_request(verb_text):
             relevant = [
                 item for item in relevant
                 if _is_read_tool(item[2])
@@ -313,16 +389,29 @@ class ToolSelector:
         user_input: str,
         selected_tools: Sequence[Any],
     ) -> bool:
-        """Require execution for explicit writes with a matching Tool target."""
-        if not _has_unnegated_write_cue(user_input):
+        """Require fresh execution for operational reads and explicit writes."""
+        verb_text = _request_verbs(user_input, selected_tools)
+        write_request = _has_unnegated_write_cue(verb_text)
+        read_request = not write_request and _is_read_only_request(verb_text)
+        text = str(user_input or "").casefold()
+        if read_request and any(cue in text for cue in (
+            "支持", "能力", "capabilities", "support",
+        )):
+            return False
+        historical_summary = any(cue in text for cue in (
+            "汇总", "总结", "summarize", "summary",
+        )) and any(cue in text for cue in (
+            "刚才", "之前", "上述", "previous", "earlier",
+        ))
+        if historical_summary or not (write_request or read_request):
             return False
         terms = _terms(user_input)
-        for cue in _WRITE_CUES:
+        for cue in (*_WRITE_CUES, *_READ_CUES):
             terms.difference_update(_terms(cue))
         if not terms:
             return False
         return any(
-            not _is_read_tool(tool)
+            (_is_read_tool(tool) if read_request else not _is_read_tool(tool))
             and bool(
                 terms & (
                     _terms(_tool_field(tool, "name"))
@@ -338,9 +427,9 @@ class ToolSelector:
         self, available_tools: Sequence[ToolDefinition]
     ) -> list[str]:
         return sorted({
-            normalize_namespace(getattr(tool, "namespace", ""))
+            normalize_namespace(_tool_field(tool, "namespace", ""))
             for tool in (available_tools or ())
-            if normalize_namespace(getattr(tool, "namespace", ""))
+            if normalize_namespace(_tool_field(tool, "namespace", ""))
         })
 
     def detect_namespaces(

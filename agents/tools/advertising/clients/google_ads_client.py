@@ -636,6 +636,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
                    campaign.bidding_strategy, campaign.bidding_strategy_type,
                    campaign.start_date_time, campaign.end_date_time,
                    campaign.campaign_budget,
+                   campaign_budget.id, campaign_budget.resource_name,
+                   campaign_budget.name, campaign_budget.amount_micros,
+                   campaign_budget.delivery_method,
+                   campaign_budget.explicitly_shared, campaign_budget.status,
                    campaign.contains_eu_political_advertising,
                    campaign.brand_guidelines_enabled,
                    campaign.optimization_goal_setting.optimization_goal_types,
@@ -667,6 +671,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
         items = self._response_payload(results).get('results', [])
         if items:
             camp = items[0].get('campaign', {})
+            budget = (
+                self._normalize_campaign_budget(items[0])
+                if items[0].get("campaignBudget") else None
+            )
+            budget_amount = budget["amount_micros"] if budget else None
             budget_resource_name = camp.get("campaignBudget")
             target_cpa = camp.get("targetCpa", {}).get("targetCpaMicros")
             if target_cpa is None:
@@ -698,6 +707,12 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'start_date_time': camp.get('startDateTime'),
                 'end_date_time': camp.get('endDateTime'),
                 'campaign_budget_resource_name': budget_resource_name,
+                'budget': budget,
+                'daily_budget_micros': budget_amount,
+                'daily_budget': (
+                    int(budget_amount) / 1_000_000
+                    if budget_amount is not None else None
+                ),
                 'campaign_budget_id': (
                     str(budget_resource_name).rsplit("/", 1)[-1]
                     if budget_resource_name

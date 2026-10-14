@@ -8,6 +8,7 @@ into a ToolDefinition.  It never accepts a method name from user input.
 from __future__ import annotations
 
 from typing import Any, Callable, Iterable, Optional
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 from agents.agent_harness.core.interfaces import (
     ReplayPolicy,
@@ -72,7 +73,7 @@ def method_tool(
     result_id_fields: Optional[Iterable[str]] = None,
     related_resource_type: Optional[str] = None,
     related_resource_id_fields: Optional[Iterable[str]] = None,
-    timeout_seconds: float = 30.0,
+    timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
     max_output_bytes: int = 1_000_000,
     required_permissions: Optional[Iterable[str]] = None,
     readback_tool: Optional[str] = None,
@@ -113,7 +114,7 @@ def method_tool(
         live_support=live_support,
         contract_version=contract_version,
         integration_api_version=integration_api_version,
-        result_items_key=result_items_key,
+        result_items_key=result_items_key or (result_key if action == "list" else None),
         result_id_fields=list(result_id_fields or []),
         related_resource_type=related_resource_type,
         related_resource_id_fields=list(related_resource_id_fields or []),

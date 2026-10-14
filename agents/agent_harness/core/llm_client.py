@@ -8,11 +8,13 @@ import json
 import logging
 import re
 import threading
+import math
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional, Dict, Any
 
 from ..messages import AgentMessage, ModelTurn, ToolCall
+from .timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +80,7 @@ class LLMClient:
         model: str = None,
         api_key: str = None,
         base_url: str = None,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         max_tool_calls_per_response: int = 64,
         max_tool_argument_chars: int = 65_536,
     ):
@@ -117,6 +119,7 @@ class LLMClient:
                 if self.base_url:
                     kwargs["base_url"] = self.base_url
                 kwargs["timeout"] = self.timeout_seconds
+                kwargs["max_retries"] = 0
                 self._client = OpenAI(**kwargs)
             except ImportError:
                 logger.error("❌ 未安装 openai 包，请运行: pip install openai")
@@ -158,6 +161,12 @@ class LLMClient:
             )
         context = getattr(request, "context", None)
         if isinstance(context, dict):
+            remaining = context.get("model_timeout_seconds")
+            if remaining is not None:
+                remaining = float(remaining)
+                if not math.isfinite(remaining) or remaining <= 0:
+                    raise ValueError("model timeout must be positive and finite")
+                kwargs["timeout"] = min(self.timeout_seconds, remaining)
             max_tokens = context.get("max_output_tokens")
             if isinstance(max_tokens, int) and not isinstance(max_tokens, bool):
                 if max_tokens > 0:
@@ -503,7 +512,7 @@ class LLMClient:
 
 def create_llm_client(
     model: str = None, api_key: str = None, base_url: str = None,
-    timeout_seconds: float = 30.0,
+    timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
     max_tool_calls_per_response: int = 64,
     max_tool_argument_chars: int = 65_536,
 ) -> LLMClient:

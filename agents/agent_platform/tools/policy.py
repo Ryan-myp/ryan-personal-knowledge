@@ -208,6 +208,8 @@ class ToolExecutionPolicy:
                 context, definition, dict(call.arguments), reason_code,
             ),
         }
+        if repairable:
+            result["runtime_signals"] = {"tool_input_repairable": True}
         if result["needs_input"] and callable(self.interaction_builder):
             interaction = self.interaction_builder(context, reason_code, message)
             if isinstance(interaction, Mapping):

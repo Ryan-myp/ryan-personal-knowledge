@@ -120,12 +120,16 @@ def test_agent_loop_owns_transcript_tool_turns_and_events():
             "agent_start",
             "turn_start",
             "message_end",
+            "model_start",
+            "model_end",
             "message_end",
             "tool_execution_start",
         "tool_execution_end",
         "message_end",
         "turn_end",
         "turn_start",
+        "model_start",
+        "model_end",
         "message_end",
         "turn_end",
         "agent_end",
@@ -186,7 +190,7 @@ def test_agent_loop_can_block_tool_and_cancel_before_next_model_turn():
         TurnRequest(user_input="say hi", cancellation_event=cancelled)
     )
 
-    assert result.status.value == "succeeded"
+    assert result.status.value == "failed"
     assert result.data["tool_results"][0]["is_error"] is True
     assert model.calls == 1
     assert events[-1]["type"] == "agent_end"

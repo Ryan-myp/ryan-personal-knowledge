@@ -16,6 +16,44 @@ class RunStatus(str, Enum):
     PARTIALLY_FAILED = "partially_failed"
 
 
+def _tool_succeeded(row: Mapping[str, Any]) -> bool:
+    content = row.get("result", row.get("content", row))
+    content = content if isinstance(content, Mapping) else {}
+    return not (row.get("is_error") or content.get("success") is False)
+
+
+def tool_outcome_status(results: Any) -> RunStatus:
+    """Summarize execution evidence, excluding prompts and coalesced repeats."""
+    rows = [row for row in results or () if isinstance(row, Mapping)]
+    successful_names = {
+        row.get("name") for row in rows if _tool_succeeded(row)
+    }
+    outcomes = []
+    for row in rows:
+        content = row.get("result", row.get("content", row))
+        content = content if isinstance(content, Mapping) else {}
+        signals = row.get("runtime_signals") or {}
+        if any(row.get(key) or content.get(key) for key in (
+            "needs_input", "needs_confirmation", "skipped",
+        )):
+            continue
+        if isinstance(signals, Mapping) and any(signals.get(key) for key in (
+            "duplicate_read_coalesced", "duplicate_write_coalesced",
+        )):
+            continue
+        if (
+            isinstance(signals, Mapping)
+            and signals.get("tool_input_repairable")
+            and row.get("name") in successful_names
+        ):
+            continue
+        outcomes.append(_tool_succeeded(row))
+    failures = outcomes.count(False)
+    if failures and any(outcomes):
+        return RunStatus.PARTIALLY_FAILED
+    return RunStatus.FAILED if failures else RunStatus.SUCCEEDED
+
+
 @dataclass(frozen=True)
 class RunResult:
     """Common Run outcome while preserving application payload in ``data``."""
@@ -63,7 +101,9 @@ class RunResult:
             status = RunStatus.RECOVERY_REQUIRED
         elif needs_input:
             status = RunStatus.AWAITING_INPUT
-        elif status_value in {item.value for item in RunStatus}:
+        elif status_value in {
+            item.value for item in RunStatus if item != RunStatus.SUCCEEDED
+        }:
             status = RunStatus(status_value)
         elif (
             source.get("success") is False
@@ -72,18 +112,9 @@ class RunResult:
         ):
             status = RunStatus.FAILED
         else:
-            results = [
-                item for item in (source.get("results") or [])
-                if isinstance(item, Mapping)
-            ]
-            failures = sum(item.get("success") is False for item in results)
-            successes = sum(item.get("success") is True for item in results)
-            if failures and successes:
-                status = RunStatus.PARTIALLY_FAILED
-            elif failures:
-                status = RunStatus.FAILED
-            else:
-                status = RunStatus.SUCCEEDED
+            status = tool_outcome_status(
+                source.get("results") or source.get("tool_results") or (),
+            )
 
         return cls(
             run_id=str(source.get("run_id") or ""),

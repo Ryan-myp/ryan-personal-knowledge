@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import math
 from contextvars import copy_context
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -10,6 +11,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Optional, Sequence, TYPE_CHECKING
 
 from .messages import AgentMessage, ModelTurn, ToolCall
+from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .runtime_kernel import TurnRequest
 
 if TYPE_CHECKING:
@@ -41,7 +43,7 @@ class _ModelInvocationFailure(RuntimeError):
 
 @dataclass(frozen=True)
 class ModelExecutionOptions:
-    timeout_seconds: float | None = None
+    timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS
     max_inflight: int = 32
     max_retries: int = 0
     retry_delay_seconds: float = 0.0
@@ -65,6 +67,11 @@ class ModelExecutionOptions:
                 raise ValueError(f"{name} must be positive")
         if self.max_retries < 0 or self.retry_delay_seconds < 0:
             raise ValueError("model retry bounds must be non-negative")
+        if (
+            self.timeout_seconds is not None
+            and not math.isfinite(self.timeout_seconds)
+        ) or not math.isfinite(self.retry_delay_seconds):
+            raise ValueError("model time bounds must be finite")
 
 
 @dataclass
@@ -77,6 +84,8 @@ class _ModelInvocation:
     abort_event: threading.Event | None
     lifecycle_events: bool
     provider_index: int = 0
+    deadline: float | None = None
+    stream_output_started: bool = False
 
 
 class ModelExecutionCoordinator:
@@ -121,10 +130,15 @@ class ModelExecutionCoordinator:
     def invoke(
         self,
         invoke: Callable[[], Any],
+        *,
+        timeout_seconds: float | None = None,
     ) -> Any:
+        timeout = self.options.timeout_seconds if timeout_seconds is None else timeout_seconds
+        if timeout is not None and timeout <= 0:
+            raise ModelTimeoutError("model execution budget exhausted")
         if not self._model_slots.acquire(blocking=False):
             raise ModelCapacityError("model execution capacity exhausted")
-        if self.options.timeout_seconds is None:
+        if timeout is None:
             try:
                 return invoke()
             finally:
@@ -142,7 +156,7 @@ class ModelExecutionCoordinator:
             raise
         future.add_done_callback(lambda _completed: self._model_slots.release())
         try:
-            return future.result(timeout=self.options.timeout_seconds)
+            return future.result(timeout=timeout)
         except FutureTimeoutError as error:
             future.cancel()
             raise ModelTimeoutError("model provider timed out") from error
@@ -158,6 +172,8 @@ class ModelExecutionCoordinator:
         tools: Sequence[Any],
         request: TurnRequest,
         abort_event: Optional[threading.Event] = None,
+        timeout_seconds: float | None = None,
+        on_output: Optional[Callable[[], None]] = None,
     ) -> ModelTurn:
         stream = getattr(provider, "stream", None)
         if not callable(stream):
@@ -167,6 +183,7 @@ class ModelExecutionCoordinator:
                     if callable(getattr(provider, "complete", None))
                     else provider(messages, tools, request)
                 ),
+                timeout_seconds=timeout_seconds,
             )
         # Consume the iterator inside the bounded worker. A timeout around
         # only ``stream(...)`` is insufficient because most providers return
@@ -176,7 +193,9 @@ class ModelExecutionCoordinator:
                 stream(messages, tools, request),
                 request,
                 abort_event,
+                on_output,
             ),
+            timeout_seconds=timeout_seconds,
         )
 
     def _consume_stream(
@@ -184,6 +203,7 @@ class ModelExecutionCoordinator:
         iterator: Any,
         request: TurnRequest,
         abort_event: Optional[threading.Event] = None,
+        on_output: Optional[Callable[[], None]] = None,
     ) -> ModelTurn:
         parts: list[str] = []
         final: Optional[ModelTurn] = None
@@ -203,6 +223,8 @@ class ModelExecutionCoordinator:
             else:
                 delta = ""
             if delta not in (None, ""):
+                if on_output is not None:
+                    on_output()
                 safe_delta = str(delta)[: self.options.max_stream_delta_chars]
                 parts.append(safe_delta)
                 self.emit(
@@ -247,6 +269,8 @@ class ModelExecutionCoordinator:
         tools: Sequence[Any],
         request: TurnRequest,
         abort_event: Optional[threading.Event] = None,
+        timeout_seconds: float | None = None,
+        on_output: Optional[Callable[[], None]] = None,
     ) -> ModelTurn:
         streaming = bool(
             request.streaming
@@ -262,6 +286,8 @@ class ModelExecutionCoordinator:
                 tools,
                 request,
                 abort_event,
+                timeout_seconds,
+                on_output,
             )
             if streaming
             else self.invoke(
@@ -270,6 +296,7 @@ class ModelExecutionCoordinator:
                     if callable(getattr(provider, "complete", None))
                     else provider(messages, tools, request)
                 ),
+                timeout_seconds=timeout_seconds,
             )
         )
         self.assert_not_interrupted(request, abort_event)
@@ -281,6 +308,10 @@ class ModelExecutionCoordinator:
         state: AgentState,
         abort_event: Optional[threading.Event] = None,
     ) -> ModelTurn:
+        deadline = (
+            time.monotonic() + self.options.timeout_seconds
+            if self.options.timeout_seconds is not None else None
+        )
         messages, tools, model_request = self.prepare(request, state)
         providers = tuple(
             provider for provider in self.providers() if provider is not None
@@ -299,6 +330,7 @@ class ModelExecutionCoordinator:
                 or self.options.timeout_seconds is not None
                 or len(providers) > 1
             ),
+            deadline=deadline,
         )
         for provider_index, provider in enumerate(providers):
             complete = getattr(provider, "complete", None)
@@ -328,6 +360,23 @@ class ModelExecutionCoordinator:
         self, provider: Any, invocation: _ModelInvocation, attempt: int
     ) -> ModelTurn:
         request = invocation.request
+        remaining = (
+            invocation.deadline - time.monotonic()
+            if invocation.deadline is not None else None
+        )
+        if remaining is not None and remaining <= 0:
+            raise _ModelInvocationFailure(
+                ModelTimeoutError("model execution budget exhausted"), False,
+            )
+        model_request = invocation.model_request
+        if remaining is not None:
+            model_request = replace(model_request, context={
+                **dict(model_request.context or {}),
+                "model_timeout_seconds": remaining,
+            })
+        invocation.stream_output_started = False
+        def mark_stream_output() -> None:
+            invocation.stream_output_started = True
         provider_name = self._provider_name(provider)
         if invocation.lifecycle_events:
             self.emit(
@@ -342,12 +391,15 @@ class ModelExecutionCoordinator:
                 provider,
                 invocation.messages,
                 invocation.tools,
-                invocation.model_request,
+                model_request,
                 invocation.abort_event,
+                remaining,
+                mark_stream_output,
             )
         except Exception as error:
             raise _ModelInvocationFailure(
                 error, self._retryable_model_error(error)
+                and not invocation.stream_output_started,
             ) from error
         self._record_usage(request, invocation.state, model_turn)
         if invocation.lifecycle_events:
@@ -379,15 +431,44 @@ class ModelExecutionCoordinator:
                 )
                 if not retryable or attempt == self.options.max_retries:
                     raise
+                delay = self._retry_delay(error, attempt)
                 self.emit(
                     "model_retry",
                     invocation.request,
                     attempt=attempt + 1,
                     provider=self._provider_name(provider),
                     error_type=type(error).__name__,
+                    retry_delay_seconds=delay,
                 )
-                time.sleep(self.options.retry_delay_seconds)
+                self._wait_for_retry(invocation, delay)
         raise RuntimeError("model retry loop exhausted")
+
+    def _retry_delay(self, error: Exception, attempt: int) -> float:
+        response = getattr(error, "response", None)
+        headers = getattr(response, "headers", {}) or {}
+        hint = headers.get("retry-after") or headers.get("Retry-After")
+        if hint is not None:
+            try:
+                seconds = float(hint)
+            except (TypeError, ValueError):
+                seconds = -1
+            if math.isfinite(seconds) and seconds >= 0:
+                return min(seconds, 60.0)
+        return min(self.options.retry_delay_seconds * (2 ** attempt), 60.0)
+
+    def _wait_for_retry(self, invocation: _ModelInvocation, delay: float) -> None:
+        until = time.monotonic() + delay
+        while time.monotonic() < until:
+            self.assert_not_interrupted(invocation.request, invocation.abort_event)
+            remaining = (
+                invocation.deadline - time.monotonic()
+                if invocation.deadline is not None else float("inf")
+            )
+            if remaining <= 0:
+                raise _ModelInvocationFailure(
+                    ModelTimeoutError("model execution budget exhausted"), False,
+                )
+            time.sleep(min(0.1, remaining, until - time.monotonic()))
 
     @staticmethod
     def _usage_number(usage: Mapping[str, Any], *names: str) -> int:

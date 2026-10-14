@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
 @dataclass(frozen=True)
@@ -15,10 +16,10 @@ class GovernancePolicy:
     max_context_chars: int = 12_000
     max_tools: int = 128
     max_turns: int = 12
-    model_max_retries: int = 0
-    model_retry_delay_seconds: float = 0.0
-    model_timeout_seconds: float | None = None
-    tool_timeout_seconds: float | None = 60.0
+    model_max_retries: int = 2
+    model_retry_delay_seconds: float = 5.0
+    model_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS
+    tool_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS
     tool_max_retries: int = 1
     tool_retry_delay_seconds: float = 0.2
     tool_circuit_failure_threshold: int = 5

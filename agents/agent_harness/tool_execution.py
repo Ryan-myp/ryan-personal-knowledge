@@ -16,6 +16,7 @@ from contextvars import copy_context
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 from .messages import AgentMessage, ToolCall
+from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
 from .runtime_kernel import TurnRequest
@@ -151,6 +152,7 @@ class ToolExecutionCoordinator:
         "execution_status": 3,
         "effect_state": 4,
         "requires_reconciliation": 5,
+        "query_summary": 6,
         "total_count": 6,
         "total": 7,
         "count": 8,
@@ -172,7 +174,7 @@ class ToolExecutionCoordinator:
         tool_execution: str = "parallel",
         max_parallel_tools: int = 8,
         max_inflight_tool_invocations: int = 64,
-        tool_timeout_seconds: float | None = None,
+        tool_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         tool_max_retries: int = 0,
         tool_retry_delay_seconds: float = 0.0,
         tool_circuit: Optional[ToolCircuitBreaker] = None,
@@ -385,6 +387,45 @@ class ToolExecutionCoordinator:
             return result, truncated
         return self._truncate_tool_text(str(value), budget), [path or "$"]
 
+    def _query_content(self, value: Any, definition: Any) -> Any:
+        collection = self._tool_value(definition, "result_items_key")
+        data = value.get("data") if isinstance(value, Mapping) else None
+        rows = data.get(collection) if isinstance(data, Mapping) and collection else None
+        if not isinstance(rows, list) or self._tool_is_write(definition):
+            return self._bound_tool_value(value)
+        summary = {
+            "collection": collection, "returned_count": len(rows),
+            "context_count": len(rows), "context_truncated": False,
+        }
+        content = self._bound_tool_value({
+            **value, "data": {"query_summary": summary, **data},
+        })
+        preview = content.get("data") if isinstance(content, Mapping) else None
+        visible_summary = preview.get("query_summary") if isinstance(preview, Mapping) else None
+        if isinstance(visible_summary, dict):
+            visible_rows = preview.get(collection)
+            visible_summary["context_count"] = len(visible_rows) if isinstance(visible_rows, list) else 0
+            visible_summary["context_truncated"] = bool(content.get("output_truncated"))
+        return content
+
+    def _retained_tool_value(self, value: Any, definition: Any) -> Any:
+        """Keep API evidence under the Tool contract, not the model budget."""
+        limit = min(1_000_000, int(self._tool_value(
+            definition, "max_output_bytes", 1_000_000,
+        )))
+        if limit < 2:
+            raise ValueError("max_output_bytes must be at least two bytes")
+        if len(self._serialized_tool_value(value).encode("utf-8")) <= limit:
+            return value
+        bounded, paths = self._compact_tool_value(value, max(2, limit // 4 - 64), "data")
+        retained = dict(bounded) if isinstance(bounded, Mapping) else {"items": bounded}
+        retained["output_truncated"] = True
+        retained["truncated_fields"] = list(dict.fromkeys(paths))[:1]
+        if len(self._serialized_tool_value(retained).encode("utf-8")) > limit:
+            marker = {"output_truncated": True}
+            return marker if len(self._serialized_tool_value(marker)) <= limit else {}
+        return retained
+
     def _bound_tool_value(self, value: Any) -> Any:
         text = (
             value
@@ -396,7 +437,7 @@ class ToolExecutionCoordinator:
         if isinstance(value, str):
             return self._truncate_tool_text(value, self.max_tool_result_chars)
 
-        max_paths = 1 if self.max_tool_result_chars < 512 else 8
+        max_paths = min(8, max(1, self.max_tool_result_chars // 512))
         max_path_chars = 32 if self.max_tool_result_chars < 512 else 96
         marker_reserve = len(self._serialized_tool_value({
             "output_truncated": True,
@@ -687,7 +728,7 @@ class ToolExecutionCoordinator:
             result = {
                 "tool_call_id": call.id,
                 "name": call.name,
-                "content": self._bound_tool_value(safe_output),
+                "content": self._query_content(safe_output, definition),
                 "is_error": bool(
                     isinstance(safe_output, Mapping)
                     and safe_output.get("success") is False
@@ -716,8 +757,8 @@ class ToolExecutionCoordinator:
                                 )
                             )
                         elif key in {"data", "card_payload"}:
-                            result[key] = self._bound_tool_value(
-                                safe_output[key],
+                            result[key] = self._retained_tool_value(
+                                safe_output[key], definition,
                             )
                         else:
                             result[key] = safe_output[key]

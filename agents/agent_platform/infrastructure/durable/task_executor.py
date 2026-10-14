@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Optional
 
 from .ports import TaskQueueStore
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .task import TaskSubmission
 
 logger = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class TaskExecutor:
         *,
         max_workers: int = 4,
         max_queue: int = 32,
-        task_timeout_seconds: float = 900.0,
+        task_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         lease_seconds: float = 300.0,
         queue_poll_interval: float = 0.5,
         redact: Optional[Callable[[Any], Any]] = None,

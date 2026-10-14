@@ -16,6 +16,7 @@ connection time. They are never persisted or returned by this module.
 """
 
 from __future__ import annotations
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 import ipaddress
 import hashlib
@@ -245,7 +246,10 @@ class MCPHTTPClient:
             server.get("credential_ref"),
             str(server.get("auth_header") or ""),
         )
-        self.timeout_seconds = max(1.0, min(float(server.get("timeout_seconds") or 20.0), 120.0))
+        self.timeout_seconds = max(1.0, min(
+            float(server.get("timeout_seconds") or DEFAULT_EXECUTION_TIMEOUT_SECONDS),
+            DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+        ))
         self._session = requests.Session()
         self._lock = threading.RLock()
         self._next_id = 0
@@ -581,7 +585,10 @@ class MCPServerManager:
                 "description": str(data.get("description") or "").strip()[:500],
                 "endpoint": endpoint, "transport": _TRANSPORT, "auth_type": auth_type,
                 "credential_ref": credential_ref, "auth_header": auth_header,
-                "timeout_seconds": max(1.0, min(float(data.get("timeout_seconds") or 20.0), 120.0)),
+                "timeout_seconds": max(1.0, min(
+                    float(data.get("timeout_seconds") or DEFAULT_EXECUTION_TIMEOUT_SECONDS),
+                    DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+                )),
                 "created_by": str(created_by),
             })
         except PersistenceConflictError as exc:
@@ -739,7 +746,10 @@ class MCPServerManager:
             "description": str(updates.get("description", record.get("description") or "")).strip()[:500],
             "endpoint": endpoint, "transport": _TRANSPORT, "auth_type": auth_type,
             "credential_ref": credential_ref, "auth_header": auth_header,
-            "timeout_seconds": max(1.0, min(float(updates.get("timeout_seconds", record.get("timeout_seconds") or 20.0)), 120.0)),
+            "timeout_seconds": max(1.0, min(
+                float(updates.get("timeout_seconds", record.get("timeout_seconds") or DEFAULT_EXECUTION_TIMEOUT_SECONDS)),
+                DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+            )),
         }
         if changed_connection:
             normalized.update({
@@ -1158,7 +1168,10 @@ class MCPServerManager:
                     replay_policy=ReplayPolicy.SAFE if read_only else ReplayPolicy.UNSAFE,
                     traits=["external", "mcp"],
                     live_support=read_only or live_write_enabled,
-                    timeout_seconds=min(float(record.get("timeout_seconds") or 20.0), 120.0),
+                    timeout_seconds=min(
+                        float(record.get("timeout_seconds") or DEFAULT_EXECUTION_TIMEOUT_SECONDS),
+                        DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+                    ),
                     max_output_bytes=1_000_000,
                     required_permissions=required_permissions,
                     resource_id_field=tool.get("resource_id_field"),

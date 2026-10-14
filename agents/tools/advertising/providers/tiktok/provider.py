@@ -3,6 +3,7 @@ tools/providers/tiktok/provider.py - TikTok Tool Source 定义
 """
 from __future__ import annotations
 
+
 import logging
 import inspect
 from pathlib import Path
@@ -80,6 +81,20 @@ from ..update_contracts import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _account_listing_arguments(context, data):
+    requested = data["advertiser_ids"]
+    if not isinstance(requested, list) or not requested:
+        raise ValueError("advertiser_ids must be a non-empty list")
+    authorized = getattr(context, "metadata", {}).get("authorized_account_ids")
+    if authorized is None and getattr(context, "account_id", None):
+        authorized = [context.account_id]
+    if authorized is not None:
+        allowed = {str(value) for value in authorized}
+        if any(str(value) not in allowed for value in requested):
+            raise PermissionError("Requested advertisers are outside the authorized account scope")
+    return (requested,), {}
 
 
 def _tiktok_lookup(
@@ -485,7 +500,10 @@ class TikTokToolSource(BaseProviderToolSource):
                 properties={"advertiser_ids": {"type": "array", "items": {"type": "string"}}},
                 required=["advertiser_ids"], action="list", resource_type="account",
                 intent_types=["list_accounts"], traits=["read", "account"],
-                argument_builder=lambda _ctx, data: ((data["advertiser_ids"],), {}),
+                intent_aliases=["账户列表", "账号列表", "account list"],
+                result_items_key="accounts",
+                result_id_fields=["advertiser_id", "account_id", "id"],
+                argument_builder=_account_listing_arguments,
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_audience",
@@ -1798,11 +1816,19 @@ class TikTokToolSource(BaseProviderToolSource):
         tools.append(method_tool(
             namespace="tiktok", skill="tiktok-ads-api-expert",
             name="tiktok_get_creative",
-            description="查询 TikTok Creative 详情。",
+            description=(
+                "按数字 Ad ID 查询 TikTok 广告的 Creative 详情。"
+                "creative_id 必须是广告的 ad_id，不是 video_id 或 image_id；"
+                "视频和图片素材分别使用 tiktok_get_video 和 tiktok_get_image。"
+            ),
             method_name="get_creative", result_key="creative",
             properties={
                 "account_id": {"type": "string"},
-                "creative_id": {"type": "string", "minLength": 1},
+                "creative_id": {
+                    "type": "string", "minLength": 1, "pattern": "^[0-9]+$",
+                    "description": "数字 Ad ID；不得使用 v 开头的 video_id",
+                    "input_aliases": ["ad_id"],
+                },
             },
             required=["account_id", "creative_id"],
             # Preserve the logical resource hierarchy without inventing a

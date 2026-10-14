@@ -1315,8 +1315,16 @@ def test_replay_key_coalesces_effective_inputs_but_keeps_distinct_queries():
         ))
 
         assert result.status.value == "succeeded"
-        assert executions == [
-            {"limit": 50},
+        effective = [
+            {
+                "account_id": args.get("account_id", "acct-1"),
+                "limit": args.get("limit", 25),
+                "cursor": args.get("cursor"),
+            }
+            for args in executions
+        ]
+        assert sorted(effective, key=lambda item: str(item["cursor"])) == [
+            {"account_id": "acct-1", "limit": 50, "cursor": None},
             {"account_id": "acct-1", "limit": 50, "cursor": "next"},
         ]
         tool_results = result.data["tool_results"]
@@ -1404,7 +1412,9 @@ def test_write_replay_cache_does_not_merge_distinct_arguments():
     ))
     try:
         app.prompt("create two records")
-        assert executions == [{"name": "one"}, {"name": "two"}]
+        assert sorted(executions, key=lambda item: item["name"]) == [
+            {"name": "one"}, {"name": "two"},
+        ]
     finally:
         app.close()
 

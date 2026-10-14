@@ -19,6 +19,55 @@ from scripts.advertising.campaign_service_e2e import (
 )
 
 
+def test_query_service_is_read_only_and_keeps_only_confirmed_test_accounts():
+    from scripts.advertising import campaign_service_e2e as driver
+
+    config = driver.build_service_config(driver.CONFIRMED_ACCOUNTS, read_only=True)
+    assert config["execution_mode"] == "read_only"
+    assert config["execution_timeout_seconds"] == 500.0
+    assert config["allow_live_writes"] is False
+    assert config["live_approved_tools"] == []
+    assert "ads.write" not in config["granted_permissions"]
+    assert config["allowed_accounts"] == driver.CONFIRMED_ACCOUNTS
+    with pytest.raises(ValueError):
+        driver.build_service_config({"meta": ["unconfirmed"]}, read_only=True)
+
+
+def test_conversation_query_uses_natural_text_and_read_only_allowlist(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from scripts.advertising import campaign_service_e2e as driver
+
+    calls = []
+    monkeypatch.setattr(driver, "_load_state", lambda _directory: (
+        tmp_path,
+        {"base_url": "http://127.0.0.1:8766", "accounts": driver.CONFIRMED_ACCOUNTS},
+        {"X-API-Key": "local-fixture"},
+    ))
+    monkeypatch.setattr(driver, "_json_write", lambda *_args: None)
+    payload = {"status": "succeeded", "results": [], "tool_call_count": 0}
+    def post(url, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status_code=200, raise_for_status=lambda: None, json=lambda: payload,
+        )
+    monkeypatch.setattr(driver.requests, "post", post)
+    text = "列出这个 Meta 测试账户的 Campaign。"
+    driver.conversation_chat(tmp_path, "meta", text, "natural", "query-session")
+    body = calls[0]["json"]
+    assert body["user_input"] == text
+    assert body["account_id"] == "2806375919473667"
+    assert body["session_id"] == "query-session"
+    assert body["execution_mode"] == "dry_run"
+    assert "platform_params" not in body
+    assert calls[0]["timeout"] == 500.0
+    definitions = {
+        binding.definition.name: binding.definition
+        for binding in driver.create_tool_source("meta").list_bindings()
+    }
+    assert body["tool_allowlist"]
+    assert all(not definitions[name].is_write_tool for name in body["tool_allowlist"])
+
+
 def test_parameter_lookup_e2e_scope_requires_confirmed_provider_account():
     from types import SimpleNamespace
 

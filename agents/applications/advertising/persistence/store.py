@@ -408,7 +408,7 @@ class AdAgentStore:
         auth_type TEXT NOT NULL DEFAULT 'none',
         credential_ref TEXT,
         auth_header TEXT NOT NULL DEFAULT 'Authorization',
-        timeout_seconds REAL NOT NULL DEFAULT 20,
+        timeout_seconds REAL NOT NULL DEFAULT 500,
         status TEXT NOT NULL DEFAULT 'draft',
         enabled INTEGER NOT NULL DEFAULT 0,
         validation_status TEXT NOT NULL DEFAULT 'not_run',
@@ -3418,7 +3418,7 @@ class AdAgentStore:
                         str(data.get("transport") or "streamable_http"),
                         str(data.get("auth_type") or "none"), data.get("credential_ref"),
                         str(data.get("auth_header") or "Authorization"),
-                        float(data.get("timeout_seconds") or 20.0), str(data["created_by"]),
+                        float(data.get("timeout_seconds") or 500.0), str(data["created_by"]),
                         now, now,
                     ),
                 )

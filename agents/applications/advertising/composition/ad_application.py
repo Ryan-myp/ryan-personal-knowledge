@@ -20,6 +20,7 @@ from agents.agent_harness import (
 )
 
 from agents.agent_harness.core.features import RuntimeFeature
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.agent_harness.core.interfaces import (
     EffectReconciler,
     ExecutionMode,
@@ -83,7 +84,7 @@ class AdvertisingComposition(
         offline_mode: bool = False,
         granted_permissions: Optional[set[str]] = None,
         max_tool_calls: int = 32,
-        turn_timeout_seconds: float = 120.0,
+        turn_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         max_user_input_chars: int = 12_000,
         max_platform_params_bytes: int = 256_000,
         effect_reconcilers: Optional[Mapping[str, EffectReconciler]] = None,
@@ -93,7 +94,7 @@ class AdvertisingComposition(
         parameter_selection_ttl_seconds: int = 600,
         max_task_workers: int = 4,
         max_task_queue: int = 32,
-        task_timeout_seconds: float = 900.0,
+        task_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         task_lease_seconds: float = 300.0,
         task_queue_poll_interval: float = 0.5,
         session_lease_seconds: float = 300.0,

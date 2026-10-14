@@ -20,6 +20,7 @@ from agents.agent_harness.core.interfaces import (
     RiskLevel, ReplayPolicy, ToolDefinition, ToolEffect, ToolHandler, ToolSchema, Skill,
 )
 from agents.agent_harness.core.namespace import normalize_namespace
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.agent_harness.core.plugins import normalize_plugin_version
 
 
@@ -63,7 +64,7 @@ class SkillToolSpec:
     intent_aliases: list[str] = field(default_factory=list)
     replay_policy: str = ""
     traits: list[str] = field(default_factory=list)
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS
     max_output_bytes: int = 1_000_000
     contract_version: str = "1"
     integration_api_version: Optional[str] = None
@@ -218,7 +219,7 @@ class SkillContract:
         permissions = cls._string_list(
             spec.get("required_permissions", []), f"tool {name}.required_permissions"
         )
-        timeout_seconds = spec.get("timeout_seconds", 30.0)
+        timeout_seconds = spec.get("timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS)
         max_output_bytes = spec.get("max_output_bytes", 1_000_000)
         if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
             raise ValueError(f"Skill tool {name}.timeout_seconds must be a number")

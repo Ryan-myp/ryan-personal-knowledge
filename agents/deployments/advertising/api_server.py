@@ -7,6 +7,7 @@ import sys
 import os
 import json
 import logging
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 import inspect
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -227,6 +228,9 @@ def _init_runtime():
             backend=database_config.get("backend"),
             database_url=database_config.get("url"),
         )
+        execution_timeout = float(config.get(
+            "execution_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+        ))
         runtime = create_advertising_application(
             persistence_store=store,
             whitelist_validator=AccountWhitelistValidator(str(config_path)),
@@ -252,6 +256,8 @@ def _init_runtime():
             ),
             offline_mode=False,
             require_llm=True,
+            turn_timeout_seconds=execution_timeout,
+            task_timeout_seconds=execution_timeout,
         )
 
         credentials = {}
@@ -284,7 +290,10 @@ def _init_runtime():
         if api_key:
             from agents.agent_harness.core.llm_client import create_llm_client
             base_url = models_config.get("openai", {}).get("base_url") or os.environ.get("OPENAI_BASE_URL")
-            llm = create_llm_client(model=llm_model, api_key=api_key, base_url=base_url)
+            llm = create_llm_client(
+                model=llm_model, api_key=api_key, base_url=base_url,
+                timeout_seconds=execution_timeout,
+            )
             runtime.inject_llm(llm)
             logger.info(f"✅ LLM 已注入: {llm_model}")
         else:
@@ -437,6 +446,10 @@ async def health():
         "state": state, "error": runtime_status.get("error"),
         "service": "ad-agent", "version": "1.0.0",
         "execution_mode": runtime.execution_mode if runtime else None,
+        "execution_timeout_seconds": (
+            getattr(runtime, "turn_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS)
+            if runtime else DEFAULT_EXECUTION_TIMEOUT_SECONDS
+        ),
         "execution_mode_options": ["dry_run", "live"],
         "live_mode_available": live_available,
         "live_mode_reason": live_reason,

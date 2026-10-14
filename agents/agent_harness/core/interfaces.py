@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, runtime
 
 from .security import sha256_json
 from .context import ContextQuery
+from .timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
 # ─── 核心数据类型 ───────────────────────────────────────────────
@@ -148,7 +149,7 @@ class ToolDefinition:
     # Read tools are live by default; write tools must opt in explicitly.
     live_support: Optional[bool] = None
     # Operational contract used by the Runtime before a handler is invoked.
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS
     max_output_bytes: int = 1_000_000
     required_permissions: list[str] = field(default_factory=list)
     # Publisher-owned scope metadata. The Core treats scope as opaque; an

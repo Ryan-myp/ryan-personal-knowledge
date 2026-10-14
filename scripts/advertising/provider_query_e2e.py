@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agents.agent_harness.core.interfaces import ToolContext, ToolEffect  # noqa: E402
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS  # noqa: E402
 from agents.agent_harness.core.namespace import normalize_namespace  # noqa: E402
 from agents.agent_harness.core.tool_registry import validate_tool_input  # noqa: E402
 from agents.tools.advertising.shared.domain.provider_evidence import (  # noqa: E402
@@ -165,8 +166,8 @@ SAFETY = {
     "credentials_included": False,
     "raw_provider_responses_included": False,
 }
-QUERY_TIMEOUT_SECONDS = 15.0
-PROVIDER_QUERY_TIMEOUT_SECONDS = {"meta": 30.0}
+QUERY_TIMEOUT_SECONDS = DEFAULT_EXECUTION_TIMEOUT_SECONDS
+PROVIDER_QUERY_TIMEOUT_SECONDS = {"meta": DEFAULT_EXECUTION_TIMEOUT_SECONDS}
 QUERY_SKIP_REASONS = {
     "missing_parent_resource",
     "no_safe_input",

@@ -575,7 +575,7 @@
                         <label><span>认证方式</span><select id="mcpAuthTypeInput" onchange="updateMCPAuthHint()"><option value="none">无认证</option><option value="bearer">Bearer Token</option><option value="api_key">API Key Header</option></select></label>
                         <label><span>credential_ref</span><input id="mcpCredentialRefInput" maxlength="128" placeholder="例如 reporting_prod"></label>
                         <label><span>认证 Header</span><input id="mcpAuthHeaderInput" maxlength="64" placeholder="Authorization / X-API-Key"></label>
-                        <label><span>超时（秒）</span><input id="mcpTimeoutInput" type="number" min="1" max="120" value="20"></label>
+                        <label><span>超时（秒）</span><input id="mcpTimeoutInput" type="number" min="1" max="500" value="500"></label>
                         <label class="wide"><span>说明</span><textarea id="mcpDescriptionInput" maxlength="500" rows="2" placeholder="说明 Server 能提供什么能力"></textarea></label>
                     </div>
                     <div class="mcp-auth-hint" id="mcpAuthHint">认证密钥由部署环境提供：AD_AGENT_MCP_CREDENTIAL_&lt;CREDENTIAL_REF&gt;，页面只保存引用。</div>

@@ -3185,8 +3185,11 @@ class TikTokAPIClient(BasePlatformClient):
         """Get an Ad-backed logical Creative through the official Ad Get API."""
         advertiser_id = str(advertiser_id or "").strip()
         creative_id = str(creative_id or "").strip()
-        if not advertiser_id or not creative_id:
-            raise ValueError("advertiser_id and creative_id must not be empty")
+        if (
+            not advertiser_id.isascii() or not advertiser_id.isdecimal()
+            or not creative_id.isascii() or not creative_id.isdecimal()
+        ):
+            raise ValueError("advertiser_id and creative_id must be numeric IDs; creative_id is an Ad ID")
         creatives = self.list_creatives(
             advertiser_id,
             filtering=[{

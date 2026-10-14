@@ -19,6 +19,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional, Callable
 from functools import wraps
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +251,7 @@ class BasePlatformClient(ABC):
         self.retry_config = retry_config or RetryConfig()
         self.rate_limiter = rate_limiter
         self._session_cache: dict[str, Any] = {}  # 请求级缓存
-        self.request_timeout = 30.0
+        self.request_timeout = DEFAULT_EXECUTION_TIMEOUT_SECONDS
         self.request_deadline: Optional[float] = None
 
     def supports_tool_api_version(self, version: Optional[str]) -> bool:

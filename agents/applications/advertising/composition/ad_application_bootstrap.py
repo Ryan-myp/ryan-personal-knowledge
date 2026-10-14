@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.scenarios.advertising import advertising_agent_profile
 from agents.tools.advertising.shared.features.factory import discover_features
 from agents.agent_harness.core.interfaces import EffectReconciler, ExecutionMode
@@ -320,7 +321,7 @@ class AdApplicationBootstrap:
         options: Mapping[str, Any],
     ) -> None:
         max_tool_calls = int(options.get("max_tool_calls", 32))
-        turn_timeout = float(options.get("turn_timeout_seconds", 120.0))
+        turn_timeout = float(options.get("turn_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS))
         if max_tool_calls <= 0:
             raise ValueError("max_tool_calls must be positive")
         if turn_timeout <= 0:
@@ -375,7 +376,7 @@ class AdApplicationBootstrap:
                 outbox_max_attempts=int(options.get("outbox_max_attempts", 10)),
                 max_task_workers=int(options.get("max_task_workers", 4)),
                 max_task_queue=int(options.get("max_task_queue", 32)),
-                task_timeout_seconds=float(options.get("task_timeout_seconds", 900.0)),
+                task_timeout_seconds=float(options.get("task_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS)),
                 task_lease_seconds=float(options.get("task_lease_seconds", 300.0)),
                 task_queue_poll_interval=float(
                     options.get("task_queue_poll_interval", 0.5)

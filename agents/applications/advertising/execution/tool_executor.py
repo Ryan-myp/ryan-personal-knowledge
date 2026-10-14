@@ -13,6 +13,7 @@ from typing import Any, Callable, Optional
 from agents.agent_harness.core.features import RuntimeExecutionServices
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolError, ToolResult
 from agents.agent_harness.core.tool_registry import validate_tool_input
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
 class _CancellationBridge:
@@ -349,7 +350,7 @@ class _ToolInvocationRunner:
         if uncertain_write:
             data.update({"requires_reconciliation": True, "effect_state": "unknown"})
         max_seconds = float(
-            getattr(invocation.definition, "timeout_seconds", 30.0)
+            getattr(invocation.definition, "timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS)
         )
         uncertainty = (
             "；这是外部写操作，结果未知，必须先进行状态核对，不能直接重试"
@@ -564,7 +565,7 @@ class ToolExecutor:
     ) -> tuple[float, Optional[ToolResult]]:
         metadata = ctx.metadata if ctx else {}
         now = time.monotonic()
-        deadline = now + float(getattr(definition, "timeout_seconds", 30.0))
+        deadline = now + float(getattr(definition, "timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS))
         turn_deadline = metadata.get("turn_deadline")
         if turn_deadline is not None:
             deadline = min(deadline, float(turn_deadline))

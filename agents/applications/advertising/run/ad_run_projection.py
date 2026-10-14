@@ -44,6 +44,14 @@ class AdvertisingRunProjection:
                 "success": not bool(item.get("is_error")),
                 "error": str(raw or "") if item.get("is_error") else "",
             }
+            complete_data = item.get("data")
+            if isinstance(complete_data, Mapping):
+                result["data"] = dict(complete_data)
+                if result.pop("output_truncated", False):
+                    result["model_context_truncated"] = True
+                    result["model_context_truncated_fields"] = result.pop(
+                        "truncated_fields", [],
+                    )
             if name:
                 result.setdefault("tool", name)
                 try:

@@ -29,7 +29,8 @@ from .persistence import TranscriptStore
 from .state_persistence import AgentStatePersistence, TranscriptPersistenceError
 from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
-from .results import RunResult, RunStatus
+from .results import RunResult, RunStatus, tool_outcome_status
+from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .runtime_kernel import TurnRequest
 from .skills import SkillCatalog
 from .tool_catalog import ToolCatalog
@@ -115,7 +116,7 @@ class Agent:
         transcript_store: Optional[TranscriptStore] = None,
         session_ttl_seconds: float = 3600.0,
         max_sessions: int = 1000,
-        model_timeout_seconds: float | None = None,
+        model_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         max_inflight_model_invocations: int = 32,
         model_fallbacks: Sequence[Any] = (),
         max_input_tokens: int | None = None,
@@ -124,7 +125,7 @@ class Agent:
         max_stream_delta_chars: int = 4096,
         max_tool_result_chars: int = 32_000,
         max_interaction_chars: int = 256_000,
-        tool_timeout_seconds: float | None = None,
+        tool_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         tool_max_retries: int = 0,
         tool_retry_delay_seconds: float = 0.0,
         tool_circuit_failure_threshold: int = 5,
@@ -1116,7 +1117,7 @@ class Agent:
                     )
                     runtime_signals = {
                         key: value
-                        for item in tool_results
+                        for item in all_tool_results
                         if isinstance(item.get("runtime_signals"), Mapping)
                         for key, value in item["runtime_signals"].items()
                     }
@@ -1140,7 +1141,7 @@ class Agent:
                         )
                         else RunStatus.AWAITING_INPUT
                         if awaiting_input
-                        else RunStatus.SUCCEEDED
+                        else tool_outcome_status(all_tool_results)
                     )
                     terminal_reply = (
                         "Run Tool-call budget exceeded; the rejected batch was not executed."

@@ -961,7 +961,7 @@ class ManagedSkillManager:
             actual_eval = evaluation_workspace / eval_path
             command = os.environ.get("SKILL_UP_BIN", "skill-up")
             command_parts = [command] if os.path.sep in command else [shutil.which(command) or command]
-            timeout = max(1, min(int(os.environ.get("AGENT_PLATFORM_SKILL_UP_TIMEOUT", "900")), 1800))
+            timeout = max(1, min(int(os.environ.get("AGENT_PLATFORM_SKILL_UP_TIMEOUT", "500")), 500))
             engine_name = str((_config.get("engine") or {}).get("name", ""))
             evaluation_env = self._evaluation_environment(engine_name)
             engine_binding = self.evaluation_engines[engine_name]

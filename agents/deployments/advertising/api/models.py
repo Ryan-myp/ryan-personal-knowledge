@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
 class ChatRequest(BaseModel):
@@ -138,7 +139,10 @@ class MCPServerRequest(BaseModel):
     auth_type: Literal["none", "bearer", "api_key"] = "none"
     credential_ref: Optional[str] = Field(default=None, max_length=128)
     auth_header: str = Field(default="", max_length=64)
-    timeout_seconds: float = Field(default=20.0, ge=1.0, le=120.0)
+    timeout_seconds: float = Field(
+        default=DEFAULT_EXECUTION_TIMEOUT_SECONDS, ge=1.0,
+        le=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+    )
 
 
 class MCPServerPatchRequest(BaseModel):
@@ -149,7 +153,9 @@ class MCPServerPatchRequest(BaseModel):
     auth_type: Optional[Literal["none", "bearer", "api_key"]] = None
     credential_ref: Optional[str] = Field(default=None, max_length=128)
     auth_header: Optional[str] = Field(default=None, max_length=64)
-    timeout_seconds: Optional[float] = Field(default=None, ge=1.0, le=120.0)
+    timeout_seconds: Optional[float] = Field(
+        default=None, ge=1.0, le=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
+    )
 
 
 class MCPValidationRequest(BaseModel):

@@ -53,15 +53,15 @@ def test_tool_source_audit_discovers_all_installed_channels_without_issues():
     )
 
 
-def test_meta_account_listing_has_five_minute_timeout_without_widening_other_tools():
+def test_meta_queries_use_the_shared_500_second_budget():
     runtime = build_runtime()
     account_list, _handler = runtime.registry.get("meta_list_accounts")
     campaign_list, _handler = runtime.registry.get("meta_list_campaigns")
     business_list, _handler = runtime.registry.get("meta_list_businesses")
 
-    assert account_list.timeout_seconds == 300
-    assert campaign_list.timeout_seconds == 300
-    assert business_list.timeout_seconds == 30
+    assert account_list.timeout_seconds == 500
+    assert campaign_list.timeout_seconds == 500
+    assert business_list.timeout_seconds == 500
     now = time.monotonic()
     deadline, error = ToolExecutor._deadline(
         ToolContext("timeout-test", "user-test"),
@@ -69,7 +69,7 @@ def test_meta_account_listing_has_five_minute_timeout_without_widening_other_too
         account_list.name,
     )
     assert error is None
-    assert 299.9 <= deadline - now <= 300.01
+    assert 499.9 <= deadline - now <= 500.01
     now = time.monotonic()
     campaign_deadline, error = ToolExecutor._deadline(
         ToolContext("campaign-timeout-test", "user-test"),
@@ -77,7 +77,7 @@ def test_meta_account_listing_has_five_minute_timeout_without_widening_other_too
         campaign_list.name,
     )
     assert error is None
-    assert 299.9 <= campaign_deadline - now <= 300.01
+    assert 499.9 <= campaign_deadline - now <= 500.01
 
 
 def test_provider_evidence_errors_do_not_pollute_code_contract_issues(tmp_path):

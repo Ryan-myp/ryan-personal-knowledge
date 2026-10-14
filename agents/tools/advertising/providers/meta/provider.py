@@ -818,11 +818,11 @@ class MetaToolSource(BaseProviderToolSource):
                 },
                 argument_builder=_meta_list_accounts_arguments,
                 action="list", resource_type="account", intent_types=["list_accounts"],
+                intent_aliases=["账户列表", "账号列表", "account list"],
                 traits=["read", "account"],
                 result_items_key="accounts",
                 result_id_fields=["id", "account_id"],
                 scope_required=False,
-                timeout_seconds=300.0,
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_list_businesses",
@@ -1388,7 +1388,6 @@ class MetaToolSource(BaseProviderToolSource):
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "campaign"],
-            timeout_seconds=300.0,
         ), MetaListCampaignsHandler(api_client)))
 
         # Get Campaign

@@ -344,28 +344,53 @@ def test_harness_aggregates_provider_cache_usage_separately_from_turn_calls():
         app.close()
 
 
-def test_model_timeout_and_retryable_fallback_are_explicit():
+def test_model_timeout_does_not_reset_the_budget_for_fallback():
     class Slow:
         def complete(self, _messages, _tools, _request):
             time.sleep(0.05)
             return "late"
 
     class Fallback:
+        calls = 0
+
         def complete(self, _messages, _tools, _request):
+            self.calls += 1
             return "fallback"
 
     events = []
+    fallback = Fallback()
     app = AgentApplication.create(
         model=Slow(),
-        model_fallbacks=(Fallback(),),
+        model_fallbacks=(fallback,),
         model_timeout_seconds=0.01,
         event_callback=events.append,
     )
     try:
         result = app.prompt("fallback")
-        assert result.reply == "fallback"
-        assert any(event["type"] == "model_fallback" for event in events)
+        assert result.status.value == "failed"
+        assert result.runtime_signals["model_timeout"] is True
+        assert fallback.calls == 0
         assert any(event["type"] == "model_error" for event in events)
+    finally:
+        app.close()
+
+
+def test_retryable_fallback_uses_the_remaining_model_budget():
+    class Unavailable:
+        def complete(self, *_args):
+            raise ConnectionError("temporary model failure")
+
+    class Fallback:
+        def complete(self, _messages, _tools, request):
+            assert 0 < request.context["model_timeout_seconds"] <= 1
+            return "fallback"
+
+    app = AgentApplication.create(
+        model=Unavailable(), model_fallbacks=(Fallback(),),
+        model_timeout_seconds=1,
+    )
+    try:
+        assert app.prompt("hello").reply == "fallback"
     finally:
         app.close()
 

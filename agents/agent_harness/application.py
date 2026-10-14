@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from .agent import Agent
+from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .agent_runtime import AgentRuntime
 from .context import ContextProvider
 from .observability import AlertSink, MetricsSink, TraceSink
@@ -58,7 +59,7 @@ class AgentApplication:
         max_transcript_chars: int = 100_000,
         transcript_store: Any = None,
         idempotency_store: Any = None,
-        model_timeout_seconds: float | None = None,
+        model_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         max_inflight_model_invocations: int = 32,
         model_fallbacks: Any = (),
         max_input_tokens: int | None = None,
@@ -68,7 +69,7 @@ class AgentApplication:
         max_interaction_chars: int = 256_000,
         session_ttl_seconds: float = 3600.0,
         max_sessions: int = 1000,
-        tool_timeout_seconds: float | None = None,
+        tool_timeout_seconds: float | None = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         tool_max_retries: int = 0,
         tool_retry_delay_seconds: float = 0.0,
         tool_circuit_failure_threshold: int = 5,

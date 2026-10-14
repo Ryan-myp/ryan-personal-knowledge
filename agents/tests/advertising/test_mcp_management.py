@@ -79,7 +79,7 @@ def test_mcp_validation_discovers_tools_and_registers_only_enabled_tools():
         )
         validated = manager.validate_server("tenant-a", created["server_id"], ["all"])
         assert validated["validation_status"] == "passed"
-        assert validated["timeout_seconds"] == 20.0
+        assert validated["timeout_seconds"] == 500.0
         assert len(validated["tools"]) == 1
         assert validated["tools"][0]["enabled"] is False
         assert validated["tools"][0]["trusted_read"] is False

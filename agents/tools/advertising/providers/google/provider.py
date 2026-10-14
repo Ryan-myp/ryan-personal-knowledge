@@ -1166,14 +1166,22 @@ class GoogleToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_list_customer_clients",
-                description="查询 Google Ads 经理账户下可访问的客户账户。",
+                description=(
+                    "列出授权范围内的 Google Ads 账户及账户名称、状态、币种、时区。"
+                    "level=0 只表示当前查询根账户，不表示经理账户；"
+                    "只有 manager=true 才能称为经理账户。不要额外查询 Campaign。"
+                ),
                 method_name="list_customer_clients", result_key="customer_clients",
                 properties={
                     "customer_id": {"type": "string"},
                     "limit": {"type": "integer"},
                 },
                 required=["customer_id"], action="list", resource_type="customer_client",
-                intent_types=["list_customer_clients"], traits=["read", "account"],
+                intent_types=["list_customer_clients", "list_accounts"], traits=["read", "account"],
+                intent_aliases=[
+                    "查询 Google Ads 账户列表", "列出 Google Ads 测试账户",
+                    "账户列表", "账号列表", "account list",
+                ],
                 argument_builder=lambda _ctx, data: ((), {
                     "page_size": data.get("limit", 100),
                 }),

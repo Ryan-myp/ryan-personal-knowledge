@@ -24,6 +24,7 @@ from typing import Any, Optional
 from datetime import datetime, timezone
 
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
+from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,7 @@ class DV360APIClient(BasePlatformClient):
                 ['openssl', 'dgst', '-sha256', '-sign', key_path],
                 input=data,
                 capture_output=True,
-                timeout=10,
+                timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
             )
             if result.returncode != 0:
                 raise APIError(f"openssl sign failed: {result.stderr.decode()}")
