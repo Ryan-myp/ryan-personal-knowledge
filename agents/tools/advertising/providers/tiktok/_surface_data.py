@@ -95,6 +95,8 @@ API_SURFACE = [
     {"resource": "creative", "action": "update", "method": "update_creative", "status": "implemented", "provider_operation": "ad/update", "notes": "Creative updates are applied to the owning Ad."},
     {"resource": "creative", "action": "delete", "method": "delete_creative", "status": "implemented", "provider_operation": "ad/delete", "notes": "Creative deletion deletes the owning Ad-backed creative."},
     {"resource": "creative_portfolio", "action": "create", "method": "create_creative_portfolio", "status": "implemented"},
+    {"resource": "creative_portfolio", "action": "list", "method": "list_creative_portfolios", "status": "implemented", "provider_operation": "creative/portfolio/list"},
+    {"resource": "creative_portfolio", "action": "recommend", "method": "recommend_ctas", "status": "implemented", "provider_operation": "creative/cta/recommend"},
     {"resource": "creative_portfolio", "action": "get", "method": "get_creative_portfolio", "status": "implemented"},
     {"resource": "creative_portfolio", "action": "preview", "method": "preview_creative_portfolio", "status": "implemented"},
     {"resource": "identity", "action": "create", "method": "create_identity", "status": "implemented"},

@@ -761,9 +761,9 @@ def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_
     client.request = lambda method, endpoint, data=None, **_kwargs: (
         calls.append((method, endpoint, data)) or {"portfolio_id": "portfolio-1"}
     )
-    content = [{"call_to_action_text": "Shop now", "asset_ids": ["asset-1"]}]
+    content = [{"asset_content": "Shop now", "asset_ids": ["asset-1"]}]
 
-    result = client.create_creative_portfolio("123", "CTA", content)
+    result = client.create_creative_portfolio("123", "CTA", content, live=True)
 
     assert result == {"portfolio_id": "portfolio-1"}
     assert calls == [(
@@ -778,7 +778,7 @@ def test_tiktok_creative_portfolio_uses_official_v13_payload_and_keeps_crud_gap_
         for definition, _handler in create_tiktok_tool_source().register_tools()
     }
     tool = definitions["tiktok_create_creative_portfolio"]
-    assert tool.live_support is False
+    assert tool.live_support is True
     assert validate_tool_input(
         tool.input_schema,
         {"account_id": "123", "creative_portfolio_type": "CTA", "portfolio_content": content},
@@ -910,9 +910,8 @@ def test_tiktok_creative_portfolio_get_and_preview_use_scoped_verified_endpoints
     }
     assert calls == [
         (
-            "POST", "creative/portfolio/get/",
+            "GET", "creative/portfolio/get/", None,
             {"advertiser_id": "123", "creative_portfolio_id": "portfolio-1"},
-            None,
         ),
         (
             "POST", "creative/ads_preview/create/",

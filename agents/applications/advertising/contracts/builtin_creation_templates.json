@@ -339,17 +339,17 @@
     {
       "key": "tiktok.test.traffic",
       "name": "TikTok 测试账号 · 流量",
-      "description": "TikTok 受控测试账号的新加坡 Traffic 视频模板。预填新加坡素材、身份、地域与落地页；仅需输入名称、排期和总预算。",
+      "description": "TikTok 受控测试账号的新加坡 Traffic 视频模板。预填已实测的视频、封面、身份、地域、落地页与 Learn more CTA 素材组合；仅需输入名称、排期和总预算，所有投放层级保持暂停。",
       "provider": "tiktok",
       "blueprint_id": "tiktok.traffic_video",
-      "blueprint_version": "3.2.0",
+      "blueprint_version": "3.3.0",
       "ad_format": "SINGLE_VIDEO",
       "account_id": "7397068114548195329",
-      "verification_status": "partial_live_verified",
-      "verified_scope": "Campaign 和 Ad Group 已以 DISABLE 状态创建并回读；素材组合需按账户资源补齐",
+      "verification_status": "live_verified",
+      "verified_scope": "2026-10-15 已通过 /chat 使用此模板完成 Campaign、Ad Group、Ad 全层级创建，并通过独立查询逐级回读。三层 operation_status 均为 DISABLE，Ad effective_status 为 PAUSED，CTA Portfolio 绑定 ID 与模板一致。渠道实际 Campaign 目标为 WEB_CONVERSIONS，广告组为 CLICK/CPC；不是旧版 TRAFFIC API。详见 tiktok-cta-verification-20261015.md",
       "required_inputs": ["Campaign 名称", "开始时间（UTC）", "结束时间（UTC）", "总预算（USD）"],
       "required_input_fields": ["campaign.campaign_name", "ad_group.schedule_start_time", "ad_group.schedule_end_time", "ad_group.budget"],
-      "tags": ["内置", "测试账号", "TikTok", "流量", "部分验证"],
+      "tags": ["内置", "测试账号", "TikTok", "流量", "已验证"],
       "values": {
         "campaign.objective_type": "TRAFFIC",
         "ad_group.objective_type": "TRAFFIC",
@@ -378,7 +378,7 @@
         "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d",
         "ad.image_web_uris": ["ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"],
         "ad.ad_text": "Discover more from Shopee Singapore.",
-        "ad.call_to_action": "LEARN_MORE",
+        "ad.call_to_action_id": "7696698198538112006",
         "ad.landing_page_url": "https://shopee.sg/"
       }
     },
@@ -427,11 +427,11 @@
       "description": "TikTok 受控测试账号的 Product Sales 商品目录基线。预填已查询的商品目录、商品集、视频和身份；Campaign 与 Ad Group 默认关闭。",
       "provider": "tiktok",
       "blueprint_id": "tiktok.product_sales_video",
-      "blueprint_version": "2.2.0",
+      "blueprint_version": "2.3.0",
       "ad_format": "SINGLE_VIDEO",
       "account_id": "7397068114548195329",
       "verification_status": "provider_limited",
-      "verified_scope": "测试账号的商品目录、商品集、视频和身份已通过只读 Tool 查询；此 Product Sales 模板组合尚未完成 live 创建与读回",
+      "verified_scope": "2026-10-15 Campaign 与 Ad Group 已暂停创建并回读；CTA Portfolio 已创建回读并通过 Traffic Ad 验证。此 Product Sales Ad 的创建仍报帖子与身份不匹配，完整模板未通过，不能视为销售广告已验证",
       "required_inputs": ["Campaign 名称", "开始时间（UTC）", "结束时间（UTC）", "总预算（USD）"],
       "required_input_fields": ["campaign.campaign_name", "ad_group.schedule_start_time", "ad_group.schedule_end_time", "ad_group.budget"],
       "tags": ["内置", "测试账号", "TikTok", "销售", "渠道限制"],
@@ -471,7 +471,7 @@
         "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d",
         "ad.ad_text": "Explore our featured products.",
         "ad.ad_name": "Template Product Sales Ad",
-        "ad.call_to_action": "SHOP_NOW"
+        "ad.call_to_action_id": "7696698198538112006"
       }
     },
     {

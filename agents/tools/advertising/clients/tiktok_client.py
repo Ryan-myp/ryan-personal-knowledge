@@ -20,10 +20,9 @@ from .base import BasePlatformClient, APIError, AuthError, RateLimitError, Tempo
 logger = logging.getLogger(__name__)
 
 
-# TikTok Smart+ exposes a fixed CTA enum rather than a discoverable lookup
-# endpoint. Keep this provider-owned catalog next to the adapter so schema
-# and direct client calls can reject a UI label such as ``INSTALL`` before
-# the request reaches the provider.
+# Plain Smart+ CTA values remain distinct from recommended CTA portfolio
+# assets. Keep this catalog at the Provider boundary; portfolio IDs come
+# from creative/cta/recommend followed by creative/portfolio/create.
 TIKTOK_SMART_PLUS_CTA_VALUES = (
     "APPLY_NOW", "BOOK_NOW", "CALL_NOW", "CHECK_AVAILABILITY", "CONTACT_US",
     "DOWNLOAD_NOW", "EXPERIENCE_NOW", "GET_QUOTE", "GET_SHOWTIMES",
@@ -315,6 +314,7 @@ class TikTokAPIClient(BasePlatformClient):
         max_pages: int = 100,
         max_items: Optional[int] = None,
         item_filter: Optional[Callable[[Any], bool]] = None,
+        items_key: str = "list",
     ) -> list:
         """Consume TikTok ``page_info`` pages into one deterministic list."""
         if max_items is not None:
@@ -346,7 +346,7 @@ class TikTokAPIClient(BasePlatformClient):
             elif isinstance(payload, dict):
                 # Keep the parser compatible with older list-shaped endpoint
                 # responses that nest items under ``list``.
-                page_items = payload.get("list", [])
+                page_items = payload.get(items_key, [])
                 page_info = payload.get("page_info", {})
             else:
                 raise APIError(f"TikTok {endpoint} returned an invalid list envelope")
@@ -1837,6 +1837,12 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError(
                 "Provider authorization context is resolved privately by the client"
             )
+        configuration = ad.get("ad_configuration") or {}
+        has_portfolio = ad.get("call_to_action_id") or (
+            configuration.get("call_to_action_id") if isinstance(configuration, dict) else None
+        )
+        if has_portfolio and (ad.get("call_to_action") or ad.get("call_to_action_list")):
+            raise ValueError("Choose a CTA portfolio ID or plain CTA values, not both")
         ad = {**ad, "request_id": str(ad.get("request_id") or time.time_ns())}
         if live and self._smart_plus_status(ad) != "DISABLE":
             raise ValueError("TikTok Smart+ live creation only allows a paused ad")
@@ -3734,11 +3740,46 @@ class TikTokAPIClient(BasePlatformClient):
         )
         return result if isinstance(result, dict) else {"result": result}
 
+    def recommend_ctas(self, advertiser_id: str, content_type: str = "LANDING_PAGE", limit: int = 20) -> list:
+        """Return provider-issued CTA assets, not guessed enum identifiers."""
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isascii() or not advertiser_id.isdecimal():
+            raise ValueError("advertiser_id must contain digits only")
+        if content_type not in {"LANDING_PAGE", "APP_DOWNLOAD"}:
+            raise ValueError("content_type must be LANDING_PAGE or APP_DOWNLOAD")
+        limit = self._validate_reference_limit(limit)
+        self.acquire_rate_limit(self._rate_limiter)
+        result = self.request("GET", "creative/cta/recommend/", params={
+            "advertiser_id": advertiser_id, "asset_type": "CTA_AUTO_OPTIMIZED",
+            "content_type": content_type, "new_version": "false",
+        })
+        payload = self._data_section(result)
+        assets = payload.get("recommend_assets") if isinstance(payload, dict) else None
+        if not isinstance(assets, list):
+            raise APIError("TikTok CTA recommendation response is missing recommend_assets")
+        return self._public_provider_data(assets[:limit])
+
+    def list_creative_portfolios(self, advertiser_id: str, portfolio_type: str = "CTA", limit: int = 20) -> list:
+        advertiser_id = str(advertiser_id or "").strip()
+        if not advertiser_id.isascii() or not advertiser_id.isdecimal():
+            raise ValueError("advertiser_id must contain digits only")
+        limit = self._validate_reference_limit(limit)
+        if portfolio_type not in {"CTA", "CARD", "DOWNLOAD_CARD", "PRODUCT_CARD", "STICKER", "PREMIUM_BADGE"}:
+            raise ValueError("Unsupported creative portfolio type")
+        rows = self._list_pages(
+            "creative/portfolio/list/",
+            {"advertiser_id": advertiser_id, "page_size": min(limit, 100),
+             "filtering": json.dumps({"creative_portfolio_types": [portfolio_type]})},
+            max_items=limit, items_key="creative_portfolios",
+        )
+        return self._public_provider_data(rows)
+
     def create_creative_portfolio(
         self,
         advertiser_id: str,
         creative_portfolio_type: str = "CTA",
         portfolio_content: list[dict] = None,
+        live: bool = False,
     ) -> dict:
         """Create a TikTok v1.3 Creative Portfolio."""
         advertiser_id = str(advertiser_id or "").strip()
@@ -3755,15 +3796,39 @@ class TikTokAPIClient(BasePlatformClient):
                 raise ValueError("portfolio_content must be a non-empty list when provided")
             if len(portfolio_content) > 100 or any(not isinstance(item, dict) for item in portfolio_content):
                 raise ValueError("portfolio_content must contain at most 100 objects")
+        if self._contains_private_business_center_field(portfolio_content):
+            raise ValueError("Provider authorization context must not be supplied in CTA content")
+        if portfolio_type == "CTA":
+            self._validate_cta_portfolio_content(portfolio_content)
         data = {
             "advertiser_id": advertiser_id,
             "creative_portfolio_type": portfolio_type,
         }
         if portfolio_content is not None:
             data["portfolio_content"] = portfolio_content
+        if not live:
+            return {"mode": "dry_run", "execution_status": "planned", "live_support": portfolio_type == "CTA",
+                    "operation": {"creative/portfolio/create/": {"create": data}}}
+        if portfolio_type != "CTA" or not portfolio_content:
+            raise ValueError("Live creative portfolio creation only supports explicit CTA content")
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request("POST", "creative/portfolio/create/", data=data)
         return result if isinstance(result, dict) else {"result": result}
+
+    @staticmethod
+    def _validate_cta_portfolio_content(content: list[dict] | None) -> None:
+        if not content:
+            raise ValueError("CTA portfolio requires recommended asset_content and asset_ids")
+        for item in content:
+            if set(item) != {"asset_content", "asset_ids"}:
+                raise ValueError("CTA content must contain only asset_content and asset_ids")
+            text, identifiers = item["asset_content"], item["asset_ids"]
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("CTA asset_content must be a non-empty string")
+            if not isinstance(identifiers, list) or not identifiers:
+                raise ValueError("CTA asset_ids must be a non-empty list")
+            if any(not isinstance(identifier, str) or not identifier.strip() for identifier in identifiers):
+                raise ValueError("CTA asset_ids must contain non-empty strings")
 
     def get_creative_portfolio(
         self, advertiser_id: str, creative_portfolio_id: str
@@ -3777,7 +3842,7 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError("creative_portfolio_id is required")
         self.acquire_rate_limit(self._rate_limiter)
         result = self.request(
-            "POST", "creative/portfolio/get/", data={
+            "GET", "creative/portfolio/get/", params={
                 "advertiser_id": advertiser_id,
                 "creative_portfolio_id": creative_portfolio_id,
             },

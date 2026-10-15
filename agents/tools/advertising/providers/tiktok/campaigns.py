@@ -21,12 +21,16 @@ class TikTokListCampaignsHandler(ToolHandler):
         advertiser_id = ctx.account_id
         if self.client and advertiser_id:
             try:
-                campaigns = call_with_optional_page_size(
-                    self.client.list_campaigns,
-                    advertiser_id,
-                    limit=input_data.get("limit", 20),
-                    parameter_names=("max_results", "page_size", "limit"),
-                )
+                if input_data.get("campaign_id"):
+                    campaign = self.client.get_campaign(advertiser_id, input_data["campaign_id"])
+                    campaigns = [campaign] if campaign else []
+                else:
+                    campaigns = call_with_optional_page_size(
+                        self.client.list_campaigns,
+                        advertiser_id,
+                        limit=input_data.get("limit", 20),
+                        parameter_names=("max_results", "page_size", "limit"),
+                    )
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": advertiser_id,

@@ -1,5 +1,5 @@
 {
-  "digest": "4200c0ed21d475b06f6fbd219926dd991276d3fcad703c50f6a7ede36fbbac7d",
+  "digest": "fc8dc8617cc3da03ac00cf63c4b7cdc558ed593509a8392f8bdb0391c325e8dc",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -30132,8 +30132,8 @@
       ]
     },
     "tiktok": {
-      "digest": "c876816012f5673684935a1ec81e00ef39cf3e4c4267f1d4bf29d2f4df89f9bc",
-      "tool_count": 85,
+      "digest": "04d6bcbbb3ccd0f43de5468807431620b16818c5ef5aeb5beb1b20a4ec486d5a",
+      "tool_count": 87,
       "tools": [
         {
           "action": "create",
@@ -30274,6 +30274,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -31331,6 +31332,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -32799,6 +32801,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -33752,6 +33755,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -34409,6 +34413,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -34995,9 +35000,9 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "75198d14cd42914013f9d5cb47e7a958c3880a52222acb115ffed9d9539151e6",
-          "contract_version": "1.3.0",
-          "description": "创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
+          "contract_hash": "8229b0f39c45606cfebe4c904ef00f30220381c2de42136638c456c96de5110b",
+          "contract_version": "1.5.0",
+          "description": "创建 TikTok Creative Portfolio；默认 dry-run，live 仅支持非投放的 CTA 素材组合并需要确认。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -35012,23 +35017,38 @@
               "creative_portfolio_type": {
                 "description": "Portfolio type",
                 "enum": [
-                  "CTA",
-                  "CARD",
-                  "PREMIUM_BADGE",
-                  "STICKER",
-                  "DOWNLOAD_CARD",
-                  "PRODUCT_CARD"
+                  "CTA"
                 ],
                 "type": "string"
               },
               "portfolio_content": {
                 "description": "Portfolio content records",
                 "items": {
-                  "additionalProperties": true,
+                  "additionalProperties": false,
+                  "properties": {
+                    "asset_content": {
+                      "description": "Recommended CTA asset content",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "asset_ids": {
+                      "description": "Matching asset IDs returned by tiktok_recommend_ctas",
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "minItems": 1,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "asset_content",
+                    "asset_ids"
+                  ],
                   "type": "object"
                 },
                 "manual_entry": {
-                  "instructions": "内容字段由 creative_portfolio_type 决定（如 CTA、CARD、PRODUCT_CARD），请按 TikTok 当前版本返回的对象结构填写；未知字段不会被系统猜测。",
+                  "instructions": "先通过 tiktok_recommend_ctas 获取推荐资产，再将同一组 asset_content 与 asset_ids 原样填入；不能用 LEARN_MORE 等按钮枚举代替推荐资产。",
                   "source": "tiktok_creative_portfolio_payload",
                   "title": "Creative Portfolio 内容"
                 },
@@ -35039,10 +35059,14 @@
               }
             },
             "required": [
-              "account_id"
+              "account_id",
+              "creative_portfolio_type",
+              "portfolio_content"
             ],
             "requires": [
-              "account_id"
+              "account_id",
+              "creative_portfolio_type",
+              "portfolio_content"
             ],
             "requires_any_of": [],
             "type": "object"
@@ -35053,13 +35077,13 @@
             "create_creative_portfolio"
           ],
           "live_permission": null,
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_create_creative_portfolio",
           "namespace": "tiktok",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
-          "readback_tool": null,
+          "readback_tool": "tiktok_get_creative_portfolio",
           "related_resource_id_fields": [],
           "related_resource_type": null,
           "replay_policy": "unsafe",
@@ -35235,6 +35259,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -35751,6 +35776,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -36845,6 +36871,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -37862,6 +37889,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -38540,6 +38568,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -39304,6 +39333,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -39638,6 +39668,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -39719,6 +39750,7 @@
                 "type": "array"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -39943,6 +39975,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -40238,7 +40271,7 @@
           "activation_rules": [],
           "cancellation_mode": "cooperative",
           "contract_hash": "0fce87306cd79608c9816aef7914574036672834b0c967fe014c7b84192bf5d1",
-          "contract_version": "1.3.0",
+          "contract_version": "1.5.0",
           "description": "查询 TikTok Creative Portfolio 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -41213,6 +41246,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -41491,8 +41525,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "110f80baeba3eb32502f5824c1cdecd24493bec43df7b47bd00c227b757e96bc",
-          "contract_version": "1.3.0",
+          "contract_hash": "050f73cfeef46991f78fc2d25012c163f48ed197dc8717ea615a446303a4b5cf",
+          "contract_version": "1.5.0",
           "description": "查询 TikTok Ads Campaign 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -41502,6 +41536,23 @@
             "conditional_rules": [],
             "properties": {
               "account_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "lookup_query_field": "campaign_id",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "tiktok_list_campaigns",
+                "minLength": 1,
+                "pattern": "^[0-9]+$",
+                "selection_label_fields": [
+                  "campaign_name",
+                  "name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "campaign_id",
+                  "id"
+                ],
                 "type": "string"
               },
               "limit": {
@@ -41713,6 +41764,84 @@
           "traits": [
             "read",
             "catalog",
+            "lookup"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "d74948dc40a5fafea96941d80a55ba1de3f17cc12a9bd9dbb71db9bb4c925515",
+          "contract_version": "1.0.0",
+          "description": "查询 Creative Portfolio 列表端点可见的素材组合；空列表不证明已知 CTA ID 不存在，已知 ID 应使用 tiktok_get_creative_portfolio 精确查询。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "portfolio_type": {
+                "default": "CTA",
+                "enum": [
+                  "CTA",
+                  "CARD",
+                  "DOWNLOAD_CARD",
+                  "PRODUCT_CARD",
+                  "STICKER",
+                  "PREMIUM_BADGE"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "account_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v1.3",
+          "intent_aliases": [],
+          "intent_types": [
+            "list_creative_portfolios"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_list_creative_portfolios",
+          "namespace": "tiktok",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creative_portfolio",
+          "result_id_fields": [],
+          "result_items_key": "portfolios",
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "tiktok-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "creative",
             "lookup"
           ]
         },
@@ -42706,6 +42835,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -42782,6 +42912,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -42925,6 +43056,80 @@
           "action": "recommend",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
+          "contract_hash": "bb33a0c1ed25db985626648e815069684cd355aaeb4c8e31069669ff3da234db",
+          "contract_version": "1.0.0",
+          "description": "查询 TikTok CTA 推荐资产，返回真实 asset_ids 与 asset_content，供创建 CTA Portfolio。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "type": "string"
+              },
+              "content_type": {
+                "default": "LANDING_PAGE",
+                "enum": [
+                  "LANDING_PAGE",
+                  "APP_DOWNLOAD"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "account_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v1.3",
+          "intent_aliases": [],
+          "intent_types": [
+            "recommend_ctas"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "tiktok_recommend_ctas",
+          "namespace": "tiktok",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creative_portfolio",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "tiktok-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "creative",
+            "lookup"
+          ]
+        },
+        {
+          "action": "recommend",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "88acb3341ed43259549a02fd73986d6dc33d29f6634b2f4f93d50ce66f3cb792",
           "contract_version": "1.3.0",
           "description": "根据种子词查询 TikTok 兴趣定向推荐关键词。",
@@ -43048,6 +43253,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -43629,15 +43835,46 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "392eb682ffe8f5709ca68d65f7c9979491abc0f1866fa0b8987b1e571b0a598f",
-          "contract_version": "1.5.0",
+          "contract_hash": "ae0dd8396f2f0bf7de3e3c6fa386a76410851033e9f5d9d1bc721cfad3dcf956",
+          "contract_version": "1.6.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "if": {
+                  "objective_type": "LEAD_GENERATION"
+                },
+                "message": "LEAD_GENERATION Smart+ ads require a selected Instant Page",
+                "required": [
+                  "page_list"
+                ]
+              },
+              {
+                "forbidden": [
+                  "call_to_action",
+                  "call_to_action_list"
+                ],
+                "if": {
+                  "any": [
+                    {
+                      "call_to_action_id": {
+                        "exists": true
+                      }
+                    },
+                    {
+                      "ad_configuration.call_to_action_id": {
+                        "exists": true
+                      }
+                    }
+                  ]
+                },
+                "message": "Choose a CTA portfolio ID or plain CTA values, not both"
+              }
+            ],
             "properties": {
               "account_id": {
                 "type": "string"
@@ -43648,12 +43885,19 @@
                 "properties": {
                   "call_to_action_id": {
                     "description": "TikTok CTA ID",
-                    "manual_entry": {
-                      "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
-                      "source": "external_provider_identifier",
-                      "title": "TikTok 行动号召 ID"
-                    },
+                    "lookup_query_field": "creative_portfolio_id",
+                    "lookup_result_key": "creative_portfolio",
+                    "lookup_tool": "tiktok_get_creative_portfolio",
+                    "manual_entry": null,
                     "minLength": 1,
+                    "selection_label_fields": [
+                      "creative_portfolio_name",
+                      "name",
+                      "creative_portfolio_id"
+                    ],
+                    "selection_value_fields": [
+                      "creative_portfolio_id"
+                    ],
                     "type": "string"
                   },
                   "catalog_creative_info": {
@@ -43849,11 +44093,18 @@
               },
               "call_to_action_id": {
                 "description": "CTA ID",
-                "manual_entry": {
-                  "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
-                  "source": "external_provider_identifier",
-                  "title": "TikTok 行动号召 ID"
-                },
+                "lookup_query_field": "creative_portfolio_id",
+                "lookup_result_key": "creative_portfolio",
+                "lookup_tool": "tiktok_get_creative_portfolio",
+                "manual_entry": null,
+                "selection_label_fields": [
+                  "creative_portfolio_name",
+                  "name",
+                  "creative_portfolio_id"
+                ],
+                "selection_value_fields": [
+                  "creative_portfolio_id"
+                ],
                 "type": "string"
               },
               "call_to_action_list": {
@@ -43916,6 +44167,7 @@
               },
               "campaign_id": {
                 "description": "Parent Smart+ campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "minLength": 1,
@@ -43962,11 +44214,18 @@
                         },
                         "call_to_action_id": {
                           "description": "TikTok CTA ID",
-                          "manual_entry": {
-                            "instructions": "请使用 TikTok Ads Manager 或创意接口返回的 CTA ID；当前能力没有独立的 CTA 目录接口，不会根据文字猜测。",
-                            "source": "external_provider_identifier",
-                            "title": "TikTok 行动号召 ID"
-                          },
+                          "lookup_query_field": "creative_portfolio_id",
+                          "lookup_result_key": "creative_portfolio",
+                          "lookup_tool": "tiktok_get_creative_portfolio",
+                          "manual_entry": null,
+                          "selection_label_fields": [
+                            "creative_portfolio_name",
+                            "name",
+                            "creative_portfolio_id"
+                          ],
+                          "selection_value_fields": [
+                            "creative_portfolio_id"
+                          ],
                           "type": "string"
                         },
                         "identity_id": {
@@ -44689,6 +44948,7 @@
               },
               "campaign_id": {
                 "description": "Parent Smart+ campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "minLength": 1,
@@ -46312,6 +46572,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "minLength": 1,
@@ -46594,6 +46855,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "minLength": 1,
@@ -46797,6 +47059,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -47030,6 +47293,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -47346,6 +47610,7 @@
               },
               "campaign_id": {
                 "description": "Parent campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -47737,6 +48002,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "tiktok_list_campaigns",
                 "selection_label_fields": [
@@ -52039,6 +52305,32 @@
         "status": "implemented"
       },
       {
+        "action": "list",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "list_creative_portfolios",
+        "provider": "tiktok",
+        "provider_operation": "creative/portfolio/list",
+        "resource": "creative_portfolio",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
+        "action": "recommend",
+        "api_version": "v1.3",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_open_api_baseline",
+        "method": "recommend_ctas",
+        "provider": "tiktok",
+        "provider_operation": "creative/cta/recommend",
+        "resource": "creative_portfolio",
+        "source_url": "https://business-api.tiktok.com/portal/docs",
+        "status": "implemented"
+      },
+      {
         "action": "get",
         "api_version": "v1.3",
         "evidence_level": "code_contract",
@@ -52534,5 +52826,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 300
+  "tool_count": 302
 }

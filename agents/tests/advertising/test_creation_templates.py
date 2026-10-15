@@ -928,7 +928,8 @@ def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
     assert traffic["values"]["ad_group.location_ids"] == ["1880251"]
     assert traffic["values"]["ad_group.optimization_goal"] == "CLICK"
     assert traffic["values"]["ad_group.billing_event"] == "CPC"
-    assert traffic["values"]["ad.call_to_action"] == "LEARN_MORE"
+    assert traffic["values"]["ad.call_to_action_id"] == "7696698198538112006"
+    assert "ad.call_to_action" not in traffic["values"]
     assert traffic["values"]["ad.landing_page_url"] == "https://shopee.sg/"
     assert sales["values"]["ad_group.catalog_id"] == "7598491157655570192"
     assert sales["values"]["ad_group.product_source"] == "CATALOG"

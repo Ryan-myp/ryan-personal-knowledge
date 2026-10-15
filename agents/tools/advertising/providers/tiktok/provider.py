@@ -129,6 +129,7 @@ TIKTOK_LOOKUP_CONTRACTS = {
         "campaign_id": _tiktok_lookup(
             "tiktok_list_campaigns", "campaigns", ["campaign_id", "id"],
             ["campaign_name", "name", "id"],
+            query_field="campaign_id",
         ),
         "adgroup_id": _tiktok_lookup(
             # The list Tool's public result contract is ``adgroups``. Keep
@@ -318,6 +319,16 @@ TIKTOK_LOOKUP_CONTRACTS = {
             },
         },
     },
+    "tiktok_smart_plus_create_ad": {
+        "call_to_action_id": {
+            **_tiktok_lookup(
+                "tiktok_get_creative_portfolio", "creative_portfolio", ["creative_portfolio_id"],
+                ["creative_portfolio_name", "name", "creative_portfolio_id"],
+                query_field="creative_portfolio_id",
+            ),
+            "manual_entry": None,
+        },
+    },
 }
 
 
@@ -409,6 +420,8 @@ class TikTokToolSource(BaseProviderToolSource):
         "send_pixel_event": ["tiktok_send_pixel_event"],
         "send_pixel_events": ["tiktok_send_pixel_events"],
         "create_creative_portfolio": ["tiktok_create_creative_portfolio"],
+        "list_creative_portfolios": ["tiktok_list_creative_portfolios"],
+        "recommend_ctas": ["tiktok_recommend_ctas"],
         "get_creative_portfolio": ["tiktok_get_creative_portfolio"],
         "preview_creative_portfolio": ["tiktok_preview_creative_portfolio"],
         "create_identity": ["tiktok_create_identity"],
@@ -726,6 +739,40 @@ class TikTokToolSource(BaseProviderToolSource):
             ))
         tools.extend([
             method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_recommend_ctas",
+                description="查询 TikTok CTA 推荐资产，返回真实 asset_ids 与 asset_content，供创建 CTA Portfolio。",
+                method_name="recommend_ctas", result_key="ctas",
+                properties={
+                    "account_id": {"type": "string"},
+                    "content_type": {"type": "string", "enum": ["LANDING_PAGE", "APP_DOWNLOAD"], "default": "LANDING_PAGE"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                required=["account_id"], action="recommend", resource_type="creative_portfolio",
+                intent_types=["recommend_ctas"], traits=["read", "creative", "lookup"],
+                contract_version="1.0.0", integration_api_version="v1.3",
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "content_type": data.get("content_type", "LANDING_PAGE"),
+                    "limit": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
+                namespace="tiktok", skill="tiktok-ads-api-expert",
+                name="tiktok_list_creative_portfolios",
+                description="查询 Creative Portfolio 列表端点可见的素材组合；空列表不证明已知 CTA ID 不存在，已知 ID 应使用 tiktok_get_creative_portfolio 精确查询。",
+                method_name="list_creative_portfolios", result_key="portfolios",
+                properties={
+                    "account_id": {"type": "string"},
+                    "portfolio_type": {"type": "string", "enum": ["CTA", "CARD", "DOWNLOAD_CARD", "PRODUCT_CARD", "STICKER", "PREMIUM_BADGE"], "default": "CTA"},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                },
+                required=["account_id"], action="list", resource_type="creative_portfolio",
+                intent_types=["list_creative_portfolios"], traits=["read", "creative", "lookup"],
+                contract_version="1.0.0", integration_api_version="v1.3",
+                argument_builder=lambda ctx, data: ((account(ctx, data),), {
+                    "portfolio_type": data.get("portfolio_type", "CTA"), "limit": data.get("limit", 20),
+                }),
+            ),
+            method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_list_languages",
                 description="查询 TikTok 官方语言定向选项。", method_name="list_languages",
                 result_key="languages", properties={"account_id": {"type": "string"}},
@@ -869,13 +916,15 @@ class TikTokToolSource(BaseProviderToolSource):
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_create_creative_portfolio",
-                description="创建 TikTok Creative Portfolio（CTA/Card 等增强素材）；默认仅生成 dry-run 计划。",
+                description="创建 TikTok Creative Portfolio；默认 dry-run，live 仅支持非投放的 CTA 素材组合并需要确认。",
                 method_name="create_creative_portfolio", result_key="creative_portfolio_result",
                 properties=creative_portfolio["properties"], required=creative_portfolio["required"],
                 requires=creative_portfolio["requires"],
                 action="create", resource_type="creative_portfolio", resource_id_field="creative_portfolio_id",
                 intent_types=["create_creative_portfolio"],
-                traits=["write", "creative", "portfolio"], write=True, live_support=False,
+                traits=["write", "creative", "portfolio"], write=True, live_support=True,
+                contract_version="1.5.0", integration_api_version="v1.3",
+                readback_tool="tiktok_get_creative_portfolio",
                 argument_builder=lambda ctx, data: ((
                     account(ctx, data), data.get("creative_portfolio_type", "CTA"),
                     data.get("portfolio_content"),
@@ -883,6 +932,7 @@ class TikTokToolSource(BaseProviderToolSource):
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_creative_portfolio",
+                contract_version="1.5.0",
                 description="查询 TikTok Creative Portfolio 详情。",
                 method_name="get_creative_portfolio", result_key="creative_portfolio",
                 properties=creative_portfolio_get["properties"],
@@ -1229,12 +1279,16 @@ class TikTokToolSource(BaseProviderToolSource):
         # List Campaigns
         tools.append((ToolDefinition(
             name="tiktok_list_campaigns",
+            contract_version="1.5.0",
             skill="tiktok-ads-api-expert",
             namespace="tiktok",
             description="查询 TikTok Ads Campaign 列表。",
             input_schema=ToolSchema(
                 required=["account_id"],
-                properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
+                properties={
+                    "account_id": {"type": "string"}, "limit": {"type": "integer"},
+                    "campaign_id": {"type": "string", "minLength": 1, "pattern": "^[0-9]+$"},
+                },
             ),
             action="list", resource_type="campaign",
             intent_types=[
@@ -1743,11 +1797,12 @@ class TikTokToolSource(BaseProviderToolSource):
                 "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
-            contract_version="1.5.0",
+            contract_version="1.6.0",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
             required=["account_id"] + smart_plus_ad["required"],
             requires=smart_plus_ad["requires"],
             requires_any_of=smart_plus_ad["requires_any_of"],
+            conditional_rules=smart_plus_ad["conditional_rules"],
             action="create", resource_type="ad", parent_resource_type="ad_group",
             resource_id_field="smart_plus_ad_id", parent_resource_id_field="adgroup_id",
             related_resource_type="campaign",

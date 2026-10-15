@@ -65,8 +65,8 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     versions = {item["id"]: item["version"] for item in items}
     assert versions["tiktok.app_conversion_video"] == "3.0.0"
     assert versions["tiktok.lead_generation"] == "2.0.2"
-    assert versions["tiktok.product_sales_video"] == "2.2.0"
-    assert versions["tiktok.traffic_video"] == "3.2.0"
+    assert versions["tiktok.product_sales_video"] == "2.3.0"
+    assert versions["tiktok.traffic_video"] == "3.3.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 

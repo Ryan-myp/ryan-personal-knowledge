@@ -6,6 +6,7 @@ Tool Sources make a new Skill/Tool additive: it can publish its own schema
 without teaching the shared Runtime provider-specific rules.
 """
 
+from copy import deepcopy
 from typing import Any
 
 
@@ -283,7 +284,7 @@ def tiktok_smart_plus_updates(
             property_schema = ad_schema["properties"].get(field)
             if not isinstance(property_schema, dict):
                 raise ValueError(f"Smart+ Ad schema is missing update field: {field}")
-            common[field] = property_schema
+            common[field] = deepcopy(property_schema)
     else:
         raise ValueError(f"Unsupported Smart+ update resource: {resource_type}")
     return _object(common, f"Allowed TikTok Smart+ {resource_type} update fields")

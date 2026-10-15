@@ -48,6 +48,7 @@ RESOURCES = {
     "asset_group",
     "listing_group_filter",
     "product_group",
+    "creative_portfolio",
 }
 SENSITIVE = re.compile(
     r"token|secret|api[_-]?key|private_key|password|bc_id|partner_id|perter_id|mcc",
@@ -611,6 +612,7 @@ def _approved_tools():
                 tool.action == "create"
                 and tool.resource_type != "creative"
                 and tool.resource_type != "listing_group_filter"
+                and tool.resource_type != "creative_portfolio"
                 and not ({"status", "operation_status"} & set(fields))
             ):
                 continue
@@ -841,7 +843,10 @@ class ProviderRecorder:
         if provider == "google-ads":
             self._guard_google(data, path)
         if provider == "tiktok" and "/create/" in path:
-            if str(data.get("operation_status") or "").upper() != "DISABLE":
+            if path.endswith("/creative/portfolio/create/"):
+                if data.get("creative_portfolio_type") != "CTA":
+                    raise PermissionError("Only non-serving CTA portfolio creation is authorized")
+            elif str(data.get("operation_status") or "").upper() != "DISABLE":
                 raise PermissionError("TikTok creation must explicitly be DISABLE")
         if provider == "meta" and re.fullmatch(r"/v[\d.]+/\d+/?", path):
             if path.rstrip("/").rsplit("/", 1)[-1] not in self.created:

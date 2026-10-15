@@ -585,22 +585,32 @@ def tiktok_pixel_batch_schema() -> dict[str, Any]:
 def tiktok_creative_portfolio_schema() -> dict[str, Any]:
     """Schema for TikTok v1.3 Creative Portfolio creation."""
     return {
-        "required": ["account_id"],
-        "requires": ["account_id"],
+        "required": ["account_id", "creative_portfolio_type", "portfolio_content"],
+        "requires": ["account_id", "creative_portfolio_type", "portfolio_content"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "creative_portfolio_type": _field(
                 "string", "Portfolio type",
-                enum=["CTA", "CARD", "PREMIUM_BADGE", "STICKER", "DOWNLOAD_CARD", "PRODUCT_CARD"],
+                enum=["CTA"],
             ),
             "portfolio_content": _field(
                 "array", "Portfolio content records",
-                items={"type": "object", "additionalProperties": True},
+                items={
+                    "type": "object", "additionalProperties": False,
+                    "required": ["asset_content", "asset_ids"],
+                    "properties": {
+                        "asset_content": _field("string", "Recommended CTA asset content", minLength=1),
+                        "asset_ids": _field(
+                            "array", "Matching asset IDs returned by tiktok_recommend_ctas",
+                            minItems=1, items={"type": "string", "minLength": 1},
+                        ),
+                    },
+                },
                 minItems=1, maxItems=100,
                 presentation="advanced_json",
                 manual_entry={
                     "title": "Creative Portfolio 内容",
-                    "instructions": "内容字段由 creative_portfolio_type 决定（如 CTA、CARD、PRODUCT_CARD），请按 TikTok 当前版本返回的对象结构填写；未知字段不会被系统猜测。",
+                    "instructions": "先通过 tiktok_recommend_ctas 获取推荐资产，再将同一组 asset_content 与 asset_ids 原样填入；不能用 LEARN_MORE 等按钮枚举代替推荐资产。",
                     "source": "tiktok_creative_portfolio_payload",
                 },
             ),
@@ -2099,6 +2109,14 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
                 "if": {"objective_type": "LEAD_GENERATION"},
                 "required": ["page_list"],
                 "message": "LEAD_GENERATION Smart+ ads require a selected Instant Page",
+            },
+            {
+                "if": {"any": [
+                    {"call_to_action_id": {"exists": True}},
+                    {"ad_configuration.call_to_action_id": {"exists": True}},
+                ]},
+                "forbidden": ["call_to_action", "call_to_action_list"],
+                "message": "Choose a CTA portfolio ID or plain CTA values, not both",
             },
         ],
         "properties": {
