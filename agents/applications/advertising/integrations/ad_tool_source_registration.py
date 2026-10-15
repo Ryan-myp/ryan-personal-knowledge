@@ -40,6 +40,9 @@ class AdToolSourceRegistrationMixin:
         before_provider_versions = copy.deepcopy(self.provider_version_contracts)
         before_provider_surfaces = copy.deepcopy(self.provider_api_surfaces)
         before_blueprints = self.creation_blueprints.snapshot()
+        before_plugin_ids = {
+            record.manifest.plugin_id for record in self.plugin_registry.list()
+        }
         try:
             runtime = self._register_provider_tool_source_unchecked(module)
             platform = self._canonical_platform(getattr(module, "platform_name", ""))
@@ -85,7 +88,9 @@ class AdToolSourceRegistrationMixin:
             self.creation_blueprints.restore(before_blueprints)
             platform = self._canonical_platform(getattr(module, "platform_name", ""))
             if platform:
-                self.plugin_registry.unregister(f"provider-tools:{platform}")
+                for plugin_id in (f"provider-tools:{platform}", f"creation-templates:{platform}"):
+                    if plugin_id not in before_plugin_ids:
+                        self.plugin_registry.unregister(plugin_id)
             self._refresh_tool_catalog()
             raise
 
@@ -113,6 +118,13 @@ class AdToolSourceRegistrationMixin:
             self.creation_blueprints.register_many(
                 blueprints, owner=platform or None, tool_registry=self.registry
             )
+            if self.persistence_store is not None:
+                source = self.creation_template_tool_source(platform)
+                self.registry.register_source(source)
+                self._register_builtin_plugin(
+                    source.source_id, source, (PluginKind.TOOL_SOURCE.value,),
+                    description=f"Local creation template catalog for {platform}",
+                )
         self._register_ad_format_catalog(
             getattr(module, "platform_name", "") or "",
             getattr(runtime, "ad_format_catalogs", []) or [],

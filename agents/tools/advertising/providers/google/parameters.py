@@ -1026,6 +1026,10 @@ def google_campaign_schema() -> dict[str, Any]:
             ),
         },
         "conditional_rules": [
+            {"id": "brand_guidelines_pmax_only",
+             "if": {"advertising_channel_type": {"not_in": ["PERFORMANCE_MAX"]}},
+             "forbidden": ["brand_guidelines_enabled"],
+             "message": "brand_guidelines_enabled is only supported for PERFORMANCE_MAX campaigns"},
             {"id": "target_cpa_dependency", "if": {"bidding_strategy": "TARGET_CPA"},
              "required": ["target_cpa_micros"], "message": "TARGET_CPA requires target_cpa_micros"},
             {"id": "target_roas_dependency", "if": {"bidding_strategy": "TARGET_ROAS"},

@@ -75,6 +75,8 @@ def _select_blueprint_tools(
     runtime: Any,
     context: Mapping[str, Any],
     tools: Any,
+    *,
+    include_lookups: bool = False,
 ) -> Optional[list[Any]]:
     blueprint_id = str(context.get("creation_blueprint_id") or "").strip()
     if not blueprint_id:
@@ -103,7 +105,32 @@ def _select_blueprint_tools(
         ):
             return []
         selected.append(tool)
-    return selected
+    if include_lookups:
+        selection = runtime.input_builder.parameter_selection
+        lookup_names = {
+            lookup
+            for tool in selected
+            for field, schema in selection.iter_schema_fields(tool.input_schema.properties)
+            if field.split(".", 1)[0] not in {
+                tool.parent_resource_id_field, tool.resource_id_field,
+                *(tool.related_resource_id_fields or ()),
+            }
+            if (lookup := selection.lookup_tool_for_field(schema))
+        }
+        lookup_names.update(
+            str(field["lookup_tool"])
+            for field in blueprint.fields if field.get("lookup_tool")
+        )
+        for name in sorted(lookup_names):
+            lookup = available.get(name)
+            if (
+                lookup is not None and lookup.is_read_tool
+                and runtime._canonical_platform(lookup.namespace)
+                == runtime._canonical_platform(blueprint.provider)
+            ):
+                selected.append(lookup)
+    selected = list({tool.name: tool for tool in selected}.values())
+    return selected[:MAX_RELEVANT_TOOLS_PER_TURN]
 
 
 def _creation_blueprint_request_error(
@@ -466,6 +493,7 @@ class AdApplicationAssembly:
             )
             selected = _select_blueprint_tools(
                 runtime, request_context, tools,
+                include_lookups=str(request.execution_mode or "dry_run") == "live",
             )
             if selected is None:
                 conversation_context = tuple(

@@ -19,7 +19,7 @@
     const load = index => {
         if (index >= sources.length) return;
         const script = document.createElement('script');
-        script.src = `/static/js/${sources[index]}?v=20261014-markdown-v2`;
+        script.src = `/static/js/${sources[index]}?v=20261015-confirmation-v4`;
         script.onload = () => load(index + 1);
         script.onerror = () => console.error(`Failed to load ${sources[index]}`);
         document.head.appendChild(script);

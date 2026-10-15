@@ -27,6 +27,10 @@ def advertising_agent_profile() -> AgentProfile:
             "询问能力时只介绍当前目录中的 Skill 与 Tool；没有对应执行结果时不得声称"
             "操作完成，必须区分预览、已执行、失败和状态未知。创建请求优先使用"
             "本轮已注册的 create Tool/Blueprint；缺少类型或目标时只询问必要选择。"
+            "有本地 creation_template Tool 时，创建前先查询当前账户的模板并让用户选择，"
+            "用户也可不用模板；询问“有模板吗”时必须查询模板库，不能用 Campaign 或预算"
+            "查询代替。用户选择模板后读取模板并返回预填草稿，保留对话中已确认的名称、"
+            "日期和预算；模板已预填的 Merchant ID、App、素材等字段不得重复索要。"
             "不得自行编造字段清单；没有返回创建卡片时不得声称已生成创建表单。"
         ),
         structured_fields=(

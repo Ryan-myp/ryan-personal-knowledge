@@ -181,7 +181,7 @@ META_LOOKUP_CONTRACTS = {
         "catalog_id": _meta_lookup(
             "meta_list_catalogs", "catalogs", ["id", "catalog_id"],
             ["name", "catalog_name", "id"],
-        ),
+        ) | {"lookup_query_field": "catalog_id"},
         "product_set_id": _meta_lookup(
             "meta_list_product_sets", "product_sets", ["id", "product_set_id"],
             ["name", "product_set_name", "id"], depends_on=[{
@@ -871,11 +871,13 @@ class MetaToolSource(BaseProviderToolSource):
                 description="查询 Meta 商品目录。", method_name="list_catalogs",
                 result_key="catalogs", properties={
                     "account_id": {"type": "string"},
+                    "catalog_id": {"type": "string", "pattern": "^[0-9]+$"},
                     "limit": {"type": "integer"},
                 }, required=["account_id"], action="list", resource_type="catalog",
                 intent_types=["list_catalogs"], traits=["read", "catalog"],
                 argument_builder=lambda ctx, data: ((account_from(ctx, data, "account_id"),), {
                     "limit": data.get("limit", 25),
+                    **({"catalog_id": data["catalog_id"]} if data.get("catalog_id") else {}),
                 }),
             ),
             method_tool(

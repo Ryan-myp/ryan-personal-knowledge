@@ -320,6 +320,7 @@ class FakeRuntime:
         self.parameter_option_calls = []
         self.execution_mode = "dry_run"
         self.allow_live_writes = False
+        self._live_approved_tools = {"create_test"}
         self._read_only_mode = False
 
     def set_execution_mode(self, mode):
@@ -409,6 +410,7 @@ def test_health_is_safe_and_does_not_require_api_key(fake_server, monkeypatch):
 
 
 def test_execution_mode_read_uses_authenticated_principal_scope(fake_server, monkeypatch):
+    monkeypatch.delenv("AD_AGENT_ENABLE_LIVE", raising=False)
     fake_server.get_execution_mode = lambda tenant_id=None, user_id=None: (
         "live" if (tenant_id, user_id) == ("tenant-a", "operator") else "dry_run"
     )
@@ -568,23 +570,42 @@ def test_execution_mode_switch_does_not_grant_live_write_permission(
         }),
     )
     with TestClient(api_server.app) as client:
-        planner_can_select_live = client.post(
+        planner_denied = client.post(
             "/settings/execution-mode",
             headers={"X-API-Key": "plan-key"},
             json={"mode": "live"},
         )
-        writer_can_select_live = client.post(
+        writer_denied = client.post(
             "/settings/execution-mode",
             headers={"X-API-Key": "write-key"},
             json={"mode": "live"},
         )
-    assert planner_can_select_live.status_code == 200
-    assert planner_can_select_live.json()["mode"] == "live"
-    assert planner_can_select_live.json()["live_mode_available"] is False
-    assert planner_can_select_live.json()["live_mode_reason"] == "服务未开启 live 环境开关"
-    assert writer_can_select_live.status_code == 200
-    assert writer_can_select_live.json()["mode"] == "live"
-    assert fake_server.execution_mode == "live"
+    assert planner_denied.status_code == 403
+    assert writer_denied.status_code == 409
+    assert "live 环境开关" in writer_denied.json()["detail"]
+    assert fake_server.execution_mode == "dry_run"
+
+
+def test_execution_mode_rejects_live_when_no_tools_are_approved(monkeypatch, fake_server):
+    fake_server.allow_live_writes = True
+    fake_server._live_approved_tools = set()
+    monkeypatch.setenv("AD_AGENT_ENABLE_LIVE", "1")
+    monkeypatch.setenv("AD_AGENT_API_KEY_PRINCIPALS", json.dumps({
+        "write-key": {
+            "user_id": "operator", "tenant_id": "tenant",
+            "permissions": ["ads.plan", "ads.write"],
+        },
+    }))
+    with TestClient(api_server.app) as client:
+        status = client.get("/settings/execution-mode", headers={"X-API-Key": "write-key"})
+        response = client.post(
+            "/settings/execution-mode", headers={"X-API-Key": "write-key"},
+            json={"mode": "live"},
+        )
+    assert status.json()["live_mode_available"] is False
+    assert response.status_code == 409
+    assert "Tool" in response.json()["detail"]
+    assert fake_server.execution_mode == "dry_run"
 
 
 def test_execution_mode_can_switch_live_then_return_to_dry_run(monkeypatch, fake_server):
@@ -1054,19 +1075,20 @@ def test_creation_cards_are_declared_as_a_right_side_workbench_contract():
 
 
 def test_template_creation_context_survives_chat_followup_and_confirmation():
+    from agents.tests.advertising.test_google_confirmation_flow import (
+        test_confirmation_frontend_regressions,
+    )
+
     static = api_server.STATIC_PATH / "js"
     blueprint_editor = (static / "chat-blueprint-editor.js").read_text(
         encoding="utf-8",
     )
     creation = (static / "chat-creation.js").read_text(encoding="utf-8")
-    messages = (static / "chat-messages.js").read_text(encoding="utf-8")
-    requests = (static / "chat-requests.js").read_text(encoding="utf-8")
 
     assert "creation_template_id: blueprintState.templates.find(" in blueprint_editor
     assert "pendingBlueprintRequest = creationContextForCard(card)" in creation
     assert "creation_template_id: card.template_id || null" in creation
-    assert "creation_template_id: requestParams.creation_template_id || null" in requests
-    assert "creation_template_id: originalRequest?.creation_template_id || null" in messages
+    test_confirmation_frontend_regressions()
 
 
 def test_history_cards_restore_as_launchers_without_opening_workbench():
@@ -1136,9 +1158,9 @@ def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
         api_server.STATIC_PATH / "js" / "chat.js"
     ).read_text(encoding="utf-8")
 
-    assert "chat.css?v=20261014-markdown-v2" in template
-    assert "chat.js?v=20261014-markdown-v2" in template
-    assert "v=20261014-markdown-v2" in bootstrap
+    assert "chat.css?v=20261015-confirmation-v4" in template
+    assert "chat.js?v=20261015-confirmation-v4" in template
+    assert "v=20261015-confirmation-v4" in bootstrap
 
 
 def test_chat_markdown_dependencies_load_before_messages_and_history():

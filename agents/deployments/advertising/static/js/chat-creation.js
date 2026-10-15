@@ -334,8 +334,38 @@
             return { completed, total, percent: total ? Math.round(completed / total * 100) : 0 };
         }
 
+        function creationSubmissionModeError() {
+            if (workspaceMode.loading || workspaceMode.saving || !workspaceMode.mode) {
+                return '正在读取或切换执行模式，请稍后再确认。';
+            }
+            if (workspaceMode.mode === 'live' && !workspaceMode.liveAvailable) {
+                return workspaceMode.liveReason || '当前服务未开放 live 执行，请切换到 dry-run 预览。';
+            }
+            return '';
+        }
+
         function creationCardCanSubmit(card) {
-            return Boolean(String(card.account_id || '').trim() && !card.validation_pending && !card.validation_error && card.ready && !(card.missing_fields || []).length && !(card.invalid_fields || []).length && !(card.fields || []).some(field => field.local_error));
+            return Boolean(!creationSubmissionModeError() && String(card.account_id || '').trim() && !card.validation_pending && !card.validation_error && card.ready && !(card.missing_fields || []).length && !(card.invalid_fields || []).length && !(card.fields || []).some(field => field.local_error));
+        }
+
+        function refreshCreationSubmissionAvailability() {
+            const reason = creationSubmissionModeError();
+            for (const card of creationCardState.values()) {
+                const button = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"] [data-creation-action="submit_create"]`);
+                if (!button) continue;
+                button.disabled = !creationCardCanSubmit(card);
+                button.title = reason;
+            }
+            const review = pendingCreationReview || (
+                ['confirm_write', 'confirm_write_plan'].includes(pendingRequest?.payload?.type)
+                    ? pendingRequest : null
+            );
+            const confirmation = document.getElementById('confirmCard')?.querySelector('.confirm-btn.confirm');
+            if (review && confirmation) {
+                const message = reason || (review.mode !== workspaceMode.mode ? '执行模式已变化，请重新确认计划。' : '');
+                confirmation.disabled = Boolean(message);
+                confirmation.title = message;
+            }
         }
 
         function updateCreationCardIndicators(wrapper, card) {
@@ -573,13 +603,20 @@
             const review = document.createElement('div');
             review.className = 'creation-card-review';
             review.dataset.cardReview = card.id;
-            const modeLabel = workspaceMode.mode === 'live' ? 'LIVE · 确认后提交' : 'DRY-RUN · 不修改线上';
+            const modeLabel = workspaceMode.mode === 'live'
+                ? workspaceMode.liveAvailable ? 'LIVE · 确认后提交' : 'LIVE · 当前不可用'
+                : 'DRY-RUN · 不修改线上';
             review.innerHTML = `<div class="creation-review-head"><div><strong>参数预览</strong><small>按广告层级汇总已填写内容</small></div><span>${modeLabel}</span></div><div class="creation-review-account"><span>广告账户</span><strong>${escapeHtml(card.account_id || '未填写')}</strong></div><div class="creation-review-groups">${creationReviewRows(card) || '<div class="creation-review-empty">暂无已填写参数</div>'}</div><div class="creation-review-note">这里只是预览，不会产生线上变化；确认后才会继续创建。</div>`;
             const target = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"] .creation-card-footer`);
             if (target) target.parentElement.insertBefore(review, target);
         }
 
         function showCreationReview(card) {
+            const modeError = creationSubmissionModeError();
+            if (modeError) {
+                addMessage(modeError, 'agent', null, true);
+                return;
+            }
             if (!String(card.account_id || '').trim()) {
                 const input = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"] .creation-card-account input`);
                 input?.focus();
@@ -590,7 +627,7 @@
                 addMessage('还有必填参数或联动参数需要补充，请先完成卡片中的标记项。', 'agent', null, true);
                 return;
             }
-            pendingCreationReview = card;
+            pendingCreationReview = { card, mode: workspaceMode.mode };
             const oldCard = document.getElementById('confirmCard');
             if (oldCard) oldCard.remove();
             const review = document.createElement('div');
@@ -862,7 +899,7 @@
         }
 
         function cancelCreationReview() {
-            const card = pendingCreationReview;
+            const card = pendingCreationReview?.card;
             pendingCreationReview = null;
             document.getElementById('confirmCard')?.remove();
             if (typeof clearWorkbenchConfirmation === 'function') clearWorkbenchConfirmation();
@@ -870,10 +907,15 @@
         }
 
         function confirmCreationSubmission() {
-            const card = pendingCreationReview;
+            const review = pendingCreationReview;
             pendingCreationReview = null;
             document.getElementById('confirmCard')?.remove();
-            if (!card) return;
+            if (!review) return;
+            if (review.mode !== workspaceMode.mode || creationSubmissionModeError()) {
+                addMessage('执行模式已变化或当前不可用，请返回草稿，按当前模式重新确认。', 'agent', null, true);
+                return;
+            }
+            const card = review.card;
             if (!creationCardCanSubmit(card)) {
                 addMessage('参数已发生变化，请回到卡片完成检查后再确认创建。', 'agent', null, true);
                 return;
@@ -896,6 +938,7 @@
                 creation_blueprint_id: card.blueprint_id || null,
                 creation_blueprint_version: card.blueprint_version || null,
                 creation_template_id: card.template_id || null,
+                execution_mode: workspaceMode.mode,
             };
             addMessage('确认创建', 'user');
             addLoading();

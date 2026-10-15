@@ -215,7 +215,47 @@ class AdvertisingContextProvider:
             selection["preset_values"] = presets
             selection["preset_fields"] = list(values)[:128]
             selection["preset_values_truncated"] = len(presets) != len(values)
+            selection["resource_lookup_requirements"] = self._template_lookup_requirements(
+                blueprint, presets,
+            )
         return selection
+
+    def _template_lookup_requirements(
+        self, blueprint: Any, values: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        requirements = {}
+        for field in blueprint.fields:
+            value = values.get(str(field["path"]))
+            if value in (None, "", [], {}):
+                continue
+            selection = self.owner.input_builder.parameter_selection
+            tool_name, schema_path = str(field["tool_ref"]).split(".", 1)
+            definition, _handler = self.owner.registry.get(tool_name)
+            schema = selection._schema_at_path(
+                definition.input_schema.properties, schema_path,
+            )
+            candidates = [(schema_path, schema, value, field.get("lookup_tool"))]
+            candidates.extend(
+                (
+                    f"{schema_path}.{path}", child_schema,
+                    selection.value_at_path(value, path), None,
+                )
+                for path, child_schema in selection.iter_schema_fields(
+                    schema.get("properties"),
+                )
+            )
+            for path, child_schema, selected, declared_lookup in candidates:
+                lookup = declared_lookup or selection.lookup_tool_for_field(child_schema)
+                if not lookup or selected in (None, "", [], {}):
+                    continue
+                requirements[(tool_name, path)] = {
+                    "tool": tool_name, "field": path,
+                    "lookup_tool": lookup, "value": selected,
+                    "query_field": child_schema.get("lookup_query_field"),
+                    "lookup_defaults": child_schema.get("lookup_defaults") or {},
+                    "dependencies": child_schema.get("lookup_depends_on") or [],
+                }
+        return list(requirements.values())[:32]
 
     @staticmethod
     def _render_prompt(
@@ -306,14 +346,21 @@ class AdvertisingContextProvider:
                     "已选择的创建流程（来自服务端蓝图注册表）：\n"
                     + selection_json
                     + "\n用户已明确选择此广告创建蓝图/模板。必须通过列出的"
-                    "已注册创建 Tool 继续该流程，不得改为查询 Tool，也不得只用文字"
+                    "已注册创建 Tool 继续该流程，不得以查询代替创建，也不得只用文字"
                     "虚构创建计划。Tool schema、账户范围、权限、确认和幂等门禁始终有效。"
                     "结构化输入中的 preset_values 是服务端已保存的模板参数，"
                     "preset_fields 列出的字段已预填，不能要求用户重复填写。"
                     "参数解析器会在执行前合并模板与用户表单；仅在实际工具校验"
                     "报告缺失或无效时要求补充。必须完成蓝图声明的全部层级，"
                     "不能只创建 Campaign 后就宣称完整流程完成。"
-                    "必须按 tools 列出的父到子顺序执行，首先调用第一个创建 Tool。"
+                    "真实写入前，模板预填的动态资源必须先通过字段 schema 声明的"
+                    "只读 lookup_tool 查询并匹配当前账户中的准确 ID。允许这些必要的"
+                    "资源查询；平台会在服务端关联查询得到的签名凭证，"
+                    "不需要用户填写或模型复制 selection_token。"
+                    "resource_lookup_requirements 逐项列出了需要校验的字段、准确值和"
+                    "来源 Tool，必须全部查验，不能只查 Page 而漏掉素材、Pixel 或商品集。"
+                    "存在 query_field 时应使用准确值查询；不存在时查询对应目录并匹配值。"
+                    "随后必须按 tools 列出的父到子顺序执行创建 Tool。"
                     "父级创建未成功时禁止提前调用子级；父级 ID 必须取实际工具结果，"
                     "禁止用名称、猜测值或旧资源 ID 代替本次创建返回的 ID。"
                 )
@@ -433,6 +480,8 @@ class AdvertisingToolExecutor:
             "execution_mode": str(request.execution_mode or "dry_run"),
             "run_id": str(request.run_id or ""),
             "turn_id": str(request.turn_id or ""),
+            "tenant_id": str(request.tenant_id or "default"),
+            "account_scope": getattr(getattr(request, "principal", None), "account_scope", None),
         }
         if (
             str(getattr(self.definition, "action", "") or "").lower() == "list"
@@ -651,10 +700,19 @@ class AdvertisingToolExecutor:
     ) -> None:
         data = result.get("data")
         if (
-            not self.definition.is_read_tool or not result.get("success")
+            result.get("success") is not True or result.get("simulated")
             or account_id in (None, "")
-            or not isinstance(data, Mapping) or data.get("data_status") != "live"
+            or not isinstance(data, Mapping) or data.get("simulated")
         ):
+            return
+        live_read = self.definition.is_read_tool and data.get("data_status") == "live"
+        live_write = (
+            self.definition.is_write_tool
+            and data.get("execution_mode") == "live"
+            and data.get("execution_status") == "executed"
+            and data.get("data_status") in (None, "live")
+        )
+        if not (live_read or live_write):
             return
         namespace = self.owner._canonical_platform(self.definition.namespace)
         scopes = dict(session.ctx.metadata.get("read_account_scopes") or {})

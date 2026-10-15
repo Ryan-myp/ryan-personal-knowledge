@@ -46,7 +46,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_creation_blueprint_services.py", "ad_creation_catalog_services.py",
             "ad_creation_contract_services.py", "ad_creation_services.py",
             "ad_creation_template_services.py", "ad_creation_ui_services.py",
-            "templates.py",
+            "templates.py", "template_tool_service.py",
         },
         "execution": {
             "account_context.py", "account_policy.py", "ad_tool_interaction.py",

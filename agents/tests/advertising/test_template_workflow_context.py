@@ -7,7 +7,7 @@ def test_selected_template_presets_are_visible_to_the_model_in_the_authorized_sc
     seen = {}
     blueprint = SimpleNamespace(
         blueprint_id="example.complete", version="1.0.0", provider="example",
-        title="Complete hierarchy", ad_format="EXAMPLE", tools=["example_create"],
+        title="Complete hierarchy", ad_format="EXAMPLE", tools=["example_create"], fields=[],
     )
 
     def get(_tenant, _user, _template, **kwargs):
@@ -55,3 +55,17 @@ def test_unavailable_template_does_not_supply_model_presets():
     }, request)
     assert selection["available"] is False
     assert "preset_values" not in selection
+
+
+def test_selected_template_allows_required_resource_lookups_before_paused_creation():
+    prompt = AdvertisingContextProvider._render_prompt({}, {
+        "creation_selection": {
+            "available": True, "create_tools": ["example_create"],
+            "preset_values": {"ad.asset_id": "asset-1"},
+        },
+    })
+    assert "只读 lookup_tool" in prompt
+    assert "不需要用户填写或模型复制 selection_token" in prompt
+    assert "不得改为查询 Tool" not in prompt
+    assert "首先调用第一个创建 Tool" not in prompt
+    assert "不能只创建 Campaign 后就宣称完整流程完成" in prompt

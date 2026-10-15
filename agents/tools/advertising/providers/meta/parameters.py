@@ -973,6 +973,22 @@ def meta_adset_schema() -> dict[str, Any]:
                 **_meta_lead_gen_config_schema(),
                 **_ui_when("optimization_goal", "LEAD_GENERATION", "LEADS"),
             },
+            "regional_regulated_categories": _field(
+                "array", "Verified regional advertising declaration categories",
+                items={"type": "string", "enum": ["SINGAPORE_UNIVERSAL"]},
+            ),
+            "regional_regulation_identities": _object({
+                "singapore_universal_beneficiary": _field(
+                    "string", "Existing verified Singapore beneficiary identity ID",
+                    pattern="^[0-9]+$",
+                ),
+                "singapore_universal_payer": _field(
+                    "string", "Existing verified Singapore payer identity ID",
+                    pattern="^[0-9]+$",
+                ),
+            }, "Account-owned verified regional identities; never invent identities",
+                required=["singapore_universal_beneficiary", "singapore_universal_payer"],
+            ),
             "product_set_id": _field(
                 "string", "Catalog product set ID",
                 lookup_tool="meta_list_product_sets", lookup_result_key="product_sets",
@@ -991,6 +1007,12 @@ def meta_adset_schema() -> dict[str, Any]:
             ),
         },
         "conditional_rules": [
+            {
+                "id": "singapore_declaration_requires_verified_identities",
+                "if": {"regional_regulated_categories": {"contains": "SINGAPORE_UNIVERSAL"}},
+                "required": ["regional_regulation_identities"],
+                "message": "Singapore declarations require regional_regulation_identities with existing verified beneficiary and payer IDs",
+            },
             {
                 "id": "conversion_goal_requires_promoted_object",
                 "if": {"optimization_goal": "OFFSITE_CONVERSIONS"},

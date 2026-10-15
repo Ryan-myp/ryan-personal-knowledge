@@ -811,7 +811,9 @@ class MetaAPIClient(BasePlatformClient):
         )
         return self.require_resource_object(result, "Meta audience source upload")
 
-    def list_catalogs(self, account_id: str, limit: int = 25) -> list:
+    def list_catalogs(
+        self, account_id: str, limit: int = 25, catalog_id: Optional[str] = None,
+    ) -> list:
         """获取广告账户可用的商品目录。"""
         clean_id = self._clean_meta_id(account_id, "account_id")
         # Catalog ownership is exposed on the Business node, not on the ad
@@ -823,6 +825,19 @@ class MetaAPIClient(BasePlatformClient):
         )
         if not business_id:
             raise ValueError("Meta credentials must include business_id to list catalogs")
+        if catalog_id is not None:
+            catalog_id = self._clean_meta_id(catalog_id, "catalog_id")
+            node = self.require_resource_object(
+                self.request(
+                    "GET", f"/{catalog_id}",
+                    extra_params={"fields": "id,name,vertical,product_count,feed_count,business"},
+                ),
+                "Meta catalog lookup",
+            )
+            business = node.get("business")
+            if not isinstance(business, Mapping) or str(business.get("id") or "") != business_id:
+                return []
+            return [{key: value for key, value in node.items() if key != "business"}]
         return self._list_graph_pages(
             business_id,
             f"/{business_id}/owned_product_catalogs",
@@ -1430,7 +1445,7 @@ class MetaAPIClient(BasePlatformClient):
         elif resource_type == "creative":
             items = self.list_creatives(account_id, limit=1000)
         elif resource_type == "catalog":
-            items = self.list_catalogs(account_id, limit=1000)
+            return bool(self.list_catalogs(account_id, catalog_id=resource_id))
         else:
             return False
         if not isinstance(items, list):
@@ -1515,7 +1530,11 @@ class MetaAPIClient(BasePlatformClient):
             data['start_time'] = campaign['start_time']
         if 'end_time' in campaign:
             data['end_time'] = campaign['end_time']
-        for field_name in ('catalog_id', 'conversion_specs', 'messaging_apps'):
+        if campaign.get("catalog_id") is not None:
+            data["promoted_object"] = json.dumps({
+                "product_catalog_id": self._clean_meta_id(campaign["catalog_id"], "catalog_id"),
+            })
+        for field_name in ('conversion_specs', 'messaging_apps'):
             if campaign.get(field_name) is not None:
                 value = campaign[field_name]
                 data[field_name] = json.dumps(value) if isinstance(value, (dict, list)) else value
@@ -1682,6 +1701,9 @@ class MetaAPIClient(BasePlatformClient):
             data['start_time'] = adset['start_time']
         if 'end_time' in adset:
             data['end_time'] = adset['end_time']
+        for field_name in ("regional_regulated_categories", "regional_regulation_identities"):
+            if adset.get(field_name) is not None:
+                data[field_name] = json.dumps(adset[field_name])
         if not live:
             return {
                 "mode": "dry_run",
@@ -1785,6 +1807,8 @@ class MetaAPIClient(BasePlatformClient):
             creative['creative_id'] = ad['creative_id']
         elif ad.get('object_story_spec'):
             creative['object_story_spec'] = ad['object_story_spec']
+            if ad.get("product_set_id"):
+                creative["product_set_id"] = str(ad["product_set_id"])
         elif ad.get('creative'):
             creative = ad['creative']
         else:
@@ -1902,10 +1926,7 @@ class MetaAPIClient(BasePlatformClient):
             "name": ad.get("headline", ""),
             "description": ad.get("description", ""),
             "call_to_action": {"type": cta_type},
-            # Product set selection belongs to the parent Ad Set's
-            # ``promoted_object``. Meta rejects it inside template_data.
-            # Keep the selected format explicit for the supported catalog
-            # creative contract.
+            # The Product Set belongs on the Creative, not inside template_data.
             "format_option": format_options[ad_style],
         }
         return self.create_ad(
@@ -1914,6 +1935,7 @@ class MetaAPIClient(BasePlatformClient):
             {
                 "name": ad.get("name", "Untitled Catalog Ad"),
                 "status": ad.get("status", "PAUSED"),
+                "product_set_id": product_set_id,
                 "object_story_spec": {
                     "page_id": page_id,
                     "template_data": template_data,

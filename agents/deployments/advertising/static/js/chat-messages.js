@@ -40,6 +40,7 @@
         }
 
         function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null, uiOptions = null) {
+            if (!toolSummaryHtml && !chatMessageHasPresentation(content, tools, ui)) return null;
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
             if (welcome) welcome.style.display = 'none';
@@ -61,7 +62,7 @@
             } else if (tools && tools.length > 0) {
                 bodyHtml += `<div class="tool-results">${tools.map(t => `
                     <span class="tool-tag ${t.success ? 'success' : 'error'}">
-                        ${t.success ? '✓' : '✗'} ${t.tool}
+                        ${t.success ? '✓' : '✗'} ${escapeHtml(t.tool)}
                     </span>
                 `).join('')}</div>`;
             }
@@ -128,6 +129,7 @@
             const confirmationButton = msg.querySelector('.message-confirmation-button');
             if (confirmationButton && ui?.confirmation?.payload) {
                 confirmationButton.addEventListener('click', () => {
+                    if (isSending) return;
                     showConfirm(
                         ui.confirmation.payload,
                         ui.confirmation.original_request || null,
@@ -177,7 +179,40 @@
             if (loading) loading.remove();
         }
 
-        // Show confirmation as inline card in chat
+        function confirmationCanExecute(payload) {
+            if (!['confirm_write', 'confirm_write_plan'].includes(payload?.type)) return false;
+            const token = payload.confirmation_token;
+            const expires = Date.parse(payload.expires_at || '');
+            return typeof token === 'string' && Boolean(token.trim())
+                && token !== '<redacted>' && Number.isFinite(expires) && expires > Date.now();
+        }
+
+        function confirmationRequestParams(originalRequest, payload, accountId, extraParams) {
+            const confirmed = confirmationCanExecute(payload);
+            const params = JSON.parse(JSON.stringify(originalRequest.platform_params || {},
+                (key, value) => !confirmed && ['selection_tokens', 'selection_token'].includes(key) ? undefined : value));
+            const platform = payload.platform || originalRequest.platforms?.[0]
+                || (Object.keys(params).length === 1 ? Object.keys(params)[0] : null);
+            if (Object.keys(extraParams).length) {
+                if (!platform) throw new Error('无法确定补充参数所属渠道，请重新打开创建草稿。');
+                params[platform] = { ...(params[platform] || {}), ...extraParams };
+            }
+            return {
+                user_input: originalRequest.user_input,
+                session_id: originalRequest.session_id,
+                account_id: accountId || originalRequest.account_id || null,
+                platform_params: params,
+                confirmed,
+                confirmation_payload: confirmed ? payload : null,
+                creation_blueprint_id: originalRequest.creation_blueprint_id || null,
+                creation_blueprint_version: originalRequest.creation_blueprint_version || null,
+                creation_template_id: originalRequest.creation_template_id || null,
+                execution_mode: workspaceMode.mode,
+                ...(originalRequest.tool_allowlist ? { tool_allowlist: [...originalRequest.tool_allowlist] } : {}),
+            };
+        }
+
+        // Snapshot the exact submitted draft; a later edit needs a new approval.
         function showConfirm(payload, originalRequest = null) {
             // 移除旧的确认卡片
             const oldCard = document.getElementById('confirmCard');
@@ -185,7 +220,11 @@
 
             pendingRequest = {
                 payload,
-                originalRequest: originalRequest  // 保存原始请求数据
+                originalRequest: originalRequest ? JSON.parse(JSON.stringify({
+                    ...originalRequest,
+                    session_id: originalRequest.session_id || payload.session_id || sessionId,
+                })) : null,
+                mode: originalRequest?.execution_mode || workspaceMode.mode,
             };
             markTraceAwaitingConfirmation();
 
@@ -198,19 +237,20 @@
             if (payload.type === 'ask_account') {
                 inputHtml = `
                     <div class="confirm-field">
-                        <label>📱 ${payload.platform || '平台'} 账户ID</label>
-                        <input type="text" id="confirmAccountInput" placeholder="请输入账户ID..." autofocus>
+                        <label for="confirmAccountInput">📱 ${escapeHtml(payload.platform || '平台')} 账户ID</label>
+                        <input type="text" id="confirmAccountInput" placeholder="请输入账户ID..." required autofocus>
                     </div>
                 `;
             } else if (payload.type === 'ask_params') {
                 inputHtml = `
                     <div class="confirm-field">
-                        <label>📝 缺失参数: ${payload.missing.join(', ')}</label>
-                        <input type="text" id="confirmParamInput" placeholder="例如: campaign_id=12345" autofocus>
+                        <label for="confirmParamInput">📝 缺失参数: ${escapeHtml(payload.missing.join(', '))}</label>
+                        <input type="text" id="confirmParamInput" placeholder="例如: campaign_id=12345" required autofocus>
                     </div>
                 `;
             } else if (payload.type === 'confirm_write_plan') {
-                const steps = Array.isArray(payload.preview?.steps) ? payload.preview.steps : [];
+                const steps = Array.isArray(payload.preview?.steps) ? payload.preview.steps
+                    : (payload.tools || []).map(tool => ({ tool }));
                 const stepHtml = steps.length
                     ? `<div class="confirm-plan-steps">${steps.map((step, index) => `
                         <div class="confirm-plan-step">
@@ -224,18 +264,21 @@
                     <div class="confirm-plan-account">${escapeHtml(payload.platform || '平台')} · 账户 ${escapeHtml(payload.account_id || '已校验')}</div>
                 `;
             }
+            if (['confirm_write', 'confirm_write_plan'].includes(payload.type) && !confirmationCanExecute(payload)) {
+                inputHtml += '<p role="status">历史确认或过期凭证不能直接执行。请先重新生成计划，再确认本次写入。</p>';
+            }
 
             card.innerHTML = `
                 <div class="confirm-card-header">
                     <span class="confirm-icon">⚠️</span>
-                    <span class="confirm-title">${payload.question || '需要确认'}</span>
+                    <span class="confirm-title">${escapeHtml(payload.question || '需要确认')}</span>
                 </div>
                 <div class="confirm-card-body">
                     ${inputHtml}
                 </div>
                 <div class="confirm-card-footer">
                     <button class="confirm-btn cancel" onclick="cancelConfirm()">取消</button>
-                    <button class="confirm-btn confirm" onclick="executeConfirm()">确认执行</button>
+                    <button class="confirm-btn confirm" onclick="executeConfirm()">${confirmationCanExecute(payload) ? '确认执行' : ['confirm_write', 'confirm_write_plan'].includes(payload.type) ? '重新生成确认计划' : '补充后继续'}</button>
                 </div>
             `;
 
@@ -272,10 +315,25 @@
 
         // Execute confirmation
         async function executeConfirm() {
-            if (!pendingRequest) return;
+            if (!pendingRequest || isSending) return;
 
-            const { payload, originalRequest } = pendingRequest;
-            pendingRequest = null;
+            const { payload, originalRequest, mode } = pendingRequest;
+            if (!originalRequest?.user_input?.trim()) {
+                addMessage('这条历史确认缺少原始请求，请重新打开创建草稿生成计划。', 'agent', null, true);
+                return;
+            }
+            if (originalRequest.session_id !== sessionId) {
+                addMessage('当前对话已切换，请回到原对话重新打开确认计划。', 'agent', null, true);
+                return;
+            }
+            if (['confirm_write', 'confirm_write_plan'].includes(payload.type)
+                && (mode !== workspaceMode.mode || creationSubmissionModeError())) {
+                pendingRequest = null;
+                document.getElementById('confirmCard')?.remove();
+                if (typeof clearWorkbenchConfirmation === 'function') clearWorkbenchConfirmation();
+                addMessage('执行模式已变化或当前不可用，请按当前模式重新生成并确认计划。', 'agent', null, true);
+                return;
+            }
 
             // 先获取用户输入（在移除卡片之前）
             const accountInput = document.getElementById('confirmAccountInput');
@@ -303,50 +361,37 @@
                     }
                 }
             }
+            if (payload.type === 'ask_account' && !account_id) {
+                addMessage('请先填写要操作的广告账户 ID。', 'agent', null, true);
+                return;
+            }
+            if (payload.type === 'ask_params' && !Object.keys(extra_params).length) {
+                addMessage('请先补充计划所需的参数。', 'agent', null, true);
+                return;
+            }
+            pendingRequest = null;
 
             // 移除卡片
             const card = document.getElementById('confirmCard');
             if (card) card.remove();
+            if (typeof clearWorkbenchConfirmation === 'function') clearWorkbenchConfirmation();
+            if (typeof workbenchState !== 'undefined' && workbenchState.activeCardId) {
+                openCreationWorkbench(workbenchState.cards.get(workbenchState.activeCardId));
+            } else if (typeof closeCreationWorkbench === 'function') closeCreationWorkbench();
 
             // The confirmation is a user action. Keep it as a user message
             // so the transcript does not invent a second Agent turn.
-            addMessage('确认并继续执行', 'user');
+            const authorizing = confirmationCanExecute(payload);
+            addMessage(authorizing ? '确认并继续执行' : '补充信息并重新生成确认计划', 'user');
+            isSending = true;
             addLoading();
             startExecutionTrace(originalRequest?.user_input || '确认并继续执行');
 
             // 发送带参数的请求 - 使用原始 user_input
-            const userInput = originalRequest ? originalRequest.user_input : '';
             try {
-                // 构建 platform_params，合并原始参数和用户提供的新参数
-                const originalParams = originalRequest?.platform_params || {};
-                const platforms = originalRequest?.platforms || [];
-
-                const requestParams = {
-                    user_input: userInput,
-                    user_id: 'web_user',
-                    session_id: sessionId,
-                    confirmed: true,
-                    confirmation_payload: payload,
-                    creation_blueprint_id: originalRequest?.creation_blueprint_id || null,
-                    creation_blueprint_version: originalRequest?.creation_blueprint_version || null,
-                    creation_template_id: originalRequest?.creation_template_id || null,
-                };
-
-                // 如果有额外参数，添加到对应平台的 params 中
-                if (Object.keys(extra_params).length > 0 && platforms.length > 0) {
-                    const firstPlatform = platforms[0];
-                    requestParams.platform_params = {
-                        [firstPlatform]: {
-                            ...(originalParams[firstPlatform] || {}),
-                            ...extra_params
-                        }
-                    };
-                }
-
-                if (account_id) {
-                    requestParams.account_id = account_id;
-                }
-
+                const requestParams = confirmationRequestParams(
+                    originalRequest, payload, account_id, extra_params,
+                );
                 const data = await streamChatRequest(requestParams);
                 removeLoading();
                 renderStreamResult(data, requestParams);
@@ -355,6 +400,8 @@
             } catch (error) {
                 removeLoading();
                 addMessage(markChatRequestFailure(error), 'agent', null, true);
+            } finally {
+                isSending = false;
             }
         }
 

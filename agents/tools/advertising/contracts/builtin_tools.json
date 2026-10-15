@@ -1,10 +1,10 @@
 {
-  "digest": "fc8dc8617cc3da03ac00cf63c4b7cdc558ed593509a8392f8bdb0391c325e8dc",
+  "digest": "f91f4ba2c80bc5fa73def71b6e01db85b93ea6822954c3ca21e12127cee9ec28",
   "format_version": 1,
   "platforms": {
     "dv360": {
-      "digest": "7fdd5bffcb8c3402a1e4da0039e55cc958424fbef7f2d15674c07a40a5c39717",
-      "tool_count": 31,
+      "digest": "e87e10892dc088896c7f299ea833ca966c74ae7d39972e4bdb4558e4395ae372",
+      "tool_count": 33,
       "tools": [
         {
           "action": "activate",
@@ -1151,6 +1151,91 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
+          "contract_hash": "8029f2655934351622fd8f02642d583b1266148cf6d86371265bc1f47a3059a9",
+          "contract_version": "1.0.0",
+          "description": "读取已选择的广告创建模板并返回预填参数草稿卡片；不创建广告。用户选择某个模板时调用，template_id 必须来自模板查询结果。将对话中已确认的名称、日期、预算按模板的 required_input_fields 放入 values，不要重复索要已预填的 Merchant ID、App、素材等字段。values 仅允许蓝图声明的字段。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "template_id": {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": "string"
+              },
+              "values": {
+                "additionalProperties": true,
+                "description": "Data-only overrides keyed by declared blueprint paths. Unknown or executable fields are rejected.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "template_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "使用模板",
+            "选择模板",
+            "查看模板",
+            "模板详情",
+            "预览模板"
+          ],
+          "intent_types": [
+            "get_creation_template"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "dv360_get_creation_template",
+          "namespace": "dv360",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "template",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
+            "catalog"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "b6b3cfa829ec23cac70e245d86aa52e25225aa6eca664ea13db6899ce73b3f5e",
           "contract_version": "1.2.0",
           "description": "查询 DV360 Creative 详情。",
@@ -1613,6 +1698,91 @@
           "traits": [
             "read",
             "campaign"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "2068b2cbfc860a02d17ca399a1cd846511f10c4d82bcf588313da293d31f8eef",
+          "contract_version": "1.0.0",
+          "description": "查询当前账户可用的内置/个人广告创建模板（本地模板库，不是已建 Campaign 列表）。创建广告时先查询这些模板；用户问“有模板吗”应使用本工具，不能改查 Campaign 或预算。返回模板 ID、已预填字段和剩余输入；没有外部广告写入。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "default": 20,
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional template name or ad type, e.g. Shopping, App, PMax.",
+                "maxLength": 120,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "有模板吗",
+            "有没有模板",
+            "查询模板",
+            "可用模板",
+            "内置模板",
+            "广告模板"
+          ],
+          "intent_types": [
+            "list_creation_templates"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "dv360_list_creation_templates",
+          "namespace": "dv360",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "templates",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
+            "catalog"
           ]
         },
         {
@@ -2444,9 +2614,179 @@
       ]
     },
     "google-ads": {
-      "digest": "7654c027da33a054f22f40fd3bd6f0af3d17292950b1740ddc1908a5bb8d79c9",
-      "tool_count": 104,
+      "digest": "8912b9aa888b161d9e06e01910d8614878b107d86f2cd889ed624aef6b06395f",
+      "tool_count": 106,
       "tools": [
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "8029f2655934351622fd8f02642d583b1266148cf6d86371265bc1f47a3059a9",
+          "contract_version": "1.0.0",
+          "description": "读取已选择的广告创建模板并返回预填参数草稿卡片；不创建广告。用户选择某个模板时调用，template_id 必须来自模板查询结果。将对话中已确认的名称、日期、预算按模板的 required_input_fields 放入 values，不要重复索要已预填的 Merchant ID、App、素材等字段。values 仅允许蓝图声明的字段。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "template_id": {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": "string"
+              },
+              "values": {
+                "additionalProperties": true,
+                "description": "Data-only overrides keyed by declared blueprint paths. Unknown or executable fields are rejected.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "template_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "使用模板",
+            "选择模板",
+            "查看模板",
+            "模板详情",
+            "预览模板"
+          ],
+          "intent_types": [
+            "get_creation_template"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "google_ads_get_creation_template",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "template",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
+            "catalog"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "2068b2cbfc860a02d17ca399a1cd846511f10c4d82bcf588313da293d31f8eef",
+          "contract_version": "1.0.0",
+          "description": "查询当前账户可用的内置/个人广告创建模板（本地模板库，不是已建 Campaign 列表）。创建广告时先查询这些模板；用户问“有模板吗”应使用本工具，不能改查 Campaign 或预算。返回模板 ID、已预填字段和剩余输入；没有外部广告写入。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "default": 20,
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional template name or ad type, e.g. Shopping, App, PMax.",
+                "maxLength": 120,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "有模板吗",
+            "有没有模板",
+            "查询模板",
+            "可用模板",
+            "内置模板",
+            "广告模板"
+          ],
+          "intent_types": [
+            "list_creation_templates"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "google_ads_list_creation_templates",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "templates",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
+            "catalog"
+          ]
+        },
         {
           "action": "create",
           "activation_rules": [
@@ -4715,7 +5055,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "03086cf84265865619d5b78a7cf8e726f35e8b41c0b24249f1c03ea407230268",
+          "contract_hash": "30f58a5b3c62aec9def856283fb831ca283946adbea98020ca1320a751b0293a",
           "contract_version": "1.5.1",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
@@ -4724,6 +5064,20 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "forbidden": [
+                  "brand_guidelines_enabled"
+                ],
+                "id": "brand_guidelines_pmax_only",
+                "if": {
+                  "advertising_channel_type": {
+                    "not_in": [
+                      "PERFORMANCE_MAX"
+                    ]
+                  }
+                },
+                "message": "brand_guidelines_enabled is only supported for PERFORMANCE_MAX campaigns"
+              },
               {
                 "id": "target_cpa_dependency",
                 "if": {
@@ -8996,7 +9350,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "151e096e83c1c47da6a48a755f233163d01d0a8de0ddb68da57fce3aaa742476",
           "contract_version": "1.5.0",
-          "description": "创建 Google Shopping Product Group/Listing Group；live 仅在受控测试账号和确认后执行。",
+          "description": "创建 Google Shopping Product Group/Listing Group；live 先核实 Campaign 和 Ad Group 均 PAUSED。Google 可能返回 ENABLED，实际状态须用 google_get_product_group 回查，不得把请求的 PAUSED 当作返回状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -18613,8 +18967,8 @@
       ]
     },
     "meta": {
-      "digest": "62541a9a73fec806c6203cc09cb70c2755bc98b1cb2478bbd4765f17f585951f",
-      "tool_count": 80,
+      "digest": "ff3a74805354d22b3ad657efb1feb53571feae1485288d03233761b11bd705d2",
+      "tool_count": 82,
       "tools": [
         {
           "action": "boost",
@@ -19380,7 +19734,7 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "61de3fe664aca48c3647d06953748f4f95463d177edefe2a977e4167ce1dc7ad",
+          "contract_hash": "628d00eb9d988bfce9ad489a1358f5cd47f00064e2a6e8a4aeb0b77422dd0599",
           "contract_version": "1.5.1",
           "description": "创建 Meta Ad Set。",
           "effect_class": "write",
@@ -19389,6 +19743,18 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "id": "singapore_declaration_requires_verified_identities",
+                "if": {
+                  "regional_regulated_categories": {
+                    "contains": "SINGAPORE_UNIVERSAL"
+                  }
+                },
+                "message": "Singapore declarations require regional_regulation_identities with existing verified beneficiary and payer IDs",
+                "required": [
+                  "regional_regulation_identities"
+                ]
+              },
               {
                 "id": "conversion_goal_requires_promoted_object",
                 "if": {
@@ -19896,6 +20262,37 @@
                     "APP_INSTALLS"
                   ]
                 }
+              },
+              "regional_regulated_categories": {
+                "description": "Verified regional advertising declaration categories",
+                "items": {
+                  "enum": [
+                    "SINGAPORE_UNIVERSAL"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "regional_regulation_identities": {
+                "additionalProperties": false,
+                "description": "Account-owned verified regional identities; never invent identities",
+                "properties": {
+                  "singapore_universal_beneficiary": {
+                    "description": "Existing verified Singapore beneficiary identity ID",
+                    "pattern": "^[0-9]+$",
+                    "type": "string"
+                  },
+                  "singapore_universal_payer": {
+                    "description": "Existing verified Singapore payer identity ID",
+                    "pattern": "^[0-9]+$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "singapore_universal_beneficiary",
+                  "singapore_universal_payer"
+                ],
+                "type": "object"
               },
               "roas_average_floor": {
                 "description": "Minimum ROAS floor for LOWEST_COST_WITH_MIN_ROAS",
@@ -21375,6 +21772,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "selection_label_fields": [
@@ -23595,6 +23993,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "selection_label_fields": [
@@ -24292,6 +24691,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "minLength": 1,
@@ -24538,6 +24938,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "selection_label_fields": [
@@ -25426,7 +25827,7 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "d8cd6de9b24e1677757a55f3c5d560fdb19f331e073e8c9a264f9ddf87ceeb36",
+          "contract_hash": "c82b509b9b213a4a3b2866541e137ec4782a5104d3d912b81212967780cda59b",
           "contract_version": "1.5.1",
           "description": "查询 Meta 商品目录详情。",
           "effect_class": "read",
@@ -25445,6 +25846,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "minLength": 1,
@@ -25506,6 +25908,91 @@
           "timeout_seconds": 500.0,
           "traits": [
             "read",
+            "catalog"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "8029f2655934351622fd8f02642d583b1266148cf6d86371265bc1f47a3059a9",
+          "contract_version": "1.0.0",
+          "description": "读取已选择的广告创建模板并返回预填参数草稿卡片；不创建广告。用户选择某个模板时调用，template_id 必须来自模板查询结果。将对话中已确认的名称、日期、预算按模板的 required_input_fields 放入 values，不要重复索要已预填的 Merchant ID、App、素材等字段。values 仅允许蓝图声明的字段。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "template_id": {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": "string"
+              },
+              "values": {
+                "additionalProperties": true,
+                "description": "Data-only overrides keyed by declared blueprint paths. Unknown or executable fields are rejected.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "template_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "使用模板",
+            "选择模板",
+            "查看模板",
+            "模板详情",
+            "预览模板"
+          ],
+          "intent_types": [
+            "get_creation_template"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "meta_get_creation_template",
+          "namespace": "meta",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "template",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
             "catalog"
           ]
         },
@@ -26009,7 +26496,7 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "91fbf3bf0b8accb393d92b3988afe5cd104686d2e22d49ccf8345d752fea2534",
+          "contract_hash": "8c6ca2c22fe86f40d45480100daac37e117da344b77a0a0a736e7030ca642b66",
           "contract_version": "1.5.1",
           "description": "查询 Meta 商品集详情。",
           "effect_class": "read",
@@ -26028,6 +26515,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "selection_label_fields": [
@@ -26657,7 +27145,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_hash": "4522813c9c41409a2b7fff8c531ad9a6fb2820de7dbd2a5565c9a7f3c24c6967",
           "contract_version": "1.5.1",
           "description": "查询 Meta 商品目录。",
           "effect_class": "read",
@@ -26668,6 +27156,25 @@
             "conditional_rules": [],
             "properties": {
               "account_id": {
+                "type": "string"
+              },
+              "catalog_id": {
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_query_field": "catalog_id",
+                "lookup_result_key": "catalogs",
+                "lookup_tool": "meta_list_catalogs",
+                "pattern": "^[0-9]+$",
+                "selection_label_fields": [
+                  "name",
+                  "catalog_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "catalog_id"
+                ],
                 "type": "string"
               },
               "limit": {
@@ -26711,6 +27218,91 @@
           "timeout_seconds": 500.0,
           "traits": [
             "read",
+            "catalog"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "2068b2cbfc860a02d17ca399a1cd846511f10c4d82bcf588313da293d31f8eef",
+          "contract_version": "1.0.0",
+          "description": "查询当前账户可用的内置/个人广告创建模板（本地模板库，不是已建 Campaign 列表）。创建广告时先查询这些模板；用户问“有模板吗”应使用本工具，不能改查 Campaign 或预算。返回模板 ID、已预填字段和剩余输入；没有外部广告写入。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "default": 20,
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional template name or ad type, e.g. Shopping, App, PMax.",
+                "maxLength": 120,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "有模板吗",
+            "有没有模板",
+            "查询模板",
+            "可用模板",
+            "内置模板",
+            "广告模板"
+          ],
+          "intent_types": [
+            "list_creation_templates"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "meta_list_creation_templates",
+          "namespace": "meta",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "templates",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
             "catalog"
           ]
         },
@@ -27252,7 +27844,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "aee8018d3af8d8082aa9a4940c1a859de7ebba5627db9ec9d126b4e411849224",
+          "contract_hash": "0e620be4543fc11ddffb789515ea4fb5e81382a6a3206d7585a59f539d6ef27d",
           "contract_version": "1.5.1",
           "description": "查询 Meta 商品目录下的商品集。",
           "effect_class": "read",
@@ -27269,6 +27861,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "selection_label_fields": [
@@ -29019,6 +29612,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "minLength": 1,
@@ -29562,6 +30156,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "catalog_id",
                 "lookup_result_key": "catalogs",
                 "lookup_tool": "meta_list_catalogs",
                 "selection_label_fields": [
@@ -30132,8 +30727,8 @@
       ]
     },
     "tiktok": {
-      "digest": "04d6bcbbb3ccd0f43de5468807431620b16818c5ef5aeb5beb1b20a4ec486d5a",
-      "tool_count": 87,
+      "digest": "30189132a83812712ea4014d235afb51fe45c889f43770abd15379fe72d57e29",
+      "tool_count": 89,
       "tools": [
         {
           "action": "create",
@@ -40200,6 +40795,91 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
+          "contract_hash": "8029f2655934351622fd8f02642d583b1266148cf6d86371265bc1f47a3059a9",
+          "contract_version": "1.0.0",
+          "description": "读取已选择的广告创建模板并返回预填参数草稿卡片；不创建广告。用户选择某个模板时调用，template_id 必须来自模板查询结果。将对话中已确认的名称、日期、预算按模板的 required_input_fields 放入 values，不要重复索要已预填的 Merchant ID、App、素材等字段。values 仅允许蓝图声明的字段。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "template_id": {
+                "maxLength": 240,
+                "minLength": 1,
+                "type": "string"
+              },
+              "values": {
+                "additionalProperties": true,
+                "description": "Data-only overrides keyed by declared blueprint paths. Unknown or executable fields are rejected.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "template_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "使用模板",
+            "选择模板",
+            "查看模板",
+            "模板详情",
+            "预览模板"
+          ],
+          "intent_types": [
+            "get_creation_template"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "tiktok_get_creation_template",
+          "namespace": "tiktok",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "template",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
+            "catalog"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2ed32369de7ce5876d64b630c50510f3bc25622fecd9aef94c850963498c74d7",
           "contract_version": "1.3.0",
           "description": "按数字 Ad ID 查询 TikTok 广告的 Creative 详情。creative_id 必须是广告的 ad_id，不是 video_id 或 image_id；视频和图片素材分别使用 tiktok_get_video 和 tiktok_get_image。",
@@ -41765,6 +42445,91 @@
             "read",
             "catalog",
             "lookup"
+          ]
+        },
+        {
+          "action": "list",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "2068b2cbfc860a02d17ca399a1cd846511f10c4d82bcf588313da293d31f8eef",
+          "contract_version": "1.0.0",
+          "description": "查询当前账户可用的内置/个人广告创建模板（本地模板库，不是已建 Campaign 列表）。创建广告时先查询这些模板；用户问“有模板吗”应使用本工具，不能改查 Campaign 或预算。返回模板 ID、已预填字段和剩余输入；没有外部广告写入。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "description": "Optional selected account; current authorization still applies.",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "limit": {
+                "default": 20,
+                "maximum": 100,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "query": {
+                "description": "Optional template name or ad type, e.g. Shopping, App, PMax.",
+                "maxLength": 120,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "有模板吗",
+            "有没有模板",
+            "查询模板",
+            "可用模板",
+            "内置模板",
+            "广告模板"
+          ],
+          "intent_types": [
+            "list_creation_templates"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 128000,
+          "name": "tiktok_list_creation_templates",
+          "namespace": "tiktok",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "creation_template",
+          "result_id_fields": [
+            "template_id"
+          ],
+          "result_items_key": "templates",
+          "risk_level": "low",
+          "scope_fields": [
+            "account_id"
+          ],
+          "scope_required": false,
+          "scope_type": "account",
+          "skill": "campaign-management",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "local",
+            "creation_template",
+            "catalog"
           ]
         },
         {
@@ -52826,5 +53591,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 302
+  "tool_count": 310
 }

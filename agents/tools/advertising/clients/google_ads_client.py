@@ -1900,6 +1900,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "status": "RUNNING",
         }
     
+    @staticmethod
+    def _cpc_bid_fields(micros: Any) -> dict[str, Any]:
+        return {
+            "cpc_bid_amount": int(micros) / 1_000_000 if micros is not None else None,
+            "cpc_bid_unit": "account_currency",
+        }
+
     def list_ad_groups(self, campaign_id: str, page_size: int = 100) -> list:
         """获取 Ad Group 列表"""
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
@@ -1930,6 +1937,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'status': ag.get('status'),
                 'type': ag.get('type'),
                 'cpc_bid_micros': ag.get('cpcBidMicros'),
+                **self._cpc_bid_fields(ag.get('cpcBidMicros')),
                 'cpm_bid_micros': ag.get('cpmBidMicros'),
                 'cpv_bid_micros': ag.get('cpvBidMicros'),
                 'effective_target_cpa_micros': ag.get('effectiveTargetCpaMicros'),
@@ -1967,6 +1975,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 'status': ag.get('status'),
                 'type': ag.get('type'),
                 'cpc_bid_micros': ag.get('cpcBidMicros'),
+                **self._cpc_bid_fields(ag.get('cpcBidMicros')),
                 'cpm_bid_micros': ag.get('cpmBidMicros'),
                 'cpv_bid_micros': ag.get('cpvBidMicros'),
                 'effective_target_cpa_micros': ag.get('effectiveTargetCpaMicros'),
@@ -2214,6 +2223,13 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("status must be PAUSED or ENABLED")
         if live and status != "PAUSED":
             raise ValueError("Google live creation only allows PAUSED Product Groups")
+        if live:
+            parent = self.get_ad_group(ad_group_id)
+            if (
+                str(parent.get("status") or "").upper() != "PAUSED"
+                or str(parent.get("campaign_status") or "").upper() != "PAUSED"
+            ):
+                raise ValueError("Product Group creation requires a PAUSED Ad Group and Campaign")
 
         supported_types = {
             "all_products",
@@ -2352,6 +2368,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "cpc_bid_micros": criterion.get(
                 "cpcBidMicros", criterion.get("cpc_bid_micros")
             ),
+            **cls._cpc_bid_fields(criterion.get("cpcBidMicros", criterion.get("cpc_bid_micros"))),
             "partition_type": listing.get("type"),
             "product_group_type": product_group_type,
             "value": value,
@@ -3960,6 +3977,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
             brand_guidelines_enabled, bool
         ):
             raise ValueError("brand_guidelines_enabled must be boolean")
+        if brand_guidelines_enabled is not None and advertising_channel_type != "PERFORMANCE_MAX":
+            raise ValueError("brand_guidelines_enabled is only supported for PERFORMANCE_MAX campaigns")
         # Google Ads REST writes go through the customer-level mutate
         # endpoints.  Resource-level POST/PUT endpoints look plausible but
         # are not Google Ads API contracts.

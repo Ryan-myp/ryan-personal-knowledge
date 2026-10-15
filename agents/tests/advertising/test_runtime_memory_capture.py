@@ -137,7 +137,7 @@ def test_live_provider_failure_remembers_only_allowlisted_error_code():
 
 
 def test_advertising_run_service_records_live_write_outcomes():
-    from agents.agent_harness import RunResult
+    from agents.agent_harness import RunResult, redact_for_persistence
     from agents.applications.advertising.run.ad_run_service import (
         AdvertisingRunService,
     )
@@ -167,6 +167,7 @@ def test_advertising_run_service_records_live_write_outcomes():
         _sessions={},
         sessions={},
         execution_mode="dry_run",
+        redact_for_persistence=redact_for_persistence,
     )
 
     result = AdvertisingRunService(runtime).run(

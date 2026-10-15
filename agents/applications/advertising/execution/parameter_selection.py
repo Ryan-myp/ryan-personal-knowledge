@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from datetime import datetime, timezone
+from threading import RLock
 from typing import Any, Callable, Optional
 
 from agents.agent_harness.core.interfaces import ToolContext, ToolResult
@@ -20,6 +22,54 @@ class ParameterSelectionService:
     ) -> None:
         self.services = services
         self.scope_value_resolver = scope_value_resolver
+        self._lookup_proofs: OrderedDict[tuple[str, ...], list[dict[str, Any]]] = OrderedDict()
+        self._proof_lock = RLock()
+
+    def _proof_key(self, context: ToolContext, tool: Any, field: str, schema: dict) -> tuple[str, ...]:
+        return (
+            str(context.session_id), str(context.user_id),
+            str(context.metadata.get("tenant_id") or "default"),
+            str(self._scope_value(context) or ""),
+            self._selection_scope_key(schema, context),
+            str(tool.namespace), str(tool.name), field,
+        )
+
+    def _remember_lookup(
+        self, context: ToolContext, tool: Any, field: str, schema: dict,
+        options: list[dict[str, Any]],
+    ) -> None:
+        key = self._proof_key(context, tool, field, schema)
+        with self._proof_lock:
+            self._lookup_proofs[key] = [
+                {"value": option["value"], "selection_token": option["selection_token"]}
+                for option in options
+            ]
+            self._lookup_proofs.move_to_end(key)
+            while len(self._lookup_proofs) > 256:
+                self._lookup_proofs.popitem(last=False)
+
+    def _lookup_tokens(
+        self, tool: Any, tool_input: dict[str, Any], context: ToolContext,
+    ) -> dict[str, Any]:
+        tokens = {}
+        properties = getattr(tool.input_schema, "properties", {}) or {}
+        for field, schema in self.iter_schema_fields(properties):
+            value = self.value_at_path(tool_input, field)
+            if value is None or not self.lookup_tool_for_field(schema):
+                continue
+            key = self._proof_key(context, tool, field, schema)
+            with self._proof_lock:
+                options = self._lookup_proofs.get(key, ())
+            is_array = schema.get("type") == "array"
+            values = value if is_array and isinstance(value, list) else [value]
+            matched = [
+                [option["selection_token"] for option in options if option["value"] == item]
+                for item in values
+            ]
+            if matched and all(len(matches) == 1 for matches in matched):
+                proof = [matches[0] for matches in matched]
+                tokens[field] = proof if is_array else proof[0]
+        return tokens
 
     def _scope_value(self, context: ToolContext) -> Any:
         if not callable(self.scope_value_resolver):
@@ -252,6 +302,9 @@ class ParameterSelectionService:
                     "label": label,
                     "selection_token": token,
                 })
+            self._remember_lookup(
+                context, target_tool, field_name, field_schema, options,
+            )
             if options or (target_tool_name and target_field):
                 selections.append({
                     "tool_name": target_tool.name,
@@ -276,9 +329,16 @@ class ParameterSelectionService:
         trusted_state_fields: Optional[set[str]] = None,
     ) -> list[str]:
         trusted_state_fields = trusted_state_fields or set()
-        raw_tokens = platform_params.get("selection_tokens") or {}
-        if not isinstance(raw_tokens, dict):
+        supplied_tokens = platform_params.get("selection_tokens") or {}
+        if not isinstance(supplied_tokens, dict):
             return ["selection_tokens must be an object"]
+        # Native Tool calls keep proofs server-side; both paths still verify
+        # the signed user/session/account/Tool/field claims and selected value.
+        cached_tokens = (
+            self._lookup_tokens(tool_def, tool_input, context)
+            if self.services.execution_mode == "live" else {}
+        )
+        raw_tokens = {**cached_tokens, **supplied_tokens}
         errors: list[str] = []
         properties = getattr(tool_def.input_schema, "properties", {}) or {}
         for raw_field_name, token_input in raw_tokens.items():

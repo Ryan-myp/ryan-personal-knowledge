@@ -10,9 +10,20 @@ from agents.applications.advertising.creation.templates import (
     CreationTemplateError,
     creation_template_manager_for_runtime,
 )
+from agents.tools.advertising.creation_templates import (
+    creation_template_tool_source as make_creation_template_tool_source,
+)
+from .template_tool_service import CreationTemplateToolService
 
 
 class AdCreationTemplateServicesMixin:
+    def creation_template_tool_source(self, namespace: str) -> Any:
+        """Bind local catalog Tools to the application's authorized template service."""
+        service = CreationTemplateToolService(self, namespace)
+        return make_creation_template_tool_source(
+            namespace, service.list_templates, service.get_template,
+        )
+
     @staticmethod
     def _creation_path_value(
         source: Any, path: str,

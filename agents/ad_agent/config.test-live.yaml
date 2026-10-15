@@ -1,0 +1,53 @@
+# Local test-account deployment. The page controls each user's dry_run/live mode.
+# Requires the separate AD_AGENT_ENABLE_LIVE=1 deployment opt-in.
+execution_mode: dry_run
+execution_timeout_seconds: 500
+read_only_mode: false
+allow_live_writes: true
+
+allowed_accounts:
+  google-ads: ["9055507554"]
+  meta: ["2806375919473667"]
+  tiktok: ["7397068114548195329"]
+
+# Creation only: no activation, resume, deletion, or arbitrary update Tools.
+# Provider contracts enforce paused serving resources. Google App Ad requires
+# ENABLED beneath verified PAUSED parents; that exception does not enable delivery.
+live_approved_tools:
+  - google_create_campaign
+  - google_create_ad_group
+  - google_create_pmax_asset_group
+  - google_create_asset_group_listing_group_filter
+  - google_create_product_group
+  - google_create_shopping_product_ad
+  - google_create_app_ad_group
+  - google_create_app_ad
+  - meta_create_campaign
+  - meta_create_adset
+  - meta_create_creative
+  - meta_create_ad
+  - meta_create_traffic_ad
+  - meta_create_conversion_ad
+  - meta_create_catalog_ad
+  - meta_create_app_promotion_ad
+  - tiktok_smart_plus_create_campaign
+  - tiktok_smart_plus_create_adgroup
+  - tiktok_smart_plus_create_ad
+
+granted_permissions:
+  - ads.read
+  - ads.plan
+  - ads.write
+  - skills.read
+  - skills.write
+  - skills.evaluate
+  - knowledge.read
+  - knowledge.write
+  - mcp.read
+  - mcp.manage
+
+models:
+  default: "agnes-2.5-flash"
+  openai:
+    base_url: ""
+log_level: INFO

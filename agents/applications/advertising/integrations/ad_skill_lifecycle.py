@@ -233,6 +233,8 @@ class AdSkillLifecycleMixin:
                 self.creation_blueprints.remove_owner(canonical_namespace)
             self._refresh_tool_catalog()
             self.plugin_registry.unregister(f"skill:{target_key}")
+            if not remaining:
+                self.plugin_registry.unregister(f"creation-templates:{canonical_namespace}")
             logger.info(
                 "✅ 已卸载 Skill '%s' (platform=%s)，移除 %s 个工具",
                 target_key, canonical_namespace, len(set(tool_names)),

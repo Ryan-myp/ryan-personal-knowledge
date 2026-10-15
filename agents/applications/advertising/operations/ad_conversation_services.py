@@ -12,6 +12,7 @@ from typing import Any, Mapping, Optional
 
 from agents.agent_harness.core.context import ContextQuery
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
+from agents.tools.advertising.shared.domain.conversation import project_conversation_messages
 
 
 class AdConversationServices:
@@ -64,7 +65,11 @@ class AdConversationServices:
             records = self.runtime._session_manager.list_conversation_messages(
                 str(session.get("session_id") or ""), limit=500
             )
-            messages = [record.to_dict() for record in records]
+            metadata = AdConversationServices._decode_session_metadata(session)
+            messages = project_conversation_messages(
+                [record.to_dict() for record in records],
+                metadata.get("conversation_ui"),
+            )
             conversations.append(AdConversationServices._conversation_summary(session, messages))
         return conversations[:limit]
 
@@ -219,29 +224,10 @@ class AdConversationServices:
             return None
         metadata = AdConversationServices._decode_session_metadata(session)
         records = self.runtime._session_manager.list_conversation_messages(session_id, limit=limit)
-        messages = [
-            {
-                "role": record.role,
-                "content": self.runtime._redact_for_persistence(record.content),
-                "created_at": record.created_at,
-                "turn_id": record.turn_id,
-                **(
-                    {"ui": self.runtime._redact_for_persistence(record.metadata["ui"])}
-                    if isinstance(getattr(record, "metadata", None), dict)
-                    and isinstance(record.metadata.get("ui"), dict)
-                    else {}
-                ),
-            }
-            for record in records
-        ]
-        ui_by_turn = metadata.get("conversation_ui", {})
-        if isinstance(ui_by_turn, dict):
-            for message in messages:
-                if message.get("role") != "assistant" or message.get("ui"):
-                    continue
-                stored_ui = ui_by_turn.get(str(message.get("turn_id")))
-                if isinstance(stored_ui, dict) and stored_ui:
-                    message["ui"] = self.runtime._redact_for_persistence(stored_ui)
+        messages = self.runtime._redact_for_persistence(project_conversation_messages(
+            [record.to_dict() for record in records],
+            metadata.get("conversation_ui"),
+        ))
         summary = AdConversationServices._conversation_summary(session, messages)
         traces = metadata.get("execution_traces")
         return {

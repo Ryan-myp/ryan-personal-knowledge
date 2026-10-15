@@ -228,6 +228,13 @@ class CreationTemplateManager:
         )
         return f"builtin_{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}"
 
+    def validate_overrides(
+        self, template: Mapping[str, Any], values: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Validate preview values against the same Blueprint as saved presets."""
+        blueprint = self._blueprint(template["blueprint_id"], template["blueprint_version"])
+        return self._values(blueprint, values)
+
     def _account_is_visible(
         self,
         provider: str,

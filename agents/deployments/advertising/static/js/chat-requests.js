@@ -1,3 +1,11 @@
+        function chatMessageHasPresentation(content, tools, ui) {
+            return Boolean(
+                String(content ?? '').trim() || tools?.length || ui?.cards?.length
+                || ui?.account_selection || ui?.confirmation?.payload
+                || ui?.clarification?.options?.length || ui?.clarification?.fields?.length
+            );
+        }
+
         async function streamChatRequest(requestParams) {
             const response = await authenticatedFetch('/chat/stream', {
                 method: 'POST',
@@ -93,6 +101,23 @@
                 .includes(String(data.status || '').toLowerCase());
             const creationNeedsCorrection = data.response_source === 'creation_card' || data.response_source === 'creation_validation';
             const hasCreationCards = Boolean(data.ui?.cards?.length) && (!requestParams?.creation_blueprint_id || creationNeedsCorrection);
+            let ui = data.ui || null;
+            let confirmationRequest = null;
+            if (data.confirmation_payload) {
+                confirmationRequest = {
+                    ...(ui?.confirmation?.original_request || {}),
+                    ...(requestParams || {}),
+                    session_id: requestParams?.session_id || data.session_id || sessionId,
+                    execution_mode: requestParams?.execution_mode || workspaceMode.mode,
+                };
+                ui = {
+                    ...(ui || {}),
+                    confirmation: {
+                        payload: data.confirmation_payload,
+                        original_request: confirmationRequest,
+                    },
+                };
+            }
             if (!runFailed && data.needs_confirmation && data.confirmation_payload && !hasCreationCards) {
                 addMessage(
                     data.content || streamResultFallback(data),
@@ -101,32 +126,22 @@
                     false,
                     '',
                     null,
-                    data.ui || null,
+                    ui,
                     { originalRequest: requestParams },
                 );
-                showConfirm(data.confirmation_payload, {
-                    user_input: requestParams.user_input,
-                    account_id: requestParams.account_id || null,
-                    platforms: results.map(item => item.platform).filter(Boolean),
-                    platform_params: requestParams.platform_params || {},
-                    creation_blueprint_id: requestParams.creation_blueprint_id || null,
-                    creation_blueprint_version: requestParams.creation_blueprint_version || null,
-                    creation_template_id: requestParams.creation_template_id || null,
-                });
+                showConfirm(data.confirmation_payload, confirmationRequest);
                 return;
             }
             const tools = results.map(item => ({ tool: item.tool, success: item.success }));
             const content = String(data.content || '').trim() || streamResultFallback(data);
             addMessage(
-                runFailed && data.status !== 'partially_failed'
-                    ? `本次处理未成功：${content}`
-                    : content,
+                content,
                 'agent',
                 tools,
                 runFailed,
                 '',
                 null,
-                data.ui || null,
+                ui,
                 { originalRequest: requestParams },
             );
         }
@@ -550,6 +565,7 @@
                 let precedingUserInput = '';
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
                     if (!['user', 'assistant'].includes(message.role)) continue;
+                    if (!chatMessageHasPresentation(message.content, message.tools, message.ui)) continue;
                     const role = message.role === 'user' ? 'user' : 'agent';
                     if (role === 'user') {
                         precedingUserInput = String(message.content || '');
@@ -557,8 +573,8 @@
                     addMessage(
                         message.content || '',
                         role,
-                        null,
-                        false,
+                        message.tools || null,
+                        Boolean(message.is_error),
                         '',
                         message.created_at,
                         message.ui || null,

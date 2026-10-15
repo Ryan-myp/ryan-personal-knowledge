@@ -1333,7 +1333,7 @@ class GoogleToolSource(BaseProviderToolSource):
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_product_group",
-                description="创建 Google Shopping Product Group/Listing Group；live 仅在受控测试账号和确认后执行。",
+                description="创建 Google Shopping Product Group/Listing Group；live 先核实 Campaign 和 Ad Group 均 PAUSED。Google 可能返回 ENABLED，实际状态须用 google_get_product_group 回查，不得把请求的 PAUSED 当作返回状态。",
                 method_name="create_product_group", result_key="product_group_id",
                 properties=google_product_group_schema()["properties"],
                 required=google_product_group_schema()["required"],

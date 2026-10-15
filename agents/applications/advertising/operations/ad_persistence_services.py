@@ -95,16 +95,25 @@ class AdPersistenceServices:
                 session.session_id, turn_id, "assistant", safe_reply,
                 metadata={"ui": safe_ui} if safe_ui else None,
             )
-        elif safe_ui:
-            # The generic Harness already wrote the transcript rows. Attach
-            # presentation state to that assistant row instead of keeping the
-            # card only in bounded session metadata.
-            self.runtime._session_manager.update_conversation_message_metadata(
+        elif safe_reply.strip() or safe_ui:
+            # The Harness retains native protocol messages. Persist the actual
+            # user-facing reply alongside its UI, including terminal Tool gates.
+            presentation = {"display_reply": safe_reply}
+            if safe_ui:
+                presentation["ui"] = safe_ui
+            if isinstance(execution_trace, Mapping):
+                presentation["display_status"] = str(execution_trace.get("status") or "")
+            updated = self.runtime._session_manager.update_conversation_message_metadata(
                 session.session_id,
                 turn_id,
                 "assistant",
-                {"ui": safe_ui},
+                presentation,
             )
+            if not updated:
+                self.runtime._session_manager.record_conversation_message(
+                    session.session_id, turn_id, "assistant", safe_reply,
+                    metadata=presentation,
+                )
         metadata = {
             "execution_mode": self.runtime.execution_mode,
             "read_only_mode": self.runtime._read_only_mode,

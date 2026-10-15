@@ -7,7 +7,7 @@ persistence/session_manager.py - 会话管理器
 import json
 import logging
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from .interfaces import PersistenceBackend
 from .models import (
@@ -97,7 +97,7 @@ class SessionManager:
                 turn_id=str(turn_id),
                 role=str(role),
                 content=str(content),
-                created_at=datetime.now().isoformat(),
+                created_at=datetime.now(timezone.utc).isoformat(),
                 metadata=dict(metadata or {}),
             )
         )

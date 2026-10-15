@@ -110,6 +110,57 @@ def _prompt(client, text, session="page-conversation", endpoint="/chat"):
     return response.json()
 
 
+def test_completed_live_write_remembers_the_account_for_read_followups(tmp_path):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        session = runtime._ensure_session("created", "operator", "test-account", None)
+        definition, _handler = runtime.registry.get("meta_create_campaign")
+        executor = AdvertisingToolExecutor(runtime, definition)
+        context = {}
+        executor._remember_read_account(session, context, "test-account", {
+            "success": True, "simulated": False,
+            "data": {"execution_mode": "live", "execution_status": "executed"},
+        })
+        assert session.ctx.metadata["read_account_scopes"] == {"meta": "test-account"}
+        assert context["_agent_read_account_scopes"] == {"meta": "test-account"}
+        runtime.persistence_services.persist_conversation_turn(
+            session, "created-turn", "Create paused resource", "Created.",
+        )
+        runtime._sessions.clear()
+        install(runtime,
+            ModelTurn(tool_calls=(call("meta_get_campaign", {"campaign_id": "101"}),)),
+            ModelTurn(content="Details."),
+        )
+        result = runtime.run(
+            "查询刚才 campaign 的详情", session_id="created", principal=_principal(),
+        )
+        assert result["status"] == "succeeded"
+        assert provider.calls == [("campaign", ("101",))]
+    finally:
+        _close(runtime)
+
+
+@pytest.mark.parametrize("result", [
+    {"success": False, "data": {"execution_mode": "live", "execution_status": "executed"}},
+    {"success": True, "simulated": True, "data": {"execution_mode": "live", "execution_status": "executed"}},
+    {"success": True, "data": {"execution_mode": "dry_run", "execution_status": "planned"}},
+    {"success": True, "data": {"execution_mode": "live", "execution_status": "unknown"}},
+    {"success": True, "data": {"execution_mode": "live", "execution_status": "executed", "data_status": "offline_no_client"}},
+])
+def test_failed_planned_or_simulated_writes_never_establish_read_account_scope(tmp_path, result):
+    runtime = _runtime(tmp_path)
+    try:
+        session = runtime._ensure_session("unverified", "operator", None, None)
+        definition, _handler = runtime.registry.get("meta_create_campaign")
+        AdvertisingToolExecutor(runtime, definition)._remember_read_account(
+            session, {}, "test-account", result,
+        )
+        assert not session.ctx.metadata.get("read_account_scopes")
+    finally:
+        _close(runtime)
+
+
 @pytest.mark.parametrize("namespace,prefix,field", [
     ("meta", "meta", "account_id"),
     ("google-ads", "google", "customer_id"),

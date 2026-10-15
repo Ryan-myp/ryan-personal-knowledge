@@ -11,9 +11,10 @@
         function blueprintDraftPlatformParams(blueprint) {
             const values = {};
             const scopedSelectionTokens = {};
+            const submittedFields = new Map();
             const evaluated = new Map((blueprintState.evaluation?.fields || []).map(item => [item.path, item]));
             for (const field of (blueprint?.fields || [])) {
-                if (field.visible === false) continue;
+                if (field.visible === false || evaluated.get(field.path)?.visible === false) continue;
                 let value = blueprintState.values[field.path];
                 if (value === undefined) value = evaluated.get(field.path)?.value;
                 if (value === undefined) value = blueprintFieldDefault(field);
@@ -23,6 +24,8 @@
                 const { toolName, fieldPath } = blueprintToolFieldSchema(field.tool_ref);
                 setCreationNestedValue(values, fieldPath || field.path, value);
                 if (toolName) {
+                    if (!submittedFields.has(toolName)) submittedFields.set(toolName, new Set());
+                    submittedFields.get(toolName).add(fieldPath || field.path);
                     values[toolName] = values[toolName] || {};
                     setCreationNestedValue(values[toolName], fieldPath || field.path, value);
                 }
@@ -30,6 +33,8 @@
             Object.entries(blueprintState.selectionTokens || {}).forEach(([fieldName, token]) => {
                 const toolName = blueprintState.selectionTokenTools?.[fieldName];
                 if (!toolName || !token) return;
+                const fields = submittedFields.get(toolName);
+                if (!fields || ![...fields].some(path => fieldName === path || fieldName.startsWith(`${path}.`))) return;
                 scopedSelectionTokens[toolName] = scopedSelectionTokens[toolName] || {};
                 scopedSelectionTokens[toolName][fieldName] = token;
             });
@@ -871,7 +876,8 @@
             renderBlueprintList();
             renderBlueprintEditor();
             if (template) showBlueprintNotice(`已应用“${template.name || '我的模板'}”，你仍可修改本次投放参数。`);
-            if (selector?.field) evaluateBlueprintDraft(selector.field);
+            // Hydration establishes the baseline; only later edits reset dependent fields.
+            if (selector?.field) evaluateBlueprintDraft(null);
         }
 
         function selectCreationTemplate(templateId) {

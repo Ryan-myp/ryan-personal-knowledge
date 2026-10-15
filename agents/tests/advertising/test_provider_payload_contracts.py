@@ -6856,6 +6856,8 @@ def test_google_product_group_queries_normalize_listing_group_rows():
         "resource_name": "customers/123/adGroupCriteria/456~789",
         "status": "ENABLED",
         "cpc_bid_micros": "250000",
+        "cpc_bid_amount": 0.25,
+        "cpc_bid_unit": "account_currency",
         "partition_type": "SUBDIVISION",
         "product_group_type": "product_type_2",
         "value": "Shoes",

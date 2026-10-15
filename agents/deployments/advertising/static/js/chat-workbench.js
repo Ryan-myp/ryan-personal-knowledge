@@ -151,7 +151,11 @@
         }
 
         function clearWorkbenchConfirmation() {
-            document.getElementById('confirmation-workbench-host')?.replaceChildren();
+            const confirmationHost = document.getElementById('confirmation-workbench-host');
+            if (confirmationHost) {
+                confirmationHost.replaceChildren();
+                confirmationHost.hidden = true;
+            }
             const host = document.getElementById('creation-workbench-host');
             if (host) host.hidden = false;
         }

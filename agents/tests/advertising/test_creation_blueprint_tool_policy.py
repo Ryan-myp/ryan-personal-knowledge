@@ -2,6 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
+from agents.agent_platform.tools.policy import ToolExecutionPolicy
 from agents.applications.advertising.execution.ad_tool_policy_factory import (
     AdvertisingToolPolicyFactory,
 )
@@ -65,6 +66,7 @@ def _factory():
         write_guard=None,
         enforce_account_scope=True,
         security=_Security(),
+        policy_engine=ToolExecutionPolicy(),
         creation_blueprints=_BlueprintRegistry(),
         creation_card_builder=card_builder,
         registry=SimpleNamespace(list_all=lambda: []),
@@ -114,7 +116,10 @@ def _request(context):
     return SimpleNamespace(
         context={"account_id": TEST_ACCOUNT, **context},
         execution_mode="dry_run",
-        principal=SimpleNamespace(account_scope=None),
+        principal=SimpleNamespace(
+            account_scope=None,
+            permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
+        ),
         tenant_id="test-tenant",
         user_id="test-user",
         session_id="test-session",

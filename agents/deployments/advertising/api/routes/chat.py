@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.models import ChatRequest, ChatStreamRequest
+from agents.tools.advertising.shared.domain.conversation import visible_run_reply
 
 _STREAM_RUN_STATUSES = frozenset({
     "awaiting_confirmation",
@@ -49,8 +50,10 @@ def _chat_result_for_response(context: ApiContext, result: Any) -> Any:
     safe_result = context.redact(result)
     if not isinstance(result, dict) or not isinstance(safe_result, dict):
         return safe_result
-    if not str(result.get("reply") or "").strip() and result.get("error"):
-        safe_result["reply"] = _chat_reply_content(result)
+    if not str(result.get("reply") or "").strip():
+        fallback = _chat_reply_content(safe_result)
+        if fallback:
+            safe_result["reply"] = context.redact(fallback)
     if isinstance(result.get("confirmation_payload"), dict):
         safe_result["confirmation_payload"] = _confirmation_payload_for_response(
             context, result["confirmation_payload"],
@@ -95,22 +98,7 @@ def _stream_run_status(
 
 def _chat_reply_content(result: Mapping[str, Any]) -> str:
     """Preserve a safe Run failure reason when no model reply was produced."""
-    reply = str(result.get("reply") or "")
-    if reply.strip():
-        return reply
-    error = str(result.get("error") or "")
-    if not error:
-        return ""
-    messages = {
-        "RateLimitError": "模型服务暂时限流，本次请求未完成。这不代表广告账户没有数据。",
-        "model_timeout": "模型响应超时，本次请求未完成。这不代表广告账户没有数据。",
-        "model_not_configured": "模型服务未配置，本次请求无法执行。",
-        "model_token_budget_exceeded": "本次请求超出模型上下文或输出预算，执行未完成。",
-    }
-    message = messages.get(error, "本次请求执行失败，请查看执行记录。")
-    if result.get("results") or result.get("tool_results"):
-        return message + "已有工具执行记录；创建或更新操作不要直接重试，请先核实实际结果。"
-    return message
+    return visible_run_reply(result)
 
 
 def create_chat_router(context: ApiContext) -> APIRouter:

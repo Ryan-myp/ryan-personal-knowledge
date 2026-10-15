@@ -12,6 +12,7 @@ from agents.agent_harness.core.execution_trace import ExecutionEventCallback
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from .ad_run_memory import AdvertisingRunMemoryRecorder
 from .ad_run_projection import AdvertisingRunProjection
+from agents.tools.advertising.shared.domain.conversation import visible_run_reply
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,7 @@ class AdvertisingRunService:
                 )
             ),
         )
+        payload["reply"] = runtime.redact_for_persistence(visible_run_reply(payload))
         session = runtime.sessions.get(effective_session_id)
         if session is not None:
             raw_ui = payload.get("ui")
@@ -211,6 +213,7 @@ class AdvertisingRunService:
                     "payload": payload.get("confirmation_payload"),
                     "original_request": {
                         "user_input": user_input,
+                        "session_id": effective_session_id,
                         "account_id": account_id,
                         "platforms": [
                             item.get("platform") for item in (payload.get("results") or [])
@@ -220,6 +223,8 @@ class AdvertisingRunService:
                         "creation_blueprint_id": creation_blueprint_id,
                         "creation_blueprint_version": creation_blueprint_version,
                         "creation_template_id": creation_template_id,
+                        "execution_mode": execution_mode,
+                        "tool_allowlist": tool_allowlist,
                     },
                 }
                 payload["ui"] = persisted_ui

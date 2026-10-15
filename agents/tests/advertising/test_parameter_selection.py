@@ -44,6 +44,131 @@ def _tool(name, *, namespace="google-ads", properties=None, action="list"):
     )
 
 
+def _live_lookup():
+    signer = _Signer()
+    source = _tool("example_list_assets", namespace="example")
+    target = _tool(
+        "example_create_ad", namespace="example", action="create",
+        properties={"asset_id": {"type": "string", "lookup_tool": source.name}},
+    )
+    services = SimpleNamespace(
+        registry=SimpleNamespace(list_all=lambda: [source, target]),
+        selection_signer=signer, execution_mode="live",
+        normalize_namespace=lambda value: value,
+    )
+    service = ParameterSelectionService(
+        services, scope_value_resolver=lambda context: context.account_id,
+    )
+    return service, signer, source, target
+
+
+def test_native_creation_reuses_a_live_lookup_proof_without_exposing_its_token_to_the_model():
+    selection, signer, source, target = _live_lookup()
+    selection.decorate_lookup_result(
+        source, ToolResult.ok({
+            "assets": [{"id": "asset-1"}], "data_status": "live",
+        }), _context(), "example",
+    )
+    errors = selection.apply_selection_tokens(
+        target, {"asset_id": "asset-1"}, {}, _context(),
+    )
+    assert errors == []
+    assert signer.verified[0][1]["tool_name"] == target.name
+    assert signer.verified[0][1]["field"] == "asset_id"
+
+
+@pytest.mark.parametrize("change", ["session", "user", "tenant", "account", "value", "tool", "namespace"])
+def test_native_lookup_proof_cannot_authorize_another_scope(change):
+    selection, _signer, source, target = _live_lookup()
+    selection.decorate_lookup_result(
+        source, ToolResult.ok({
+            "assets": [{"id": "asset-1"}], "data_status": "live",
+        }), _context(), "example",
+    )
+    context = _context()
+    value = "asset-1"
+    if change == "session":
+        context.session_id = "another-session"
+    elif change == "user":
+        context.user_id = "another-user"
+    elif change == "tenant":
+        context.metadata["tenant_id"] = "another-tenant"
+    elif change == "account":
+        context.account_id = "another-account"
+    elif change == "value":
+        value = "another-asset"
+    else:
+        setattr(target, "name" if change == "tool" else "namespace", "another")
+    assert selection.apply_selection_tokens(target, {"asset_id": value}, {}, context)
+
+
+@pytest.mark.parametrize("data_status", ["offline_no_client", "local", None])
+def test_native_creation_never_treats_an_offline_lookup_as_provider_authorization(data_status):
+    selection, _signer, source, target = _live_lookup()
+    selection.decorate_lookup_result(
+        source, ToolResult.ok({
+            "assets": [{"id": "asset-1"}], "data_status": data_status,
+        }), _context(), "example",
+    )
+    assert selection.apply_selection_tokens(target, {"asset_id": "asset-1"}, {}, _context())
+
+
+def test_native_creation_verifies_expiry_even_for_a_remembered_provider_lookup():
+    selection, signer, source, target = _live_lookup()
+    selection.decorate_lookup_result(
+        source, ToolResult.ok({
+            "assets": [{"id": "asset-1"}], "data_status": "live",
+        }), _context(), "example",
+    )
+    def expired(*_args, **_kwargs):
+        raise ValueError("selection token expired")
+    signer.verify = expired
+    errors = selection.apply_selection_tokens(
+        target, {"asset_id": "asset-1"}, {}, _context(),
+    )
+    assert any("expired" in error for error in errors)
+
+
+def test_a_new_empty_live_lookup_invalidates_previously_cached_options():
+    selection, _signer, source, target = _live_lookup()
+    for assets in ([{"id": "asset-1"}], []):
+        selection.decorate_lookup_result(
+            source, ToolResult.ok({"assets": assets, "data_status": "live"}),
+            _context(), "example",
+        )
+    assert selection.apply_selection_tokens(target, {"asset_id": "asset-1"}, {}, _context())
+
+
+def test_native_lookup_proofs_are_bounded_and_not_part_of_persistent_context():
+    selection, _signer, source, target = _live_lookup()
+    context = _context()
+    for index in range(270):
+        context.session_id = f"session-{index}"
+        selection.decorate_lookup_result(
+            source, ToolResult.ok({"assets": [{"id": "asset-1"}], "data_status": "live"}),
+            context, "example",
+        )
+    assert len(selection._lookup_proofs) == 256
+    assert context.metadata == {}
+    assert context.protected_state == {}
+    context.session_id = "session-0"
+    assert selection.apply_selection_tokens(target, {"asset_id": "asset-1"}, {}, context)
+    context.session_id = "session-269"
+    assert selection.apply_selection_tokens(target, {"asset_id": "asset-1"}, {}, context) == []
+
+
+def test_implicit_business_catalog_proof_still_requires_the_same_selected_account():
+    selection, _signer, source, target = _live_lookup()
+    target.input_schema.properties["asset_id"]["lookup_account_required"] = False
+    selection.decorate_lookup_result(
+        source, ToolResult.ok({"assets": [{"id": "asset-1"}], "data_status": "live"}),
+        _context(), "example",
+    )
+    context = _context()
+    context.account_id = "another-account"
+    assert selection.apply_selection_tokens(target, {"asset_id": "asset-1"}, {}, context)
+
+
 def test_lookup_options_are_signed_for_target_and_account_scope():
     signer = _Signer()
     source = _tool("google_list_assets")

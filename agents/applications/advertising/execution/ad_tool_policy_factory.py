@@ -86,6 +86,16 @@ class AdvertisingToolPolicyFactory:
         )
         if scope_error:
             return scope_error
+        principal = getattr(request, "principal", None)
+        if principal is not None:
+            required = runtime.policy_engine.required_permissions(
+                tool, str(getattr(request, "execution_mode", "") or "dry_run"),
+            )
+            missing = sorted(required - frozenset(getattr(principal, "permissions", ()) or ()))
+            if missing:
+                return "permission_denied", (
+                    "missing required Tool permissions: " + ", ".join(missing)
+                )
         if str(getattr(tool, "action", "") or "").lower() == "create":
             blueprint_error = self._creation_blueprint_argument_error(
                 tool, request, arguments, request_context, platform,

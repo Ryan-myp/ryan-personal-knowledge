@@ -352,6 +352,7 @@
         }
 
         function renderWorkspaceMode() {
+            if (typeof refreshCreationSubmissionAvailability === 'function') refreshCreationSubmissionAvailability();
             const title = document.getElementById('workspaceModeTitle');
             const description = document.getElementById('workspaceModeDescription');
             if (!title || !description) return;
@@ -374,7 +375,7 @@
                 if (toggleIcon) toggleIcon.textContent = '●';
             } else if (liveSelected && !workspaceMode.liveAvailable) {
                 const reason = workspaceMode.liveReason || '服务端未开放 live 写入';
-                title.textContent = 'live 偏好已保存 · 当前不可用';
+                title.textContent = 'live 模式 · 当前不可用';
                 description.textContent =
                     `live 写入当前不可用：${reason}。服务端执行门禁仍然有效，请切换到 dry-run 预览。`;
                 if (toggleLabel) toggleLabel.textContent = 'live · 不可用';

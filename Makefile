@@ -1,4 +1,4 @@
-.PHONY: ad-agent-python-version ad-agent-install ad-agent-dependency-check ad-agent-run ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-reliability-evidence-mysql ad-agent-check
+.PHONY: ad-agent-python-version ad-agent-install ad-agent-dependency-check ad-agent-run ad-agent-run-test ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-reliability-evidence-mysql ad-agent-check
 
 AD_AGENT_PYTHON_WRAPPER := ./scripts/ad-agent-python
 AD_AGENT_TEST_ENV := PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=.
@@ -38,6 +38,9 @@ ad-agent-dependency-check:
 
 ad-agent-run:
 	@$(AD_AGENT_PYTHON_WRAPPER) -m uvicorn agents.deployments.advertising.api_server:app --host 127.0.0.1 --port 8765
+
+ad-agent-run-test:
+	@AD_AGENT_ENABLE_LIVE=1 AD_AGENT_CONFIG_PATH=agents/ad_agent/config.test-live.yaml $(AD_AGENT_PYTHON_WRAPPER) -m uvicorn agents.deployments.advertising.api_server:app --host 127.0.0.1 --port 8765
 
 ad-agent-test:
 	@$(AD_AGENT_TEST_ENV) $(AD_AGENT_PYTHON_WRAPPER) -m pytest agents/tests -q

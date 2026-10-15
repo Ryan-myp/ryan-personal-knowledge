@@ -428,19 +428,8 @@ async def health():
         # Useful for tests/embedding callers that inject an already-created
         # Runtime instead of going through the ASGI lifespan.
         state = "ready"
-    live_reason = None
-    live_available = False
-    if runtime is not None:
-        if getattr(runtime, "_read_only_mode", False):
-            live_reason = "服务当前处于只读配置，不能切换到 live"
-        elif os.environ.get("AD_AGENT_ENABLE_LIVE") != "1":
-            live_reason = "服务未开启 live 环境开关"
-        elif not bool(getattr(runtime, "allow_live_writes", False)):
-            live_reason = "服务未开启 live 写入权限"
-        else:
-            live_available = True
-    else:
-        live_reason = "Runtime 尚未就绪"
+    live_reason = _live_mode_unavailable_reason()
+    live_available = live_reason is None
     return {
         "status": "healthy" if state == "ready" else "unhealthy",
         "state": state, "error": runtime_status.get("error"),
@@ -541,6 +530,8 @@ def _live_mode_unavailable_reason() -> Optional[str]:
         return "服务未开启 live 环境开关"
     if not bool(getattr(runtime, "allow_live_writes", False)):
         return "服务未开启 live 写入权限"
+    if not getattr(runtime, "_live_approved_tools", None):
+        return "服务尚未批准任何 live 写入 Tool"
     return None
 
 
@@ -617,11 +608,13 @@ async def change_execution_mode(
     if mode not in {"dry_run", "live"}:
         raise HTTPException(status_code=422, detail="执行模式只能是 dry_run 或 live")
     _require_principal_permission(principal, "ads.plan")
-    # Selecting live is a scoped execution preference, not a grant of
-    # mutation authority.  The actual write path still requires ads.write
-    # plus every deployment, account, Tool and confirmation gate. Keeping
-    # those checks at execution time lets a planner switch the mode here
-    # without making the UI itself an authorization boundary.
+    if mode == "live":
+        _require_principal_permission(principal, "ads.write")
+        live_reason = _live_mode_unavailable_reason()
+        if live_reason:
+            raise HTTPException(status_code=409, detail=live_reason)
+    # Persist only an executable selection. Per-Tool authorization,
+    # confirmation, account scope and replay gates remain authoritative.
     try:
         await run_in_threadpool(_set_principal_execution_mode, principal, mode)
     except ValueError as exc:
