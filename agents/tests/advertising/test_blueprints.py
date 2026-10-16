@@ -63,11 +63,25 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
-    assert versions["tiktok.app_conversion_video"] == "3.0.0"
+    assert versions["tiktok.app_conversion_video"] == "3.0.3"
     assert versions["tiktok.lead_generation"] == "2.0.2"
     assert versions["tiktok.product_sales_video"] == "2.3.0"
     assert versions["tiktok.traffic_video"] == "3.3.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
+
+
+def test_tiktok_app_blueprint_exposes_optional_tracking_partner_inputs():
+    blueprint = load_blueprint_file(BLUEPRINT_PATH)
+    fields = {item["path"]: item for item in blueprint.fields}
+
+    assert fields["ad.click_tracking_url"]["tool_ref"] == (
+        "tiktok_create_app_ad.click_tracking_url"
+    )
+    assert fields["ad.impression_tracking_url"]["tool_ref"] == (
+        "tiktok_create_app_ad.impression_tracking_url"
+    )
+    assert fields["ad.click_tracking_url"].get("required") is not True
+    assert fields["ad.impression_tracking_url"].get("required") is not True
 
 
 def test_creation_blueprint_list_publishes_contract_and_support_metadata():
@@ -654,6 +668,18 @@ def test_google_template_image_fields_are_account_scoped_lookups():
         assert schema["lookup_tool"] == "google_list_assets"
         assert schema["lookup_query_field"] == "asset_id"
         assert schema["lookup_asset_types"] == ["IMAGE"]
+
+
+def test_google_app_blueprint_pauses_parents_and_enables_app_ad():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    runtime.register_tool_source(create_google_tool_source())
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.4.0")
+    fields = {field["path"]: field for field in blueprint.fields}
+
+    assert fields["campaign.status"]["default"] == "PAUSED"
+    assert fields["ad_group.status"]["default"] == "PAUSED"
+    assert fields["ad.status"]["options"] == ["ENABLED"]
+    assert fields["ad.status"]["default"] == "ENABLED"
 
 
 def test_google_entry_type_is_not_repeated_at_ad_group_level():
@@ -1260,7 +1286,7 @@ def test_explicit_blueprint_submission_waits_for_required_fields_before_executio
         account_id="123",
         platform_params={"google-ads": {"campaign_type": "APP"}},
         creation_blueprint_id="google-ads.app",
-        creation_blueprint_version="1.2.0",
+        creation_blueprint_version="1.4.0",
     )
 
     assert result["results"] == []
@@ -1328,7 +1354,7 @@ def test_creation_submission_validates_asset_minimums_before_any_tool_runs():
             },
         }},
         creation_blueprint_id="google-ads.app",
-        creation_blueprint_version="1.2.0",
+        creation_blueprint_version="1.4.0",
     )
 
     assert result["results"] == []
@@ -1433,7 +1459,7 @@ def test_google_app_campaign_conversion_lookup_is_declared_at_campaign_level():
     assert selective["object_properties"]["conversion_actions"][
         "lookup_tool"
     ] == "google_list_conversion_actions"
-    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.2.0")
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.4.0")
     blueprint_field = next(
         field for field in blueprint.fields
         if field["path"] == "campaign.selective_optimization"
@@ -1942,7 +1968,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
         "google-ads": ["9055507554"],
     }
     runtime.register_tool_source(create_google_tool_source())
-    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.2.0")
+    blueprint = runtime.creation_blueprints.get("google-ads.app", "1.4.0")
 
     class SelectedBlueprintModel:
         def __init__(self):
@@ -1983,7 +2009,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
             user_id="template-user",
             account_id="9055507554",
             creation_blueprint_id="google-ads.app",
-            creation_blueprint_version="1.2.0",
+            creation_blueprint_version="1.4.0",
             creation_template_id=template["template_id"],
         )
 
@@ -2253,7 +2279,7 @@ def test_google_template_values_materialize_for_every_declared_creation_tool():
         runtime.close(wait=True)
 
 
-def test_google_template_schema_changes_publish_contract_version_1_5():
+def test_google_template_schema_changes_publish_contract_version_1_7():
     runtime = AdvertisingComposition(
         require_llm=False,
         offline_mode=True,
@@ -2273,7 +2299,7 @@ def test_google_template_schema_changes_publish_contract_version_1_5():
             definition, _handler = runtime.registry.get(tool_name)
             assert definition.contract_version == {
                 "google_create_campaign": "1.5.1",
-                "google_create_app_ad": "1.6.0",
+                "google_create_app_ad": "1.7.0",
             }.get(tool_name, "1.5.0")
     finally:
         runtime.close(wait=True)

@@ -1,4 +1,4 @@
-"""Authorized, delivery-paused test-account checks through the HTTP Agent."""
+"""Authorized test-account checks through the HTTP Agent with paused delivery parents."""
 
 from __future__ import annotations
 
@@ -27,6 +27,12 @@ from agents.agent_harness.redaction import redact_for_persistence
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.deployments.advertising.local_config import load_default_local_env
 from agents.tools.advertising.providers.source_factory import create_tool_source
+from scripts.advertising.provider_live_e2e_memory import (
+    append_live_e2e_observation,
+    load_live_e2e_memory,
+    require_new_hierarchy_authorization,
+    resolve_template_memory,
+)
 
 PROVIDERS = ("google-ads", "meta", "tiktok")
 CONFIRMED_ACCOUNTS = {
@@ -180,6 +186,97 @@ def _redact_signed_url(match):
         for key in parse_qs(urlsplit(url).query, keep_blank_values=True)
     }
     return "<redacted>" if query_keys & SIGNED_URL_QUERY_KEYS else match.group(0)
+
+
+def _created_resource_type(tool_name):
+    name = tool_name.lower()
+    if "create" not in name:
+        return None
+    if "listing_group_filter" in name:
+        return "listing_group_filter"
+    if "product_group" in name:
+        return "product_group"
+    if "creative_portfolio" in name:
+        return "creative_portfolio"
+    if "asset_group" in name:
+        return "asset_group"
+    if "adset" in name and "ad" not in name.replace("adset", ""):
+        return "ad_set"
+    if "ad_group" in name or "adgroup" in name:
+        return "ad_group"
+    if "campaign" in name:
+        return "campaign"
+    if "creative" in name:
+        return "creative"
+    if "create_ad" in name or name.endswith("_ad"):
+        return "ad"
+    return None
+
+
+def _created_live_resources(payload):
+    resource_fields = {
+        "campaign": ("campaign_id",),
+        "ad_group": ("ad_group_id", "adgroup_id"),
+        "ad_set": ("adset_id", "ad_set_id"),
+        "ad": ("smart_plus_ad_id", "ad_id"),
+        "creative": ("creative_id",),
+        "asset_group": ("asset_group_id",),
+        "product_group": ("product_group_id",),
+        "listing_group_filter": ("listing_group_filter_id",),
+        "creative_portfolio": ("creative_portfolio_id",),
+    }
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return []
+    resources = []
+    for row in results:
+        if not isinstance(row, dict) or row.get("success") is not True:
+            continue
+        result = row.get("result") if isinstance(row.get("result"), dict) else row
+        data = result.get("data")
+        if (
+            not isinstance(data, dict)
+            or data.get("execution_mode") != "live"
+            or result.get("simulated") is True
+        ):
+            continue
+        tool_name = str(result.get("tool") or row.get("tool") or "")
+        resource_type = _created_resource_type(tool_name)
+        if resource_type is None:
+            continue
+        for node in _walk(data):
+            resource_id = next(
+                (
+                    node.get(field)
+                    for field in resource_fields[resource_type]
+                    if node.get(field) is not None
+                ),
+                None,
+            )
+            if resource_id is None:
+                continue
+            resource = {
+                "resource_type": resource_type,
+                "id": str(resource_id),
+            }
+            status = node.get("operation_status", node.get("status"))
+            if status is not None:
+                resource["status"] = str(status)
+            resources.append(resource)
+            break
+    return resources
+
+
+def _live_error_messages(payload):
+    messages = []
+    for row in payload.get("results") or ():
+        if not isinstance(row, dict):
+            continue
+        result = row.get("result") if isinstance(row.get("result"), dict) else row
+        error = result.get("error")
+        if error:
+            messages.append(str(error))
+    return messages[:5]
 
 
 def compact_summary(payload, tool):
@@ -431,7 +528,7 @@ def report(directory):
         "All cases use the real /chat endpoint, model, Harness and registered Tools.",
         "Verified means matching non-simulated Tool success plus successful provider transport.",
         "It does not mean every advertising type, update field, or conversation workflow has passed.",
-        "Delivery parents remain paused; App Ad ENABLED requires verified paused parents. Updates target only resources created by this test.",
+        "Google App Campaign and Ad Group must remain PAUSED; Google App Ad is ENABLED per v24 and cannot serve under paused parents.",
         "",
         "Transport success alone is not functional success. Updates are also checked against subsequent reads.",
         "| Case | Provider | Tool | Transport Evidence | Update Readback | Agent Status |",
@@ -530,6 +627,14 @@ def resolve_selection_tokens(
     if lookup_context is not None and not isinstance(lookup_context, dict):
         raise ValueError("lookup_context must be an object")
 
+    definitions = {
+        binding.definition.name: binding.definition
+        for binding in create_tool_source(provider).list_bindings()
+    }
+    definition = definitions.get(tool_name)
+    if definition is None:
+        raise ValueError(f"selection lookup requires a registered Tool: {tool_name}")
+
     resolved = {}
     for field, values in field_values.items():
         if (
@@ -539,6 +644,26 @@ def resolve_selection_tokens(
             or not values
         ):
             raise ValueError("selection fields must contain non-empty value lists")
+        field_schema = definition.input_schema.properties.get(field)
+        field_type = field_schema.get("type") if isinstance(field_schema, dict) else None
+        field_types = (
+            {field_type}
+            if isinstance(field_type, str)
+            else set(field_type)
+            if isinstance(field_type, (list, tuple))
+            and all(isinstance(item, str) for item in field_type)
+            else set()
+        )
+        supported_types = {"array", "string", "integer", "number", "boolean", "object"}
+        if (
+            not field_types
+            or not field_types <= supported_types
+            or ("array" in field_types and len(field_types) > 1)
+        ):
+            raise ValueError(f"selection field has no supported Tool schema: {field}")
+        is_array = "array" in field_types
+        if not is_array and len(values) != 1:
+            raise ValueError(f"scalar selection field requires exactly one value: {field}")
         queries = (
             lookup_queries.get(field, values)
             if isinstance(lookup_queries, dict) else values
@@ -592,7 +717,7 @@ def resolve_selection_tokens(
                     f"{provider}.{field} lookup did not return a selection token"
                 )
             tokens.append(token)
-        resolved[field] = tokens
+        resolved[field] = tokens if is_array else tokens[0]
     return resolved
 
 
@@ -620,30 +745,41 @@ def _approved_tools():
     return sorted(names)
 
 
-def build_service_config(accounts, *, read_only=False):
+def build_service_config(accounts, *, read_only=False, live=False):
     if accounts != CONFIRMED_ACCOUNTS:
         raise ValueError("configured accounts differ from the user-confirmed test accounts")
+    if read_only and live:
+        raise ValueError("read-only and live service modes are mutually exclusive")
     return {
-        "execution_mode": "read_only" if read_only else "dry_run",
+        "execution_mode": "read_only" if read_only else "live" if live else "dry_run",
         "execution_timeout_seconds": DEFAULT_EXECUTION_TIMEOUT_SECONDS,
-        "allow_live_writes": not read_only,
+        "allow_live_writes": live,
         "allowed_accounts": {name: list(values) for name, values in accounts.items()},
-        "live_approved_tools": [] if read_only else _approved_tools(),
+        "live_approved_tools": _approved_tools() if live else [],
         "granted_permissions": (
-            ["ads.read", "knowledge.read"] if read_only else [
-                "ads.read", "ads.plan", "ads.write", "ads.reconcile", "knowledge.read",
+            ["ads.read", "knowledge.read", "skills.read", "memory.read"]
+            if read_only
+            else [
+                "ads.read",
+                "ads.plan",
+                "ads.write",
+                "ads.reconcile",
+                "knowledge.read",
+                "skills.read",
+                "memory.read",
             ]
         ),
     }
 
 
-def start(directory, port, *, read_only=False):
+def start(directory, port, *, read_only=False, live=False):
+    load_live_e2e_memory(ROOT)
     load_default_local_env()
     root = Path(directory).resolve()
     root.mkdir(parents=True, exist_ok=True)
     original = yaml.safe_load((ROOT / "agents/ad_agent/config.yaml").read_text()) or {}
     accounts = {p: original["allowed_accounts"][p] for p in PROVIDERS}
-    config = build_service_config(accounts, read_only=read_only)
+    config = build_service_config(accounts, read_only=read_only, live=live)
     config_path = root / "test-config.yaml"
     config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
     private_root = _private_directory(root)
@@ -654,7 +790,7 @@ def start(directory, port, *, read_only=False):
     env = {
         **os.environ,
         "AD_AGENT_API_KEY": key,
-        "AD_AGENT_ENABLE_LIVE": "0" if read_only else "1",
+        "AD_AGENT_ENABLE_LIVE": "1" if live else "0",
         "AD_AGENT_CONFIG_PATH": str(config_path),
         "AD_AGENT_DB_PATH": str(private_root / "test.db"),
         "AD_AGENT_SERVICE_PRINCIPAL": "campaign-e2e",
@@ -793,9 +929,12 @@ class ProviderRecorder:
         self.root = Path(directory)
         self._case_context = ContextVar("provider_recorder_case", default=None)
         owned_path = self.root / "created-resource-ids.json"
-        self.created = (
-            set(json.loads(owned_path.read_text())) if owned_path.is_file() else set()
-        )
+        persisted_ids = json.loads(owned_path.read_text()) if owned_path.is_file() else []
+        self.created = {
+            identifier
+            for value in persisted_ids
+            for identifier in self._resource_identifiers(value)
+        }
         self.paused_ad_groups = set()
         self.paused_asset_groups = set()
         self.paused_campaigns = set()
@@ -843,16 +982,49 @@ class ProviderRecorder:
         if provider == "google-ads":
             self._guard_google(data, path)
         if provider == "tiktok" and "/create/" in path:
-            if path.endswith("/creative/portfolio/create/"):
-                if data.get("creative_portfolio_type") != "CTA":
-                    raise PermissionError("Only non-serving CTA portfolio creation is authorized")
-            elif str(data.get("operation_status") or "").upper() != "DISABLE":
-                raise PermissionError("TikTok creation must explicitly be DISABLE")
+            self._guard_tiktok_creation(data, path)
         if provider == "meta" and re.fullmatch(r"/v[\d.]+/\d+/?", path):
             if path.rstrip("/").rsplit("/", 1)[-1] not in self.created:
                 raise PermissionError("update is not a resource created by this test")
+            self._guard_update_status(provider, data)
         if provider == "tiktok" and "/update/" in path:
             self._guard_tiktok_update(data)
+
+    @staticmethod
+    def _guard_tiktok_creation(data, path):
+        if path.endswith("/creative/portfolio/create/"):
+            if data.get("creative_portfolio_type") != "CTA":
+                raise PermissionError(
+                    "Only non-serving CTA portfolio creation is authorized"
+                )
+            return
+
+        if path.rstrip("/").endswith("/smart_plus/ad/create"):
+            if str(data.get("operation_status") or "").upper() != "DISABLE":
+                raise PermissionError(
+                    "TikTok Smart+ Ad creation must explicitly be DISABLE"
+                )
+            return
+
+        if path.rstrip("/").endswith("/ad/create"):
+            creatives = data.get("creatives")
+            if (
+                not isinstance(creatives, list)
+                or not creatives
+                or any(
+                    not isinstance(creative, dict)
+                    or str(creative.get("operation_status") or "").upper()
+                    != "DISABLE"
+                    for creative in creatives
+                )
+            ):
+                raise PermissionError(
+                    "TikTok Ad creation requires every creative to explicitly be DISABLE"
+                )
+            return
+
+        if str(data.get("operation_status") or "").upper() != "DISABLE":
+            raise PermissionError("TikTok creation must explicitly be DISABLE")
 
     def _guard_google(self, data, path):
         serving_resources = {
@@ -883,6 +1055,22 @@ class ProviderRecorder:
                         "",
                     )
                 label = serving_resources.get(resource)
+                if resource == "assetGroups":
+                    campaign = re.fullmatch(
+                        r"customers/(\d+)/campaigns/(\d+)",
+                        str(create.get("campaign") or ""),
+                    )
+                    customer = re.search(r"/customers/(\d+)/", path)
+                    if (
+                        campaign is None
+                        or customer is None
+                        or campaign.group(1) != customer.group(1)
+                        or campaign.group(2) not in self.created
+                        or campaign.group(2) not in self.paused_campaigns
+                    ):
+                        raise PermissionError(
+                            "Google Asset Group requires a created PAUSED Campaign"
+                        )
                 if resource == "assetGroupListingGroupFilters":
                     parent = str(create.get("assetGroup") or "")
                     match = re.fullmatch(
@@ -909,6 +1097,7 @@ class ProviderRecorder:
                     )
             update = node.get("update")
             if isinstance(update, dict):
+                self._guard_update_status("google-ads", update)
                 resource = update.get("resourceName", "")
                 numeric_ad = resource.rsplit("/", 1)[-1] if "/ads/" in resource else ""
                 owned_ad = bool(numeric_ad) and any(
@@ -922,7 +1111,9 @@ class ProviderRecorder:
 
     def _guard_google_app_ad(self, create, path):
         if str(create.get("status") or "").upper() != "ENABLED":
-            raise PermissionError("Google App Ad requires explicit ENABLED status")
+            raise PermissionError(
+                "Google App Ad creation must explicitly be ENABLED"
+            )
         group = re.fullmatch(
             r"customers/(\d+)/adGroups/(\d+)", str(create.get("adGroup") or ""),
         )
@@ -943,6 +1134,7 @@ class ProviderRecorder:
             )
 
     def _guard_tiktok_update(self, data):
+        self._guard_update_status("tiktok", data)
         fields = (
             "campaign_id",
             "adgroup_id",
@@ -958,6 +1150,17 @@ class ProviderRecorder:
             ids.extend(value if isinstance(value, list) else [value] if value else [])
         if not ids or any(str(item) not in self.created for item in ids):
             raise PermissionError("update is not a resource created by this test")
+
+    @staticmethod
+    def _guard_update_status(provider, data):
+        allowed = {"DISABLE"} if provider == "tiktok" else {"PAUSED"}
+        for node in _walk(data):
+            for field in ("status", "operation_status"):
+                value = node.get(field)
+                if value is not None and str(value).upper() not in allowed:
+                    raise PermissionError(
+                        "test-account updates must keep delivery paused"
+                    )
 
     def send(self, session, request, **kwargs):
         host = urlsplit(request.url).hostname
@@ -1056,10 +1259,26 @@ class ProviderRecorder:
             for field in fields:
                 value = node.get(field)
                 if isinstance(value, (str, int)):
-                    self.created.add(str(value))
+                    self.created.update(self._resource_identifiers(value))
                 elif isinstance(value, list):
-                    self.created.update(str(item) for item in value)
+                    for item in value:
+                        self.created.update(self._resource_identifiers(item))
         _json_write(self.root / "created-resource-ids.json", sorted(self.created))
+
+    @staticmethod
+    def _resource_identifiers(value):
+        identifier = str(value)
+        identifiers = {identifier}
+        parts = identifier.split("/")
+        if (
+            len(parts) == 4
+            and parts[0] == "customers"
+            and parts[1].isdigit()
+            and parts[2]
+            and parts[3]
+        ):
+            identifiers.add(parts[3])
+        return identifiers
 
     def _capture_google_paused_resources(self, document):
         for node in _walk(document):
@@ -1115,13 +1334,20 @@ def serve(directory, port):
 
 def chat(
     directory, provider, tool, params, case_id, write=False, template_id=None,
-    session_id=None, user_input=None,
+    session_id=None, user_input=None, *, live=False,
 ):
     root, state, headers = _load_state(directory)
     account = str(state["accounts"][provider][0])
     effective_session_id = str(
         session_id or f"qa-{provider}-{case_id}"
     )
+    if live and not write:
+        definitions = {
+            binding.definition.name: binding.definition
+            for binding in create_tool_source(provider).list_bindings()
+        }
+        if definitions.get(tool) and definitions[tool].is_write_tool:
+            raise ValueError("write Tools require the explicit --write option")
     tool_params = dict(params)
     blueprint_id = tool_params.pop("_e2e_blueprint_id", None)
     blueprint_version = tool_params.pop("_e2e_blueprint_version", None)
@@ -1135,11 +1361,26 @@ def chat(
     request_text = str(user_input or "").strip() or (
         f"请调用工具 {tool} 一次，使用本请求中的结构化参数。"
     )
+    selected_params = tool_params.get(tool)
+    if not isinstance(selected_params, dict):
+        selected_params = tool_params
+    google_app_enabled_ad = (
+        provider == "google-ads"
+        and tool == "google_create_app_ad"
+        and str(selected_params.get("status") or "").upper() == "ENABLED"
+    )
+    status_guard = (
+        "Google Ads v24 要求本次 App Ad 状态为 ENABLED；只创建这个子级。"
+        "所属 Campaign 与 Ad Group 必须保持 PAUSED，不得创建、启用或更新父级。"
+        "不要把 App Ad 描述为暂停。"
+        if google_app_enabled_ad
+        else "不得启用广告。"
+    )
     body = {
         "user_input": (
             f"{request_text}\n\n这是受控测试。仅使用 {provider} 测试账户 {account}。"
-            f"请只调用工具 {tool} 一次，"
-            "不得调用任何其他 Tool，不得启用广告。工具参数以本请求的结构化 platform_params 为准，"
+            f"请只调用工具 {tool} 一次，不得调用任何其他 Tool。{status_guard}"
+            "工具参数以本请求的结构化 platform_params 为准，"
             "不能额外添加字段（尤其 customer_id、account_id）；账户范围已由请求上下文提供。"
             "selection token 等敏感值只通过结构化参数传递，不得猜测、复述或替换。"
             "账号所有者已授权本轮暂停资源功能测试。需要确认时先调用工具，让平台返回结构化确认凭证，"
@@ -1151,7 +1392,7 @@ def chat(
         "account_id": account,
         "platform_params": {provider: tool_params},
         "tool_allowlist": [tool],
-        "execution_mode": "live" if write else "dry_run",
+        "execution_mode": "live" if write or live else "dry_run",
     }
     if template_id:
         body["creation_template_id"] = str(template_id)
@@ -1202,18 +1443,21 @@ def chat(
         body.update(
             confirmed=True, confirmation_payload=payload["confirmation_payload"]
         )
-        body["user_input"] += (
-            " 已明确确认刚才平台返回的计划：confirmed=true。"
-            "HTTP 外层已携带平台签名的 confirmation_payload，不是豁免门禁。"
-            "请实际再次调用同一工具和原参数，由平台验证审批签名、权限和幂等。"
-            "不要向工具参数添加 confirm/confirmed 字段，不要停留在文字询问确认。"
-        )
         payload = request_phase("confirmed")
     print(json.dumps(compact_summary(payload, tool), ensure_ascii=False))
     return payload
 
 
-def conversation_chat(directory, provider, user_input, case_id, session_id=None):
+def conversation_chat(
+    directory,
+    provider,
+    user_input,
+    case_id,
+    session_id=None,
+    *,
+    live=False,
+    allow_read_tools=True,
+):
     """Test original user text through the model with only registered reads."""
     root, state, headers = _load_state(directory)
     if state.get("accounts") != CONFIRMED_ACCOUNTS or provider not in PROVIDERS:
@@ -1225,12 +1469,16 @@ def conversation_chat(directory, provider, user_input, case_id, session_id=None)
         "user_input": user_input,
         "session_id": session_id or f"qa-conversation-{provider}",
         "account_id": account,
-        "execution_mode": "dry_run",
-        "tool_allowlist": [
-            binding.definition.name
-            for binding in create_tool_source(provider).list_bindings()
-            if not binding.definition.is_write_tool
-        ],
+        "execution_mode": "live" if live else "dry_run",
+        "tool_allowlist": (
+            [
+                binding.definition.name
+                for binding in create_tool_source(provider).list_bindings()
+                if not binding.definition.is_write_tool
+            ]
+            if allow_read_tools
+            else []
+        ),
     }
     started = time.monotonic()
     response = requests.post(
@@ -1268,7 +1516,8 @@ def conversation_chat(directory, provider, user_input, case_id, session_id=None)
 
 def template_chat(
     directory, provider, template_id, params, case_id, *,
-    write=False, session_id=None, user_input=None,
+    write=False, session_id=None, user_input=None, allow_new_hierarchy=False,
+    existing_resources_reconciled=False,
 ):
     """Exercise the selected template without restricting the model to one Tool."""
     root, state, headers = _load_state(directory)
@@ -1288,18 +1537,78 @@ def template_chat(
         or template.get("status") != "active"
     ):
         raise ValueError("template provider/account is outside the confirmed test scope")
+    memory = resolve_template_memory(
+        ROOT,
+        provider=provider,
+        account_id=account,
+        template_id=template_id,
+        api_template=template,
+    )
+    reuse_state = memory["hierarchy_reuse"]
+    print(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "e2e_memory_preflight": {
+                    "template_id": template_id,
+                    "verification_state": memory["verification_state"],
+                    "template_values_sha256": memory["template_values_sha256"],
+                    "known_resource_ids": reuse_state["resource_ids"],
+                    "unresolved_attempt_ids": reuse_state["unresolved_attempt_ids"],
+                    "recovery_plan": memory["recovery_plan"],
+                    "known_findings": [
+                        {
+                            "id": finding["id"],
+                            "status": finding["status"],
+                            "next_action": finding["next_action"],
+                        }
+                        for finding in memory["known_findings"]
+                    ],
+                },
+            },
+            ensure_ascii=False,
+        )
+    )
+    if write:
+        try:
+            require_new_hierarchy_authorization(
+                reuse_state,
+                allow_new_hierarchy=allow_new_hierarchy,
+                existing_resources_reconciled=existing_resources_reconciled,
+                verification_state=memory["verification_state"],
+                known_findings=memory["known_findings"],
+            )
+        except ValueError as error:
+            known_ids = json.dumps(
+                reuse_state.get("resource_ids", {}),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            raise ValueError(
+                f"{error}. Known resource IDs: {known_ids}. See the memory evidence "
+                "refs and resume the missing child; an unresolved write always "
+                "requires read reconciliation"
+            ) from error
     headers = {
         **headers, "X-E2E-Case": case_id,
         "X-E2E-Provider": provider, "X-E2E-Account": account,
     }
-    body = {
-        "user_input": user_input or (
+    if provider == "google-ads" and template_id == "google.test.app":
+        default_user_input = (
+            "使用 google.test.app 内置模板和表单参数创建完整 App Campaign。"
+            "Campaign 与 Ad Group 必须为 PAUSED；App Ad 按 Google Ads v24 要求设为 ENABLED。"
+            "不得启用父级，不得修改模板字段；完成后逐层回读并确认父级仍暂停。"
+            "缺少参数时明确指出；需要确认时返回平台确认计划。"
+        )
+    else:
+        default_user_input = (
             "使用已选内置模板和表单参数创建完整的广告系列，包含模板声明的全部下层级。"
-            "严格按模板声明的各层级状态执行，所有可控制投放的父级保持暂停。"
-            "如模板明确声明子级 ENABLED，只创建该子级，不启用 Campaign 或广告组；"
-            "回复必须如实区分子级状态与整体暂停投放，不得自行转换状态。"
+            "严格按模板声明的各层级状态执行；广告投放层级保持暂停。"
+            "不得启用 Campaign 或广告组；如模板状态与此冲突，先停止并说明，不要执行写入。"
             "不要修改表单参数；缺少参数时明确指出；需要确认时返回平台的确认计划。"
-        ),
+        )
+    body = {
+        "user_input": user_input or default_user_input,
         "session_id": session_id or f"template-{provider}-{case_id}",
         "account_id": account,
         "creation_template_id": template_id,
@@ -1313,9 +1622,44 @@ def template_chat(
         "blueprint_id": template["blueprint_id"],
         "session_id": body["session_id"], "params": params, "phases": [],
         "native_planning": True,
+        "e2e_memory": {
+            "template_key": memory["template_key"],
+            "blueprint_version": memory["blueprint_version"],
+            "template_values_sha256": memory["template_values_sha256"],
+            "verification_state": memory["verification_state"],
+            "template_values_source": (
+                "agents/applications/advertising/contracts/"
+                "builtin_creation_templates.json"
+            ),
+            "remaining_gap": memory.get("remaining_gap"),
+            "known_findings": memory["known_findings"],
+            "latest_live_test_resources": memory.get("latest_live_test_resources"),
+            "known_live_hierarchies": memory["known_live_hierarchies"],
+            "observations": memory["observations"],
+            "hierarchy_reuse": reuse_state,
+            "recovery_plan": memory["recovery_plan"],
+            "new_hierarchy_override": bool(allow_new_hierarchy),
+        },
     }
     payload = {}
+    attempt_id = secrets.token_hex(16)
     for index in range(5):
+        phase_id = f"{attempt_id}:{index}"
+        if write:
+            append_live_e2e_observation(
+                ROOT,
+                event_type="attempt_started",
+                outcome="pending",
+                attempt_id=attempt_id,
+                phase_id=phase_id,
+                phase=index,
+                provider=provider,
+                account_id=account,
+                template_id=template_id,
+                blueprint_version=template["blueprint_version"],
+                template_values_sha256=memory["template_values_sha256"],
+                case_id=case_id,
+            )
         try:
             response = requests.post(
                 state["base_url"] + "/chat", json=body, headers=headers,
@@ -1324,9 +1668,55 @@ def template_chat(
             response.raise_for_status()
             payload = response.json()
         except requests.RequestException as error:
+            if write:
+                append_live_e2e_observation(
+                    ROOT,
+                    event_type="attempt_completed",
+                    outcome="ambiguous",
+                    attempt_id=attempt_id,
+                    phase_id=phase_id,
+                    phase=index,
+                    provider=provider,
+                    account_id=account,
+                    template_id=template_id,
+                    blueprint_version=template["blueprint_version"],
+                    template_values_sha256=memory["template_values_sha256"],
+                    case_id=case_id,
+                    error_messages=[type(error).__name__],
+                )
             evidence["phases"].append({"transport_error": type(error).__name__})
             _json_write(root / "cases" / f"{case_id}.json", evidence)
             raise
+        if write:
+            created_resources = _created_live_resources(payload)
+            if created_resources:
+                outcome = (
+                    "completed"
+                    if payload.get("status") in {"succeeded", "completed"}
+                    else "partial"
+                )
+            elif payload.get("needs_confirmation") or payload.get("needs_input"):
+                outcome = "awaiting_input"
+            elif _live_error_messages(payload):
+                outcome = "failed"
+            else:
+                outcome = "completed"
+            append_live_e2e_observation(
+                ROOT,
+                event_type="attempt_completed",
+                outcome=outcome,
+                attempt_id=attempt_id,
+                phase_id=phase_id,
+                phase=index,
+                provider=provider,
+                account_id=account,
+                template_id=template_id,
+                blueprint_version=template["blueprint_version"],
+                template_values_sha256=memory["template_values_sha256"],
+                case_id=case_id,
+                created_resources=created_resources,
+                error_messages=_live_error_messages(payload),
+            )
         evidence["phases"].append({"phase": index, "response": payload})
         evidence["response"] = payload
         _json_write(root / "cases" / f"{case_id}.json", evidence)
@@ -1335,10 +1725,6 @@ def template_chat(
             break
         body["confirmed"] = True
         body["confirmation_payload"] = approval
-        body["user_input"] = (
-            "确认刚才平台返回的创建计划，包含模板明确声明的各层级状态。"
-            "继续完成全部层级，复用已创建的父资源，不重复创建，不启用父级或投放。"
-        )
     print(json.dumps({
         "case_id": case_id, "status": payload.get("status"),
         "phases": len(evidence["phases"]),
@@ -1365,9 +1751,29 @@ def main():
     parser.add_argument("--case-id", default="probe")
     parser.add_argument("--write", action="store_true")
     parser.add_argument("--read-only", action="store_true")
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="explicitly enable live mode for an allowlisted test-account service",
+    )
+    parser.add_argument(
+        "--no-tools",
+        action="store_true",
+        help="disable Tool execution for knowledge, Skill, or Memory dialogue probes",
+    )
     parser.add_argument("--blueprint-id")
     parser.add_argument("--blueprint-version")
     parser.add_argument("--template-id")
+    parser.add_argument(
+        "--allow-new-hierarchy",
+        action="store_true",
+        help="explicitly authorize another paused hierarchy after checking the memory ledger",
+    )
+    parser.add_argument(
+        "--confirm-resource-readback",
+        action="store_true",
+        help="confirm that every known hierarchy resource was read back before creating another",
+    )
     parser.add_argument("--session-id")
     parser.add_argument(
         "--user-input",
@@ -1375,7 +1781,9 @@ def main():
     )
     args = parser.parse_args()
     if args.command == "start":
-        start(args.directory, args.port, read_only=args.read_only)
+        start(
+            args.directory, args.port, read_only=args.read_only, live=args.live
+        )
     elif args.command == "serve":
         serve(args.directory, args.port)
     elif args.command == "chat":
@@ -1394,16 +1802,20 @@ def main():
             args.template_id,
             args.session_id,
             args.user_input,
+            live=args.live,
         )
     elif args.command == "conversation":
         conversation_chat(
-            args.directory, args.provider, args.user_input, args.case_id, args.session_id,
+            args.directory, args.provider, args.user_input, args.case_id,
+            args.session_id, live=args.live, allow_read_tools=not args.no_tools,
         )
     elif args.command == "template":
         template_chat(
             args.directory, args.provider, args.template_id,
             json.loads(args.params), args.case_id, write=args.write,
             session_id=args.session_id, user_input=args.user_input,
+            allow_new_hierarchy=args.allow_new_hierarchy,
+            existing_resources_reconciled=args.confirm_resource_readback,
         )
     elif args.command == "report":
         report(args.directory)

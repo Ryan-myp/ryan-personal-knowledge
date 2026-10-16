@@ -24,6 +24,7 @@ from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 from agents.tools.advertising.providers.dv360 import create_dv360_tool_source
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition, AccountWhitelistValidator
+from agents.applications.advertising.run.ad_runtime_policy import AdvertisingRuntimePolicy
 from agents.agent_harness.skills.contract import SkillContract
 from agents.tools.advertising.providers.source_factory import create_tool_source, discover_tool_source_factory
 from agents.tools.advertising.clients.factory import create_platform_client
@@ -944,6 +945,50 @@ def test_runtime_resource_outputs_use_tool_metadata_not_tool_name():
         "success": True,
         "data": {"campaign_id": "c1"},
     }]) == []
+
+
+def test_dry_run_parent_resource_id_matches_declared_child_schema():
+    registry = SimpleToolRegistry()
+    parent = ToolDefinition(
+        name="provider_create_campaign",
+        skill="provider-skill",
+        namespace="new-network",
+        description="Create a campaign",
+        input_schema=ToolSchema(properties={"name": {"type": "string"}}),
+        action="create",
+        resource_type="campaign",
+        resource_id_field="campaign_id",
+        effect_class=ToolEffect.WRITE,
+    )
+    child = ToolDefinition(
+        name="provider_create_ad_group",
+        skill="provider-skill",
+        namespace="new-network",
+        description="Create an ad group",
+        input_schema=ToolSchema(properties={
+            "campaign_id": {
+                "type": "string",
+                "pattern": "^[0-9]+$",
+            },
+        }),
+        action="create",
+        resource_type="ad_group",
+        parent_resource_type="campaign",
+        parent_resource_id_field="campaign_id",
+        resource_id_field="ad_group_id",
+        effect_class=ToolEffect.WRITE,
+    )
+    registry.register(parent, lambda _ctx, value: value)
+    registry.register(child, lambda _ctx, value: value)
+    policy = AdvertisingRuntimePolicy(
+        type("Runtime", (), {"registry": registry})()
+    )
+
+    result = policy.simulate_write(parent, {"name": "demo"}, "new-network")
+
+    assert result.success is True
+    assert result.data["campaign_id"].isascii()
+    assert result.data["campaign_id"].isdecimal()
 
 
 def test_runtime_input_compatibility_comes_from_schema_or_generic_semantics():

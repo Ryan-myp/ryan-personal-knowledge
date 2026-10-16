@@ -253,11 +253,17 @@ class AdCreationContractServicesMixin:
                 "当前查询还缺少必要的上级条件：" + "、".join(missing_source)
             )
         result = self.tool_executor.execute(session.ctx, source_tool, input_data)
+        selected_value = context_values.get(field)
+        if selected_value is None:
+            selected_value = self.input_builder.parameter_selection.value_at_path(
+                context_values, field,
+            )
         result = self.input_builder.parameter_selection.decorate_lookup_result(
             definition, result, session.ctx, actual_platform,
             target_tool_name=tool_name,
             target_field=field,
             query=query if not query_field else None,
+            selected_value=selected_value,
         )
         result = self.security.enforce_result_limit(result, definition)
         if not result.success:

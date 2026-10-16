@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.3 - 2026-10-16
+
+- Google App 模板固定 Campaign/Ad Group 为 PAUSED、App Ad 为 ENABLED；父级暂停是阻断投放的安全边界。
+- 明确 v24 拒绝 PAUSED App Ad，不再把该 Provider 限制误报成完整创建阻塞。
+
+## 2.0.2 - 2026-10-16
+
+- 记录测试账号 App Campaign 的全层级暂停限制及 Provider 拒绝证据。
+- 明确历史 ENABLED App Ad 不能作为全层级暂停创建通过案例。
+- 加入测试账号 E2E 长期记忆的检索、续跑和证据更新流程。
+
 ## 2.0.1 - 2026-10-14
 
 - App 创意变更明确使用新建与绑定，不原地更新旧广告。

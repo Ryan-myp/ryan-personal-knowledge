@@ -1,5 +1,5 @@
 {
-  "digest": "f91f4ba2c80bc5fa73def71b6e01db85b93ea6822954c3ca21e12127cee9ec28",
+  "digest": "ea70252a165acd396a9504165fe99b4912fd2b91b18fcc84ad27d22e1befef03",
   "format_version": 1,
   "platforms": {
     "dv360": {
@@ -2614,7 +2614,7 @@
       ]
     },
     "google-ads": {
-      "digest": "8912b9aa888b161d9e06e01910d8614878b107d86f2cd889ed624aef6b06395f",
+      "digest": "5e1e71a76319522847a4be8b995c613c6bb7cbb6dee9b7c7ac8e7f5a620e6df9",
       "tool_count": 106,
       "tools": [
         {
@@ -3149,6 +3149,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -3429,9 +3430,9 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "97680023370336b51a00be62a4885fe3ab07e810ab801162b7f75b3cb57245fa",
-          "contract_version": "1.6.0",
-          "description": "新建 Google App Ad 并绑定到 Ad Group，不更新旧 Ad 的创意字段。必须显式确认 Ad 状态 ENABLED；创建前实时核验所属 Campaign 和 Ad Group 均为 PAUSED。父级状态未知或启用时拒绝写入，不得将 Ad 实际状态描述为 PAUSED，也不得自动启用父级。",
+          "contract_hash": "bd7ec7b547b40e6a5d008db21b00723e813326de8e9f41f70d6ca19198214183",
+          "contract_version": "1.7.0",
+          "description": "新建 Google App Ad 并绑定到 Ad Group，不更新旧 Ad 的创意字段。Google Ads v24 要求此类 App Ad 使用 ENABLED；创建前实时核验所属 Campaign 和 Ad Group 均为 PAUSED。父级状态未知或启用时拒绝写入，不得自动启用父级。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -3601,7 +3602,7 @@
                 "type": "string"
               },
               "status": {
-                "description": "Explicit ENABLED App Ad; its Ad Group and Campaign must both remain PAUSED",
+                "description": "Google v24 requires ENABLED for this App Ad type; its Ad Group and Campaign must both remain PAUSED",
                 "enum": [
                   "ENABLED"
                 ],
@@ -3747,6 +3748,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Numeric parent App Campaign ID returned by the creation Tool",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -4042,6 +4044,7 @@
               },
               "campaign_id": {
                 "description": "Parent Performance Max Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -6165,6 +6168,7 @@
               },
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -6393,6 +6397,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -8983,6 +8988,7 @@
               },
               "campaign_id": {
                 "description": "Parent Performance Max Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -10688,6 +10694,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -11982,6 +11989,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -12078,6 +12086,7 @@
               },
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -12301,6 +12310,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -13060,6 +13070,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -13138,6 +13149,7 @@
                 "type": "array"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -13332,6 +13344,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -13594,6 +13607,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -13779,6 +13793,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -14529,6 +14544,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -14628,6 +14644,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -14946,6 +14963,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -15186,6 +15204,7 @@
               },
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -15403,6 +15422,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -15509,6 +15529,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -15592,6 +15613,7 @@
             "properties": {
               "campaign_id": {
                 "description": "可选：精确查询一个 Campaign ID，适用于父资源选择",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -15835,6 +15857,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -16096,6 +16119,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -16353,6 +16377,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -16500,6 +16525,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -16847,6 +16873,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -17000,6 +17027,7 @@
                 "type": "string"
               },
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -17533,6 +17561,7 @@
             "conditional_rules": [],
             "properties": {
               "campaign_id": {
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "selection_label_fields": [
@@ -17805,6 +17834,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -17919,6 +17949,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -18225,6 +18256,7 @@
             "properties": {
               "campaign_id": {
                 "description": "Campaign ID",
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "google_list_campaigns",
                 "minLength": 1,
@@ -18967,7 +18999,7 @@
       ]
     },
     "meta": {
-      "digest": "ff3a74805354d22b3ad657efb1feb53571feae1485288d03233761b11bd705d2",
+      "digest": "69fa928f7ecceaa29b8c9702881d4e0c7f6b0f77b606a1c7a68b4bc31320cee4",
       "tool_count": 82,
       "tools": [
         {
@@ -26821,7 +26853,11 @@
             "type": "object"
           },
           "integration_api_version": "v25.0",
-          "intent_aliases": [],
+          "intent_aliases": [
+            "Ad 列表",
+            "广告列表",
+            "Meta ads list"
+          ],
           "intent_types": [
             "list_ads"
           ],
@@ -30727,7 +30763,7 @@
       ]
     },
     "tiktok": {
-      "digest": "30189132a83812712ea4014d235afb51fe45c889f43770abd15379fe72d57e29",
+      "digest": "ccf5a8ef37404c902647411a4c3682f152fe62620ec8e6b67265a800d639daa7",
       "tool_count": 89,
       "tools": [
         {
@@ -33322,8 +33358,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7d3927579e91be17bed22e9082009b4f370d0e82a12e43d6d03e1ced117ec7f6",
-          "contract_version": "1.5.0",
+          "contract_hash": "56620667f868efd1ad622f23bd6f7b3c13374c528485202f3cebbd0877f2336c",
+          "contract_version": "1.6.0",
           "description": "创建 TikTok App Promotion 广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -33382,10 +33418,15 @@
                 ],
                 "type": "string"
               },
+              "app_name": {
+                "description": "App name displayed in the App Promotion creative; must match the selected app",
+                "minLength": 1,
+                "type": "string"
+              },
               "app_promotion_type": {
                 "description": "App acquisition or retargeting mode",
                 "enum": [
-                  "APP_ACQUISITION",
+                  "APP_INSTALL",
                   "APP_RETARGETING"
                 ],
                 "type": "string"
@@ -33408,6 +33449,12 @@
                   "campaign_id",
                   "id"
                 ],
+                "type": "string"
+              },
+              "click_tracking_url": {
+                "description": "MMP-provided click tracking URL; never substitute a guessed URL",
+                "maxLength": 2048,
+                "minLength": 1,
                 "type": "string"
               },
               "conversion_id": {
@@ -33554,6 +33601,12 @@
                     "CAROUSEL"
                   ]
                 }
+              },
+              "impression_tracking_url": {
+                "description": "MMP-provided impression tracking URL; never substitute a guessed URL",
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
               },
               "landing_page_url": {
                 "description": "Optional app store fallback URL",
@@ -33715,6 +33768,7 @@
               "adgroup_id",
               "name",
               "app_id",
+              "app_name",
               "promotion_type",
               "operating_systems"
             ],
@@ -33921,7 +33975,7 @@
                 "app_promotion_type": {
                   "in": [
                     "APP_RETARGETING",
-                    "APP_ACQUISITION"
+                    "APP_INSTALL"
                   ]
                 },
                 "objective_type": {
@@ -33936,7 +33990,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f3568a069b0ef6600599545648f139a4d8df6325a4c62176a6117ec86352d12f",
+          "contract_hash": "669ef382d1e91341c187738daea04e564e6b973bc50aa5b208dbdd0f9a23721f",
           "contract_version": "1.5.0",
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
@@ -33984,13 +34038,15 @@
               "app_promotion_type": {
                 "description": "App promotion mode; only for app campaigns",
                 "enum": [
-                  "APP_ACQUISITION",
+                  "APP_INSTALL",
                   "APP_RETARGETING"
                 ],
                 "option_aliases": {
-                  "APP_ACQUISITION": [
+                  "APP_INSTALL": [
+                    "app install",
                     "app acquisition",
                     "app user acquisition",
+                    "应用安装",
                     "应用获客",
                     "应用拉新"
                   ],
@@ -42753,7 +42809,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "1bfb92c3f01e21c982a4280f1727b878d52ffba847c64f7e31b1a1fc2777f30e",
+          "contract_hash": "c4423513d345f649d2c8b0337ff179871217fabd6a1fa7e8a123c441328b80df",
           "contract_version": "1.3.0",
           "description": "查询 TikTok 广告账户下的可用广告身份。",
           "effect_class": "read",
@@ -42793,7 +42849,7 @@
                 "type": "string"
               },
               "identity_type": {
-                "description": "Identity type filter",
+                "description": "Required identity type filter",
                 "enum": [
                   "CUSTOMIZED_USER",
                   "AUTH_CODE",
@@ -42815,10 +42871,12 @@
               }
             },
             "required": [
-              "account_id"
+              "account_id",
+              "identity_type"
             ],
             "requires": [
-              "account_id"
+              "account_id",
+              "identity_type"
             ],
             "requires_any_of": [],
             "type": "object"
@@ -43358,7 +43416,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "00026db759f9707c3b69968424032421aa82742302a866f9bcb5cc96f9bda9f5",
+          "contract_hash": "f3a82dc0351995f802468871eaacbe4f7d800069783483e0efe53aef43a61ba3",
           "contract_version": "1.3.0",
           "description": "按投放位置、广告目标和业务条件查询 TikTok 官方可用地域。",
           "effect_class": "read",
@@ -43382,6 +43440,7 @@
                 "type": "string"
               },
               "level_range": {
+                "default": "TO_COUNTRY",
                 "enum": [
                   "ALL",
                   "TO_COUNTRY",
@@ -45552,7 +45611,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ff2947a7f4cdd3243fc79df47a5430fd27e582618880103d9aba76dd4a76ce24",
+          "contract_hash": "ceaa1f33545e37bd305f3bf3817cd2a4c758c7e5e29cb49a418d6ff50f92fbce",
           "contract_version": "1.5.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -46227,7 +46286,9 @@
             "requires_any_of": [
               [
                 "location_ids",
-                "saved_audience_id"
+                "saved_audience_id",
+                "targeting_spec.location_ids",
+                "targeting_spec.saved_audience_id"
               ]
             ],
             "type": "object"
@@ -46613,7 +46674,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "0073a9035a89804f507ceb6d82cd9dea9f733bea432ab7c34eabae55dce18919",
           "contract_version": "2",
-          "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。",
+          "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -47244,7 +47305,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "914c1c8ed6aae3dc04cab5d0fdf7fcfac736b19684fb0cafce8f2a3d84f31503",
           "contract_version": "2",
-          "description": "更新 TikTok Upgraded Smart+ ad_group；仅允许在测试账号和确认后执行。",
+          "description": "更新 TikTok Upgraded Smart+ ad_group；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -47580,7 +47641,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "de480bad841c32b2d19496a7ed816846475e019e5d69cfad72d9212ffb36fe42",
           "contract_version": "2",
-          "description": "更新 TikTok Upgraded Smart+ campaign；仅允许在测试账号和确认后执行。",
+          "description": "更新 TikTok Upgraded Smart+ campaign；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {

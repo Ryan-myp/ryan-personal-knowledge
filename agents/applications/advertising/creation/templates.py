@@ -76,6 +76,18 @@ def load_builtin_template_definitions(path: Optional[Path] = None) -> list[dict[
             raise CreationTemplateError(f"内置模板 {key} 的 values 必须是对象")
         definition["key"] = key
         definition["values"] = dict(values)
+        live_create_supported = definition.get("live_create_supported", True)
+        if not isinstance(live_create_supported, bool):
+            raise CreationTemplateError(
+                f"内置模板 {key} 的 live_create_supported 必须是布尔值"
+            )
+        definition["live_create_supported"] = live_create_supported
+        definition["live_create_block_reason"] = _text(
+            definition.get("live_create_block_reason"),
+            f"内置模板 {key} 的 live_create_block_reason",
+            500,
+            required=not live_create_supported,
+        )
         definition["tags"] = _tags(definition.get("tags", []))
         definition["required_inputs"] = [
             _text(value, f"内置模板 {key} 的 required_inputs", 200)
@@ -309,6 +321,10 @@ class CreationTemplateManager:
             "catalog_key": key,
             "verification_status": str(definition.get("verification_status") or "dry_run_only"),
             "verified_scope": str(definition.get("verified_scope") or ""),
+            "live_create_supported": definition.get("live_create_supported", True),
+            "live_create_block_reason": str(
+                definition.get("live_create_block_reason") or ""
+            ),
             "required_inputs": list(definition.get("required_inputs") or []),
             "required_input_fields": list(
                 definition.get("required_input_fields") or []

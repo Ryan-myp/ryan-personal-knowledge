@@ -1,0 +1,1035 @@
+{
+  "schema_version": "1.0.0",
+  "updated_at": "2026-10-16",
+  "purpose": "Versioned regression memory for test-account live campaign creation, update, and readback. Template values are the parameter source of truth; this ledger locks each template value set by SHA-256 and records evidence without duplicating account data.",
+  "scope": {
+    "providers": {
+      "google-ads": ["PERFORMANCE_MAX", "SHOPPING", "APP"],
+      "meta": ["TRAFFIC", "CATALOG_SALES", "CONVERSION", "APP_PROMOTION"],
+      "tiktok": ["TRAFFIC", "PRODUCT_SALES", "APP_PROMOTION"]
+    },
+    "test_accounts": {
+      "google-ads": "9055507554",
+      "meta": "2806375919473667",
+      "tiktok": "7397068114548195329"
+    },
+    "excluded": [
+      {
+        "provider": "tiktok",
+        "campaign_type": "LEAD_GENERATION",
+        "reason": "User explicitly deferred TikTok Lead for this test pass."
+      }
+    ]
+  },
+  "safety": {
+    "test_accounts_only": true,
+    "dry_run_is_not_live_evidence": true,
+    "new_campaign_hierarchy_must_remain_paused": true,
+    "provider_status": {
+      "google-ads": "PAUSED",
+      "meta": "PAUSED",
+      "tiktok_smart_plus": "DISABLE",
+      "tiktok_legacy_app": 0
+    },
+    "credentials_or_selection_tokens_included": false,
+    "example_com_mmp_urls_are_test_only": true
+  },
+  "campaign_types": [
+    {
+      "provider": "google-ads",
+      "campaign_type": "PERFORMANCE_MAX",
+      "template_key": "google.test.performance-max",
+      "blueprint_id": "google-ads.performance_max",
+      "blueprint_version": "1.1.0",
+      "template_values_sha256": "6ae817c92c71c27830490c79a6a9c168ac5dfa62ec569478b792d5fc739d3268",
+      "test_account": "9055507554",
+      "verification_state": "live_verified",
+      "last_verified_at": "2026-10-15",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-pmax-template-create.json",
+          "resource_ids": {
+            "campaign": "24360669113"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED"
+          }
+        },
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-pmax-template-create-fixed.json",
+          "resource_ids": {
+            "campaign": "24366655138",
+            "asset_group": "6760848552",
+            "listing_group_filter": "15465692502"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "asset_group": "PAUSED"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.advertising_channel_type",
+        "campaign.bidding_strategy",
+        "campaign.status",
+        "asset_group.final_urls",
+        "asset_group.headlines",
+        "asset_group.images",
+        "asset_group.logos",
+        "asset_group.status",
+        "listing_group_filter.filter_type",
+        "listing_group_filter.listing_source"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "asset_group.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign": "live_pass",
+        "asset_group": "live_pass",
+        "creative_assets": "live_pass",
+        "listing_group_filter": "live_partial"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "tracked_live_evidence_record",
+          "case_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#google-ads/PERFORMANCE_MAX"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261015-run1/cases/google-pmax-live-create.json"
+        }
+      ],
+      "remaining_gap": "Repeat the complete current-template chain through /chat, including listing-group filter readback and update evidence, before labeling the current template fully verified."
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "SHOPPING",
+      "template_key": "google.test.shopping",
+      "blueprint_id": "google-ads.shopping",
+      "blueprint_version": "1.1.0",
+      "template_values_sha256": "0d210adf8599889e17a410b72e128749cce90ec85daa5e3333b110c7ee66b986",
+      "test_account": "9055507554",
+      "verification_state": "partial_live",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": [
+            "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-shopping-template-create.json",
+            "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-shopping-ad-group-create.json",
+            "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-shopping-product-group-create.json",
+            "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-shopping-ad-create.json"
+          ],
+          "resource_ids": {
+            "campaign": "24366665002",
+            "ad_group": "204896939007",
+            "product_group": "293946777986",
+            "ad": "204896939007~828195964983"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_group": "PAUSED",
+            "product_group": "not_verified",
+            "ad": "not_verified"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.shopping_setting.merchant_id",
+        "campaign.shopping_setting.campaign_priority",
+        "campaign.shopping_setting.enable_local",
+        "campaign.status",
+        "ad_group.type",
+        "ad_group.cpc_bid_micros",
+        "ad_group.status",
+        "product_group.partition_type",
+        "product_group.product_group_type",
+        "product_group.cpc_bid_micros",
+        "product_group.status",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_group.status": "PAUSED",
+        "product_group.status": "PAUSED",
+        "ad.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign": "live_pass",
+        "ad_group": "live_pass",
+        "product_group_create_and_read": "live_pass",
+        "product_group_update": "provider_rejected",
+        "product_ad": "live_partial"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "tracked_live_evidence_record",
+          "case_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#google-ads/SHOPPING"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run1/cases/google-live-shopping-product-group-list-readback.json"
+        }
+      ],
+      "remaining_gap": "The tested Product Group CPC update was rejected by the Provider. Preserve the exact rejection and do not report all-level update coverage as passing until the supported update fields are established."
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "APP",
+      "template_key": "google.test.app",
+      "blueprint_id": "google-ads.app",
+      "blueprint_version": "1.4.0",
+      "template_values_sha256": "f8d617e398fdf88605ac21f53d3105aebc65c296b65dc248dd9c7fa8668b5af0",
+      "historical_template_locks": [
+        {
+          "blueprint_version": "1.3.0",
+          "template_values_sha256": "d4ba426fad0ed5c696bd92ba2506c00202019f3c267b100163d640aacb5c0937",
+          "evidence_refs": [
+            "outputs/full-agent-e2e-20261016-live-run3/cases/google-app-ad-create-child-20261016-r5.json"
+          ]
+        }
+      ],
+      "test_account": "9055507554",
+      "verification_state": "partial_live",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#google-ads/APP",
+          "resource_ids": {
+            "campaign": "24226802801",
+            "ad_group": "199870458893",
+            "ad": "199870458~823804628628"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_group": "PAUSED",
+            "ad": "ENABLED"
+          },
+          "resume_safe": false
+        },
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/google-live-app-readback-run4.json",
+          "resource_ids": {
+            "campaign": "24366769615",
+            "ad_group": "204899076647"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_group": "PAUSED"
+          },
+          "resume_safe": false
+        }
+      ],
+      "critical_fields": [
+        "campaign.app_campaign_setting",
+        "campaign.bidding_strategy",
+        "campaign.selective_optimization",
+        "campaign.target_cpa_micros",
+        "campaign.status",
+        "ad_group.status",
+        "ad.headlines",
+        "ad.descriptions",
+        "ad.images",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_group.status": "PAUSED",
+        "ad.status": "ENABLED"
+      },
+      "coverage": {
+        "campaign": "live_pass",
+        "ad_group": "live_pass",
+        "app_ad_create_paused": "provider_rejected",
+        "app_ad_create_and_readback": "not_run"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "tracked_live_evidence_record",
+          "case_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#google-ads/APP"
+        },
+        {
+          "evidence_level": "live_chat_no_provider_effect",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run5/cases/google-app-parent-campaign-before-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/google-live-app-readback-run4.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/google-app-ad-create-child-20261016-r5.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/google-live-app-updates-run4.json"
+        }
+      ],
+      "remaining_gap": "Campaign 24366769615 and Ad Group 204899076647 were previously read back PAUSED. On 2026-10-16, current live revalidation returned HTTP 401 then 403 `The caller does not have permission`; no write was sent. Restore Google test-account access, re-read both parents as PAUSED, then create only the missing App Ad with status ENABLED and verify by exact get and list."
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "TRAFFIC",
+      "template_key": "meta.test.traffic",
+      "blueprint_id": "meta.traffic_link",
+      "blueprint_version": "1.2.0",
+      "template_values_sha256": "990ce4e8f6063521939c7176fb37decd3fa3fab8e28d3ecbf017264b3b0de0fa",
+      "test_account": "2806375919473667",
+      "verification_state": "live_verified",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-traffic-template-create-20261016.json",
+          "resource_ids": {
+            "campaign": "120251918011200251",
+            "ad_set": "120251918013540251",
+            "ad": "120251918014470251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.objective",
+        "campaign.status",
+        "ad_set.optimization_goal",
+        "ad_set.targeting",
+        "ad_set.status",
+        "ad.page_id",
+        "ad.image_hash",
+        "ad.link",
+        "ad.call_to_action_type",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_set.status": "PAUSED",
+        "ad.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign_create_update_read": "live_pass",
+        "ad_set_create_update_read": "live_pass",
+        "ad_create_update_read": "live_pass",
+        "creative_read": "live_pass"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-traffic-template-create-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-traffic-campaign-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-traffic-adset-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-traffic-ad-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-traffic-creative-read-20261016.json"
+        }
+      ]
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "CATALOG_SALES",
+      "template_key": "meta.test.catalog-sales",
+      "blueprint_id": "meta.catalog_sales",
+      "blueprint_version": "1.1.0",
+      "template_values_sha256": "f246a2794f5047d319258562564c82d6ea456c6e256d51b0237e0b618b9a557e",
+      "test_account": "2806375919473667",
+      "verification_state": "live_verified",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-catalog-template-create-20261016.json",
+          "resource_ids": {
+            "campaign": "120251918078880251",
+            "ad_set": "120251918080730251",
+            "ad": "120251918084610251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.objective",
+        "campaign.catalog_id",
+        "campaign.status",
+        "ad_set.product_set_id",
+        "ad_set.promoted_object",
+        "ad_set.status",
+        "ad.product_set_id",
+        "ad.call_to_action_type",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_set.status": "PAUSED",
+        "ad.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign_create_update_read": "live_pass",
+        "ad_set_create_update_read": "live_pass",
+        "ad_create_update_read": "live_pass"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-catalog-template-create-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-catalog-campaign-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-catalog-adset-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-catalog-ad-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-catalog-campaign-readback-20261016.json"
+        }
+      ]
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "CONVERSION",
+      "template_key": "meta.test.conversion",
+      "blueprint_id": "meta.conversion_link",
+      "blueprint_version": "1.1.0",
+      "template_values_sha256": "f9c6b3f569e13204525dbfdcd55f9564aa0ad6146e283fcea62731c61d03141c",
+      "test_account": "2806375919473667",
+      "verification_state": "live_verified",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-conversion-template-create-20261016.json",
+          "resource_ids": {
+            "campaign": "120251918088900251",
+            "ad_set": "120251918090380251",
+            "ad": "120251918092130251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.objective",
+        "campaign.status",
+        "ad_set.optimization_goal",
+        "ad_set.promoted_object",
+        "ad_set.targeting",
+        "ad_set.status",
+        "ad.page_id",
+        "ad.image_hash",
+        "ad.link",
+        "ad.call_to_action_type",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_set.status": "PAUSED",
+        "ad.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign_create_update_read": "live_pass",
+        "ad_set_create_update_read": "live_pass",
+        "ad_create_update_read": "live_pass"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-conversion-template-create-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-conversion-campaign-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-conversion-adset-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-conversion-ad-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-conversion-ad-readback-20261016.json"
+        }
+      ]
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "APP_PROMOTION",
+      "template_key": "meta.test.app-promotion",
+      "blueprint_id": "meta.app_promotion",
+      "blueprint_version": "1.0.0",
+      "template_values_sha256": "4fa19d96cb50717f1655ebe4c0a9c38ab57e912bf69f51faee67ed1000118e8f",
+      "test_account": "2806375919473667",
+      "verification_state": "partial_live",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": [
+            "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-template-create-20261016.json",
+            "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-adset-create-corrected-20261016.json",
+            "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-ad-create-20261016.json"
+          ],
+          "resource_ids": {
+            "campaign": "120251918098560251",
+            "ad_set": "120251918116600251",
+            "ad": "120251918121760251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "not_verified"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.objective",
+        "campaign.status",
+        "ad_set.optimization_goal",
+        "ad_set.promoted_object.application_id",
+        "ad_set.promoted_object.object_store_url",
+        "ad_set.status",
+        "ad.application_id",
+        "ad.object_store_url",
+        "ad.image_hash",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_set.status": "PAUSED",
+        "ad.status": "PAUSED"
+      },
+      "coverage": {
+        "template_campaign_create": "live_pass",
+        "ad_set_create_update_read": "live_pass",
+        "ad_create_update_read": "live_pass",
+        "complete_template_chain": "partial"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-template-create-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-adset-create-corrected-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-ad-create-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-ad-readback-20261016.json"
+        }
+      ],
+      "remaining_gap": "Resources were created and exercised through real Tools, but the native App template chain stopped at local argument resolution after Campaign creation. Determine and regression-test the actual ValueError path before calling the template flow complete."
+    },
+    {
+      "provider": "tiktok",
+      "campaign_type": "TRAFFIC",
+      "template_key": "tiktok.test.traffic",
+      "blueprint_id": "tiktok.traffic_video",
+      "blueprint_version": "3.3.0",
+      "template_values_sha256": "1a226772ad23bc219815f08754d3948b457ad0178c73a7d2d296289766b1bff2",
+      "test_account": "7397068114548195329",
+      "verification_state": "live_verified",
+      "last_verified_at": "2026-10-16",
+      "creation_status": "DISABLE",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-template-20261016.json",
+          "resource_ids": {
+            "campaign": "1879182108006450",
+            "ad_group": "1879182124055009",
+            "ad": "1879183742331441",
+            "creative": "1879183744241697"
+          },
+          "delivery_statuses": {
+            "campaign": "DISABLE",
+            "ad_group": "DISABLE",
+            "ad": "DISABLE",
+            "creative": "ENABLE"
+          }
+        }
+      ],
+      "latest_live_test_resources": {
+        "account_id": "7397068114548195329",
+        "campaign_id": "1879182108006450",
+        "ad_group_id": "1879182124055009",
+        "ad_id": "1879183742331441",
+        "smart_plus_creative_id": "1879183744241697",
+        "delivery_status": "DISABLE",
+        "resume_policy": "Use these existing resources for update and query regression. Do not recreate the hierarchy unless the caller explicitly authorizes --allow-new-hierarchy."
+      },
+      "critical_fields": [
+        "campaign.objective_type",
+        "campaign.operation_status",
+        "ad_group.location_ids",
+        "ad_group.placements",
+        "ad_group.operation_status",
+        "ad.identity_type",
+        "ad.identity_id",
+        "ad.video_id",
+        "ad.image_web_uris",
+        "ad.call_to_action_id",
+        "ad.landing_page_url",
+        "ad.operation_status"
+      ],
+      "expected_status_values": {
+        "campaign.operation_status": "DISABLE",
+        "ad_group.operation_status": "DISABLE",
+        "ad.operation_status": "DISABLE"
+      },
+      "coverage": {
+        "campaign_create_update_read": "live_pass",
+        "ad_group_create_update_read": "live_pass",
+        "ad_create_update_read": "live_pass",
+        "ad_list_after_update": "live_pass",
+        "smart_plus_ad_creative_id_and_status_normalization": "live_pass"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-template-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-campaign-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-create-child-resume-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-adgroup-update-recovery-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-adgroup-read-after-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-read-after-update-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ads-list-final-20261016.json"
+        }
+      ]
+    },
+    {
+      "provider": "tiktok",
+      "campaign_type": "PRODUCT_SALES",
+      "template_key": "tiktok.test.sales",
+      "blueprint_id": "tiktok.product_sales_video",
+      "blueprint_version": "2.3.0",
+      "template_values_sha256": "484852b1218b9a890c18384786511d627f8590b667779ec416115ebb1be92e72",
+      "test_account": "7397068114548195329",
+      "verification_state": "partial_live",
+      "last_verified_at": "2026-09-09",
+      "creation_status": "DISABLE",
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#tiktok/PRODUCT_SALES",
+          "resource_ids": {
+            "campaign": "1875745928289778"
+          },
+          "delivery_statuses": {
+            "campaign": "DISABLE"
+          }
+        }
+      ],
+      "critical_fields": [
+        "campaign.objective_type",
+        "campaign.catalog_enabled",
+        "campaign.catalog_type",
+        "campaign.operation_status",
+        "ad_group.catalog_id",
+        "ad_group.product_source",
+        "ad_group.optimization_goal",
+        "ad_group.optimization_event",
+        "ad_group.location_ids",
+        "ad_group.operation_status",
+        "ad.video_id",
+        "ad.image_web_uris",
+        "ad.operation_status"
+      ],
+      "expected_status_values": {
+        "campaign.operation_status": "DISABLE",
+        "ad_group.operation_status": "DISABLE",
+        "ad.operation_status": "DISABLE"
+      },
+      "coverage": {
+        "campaign_create": "live_pass",
+        "ad_group_create": "provider_rejected",
+        "ad_create": "not_run"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "tracked_live_evidence_record",
+          "case_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#tiktok/PRODUCT_SALES"
+        }
+      ],
+      "remaining_gap": "Prior live evidence created the Campaign but the Ad Group was rejected because the test advertiser lacked a required Pixel for website Product Sales optimization. Current-template end-to-end coverage is still required."
+    },
+    {
+      "provider": "tiktok",
+      "campaign_type": "APP_PROMOTION",
+      "template_key": "tiktok.test.app-promotion",
+      "blueprint_id": "tiktok.app_conversion_video",
+      "blueprint_version": "3.0.3",
+      "template_values_sha256": "e9ad4bda5568e7c3c3680f7ca5eee3a79a24e8adc667b6244d2f13a1a1f9f422",
+      "historical_template_locks": [
+        {
+          "blueprint_version": "3.0.3",
+          "template_values_sha256": "3d2c6c2b6024b6fcb13c0fe9e703a58d4e66e206e899fca1323efc982c12e9a7",
+          "evidence_refs": [
+            "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-ad-create-corrected-20261016-r1.json"
+          ]
+        }
+      ],
+      "test_account": "7397068114548195329",
+      "verification_state": "live_verified",
+      "last_verified_at": "2026-10-16",
+      "creation_status": 0,
+      "prior_live_write_observed": true,
+      "known_live_hierarchies": [
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-readback-get-20261016-r4.json",
+          "resource_ids": {
+            "campaign": "1879169312562338",
+            "ad_group": "1879169302541826",
+            "ad": "1879192935209457"
+          },
+          "delivery_statuses": {
+            "campaign": 0,
+            "ad_group": "DISABLE",
+            "ad": "DISABLE"
+          },
+          "resume_safe": false
+        },
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-ad-create-corrected-20261016-r1.json",
+          "resource_ids": {
+            "campaign": "1879169312562338",
+            "ad_group": "1879169302541826",
+            "ad": "1879195024030513"
+          },
+          "delivery_statuses": {
+            "campaign": 0,
+            "ad_group": "DISABLE",
+            "ad": "DISABLE"
+          },
+          "resume_safe": false
+        },
+        {
+          "evidence_ref": "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-create-20261016-r1.json",
+          "readback_refs": [
+            "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-exact-get-20261016-r1.json",
+            "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-list-20261016-r1.json",
+            "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-parent-campaign-get-20261016-r1.json"
+          ],
+          "template_values_sha256": "e9ad4bda5568e7c3c3680f7ca5eee3a79a24e8adc667b6244d2f13a1a1f9f422",
+          "selected_identity_id": "36a059a7-2b1d-51c3-bb40-236ae6f84515",
+          "resource_ids": {
+            "campaign": "1879169312562338",
+            "ad_group": "1879169302541826",
+            "ad": "1879196654038418"
+          },
+          "delivery_statuses": {
+            "campaign": "DISABLE",
+            "ad_group": "DISABLE",
+            "ad": "DISABLE"
+          },
+          "resume_safe": false
+        }
+      ],
+      "critical_fields": [
+        "campaign.app_promotion_type",
+        "campaign.campaign_type",
+        "campaign.campaign_automation_type",
+        "campaign.status",
+        "ad_group.app_id",
+        "ad_group.optimization_event",
+        "ad_group.status",
+        "ad.app_id",
+        "ad.app_name",
+        "ad.image_ids",
+        "ad.video_id",
+        "ad.identity_id",
+        "ad.click_tracking_url",
+        "ad.impression_tracking_url",
+        "ad.call_to_action",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": 0,
+        "ad_group.status": 0,
+        "ad.status": 0
+      },
+      "coverage": {
+        "current_template_paused_create": "live_pass",
+        "campaign_and_ad_group": "live_pass",
+        "ad_assets_video_and_image": "live_pass",
+        "ad_create_and_exact_get": "live_pass",
+        "ad_app_name_matches_selected_app": "live_pass",
+        "ad_group_list": "live_pass",
+        "paused_demo_tracking_urls": "live_pass",
+        "real_mmp_attribution": "not_verified"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "tracked_live_evidence_record",
+          "case_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#tiktok/APP_PROMOTION"
+        },
+        {
+          "evidence_level": "template_contract",
+          "case_ref": "agents/applications/advertising/contracts/builtin_creation_templates.json#tiktok.test.app-promotion"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-precreate-campaign-readback-20261016-r6.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-precreate-adgroup-readback-20261016-r6.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-precreate-ads-readback-20261016-r6.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-create-child-20261016-r4.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-readback-get-20261016-r4.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-readback-list-20261016-r4.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-create-20261016-r1.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-exact-get-20261016-r1.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-list-20261016-r1.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-parent-campaign-get-20261016-r1.json"
+        }
+      ],
+      "known_limitations": "Real MMP attribution is not verified because the two URLs are synthetic AppsFlyer-format demo placeholders. The paused-demo platform API accepted and returned both URLs; do not enable delivery until they are replaced with MMP-generated values."
+    }
+  ],
+  "known_findings": [
+    {
+      "id": "tiktok_smart_plus_recorder_schema",
+      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "status": "resolved",
+      "root_cause": "The long-lived 8770 service had loaded an older E2E ProviderRecorder. It treated the Smart+ Ad create endpoint as the legacy creatives[] shape instead of validating top-level operation_status=DISABLE and the Smart+ creative_list payload.",
+      "fix": "Special-case the Smart+ Ad endpoint in the recorder and restart the isolated E2E service after changing recorder code.",
+      "next_action": "Keep the regression tests and restart rule; verify the provider-http evidence contains an Ad create request before marking the Ad live.",
+      "regression_tests": [
+        "test_tiktok_smart_plus_ad_create_accepts_disabled_ad_status",
+        "test_tiktok_smart_plus_ad_create_rejects_enabled_or_missing_status"
+      ]
+    },
+    {
+      "id": "tiktok_lookup_provider_502",
+      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "status": "resolved",
+      "root_cause": "The initial signed-selection attempt hit transient TikTok read/lookup failures before any Ad create request. The existing Campaign and Ad Group remained intact; after lookup recovered, a single child-only /chat call created the Ad.",
+      "fix": "Retry only the failed read/selection lookup with bounded backoff, then resume the missing child Tool using fresh session-bound selection tokens. Never replay successful parent creates.",
+      "next_action": "If a scoped lookup returns 502 again, preserve existing parents and retry only that read. Reconcile an ambiguous write by exact get/list before considering any retry.",
+      "regression_tests": [
+        "test_chat_keeps_selection_tokens_structured_and_redacts_prompt",
+        "test_chat_keeps_blueprint_metadata_out_of_tool_arguments"
+      ],
+      "evidence_refs": [
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-create-child-resume-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-read-after-update-20261016.json"
+      ]
+    },
+    {
+      "id": "tiktok_smart_plus_ad_creative_identity",
+      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "status": "resolved",
+      "root_cause": "TikTok's standard ad/get list can return a Smart+ row whose ad_id and operation_status describe the linked creative, while smart_plus_ad_id and smart_plus/ad/get identify the delivery Ad. The stale list row also kept the old creative label after the Ad name was updated.",
+      "fix": "Use smart_plus_ad_id as canonical ad_id; preserve a different raw ad_id as smart_plus_creative_id and its status as creative_operation_status. When a standard list contains Smart+ rows, refresh from smart_plus/ad/get and prefer its current Ad name and delivery status.",
+      "next_action": "Keep list/get ID, status, and updated-name regressions. Never interpret creative ENABLE as delivery Ad ENABLE; verify operation_status on the Smart+ Ad object.",
+      "regression_tests": [
+        "test_tiktok_smart_plus_ad_list_keeps_ad_and_creative_ids_distinct",
+        "test_tiktok_smart_plus_list_prefers_current_ad_details_over_linked_creative_rows"
+      ],
+      "evidence_refs": [
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ads-list-normalized-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-read-after-update-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ads-list-final-20261016.json"
+      ]
+    },
+    {
+      "id": "tiktok_smart_plus_update_status_injection",
+      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "status": "resolved",
+      "root_cause": "When asked to rename an Ad Group while keeping delivery paused, the model added updates.status=DISABLE beside updates.name. The local conditional contract correctly rejected the mixed content/status update before Provider I/O.",
+      "fix": "The Smart+ update Tool descriptions now say content updates include only requested fields; status/operation_status is included only for an explicit status-change request and must be a separate call. A precise child-only /chat retry updated the existing name successfully.",
+      "next_action": "Keep the update description regression. For content-only changes, do not inject status merely to preserve the currently paused state.",
+      "regression_tests": [
+        "test_tiktok_smart_plus_update_tools_explain_status_and_content_separation",
+        "test_tiktok_smart_plus_update_payloads_use_parent_ids_and_normalize_status"
+      ],
+      "evidence_refs": [
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-adgroup-update-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-adgroup-update-recovery-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ad-update-20261016.json"
+      ]
+    },
+    {
+      "id": "tiktok_transient_ads_list_connection",
+      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "status": "resolved",
+      "root_cause": "One live Ad list request encountered repeated transport ConnectionError responses. No write was involved; a later single read retry succeeded and returned the updated Ad from the Smart+ list endpoint.",
+      "fix": "Retry only the read once after a short delay, then verify the exact Ad through get. Do not repeat any create or update request.",
+      "next_action": "If transport failures persist, report the query as unavailable and preserve the existing resource IDs; never convert a failed list into a create retry.",
+      "regression_tests": [],
+      "evidence_refs": [
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ads-list-after-update-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ads-list-after-update-retry1-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run2/cases/tiktok-live-traffic-ads-list-final-20261016.json"
+      ]
+    },
+    {
+      "id": "chat_recovery_input_shape",
+      "applies_to": [
+        {"provider": "google-ads", "campaign_type": "PERFORMANCE_MAX"},
+        {"provider": "google-ads", "campaign_type": "SHOPPING"},
+        {"provider": "google-ads", "campaign_type": "APP"},
+        {"provider": "meta", "campaign_type": "TRAFFIC"},
+        {"provider": "meta", "campaign_type": "CATALOG_SALES"},
+        {"provider": "meta", "campaign_type": "CONVERSION"},
+        {"provider": "meta", "campaign_type": "APP_PROMOTION"},
+        {"provider": "tiktok", "campaign_type": "TRAFFIC"},
+        {"provider": "tiktok", "campaign_type": "PRODUCT_SALES"},
+        {"provider": "tiktok", "campaign_type": "APP_PROMOTION"}
+      ],
+      "status": "resolved",
+      "root_cause": "A targeted child Tool request carried creation_blueprint_id, which reactivated the full blueprint form and required unrelated Campaign/Ad Group fields. Earlier flat parameters also failed because the input builder expects Tool-name-scoped values.",
+      "fix": "For a single-child recovery, omit both creation_template_id and creation_blueprint_id/version. Send platform_params as {tool_name: {field_values..., selection_tokens: {...}}}; keep selection_tokens beside the matching values inside that Tool object.",
+      "next_action": "Keep the shape covered by E2E helper contract tests; do not restart a successful parent chain to test a child.",
+      "regression_tests": [
+        "test_chat_keeps_selection_tokens_structured_and_redacts_prompt",
+        "test_chat_keeps_blueprint_metadata_out_of_tool_arguments"
+      ]
+    },
+    {
+      "id": "tiktok_app_ad_template_media_and_tracking",
+      "applies_to": [
+        {"provider": "tiktok", "campaign_type": "APP_PROMOTION"}
+      ],
+      "status": "resolved",
+      "root_cause": "The first child-only request omitted the required App cover image. A generic example.com click/impression pair was rejected with `Incorrect URL format`, and omitting both URLs was rejected with `Make sure your click tracking and impression URLs are entered before publishing`. The later request labelled corrected still explicitly sent the old Singapore identity_id 15efada4-8fb9-54aa-b5c6-3b82529b947d, so its Singapore readback did not test the updated template.",
+      "fix": "The template now supplies both required media assets, a paused-demo click/impression pair, app_id 6734587026957402118, and the available matching Shopee Indonesia identity 36a059a7-2b1d-51c3-bb40-236ae6f84515. A fresh child-only live create sourced these current values and signed selection tokens; exact Ad get, Ad Group list, and Campaign get confirmed the selected App/identity and DISABLE status at all three hierarchy levels. Never enable delivery with synthetic URLs.",
+      "next_action": "The paused-demo create/get/list path is resolved. Real MMP attribution remains unverified: before delivery, replace both synthetic URLs with the app's MMP-generated pair and validate attribution separately.",
+      "regression_tests": [
+        "test_tiktok_app_template_uses_documented_paused_demo_tracking_urls",
+        "test_tiktok_app_ad_forwards_explicit_mmp_urls_and_stays_paused"
+      ],
+      "evidence_refs": [
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-create-child-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-create-child-20261016-r2.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-attribution-app-catalog-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-postreject-reconcile-ads-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-postreject-url-reconcile-ads-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-postreject-empty-url-reconcile-ads-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-create-child-20261016-r4.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-readback-get-20261016-r4.json",
+        "outputs/full-agent-e2e-20261016-live-run3/cases/tiktok-app-ad-readback-list-20261016-r4.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-corrected-identity-catalog-20261016.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-ad-create-corrected-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-ad-corrected-exact-get-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-corrected-postcreate-ad-list-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-create-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-exact-get-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-identity-list-20261016-r1.json",
+        "outputs/full-agent-e2e-20261016-live-run4/cases/tiktok-app-indonesia-parent-campaign-get-20261016-r1.json"
+      ]
+    },
+    {
+      "id": "google_app_ad_pause_limit",
+      "applies_to": [{"provider": "google-ads", "campaign_type": "APP"}],
+      "status": "provider_limited",
+      "root_cause": "Google Ads rejected pausing the tested App Ad type with the provider validation error `Cannot pause an adgroup ad with this ad type.`",
+      "fix": "Set the App Ad to ENABLED because v24 rejects PAUSED for this ad type; keep Campaign and Ad Group PAUSED and verify both parents immediately before creation.",
+      "next_action": "Use ENABLED for the App Ad only beneath read-verified PAUSED parents. Never enable Campaign or Ad Group; report the App Ad's actual ENABLED state and parent-blocked delivery state.",
+      "regression_tests": [
+        "test_google_app_ad_requires_enabled_status_and_both_verified_paused_parents",
+        "test_google_app_paused_status_is_rejected_without_enabled_fallback"
+      ]
+    },
+    {
+      "id": "meta_app_template_argument_resolution",
+      "applies_to": [{"provider": "meta", "campaign_type": "APP_PROMOTION"}],
+      "status": "unresolved",
+      "root_cause": "The 2026-10-16 saved template evidence records only tool_argument_resolution_error_type=ValueError; it does not retain the exception message or failing field path. The exact cause is therefore not proven.",
+      "fix": "No code fix is claimed. Campaign creation succeeded; later Ad Set and Ad resources were separately created and read back through real Tools.",
+      "next_action": "Resume the existing App workflow without recreating its Campaign, capture a credential-redacted error message and missing/invalid field path, then add a focused regression test before changing argument resolution.",
+      "regression_tests": []
+    }
+  ]
+}

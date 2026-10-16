@@ -1,7 +1,7 @@
 ---
 name: tiktok-ads-expert
 description: "TikTok Ads 专家 Skill：负责广告层级、Smart/电商/应用/Lead/Spark 创意、定向与素材资产、Pixel/CAPI、报表和投放诊断"
-version: 2.0.0
+version: 2.0.1
 author: Ryan
 created: 2026-09-08
 tags: [tiktok, ads, smart-plus, spark-ads, ecommerce, app, lead-generation, pixel, reporting]
@@ -118,6 +118,26 @@ advertiser scope
   -> live write (only if explicitly enabled)
   -> readback / audit / report interpretation
 ```
+
+## 测试账号 E2E 记忆
+
+对测试账号执行 live 创建、更新或查询回归前，先检索
+`agents/knowledge/advertising/wiki/concepts/provider-live-e2e-memory.md`，再读取
+`agents/tools/advertising/contracts/provider_live_e2e_memory.json` 中 Traffic、
+Product Sales 或 App Promotion 对应记录。复用已验证的视频、身份、CTA、Catalog、App 和模板参数；
+TikTok Lead Generation 按当前范围暂不测试。
+
+Campaign 或 Ad Group 已成功创建后，子级失败只能从该父级恢复；先读取并复用现有资源 ID，不重跑
+完整 Campaign 链。Smart+ Ad 的投放状态看 Ad 自身 `operation_status`，不能把关联 Creative 的
+`ENABLE` 当作 Ad 已启用。Ad 创建/更新的状态字段组合以及 lookup 502 的恢复步骤以账本为准，
+先修复已记录根因，不要再次探索同一个失败分支。不要把任意 example.com 地址当作 MMP URL。
+测试账号 App 目录当前显示 click tracking 已配置、impression tracking 未配置；真实 App Ad 创建
+实测拒绝省略两条 URL。内置测试模板采用 TikTok 帮助页的 AppsFlyer Android 示例格式并替换为
+测试包名，但它是合成占位值，只允许在 Ad 保持 DISABLE 的演示测试中使用，不能启用投放；
+真实投放必须替换为 MMP 控制台生成的链接。App Promotion 视频广告按模板同时传入图片和视频素材。
+暂停演示层级已验证：Campaign `1879169312562338`、Ad Group `1879169302541826`、
+Ad `1879192935209457` 均为 DISABLE，Ad 查询与列表回读通过。后续先复用并回读，不要重复创建；
+这不代表真实 MMP 归因或实际投放已验证。
 
 写操作默认 dry-run；当前格式若仅支持部分模拟或声明能力，必须显式说明。请求超时、未知
 状态或重试时先按幂等键和 readback 判断是否已创建；参数/权限/素材不存在错误不盲目重试。

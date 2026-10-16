@@ -1079,30 +1079,17 @@ class MetaAPIClient(BasePlatformClient):
     def list_pages(self, account_id: str, limit: int = 25) -> list:
         """List Facebook Pages usable as a Meta ad identity.
 
-        Older Marketing API versions exposed ``promotable_pages`` on the ad
-        account. Meta v19 no longer exposes that edge, so fall back to the
-        current user's Page list. The fallback deliberately does not return
-        Page access tokens and callers must still use the selected Page ID
-        explicitly; it never guesses a Page for a live creative.
+        The current Marketing API exposes the authenticated user's managed
+        Pages through ``/me/accounts``. Page access tokens are intentionally
+        omitted; callers must still use the selected Page ID explicitly and
+        the provider validates it when creating a live creative.
         """
         clean_id = str(account_id).replace("act_", "")
-        try:
-            return self._list_graph_pages(
-                clean_id,
-                f"/act_{clean_id}/promotable_pages",
-                {"limit": limit, "fields": "id,name,category"},
-            )
-        except APIError as exc:
-            # Only fall back for the removed/unsupported edge. Permission,
-            # auth and other provider failures must remain visible.
-            message = str(exc).lower()
-            if exc.status_code != 400 or "unknown path" not in message:
-                raise
-            return self._list_graph_pages(
-                clean_id,
-                "/me/accounts",
-                {"limit": limit, "fields": "id,name,category,tasks"},
-            )
+        return self._list_graph_pages(
+            clean_id,
+            "/me/accounts",
+            {"limit": limit, "fields": "id,name,category,tasks"},
+        )
 
     def list_apps(self, account_id: str, limit: int = 25) -> list:
         """List applications advertisable by the scoped Meta ad account."""

@@ -146,7 +146,7 @@ def test_skill_up_app_creation_keeps_dynamic_app_id_unresolved(tmp_path):
             "account_id": "7397068114548195329",
             "name": "skill-up-app",
             "objective_type": "APP_PROMOTION",
-            "app_promotion_type": "APP_ACQUISITION",
+            "app_promotion_type": "APP_INSTALL",
         },
     ),))))
 

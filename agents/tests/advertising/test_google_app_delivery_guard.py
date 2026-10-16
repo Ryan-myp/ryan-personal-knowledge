@@ -1,4 +1,4 @@
-"""Explicit App Ad enablement must never enable either delivery parent."""
+"""App Ad status must be explicit and both delivery parents must stay paused."""
 
 import pytest
 
@@ -80,10 +80,18 @@ def test_app_ad_creation_refuses_an_unverified_parent_relationship():
     assert [event[0] for event in events] == ["read"]
 
 
-@pytest.mark.parametrize("status", [None, "", "PAUSED", "REMOVED"])
-def test_app_ad_creation_does_not_silently_enable_a_missing_or_different_status(status):
+def test_google_app_paused_status_is_rejected_without_enabled_fallback():
     client, events, _row = client_fixture()
-    with pytest.raises(ValueError, match="explicit ENABLED"):
+    with pytest.raises(ValueError, match="requires ENABLED status"):
+        create(client, status="PAUSED", live=True)
+
+    assert events == []
+
+
+@pytest.mark.parametrize("status", [None, "", "PAUSED", "REMOVED", "UNKNOWN"])
+def test_app_ad_creation_rejects_a_missing_or_unsupported_status(status):
+    client, events, _row = client_fixture()
+    with pytest.raises(ValueError, match="requires ENABLED status"):
         create(client, status=status, live=True)
     assert events == []
 
@@ -98,7 +106,7 @@ def test_app_ad_dry_run_discloses_enabled_ad_and_both_paused_parent_requirements
     assert plan["delivery_guard"]["campaign_required_status"] == "PAUSED"
 
 
-def test_app_ad_tool_requires_explicit_enabled_status():
+def test_app_ad_tool_requires_an_explicit_supported_status():
     definition = next(
         binding.definition for binding in create_google_tool_source().list_bindings()
         if binding.definition.name == "google_create_app_ad"

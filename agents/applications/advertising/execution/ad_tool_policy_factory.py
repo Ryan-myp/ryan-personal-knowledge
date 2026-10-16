@@ -339,6 +339,15 @@ class AdvertisingToolPolicyFactory:
             template, platform, blueprint_id, blueprint_version,
         ):
             return "", "", "模板与当前创建蓝图或广告渠道不一致"
+        if (
+            str(getattr(request, "execution_mode", "dry_run")).lower() == "live"
+            and str(getattr(tool, "action", "") or "").lower() == "create"
+            and template.get("live_create_supported") is False
+        ):
+            return "", "", str(
+                template.get("live_create_block_reason")
+                or "所选模板不支持 live 创建，已在写入前拒绝执行"
+            )
         return (
             str(template.get("blueprint_id") or "").strip(),
             str(template.get("blueprint_version") or "").strip(),

@@ -55,6 +55,20 @@ def test_alias_selection_keeps_explicit_details_and_multiple_namespaces():
     assert {"list_one", "list_two"} <= {tool["name"] for tool in selected}
 
 
+def test_meta_child_ad_query_selects_the_ad_list_tool_once():
+    tools = [
+        binding.definition for binding in create_tool_source("meta").list_bindings()
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "查询 Meta 测试账户 Ad Set ID 123 下的 Ad 列表，只查询一次。",
+        tools,
+        limit=32,
+    )
+
+    assert [tool.name for tool in selected] == ["meta_list_ads"]
+
+
 def test_all_three_account_queries_expose_only_account_discovery_tools():
     for provider in ("google-ads", "meta", "tiktok"):
         tools = [

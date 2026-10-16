@@ -532,7 +532,7 @@ def test_cross_channel_create_calls_enter_the_same_harness_interaction_path():
                 "account_id": "t1",
                 "name": "preflight",
                 "objective_type": "APP_PROMOTION",
-                "app_promotion_type": "APP_ACQUISITION",
+                "app_promotion_type": "APP_INSTALL",
                 "campaign_type": "REGULAR_CAMPAIGN",
                 "budget_mode": "BUDGET_MODE_DAY",
                 "daily_budget": 100,
@@ -1017,7 +1017,15 @@ def test_tiktok_campaign_and_app_ios_contracts_are_explicit():
     campaign = definitions["tiktok_create_campaign"].input_schema
     adgroup = definitions["tiktok_create_adgroup"].input_schema
 
-    assert "APP_ACQUISITION" in campaign.properties["app_promotion_type"]["enum"]
+    assert campaign.properties["app_promotion_type"]["enum"] == [
+        "APP_INSTALL", "APP_RETARGETING",
+    ]
+    invalid_app_mode = validate_tool_input(campaign, {
+        "name": "Invalid app mode",
+        "objective_type": "APP_PROMOTION",
+        "app_promotion_type": "APP_ACQUISITION",
+    })
+    assert any("app_promotion_type" in error for error in invalid_app_mode)
     assert any(
         rule.get("id") == "app_campaign_requires_app_mode"
         for rule in campaign.conditional_rules
@@ -1171,7 +1179,7 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
             "account_id": "t1",
             "campaign_name": "Android acquisition",
             "objective_type": "APP_PROMOTION",
-            "app_promotion_type": "APP_ACQUISITION",
+            "app_promotion_type": "APP_INSTALL",
             "campaign_type": "REGULAR_CAMPAIGN",
             "budget_mode": "BUDGET_MODE_DAY",
             "daily_budget": 50,
@@ -1184,7 +1192,7 @@ def test_conditional_missing_parameter_exposes_lookup_tool():
             "tiktok": {
                 "campaign_name": "Android acquisition",
                 "objective_type": "APP_PROMOTION",
-                "app_promotion_type": "APP_ACQUISITION",
+                "app_promotion_type": "APP_INSTALL",
                 "campaign_type": "REGULAR_CAMPAIGN",
                 "budget_mode": "BUDGET_MODE_DAY",
                 "daily_budget": 50,
@@ -1562,6 +1570,46 @@ def test_tiktok_identity_lookup_forwards_identity_type_before_provider_query():
         session_id="tiktok-identity-dependency",
         user_id="u1",
     )
+
+    assert calls == [("7397068114548195329", "BC_AUTH_TT", 1, 20)]
+    assert selection["options"][0]["value"] == "identity-1"
+    assert selection["options"][0]["selection_token"]
+
+
+def test_tiktok_app_ad_identity_lookup_forwards_identity_type_before_provider_query():
+    calls = []
+
+    class LookupClient:
+        platform = "tiktok"
+
+        def list_identities(
+            self, advertiser_id, identity_type=None, page=1, page_size=20
+        ):
+            calls.append((advertiser_id, identity_type, page, page_size))
+            return [{
+                "identity_id": "identity-1",
+                "identity_type": identity_type,
+                "display_name": "Test app identity",
+            }]
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        whitelist_validator=whitelist(tiktok=["7397068114548195329"]),
+        selection_token_secret="selection-secret-1234",
+    )
+    runtime.register_tool_source(create_tiktok_tool_source(LookupClient()))
+    try:
+        selection = runtime.resolve_parameter_options(
+            "tiktok",
+            "identity_id",
+            "tiktok_create_app_ad",
+            "7397068114548195329",
+            lookup_context={"identity_type": "BC_AUTH_TT"},
+            session_id="tiktok-app-identity-dependency",
+            user_id="u1",
+        )
+    finally:
+        runtime.close(wait=True)
 
     assert calls == [("7397068114548195329", "BC_AUTH_TT", 1, 20)]
     assert selection["options"][0]["value"] == "identity-1"

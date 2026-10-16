@@ -14,6 +14,8 @@ from agents.agent_harness.core.interfaces import ToolContext, ToolResult
 class ParameterSelectionService:
     """Own lookup-field discovery, signed picker options and token checks."""
 
+    _MAX_PROOFS_PER_FIELD = 64
+
     def __init__(
         self,
         services: Any,
@@ -36,14 +38,39 @@ class ParameterSelectionService:
 
     def _remember_lookup(
         self, context: ToolContext, tool: Any, field: str, schema: dict,
-        options: list[dict[str, Any]],
+        options: list[dict[str, Any]], *, invalidate_empty: bool = False,
     ) -> None:
         key = self._proof_key(context, tool, field, schema)
         with self._proof_lock:
-            self._lookup_proofs[key] = [
-                {"value": option["value"], "selection_token": option["selection_token"]}
-                for option in options
-            ]
+            if invalidate_empty:
+                proofs = []
+            else:
+                by_value: OrderedDict[str, dict[str, Any]] = OrderedDict()
+                existing = self._lookup_proofs.get(key, ())
+                for option in existing:
+                    identity = json.dumps(
+                        option["value"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    )
+                    by_value[identity] = option
+                for option in options:
+                    identity = json.dumps(
+                        option["value"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                    )
+                    by_value[identity] = {
+                        "value": option["value"],
+                        "selection_token": option["selection_token"],
+                    }
+                    by_value.move_to_end(identity)
+                proofs = list(by_value.values())[-self._MAX_PROOFS_PER_FIELD:]
+                if not proofs:
+                    return
+            self._lookup_proofs[key] = proofs
             self._lookup_proofs.move_to_end(key)
             while len(self._lookup_proofs) > 256:
                 self._lookup_proofs.popitem(last=False)
@@ -222,6 +249,7 @@ class ParameterSelectionService:
         target_tool_name: Optional[str] = None,
         target_field: Optional[str] = None,
         query: Optional[str] = None,
+        selected_value: Any = None,
     ) -> ToolResult:
         if not result.success or not isinstance(result.data, dict):
             return result
@@ -254,17 +282,14 @@ class ParameterSelectionService:
                 values = [values] if values else []
             if not isinstance(values, list):
                 continue
-            options: list[dict[str, Any]] = []
+            candidates: list[tuple[str, Any, str]] = []
             seen: set[str] = set()
-            expires_at = 0
             allowed_asset_types = {
                 str(item).strip().upper()
                 for item in field_schema.get("lookup_asset_types", ())
                 if str(item).strip()
             }
             for item in values:
-                if len(options) >= 20:
-                    break
                 if allowed_asset_types and (
                     not isinstance(item, dict)
                     or str(item.get("type") or "").strip().upper()
@@ -287,6 +312,30 @@ class ParameterSelectionService:
                 if identity in seen:
                     continue
                 seen.add(identity)
+                candidates.append((identity, value, label))
+
+            selected_values = (
+                selected_value if isinstance(selected_value, list)
+                else [selected_value]
+            )
+            selected_identities = {
+                json.dumps(
+                    value, ensure_ascii=False, sort_keys=True, default=str,
+                )
+                for value in selected_values
+                if value not in (None, "")
+            }
+            preferred = [
+                candidate for candidate in candidates
+                if candidate[0] in selected_identities
+            ]
+            remaining = [
+                candidate for candidate in candidates
+                if candidate[0] not in selected_identities
+            ]
+            options: list[dict[str, Any]] = []
+            expires_at = 0
+            for _identity, value, label in (preferred + remaining)[:20]:
                 token, expires_at = self.services.selection_signer.issue(
                     session_id=context.session_id,
                     user_id=context.user_id,
@@ -303,7 +352,12 @@ class ParameterSelectionService:
                     "selection_token": token,
                 })
             self._remember_lookup(
-                context, target_tool, field_name, field_schema, options,
+                context,
+                target_tool,
+                field_name,
+                field_schema,
+                options,
+                invalidate_empty=not values,
             )
             if options or (target_tool_name and target_field):
                 selections.append({

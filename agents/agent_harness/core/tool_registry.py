@@ -530,11 +530,11 @@ def validate_tool_input(
 
     if include_tool_requirements:
         for field_name in schema.requires:
-            if data.get(field_name) in (None, ""):
+            if value_at(field_name) in (None, ""):
                 errors.append(f"Tool requirements require field: {field_name}")
         for alternatives in schema.requires_any_of:
             if not any(
-                data.get(field_name) not in (None, "", {}, [])
+                not is_missing(value_at(field_name))
                 for field_name in alternatives
             ):
                 errors.append(
@@ -544,7 +544,7 @@ def validate_tool_input(
         for alternatives in getattr(schema, "requires_exactly_one_of", []) or []:
             present = [
                 field_name for field_name in alternatives
-                if data.get(field_name) not in (None, "", {}, [])
+                if not is_missing(value_at(field_name))
             ]
             if len(present) != 1:
                 errors.append(

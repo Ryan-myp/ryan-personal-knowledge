@@ -583,7 +583,7 @@ class TikTokAPIClient(BasePlatformClient):
         - campaign_group_status: 状态 (0=PAUSED, 1=ACTIVE)
         - budget_restriction: 预算限制 (NO_LIMITATION, DAILY_BUDGET, LIFETIME_BUDGET)
         - daily_budget: 每日预算（账户货币；TikTok v1.3 的 wire 字段为 budget）
-        - app_promotion_type: APP 推广类型 (APP_RETARGETING, APP_ACQUISITION)
+        - app_promotion_type: APP 推广类型 (APP_INSTALL, APP_RETARGETING)
         """
         requested_status = self._normalize_status(campaign.get('status', 0))
         if live and requested_status != 0:
@@ -1090,11 +1090,12 @@ class TikTokAPIClient(BasePlatformClient):
             ).strip()
             if returned_adgroup and returned_adgroup != wanted:
                 return False
-            return (
-                not wanted_ad_ids
-                or str(row.get('ad_id') or row.get('smart_plus_ad_id') or row.get('id') or '')
-                in wanted_ad_ids
-            )
+            returned_ids = {
+                str(row.get(field) or "").strip()
+                for field in ("ad_id", "smart_plus_ad_id", "id")
+                if row.get(field) is not None
+            }
+            return not wanted_ad_ids or bool(returned_ids & wanted_ad_ids)
 
         rows = self._list_pages(
             'ad/get/',
@@ -1103,22 +1104,46 @@ class TikTokAPIClient(BasePlatformClient):
             max_items=max_results,
             item_filter=matches_requested_ad,
         )
-        if not rows:
+        has_smart_plus_rows = any(
+            isinstance(row, dict) and row.get("smart_plus_ad_id")
+            for row in rows
+        )
+        if not rows or has_smart_plus_rows:
             smart_filter = {"adgroup_ids": [str(adgroup_id)]}
             if normalized_ad_ids:
                 smart_filter["smart_plus_ad_ids"] = normalized_ad_ids
-            rows = self._list_pages(
+            smart_rows = self._list_pages(
                 "smart_plus/ad/get/",
                 {**data, "filtering": json.dumps(smart_filter, separators=(",", ":"))},
                 max_pages=1 if wanted_ad_ids else 100,
                 max_items=max_results,
                 item_filter=matches_requested_ad,
             )
-            rows = [
-                {**row, "ad_id": row.get("smart_plus_ad_id") or row.get("ad_id")}
-                for row in rows
-            ]
-        return self._public_provider_data(rows)
+            if smart_rows:
+                rows = smart_rows
+        return self._public_provider_data(
+            [self._normalize_listed_ad(row) for row in rows]
+        )
+
+    @staticmethod
+    def _normalize_listed_ad(row: Any) -> Any:
+        if not isinstance(row, dict):
+            return row
+        smart_plus_ad_id = row.get("smart_plus_ad_id")
+        provider_ad_id = row.get("ad_id")
+        if not smart_plus_ad_id:
+            return row
+
+        normalized = dict(row)
+        if provider_ad_id and str(provider_ad_id) != str(smart_plus_ad_id):
+            normalized["smart_plus_creative_id"] = (
+                row.get("smart_plus_creative_id") or provider_ad_id
+            )
+            if row.get("operation_status") is not None:
+                normalized["creative_operation_status"] = row["operation_status"]
+                normalized.pop("operation_status", None)
+        normalized["ad_id"] = smart_plus_ad_id
+        return normalized
     
     def get_ad(self, advertiser_id: str, adgroup_id: str, ad_id: str) -> dict:
         """Get one Ad through an exact, bounded provider query."""
@@ -1169,10 +1194,14 @@ class TikTokAPIClient(BasePlatformClient):
             creative['conversion_id'] = ad['conversion_id']
         if ad.get('text'):
             text_payload = ad['text']
-            creative['ad_text'] = (
-                text_payload.get('ad_text')
-                if isinstance(text_payload, dict) else text_payload
-            )
+            if isinstance(text_payload, dict):
+                creative['ad_text'] = text_payload.get('ad_text')
+                for field in ('display_name', 'call_to_action'):
+                    value = text_payload.get(field)
+                    if value not in (None, ''):
+                        creative[field] = value
+            else:
+                creative['ad_text'] = text_payload
         if ad.get('media'):
             creative['media'] = ad['media']
         # Keep every field declared by the provider-owned ad contracts. The
@@ -1181,7 +1210,7 @@ class TikTokAPIClient(BasePlatformClient):
         for key in (
             'ad_format', 'status', 'video_id', 'image_ids', 'spark_post_id',
             'page_id', 'tracking_pixel_id', 'operation_status', 'creative_type',
-            'display_name', 'catalog_id', 'product_set_id', 'call_to_action',
+            'app_name', 'display_name', 'catalog_id', 'product_set_id', 'call_to_action',
             'call_to_action_id', 'ad_text', 'identity_id', 'identity_type',
             'tiktok_item_id', 'promotion_type', 'app_id', 'app_promotion_type',
             'operating_systems', 'deep_link', 'tracking_url', 'promote_object', 'ad_text_settings',
@@ -1384,6 +1413,9 @@ class TikTokAPIClient(BasePlatformClient):
         operating_systems = ad.get("operating_systems")
         if not app_id or promotion_type not in {"APP_ANDROID", "APP_IOS"}:
             raise ValueError("app_id and a valid promotion_type are required")
+        app_name = str(ad.get("app_name") or "").strip()
+        if not app_name:
+            raise ValueError("app_name is required and must match app_id")
         if not isinstance(operating_systems, list) or not operating_systems:
             raise ValueError("operating_systems is required")
         expected_os = "ANDROID" if promotion_type == "APP_ANDROID" else "IOS"
@@ -1392,6 +1424,7 @@ class TikTokAPIClient(BasePlatformClient):
 
         normalized = dict(ad)
         normalized["app_id"] = app_id
+        normalized["app_name"] = app_name
         normalized["promotion_type"] = promotion_type
         normalized["promote_object"] = {
             "app_install": {"app_id": app_id},
@@ -1748,8 +1781,23 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError(
                 f"{public_objective} website promotion requires pixel_id or tracking_pixel_id"
             )
-        locations = adgroup.get("location_ids")
-        if not adgroup.get("saved_audience_id") and (
+        targeting_fields = {
+            "location_ids", "saved_audience_id", "gender", "age_groups",
+            "operating_systems",
+            "targeting_optimization_mode", "frequency", "frequency_schedule",
+        }
+        raw_targeting_spec = adgroup.get("targeting_spec")
+        if raw_targeting_spec is None:
+            targeting_spec = {}
+        elif isinstance(raw_targeting_spec, dict):
+            targeting_spec = dict(raw_targeting_spec)
+        else:
+            raise ValueError("TikTok Smart+ targeting_spec must be an object")
+        for key in targeting_fields:
+            if adgroup.get(key) not in (None, "", []):
+                targeting_spec[key] = adgroup[key]
+        locations = targeting_spec.get("location_ids")
+        if not targeting_spec.get("saved_audience_id") and (
             not isinstance(locations, list) or not locations
         ):
             raise ValueError("TikTok Smart+ ad group requires location_ids or saved_audience_id")
@@ -1769,15 +1817,6 @@ class TikTokAPIClient(BasePlatformClient):
         if adgroup.get("schedule_type") == "SCHEDULE_START_END" and not adgroup.get("schedule_end_time"):
             raise ValueError("SCHEDULE_START_END requires schedule_end_time")
 
-        targeting_fields = {
-            "location_ids", "saved_audience_id", "gender", "age_groups",
-            "operating_systems",
-            "targeting_optimization_mode", "frequency", "frequency_schedule",
-        }
-        targeting_spec = dict(adgroup.get("targeting_spec") or {})
-        for key in targeting_fields:
-            if adgroup.get(key) not in (None, "", []):
-                targeting_spec[key] = adgroup[key]
         if not targeting_spec:
             raise ValueError("TikTok Smart+ ad group requires targeting_spec")
 
@@ -1891,6 +1930,10 @@ class TikTokAPIClient(BasePlatformClient):
             ):
                 raise ValueError("TikTok Smart+ creative_list items require creative_info")
             creative_info = dict(item["creative_info"])
+            if creative_info.get("ad_format") in (None, "") and ad.get("ad_format") not in (
+                None, "",
+            ):
+                creative_info["ad_format"] = ad["ad_format"]
             # Accept the creation-card aliases even when the caller supplied
             # an explicit creative_list.  The outgoing object remains the
             # exact Smart+ media_info contract from TikTok's SDK schema.
@@ -3107,7 +3150,23 @@ class TikTokAPIClient(BasePlatformClient):
             )
         else:
             rows = []
-        return self._limit_list(rows, limit)
+        rows = self._limit_list(rows, limit)
+        if str(level_range or '').strip().upper() != 'TO_COUNTRY':
+            return rows
+        country_fields = {
+            'location_id', 'id', 'region_id', 'country_code', 'code',
+            'region_code', 'location_name', 'name', 'country_name',
+            'region_name',
+        }
+        return [
+            {
+                key: value
+                for key, value in row.items()
+                if key in country_fields
+            }
+            if isinstance(row, dict) else row
+            for row in rows
+        ]
     
     # ==================== 设备定向查询 ====================
     
@@ -4225,7 +4284,32 @@ class TikTokAPIClient(BasePlatformClient):
             rows = payload.get('apps', payload.get('list', []))
         else:
             rows = payload
-        return self._limit_list(rows, page_size)
+        safe_rows = []
+        for app in self._limit_list(rows, page_size):
+            if not isinstance(app, dict):
+                continue
+            tracking = app.get("tracking_url")
+            tracking = tracking if isinstance(tracking, dict) else {}
+            safe_app = {
+                key: app[key]
+                for key in (
+                    "app_platform_id", "platform", "package_name",
+                    "download_url", "self_attribution_enabled",
+                )
+                if key in app
+            }
+            app_id = app.get("app_id") or app.get("id")
+            app_name = app.get("app_name") or app.get("name") or app.get("display_name")
+            if app_id not in (None, ""):
+                safe_app["app_id"] = app_id
+            if app_name not in (None, ""):
+                safe_app["app_name"] = app_name
+            safe_app["tracking_configured"] = {
+                "click": bool(str(tracking.get("click_url") or "").strip()),
+                "impression": bool(str(tracking.get("impression_url") or "").strip()),
+            }
+            safe_rows.append(safe_app)
+        return safe_rows
     
     # ==================== 统计报告查询 ====================
     

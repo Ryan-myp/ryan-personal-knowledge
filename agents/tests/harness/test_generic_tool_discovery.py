@@ -27,7 +27,9 @@ def _definition(
     resource: str,
     description: str,
     intent_types: tuple[str, ...] = (),
+    intent_aliases: tuple[str, ...] = (),
     properties: dict | None = None,
+    parent_resource: str | None = None,
 ) -> ToolDefinition:
     return ToolDefinition(
         name=name,
@@ -38,6 +40,8 @@ def _definition(
         action=action,
         resource_type=resource,
         intent_types=list(intent_types),
+        intent_aliases=list(intent_aliases),
+        parent_resource_type=parent_resource,
         effect_class=(
             ToolEffect.READ
             if action in {"get", "list", "read", "search", "query", "fetch"}
@@ -169,6 +173,35 @@ def test_explicit_current_namespace_overrides_conversation_history():
     )
 
     assert [item.name for item in selected] == ["google_list_campaigns"]
+
+
+def test_child_list_alias_treats_parent_resource_as_scope():
+    tools = [
+        _definition(
+            "meta_list_ad_sets",
+            namespace="meta",
+            action="list",
+            resource="ad_set",
+            description="List Meta Ad Sets",
+        ),
+        _definition(
+            "meta_list_ads",
+            namespace="meta",
+            action="list",
+            resource="ad",
+            description="List Meta Ads",
+            intent_aliases=("Ad 列表",),
+            parent_resource="ad_set",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "查询 Meta 测试账户 Ad Set ID 123 下的 Ad 列表，只查询一次。",
+        tools,
+        limit=32,
+    )
+
+    assert [item.name for item in selected] == ["meta_list_ads"]
 
 
 def test_cross_channel_request_keeps_tools_when_namespace_alias_is_not_registered():

@@ -23,6 +23,21 @@ class _Signer:
         return "asset-1"
 
 
+class _ValueSigner:
+    def __init__(self):
+        self.values = {}
+
+    def issue(self, **claims):
+        token = f"token-{claims['value']}"
+        self.values[token] = claims["value"]
+        return token, 1_800_000_000
+
+    def verify(self, token, **_claims):
+        if token not in self.values:
+            raise ValueError("selection token is invalid")
+        return self.values[token]
+
+
 def _context():
     return ToolContext(
         session_id="picker-session",
@@ -137,6 +152,56 @@ def test_a_new_empty_live_lookup_invalidates_previously_cached_options():
             _context(), "example",
         )
     assert selection.apply_selection_tokens(target, {"asset_id": "asset-1"}, {}, _context())
+
+
+def test_repeated_filtered_live_lookups_accumulate_asset_proofs_for_one_creation():
+    signer = _ValueSigner()
+    source = _tool("example_list_assets", namespace="example")
+    target = _tool(
+        "example_create_asset_group",
+        namespace="example",
+        action="create",
+        properties={
+            "images": {
+                "type": "array",
+                "items": {"type": "string"},
+                "lookup_tool": source.name,
+            },
+        },
+    )
+    services = SimpleNamespace(
+        registry=SimpleNamespace(list_all=lambda: [source, target]),
+        selection_signer=signer,
+        execution_mode="live",
+        normalize_namespace=lambda value: value,
+    )
+    selection = ParameterSelectionService(
+        services, scope_value_resolver=lambda context: context.account_id,
+    )
+    context = _context()
+
+    for asset_id in ("asset-image", "asset-square", "asset-logo"):
+        selection.decorate_lookup_result(
+            source,
+            ToolResult.ok({
+                "assets": [{"id": asset_id}],
+                "data_status": "live",
+            }),
+            context,
+            "example",
+        )
+
+    tool_input = {
+        "images": ["asset-image", "asset-square", "asset-logo"],
+    }
+    errors = selection.apply_selection_tokens(
+        target, tool_input, {}, context,
+    )
+
+    assert errors == []
+    assert tool_input["images"] == [
+        "asset-image", "asset-square", "asset-logo",
+    ]
 
 
 def test_native_lookup_proofs_are_bounded_and_not_part_of_persistent_context():

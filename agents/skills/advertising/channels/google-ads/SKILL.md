@@ -1,7 +1,7 @@
 ---
 name: google-ads-api-expert
 description: "Google Ads 专家 Skill：负责账户层级、广告类型、出价、素材、GAQL 报表、变更验证和故障诊断的业务判断与 SOP"
-version: 2.0.1
+version: 2.0.3
 author: Ryan
 created: 2026-09-08
 tags: [google, google-ads, search, shopping, performance-max, gaql, bidding, reporting]
@@ -82,13 +82,26 @@ headlines/descriptions 数量与重复度。关键词意图、落地页和广告
 ### App
 
 App Ad 创意修改使用新建并绑定到目标 Ad Group，不原地更新旧 App Ad，也不自动删除或替换旧广告。
-Google App 演示模板明确声明 Ad 为 ENABLED；这不表示启用整个广告系列。必须在确认计划中
-展示实际子级状态，并实时核验其所属 Campaign 和 Ad Group 均为 PAUSED。任何父级启用、
-状态未知或关联未核实，都应停止创建；不能仅凭请求参数声称投放已经暂停。
+Google Ads v24 拒绝此类 App Ad 使用 `PAUSED`；内置测试模板因此固定 Campaign 和 Ad Group
+为 `PAUSED`、App Ad 为 `ENABLED`。创建前必须实时回读并确认两个父级均暂停，不能自动启用父级；
+创建后也不能把 ENABLED 的 Ad 描述成暂停。由于两个父级暂停，投放仍被阻断。若父级状态未知或
+已启用，必须拒绝创建 App Ad。
 
 使用内置模板时保留已验证的应用、转化目标、出价和素材参数，只向用户收集名称、排期和预算。
 每个新层级的 ID 来自本次成功创建或只读回验，不将旧 Campaign/Ad Group/Ad ID 固化为创建参数。
 完成后回查父子归属、各级实际状态、创意字段和素材引用，不把 ENABLED 的 Ad 描述为 PAUSED。
+
+## 测试账号 E2E 记忆
+
+对测试账号执行任何 live 创建、更新或查询回归前，先检索
+`agents/knowledge/advertising/wiki/concepts/provider-live-e2e-memory.md`，再读取
+`agents/tools/advertising/contracts/provider_live_e2e_memory.json` 中
+`google.test.performance-max`、`google.test.shopping` 或 `google.test.app` 对应记录。模板值与
+SHA-256 是参数事实源；已有 campaign/resource ID 和 Google App Ad 状态限制是续跑依据。
+
+若账本或近期观察已记录 Campaign 创建，先用只读 Tool 回查并从现有父级继续；不能重跑整条模板。
+更新参数时保留已验证素材、Merchant Center、App、转化动作和商品树值，只改本轮明确要求的字段。
+E2E 完成后保留真实 Provider 回读与失败原因；更新模板必须同步更新参数锁、证据和回归测试。
 
 ### Experiment
 

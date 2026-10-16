@@ -5027,7 +5027,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
             raise ValueError("App Ad requires 2 to 5 descriptions")
         status = str(status or "").strip().upper()
         if status != "ENABLED":
-            raise ValueError("App Ad creation requires explicit ENABLED status under PAUSED parents")
+            raise ValueError(
+                "Google Ads v24 App Ad creation requires ENABLED status"
+            )
         provider_status = status
         delivery_guard = {
             "resource": "ad_group",
@@ -5533,6 +5535,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
 
         if live:
             customer = self._numeric_id(self.customer_id, "customer_id")
+            campaign = self.get_campaign(campaign_id)
+            if str((campaign or {}).get("status") or "").upper() != "PAUSED":
+                raise ValueError(
+                    "Google live Asset Group creation requires a PAUSED Campaign"
+                )
             refs: list[tuple[str, str]] = []
             asset_operations: list[dict[str, Any]] = []
             temporary_asset_id = -2

@@ -74,6 +74,7 @@ knowledge_base/
 | “需要埋哪些转化事件、如何定义和验收追踪？” | `measurement-data-contracts-and-incrementality` + `agents/skills/advertising/practices/measurement-instrumentation/` + 对应渠道事件文档 |
 | “四个平台整体怎么设计和排查？” | `four-platform-ad-agent-handbook` + 对应平台 Canonical Runbook |
 | “这个操作系统支持吗？” | 先查当前 Registry/Tool Source，不以知识文档代替能力审计 |
+| “测试账号某种广告类型上次真实创建到哪一步，失败怎么恢复？” | `concepts/provider-live-e2e-memory` + `agents/tools/advertising/contracts/provider_live_e2e_memory.json` |
 
 ## 重要边界
 

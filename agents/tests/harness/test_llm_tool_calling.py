@@ -9,6 +9,7 @@ from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
 from agents.agent_harness.core.llm_client import LLMClient, LLMStructuredOutputError
 from agents.agent_harness.messages import AgentMessage, ModelTurn, ToolCall
 from agents.agent_harness.runtime_kernel import TurnRequest
+from agents.agent_harness.tool_execution import ToolExecutionCoordinator
 
 
 def _tool(name: str = "lookup_record") -> ToolDefinition:
@@ -177,6 +178,39 @@ def test_llm_client_round_trips_assistant_tool_call_and_tool_result_messages():
     ]
 
 
+def test_model_facing_lookup_result_omits_signed_selection_catalog():
+    executor = object.__new__(ToolExecutionCoordinator)
+    executor.max_tool_result_chars = 32_000
+    result = {
+        "success": True,
+        "data": {
+            "identities": [{"identity_id": "identity-1", "display_name": "Shop"}],
+            "parameter_selections": [{
+                "tool_name": "create_ad",
+                "field": "identity_id",
+                "options": [{
+                    "value": "identity-1",
+                    "label": "Shop",
+                    "selection_token": "signed-proof",
+                }],
+            }],
+        },
+    }
+    definition = SimpleNamespace(
+        result_items_key="identities",
+        is_write_tool=False,
+    )
+
+    model_content = executor._query_content(result, definition)
+
+    assert "parameter_selections" not in model_content["data"]
+    assert model_content["data"]["identities"] == result["data"]["identities"]
+    assert "signed-proof" not in json.dumps(model_content)
+    assert result["data"]["parameter_selections"][0]["options"][0][
+        "selection_token"
+    ] == "signed-proof"
+
+
 @pytest.mark.parametrize(
     "arguments",
     ["not-json", "[]", "null", "\"value\""],
@@ -195,7 +229,7 @@ def test_llm_client_rejects_non_object_tool_arguments(arguments):
         client.complete([AgentMessage.user("find it")], [_tool()], TurnRequest("find it"))
 
 
-def test_llm_client_rejects_a_tool_not_in_the_active_catalog():
+def test_llm_client_rejects_a_tool_not_in_the_active_catalog(caplog):
     message = SimpleNamespace(
         content=None,
         tool_calls=[SimpleNamespace(
@@ -207,6 +241,10 @@ def test_llm_client_rejects_a_tool_not_in_the_active_catalog():
 
     with pytest.raises(LLMStructuredOutputError):
         client.complete([AgentMessage.user("do it")], [_tool()], TurnRequest("do it"))
+
+    assert "LLM Tool-call response rejected" in caplog.text
+    assert "tool_not_in_active_catalog" in caplog.text
+    assert "delete_everything" not in caplog.text
 
 
 def test_llm_client_rejects_duplicate_tool_call_ids():

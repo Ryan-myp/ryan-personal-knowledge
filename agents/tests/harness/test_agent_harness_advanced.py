@@ -267,6 +267,156 @@ def test_ambiguous_resource_parent_rejects_the_batch_before_any_write():
         app.close()
 
 
+def test_replayed_hierarchy_with_explicit_parent_ids_is_write_coalesced():
+    executed = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall("campaign-1", "create_campaign", {"name": "QA"}),
+                ))
+            if self.turn == 2:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "adgroup-1",
+                        "create_adgroup",
+                        {"name": "QA Ad Group", "campaign_id": "campaign-1"},
+                    ),
+                ))
+            if self.turn == 3:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "ad-1",
+                        "create_ad",
+                        {
+                            "name": "QA Ad",
+                            "campaign_id": "campaign-1",
+                            "adgroup_id": "adgroup-1",
+                        },
+                    ),
+                ))
+            if self.turn == 4:
+                return ModelTurn(tool_calls=(
+                    ToolCall("campaign-2", "create_campaign", {"name": "QA"}),
+                    ToolCall(
+                        "adgroup-2",
+                        "create_adgroup",
+                        {"name": "QA Ad Group", "campaign_id": "campaign-1"},
+                    ),
+                    ToolCall(
+                        "ad-2",
+                        "create_ad",
+                        {
+                            "name": "QA Ad",
+                            "campaign_id": "campaign-1",
+                            "adgroup_id": "adgroup-1",
+                        },
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(
+        model=Model(),
+        max_turns=8,
+        tool_execution="sequential",
+    )
+    app.register_tool_source(StaticToolSource(
+        "advertising",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "effect_class": "write",
+                    "replay_policy": "unsafe",
+                    "input_schema": {
+                        "required": ["name"],
+                        "properties": {"name": {"type": "string"}},
+                    },
+                },
+                lambda _ctx, value: executed.append(("campaign", dict(value))) or {
+                    "success": True,
+                    "data": {"campaign_id": "campaign-1"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "adgroup_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "effect_class": "write",
+                    "replay_policy": "unsafe",
+                    "input_schema": {
+                        "required": ["name", "campaign_id"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "campaign_id": {"type": "string"},
+                        },
+                    },
+                },
+                lambda _ctx, value: executed.append(("adgroup", dict(value))) or {
+                    "success": True,
+                    "data": {"adgroup_id": "adgroup-1"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_ad",
+                    "namespace": "tiktok",
+                    "action": "create",
+                    "resource_type": "ad",
+                    "parent_resource_type": "ad_group",
+                    "resource_id_field": "ad_id",
+                    "parent_resource_id_field": "adgroup_id",
+                    "effect_class": "write",
+                    "replay_policy": "unsafe",
+                    "input_schema": {
+                        "required": ["name", "campaign_id", "adgroup_id"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "campaign_id": {"type": "string"},
+                            "adgroup_id": {"type": "string"},
+                        },
+                    },
+                },
+                lambda _ctx, value: executed.append(("ad", dict(value))) or {
+                    "success": True,
+                    "data": {"ad_id": "ad-1"},
+                },
+            ),
+        ],
+    ))
+    try:
+        result = app.prompt("create a campaign with its ad group and ad")
+        tool_results = result.data["tool_results"]
+
+        assert result.status.value == "succeeded"
+        assert [kind for kind, _value in executed] == [
+            "campaign", "adgroup", "ad",
+        ]
+        coalesced = [
+            item for item in tool_results
+            if item.get("runtime_signals", {}).get("duplicate_write_coalesced")
+        ]
+        assert {item["name"] for item in coalesced} == {
+            "create_campaign", "create_adgroup", "create_ad",
+        }
+    finally:
+        app.close()
+
+
 def test_resource_scope_mismatch_rejects_the_batch_before_any_write():
     executed = []
 
@@ -381,6 +531,360 @@ def test_child_create_without_declared_parent_result_is_not_executed():
         assert child_result["is_error"] is True
         assert child_result["needs_input"] is True
         assert child_result["runtime_signals"].get(
+            "tool_resource_dependency_missing_parent"
+        )
+    finally:
+        app.close()
+
+
+def test_declared_parent_binding_survives_separate_model_turns():
+    executed = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "campaign",
+                        "create_campaign",
+                        {"campaign_name": "QA campaign"},
+                    ),
+                ))
+            if self.turn == 2:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "adgroup",
+                        "create_adgroup",
+                        {"name": "QA ad group"},
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(
+        model=Model(),
+        tool_execution="sequential",
+        max_turns=3,
+    )
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {"campaign_name": {}}},
+                },
+                lambda _ctx, value: {
+                    "success": True,
+                    "data": {"campaign_id": "campaign-123"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "ad_group_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {
+                        "name": {},
+                        "campaign_id": {},
+                    }},
+                },
+                lambda _ctx, value: (
+                    executed.append(value)
+                    or {"success": True, "data": {"ad_group_id": "adgroup-456"}}
+                ),
+            ),
+        ],
+    ))
+
+    try:
+        result = app.prompt("Create a campaign and its ad group.")
+
+        assert result.status.value == "succeeded"
+        assert len(executed) == 1
+        assert executed[0]["campaign_id"] == "campaign-123"
+    finally:
+        app.close()
+
+
+def test_invalid_duplicate_parent_call_does_not_make_prior_resource_ambiguous():
+    executed = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "campaign",
+                        "create_campaign",
+                        {"campaign_name": "QA campaign"},
+                    ),
+                ))
+            if self.turn == 2:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "adgroup",
+                        "create_adgroup",
+                        {"name": "QA ad group"},
+                    ),
+                    ToolCall("duplicate-campaign", "create_campaign", {}),
+                ))
+            return "done"
+
+    app = AgentApplication.create(
+        model=Model(),
+        tool_execution="sequential",
+        max_turns=3,
+    )
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {
+                        "type": "object",
+                        "required": ["campaign_name"],
+                        "properties": {"campaign_name": {"type": "string"}},
+                    },
+                },
+                lambda _ctx, value: {
+                    "success": True,
+                    "data": {"campaign_id": "campaign-123"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "ad_group_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {
+                        "type": "object",
+                        "required": ["name", "campaign_id"],
+                        "properties": {
+                            "name": {"type": "string"},
+                            "campaign_id": {"type": "string"},
+                        },
+                    },
+                },
+                lambda _ctx, value: (
+                    executed.append(value)
+                    or {"success": True, "data": {"ad_group_id": "adgroup-456"}}
+                ),
+            ),
+        ],
+    ))
+
+    try:
+        result = app.prompt("Create one campaign and its ad group.")
+
+        assert result.status.value == "succeeded"
+        assert executed == [{"name": "QA ad group", "campaign_id": "campaign-123"}]
+    finally:
+        app.close()
+
+
+def test_declared_parent_binding_replaces_valid_but_unmatched_model_id():
+    executed = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "campaign",
+                        "create_campaign",
+                        {
+                            "customer_id": "9055507554",
+                            "name": "QA campaign",
+                        },
+                    ),
+                ))
+            if self.turn == 2:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "adgroup",
+                        "create_adgroup",
+                        {
+                            "customer_id": "9055507554",
+                            "campaign_id": "6934977",
+                            "name": "QA ad group",
+                        },
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(
+        model=Model(),
+        tool_execution="sequential",
+        max_turns=3,
+    )
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "google-ads",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "scope_fields": ["customer_id"],
+                    "input_schema": {"properties": {
+                        "customer_id": {},
+                        "name": {},
+                    }},
+                },
+                lambda _ctx, value: {
+                    "success": True,
+                    "data": {
+                        "campaign_id": "24357433403",
+                    },
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "google-ads",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "ad_group_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "scope_fields": ["customer_id"],
+                    "input_schema": {"properties": {
+                        "customer_id": {},
+                        "name": {},
+                        "campaign_id": {
+                            "type": "string",
+                            "pattern": "^[0-9]+$",
+                        },
+                    }},
+                },
+                lambda _ctx, value: (
+                    executed.append(value)
+                    or {"success": True, "data": {"ad_group_id": "adgroup-456"}}
+                ),
+            ),
+        ],
+    ))
+
+    try:
+        result = app.prompt("Create a campaign and its ad group.")
+
+        assert result.status.value == "succeeded"
+        assert len(executed) == 1
+        assert executed[0]["campaign_id"] == "24357433403"
+    finally:
+        app.close()
+
+
+def test_declared_parent_binding_does_not_leak_between_runs():
+    executed = []
+
+    class Model:
+        def __init__(self):
+            self.turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn == 1:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "campaign",
+                        "create_campaign",
+                        {"campaign_name": "QA campaign"},
+                    ),
+                ))
+            if self.turn == 3:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        "adgroup",
+                        "create_adgroup",
+                        {"name": "QA ad group"},
+                    ),
+                ))
+            return "done"
+
+    app = AgentApplication.create(
+        model=Model(),
+        tool_execution="sequential",
+        max_turns=2,
+    )
+    app.register_tool_source(StaticToolSource(
+        "resources",
+        [
+            ToolBinding(
+                {
+                    "name": "create_campaign",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "campaign",
+                    "resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {"campaign_name": {}}},
+                },
+                lambda _ctx, value: {
+                    "success": True,
+                    "data": {"campaign_id": "campaign-123"},
+                },
+            ),
+            ToolBinding(
+                {
+                    "name": "create_adgroup",
+                    "namespace": "example",
+                    "action": "create",
+                    "resource_type": "ad_group",
+                    "parent_resource_type": "campaign",
+                    "resource_id_field": "ad_group_id",
+                    "parent_resource_id_field": "campaign_id",
+                    "input_schema": {"properties": {
+                        "name": {},
+                        "campaign_id": {},
+                    }},
+                },
+                lambda _ctx, value: (
+                    executed.append(value)
+                    or {"success": True, "data": {"ad_group_id": "adgroup-456"}}
+                ),
+            ),
+        ],
+    ))
+
+    try:
+        first = app.prompt("create campaign")
+        second = app.prompt("create ad group")
+
+        assert first.status.value == "succeeded"
+        assert second.status.value == "awaiting_input"
+        assert executed == []
+        assert second.data["tool_results"][0]["runtime_signals"].get(
             "tool_resource_dependency_missing_parent"
         )
     finally:

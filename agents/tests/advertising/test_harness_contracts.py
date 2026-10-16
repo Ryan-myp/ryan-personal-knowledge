@@ -39,6 +39,41 @@ def _whitelist(**accounts):
     return validator
 
 
+def test_default_read_turn_exposes_a_small_relevant_tool_set():
+    from types import SimpleNamespace
+
+    from agents.agent_harness.core.tool_selection import ToolSelector
+    from agents.applications.advertising.composition.ad_application_assembly import (
+        AdApplicationAssembly,
+    )
+
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    runtime.register_tool_source(create_meta_tool_source())
+    select_tools = AdApplicationAssembly._tool_selector(runtime, ToolSelector())
+    request = SimpleNamespace(
+        user_input=(
+            "查询我的 Meta 测试账户下的 Campaign 列表，最多返回 5 条，"
+            "只查询一次，不要修改任何资源。"
+        ),
+        context={},
+        execution_mode="dry_run",
+        principal=None,
+    )
+
+    try:
+        selected = select_tools(request, runtime.registry.list_all())
+
+        assert len(selected) <= 12
+        assert "meta_list_campaigns" in {item.name for item in selected}
+        assert all(item.is_read_tool for item in selected)
+    finally:
+        runtime.close(wait=True)
+
+
 class _ScriptedHarnessModel:
     """Return explicit model ToolCalls for deterministic Run-boundary tests."""
 
@@ -687,6 +722,61 @@ def test_hierarchy_guide_formats_keep_provider_enum_and_execution_boundaries():
     meta_formats = {item["format_id"]: item for item in runtime.list_ad_formats("meta")}
     assert meta_formats["lead.instant_form"]["coverage"] == "supported_dry_run"
     assert meta_formats["lead.instant_form"]["tool_names"] == ["meta_create_lead_ad"]
+
+
+def test_schema_alternative_requirements_accept_nested_dotted_paths():
+    schema = ToolSchema(
+        properties={
+            "targeting_spec": {
+                "type": "object",
+                "properties": {"location_ids": {"type": "array"}},
+            },
+            "saved_audience_id": {"type": "string"},
+        },
+        requires_any_of=[[
+            "targeting_spec.location_ids",
+            "targeting_spec.saved_audience_id",
+            "saved_audience_id",
+        ]],
+    )
+
+    assert validate_tool_input(
+        schema,
+        {"targeting_spec": {"location_ids": ["1880251"]}},
+        include_tool_requirements=True,
+    ) == []
+    assert validate_tool_input(
+        schema,
+        {"targeting_spec": {"gender": "GENDER_UNLIMITED"}},
+        include_tool_requirements=True,
+    ) == [
+        "Tool requirements require one of: "
+        "targeting_spec.location_ids, targeting_spec.saved_audience_id, saved_audience_id"
+    ]
+
+    exclusive_schema = ToolSchema(
+        properties=schema.properties,
+        requires_exactly_one_of=[[
+            "targeting_spec.location_ids",
+            "targeting_spec.saved_audience_id",
+        ]],
+    )
+    assert validate_tool_input(
+        exclusive_schema,
+        {"targeting_spec": {"location_ids": ["1880251"]}},
+        include_tool_requirements=True,
+    ) == []
+    assert any(
+        "require exactly one of" in error
+        for error in validate_tool_input(
+            exclusive_schema,
+            {"targeting_spec": {
+                "location_ids": ["1880251"],
+                "saved_audience_id": "aud-1",
+            }},
+            include_tool_requirements=True,
+        )
+    )
 
 
 def test_workflow_state_machine_and_cancel_are_durable():

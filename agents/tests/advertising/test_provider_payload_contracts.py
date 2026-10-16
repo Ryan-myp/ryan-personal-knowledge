@@ -3195,6 +3195,13 @@ def test_google_app_ad_builds_dry_run_asset_payload_without_provider_io():
 def test_google_pmax_live_chain_uses_one_atomic_customer_mutate():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
+    campaign_reads = []
+
+    def get_campaign(campaign_id):
+        campaign_reads.append(campaign_id)
+        return {"campaign_id": campaign_id, "status": "PAUSED"}
+
+    client.get_campaign = get_campaign
 
     def fake_mutate(operations):
         calls.append(operations)
@@ -3246,6 +3253,7 @@ def test_google_pmax_live_chain_uses_one_atomic_customer_mutate():
         f"customers/123/assetGroupAssets/200~{index}~HEADLINE"
         for index in range(1, 11)
     ]
+    assert campaign_reads == ["42"]
     assert len(calls) == 1
     operations = calls[0]
     assert len(operations) == 18
@@ -3261,6 +3269,33 @@ def test_google_pmax_live_chain_uses_one_atomic_customer_mutate():
         or "assetGroupAssetOperation" in operation
         for operation in operations
     )
+
+
+@pytest.mark.parametrize("parent_status", ["ENABLED", "REMOVED", None])
+def test_google_pmax_live_creation_requires_a_verified_paused_parent(parent_status):
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client.get_campaign = lambda _campaign_id: {"status": parent_status}
+    mutations = []
+    client._mutate_google_operations = lambda operations: mutations.append(operations)
+
+    with pytest.raises(ValueError, match="requires a PAUSED Campaign"):
+        client.create_pmax_asset_group(
+            "42", "Live PMax", [
+                {"text": "Headline one"}, {"text": "Headline two"},
+                {"text": "Headline three"},
+            ],
+            descriptions=[{"text": "Description one"}, {"text": "Description two"}],
+            long_headlines=[{"text": "Long headline"}],
+            images=[{"resource_name": "customers/123/assets/88"}],
+            square_marketing_images=[{"resource_name": "customers/123/assets/89"}],
+            logos=[{"resource_name": "customers/123/assets/90"}],
+            business_names=[{"text": "Example Shop"}],
+            final_urls=["https://example.test/landing"],
+            status="PAUSED",
+            live=True,
+        )
+
+    assert mutations == []
 
 
 def test_google_customer_mutate_posts_cross_service_operations_and_normalizes_results():
@@ -3951,6 +3986,69 @@ def test_tiktok_upgraded_smart_plus_uses_current_three_step_contract():
     }
 
 
+def test_tiktok_smart_plus_explicit_creative_inherits_top_level_ad_format():
+    client = TikTokAPIClient({"access_token": "test"})
+    payloads = []
+    client._smart_plus_image_uris = lambda values, advertiser_id, live=False: list(values)
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        payloads.append(data)
+        or {"code": 0, "data": {"smart_plus_ad_id": "sp-a2"}}
+    )
+
+    result = client.create_smart_plus_ad("t1", "sp-c1", "sp-g1", {
+        "ad_name": "Traffic video",
+        "operation_status": "DISABLE",
+        "ad_format": "SINGLE_VIDEO",
+        "creative_list": [{
+            "creative_info": {
+                "video_id": "video-1",
+                "image_web_uris": ["cover-1"],
+                "identity_type": "AUTH_CODE",
+                "identity_id": "identity-1",
+                "ad_text": "Discover more",
+                "landing_page_url": "https://example.test/",
+            },
+        }],
+        "call_to_action_id": "cta-1",
+    }, live=True)
+
+    assert result["smart_plus_ad_id"] == "sp-a2"
+    creative_info = payloads[0]["creative_list"][0]["creative_info"]
+    assert creative_info["ad_format"] == "SINGLE_VIDEO"
+    assert creative_info["video_info"]["video_id"] == "video-1"
+
+
+def test_tiktok_smart_plus_adgroup_accepts_harness_normalized_targeting_spec():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, **kwargs):
+        calls.append((method, endpoint, data))
+        return {"code": 0, "data": {"adgroup_id": "sp-g2"}}
+
+    client.request = request
+    result = client.create_smart_plus_adgroup("t1", "sp-c1", {
+        "objective_type": "TRAFFIC",
+        "adgroup_name": "Normalized traffic group",
+        "operation_status": "DISABLE",
+        "promotion_type": "WEBSITE",
+        "optimization_goal": "CLICK",
+        "bid_type": "BID_TYPE_NO_BID",
+        "billing_event": "CPC",
+        "schedule_type": "SCHEDULE_START_END",
+        "schedule_start_time": "2026-10-16 00:00:00",
+        "schedule_end_time": "2026-10-20 23:59:00",
+        "targeting_spec": {
+            "location_ids": ["1880251"],
+            "gender": "GENDER_UNLIMITED",
+        },
+    }, live=True)
+
+    assert result["adgroup_id"] == "sp-g2"
+    assert calls[0][1] == "smart_plus/adgroup/create/"
+    assert calls[0][2]["targeting_spec"]["location_ids"] == ["1880251"]
+
+
 def test_tiktok_smart_plus_create_methods_are_dry_run_by_default():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
@@ -4250,6 +4348,57 @@ def test_tiktok_upgraded_smart_plus_rejects_invalid_cascades_and_exposes_tools()
     } <= set(ad_update_properties)
 
 
+def test_tiktok_smart_plus_update_tools_explain_status_and_content_separation():
+    expected_tools = {
+        "tiktok_smart_plus_update_campaign",
+        "tiktok_smart_plus_update_adgroup",
+        "tiktok_smart_plus_update_ad",
+    }
+    definitions = {
+        definition.name: definition
+        for definition, _handler in create_tiktok_tool_source().register_tools()
+    }
+
+    assert expected_tools <= definitions.keys()
+    for tool_name in expected_tools:
+        description = definitions[tool_name].description
+        assert "保持暂停" in description
+        assert "单独提交" in description
+        assert "内容字段" in description
+
+
+def test_tiktok_smart_plus_tool_accepts_nested_targeting_from_harness():
+    definition = next(
+        definition
+        for definition, _handler in create_tiktok_tool_source().register_tools()
+        if definition.name == "tiktok_smart_plus_create_adgroup"
+    )
+
+    errors = validate_tool_input(
+        definition.input_schema,
+        {
+            "account_id": "t1",
+            "campaign_id": "c1",
+            "objective_type": "TRAFFIC",
+            "adgroup_name": "Traffic group",
+            "promotion_type": "WEBSITE",
+            "optimization_goal": "CLICK",
+            "bid_type": "BID_TYPE_NO_BID",
+            "billing_event": "CPC",
+            "schedule_type": "SCHEDULE_START_END",
+            "schedule_start_time": "2026-10-16 00:00:00",
+            "schedule_end_time": "2026-10-20 23:59:00",
+            "targeting_spec": {
+                "location_ids": ["1880251"],
+                "gender": "GENDER_UNLIMITED",
+            },
+        },
+        include_tool_requirements=True,
+    )
+
+    assert errors == []
+
+
 def test_tiktok_smart_plus_update_payloads_use_parent_ids_and_normalize_status():
     client = TikTokAPIClient({"access_token": "test"})
     seen = []
@@ -4373,8 +4522,128 @@ def test_tiktok_app_lookup_uses_advertiser_scoped_app_list_endpoint():
         seen.append((method, endpoint, params)) or {"apps": [{"app_id": "app-1"}]}
     )
 
-    assert client.list_apps(page_size=10) == [{"app_id": "app-1"}]
+    assert client.list_apps(page_size=10) == [{
+        "app_id": "app-1",
+        "tracking_configured": {"click": False, "impression": False},
+    }]
     assert seen == [("GET", "app/list/", {"advertiser_id": "t1", "page_size": 10})]
+
+
+def test_tiktok_app_lookup_returns_only_selection_and_tracking_readiness_fields():
+    client = TikTokAPIClient({"access_token": "test", "advertiser_id": "t1"})
+    client.request = lambda *_args, **_kwargs: {
+        "code": 0,
+        "data": {
+            "apps": [{
+                "app_id": "app-1",
+                "app_name": "Demo App",
+                "app_platform_id": "package.demo",
+                "platform": "ANDROID",
+                "package_name": "package.demo",
+                "download_url": "https://store.example/demo",
+                "self_attribution_enabled": True,
+                "tracking_url": {
+                    "click_url": "https://tracker.example/click?secret=click",
+                    "impression_url": "",
+                },
+                "partner": {
+                    "partner_id": "private-partner-id",
+                    "partner_token": "private-partner-token",
+                },
+            }],
+        },
+    }
+
+    apps = client.list_apps()
+
+    assert apps == [{
+        "app_id": "app-1",
+        "app_name": "Demo App",
+        "app_platform_id": "package.demo",
+        "platform": "ANDROID",
+        "package_name": "package.demo",
+        "download_url": "https://store.example/demo",
+        "self_attribution_enabled": True,
+        "tracking_configured": {"click": True, "impression": False},
+    }]
+    assert "private-partner-token" not in str(apps)
+    assert "private-partner-id" not in str(apps)
+    assert "secret=click" not in str(apps)
+
+
+def test_tiktok_app_ad_contract_exposes_explicit_mmp_tracking_inputs():
+    from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+
+    definition = next(
+        item.definition
+        for item in create_tiktok_tool_source().list_bindings()
+        if item.definition.name == "tiktok_create_app_ad"
+    )
+
+    assert "click_tracking_url" in definition.input_schema.properties
+    assert "impression_tracking_url" in definition.input_schema.properties
+    assert "app_name" in definition.input_schema.properties
+    assert "app_name" in definition.input_schema.required
+    assert definition.contract_version == "1.6.0"
+    assert "click_tracking_url" not in definition.input_schema.required
+    assert "impression_tracking_url" not in definition.input_schema.required
+
+
+def test_tiktok_app_ad_forwards_explicit_mmp_urls_and_stays_paused():
+    client = TikTokAPIClient({"access_token": "test"})
+    seen = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        seen.append((method, endpoint, data))
+        or {"code": 0, "data": {"ad_id": "ad-1"}}
+    )
+
+    ad_id = client.create_app_ad(
+        "t1",
+        "c1",
+        "g1",
+        {
+            "app_id": "app-1",
+            "app_name": "Demo App",
+            "promotion_type": "APP_ANDROID",
+            "operating_systems": ["ANDROID"],
+            "name": "QA app install",
+            "status": 0,
+            "click_tracking_url": "https://mmp.example/click",
+            "impression_tracking_url": "https://mmp.example/impression",
+        },
+        live=True,
+    )
+
+    assert ad_id == "ad-1"
+    assert seen[0][0:2] == ("POST", "ad/create/")
+    creative = seen[0][2]["creatives"][0]
+    assert creative["app_name"] == "Demo App"
+    assert creative["promote_object"] == {"app_install": {"app_id": "app-1"}}
+    assert creative["click_tracking_url"] == "https://mmp.example/click"
+    assert creative["impression_tracking_url"] == "https://mmp.example/impression"
+    assert creative["operation_status"] == "DISABLE"
+
+
+def test_tiktok_app_ad_rejects_missing_app_name_before_provider_io():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *_args, **_kwargs: pytest.fail(
+        "Missing app_name must be rejected before provider I/O"
+    )
+
+    with pytest.raises(ValueError, match="app_name"):
+        client.create_app_ad(
+            "t1",
+            "c1",
+            "g1",
+            {
+                "app_id": "app-1",
+                "promotion_type": "APP_ANDROID",
+                "operating_systems": ["ANDROID"],
+                "name": "QA app install",
+                "status": 0,
+            },
+            live=True,
+        )
 
 
 def test_tiktok_app_and_sales_use_smart_plus_with_paused_defaults():
@@ -4467,6 +4736,97 @@ def test_tiktok_ad_queries_use_scoped_filter_and_create_accepts_ad_ids():
         "tiktok_item_id": "item-1",
         "identity_id": "identity-1",
     }, live=True) == "ad-1"
+
+
+def test_tiktok_smart_plus_ad_list_keeps_ad_and_creative_ids_distinct():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    provider_row = {
+        "ad_id": "creative-1",
+        "smart_plus_ad_id": "smart-ad-1",
+        "adgroup_id": "group-1",
+        "campaign_automation_type": "UPGRADED_SMART_PLUS_CREATIVE",
+        "operation_status": "ENABLE",
+    }
+
+    def request_raw(method, endpoint, **kwargs):
+        calls.append((method, endpoint, kwargs))
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {"list": [provider_row], "page_info": {"total_page": 1}},
+            },
+            "headers": {},
+        }
+
+    client.request_raw = request_raw
+
+    rows = client.list_ads("account-1", "group-1")
+
+    assert rows == [{
+        "ad_id": "smart-ad-1",
+        "smart_plus_ad_id": "smart-ad-1",
+        "smart_plus_creative_id": "creative-1",
+        "adgroup_id": "group-1",
+        "campaign_automation_type": "UPGRADED_SMART_PLUS_CREATIVE",
+        "creative_operation_status": "ENABLE",
+    }]
+    assert client.get_ad("account-1", "group-1", "smart-ad-1")["ad_id"] == "smart-ad-1"
+    assert json.loads(calls[-1][2]["params"]["filtering"]) == {
+        "adgroup_ids": ["group-1"],
+        "smart_plus_ad_ids": ["smart-ad-1"],
+    }
+
+
+def test_tiktok_smart_plus_list_prefers_current_ad_details_over_linked_creative_rows():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    legacy_row = {
+        "ad_id": "creative-1",
+        "smart_plus_ad_id": "smart-ad-1",
+        "adgroup_id": "group-1",
+        "campaign_automation_type": "UPGRADED_SMART_PLUS_CREATIVE",
+        "ad_name": "legacy creative label",
+        "operation_status": "ENABLE",
+    }
+    smart_plus_row = {
+        "ad_id": "smart-ad-1",
+        "smart_plus_ad_id": "smart-ad-1",
+        "smart_plus_creative_id": "creative-1",
+        "adgroup_id": "group-1",
+        "campaign_automation_type": "UPGRADED_SMART_PLUS_CREATIVE",
+        "ad_name": "current Smart+ Ad name",
+        "operation_status": "DISABLE",
+        "creative_list": [{
+            "smart_plus_creative_id": "creative-1",
+            "material_operation_status": "ENABLE",
+        }],
+    }
+
+    def request_raw(_method, endpoint, **_kwargs):
+        calls.append(endpoint)
+        row = smart_plus_row if "smart_plus/ad/get/" in endpoint else legacy_row
+        return {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {"list": [row], "page_info": {"total_page": 1}},
+            },
+            "headers": {},
+        }
+
+    client.request_raw = request_raw
+
+    rows = client.list_ads("account-1", "group-1")
+
+    assert rows[0]["ad_id"] == "smart-ad-1"
+    assert rows[0]["ad_name"] == "current Smart+ Ad name"
+    assert rows[0]["operation_status"] == "DISABLE"
+    assert rows[0]["creative_list"][0]["material_operation_status"] == "ENABLE"
+    assert len(calls) == 2
+    assert calls[0].endswith("/ad/get/")
+    assert calls[1].endswith("/smart_plus/ad/get/")
 
 
 def test_tiktok_get_adgroup_uses_exact_bounded_provider_filter():
@@ -4870,10 +5230,16 @@ def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
     )
 
     assert client.create_app_ad("t1", "101", "202", {
-        "name": "App install", "app_id": "app-1", "promotion_type": "APP_ANDROID",
+        "name": "App install", "app_id": "app-1", "app_name": "Test App",
+        "promotion_type": "APP_ANDROID",
         "operating_systems": ["ANDROID"],
         "media": [{"video_id": "video-1"}],
         "deep_link": "myapp://home",
+        "text": {
+            "ad_text": "Install this app",
+            "display_name": "App install creative",
+            "call_to_action": "INSTALL_NOW",
+        },
     }, live=True) == "app-ad-1"
     ad = payloads[-1][2]["creatives"][0]
     assert ad["app_id"] == "app-1"
@@ -4881,10 +5247,15 @@ def test_tiktok_app_ad_builds_app_install_promote_object_and_checks_os():
     assert ad["operating_systems"] == ["ANDROID"]
     assert ad["promote_object"] == {"app_install": {"app_id": "app-1"}}
     assert ad["deep_link"] == "myapp://home"
+    assert ad["operation_status"] == "DISABLE"
+    assert ad["ad_text"] == "Install this app"
+    assert ad["display_name"] == "App install creative"
+    assert ad["call_to_action"] == "INSTALL_NOW"
 
     with pytest.raises(ValueError, match="requires operating_systems"):
         client.create_app_ad("t1", "101", "202", {
-            "name": "Wrong OS", "app_id": "app-1", "promotion_type": "APP_ANDROID",
+            "name": "Wrong OS", "app_id": "app-1", "app_name": "Test App",
+            "promotion_type": "APP_ANDROID",
             "operating_systems": ["IOS"], "media": [{"video_id": "video-1"}],
         })
 
@@ -5009,6 +5380,56 @@ def test_tiktok_tool_region_serializes_placements_and_reads_region_info():
     assert calls[0][2]["placements"] == '["PLACEMENT_TIKTOK"]'
 
 
+def test_tiktok_country_region_lookup_omits_nested_child_region_tree():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *_args, **_kwargs: {
+        "code": 0,
+        "message": "OK",
+        "data": {
+            "region_info": [{
+                "location_id": "1643084",
+                "name": "Indonesia",
+                "country_code": "ID",
+                "parent_id": "0",
+                "next_level_ids": ["province-1", "province-2"],
+            }],
+            "region_list": [{"location_id": "1643084", "name": "Indonesia"}],
+        },
+    }
+
+    assert client.list_regions(
+        "7397068114548195329",
+        ["PLACEMENT_TIKTOK"],
+        "APP_PROMOTION",
+        operating_system="ANDROID",
+        level_range="TO_COUNTRY",
+    ) == [{
+        "location_id": "1643084",
+        "name": "Indonesia",
+        "country_code": "ID",
+    }]
+
+
+def test_tiktok_region_tool_defaults_to_country_level_for_targeting():
+    client = TikTokAPIClient({"access_token": "test"})
+    definition, handler = next(
+        (definition, handler)
+        for definition, handler in create_tiktok_tool_source(client).register_tools()
+        if definition.name == "tiktok_list_regions"
+    )
+
+    assert definition.input_schema.properties["level_range"]["default"] == "TO_COUNTRY"
+    _args, kwargs = handler.argument_builder(
+        ToolContext(session_id="s1", user_id="u1", account_id="7397068114548195329"),
+        {
+            "account_id": "7397068114548195329",
+            "placements": ["PLACEMENT_TIKTOK"],
+            "objective_type": "APP_PROMOTION",
+        },
+    )
+    assert kwargs["level_range"] == "TO_COUNTRY"
+
+
 def test_tiktok_integrated_report_provider_errors_are_not_silent_successes():
     client = TikTokAPIClient({"access_token": "test"})
 
@@ -5060,7 +5481,9 @@ def test_meta_creation_dependency_lookups_cover_pages_pixels_and_lead_forms():
     assert client.list_pixels("123")[0]["id"] == "resource-1"
     assert client.list_lead_forms("page-1")[0]["id"] == "resource-1"
     assert calls == [
-        ("123", "/act_123/promotable_pages", {"limit": 25, "fields": "id,name,category"}),
+        ("123", "/me/accounts", {
+            "limit": 25, "fields": "id,name,category,tasks"
+        }),
         ("123", "/act_123/adspixels", {"limit": 25, "fields": "id,name,last_fired_time"}),
         ("page-1", "/page-1/leadgen_forms", {
             "limit": 25, "fields": "id,name,status,created_time,updated_time"
@@ -5297,7 +5720,10 @@ def test_tiktok_list_endpoints_cap_results_when_provider_ignores_page_size(
     method = getattr(client, method_name)
     rows = method("123", page_size=2)
 
-    assert rows == provider_rows[:2]
+    if method_name == "list_apps":
+        assert [row["app_id"] for row in rows] == ["0", "1"]
+    else:
+        assert rows == provider_rows[:2]
 
 
 @pytest.mark.parametrize(

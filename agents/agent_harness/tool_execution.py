@@ -388,17 +388,29 @@ class ToolExecutionCoordinator:
         return self._truncate_tool_text(str(value), budget), [path or "$"]
 
     def _query_content(self, value: Any, definition: Any) -> Any:
-        collection = self._tool_value(definition, "result_items_key")
+        model_value = value
         data = value.get("data") if isinstance(value, Mapping) else None
+        if (
+            isinstance(data, Mapping)
+            and isinstance(data.get("parameter_selections"), list)
+        ):
+            # Signed, target-specific proofs stay in the Tool result for the
+            # caller; the model only needs the underlying candidate records.
+            model_value = dict(value)
+            model_data = dict(data)
+            model_data.pop("parameter_selections", None)
+            model_value["data"] = model_data
+        collection = self._tool_value(definition, "result_items_key")
+        data = model_value.get("data") if isinstance(model_value, Mapping) else None
         rows = data.get(collection) if isinstance(data, Mapping) and collection else None
         if not isinstance(rows, list) or self._tool_is_write(definition):
-            return self._bound_tool_value(value)
+            return self._bound_tool_value(model_value)
         summary = {
             "collection": collection, "returned_count": len(rows),
             "context_count": len(rows), "context_truncated": False,
         }
         content = self._bound_tool_value({
-            **value, "data": {"query_summary": summary, **data},
+            **model_value, "data": {"query_summary": summary, **data},
         })
         preview = content.get("data") if isinstance(content, Mapping) else None
         visible_summary = preview.get("query_summary") if isinstance(preview, Mapping) else None
@@ -1027,6 +1039,30 @@ class ToolExecutionCoordinator:
         return producers
 
     @classmethod
+    def _has_required_resource_producer_inputs(
+        cls,
+        call: ToolCall,
+        definition: Any,
+    ) -> bool:
+        schema = cls._tool_value(definition, "input_schema", None)
+        required = cls._tool_value(schema, "required", ()) or ()
+        parent_field = str(
+            cls._tool_value(definition, "parent_resource_id_field", "") or ""
+        ).strip()
+        bound_fields = {
+            str(item.target_field)
+            for item in call.argument_bindings
+            if str(getattr(item, "target_field", "") or "").strip()
+        }
+        for field in required:
+            field = str(field).strip()
+            if not field or field == parent_field or field in bound_fields:
+                continue
+            if cls._value_at_path(call.arguments, field) in (None, ""):
+                return False
+        return True
+
+    @classmethod
     def _resource_candidates(
         cls,
         call: ToolCall,
@@ -1066,6 +1102,7 @@ class ToolExecutionCoordinator:
         call: ToolCall,
         definition: Any,
         producers: Mapping[tuple[str, str], Sequence[tuple[ToolCall, Any]]],
+        historical_resource_ids: Mapping[str, Any] | None = None,
     ) -> tuple[ToolCall, tuple[str, str, str] | None, str | None, str | None]:
         if str(cls._tool_value(definition, "action", "") or "").lower() != "create":
             return call, None, None, None
@@ -1077,10 +1114,15 @@ class ToolExecutionCoordinator:
         ).strip()
         if not parent_type or not parent_field:
             return call, None, None, None
-        has_value = cls._value_at_path(call.arguments, parent_field) not in (None, "")
+        if not cls._declares_input_path(definition, parent_field):
+            return call, None, None, "invalid_parent_contract"
         has_argument_binding = any(
             item.target_field == parent_field for item in call.argument_bindings
         )
+        if has_argument_binding:
+            return call, None, None, None
+
+        has_value = cls._value_at_path(call.arguments, parent_field) not in (None, "")
         schema = cls._tool_value(definition, "input_schema", None)
         properties = cls._tool_value(schema, "properties", {}) or {}
         if has_value and parent_field in properties:
@@ -1090,14 +1132,33 @@ class ToolExecutionCoordinator:
                 ToolSchema(properties={parent_field: properties[parent_field]}),
                 {parent_field: cls._value_at_path(call.arguments, parent_field)},
             )
-        if has_value or has_argument_binding:
-            return call, None, None, None
-        if not cls._declares_input_path(definition, parent_field):
-            return call, None, None, "invalid_parent_contract"
+        if has_value:
+            candidates, rejection = cls._resource_candidates(
+                call, definition, parent_type, producers,
+            )
+            historical_ids = historical_resource_ids or {}
+            historical_candidates = [
+                item for item in candidates if item[0].id in historical_ids
+            ]
+            current_candidates = [
+                item for item in candidates if item[0].id not in historical_ids
+            ]
+            if rejection or current_candidates or not historical_candidates:
+                return call, None, None, None
+            provided_value = str(cls._value_at_path(call.arguments, parent_field))
+            if any(
+                str(historical_ids[item[0].id]) == provided_value
+                for item in historical_candidates
+            ):
+                return call, None, None, None
+            if len(historical_candidates) > 1:
+                return call, None, None, "ambiguous_parent"
+            candidates = historical_candidates
+        else:
+            candidates, rejection = cls._resource_candidates(
+                call, definition, parent_type, producers,
+            )
 
-        candidates, rejection = cls._resource_candidates(
-            call, definition, parent_type, producers,
-        )
         if rejection:
             return call, None, None, rejection
         if len(candidates) > 1:
@@ -1221,6 +1282,7 @@ class ToolExecutionCoordinator:
         cls,
         calls: Sequence[ToolCall],
         tool_catalog: Any,
+        resource_history: Sequence[Mapping[str, Any]] = (),
     ) -> tuple[
         list[ToolCall],
         dict[str, list[tuple[str, str, str]]],
@@ -1229,14 +1291,69 @@ class ToolExecutionCoordinator:
     ]:
         """Bind child resource IDs using Tool-declared parent contracts."""
         definitions = cls._tool_definitions_for_calls(calls, tool_catalog)
-        producers = cls._resource_producers(calls, definitions)
+        historical_calls = []
+        historical_definitions = {}
+        historical_resource_ids = {}
+        for record in resource_history:
+            if not isinstance(record, Mapping):
+                continue
+            history_id = record.get("history_id")
+            tool_name = record.get("tool_name")
+            arguments = record.get("arguments")
+            if (
+                not isinstance(history_id, str)
+                or not history_id
+                or not isinstance(tool_name, str)
+                or not tool_name
+                or not isinstance(arguments, Mapping)
+                or not isinstance(record.get("data"), Mapping)
+            ):
+                continue
+            try:
+                binding = tool_catalog.get_binding(tool_name)
+            except (AttributeError, KeyError, TypeError):
+                continue
+            definition = getattr(binding, "definition", None)
+            if (
+                str(cls._tool_value(definition, "action", "") or "").lower()
+                != "create"
+            ):
+                continue
+            historical_call = ToolCall(
+                id=history_id,
+                name=tool_name,
+                arguments=dict(arguments),
+            )
+            historical_calls.append(historical_call)
+            historical_definitions[history_id] = definition
+            resource_id_field = str(record.get("resource_id_field") or "").strip()
+            resource_id = record["data"].get(resource_id_field)
+            if resource_id_field and resource_id not in (None, ""):
+                historical_resource_ids[history_id] = resource_id
+        definitions.update(historical_definitions)
+        producers = cls._resource_producers(
+            (
+                *historical_calls,
+                *(
+                    call for call in calls
+                    if cls._has_required_resource_producer_inputs(
+                        call,
+                        definitions.get(str(call.id)),
+                    )
+                ),
+            ),
+            definitions,
+        )
         bound_calls: list[ToolCall] = []
         resource_bindings: dict[str, list[tuple[str, str, str]]] = {}
         unresolved: dict[str, str] = {}
         rejection = None
         for call in calls:
             updated, binding, missing, reason = cls._bind_parent_resource(
-                call, definitions.get(str(call.id)), producers,
+                call,
+                definitions.get(str(call.id)),
+                producers,
+                historical_resource_ids,
             )
             bound_calls.append(updated)
             if binding:
@@ -1262,6 +1379,86 @@ class ToolExecutionCoordinator:
             unresolved,
             rejection,
         )
+
+    def _remember_run_resources(
+        self,
+        calls: Sequence[ToolCall],
+        results: Sequence[Mapping[str, Any]],
+        resource_history: list[Mapping[str, Any]] | None,
+    ) -> None:
+        if resource_history is None:
+            return
+        for call, result in zip(calls, results):
+            if (
+                not isinstance(result, Mapping)
+                or result.get("is_error")
+                or result.get("recovery_required")
+                or result.get("effect_state") == "unknown"
+                or result.get("needs_input")
+                or result.get("needs_confirmation")
+            ):
+                continue
+            try:
+                binding = self.tool_catalog.get_binding(call.name)
+            except (AttributeError, KeyError, TypeError):
+                continue
+            definition = getattr(binding, "definition", None)
+            if str(self._tool_value(definition, "action", "") or "").lower() != "create":
+                continue
+            resource_id_field = str(
+                self._tool_value(definition, "resource_id_field", "") or ""
+            ).strip()
+            namespace = str(
+                self._tool_value(definition, "namespace", "") or ""
+            ).strip()
+            resource_type = str(
+                self._tool_value(definition, "resource_type", "") or ""
+            ).strip()
+            resource_id = self._resource_id_from_output(
+                result.get("data"), resource_id_field,
+            )
+            if (
+                not resource_id_field
+                or not namespace
+                or not resource_type
+                or resource_id in (None, "")
+            ):
+                continue
+            dedupe_key = (
+                call.name,
+                resource_id_field,
+                str(resource_id),
+            )
+            existing = {
+                (
+                    str(item.get("tool_name") or ""),
+                    str(item.get("resource_id_field") or ""),
+                    str(item.get("data", {}).get(item.get("resource_id_field")) or ""),
+                )
+                for item in resource_history
+                if isinstance(item, Mapping)
+                and isinstance(item.get("data"), Mapping)
+            }
+            if dedupe_key in existing:
+                continue
+            scope_arguments = {}
+            for field_name in (
+                self._tool_value(definition, "scope_fields", ()) or ()
+            ):
+                value = self._value_at_path(call.arguments, str(field_name))
+                if value not in (None, ""):
+                    self._set_input_path(
+                        scope_arguments, str(field_name), value,
+                    )
+            history_id = f"__run_resource_{len(resource_history)}"
+            resource_history.append({
+                "history_id": history_id,
+                "tool_name": call.name,
+                "arguments": scope_arguments,
+                "resource_id_field": resource_id_field,
+                "data": {resource_id_field: resource_id},
+            })
+        del resource_history[:-64]
 
     def _resolve_argument_bindings(
         self,
@@ -1332,6 +1529,7 @@ class ToolExecutionCoordinator:
         state: Any,
         read_cache: ToolReadCache | None = None,
         write_cache: ToolWriteReplayCache | None = None,
+        resource_history: list[Mapping[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         if not calls:
             return []
@@ -1345,7 +1543,11 @@ class ToolExecutionCoordinator:
                 "terminate": True,
             } for call in calls]
         calls, resource_bindings, unresolved_dependencies, batch_rejection = (
-            self._declared_resource_dependencies(calls, self.tool_catalog)
+            self._declared_resource_dependencies(
+                calls,
+                self.tool_catalog,
+                resource_history or (),
+            )
         )
         if batch_rejection:
             signal = {
@@ -1379,7 +1581,13 @@ class ToolExecutionCoordinator:
                 },
             } for call in calls]
         pending = list(calls)
-        completed: dict[str, dict[str, Any]] = {}
+        completed: dict[str, dict[str, Any]] = {
+            str(record["history_id"]): {"data": record["data"]}
+            for record in resource_history or ()
+            if isinstance(record, Mapping)
+            and isinstance(record.get("history_id"), str)
+            and isinstance(record.get("data"), Mapping)
+        }
         results: dict[str, dict[str, Any]] = {}
         context = request.context if isinstance(request.context, Mapping) else {}
         visible_names = context.get("_harness_visible_tool_names")
@@ -1570,7 +1778,9 @@ class ToolExecutionCoordinator:
                 call for call in pending
                 if str(call.id) not in completed
             ]
-        return [results[str(call.id)] for call in calls]
+        ordered_results = [results[str(call.id)] for call in calls]
+        self._remember_run_resources(calls, ordered_results, resource_history)
+        return ordered_results
 
     def execute_emitting(
         self,

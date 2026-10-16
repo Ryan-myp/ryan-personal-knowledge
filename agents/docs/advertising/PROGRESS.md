@@ -527,7 +527,7 @@ curl -X POST http://localhost:8765/chat \
 | TikTok | Smart+ App Promotion | Campaign + Ad Group ✅ | Campaign + Ad Group ✅ | 使用已授权 App/Identity；Smart+ Ad 尚未形成可复用的素材验证证据 |
 | TikTok | Smart+ Product/Sales（App） | Campaign + Ad Group ✅ | Ad Group ✅ | Campaign `1875822474379281`、Ad Group `1875822478125442`；Ad 因视频封面素材权限被 Provider 拒绝 |
 | TikTok | Product Set | ❌ | 未执行 | 相关 v1.3 查询端点返回 HTTP 404，未猜测 Product Set ID |
-| Google Ads | PMax、Shopping、App Campaign + 下层级 | Campaign/Asset Group/Ad Group ✅ | Campaign/Asset Group/Ad Group ✅ | Shopping Product Group 与 App Ad 无法保持暂停，Provider 返回 ENABLED；不伪造为 PAUSED |
+| Google Ads | PMax、Shopping、App Campaign + 下层级 | Campaign/Asset Group/Ad Group ✅ | Campaign/Asset Group/Ad Group ✅ | Shopping Product Group 可能回读 ENABLED；App Ad 使用 ENABLED、父级 PAUSED；2026-10-16 复测只读阶段遇 403 权限错误，未执行写入 |
 | Google Ads | Feed/FeedItem | ❌ | 未执行 | v24 实测 GAQL 字段不存在；已从 Runtime Tool 注册表移除，API Surface 标为 planned |
 
 本轮还修正了几个会导致真实请求失败或误报成功的契约问题：Google v24 的遗留

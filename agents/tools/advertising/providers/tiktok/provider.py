@@ -684,7 +684,11 @@ class TikTokToolSource(BaseProviderToolSource):
                     "operating_system": {"type": "string", "enum": ["ANDROID", "IOS"]},
                     "brand_safety_type": {"type": "string"},
                     "brand_safety_partner": {"type": "string", "enum": ["IAS", "OPEN_SLATE"]},
-                    "level_range": {"type": "string", "enum": ["ALL", "TO_COUNTRY", "TO_PROVINCE", "TO_CITY", "TO_DISTRICT"]},
+                    "level_range": {
+                        "type": "string",
+                        "enum": ["ALL", "TO_COUNTRY", "TO_PROVINCE", "TO_CITY", "TO_DISTRICT"],
+                        "default": "TO_COUNTRY",
+                    },
                     "rf_campaign_type": {"type": "string", "enum": ["STANDARD", "PULSE"]},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
@@ -696,7 +700,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     "operating_system": data.get("operating_system"),
                     "brand_safety_type": data.get("brand_safety_type"),
                     "brand_safety_partner": data.get("brand_safety_partner"),
-                    "level_range": data.get("level_range"),
+                    "level_range": data.get("level_range") or "TO_COUNTRY",
                     "rf_campaign_type": data.get("rf_campaign_type"),
                     "limit": data.get("limit", 100),
                 }),
@@ -1062,7 +1066,7 @@ class TikTokToolSource(BaseProviderToolSource):
                     {"field": "app_id", "exists": True},
                 ],
                 traits=["write", "ad", "app", "app_promotion"], write=True,
-                live_support=True, contract_version="1.5.0", readback_tool="tiktok_get_ad",
+                live_support=True, contract_version="1.6.0", readback_tool="tiktok_get_ad",
                 related_resource_type="campaign", related_resource_id_fields=["campaign_id"],
                 argument_builder=lambda ctx, data: ((account(ctx, data), data["campaign_id"], data["adgroup_id"], {
                     key: data[key] for key in tiktok_app_ad_schema()["properties"] if key in data
@@ -1362,7 +1366,7 @@ class TikTokToolSource(BaseProviderToolSource):
             }, {
                 "if": {
                     "objective_type": {"aliases": ["objective"], "in": ["APP_PROMOTION"]},
-                    "app_promotion_type": {"in": ["APP_RETARGETING", "APP_ACQUISITION"]},
+                    "app_promotion_type": {"in": ["APP_RETARGETING", "APP_INSTALL"]},
                 },
             }],
         ), TikTokCreateCampaignHandler(api_client)))
@@ -2181,7 +2185,12 @@ class TikTokToolSource(BaseProviderToolSource):
             tools.append(method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert",
                 name=tool_name,
-                description=f"更新 TikTok Upgraded Smart+ {resource_type}；仅允许在测试账号和确认后执行。",
+                description=(
+                    f"更新 TikTok Upgraded Smart+ {resource_type}；仅允许在测试账号和确认后执行。"
+                    "内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 "
+                    "DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 "
+                    "status/operation_status，且不得与内容字段同次更新。"
+                ),
                 method_name=method_name, result_key=f"{provider_resource}_result",
                 properties=properties, required=required,
                 requires=[resource_id, "updates"], action="update",

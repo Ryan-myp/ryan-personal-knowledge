@@ -1,7 +1,7 @@
 ---
 name: meta-marketing-api-expert
 description: "Meta Ads 专家 Skill：负责账户与资产依赖、ODAX 目标、Ad Set 投放策略、素材/目录广告、Insights、Pixel/CAPI 和故障诊断"
-version: 2.0.0
+version: 2.0.1
 author: Ryan
 created: 2026-09-08
 tags: [meta, facebook, instagram, odax, advantage-plus, insights, pixel, capi, catalog]
@@ -124,6 +124,19 @@ event_source_url（适用时）、user_data 和 custom_data。邮箱/电话等�
   -> live 写入（若部署明确允许）
   -> readback + 审计 + 结果解释
 ```
+
+## 测试账号 E2E 记忆
+
+对测试账号执行 live 创建、更新或查询回归前，先检索
+`agents/knowledge/advertising/wiki/concepts/provider-live-e2e-memory.md`，再读取
+`agents/tools/advertising/contracts/provider_live_e2e_memory.json` 中 Traffic、Catalog Sales、
+Conversion 或 App Promotion 对应记录。已固化模板值、当前版本锁、已存在的层级 ID 和已知失败
+必须优先于重新猜测或重新查询素材参数。
+
+若该类型已有 live 创建证据，先只读回查 Campaign/Ad Set/Ad；父级已存在时只恢复缺失的子级，
+不可重放整条创建链。Meta App 的模板参数解析失败仍按账本记录为未解决，独立 Tool 创建成功
+不能替代原生模板链通过。每次回归记录实际层级状态与 Provider readback；不得把部分通过描述为
+整条链已通过。
 
 写操作默认只生成 dry-run；批量动作必须逐项展开并记录部分失败。返回未知或超时状态时先
 使用已注册 readback 查询，不要直接重复 create。重试只适用于明确的瞬态/限流错误，必须有

@@ -1212,7 +1212,7 @@ def google_app_ad_schema() -> dict[str, Any]:
             "html5_media_bundles": bundle_assets,
             "status": _field(
                 "string",
-                "Explicit ENABLED App Ad; its Ad Group and Campaign must both remain PAUSED",
+                "Google v24 requires ENABLED for this App Ad type; its Ad Group and Campaign must both remain PAUSED",
                 enum=["ENABLED"],
             ),
         },

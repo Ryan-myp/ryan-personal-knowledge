@@ -907,6 +907,7 @@ class Agent:
         all_tool_results: list[dict[str, Any]] = []
         run_read_cache = ToolReadCache()
         run_write_cache = ToolWriteReplayCache()
+        run_resource_history: list[Mapping[str, Any]] = []
         try:
             self._state_io.hydrate(request, state)
             checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
@@ -1027,6 +1028,7 @@ class Agent:
                             state,
                             read_cache=run_read_cache,
                             write_cache=run_write_cache,
+                            resource_history=run_resource_history,
                         )
                         tool_call_count += requested_count
                     all_tool_results.extend(tool_results)

@@ -59,7 +59,15 @@ from ..update_contracts import google_updates
 logger = logging.getLogger(__name__)
 
 
-def _google_lookup(tool: str, result_key: str, values: list[str], labels: list[str], *, depends_on: list[dict] | None = None) -> dict:
+def _google_lookup(
+    tool: str,
+    result_key: str,
+    values: list[str],
+    labels: list[str],
+    *,
+    depends_on: list[dict] | None = None,
+    query_field: str | None = None,
+) -> dict:
     """Build a declarative Google resource picker contract."""
     metadata = {
         "lookup_tool": tool,
@@ -67,6 +75,8 @@ def _google_lookup(tool: str, result_key: str, values: list[str], labels: list[s
         "selection_value_fields": values,
         "selection_label_fields": labels,
     }
+    if query_field:
+        metadata["lookup_query_field"] = query_field
     if depends_on:
         metadata["lookup_dependencies"] = depends_on
     return metadata
@@ -102,7 +112,7 @@ GOOGLE_LOOKUP_CONTRACTS = {
     "*": {
         "campaign_id": _google_lookup(
             "google_list_campaigns", "campaigns", ["id", "campaign_id", "resource_name"],
-            ["name", "campaign_name", "id"],
+            ["name", "campaign_name", "id"], query_field="campaign_id",
         ),
         "ad_group_id": _google_lookup(
             "google_list_ad_groups", "ad_groups", ["id", "ad_group_id", "resource_name"],
@@ -589,9 +599,9 @@ class GoogleToolSource(BaseProviderToolSource):
                 name="google_create_app_ad",
                 description=(
                     "新建 Google App Ad 并绑定到 Ad Group，不更新旧 Ad 的创意字段。"
-                    "必须显式确认 Ad 状态 ENABLED；创建前实时核验所属 Campaign "
+                    "Google Ads v24 要求此类 App Ad 使用 ENABLED；创建前实时核验所属 Campaign "
                     "和 Ad Group 均为 PAUSED。父级状态未知或启用时拒绝写入，"
-                    "不得将 Ad 实际状态描述为 PAUSED，也不得自动启用父级。"
+                    "不得自动启用父级。"
                 ),
                 method_name="create_app_ad", result_key="app_ad_plan",
                 properties=app_ad_schema["properties"],
@@ -611,7 +621,7 @@ class GoogleToolSource(BaseProviderToolSource):
                     },
                 }],
                 traits=["write", "ad", "app"], write=True, live_support=True,
-                contract_version="1.6.0",
+                contract_version="1.7.0",
                 readback_tool="google_get_ad",
                 argument_builder=lambda _ctx, data: ((
                     data["ad_group_id"], data["name"], data["headlines"], data["descriptions"],

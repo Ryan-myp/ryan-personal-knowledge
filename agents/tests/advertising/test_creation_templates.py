@@ -370,6 +370,8 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     tiktok_app = templates_by_key["tiktok.test.app-promotion"]["values"]
     assert "campaign.app_id" not in tiktok_app
     assert tiktok_app["ad_group.app_id"] == "6734587026957402118"
+    assert tiktok_app["campaign.app_promotion_type"] == "APP_INSTALL"
+    assert not any("audience" in key for key in tiktok_app)
     assert all(
         "selection_token" not in json.dumps(item["values"])
         for item in definitions
@@ -407,6 +409,7 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     assert all(item["verification_status"] in {
         "live_verified", "partial_live_verified",
         "live_verified_with_provider_limits", "dry_run_only", "provider_limited",
+        "pending_live_verification",
     } for item in definitions)
 
     templates = CreationTemplateManager(
@@ -569,7 +572,7 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
     expected_statuses = {
         "google.test.performance-max": "live_verified_with_provider_limits",
         "google.test.shopping": "live_verified_with_provider_limits",
-        "google.test.app": "live_verified_with_provider_limits",
+        "google.test.app": "partial_live_verified",
     }
     for key, template in definitions.items():
         assert template["verification_status"] == expected_statuses[key]
@@ -585,6 +588,12 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
     assert "ENABLED" in definitions["google.test.shopping"]["verified_scope"]
     assert "App Ad" in definitions["google.test.app"]["verified_scope"]
     assert "ENABLED" in definitions["google.test.app"]["verified_scope"]
+    google_app = definitions["google.test.app"]
+    assert google_app["live_create_supported"] is True
+    assert google_app["values"]["campaign.status"] == "PAUSED"
+    assert google_app["values"]["ad_group.status"] == "PAUSED"
+    assert google_app["values"]["ad.status"] == "ENABLED"
+    assert "暂停父级会阻止投放" in google_app["description"]
 
     pmax = definitions["google.test.performance-max"]["values"]
     assert type(pmax["campaign.shopping_setting"]["merchant_id"]) is int
@@ -783,7 +792,7 @@ def test_tiktok_template_blueprints_bind_registered_tools_by_resource():
                     schema = child.get("properties", {})
 
 
-def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
+def test_tiktok_app_template_uses_documented_paused_demo_tracking_urls():
     account_id = "7397068114548195329"
     expected_inputs = {
         "Campaign 名称",
@@ -827,9 +836,36 @@ def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
         )
         assert values["ad_group.schedule_type"] == "SCHEDULE_START_END"
         if template["key"] == "tiktok.test.app-promotion":
+            assert template["verification_status"] == "live_verified_with_provider_limits"
             assert values["campaign.status"] == 0
             assert values["campaign.campaign_automation_type"] == "MANUAL"
             assert values["ad_group.status"] == values["ad.status"] == 0
+            assert values["ad.app_name"] == "Shopee Indonesia"
+            assert values["ad.app_id"] == values["ad_group.app_id"]
+            assert values["ad.identity_id"] == "36a059a7-2b1d-51c3-bb40-236ae6f84515"
+            assert template["blueprint_version"] == "3.0.3"
+            click_url = values["ad.click_tracking_url"]
+            impression_url = values["ad.impression_tracking_url"]
+            assert click_url.startswith(
+                "https://app.appsflyer.com/com.shopee.id?"
+            )
+            assert impression_url.startswith(
+                "https://impression.appsflyer.com/com.shopee.id?"
+            )
+            assert "pid=bytedanceglobal_int" in click_url
+            assert "pid=bytedanceglobal_int" in impression_url
+            assert "clickid=__CALLBACK_PARAM__" in click_url
+            assert "clickid=__CALLBACK_PARAM__" in impression_url
+            assert "暂停演示" in template["description"]
+            assert "正式投放前必须替换" in template["description"]
+            definition = next(
+                binding.definition
+                for binding in create_tiktok_tool_source().list_bindings()
+                if binding.definition.name == "tiktok_create_app_ad"
+            )
+            assert "click_tracking_url" not in definition.input_schema.required
+            assert "impression_tracking_url" not in definition.input_schema.required
+            assert "app_name" in definition.input_schema.required
         else:
             assert values["campaign.operation_status"] == "DISABLE"
             assert values["ad_group.operation_status"] == "DISABLE"
@@ -844,19 +880,20 @@ def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
             for field in blueprint.fields
             if field.get("required") is True
         }
-        user_paths = {
+        base_user_paths = {
             "campaign.campaign_name",
             "ad_group.budget",
             "ad_group.schedule_start_time",
             "ad_group.schedule_end_time",
         }
-        assert user_paths <= required_paths
+        user_paths = base_user_paths
+        assert base_user_paths <= required_paths
         generated_paths = {
             field["path"]
             for field in blueprint.fields
             if field.get("default_strategy") == "generated_name"
         }
-        assert required_paths - user_paths <= set(values) | generated_paths
+        assert required_paths - base_user_paths <= set(values) | generated_paths
 
         template_id = runtime._creation_template_manager_for_request(
             {"tiktok": {account_id}},
@@ -921,6 +958,9 @@ def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
         assert unproven_fields["ad.identity_id"]["user_required"] is True
         text_path = "ad.text" if manual_app else "ad.ad_text"
         assert unproven_fields[text_path]["user_required"] is True
+        if manual_app:
+            assert unproven_fields["ad.click_tracking_url"]["user_required"] is False
+            assert unproven_fields["ad.impression_tracking_url"]["user_required"] is False
 
     traffic = templates["tiktok.test.traffic"]
     sales = templates["tiktok.test.sales"]
@@ -936,13 +976,19 @@ def test_tiktok_templates_only_ask_for_name_schedule_and_one_budget():
     assert "ad_group.product_set_id" not in sales["values"]
     assert "campaign.app_id" not in app["values"]
     assert app["values"]["ad_group.app_id"] == "6734587026957402118"
+    assert app["values"]["ad.call_to_action"] == "INSTALL_NOW"
 
     for template in templates.values():
         values = template["values"]
         assert values["ad.video_id"] == "v10033g50000d8nltv7og65nd6868v7g"
         assert values.get("ad.image_web_uris") or values.get("ad.image_ids")
         assert values["ad.identity_type"] == "BC_AUTH_TT"
-        assert values["ad.identity_id"] == "15efada4-8fb9-54aa-b5c6-3b82529b947d"
+        expected_identity_id = (
+            "36a059a7-2b1d-51c3-bb40-236ae6f84515"
+            if template is app
+            else "15efada4-8fb9-54aa-b5c6-3b82529b947d"
+        )
+        assert values["ad.identity_id"] == expected_identity_id
 
         intent = ParsedIntent(
             "create_campaign",

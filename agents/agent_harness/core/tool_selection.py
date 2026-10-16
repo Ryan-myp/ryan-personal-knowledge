@@ -38,6 +38,8 @@ _WRITE_NEGATIONS = (
     "不要", "别", "禁止", "不需要", "无需", "不用",
 )
 _INTENT_REVERSALS = ("but", "instead", "however", "但", "而是", "不过")
+_SCOPE_RELATION = re.compile(r"(?:下(?:面|的)?|之下|里面|\bunder\b|\bwithin\b|\bin\b)")
+_MULTI_TARGET = re.compile(r"(?:以及|同时|并且|和|与|、|\band\b|\balso\b)")
 _READ_ACTIONS = frozenset({
     "get", "list", "read", "search", "query", "fetch", "retrieve",
 })
@@ -200,6 +202,13 @@ def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
     matched_resources = {
         str(_tool_field(tool, "resource_type")) for tool in matched
     }
+    parent_scopes = {
+        str(parent)
+        for tool in matched
+        if (parent := _tool_field(tool, "parent_resource_type", None))
+    }
+    if not _SCOPE_RELATION.search(text) or _MULTI_TARGET.search(text):
+        parent_scopes.clear()
     namespace_terms = set().union(*(
         _terms(_tool_field(tool, "namespace")) for tool in tools
     ))
@@ -220,7 +229,7 @@ def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
         ))
     ]
     other_targets = any(
-        resource not in matched_resources
+        resource not in matched_resources | parent_scopes
         and bool(terms := _terms(resource))
         and terms <= query_terms
         for tool in tools
@@ -259,11 +268,15 @@ class ToolSelector:
         *,
         policies: Optional[Iterable[RuntimePolicy]] = None,
         max_tools_per_namespace: int = 8,
+        max_read_tools_per_turn: int = 12,
     ) -> None:
         if max_tools_per_namespace <= 0:
             raise ValueError("max_tools_per_namespace must be positive")
+        if max_read_tools_per_turn <= 0:
+            raise ValueError("max_read_tools_per_turn must be positive")
         self.policies = list(policies or ())
         self.max_tools_per_namespace = int(max_tools_per_namespace)
+        self.max_read_tools_per_turn = int(max_read_tools_per_turn)
 
     def set_policies(self, policies: Iterable[RuntimePolicy] | None) -> None:
         self.policies = list(policies or ())
@@ -366,9 +379,19 @@ class ToolSelector:
             ]
         else:
             candidates = list(available_tools or ())
-        if not explicitly_named and _is_read_only_request(verb_text):
+        read_only_request = _is_read_only_request(verb_text)
+        if not explicitly_named and read_only_request:
             candidates = _alias_scoped_reads(user_input, candidates)
-        query_terms = _terms(" ".join((*prior_inputs, str(user_input or ""))))
+        current_terms = _terms(user_input)
+        has_explicit_resource = any(
+            (resource_terms := _terms(_tool_field(tool, "resource_type")))
+            and resource_terms <= current_terms
+            for tool in candidates
+        )
+        # A current-turn resource mention must outrank stale topics from history.
+        query_terms = set(current_terms)
+        if prior_inputs and not has_explicit_resource:
+            query_terms.update(_terms(" ".join(prior_inputs)))
         if not query_terms:
             return []
         ranked = [
@@ -376,13 +399,18 @@ class ToolSelector:
             for index, tool in enumerate(candidates)
         ]
         relevant = [item for item in ranked if item[0] > 0]
-        if _is_read_only_request(verb_text):
+        if read_only_request:
             relevant = [
                 item for item in relevant
                 if _is_read_tool(item[2])
             ]
         relevant.sort(key=lambda item: (-item[0], item[1]))
-        return [tool for _score, _index, tool in relevant[:limit]]
+        effective_limit = (
+            min(limit, self.max_read_tools_per_turn)
+            if read_only_request
+            else limit
+        )
+        return [tool for _score, _index, tool in relevant[:effective_limit]]
 
     def requires_tool_call(
         self,

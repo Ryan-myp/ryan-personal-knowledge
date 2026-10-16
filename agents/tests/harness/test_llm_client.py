@@ -110,3 +110,72 @@ def test_failed_provider_attempt_is_counted_without_copying_exception_payload(mo
 
     assert usage.snapshot()["llm_requests"] == 1
     assert "private" not in str(usage.snapshot())
+
+
+def test_tool_call_failure_logs_only_safe_provider_diagnostics(monkeypatch, caplog):
+    client = LLMClient(model="test-model", api_key="test-key")
+    error = RuntimeError("access_token=private raw request body")
+    error.status_code = 400
+    error.body = {
+        "error": {
+            "type": "invalid_request_error",
+            "code": "invalid_tool_call_id",
+            "param": "messages[5].tool_call_id",
+            "message": (
+                "maximum context length exceeded; "
+                "access_token=private raw request body"
+            ),
+        }
+    }
+
+    def fail(**_kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        client,
+        "_get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=fail)
+            )
+        ),
+    )
+    caplog.set_level("ERROR", logger="agents.agent_harness.core.llm_client")
+
+    with pytest.raises(RuntimeError):
+        client.complete(
+            [
+                {"role": "system", "content": "fixed protocol"},
+                {"role": "user", "content": "create an app promotion campaign"},
+                {
+                    "role": "tool",
+                    "name": "tiktok_list_identities",
+                    "tool_call_id": "call_1",
+                    "content": {"success": True, "data": {"count": 27}},
+                },
+            ],
+            tools=[{
+                "name": "tiktok_list_identities",
+                "description": "List identities",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"account_id": {"type": "string"}},
+                    "required": ["account_id"],
+                    "additionalProperties": False,
+                },
+            }],
+            request=SimpleNamespace(context={}),
+        )
+
+    assert "status_code=400" in caplog.text
+    assert "api_error_type=invalid_request_error" in caplog.text
+    assert "api_error_code=invalid_tool_call_id" in caplog.text
+    assert "api_error_param=messages[5].tool_call_id" in caplog.text
+    assert "api_error_category=context_limit" in caplog.text
+    assert "message_count=3" in caplog.text
+    assert "tool_count=1" in caplog.text
+    assert "system_chars=" in caplog.text
+    assert "tool_result_chars=" in caplog.text
+    assert "tool_schema_chars=" in caplog.text
+    assert "private" not in caplog.text
+    assert "raw request body" not in caplog.text

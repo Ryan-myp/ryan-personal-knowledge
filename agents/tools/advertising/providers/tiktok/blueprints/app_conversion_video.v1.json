@@ -1,6 +1,6 @@
 {
   "id": "tiktok.app_conversion_video",
-  "version": "3.0.0",
+  "version": "3.0.3",
   "provider": "tiktok",
   "ad_format": "SINGLE_VIDEO",
   "title": "TikTok App 推广视频广告",
@@ -19,7 +19,7 @@
     {"path": "campaign.campaign_name", "tool_ref": "tiktok_create_campaign.name", "label": "Campaign 名称", "required": true},
     {"path": "campaign.status", "tool_ref": "tiktok_create_campaign.status", "label": "Campaign 状态", "source": "enum", "options": [0], "default": 0, "presentation": "derived_readonly"},
     {"path": "campaign.objective_type", "tool_ref": "tiktok_create_campaign.objective_type", "label": "推广目标", "required": true, "source": "enum", "options": ["APP_PROMOTION"], "presentation": "derived_readonly"},
-    {"path": "campaign.app_promotion_type", "tool_ref": "tiktok_create_campaign.app_promotion_type", "label": "App 推广方式", "required": true, "source": "enum", "options": ["APP_ACQUISITION", "APP_RETARGETING"]},
+    {"path": "campaign.app_promotion_type", "tool_ref": "tiktok_create_campaign.app_promotion_type", "label": "App 推广方式", "required": true, "source": "enum", "options": ["APP_INSTALL", "APP_RETARGETING"]},
     {"path": "campaign.campaign_type", "tool_ref": "tiktok_create_campaign.campaign_type", "label": "Campaign 类型", "required": true, "source": "enum", "options": ["REGULAR_CAMPAIGN", "IOS14_CAMPAIGN"]},
     {"path": "campaign.campaign_automation_type", "tool_ref": "tiktok_create_campaign.campaign_automation_type", "label": "自动化类型", "source": "enum", "options": ["MANUAL"], "default": "MANUAL", "presentation": "derived_readonly"},
     {"path": "campaign.budget_mode", "tool_ref": "tiktok_create_campaign.budget_mode", "label": "Campaign 预算模式", "source": "enum", "options": ["BUDGET_MODE_INFINITE"], "default": "BUDGET_MODE_INFINITE", "presentation": "derived_readonly"},
@@ -43,6 +43,7 @@
     {"path": "ad.ad_name", "tool_ref": "tiktok_create_app_ad.name", "label": "广告名称", "default_strategy": "generated_name"},
     {"path": "ad.status", "tool_ref": "tiktok_create_app_ad.status", "label": "广告状态", "source": "enum", "options": [0], "default": 0, "presentation": "derived_readonly"},
     {"path": "ad.app_id", "tool_ref": "tiktok_create_app_ad.app_id", "label": "App 引用", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_apps"},
+    {"path": "ad.app_name", "tool_ref": "tiktok_create_app_ad.app_name", "label": "App 展示名称", "required": true},
     {"path": "ad.promotion_type", "tool_ref": "tiktok_create_app_ad.promotion_type", "label": "App 平台", "required": true, "source": "enum", "options": ["APP_ANDROID", "APP_IOS"]},
     {"path": "ad.operating_systems", "tool_ref": "tiktok_create_app_ad.operating_systems", "label": "App 操作系统", "required": true, "source": "enum", "options": ["ANDROID", "IOS"]},
     {"path": "ad.ad_format", "tool_ref": "tiktok_create_app_ad.ad_format", "label": "素材形式", "source": "enum", "options": ["SINGLE_VIDEO"], "default": "SINGLE_VIDEO", "presentation": "derived_readonly"},
@@ -52,7 +53,9 @@
     {"path": "ad.identity_id", "tool_ref": "tiktok_create_app_ad.identity_id", "label": "广告身份", "required": true, "source": "lookup", "lookup_tool": "tiktok_list_identities"},
     {"path": "ad.text", "tool_ref": "tiktok_create_app_ad.text", "label": "广告文案", "required": true},
     {"path": "ad.call_to_action", "tool_ref": "tiktok_create_app_ad.call_to_action", "label": "行动号召"},
-    {"path": "ad.deep_link", "tool_ref": "tiktok_create_app_ad.deep_link", "label": "App 深链"}
+    {"path": "ad.deep_link", "tool_ref": "tiktok_create_app_ad.deep_link", "label": "App 深链"},
+    {"path": "ad.click_tracking_url", "tool_ref": "tiktok_create_app_ad.click_tracking_url", "label": "点击归因 URL", "manual_entry": {"title": "MMP 点击归因 URL", "instructions": "仅填写应用归因服务商提供的有效 URL；不要从其他广告或示例中猜填。", "source": "provider_tracking_url"}},
+    {"path": "ad.impression_tracking_url", "tool_ref": "tiktok_create_app_ad.impression_tracking_url", "label": "展示归因 URL", "manual_entry": {"title": "MMP 展示归因 URL", "instructions": "仅填写应用归因服务商提供的有效 URL；不要从其他广告或示例中猜填。", "source": "provider_tracking_url"}}
   ],
   "rules": [
     {"id": "objective_changed", "when": {"field": "campaign.objective_type", "changed": true}, "reset": ["ad_group.app_id", "ad_group.promotion_type", "ad_group.optimization_goal", "ad_group.operating_systems", "ad.app_id", "ad.promotion_type", "ad.operating_systems"]},

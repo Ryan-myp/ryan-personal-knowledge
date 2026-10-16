@@ -1554,6 +1554,7 @@ class MetaToolSource(BaseProviderToolSource):
             replay_policy=ReplayPolicy.SAFE,
             traits=["read", "ad"],
             action="list", resource_type="ad", intent_types=["list_ads"],
+            intent_aliases=["Ad 列表", "广告列表", "Meta ads list"],
             parent_resource_type="ad_set",
             parent_resource_id_field="adset_id",
         ), MetaListAdsHandler(api_client)))

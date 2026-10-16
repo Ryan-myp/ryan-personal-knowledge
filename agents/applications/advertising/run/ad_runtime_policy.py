@@ -14,7 +14,12 @@ import time
 import uuid
 from typing import Any, Mapping, Optional
 
-from agents.agent_harness.core.interfaces import ExecutionMode, ToolEffect, ToolResult
+from agents.agent_harness.core.interfaces import (
+    ExecutionMode,
+    ToolEffect,
+    ToolResult,
+    ToolSchema,
+)
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.tools.advertising.shared.domain.auth import normalize_account_id
 from agents.tools.advertising.shared.domain.contracts import ResourceResult
@@ -187,7 +192,12 @@ class AdvertisingRuntimePolicy:
         action = str(getattr(tool_def, "action", "") or "").lower()
         is_update = action in {"update", "pause", "resume", "enable", "disable"}
         is_delete = action == "delete"
-        resource_id = input_data.get(resource_key) or f"dry_{platform}_{key}"
+        resource_id = input_data.get(resource_key) or self._simulation_resource_id(
+            tool_def,
+            namespace=platform,
+            resource_type=resource_type,
+            key=key,
+        )
         operation = "delete" if is_delete else ("update" if is_update else "create")
         data = {
             "mode": ExecutionMode.DRY_RUN.value,
@@ -222,6 +232,52 @@ class AdvertisingRuntimePolicy:
             "errors": provider_errors,
         }
         return ToolResult.dry_run(data)
+
+    def _simulation_resource_id(
+        self, tool_def: Any, *, namespace: str, resource_type: str, key: str,
+    ) -> str:
+        fallback = f"dry_{namespace}_{key}"
+        registry = getattr(self.runtime, "registry", None)
+        list_tools = getattr(registry, "list_all", None)
+        if not callable(list_tools):
+            return fallback
+
+        child_fields: list[tuple[str, Any]] = []
+        for child in list_tools():
+            if (
+                str(getattr(child, "action", "") or "").lower() != "create"
+                or str(getattr(child, "namespace", "") or "").strip().lower()
+                != str(namespace).strip().lower()
+                or str(getattr(child, "parent_resource_type", "") or "")
+                .strip().lower() != str(resource_type).strip().lower()
+            ):
+                continue
+            field_name = str(
+                getattr(child, "parent_resource_id_field", "") or ""
+            ).strip()
+            properties = getattr(
+                getattr(child, "input_schema", None), "properties", {},
+            )
+            if field_name and isinstance(properties, Mapping):
+                field_schema = properties.get(field_name)
+                if isinstance(field_schema, Mapping):
+                    child_fields.append((field_name, field_schema))
+        if not child_fields:
+            return fallback
+
+        try:
+            candidate = str(int(key, 16) % 10**15)
+        except (TypeError, ValueError):
+            return fallback
+        if all(
+            not validate_tool_input(
+                ToolSchema(properties={field_name: dict(field_schema)}),
+                {field_name: candidate},
+            )
+            for field_name, field_schema in child_fields
+        ):
+            return candidate
+        return fallback
 
     @staticmethod
     def resource_id_field(tool_def: Any) -> Optional[str]:

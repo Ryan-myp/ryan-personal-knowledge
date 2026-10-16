@@ -44,7 +44,7 @@ TIKTOK_BRAND_SAFETY_TYPES = [
 ]
 TIKTOK_PRODUCT_SOURCES = ["UNSET", "CATALOG", "STORE", "SHOWCASE"]
 TIKTOK_SHOPPING_ADS_TYPES = ["UNSET", "VIDEO", "LIVE", "CATALOG_LISTING_ADS"]
-TIKTOK_APP_PROMOTION_TYPES = ["APP_ACQUISITION", "APP_RETARGETING"]
+TIKTOK_APP_PROMOTION_TYPES = ["APP_INSTALL", "APP_RETARGETING"]
 TIKTOK_AGE_GROUPS = [
     "AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44",
     "AGE_45_54", "AGE_55_100",
@@ -298,7 +298,10 @@ def tiktok_campaign_schema() -> dict[str, Any]:
                 "string", "App promotion mode; only for app campaigns",
                 enum=TIKTOK_APP_PROMOTION_TYPES,
                 option_aliases={
-                    "APP_ACQUISITION": ["app acquisition", "app user acquisition", "应用获客", "应用拉新"],
+                    "APP_INSTALL": [
+                        "app install", "app acquisition", "app user acquisition",
+                        "应用安装", "应用获客", "应用拉新",
+                    ],
                     "APP_RETARGETING": ["app retargeting", "应用再营销", "应用召回"],
                 },
                 **_ui_equals("objective_type", "APP_PROMOTION"),
@@ -665,12 +668,14 @@ def tiktok_identity_create_schema() -> dict[str, Any]:
 def tiktok_identity_list_schema() -> dict[str, Any]:
     """Schema for TikTok v1.3 advertiser identity lookup."""
     return {
-        "required": ["account_id"],
-        "requires": ["account_id"],
+        "required": ["account_id", "identity_type"],
+        "requires": ["account_id", "identity_type"],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "identity_id": _field("string", "TikTok identity ID", minLength=1, maxLength=128),
-            "identity_type": _field("string", "Identity type filter", enum=TIKTOK_IDENTITY_TYPES),
+            "identity_type": _field(
+                "string", "Required identity type filter", enum=TIKTOK_IDENTITY_TYPES,
+            ),
             "page": _field("integer", "Page number", minimum=1),
             "limit": _field("integer", "Page size", minimum=1, maximum=100),
         },
@@ -1643,8 +1648,8 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
     video_properties = tiktok_single_video_ad_schema()["properties"]
     return {
         "required": [
-            "campaign_id", "adgroup_id", "name", "app_id", "promotion_type",
-            "operating_systems",
+            "campaign_id", "adgroup_id", "name", "app_id", "app_name",
+            "promotion_type", "operating_systems",
         ],
         "requires": ["campaign_id", "app_id", "promotion_type"],
         "requires_any_of": [["video_id", "media", "creatives"]],
@@ -1661,6 +1666,11 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
                 selection_value_fields=["app_id", "id"],
                 selection_label_fields=["app_name", "name", "display_name"],
             ),
+            "app_name": _field(
+                "string",
+                "App name displayed in the App Promotion creative; must match the selected app",
+                minLength=1,
+            ),
             "promotion_type": _field(
                 "string", "App platform promotion type", enum=["APP_ANDROID", "APP_IOS"],
             ),
@@ -1675,6 +1685,18 @@ def tiktok_app_ad_schema() -> dict[str, Any]:
             "deep_link": _field("string", "Optional in-app deep link"),
             "landing_page_url": _field("string", "Optional app store fallback URL"),
             "tracking_url": _field("string", "Tracking URL"),
+            "click_tracking_url": _field(
+                "string",
+                "MMP-provided click tracking URL; never substitute a guessed URL",
+                minLength=1,
+                maxLength=2048,
+            ),
+            "impression_tracking_url": _field(
+                "string",
+                "MMP-provided impression tracking URL; never substitute a guessed URL",
+                minLength=1,
+                maxLength=2048,
+            ),
             "conversion_id": _manual_conversion_field(
                 "integer", "TikTok in-app conversion event ID", "应用内转化事件 ID"
             ),
@@ -1969,7 +1991,12 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             "optimization_goal", "bid_type", "billing_event",
             "schedule_type", "schedule_start_time",
         ],
-        "requires_any_of": [["location_ids", "saved_audience_id"]],
+        "requires_any_of": [[
+            "location_ids",
+            "saved_audience_id",
+            "targeting_spec.location_ids",
+            "targeting_spec.saved_audience_id",
+        ]],
         # The ad-group endpoint does not receive the campaign objective on
         # the wire, but the client needs the parent objective to validate its
         # cascade.  Keep it as a hidden, intent-derived context field so the

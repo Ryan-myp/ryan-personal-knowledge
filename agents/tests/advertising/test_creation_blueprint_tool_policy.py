@@ -43,6 +43,8 @@ class _BlueprintRegistry:
 
 
 class _TemplateManager:
+    live_create_supported = True
+
     @staticmethod
     def get(*_args, **_kwargs):
         return {
@@ -52,6 +54,8 @@ class _TemplateManager:
             "blueprint_id": BLUEPRINT.blueprint_id,
             "blueprint_version": BLUEPRINT.version,
             "account_id": TEST_ACCOUNT,
+            "live_create_supported": _TemplateManager.live_create_supported,
+            "live_create_block_reason": "当前模板不能执行完整暂停层级的 live 创建",
         }
 
 
@@ -112,10 +116,10 @@ def _traffic_ad_tool():
     )
 
 
-def _request(context):
+def _request(context, *, execution_mode="dry_run"):
     return SimpleNamespace(
         context={"account_id": TEST_ACCOUNT, **context},
-        execution_mode="dry_run",
+        execution_mode=execution_mode,
         principal=SimpleNamespace(
             account_scope=None,
             permissions=frozenset({"ads.read", "ads.plan", "ads.write"}),
@@ -207,6 +211,26 @@ def test_template_only_request_resolves_its_blueprint_before_tool_validation():
     assert result is not None
     assert result[0] == "creation_input_required"
     assert "campaign" in result[1]
+
+
+def test_provider_limited_template_blocks_live_create_before_provider_writes(monkeypatch):
+    monkeypatch.setattr(_TemplateManager, "live_create_supported", False)
+    factory = _factory()
+    factory.runtime.allow_live_writes = True
+    factory.runtime.write_guard = object()
+
+    result = factory.check_scope_and_confirmation(
+        _campaign_tool(),
+        _request({
+            "creation_blueprint_id": BLUEPRINT.blueprint_id,
+            "creation_template_id": "builtin-meta-traffic",
+        }, execution_mode="live"),
+        {"account_id": TEST_ACCOUNT, "name": "QA campaign", "status": "PAUSED"},
+    )
+
+    assert result is not None
+    assert result[0] == "creation_input_required"
+    assert "不能执行完整暂停层级的 live 创建" in result[1]
 
 
 def test_template_store_failure_fails_closed_before_creation():

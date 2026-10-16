@@ -143,8 +143,15 @@ class LLMClient:
 
     def complete(self, messages, tools, request) -> ModelTurn:
         """Implement the Harness ModelAdapter contract with native Tool calls."""
-        provider_messages = self._provider_messages(messages)
-        provider_tools = self._provider_tools(tools)
+        try:
+            provider_messages = self._provider_messages(messages)
+            provider_tools = self._provider_tools(tools)
+        except LLMStructuredOutputError as error:
+            logger.error(
+                "LLM Tool-call request rejected: reason=%s",
+                self._structured_error_reason(error),
+            )
+            raise
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": provider_messages,
@@ -178,28 +185,65 @@ class LLMClient:
         try:
             response = self._get_client().chat.completions.create(**kwargs)
         except Exception as error:
-            logger.error("LLM Tool-call generation failed: %s", type(error).__name__)
+            error_details = self._safe_error_details(error)
+            request_shape = self._request_shape(provider_messages, provider_tools)
+            logger.error(
+                "LLM Tool-call generation failed: error_class=%s "
+                "status_code=%s api_error_type=%s api_error_code=%s "
+                "api_error_param=%s api_error_category=%s "
+                "message_count=%s tool_count=%s request_chars=%s "
+                "max_message_chars=%s system_chars=%s user_chars=%s "
+                "assistant_chars=%s tool_result_chars=%s tool_schema_chars=%s",
+                type(error).__name__,
+                error_details["status_code"],
+                error_details["api_error_type"],
+                error_details["api_error_code"],
+                error_details["api_error_param"],
+                error_details["api_error_category"],
+                request_shape["message_count"],
+                request_shape["tool_count"],
+                request_shape["request_chars"],
+                request_shape["max_message_chars"],
+                request_shape["system_chars"],
+                request_shape["user_chars"],
+                request_shape["assistant_chars"],
+                request_shape["tool_result_chars"],
+                request_shape["tool_schema_chars"],
+            )
             raise
-        choice = next(iter(getattr(response, "choices", ()) or ()), None)
-        if choice is None:
-            raise LLMStructuredOutputError("LLM response did not contain a choice")
-        message = getattr(choice, "message", None)
-        if message is None:
-            raise LLMStructuredOutputError("LLM response did not contain a message")
-        allowed_names = {
-            self._tool_value(tool, "name") for tool in tools or ()
-        }
-        raw_calls = tuple(getattr(message, "tool_calls", None) or ())
-        if len(raw_calls) > self.max_tool_calls_per_response:
-            raise LLMStructuredOutputError(
-                "LLM returned too many Tool calls in one response"
+        try:
+            choice = next(iter(getattr(response, "choices", ()) or ()), None)
+            if choice is None:
+                raise LLMStructuredOutputError(
+                    "LLM response did not contain a choice"
+                )
+            message = getattr(choice, "message", None)
+            if message is None:
+                raise LLMStructuredOutputError(
+                    "LLM response did not contain a message"
+                )
+            allowed_names = {
+                self._tool_value(tool, "name") for tool in tools or ()
+            }
+            raw_calls = tuple(getattr(message, "tool_calls", None) or ())
+            if len(raw_calls) > self.max_tool_calls_per_response:
+                raise LLMStructuredOutputError(
+                    "LLM returned too many Tool calls in one response"
+                )
+            calls = tuple(
+                self._tool_call(item, allowed_names) for item in raw_calls
             )
-        calls = tuple(self._tool_call(item, allowed_names) for item in raw_calls)
-        call_ids = [item.id for item in calls]
-        if len(call_ids) != len(set(call_ids)):
-            raise LLMStructuredOutputError(
-                "LLM returned duplicate Tool call ids"
+            call_ids = [item.id for item in calls]
+            if len(call_ids) != len(set(call_ids)):
+                raise LLMStructuredOutputError(
+                    "LLM returned duplicate Tool call ids"
+                )
+        except LLMStructuredOutputError as error:
+            logger.error(
+                "LLM Tool-call response rejected: reason=%s",
+                self._structured_error_reason(error),
             )
+            raise
         usage = self._normalize_usage(getattr(response, "usage", None))
         if collector is not None:
             usage["llm_requests"] = 0
@@ -213,6 +257,158 @@ class LLMClient:
             ),
             usage=usage,
         )
+
+    @staticmethod
+    def _structured_error_reason(error: LLMStructuredOutputError) -> str:
+        """Map parser errors to fixed log-safe reason codes."""
+        reasons = {
+            "A Tool call was required, but no Tools are available":
+                "required_tool_catalog_empty",
+            "conversation contains an unsupported message role":
+                "unsupported_message_role",
+            "conversation contains non-serializable model content":
+                "non_serializable_message",
+            "transcript contains an incomplete Tool call":
+                "incomplete_transcript_tool_call",
+            "transcript contains a Tool result without a call id":
+                "transcript_tool_result_missing_call_id",
+            "active Tool catalog contains an invalid function name":
+                "invalid_tool_catalog_name",
+            "LLM response did not contain a choice":
+                "response_choice_missing",
+            "LLM response did not contain a message":
+                "response_message_missing",
+            "LLM returned too many Tool calls in one response":
+                "response_tool_call_limit_exceeded",
+            "LLM requested a Tool outside the active catalog":
+                "tool_not_in_active_catalog",
+            "LLM returned duplicate Tool call ids":
+                "duplicate_tool_call_id",
+            "LLM Tool arguments exceeded the configured size limit":
+                "tool_arguments_too_large",
+            "LLM Tool arguments were not valid JSON":
+                "tool_arguments_invalid_json",
+            "LLM Tool arguments must be a JSON object":
+                "tool_arguments_not_object",
+            "LLM Tool arguments were not JSON serializable":
+                "tool_arguments_not_serializable",
+        }
+        return reasons.get(str(error), "invalid_structured_output")
+
+    @staticmethod
+    def _safe_error_details(error: Exception) -> dict[str, str]:
+        body = getattr(error, "body", None)
+        provider_error = body.get("error", body) if isinstance(body, dict) else {}
+        if not isinstance(provider_error, dict):
+            provider_error = {}
+
+        def safe_value(attribute: str) -> str:
+            value = getattr(error, attribute, None)
+            if value is None:
+                value = provider_error.get(attribute)
+            if not isinstance(value, str):
+                return "unknown"
+            normalized = value.strip()
+            if (
+                not normalized
+                or len(normalized) > 120
+                or re.fullmatch(r"[A-Za-z0-9_.\[\]-]+", normalized) is None
+            ):
+                return "unknown"
+            return normalized
+
+        status_code = getattr(error, "status_code", None)
+        if isinstance(status_code, bool) or not isinstance(status_code, int):
+            status_code = "unknown"
+        return {
+            "status_code": str(status_code),
+            "api_error_type": safe_value("type"),
+            "api_error_code": safe_value("code"),
+            "api_error_param": safe_value("param"),
+            "api_error_category": LLMClient._classify_error_message(
+                provider_error.get("message")
+            ),
+        }
+
+    @staticmethod
+    def _classify_error_message(message: Any) -> str:
+        if not isinstance(message, str):
+            return "unknown"
+        normalized = message.casefold()
+        if any(term in normalized for term in (
+            "context length",
+            "context window",
+            "maximum context",
+            "max context",
+            "token limit",
+            "too many tokens",
+        )):
+            return "context_limit"
+        if any(term in normalized for term in (
+            "request too large",
+            "payload too large",
+            "request body too large",
+            "content length",
+        )):
+            return "request_size_limit"
+        if any(term in normalized for term in (
+            "tool schema",
+            "function schema",
+            "json schema",
+            "parameters schema",
+        )):
+            return "tool_schema"
+        if any(term in normalized for term in (
+            "tool_call_id",
+            "tool call",
+            "tool_calls",
+            "tool result",
+        )):
+            return "tool_transcript"
+        if any(term in normalized for term in (
+            "unsupported parameter",
+            "unknown parameter",
+            "unrecognized parameter",
+        )):
+            return "unsupported_parameter"
+        return "unclassified"
+
+    @staticmethod
+    def _request_shape(
+        messages: list[dict[str, Any]], tools: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        message_sizes = [
+            len(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+            for item in messages
+        ]
+        tool_schema_chars = sum(
+            len(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+            for item in tools
+        )
+        role_chars = {
+            "system_chars": 0,
+            "user_chars": 0,
+            "assistant_chars": 0,
+            "tool_result_chars": 0,
+        }
+        role_keys = {
+            "system": "system_chars",
+            "user": "user_chars",
+            "assistant": "assistant_chars",
+            "tool": "tool_result_chars",
+        }
+        for item, size in zip(messages, message_sizes):
+            key = role_keys.get(str(item.get("role") or ""))
+            if key:
+                role_chars[key] += size
+        return {
+            "message_count": len(messages),
+            "tool_count": len(tools),
+            "request_chars": sum(message_sizes) + tool_schema_chars,
+            "max_message_chars": max(message_sizes, default=0),
+            "tool_schema_chars": tool_schema_chars,
+            **role_chars,
+        }
 
     @staticmethod
     def _tool_value(tool: Any, key: str, default: Any = None) -> Any:

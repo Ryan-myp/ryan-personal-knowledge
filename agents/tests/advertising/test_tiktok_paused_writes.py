@@ -77,6 +77,24 @@ def test_identity_lookup_reads_the_real_identity_list_envelope():
     assert client.list_identities("123", "BC_AUTH_TT") == [{"identity_id": "available"}]
 
 
+def test_identity_list_tool_requires_type_filter_before_provider_access():
+    from agents.agent_harness.core.tool_registry import validate_tool_input
+    from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
+
+    definition = next(
+        item.definition
+        for item in create_tiktok_tool_source().list_bindings()
+        if item.definition.name == "tiktok_list_identities"
+    )
+
+    errors = validate_tool_input(
+        definition.input_schema,
+        {"account_id": "7397068114548195329"},
+    )
+
+    assert any("identity_type" in error for error in errors)
+
+
 def test_live_bc_identity_is_bound_privately_from_account_scoped_lookup():
     client = TikTokAPIClient({"access_token": "fixture"})
     client.list_identities = lambda advertiser_id, identity_type, page_size: [{

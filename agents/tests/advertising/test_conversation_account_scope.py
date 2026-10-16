@@ -360,7 +360,7 @@ def test_unprefilled_long_tiktok_conversation_keeps_ad_tools_with_all_channels_r
         call("tiktok_list_adgroups", {"campaign_id": "101"}),
         call("tiktok_list_ads", {"adgroup_id": "201"}),
     ]
-    install(runtime, *[
+    model = install(runtime, *[
         turn for tool_call in turns
         for turn in (
             ModelTurn(tool_calls=(tool_call,)),
@@ -376,7 +376,12 @@ def test_unprefilled_long_tiktok_conversation_keeps_ad_tools_with_all_channels_r
                 "列出广告组 201 下的 ad 列表",
             ):
                 result = _prompt(client, text, endpoint="/chat/stream")
-                assert result["status"] == "succeeded", result
+                assert result["status"] == "succeeded", (
+                    f"{text}: error={result.get('error')!r}; "
+                    f"content={result.get('content')!r}; "
+                    f"results={result.get('results')!r}; "
+                    f"active_tools={model.tool_names[-1] if model.tool_names else ()!r}"
+                )
                 runtime._sessions.clear()
         assert provider.calls[-1] == ("ads", "test-account", "201")
     finally:

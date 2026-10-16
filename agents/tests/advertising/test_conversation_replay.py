@@ -141,6 +141,148 @@ def test_live_reply_and_history_use_the_same_safe_fallback(payload, expected):
     assert expected in visible_run_reply(payload)
 
 
+def test_rate_limited_final_summary_keeps_successful_read_rows_visible():
+    reply = visible_run_reply({
+        "status": "failed",
+        "error": "RateLimitError",
+        "reply": (
+            "模型服务暂时限流，本次请求未完成。这不代表广告账户没有数据。"
+            "已有工具执行记录；创建或更新操作不要直接重试，请先核实实际结果。"
+        ),
+        "results": [{
+            "success": True,
+            "tool": "meta_list_campaigns",
+            "platform": "meta",
+            "action": "list",
+            "resource_type": "campaign",
+            "data": {
+                "data_status": "live",
+                "campaigns": [{
+                    "id": "campaign-123",
+                    "name": "QA Campaign",
+                    "status": "PAUSED",
+                }],
+            },
+        }],
+    })
+
+    assert "查询已成功" in reply
+    assert "模型摘要" in reply
+    assert "campaign-123" in reply
+    assert "QA Campaign" in reply
+    assert "PAUSED" in reply
+
+
+def test_rate_limited_summary_reports_partial_read_results_truthfully():
+    reply = visible_run_reply({
+        "status": "failed",
+        "error": "RateLimitError",
+        "reply": "模型服务暂时限流，本次请求未完成。这不代表广告账户没有数据。",
+        "results": [
+            {
+                "success": True,
+                "tool": "meta_list_campaigns",
+                "action": "list",
+                "resource_type": "campaign",
+                "data": {
+                    "campaigns": [
+                        {"id": "campaign-123", "name": "QA Campaign", "status": "PAUSED"},
+                    ],
+                },
+            },
+            {
+                "success": False,
+                "tool": "meta_list_ad_sets",
+                "action": "list",
+                "resource_type": "ad_set",
+                "error": "provider temporarily unavailable",
+            },
+        ],
+    })
+
+    assert "部分查询已成功" in reply
+    assert "1 项查询失败" in reply
+    assert "campaign-123" in reply
+    assert "PAUSED" in reply
+
+
+def test_rate_limited_empty_read_result_reports_zero_rows():
+    reply = visible_run_reply({
+        "error": "RateLimitError",
+        "results": [{
+            "success": True,
+            "tool": "meta_list_campaigns",
+            "action": "list",
+            "resource_type": "campaign",
+            "data": {"campaigns": []},
+        }],
+    })
+
+    assert "共 0 条" in reply
+    assert "查询已返回数据" not in reply
+
+
+def test_read_fallback_preserves_zero_and_false_values():
+    reply = visible_run_reply({
+        "error": "RateLimitError",
+        "results": [{
+            "success": True,
+            "tool": "meta_get_campaign",
+            "action": "get",
+            "resource_type": "campaign",
+            "data": {
+                "campaign": {
+                    "id": "campaign-123",
+                    "name": "QA Campaign",
+                    "status": "PAUSED",
+                    "daily_budget": 0,
+                    "special_ad_category": False,
+                    "access_token": "must-never-be-visible",
+                    "signature": "must-never-be-visible",
+                },
+            },
+        }],
+    })
+
+    assert "0" in reply
+    assert "False" in reply
+    assert "must-never-be-visible" not in reply
+
+
+def test_non_model_error_does_not_claim_a_read_summary_is_complete():
+    reply = visible_run_reply({
+        "error": "ProviderError",
+        "results": [{
+            "success": True,
+            "tool": "meta_list_campaigns",
+            "action": "list",
+            "resource_type": "campaign",
+            "data": {"campaigns": [{"id": "campaign-123"}]},
+        }],
+    })
+
+    assert "查询已成功" not in reply
+    assert "本次请求执行失败" in reply
+
+
+def test_rate_limited_write_summary_does_not_claim_creation_succeeded():
+    reply = visible_run_reply({
+        "status": "failed",
+        "error": "RateLimitError",
+        "results": [{
+            "success": True,
+            "tool": "meta_create_campaign",
+            "platform": "meta",
+            "action": "create",
+            "resource_type": "campaign",
+            "data": {"id": "campaign-123", "status": "PAUSED"},
+        }],
+    })
+
+    assert "不要直接重试" in reply
+    assert "查询已成功" not in reply
+
+
 def test_malformed_optional_ui_is_not_used_as_conversation_content():
     assert visible_run_reply({"ui": "not a card"}) == ""
 
