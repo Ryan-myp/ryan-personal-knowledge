@@ -44,7 +44,11 @@ _CONTEXT_REFERENCE_CUES = (
     "this", "that", "these", "those", "same", "above", "previous",
     "earlier", "continue", "again", "这个", "这些", "那个", "那些",
     "它", "上面", "之前", "刚才", "刚刚", "继续", "再来", "接着",
+    "为什么", "为啥", "什么原因", "原因呢", "怎么回事", "why",
     "有模板吗", "有模板", "模板呢", "any template", "any templates",
+)
+_KNOWLEDGE_FOLLOWUP_CUES = (
+    "为什么", "为啥", "什么原因", "原因呢", "怎么回事", "why",
 )
 _PROCESS_CUES = (
     "流程", "工作流", "workflow", "process",
@@ -218,6 +222,37 @@ def _is_read_tool(tool: Any) -> bool:
     )
     effect = getattr(effect, "value", effect)
     return str(effect or "read").strip().casefold() in {"read", "none"}
+
+
+def _is_knowledge_tool(tool: Any) -> bool:
+    traits = _tool_field(tool, "traits", ()) or ()
+    if isinstance(traits, str):
+        traits = (traits,)
+    normalized_traits = {
+        str(item).strip().casefold() for item in traits
+    }
+    resource = str(_tool_field(tool, "resource_type", "")).strip().casefold()
+    return "knowledge" in normalized_traits or resource == "knowledge"
+
+
+def _matches_tool_alias(text: str, tool: Any) -> bool:
+    normalized = str(text or "").casefold()
+    aliases = _tool_field(tool, "intent_aliases", ()) or ()
+    if isinstance(aliases, str):
+        aliases = (aliases,)
+    return any(
+        len(alias_text := str(alias).strip()) >= 3
+        and alias_text.casefold() in normalized
+        for alias in aliases
+    )
+
+
+def _is_knowledge_followup(text: str) -> bool:
+    normalized = str(text or "").casefold()
+    return any(
+        _contains_cue(normalized, cue)
+        for cue in _KNOWLEDGE_FOLLOWUP_CUES
+    )
 
 
 def _relevance_score(query_terms: set[str], tool: Any) -> int:
@@ -427,27 +462,25 @@ class ToolSelector:
         explicitly_aliased_reads = [
             tool for tool in (available_tools or ())
             if _is_read_tool(tool)
-            and any(
-                len(str(alias).strip()) >= 3
-                and str(alias).strip().casefold() in text
-                for alias in _tool_field(tool, "intent_aliases", ()) or ()
-            )
+            and _matches_tool_alias(text, tool)
         ]
         explicitly_aliased_knowledge = [
             tool for tool in explicitly_aliased_reads
-            if (
-                "knowledge" in {
-                    str(item).strip().casefold()
-                    for item in (_tool_field(tool, "traits", ()) or ())
-                }
-                or str(_tool_field(tool, "resource_type", "")).casefold()
-                == "knowledge"
-            )
+            if _is_knowledge_tool(tool)
         ]
         explicitly_aliased_transform = [
             tool for tool in explicitly_aliased_reads
             if str(_tool_field(tool, "resource_type", "")).casefold()
             == "json_records"
+        ]
+        contextual_knowledge = [
+            tool for tool in (available_tools or ())
+            if _is_read_tool(tool)
+            and _is_knowledge_tool(tool)
+            and any(
+                _matches_tool_alias(previous, tool)
+                for previous in prior_inputs
+            )
         ]
         if explicitly_named:
             candidates = explicitly_named
@@ -455,6 +488,8 @@ class ToolSelector:
             candidates = explicitly_aliased_knowledge
         elif explicitly_aliased_transform:
             candidates = explicitly_aliased_transform
+        elif contextual_knowledge and _is_knowledge_followup(text):
+            candidates = contextual_knowledge
         elif active_namespaces:
             namespace_set = {
                 normalize_namespace(item) for item in active_namespaces
@@ -509,12 +544,33 @@ class ToolSelector:
         self,
         user_input: str,
         selected_tools: Sequence[Any],
+        *,
+        conversation_context: Sequence[str] = (),
     ) -> bool:
         """Require fresh execution for operational reads and explicit writes."""
         verb_text = _request_verbs(user_input, selected_tools)
         write_request = _has_unnegated_write_cue(verb_text)
         read_request = not write_request and _is_read_only_request(verb_text)
         text = str(user_input or "").casefold()
+        selected_knowledge = [
+            tool for tool in (selected_tools or ())
+            if _is_read_tool(tool) and _is_knowledge_tool(tool)
+        ]
+        if selected_knowledge and any(
+            _matches_tool_alias(text, tool)
+            for tool in selected_knowledge
+        ):
+            return True
+        if (
+            selected_knowledge
+            and _is_knowledge_followup(text)
+            and any(
+                _matches_tool_alias(str(previous or ""), tool)
+                for previous in conversation_context
+                for tool in selected_knowledge
+            )
+        ):
+            return True
         if read_request and any(cue in text for cue in (
             "支持", "能力", "capabilities", "support",
         )):

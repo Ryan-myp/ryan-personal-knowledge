@@ -58,6 +58,7 @@ def test_advertising_system_prompt_grounds_capability_claims_in_registered_sourc
     assert "2-3 项" in prompt
     assert "不得自称底层模型" in prompt
     assert "不得自行编造字段清单" in prompt
+    assert "不得声称知识库检索 Tool 不存在" in prompt
     assert "没有返回创建卡片时不得声称已生成创建表单" in prompt
 
 

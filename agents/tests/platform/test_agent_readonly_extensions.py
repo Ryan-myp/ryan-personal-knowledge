@@ -28,6 +28,9 @@ from agents.agent_platform.tools.readonly_recipe import readonly_recipe_tool_sou
 from agents.applications.advertising.composition.ad_application import (
     AdvertisingComposition,
 )
+from agents.applications.advertising.composition.ad_application_assembly import (
+    AdApplicationAssembly,
+)
 
 
 class _KnowledgeProvider:
@@ -417,6 +420,85 @@ def test_tool_selector_exposes_only_explicit_readonly_capabilities():
     assert [tool.name for tool in selected] == ["agent_readonly_recipe"]
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "查知识库：Meta Campaign 暂停规则",
+        "知识库查询 Meta Campaign 暂停规则",
+        "在知识库里查 Meta Campaign 暂停规则",
+    ],
+)
+def test_short_knowledge_search_phrasings_beat_provider_intents(query):
+    knowledge_source = knowledge_search_tool_source(
+        _KnowledgeProvider(), required_permission="ads.read",
+    )
+    knowledge_tool = knowledge_source.list_bindings()[0].definition
+    provider_read = SimpleNamespace(
+        name="meta_search_targeting_options",
+        namespace="meta",
+        action="search",
+        resource_type="targeting_option",
+        description="Search Meta targeting options",
+        intent_types=["search_targeting_options"],
+        intent_aliases=["搜索 Meta 定向选项"],
+        effect_class="read",
+        input_schema={"properties": {}},
+    )
+
+    selected = ToolSelector().select_relevant(
+        query,
+        [knowledge_tool, provider_read],
+    )
+
+    assert [tool.name for tool in selected] == ["agent_knowledge_search"]
+
+
+def test_knowledge_search_is_required_and_survives_reason_followups():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    try:
+        select_tools = AdApplicationAssembly._tool_selector(
+            runtime, ToolSelector(),
+        )
+        available = runtime.registry.list_all()
+        knowledge_request = "请从知识库查一下 Meta Campaign 暂停规则"
+        direct_request = TurnRequest(
+            user_input=knowledge_request,
+            context={},
+        )
+
+        direct_tools = select_tools(direct_request, available)
+
+        assert [tool.name for tool in direct_tools] == [
+            "agent_knowledge_search",
+        ]
+        assert direct_request.context.get(
+            "_agent_tool_choice_required"
+        ) is True
+
+        followup_request = TurnRequest(
+            user_input="为啥",
+            context={
+                "_agent_tool_selection_context": [
+                    knowledge_request,
+                ],
+            },
+        )
+        followup_tools = select_tools(followup_request, available)
+
+        assert [tool.name for tool in followup_tools] == [
+            "agent_knowledge_search",
+        ]
+        assert followup_request.context.get(
+            "_agent_tool_choice_required"
+        ) is True
+    finally:
+        runtime.close(wait=True)
+
+
 def test_knowledge_and_recipe_compose_inside_the_existing_harness_run():
     provider = _KnowledgeProvider([
         {
@@ -509,13 +591,18 @@ def test_advertising_chat_searches_knowledge_instead_of_provider_api():
     class Model:
         def __init__(self):
             self.toolsets = []
+            self.first_tool_choices = {}
 
-        def complete(self, messages, tools, _request):
+        def complete(self, messages, tools, request):
             self.toolsets.append({tool.name for tool in tools})
-            if any(message.role == "tool" for message in messages):
+            self.first_tool_choices.setdefault(
+                request.turn_id,
+                request.initial_tool_choice,
+            )
+            if messages and messages[-1].role == "tool":
                 return ModelTurn(content="Campaigns should remain paused.")
             return ModelTurn(tool_calls=(ToolCall(
-                id="knowledge-search",
+                id=f"knowledge-search-{request.turn_id}",
                 name="agent_knowledge_search",
                 arguments={
                     "query": "Meta campaign pause rules",
@@ -557,18 +644,31 @@ def test_advertising_chat_searches_knowledge_instead_of_provider_api():
         permissions=frozenset({"ads.read"}),
     )
     try:
-        result = runtime.run(
-            "在知识库中搜索 Meta campaign 暂停规则",
+        first_result = runtime.run(
+            "请从知识库查一下 Meta Campaign 暂停规则",
             user_id="user-a",
+            session_id="knowledge-session",
+            tenant_id="tenant-trusted",
+            principal=principal,
+        )
+        followup_result = runtime.run(
+            "为啥",
+            user_id="user-a",
+            session_id="knowledge-session",
             tenant_id="tenant-trusted",
             principal=principal,
         )
     finally:
         runtime.close(wait=True)
 
-    assert result["status"] == "succeeded", result
+    assert first_result["status"] == "succeeded", first_result
+    assert followup_result["status"] == "succeeded", followup_result
     assert model.toolsets
     assert "agent_knowledge_search" in model.toolsets[0]
     assert "meta_list_campaigns" not in model.toolsets[0]
-    assert provider.queries
+    assert sum(
+        query.text == "Meta campaign pause rules"
+        for query in provider.queries
+    ) == 2
     assert all(query.tenant_id == "tenant-trusted" for query in provider.queries)
+    assert set(model.first_tool_choices.values()) == {"required"}

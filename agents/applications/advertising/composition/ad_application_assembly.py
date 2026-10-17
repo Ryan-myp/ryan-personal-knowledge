@@ -542,7 +542,9 @@ class AdApplicationAssembly:
                     conversation_context=conversation_context,
                 )
                 if selected and selector.requires_tool_call(
-                    request.user_input, selected,
+                    request.user_input,
+                    selected,
+                    conversation_context=conversation_context,
                 ):
                     request_context["_agent_tool_choice_required"] = True
             if isinstance(request.context, dict):

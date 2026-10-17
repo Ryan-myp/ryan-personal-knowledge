@@ -236,10 +236,12 @@ def knowledge_search_tool_source(
         namespace="agent_platform",
         description=(
             "Search the registered read-only knowledge source and return bounded "
-            "excerpts with citations. Use when the user explicitly asks to search "
-            "or retrieve knowledge; provider/channel names in the query are filters "
-            "or search terms, not a request to call provider APIs. The tenant is "
-            "taken from trusted Runtime context and cannot be supplied as an argument."
+            "excerpts with citations. Call for explicit requests to search or retrieve "
+            "knowledge, including short follow-ups to a recent knowledge query. Do not "
+            "claim this Tool is unavailable when it is present in the current Tool "
+            "definitions. Provider/channel names in the query are filters or search "
+            "terms, not a request to call provider APIs. The tenant is taken from "
+            "trusted Runtime context and cannot be supplied as an argument."
         ),
         input_schema=ToolSchema(
             properties={
@@ -271,11 +273,23 @@ def knowledge_search_tool_source(
         intent_types=["knowledge_search"],
         intent_aliases=[
             "知识库检索",
+            "知识库查询",
             "从知识库检索",
+            "从知识库查",
+            "从知识库中查",
+            "从知识库找",
+            "查知识库",
+            "查一下知识库",
             "检索知识库",
             "在知识库中搜索",
+            "在知识库里搜索",
+            "在知识库里查",
+            "知识库里查",
+            "知识库里查找",
+            "知识库中查找",
             "搜索知识库",
             "查询知识库",
+            "查找知识库中的",
             "检索知识",
             "search the knowledge base",
             "search knowledge",
