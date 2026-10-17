@@ -61,6 +61,26 @@ def test_advertising_system_prompt_grounds_capability_claims_in_registered_sourc
     assert "没有返回创建卡片时不得声称已生成创建表单" in prompt
 
 
+def test_agent_self_assessment_is_opt_in_and_tracks_the_requested_subject():
+    prompt = advertising_agent_definition().system_prompt
+
+    assert "不得主动评价 Agent 自身的能力、架构、优缺点或不足" in prompt
+    assert "只有用户明确要求评估 Agent、系统或架构时" in prompt
+    assert "“这个流程怎么样”默认评价用户所指的流程" in prompt
+    assert "业务操作失败时仍要解释本次失败的具体原因" in prompt
+
+
+def test_capability_catalog_is_not_a_prompt_for_unsolicited_self_evaluation():
+    prompt = AdvertisingContextProvider._render_prompt(
+        skill_context={},
+        capability_catalog="[REGISTERED CAPABILITIES]\nTools: knowledge_search",
+    )
+
+    assert "能力目录只用于回答用户明确提出的系统功能或能力问题" in prompt
+    assert "不得据此主动评价 Agent 自身或罗列未被询问的不足" in prompt
+    assert "“这个流程怎么样”不等同于询问 Agent 能力" in prompt
+
+
 def test_core_agent_contract_forbids_inventing_model_identity():
     runtime = AdvertisingComposition(
         require_llm=False,
