@@ -24,7 +24,7 @@ _TOKEN_STOPWORDS = frozenset({
 _READ_CUES = (
     "get", "list", "read", "search", "query", "fetch", "retrieve", "show",
     "which", "what", "available",
-    "查一下", "查询", "列出", "查看", "获取", "检索", "有哪些", "有啥",
+    "查一下", "查询", "列出", "查看", "获取", "检索", "搜索", "有哪些", "有啥",
     "哪几个", "哪些",
 )
 _WRITE_CUES = (
@@ -46,13 +46,11 @@ _CONTEXT_REFERENCE_CUES = (
     "它", "上面", "之前", "刚才", "刚刚", "继续", "再来", "接着",
     "有模板吗", "有模板", "模板呢", "any template", "any templates",
 )
-_DIAGRAM_CUES = (
-    "流程图", "时序图", "执行图", "flowchart", "sequence diagram",
-    "runtime diagram", "architecture diagram", "system diagram",
+_PROCESS_CUES = (
+    "流程", "工作流", "workflow", "process",
 )
-_SYSTEM_FLOW_CUES = (
-    "系统", "架构", "运行时", "system", "architecture", "runtime",
-    "agent run", "run kernel",
+_PROCESS_CLAUSE_SEPARATORS = re.compile(
+    r"(?:[，,。；;]|并且|然后|同时|并|以及|\b(?:and|then|also|but)\b)"
 )
 _READ_ACTIONS = frozenset({
     "get", "list", "read", "search", "query", "fetch", "retrieve",
@@ -185,12 +183,31 @@ def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
     )
 
 
-def _is_system_diagram_request(user_input: str) -> bool:
+def _is_process_explanation_request(
+    user_input: str,
+    tools: Sequence[Any],
+) -> bool:
+    """Keep workflow explanations separate from operational Tool requests."""
     text = str(user_input or "").casefold()
-    return (
-        any(_contains_cue(text, cue) for cue in _DIAGRAM_CUES)
-        and any(_contains_cue(text, cue) for cue in _SYSTEM_FLOW_CUES)
-    )
+    if _is_read_only_request(_request_verbs(user_input, tools)):
+        return False
+    if not any(_contains_cue(text, cue) for cue in _PROCESS_CUES):
+        return False
+
+    # A separate actionable clause remains routable. Verbs inside the workflow
+    # topic itself describe a process, not an execution request.
+    for clause in _PROCESS_CLAUSE_SEPARATORS.split(text):
+        if not clause.strip() or any(
+            _contains_cue(clause, cue) for cue in _PROCESS_CUES
+        ):
+            continue
+        verb_text = _request_verbs(clause, tools)
+        if (
+            _has_unnegated_write_cue(verb_text)
+            or _is_read_only_request(verb_text)
+        ):
+            return False
+    return True
 
 
 def _is_read_tool(tool: Any) -> bool:
@@ -377,7 +394,7 @@ class ToolSelector:
         """
         if limit <= 0:
             raise ValueError("limit must be positive")
-        if _is_system_diagram_request(user_input):
+        if _is_process_explanation_request(user_input, available_tools):
             return []
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
@@ -407,8 +424,37 @@ class ToolSelector:
             if (name := str(_tool_field(tool, "name", "") or "").strip())
             and name.casefold() in text
         ]
+        explicitly_aliased_reads = [
+            tool for tool in (available_tools or ())
+            if _is_read_tool(tool)
+            and any(
+                len(str(alias).strip()) >= 3
+                and str(alias).strip().casefold() in text
+                for alias in _tool_field(tool, "intent_aliases", ()) or ()
+            )
+        ]
+        explicitly_aliased_knowledge = [
+            tool for tool in explicitly_aliased_reads
+            if (
+                "knowledge" in {
+                    str(item).strip().casefold()
+                    for item in (_tool_field(tool, "traits", ()) or ())
+                }
+                or str(_tool_field(tool, "resource_type", "")).casefold()
+                == "knowledge"
+            )
+        ]
+        explicitly_aliased_transform = [
+            tool for tool in explicitly_aliased_reads
+            if str(_tool_field(tool, "resource_type", "")).casefold()
+            == "json_records"
+        ]
         if explicitly_named:
             candidates = explicitly_named
+        elif explicitly_aliased_knowledge:
+            candidates = explicitly_aliased_knowledge
+        elif explicitly_aliased_transform:
+            candidates = explicitly_aliased_transform
         elif active_namespaces:
             namespace_set = {
                 normalize_namespace(item) for item in active_namespaces
@@ -422,7 +468,12 @@ class ToolSelector:
         else:
             candidates = list(available_tools or ())
         read_only_request = _is_read_only_request(verb_text)
-        if not explicitly_named and read_only_request:
+        if (
+            not explicitly_named
+            and not explicitly_aliased_knowledge
+            and not explicitly_aliased_transform
+            and read_only_request
+        ):
             candidates = _alias_scoped_reads(user_input, candidates)
         current_terms = _terms(user_input)
         has_explicit_resource = any(

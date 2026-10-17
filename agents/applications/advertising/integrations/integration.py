@@ -476,12 +476,20 @@ class AdvertisingToolExecutor:
         self.definition = definition
 
     def _execution_metadata(self, request: Any) -> dict[str, Any]:
+        principal = getattr(request, "principal", None)
         metadata = {
             "execution_mode": str(request.execution_mode or "dry_run"),
             "run_id": str(request.run_id or ""),
             "turn_id": str(request.turn_id or ""),
-            "tenant_id": str(request.tenant_id or "default"),
-            "account_scope": getattr(getattr(request, "principal", None), "account_scope", None),
+            "principal_tenant_id": str(
+                getattr(principal, "tenant_id", None) or ""
+            ),
+            "tenant_id": str(
+                getattr(principal, "tenant_id", None)
+                or request.tenant_id
+                or "default"
+            ),
+            "account_scope": getattr(principal, "account_scope", None),
         }
         if (
             str(getattr(self.definition, "action", "") or "").lower() == "list"

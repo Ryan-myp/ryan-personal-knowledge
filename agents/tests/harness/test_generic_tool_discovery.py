@@ -370,6 +370,131 @@ def test_current_run_flowchart_never_reuses_historical_provider_asset_queries():
     assert selected == []
 
 
+def test_advertising_process_explanations_do_not_select_provider_tools():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="List Meta campaigns",
+        ),
+        _definition(
+            "meta_get_campaign_report",
+            namespace="meta",
+            action="get",
+            resource="campaign_report",
+            description="Get a Meta campaign performance report",
+        ),
+        _definition(
+            "meta_create_campaign",
+            namespace="meta",
+            action="create",
+            resource="campaign",
+            description="Create a Meta campaign",
+        ),
+    ]
+
+    requests = (
+        "画一个meta广告创建流程",
+        "创意分析流程呢",
+        "账户诊断流程",
+    )
+    for request in requests:
+        assert ToolSelector().select_relevant(
+            request,
+            tools,
+            conversation_context=("查询 Meta campaign 列表",),
+        ) == []
+
+
+def test_explicit_campaign_operations_remain_routable_with_process_language():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="List Meta campaigns",
+        ),
+        _definition(
+            "meta_create_campaign",
+            namespace="meta",
+            action="create",
+            resource="campaign",
+            description="Create a Meta campaign",
+        ),
+    ]
+    selector = ToolSelector()
+
+    assert [
+        item.name for item in selector.select_relevant(
+            "查询 Meta campaign 列表",
+            tools,
+        )
+    ] == ["meta_list_campaigns"]
+    selected = selector.select_relevant(
+        "创建 Meta campaign，并说明创建流程",
+        tools,
+    )
+    assert any(item.name == "meta_create_campaign" for item in selected)
+    assert [
+        item.name for item in selector.select_relevant(
+            "画一个 Meta campaign 创建流程",
+            tools,
+        )
+    ] == []
+
+
+def test_process_explanation_turn_completes_without_executing_provider_tools():
+    executions = []
+
+    class Model:
+        def complete(self, _messages, tools, _request):
+            assert tools == []
+            return ModelTurn(content=(
+                "flowchart TD\n"
+                "  A[选择账户与目标] --> B[配置 Campaign]\n"
+                "  B --> C[配置 Ad Group]\n"
+                "  C --> D[准备 Ad 与 Creative]"
+            ))
+
+    definition = _definition(
+        "meta_list_campaigns",
+        namespace="meta",
+        action="list",
+        resource="campaign",
+        description="List Meta campaigns",
+    )
+    selector = ToolSelector()
+    app = AgentApplication.create(
+        model=Model(),
+        tool_selector=lambda request, tools: selector.select_relevant(
+            request.user_input,
+            tools,
+            conversation_context=request.context.get(
+                "_agent_tool_selection_context", (),
+            ),
+        ),
+    )
+    app.register_tool_source(StaticToolSource("advertising", [
+        ToolBinding(
+            definition,
+            lambda _context, _values: executions.append("called"),
+        ),
+    ]))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="画一个meta广告创建流程",
+            user_id="operator",
+        ))
+
+        assert result.status.value == "succeeded"
+        assert executions == []
+    finally:
+        app.close()
+
+
 def test_unselected_tool_is_rejected_when_request_context_is_missing():
     executions = []
 

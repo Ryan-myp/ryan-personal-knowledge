@@ -199,6 +199,7 @@ def audit_provider_tools(
             "provider evidence bundle is incomplete or invalid"
         )
     runtime = AdvertisingComposition(offline_mode=True, enforce_account_scope=False)
+    provider_platforms: set[str] = set()
 
     for slug in discover_platform_slugs():
         try:
@@ -208,6 +209,9 @@ def audit_provider_tools(
                 continue
             tool_source = factory()
             runtime.register_tool_source(tool_source)
+            provider_platforms.add(runtime._canonical_platform(
+                str(getattr(tool_source, "platform_name", slug) or slug)
+            ))
             client_class = getattr(tool_source, "provider_client_class", None)
             provider_contract = getattr(tool_source, "get_provider_version_contract", None)
             if callable(provider_contract):
@@ -511,7 +515,10 @@ def audit_provider_tools(
     all_names: list[str] = []
     definitions_by_platform: dict[str, list[Any]] = {}
     for definition in runtime.registry.list_all():
-        definitions_by_platform.setdefault(str(definition.namespace), []).append(definition)
+        platform = runtime._canonical_platform(str(definition.namespace))
+        if platform not in provider_platforms:
+            continue
+        definitions_by_platform.setdefault(platform, []).append(definition)
 
     for platform, definitions in sorted(definitions_by_platform.items()):
         actions: Counter[str] = Counter()

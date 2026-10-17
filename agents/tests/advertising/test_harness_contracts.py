@@ -209,15 +209,19 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
 
     runtime._refresh_tool_catalog = fail_once
     assert runtime.unload_skill("meta") is False
-    assert [tool.name for tool in runtime.registry.list_all()] == [
-        "atomic_unload_read"
-    ]
+    assert {tool.name for tool in runtime.registry.list_all()} == {
+        "agent_knowledge_search",
+        "agent_readonly_recipe",
+        "atomic_unload_read",
+    }
     assert runtime.get_loaded_skills()["atomic-unload"] is skill
     assert runtime.plugin_registry.get("skill:atomic-unload").state.value == "active"
 
     runtime._refresh_tool_catalog = original_refresh
     assert runtime.unload_skill("meta") is True
-    assert runtime.registry.list_all() == []
+    assert {
+        tool.name for tool in runtime.registry.list_all()
+    } == {"agent_knowledge_search", "agent_readonly_recipe"}
 
 
 def test_skill_lifecycle_serializes_register_and_unload():
@@ -280,7 +284,9 @@ def test_skill_lifecycle_serializes_register_and_unload():
     unload_thread.join(timeout=2)
     assert register_result == [True]
     assert unregister_result == [True]
-    assert runtime.registry.list_all() == []
+    assert {
+        tool.name for tool in runtime.registry.list_all()
+    } == {"agent_knowledge_search", "agent_readonly_recipe"}
 
 
 def test_provider_tools_own_cross_channel_campaign_actions():

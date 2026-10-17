@@ -15,6 +15,7 @@ from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as Futur
 from contextvars import copy_context
 from typing import Any, Callable, Mapping, Optional, Sequence
 
+from .core.interfaces import ToolResult
 from .messages import AgentMessage, ToolCall
 from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .redaction import redact_for_persistence
@@ -552,6 +553,8 @@ class ToolExecutionCoordinator:
                             ) from error
                         finally:
                             pool.shutdown(wait=False, cancel_futures=True)
+                    if isinstance(output, ToolResult):
+                        output = output.to_dict()
                     return output, retry_count
                 except Exception as error:
                     retryable = (

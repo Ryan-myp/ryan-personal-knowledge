@@ -1,11 +1,184 @@
 {
-  "digest": "d8f0a459af482280cd2a781126fa1c774e2e5d2024ff5a8ae5d0db8333a43d35",
+  "digest": "b3c94fa2d80ef4fadd6d352fd22486098d6f1e276e058c9ee1819a2da4905698",
   "format_version": 1,
   "platforms": {
     "agent-platform": {
-      "digest": "14a641e04b3d5e5c8c6138222e460022cc3250c3c26e85dab9a5b74e43b976b9",
-      "tool_count": 1,
+      "digest": "fded5344e70fec3e1f256d171bb5dd07e92ce4b158250b37ae1c7d86bbbee478",
+      "tool_count": 3,
       "tools": [
+        {
+          "action": "search",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "ef29d27f6b2413f17f00bf3cd72a60e11204ea6cacd64a708940979f95a5a097",
+          "contract_version": "1.0.0",
+          "description": "Search the registered read-only knowledge source and return bounded excerpts with citations. Use when the user explicitly asks to search or retrieve knowledge; provider/channel names in the query are filters or search terms, not a request to call provider APIs. The tenant is taken from trusted Runtime context and cannot be supplied as an argument.",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "limit": {
+                "default": 5,
+                "description": "Maximum number of results",
+                "maximum": 10,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "namespaces": {
+                "description": "Optional registered knowledge namespaces",
+                "items": {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "type": "array"
+              },
+              "query": {
+                "description": "Knowledge question or search phrase",
+                "maxLength": 1200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "知识库检索",
+            "从知识库检索",
+            "检索知识库",
+            "在知识库中搜索",
+            "搜索知识库",
+            "查询知识库",
+            "检索知识",
+            "search the knowledge base",
+            "search knowledge"
+          ],
+          "intent_types": [
+            "knowledge_search"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 32000,
+          "name": "agent_knowledge_search",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "knowledge",
+          "result_id_fields": [],
+          "result_items_key": "results",
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "agent-knowledge",
+          "skill_refs": [],
+          "timeout_seconds": 15,
+          "traits": [
+            "knowledge",
+            "read_only",
+            "bounded_output"
+          ]
+        },
+        {
+          "action": "transform",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "1ab33521dfca17f19c91b9fad100e8a77425d9cc61368a99c16737782e795207",
+          "contract_version": "1.0.0",
+          "description": "Transform JSON records already present in this Run. Supported steps: filter (eq, neq, contains, in, gt, gte, lt, lte, exists), select, sort, limit, group_count, aggregate (sum, avg, min, max, count). Steps execute in order. This Tool never runs code, calls other Tools, accesses files/network, or changes source data. Keep inputs within the published record, step, and output bounds.",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "records": {
+                "description": "JSON object records produced in the current Run",
+                "items": {
+                  "additional_properties": true,
+                  "type": "object"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              "steps": {
+                "description": "Ordered declarative operations; each operation is validated against its exact allowed fields at execution",
+                "maxItems": 10,
+                "type": "array"
+              }
+            },
+            "required": [
+              "records"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "汇总这些结果",
+            "汇总刚才查询的结果",
+            "统计这些结果",
+            "筛选这些结果",
+            "整理查询结果",
+            "对查询结果分组",
+            "aggregate these results",
+            "filter these records",
+            "group these records"
+          ],
+          "intent_types": [
+            "readonly_data_transform"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 32000,
+          "name": "agent_readonly_recipe",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "json_records",
+          "result_id_fields": [],
+          "result_items_key": "records",
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "agent-readonly-recipe",
+          "skill_refs": [],
+          "timeout_seconds": 10,
+          "traits": [
+            "read_only",
+            "declarative",
+            "bounded_input",
+            "bounded_output"
+          ]
+        },
         {
           "action": "schedule",
           "activation_rules": [],
@@ -53761,5 +53934,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 311
+  "tool_count": 313
 }

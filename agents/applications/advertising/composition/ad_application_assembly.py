@@ -27,7 +27,12 @@ from agents.agent_platform import (
     PlatformDependencies,
 )
 from agents.agent_platform.runtime import DataLayer, InfrastructureLayer, IntegrationLayer
-from agents.agent_platform.tools import scheduling_tool_source
+from agents.agent_platform.tools import (
+    knowledge_search_tool_source,
+    readonly_recipe_tool_source,
+    scheduling_tool_source,
+)
+from agents.agent_harness.core.plugins import PluginKind
 from agents.agent_harness.core.memory import MemoryManager
 from agents.scenarios.advertising import (
     advertising_agent_definition,
@@ -265,6 +270,26 @@ class AdApplicationAssembly:
             runtime, store, security,
         )
         services.bind_scheduling(scheduling_service)
+        for source, description in (
+            (
+                knowledge_search_tool_source(
+                    runtime.knowledge_provider,
+                    required_permission="ads.read",
+                ),
+                "Built-in read-only knowledge search Tool",
+            ),
+            (
+                readonly_recipe_tool_source(required_permission="ads.read"),
+                "Built-in declarative read-only JSON transform Tool",
+            ),
+        ):
+            runtime.registry.register_source(source)
+            runtime._register_builtin_plugin(
+                source.source_id,
+                source,
+                (PluginKind.TOOL_SOURCE.value,),
+                description=description,
+            )
         if store is not None and not runtime._read_only_mode:
             runtime.registry.register_source(scheduling_tool_source(
                 lambda **kwargs: runtime.create_schedule(**kwargs),

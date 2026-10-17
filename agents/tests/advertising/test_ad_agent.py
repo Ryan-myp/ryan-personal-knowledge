@@ -2556,7 +2556,11 @@ class TestIterationContracts:
         rt = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
-        assert [tool.name for tool in rt.registry.list_all()] == ["custom_meta_insight"]
+        assert {tool.name for tool in rt.registry.list_all()} == {
+            "agent_knowledge_search",
+            "agent_readonly_recipe",
+            "custom_meta_insight",
+        }
         assert rt.tool_executor.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
             "source": "custom"
         }
@@ -2569,7 +2573,10 @@ class TestIterationContracts:
         assert [tool.name for tool in routed["meta"]] == ["custom_meta_insight"]
         assert not hasattr(rt, "intent_parser")
         assert rt.unload_skill("meta") is True
-        assert rt.registry.list_all() == []
+        assert {tool.name for tool in rt.registry.list_all()} == {
+            "agent_knowledge_search",
+            "agent_readonly_recipe",
+        }
         assert not hasattr(rt, "intent_router")
 
     def test_skill_directory_plugin_is_auto_discovered(self, tmp_path):
@@ -2608,7 +2615,11 @@ class TestIterationContracts:
         assert rt.auto_load_skills(
             str(skill_root), allow_executable_plugins=True,
         ) == 1
-        assert [tool.name for tool in rt.registry.list_all()] == ["custom_insight"]
+        assert {tool.name for tool in rt.registry.list_all()} == {
+            "agent_knowledge_search",
+            "agent_readonly_recipe",
+            "custom_insight",
+        }
         result = rt.tool_executor.execute(
             ToolContext("s1", "u1"), "custom_insight", {}
         )

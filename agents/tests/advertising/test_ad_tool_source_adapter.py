@@ -68,10 +68,18 @@ def test_registered_provider_source_is_part_of_platform_dependencies():
         registry=registry,
     )
     sources = runtime._platform_application.dependencies.integrations.tool_sources
-    assert [source.source_id for source in sources] == ["provider-module:example"]
-    assert [
+    assert {source.source_id for source in sources} == {
+        "agent-platform:knowledge-search",
+        "agent-platform:readonly-recipe",
+        "provider-module:example",
+    }
+    assert {
         tool.name for tool in runtime._platform_application.harness.tools.list_tools()
-    ] == ["example_lookup"]
+    } == {
+        "agent_knowledge_search",
+        "agent_readonly_recipe",
+        "example_lookup",
+    }
 
 
 def test_dynamic_provider_source_updates_platform_dependency_snapshot():

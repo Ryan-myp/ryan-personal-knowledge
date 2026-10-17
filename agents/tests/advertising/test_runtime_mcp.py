@@ -45,11 +45,18 @@ def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
     )
     gateway = RuntimeMCPServers(lambda: runtime, lambda *_args, **_kwargs: principal)
     try:
-        assert gateway.refresh(runtime) == 1
+        assert gateway.refresh(runtime) == 3
         servers = gateway.list_servers(runtime)
-        assert [server["server_id"] for server in servers] == ["namespace-test_channel"]
-        assert servers[0]["source"] == "runtime_registry"
-        assert servers[0]["endpoint"] == "/mcp/namespaces/test_channel/mcp"
+        assert [server["server_id"] for server in servers] == [
+            "namespace-agent_platform",
+            "namespace-test_channel",
+        ]
+        provider_server = next(
+            server for server in servers
+            if server["server_id"] == "namespace-test_channel"
+        )
+        assert provider_server["source"] == "runtime_registry"
+        assert provider_server["endpoint"] == "/mcp/namespaces/test_channel/mcp"
         tested = gateway.test_tool(
             "namespace-test_channel", "test_channel_create", runtime, principal,
             {"name": "draft"},
