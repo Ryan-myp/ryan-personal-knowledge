@@ -58,10 +58,12 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | 本地来源 | 系统落点 | 不导入的部分 |
 |---|---|---|
 | `ad-creative` 2.10.0 | `practices/creative-strategy` 与 Wiki 的创意路线图、Hook 漏斗诊断 | 生成素材的外部服务、抓取/上传脚本和特定平台规格副本 |
-| `ads` 2.4.6 | Wiki 的审计证据状态与覆盖率，以及 `practices/account-diagnostics` 的通用审计、Google Search Terms/转化和 Meta Insights 解读 | 未注册报表能力对应的审计项、外部抓取流程和固定表现阈值 |
+| `ads` 2.4.6；上游 `operating-check` 参考（2026-10-18） | `practices/account-diagnostics` 的通用审计、Google Search Terms/转化、Meta Insights 解读和日/周 HOLD/FIX/TEST/INVESTIGATE 运营检查 | 未注册报表能力对应的审计项、外部抓取流程和固定表现阈值 |
 | `ab-testing` 2.0.1 | `practices/experimentation-design`、Wiki 的实验方法；触发后按需加载实验设计 reference | 上游固定样本量表、统计计算器或自动平台实验执行 |
 | `attribution` 1.1.4 | `practices/measurement-attribution`、Wiki 的归因/增量方法；触发后按需加载对账 reference | 未接入数据源时声称运行 GA4、CRM、MTA 或 MMM |
 | `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约；触发后按需加载事件契约 reference | GA4/GTM/Pixel/CAPI 配置代码、外部集成和未注册的实施 Tool |
+| Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
+| Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |
 
 这些是本机读取到的来源包版本，用于追踪本次蒸馏输入，不代表远端最新版本或 Runtime
 插件版本。来源包中与已发布广告 Wiki 重合的基础内容不重复导入。上游 Skill 只作为
@@ -69,6 +71,11 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 Source 自动发现。其 `SKILL.md`、references 和 provenance 可进入受限上下文，但不会被
 当作可执行扩展，也不增加 Tool、凭证或账户权限；所有查询和变更仍须通过当前注册 Tool
 与 Harness 门禁。
+
+2026-10-18 对照 Skills Marketplace 的 `paid-ads`、`copywriting`、`page-cro`、
+`ad-creative` 和 `marketing-psychology` 条目后，保留三项非重复增量：账户运营决策
+检查、广告文案/证据 brief、付费流量落地页审查。Marketplace 的通用文案与 CRO 方法
+被改写为广告场景；未注册的网页抓取、分析、第三方平台或写操作能力不会随 Skill 引入。
 
 ## 跨渠道 Campaign 管理
 

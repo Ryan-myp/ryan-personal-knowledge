@@ -1,12 +1,13 @@
 ---
 name: account-diagnostics
 description: "基于当前账户报表和可追溯证据进行广告账户审计、效果诊断与数据解读 (evidence-led ad account audit and performance diagnosis)"
-version: "1.1.0"
+version: "1.2.0"
 namespace: advertising
 triggers:
   - [账户诊断, 账户审计, 广告账户体检, 广告账户审计, 广告账户做审计, 账户表现诊断, account audit, account diagnosis, performance diagnosis, performance audit]
   - [搜索词报告, search terms report, wasted spend, 浪费预算, 报表可信度, conversions 为零, 广告效果下降, why performance dropped]
   - [Meta Insights, Meta 广告报表, Meta Ads report, action_breakdowns, Meta breakdown, Meta 转化报表]
+  - [周度广告账户检查, 周度账户复盘, 广告账户周报, weekly account review, daily account check, weekly performance readout, spend pacing, 投放节奏检查]
 ---
 
 # 广告账户诊断与数据解读
@@ -25,6 +26,7 @@ triggers:
 
 - `references/google-report-interpretation.md`：Google Ads 搜索词、转化和日期口径。
 - `references/meta-insights-interpretation.md`：Meta Insights 分层指标、actions/action_values、归因与当前 Tool 查询边界。
+- `references/operating-check.md`：日/周账户检查顺序、HOLD/FIX/TEST/INVESTIGATE 决策和简短 readout。
 
 ## 证据标签
 
@@ -46,4 +48,4 @@ triggers:
 
 ## 输出要求
 
-简洁给出：数据来源和口径、报告是否完整、已核验发现、主要推断、Unknown/N/A 项、下一步只读检查及其目的。若证据不支持性能结论，明确说“当前不能判断”，不要用通用建议填补证据空白。
+简洁给出：数据来源和口径、报告是否完整、已核验发现、主要推断、Unknown/N/A 项、下一步只读检查及其目的。账户运营检查还要给出 HOLD/FIX/TEST/INVESTIGATE 及理由，并分别列出事实、假设、缺失数据。若证据不支持性能结论，明确说“当前不能判断”，不要用通用建议填补证据空白。

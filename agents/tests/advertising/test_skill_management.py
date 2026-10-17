@@ -30,6 +30,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "google-ads-api-expert", "meta-marketing-api-expert", "tiktok-ads-expert",
         "creative-strategy", "account-diagnostics", "experimentation-design",
         "measurement-attribution", "measurement-instrumentation",
+        "ad-copywriting", "paid-landing-page-review",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -38,10 +39,11 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     creative = catalog.get_version("creative-strategy", "1.0.0")
     assert creative["location"] == "practices/creative-strategy"
     assert "references/creative-roadmap.md" in creative["files"]
-    diagnostics = catalog.get_version("account-diagnostics", "1.1.0")
+    diagnostics = catalog.get_version("account-diagnostics", "1.2.0")
     assert diagnostics["location"] == "practices/account-diagnostics"
     assert "references/google-report-interpretation.md" in diagnostics["files"]
     assert "references/meta-insights-interpretation.md" in diagnostics["files"]
+    assert "references/operating-check.md" in diagnostics["files"]
     experimentation = catalog.get_version("experimentation-design", "1.0.0")
     assert experimentation["location"] == "practices/experimentation-design"
     assert "references/test-design.md" in experimentation["files"]
@@ -51,6 +53,12 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     instrumentation = catalog.get_version("measurement-instrumentation", "1.0.0")
     assert instrumentation["location"] == "practices/measurement-instrumentation"
     assert "references/event-measurement-contract.md" in instrumentation["files"]
+    copywriting = catalog.get_version("ad-copywriting", "1.0.0")
+    assert copywriting["location"] == "practices/ad-copywriting"
+    assert "references/ad-copy-brief.md" in copywriting["files"]
+    landing_page = catalog.get_version("paid-landing-page-review", "1.0.0")
+    assert landing_page["location"] == "practices/paid-landing-page-review"
+    assert "references/post-click-audit.md" in landing_page["files"]
 
 
 def _files(name="business-growth"):
@@ -178,6 +186,13 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
         assert "The report Tools do not expose" in meta_context
         assert "offline_no_client" in meta_context
 
+        operation_context = runtime.tool_selector._triggered_skill_context(
+            "做一次周度广告账户检查，按 HOLD、FIX、TEST、INVESTIGATE 给出结论"
+        )
+        assert "[skill guidance: account-diagnostics]" in operation_context
+        assert "references/operating-check.md" in operation_context
+        assert "关键数据缺失、报告完整性/口径有疑问" in operation_context
+
         from agents.tools.advertising.providers.meta.provider import create_meta_tool_source
 
         report_tools = {
@@ -199,6 +214,33 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
                 "time_increment",
                 "attribution_setting",
             } & set(properties), tool_name
+    finally:
+        runtime.close(wait=True)
+
+
+def test_marketplace_copywriting_and_post_click_skills_are_advisory():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        copywriting = runtime.skill_loader.get("ad-copywriting")
+        landing_page = runtime.skill_loader.get("paid-landing-page-review")
+        assert copywriting is not None
+        assert landing_page is not None
+        assert copywriting.get_tools() == []
+        assert landing_page.get_tools() == []
+
+        copy_context = runtime.tool_selector._triggered_skill_context(
+            "帮我写 5 条 TikTok 广告主文案和 CTA，突出产品卖点"
+        )
+        assert "[skill guidance: ad-copywriting]" in copy_context
+        assert "references/ad-copy-brief.md" in copy_context
+        assert "不补写数据" in copy_context
+
+        landing_context = runtime.tool_selector._triggered_skill_context(
+            "检查这条广告点击后的 landing page 是否和广告承诺匹配"
+        )
+        assert "[skill guidance: paid-landing-page-review]" in landing_context
+        assert "references/post-click-audit.md" in landing_context
+        assert "不代表已经访问页面" in landing_context
     finally:
         runtime.close(wait=True)
 
