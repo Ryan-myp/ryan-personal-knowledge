@@ -298,6 +298,78 @@ def test_relevant_tool_selection_returns_empty_for_unmatched_request():
     assert ToolSelector().select_relevant("Tell me a joke", tools) == []
 
 
+def test_self_contained_architecture_request_ignores_previous_provider_query():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="List Meta campaigns",
+        ),
+        _definition(
+            "meta_list_video_assets",
+            namespace="meta",
+            action="list",
+            resource="video_asset",
+            description="List Meta video assets",
+        ),
+        _definition(
+            "meta_list_image_assets",
+            namespace="meta",
+            action="list",
+            resource="image_asset",
+            description="List Meta image assets",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "你画一个当前系统run的流程图吧",
+        tools,
+        conversation_context=(
+            "查询 Meta campaign、video assets 和 image assets",
+        ),
+    )
+
+    assert selected == []
+
+
+def test_current_run_flowchart_never_reuses_historical_provider_asset_queries():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="List Meta campaigns",
+        ),
+        _definition(
+            "meta_list_video_assets",
+            namespace="meta",
+            action="list",
+            resource="video_asset",
+            description="List Meta video assets",
+        ),
+        _definition(
+            "meta_list_image_assets",
+            namespace="meta",
+            action="list",
+            resource="image_asset",
+            description="List Meta image assets",
+        ),
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "根据刚才的实际执行流程，画一个当前系统 Run 流程图",
+        tools,
+        conversation_context=(
+            "查询 Meta campaign、video assets 和 image assets",
+        ),
+    )
+
+    assert selected == []
+
+
 def test_unselected_tool_is_rejected_when_request_context_is_missing():
     executions = []
 

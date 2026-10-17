@@ -10,6 +10,13 @@ def test_query_contract_forbids_unrequested_child_queries_and_rounded_counts():
     assert "Do not round counts" in prompt
 
 
+def test_architecture_diagrams_do_not_trigger_business_data_tools():
+    prompt = " ".join(CORE_AGENT_SYSTEM_PROMPT.split())
+
+    assert "architecture or runtime diagrams" in prompt
+    assert "Do not call business or provider Tools" in prompt
+
+
 def test_google_account_tool_explains_root_level_without_claiming_manager_status():
     tool = next(
         binding.definition

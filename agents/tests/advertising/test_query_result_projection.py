@@ -57,6 +57,32 @@ def test_application_projection_uses_complete_data_not_the_model_preview():
     assert "output_truncated" not in row
 
 
+def test_application_projection_carries_registered_tool_effect_metadata():
+    definition = SimpleNamespace(
+        namespace="meta",
+        action="get",
+        resource_type="campaign",
+        intent_types=["get_campaign"],
+        effect_class=SimpleNamespace(value="read"),
+    )
+    runtime = SimpleNamespace(
+        _sessions={},
+        registry=SimpleNamespace(get=lambda _name: (definition, None)),
+    )
+    projection = AdvertisingRunProjection.application_state_from_run(runtime, {
+        "tool_results": [{
+            "name": "meta_get_campaign",
+            "content": {"success": True, "data": {"campaign": {"id": "1"}}},
+            "is_error": False,
+        }],
+    }, "session", "Get campaign.")
+
+    row = projection["last_results"][0]
+    assert row["action"] == "get"
+    assert row["effect_class"] == "read"
+    assert row["resource_type"] == "campaign"
+
+
 def test_retained_query_evidence_still_obeys_the_tool_byte_limit():
     class Model:
         turn = 0

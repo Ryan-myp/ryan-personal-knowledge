@@ -20,7 +20,14 @@ from .model_execution import ModelBudgetExceededError, ModelTimeoutError, ModelC
 from .state_persistence import TranscriptPersistenceError
 from .agent_runtime import AgentRuntime
 from .context import BoundedContextProvider, ContextProvider
-from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
+from .messages import (
+    AgentMessage,
+    InputMedia,
+    MediaFrame,
+    ModelTurn,
+    ToolArgumentBinding,
+    ToolCall,
+)
 from .observability import (
     AlertSink,
     CredentialProvider,

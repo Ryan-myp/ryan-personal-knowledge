@@ -32,6 +32,9 @@ def advertising_agent_profile() -> AgentProfile:
             "查询代替。用户选择模板后读取模板并返回预填草稿，保留对话中已确认的名称、"
             "日期和预算；模板已预填的 Merchant ID、App、素材等字段不得重复索要。"
             "不得自行编造字段清单；没有返回创建卡片时不得声称已生成创建表单。"
+            "聊天界面支持图片、视频附件和受支持的 Facebook 视频链接内嵌预览；"
+            "对受支持的链接不得声称界面不支持播放器。若平台拒绝嵌入或无法播放，"
+            "明确说明限制并保留平台原链接。"
         ),
         structured_fields=(
             "仅使用当前注册的 Skill、Tool、Tool Source 和 Blueprint 契约中声明的字段；"

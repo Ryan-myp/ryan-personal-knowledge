@@ -4,6 +4,15 @@ body .message .message-content-text {
     overflow-wrap: anywhere;
 }
 
+.message.agent:has(.mermaid-diagram) {
+    align-self: stretch;
+}
+.message.agent:has(.mermaid-diagram) .message-content,
+.message.agent:has(.mermaid-diagram) .message-body,
+.message.agent:has(.mermaid-diagram) .message-content-text {
+    width: 100%;
+}
+
 body .message .message-content-text :is(h1, h2, h3, h4, h5, h6) {
     margin: 20px 0 8px;
     font-weight: 650;
@@ -28,6 +37,136 @@ body .message .message-content-text > :last-child { margin-bottom: 0; }
     background: transparent;
     font-size: inherit;
     white-space: inherit;
+}
+.message-content-text pre.mermaid-render-fallback::before {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    content: "流程图暂时无法渲染，以下为原始源码";
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: normal;
+}
+.mermaid-diagram {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin: 12px 0;
+    overflow: auto;
+}
+.mermaid-diagram-zoom {
+    position: static;
+    display: block;
+    margin: 8px 0 0 auto;
+    padding: 6px 9px;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    font: inherit;
+    font-size: 12px;
+    cursor: zoom-in;
+}
+.mermaid-diagram-zoom:hover,
+.mermaid-diagram-zoom:focus-visible {
+    border-color: var(--accent);
+    outline: none;
+}
+.mermaid-diagram svg {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    margin-inline: auto;
+}
+.mermaid-viewer {
+    box-sizing: border-box;
+    width: min(96vw, 1500px);
+    height: min(92dvh, 1100px);
+    max-width: none;
+    max-height: none;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+.mermaid-viewer::backdrop {
+    background: rgba(3, 10, 17, .82);
+    backdrop-filter: blur(3px);
+}
+.mermaid-viewer[open] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+}
+.mermaid-viewer-header {
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 12px 8px 18px;
+    border-bottom: 1px solid var(--border);
+}
+.mermaid-viewer-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+.mermaid-viewer-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.mermaid-viewer-control {
+    display: grid;
+    min-width: 36px;
+    height: 36px;
+    place-items: center;
+    padding: 0 8px;
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    font: inherit;
+    cursor: pointer;
+}
+.mermaid-viewer-control:hover,
+.mermaid-viewer-control:focus-visible {
+    border-color: var(--accent);
+    outline: none;
+}
+.mermaid-viewer-zoom-status {
+    min-width: 48px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: center;
+}
+.mermaid-viewer-viewport {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 20px;
+}
+.mermaid-viewer-viewport svg {
+    display: block;
+    max-width: none;
+    height: auto;
+    margin: 0;
+}
+@media (max-width: 600px) {
+    .mermaid-viewer {
+        width: 100vw;
+        height: 100dvh;
+        border-inline: 0;
+        border-radius: 0;
+    }
+    .mermaid-viewer-header { gap: 8px; padding-inline: 10px; }
+    .mermaid-viewer-actions { gap: 4px; }
+    .mermaid-viewer-control { min-width: 32px; height: 34px; }
+    .mermaid-viewer-viewport { padding: 12px; }
 }
 .message-content-text li > input[type="checkbox"] { margin-right: 6px; accent-color: var(--accent); }
 

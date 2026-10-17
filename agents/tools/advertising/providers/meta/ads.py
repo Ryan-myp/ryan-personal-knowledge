@@ -65,7 +65,12 @@ class MetaGetAdHandler(ToolHandler):
                     return ToolResult.error(
                         f"Ad {ad_id} does not belong to account {ctx.account_id}"
                     )
-                ad = self.client.get_ad(ad_id)
+                fields = input_data.get("fields")
+                ad = (
+                    self.client.get_ad(ad_id, fields=fields)
+                    if fields is not None
+                    else self.client.get_ad(ad_id)
+                )
                 return ToolResult.ok({"ad": ad, "data_status": "live"})
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta ad: {e}")

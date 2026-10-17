@@ -40,7 +40,8 @@
         }
 
         function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null, uiOptions = null) {
-            if (!toolSummaryHtml && !chatMessageHasPresentation(content, tools, ui)) return null;
+            const attachments = uiOptions?.attachments || [];
+            if (!toolSummaryHtml && !chatMessageHasPresentation(content, tools, ui, attachments)) return null;
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
             if (welcome) welcome.style.display = 'none';
@@ -54,6 +55,8 @@
                 : parsedTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
             let bodyHtml = `<div class="message-content-text">${formatContent(content)}</div>`;
+            if (attachments.length) bodyHtml += '<div class="message-attachments-host"></div>';
+            if (ui?.media_gallery?.length) bodyHtml += '<div class="message-media-gallery-host"></div>';
             if (ui?.account_selection) {
                 bodyHtml += '<div class="message-account-selection-host"></div>';
             }
@@ -126,6 +129,21 @@
                     ),
                 );
             }
+            const attachmentHost = msg.querySelector('.message-attachments-host');
+            if (attachmentHost) {
+                renderMessageAttachments(attachmentHost, attachments, sessionId);
+            }
+            const mediaGalleryHost = msg.querySelector('.message-media-gallery-host');
+            if (mediaGalleryHost) {
+                renderMediaGallery(mediaGalleryHost, ui.media_gallery);
+            }
+            if (type === 'agent') {
+                renderFacebookVideoEmbeds(
+                    msg.querySelector('.message-body'),
+                    content,
+                    ui?.media_gallery,
+                );
+            }
             const confirmationButton = msg.querySelector('.message-confirmation-button');
             if (confirmationButton && ui?.confirmation?.payload) {
                 confirmationButton.addEventListener('click', () => {
@@ -145,6 +163,11 @@
             });
 
             container.appendChild(msg);
+            if (type === 'agent') {
+                void renderMermaidDiagrams(
+                    msg.querySelector('.message-content-text'),
+                );
+            }
             document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
 
             return msg;
@@ -451,7 +474,13 @@
         async function sendMessage() {
             const input = document.getElementById('userInput');
             const text = input.value.trim();
-            if (!text || isSending) return;
+            if ((!text && !pendingChatAttachments.length) || isSending || chatMediaUploading) return;
+            const submittedAttachments = pendingChatAttachments.map(item => ({
+                id: item.id,
+                filename: item.filename,
+                media_type: item.media_type,
+                size: item.size,
+            }));
 
             isSending = true;
             const sendButton = document.getElementById('sendBtn');
@@ -466,9 +495,11 @@
             input.value = '';
             input.style.height = 'auto';
 
-            addMessage(text, 'user');
+            addMessage(text, 'user', null, false, '', null, null, {
+                attachments: submittedAttachments,
+            });
             addLoading();
-            startExecutionTrace(text);
+            startExecutionTrace(text || '分析图片或视频附件');
 
             conversationCount++;
             const statToday = document.getElementById('statToday');
@@ -479,6 +510,9 @@
                     user_input: text,
                     user_id: 'web_user',
                     session_id: sessionId,
+                    ...(submittedAttachments.length
+                        ? { media_ids: submittedAttachments.map(item => item.id) }
+                        : {}),
                     ...(pendingBlueprintRequest || {}),
                 };
                 pendingBlueprintRequest = null;
@@ -488,6 +522,7 @@
                 const statApiCalls = document.getElementById('statAPICalls');
                 if (statApiCalls) statApiCalls.textContent = apiCallCount;
                 renderStreamResult(data, requestParams);
+                clearPendingChatMedia({ revoke: false });
                 await refreshConversationHistory({ silent: true });
 
             } catch (error) {
@@ -525,6 +560,7 @@
         // New chat
         function newChat() {
             stopDurableRunPolling();
+            clearPendingChatMedia({ revoke: true });
             sessionId = null;
             selectedConversationId = null;
             loadedConversationTurnIds.clear();

@@ -9,6 +9,7 @@ import logging
 import re
 import threading
 import math
+import base64
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional, Dict, Any
@@ -62,8 +63,49 @@ def capture_llm_usage():
         _ACTIVE_USAGE_COLLECTOR.reset(token)
 
 
+_STRUCTURED_OUTPUT_REASON_CODES = {
+    "A Tool call was required, but no Tools are available":
+        "required_tool_catalog_empty",
+    "conversation contains an unsupported message role":
+        "unsupported_message_role",
+    "conversation contains non-serializable model content":
+        "non_serializable_message",
+    "transcript contains an incomplete Tool call":
+        "incomplete_transcript_tool_call",
+    "transcript contains a Tool result without a call id":
+        "transcript_tool_result_missing_call_id",
+    "active Tool catalog contains an invalid function name":
+        "invalid_tool_catalog_name",
+    "LLM response did not contain a choice":
+        "response_choice_missing",
+    "LLM response did not contain a message":
+        "response_message_missing",
+    "LLM returned too many Tool calls in one response":
+        "response_tool_call_limit_exceeded",
+    "LLM requested a Tool outside the active catalog":
+        "tool_not_in_active_catalog",
+    "LLM returned duplicate Tool call ids":
+        "duplicate_tool_call_id",
+    "LLM Tool arguments exceeded the configured size limit":
+        "tool_arguments_too_large",
+    "LLM Tool arguments were not valid JSON":
+        "tool_arguments_invalid_json",
+    "LLM Tool arguments must be a JSON object":
+        "tool_arguments_not_object",
+    "LLM Tool arguments were not JSON serializable":
+        "tool_arguments_not_serializable",
+}
+
+
 class LLMStructuredOutputError(ValueError):
     """The model response could not satisfy a structured JSON contract."""
+
+    @property
+    def safe_reason_code(self) -> str:
+        """Expose only a stable parser code, never raw provider/model text."""
+        return _STRUCTURED_OUTPUT_REASON_CODES.get(
+            str(self), "invalid_structured_output",
+        )
 
 
 class LLMClient:
@@ -145,6 +187,10 @@ class LLMClient:
         """Implement the Harness ModelAdapter contract with native Tool calls."""
         try:
             provider_messages = self._provider_messages(messages)
+            provider_messages = self._attach_input_media(
+                provider_messages,
+                getattr(request, "input_media", ()),
+            )
             provider_tools = self._provider_tools(tools)
         except LLMStructuredOutputError as error:
             logger.error(
@@ -258,42 +304,127 @@ class LLMClient:
             usage=usage,
         )
 
+    @classmethod
+    def _attach_input_media(
+        cls,
+        messages: list[dict[str, Any]],
+        input_media: Any,
+    ) -> list[dict[str, Any]]:
+        """Attach bounded image content to the latest user message."""
+        media = tuple(input_media or ())
+        if not media:
+            return messages
+        if len(media) > 5:
+            raise ValueError("model input supports at most 5 media attachments")
+        user_message = next(
+            (item for item in reversed(messages) if item.get("role") == "user"),
+            None,
+        )
+        if user_message is None:
+            raise ValueError("model input media requires a user message")
+
+        content_parts: list[tuple[str, Any]] = []
+        existing = user_message.get("content")
+        if isinstance(existing, str) and existing:
+            content_parts.append(("text", existing))
+        elif isinstance(existing, list):
+            content_parts.extend(("existing", item) for item in existing)
+        image_payloads: list[tuple[str, bytes]] = []
+        media_payload_bytes = 0
+        for attachment in media:
+            filename = str(getattr(attachment, "filename", "attachment"))
+            media_type = str(getattr(attachment, "media_type", ""))
+            content = getattr(attachment, "content", None)
+            if not isinstance(content, bytes) or not content:
+                raise ValueError("model input media must contain non-empty bytes")
+            if media_type.startswith("image/"):
+                if media_type not in {
+                    "image/jpeg", "image/png", "image/gif", "image/webp",
+                }:
+                    raise ValueError(
+                        f"unsupported vision image media type: {media_type}"
+                    )
+                image_payloads.append((media_type, content))
+                media_payload_bytes += len(content)
+                content_parts.append(("image", (media_type, content)))
+                continue
+            if not media_type.startswith("video/"):
+                raise ValueError(f"unsupported model input media type: {media_type}")
+            frames = tuple(getattr(attachment, "frames", ()) or ())
+            if not frames:
+                raise ValueError(
+                    f"video attachment {filename} has no sampled image frames"
+                )
+            content_parts.append((
+                "text", f"视频附件 {filename}；以下是按时间采样的画面帧：",
+            ))
+            if len(frames) > 12:
+                raise ValueError("model input exceeds the 12 image/frame limit")
+            for frame in frames:
+                frame_data = getattr(frame, "content", None)
+                frame_type = str(getattr(frame, "media_type", ""))
+                if not isinstance(frame_data, bytes) or not frame_data:
+                    raise ValueError("video frame content must be non-empty bytes")
+                if frame_type not in {
+                    "image/jpeg", "image/png", "image/gif", "image/webp",
+                }:
+                    raise ValueError(
+                        f"unsupported vision image media type: {frame_type}"
+                    )
+                timestamp = float(getattr(frame, "timestamp_seconds", 0.0))
+                if not math.isfinite(timestamp) or timestamp < 0:
+                    raise ValueError("video frame timestamp must be finite and non-negative")
+                image_payloads.append((frame_type, frame_data))
+                media_payload_bytes += len(frame_data)
+                content_parts.append(("text", f"画面时间：{timestamp:.1f}s"))
+                content_parts.append(("image", (frame_type, frame_data)))
+        image_count = len(image_payloads)
+        if image_count > 12:
+            raise ValueError("model input exceeds the 12 image/frame limit")
+        if media_payload_bytes > 24 * 1024 * 1024:
+            raise ValueError("model input media exceeds the 24 MiB limit")
+
+        text_content = "\n".join(
+            value for kind, value in content_parts if kind == "text"
+        )
+        parts = (
+            [{"type": "text", "text": text_content}]
+            if text_content else []
+        )
+        parts.extend(
+            value for kind, value in content_parts if kind == "existing"
+        )
+        for kind, value in content_parts:
+            if kind != "image":
+                continue
+            media_type, content = value
+            parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": cls._media_data_url(media_type, content),
+                },
+            })
+        user_message["content"] = parts
+        return messages
+
+    @staticmethod
+    def _media_data_url(media_type: str, content: bytes) -> str:
+        supported = {
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+        }
+        if media_type not in supported:
+            raise ValueError(f"unsupported vision image media type: {media_type}")
+        if not content:
+            raise ValueError("vision image content must be non-empty")
+        return (
+            f"data:{media_type};base64,"
+            f"{base64.b64encode(content).decode('ascii')}"
+        )
+
     @staticmethod
     def _structured_error_reason(error: LLMStructuredOutputError) -> str:
         """Map parser errors to fixed log-safe reason codes."""
-        reasons = {
-            "A Tool call was required, but no Tools are available":
-                "required_tool_catalog_empty",
-            "conversation contains an unsupported message role":
-                "unsupported_message_role",
-            "conversation contains non-serializable model content":
-                "non_serializable_message",
-            "transcript contains an incomplete Tool call":
-                "incomplete_transcript_tool_call",
-            "transcript contains a Tool result without a call id":
-                "transcript_tool_result_missing_call_id",
-            "active Tool catalog contains an invalid function name":
-                "invalid_tool_catalog_name",
-            "LLM response did not contain a choice":
-                "response_choice_missing",
-            "LLM response did not contain a message":
-                "response_message_missing",
-            "LLM returned too many Tool calls in one response":
-                "response_tool_call_limit_exceeded",
-            "LLM requested a Tool outside the active catalog":
-                "tool_not_in_active_catalog",
-            "LLM returned duplicate Tool call ids":
-                "duplicate_tool_call_id",
-            "LLM Tool arguments exceeded the configured size limit":
-                "tool_arguments_too_large",
-            "LLM Tool arguments were not valid JSON":
-                "tool_arguments_invalid_json",
-            "LLM Tool arguments must be a JSON object":
-                "tool_arguments_not_object",
-            "LLM Tool arguments were not JSON serializable":
-                "tool_arguments_not_serializable",
-        }
-        return reasons.get(str(error), "invalid_structured_output")
+        return error.safe_reason_code
 
     @staticmethod
     def _safe_error_details(error: Exception) -> dict[str, str]:

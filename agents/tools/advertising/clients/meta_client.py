@@ -2251,11 +2251,12 @@ class MetaAPIClient(BasePlatformClient):
             "GET", f"/act_{account_id}/adimages",
             extra_params={
                 "limit": limit,
-                # Picker/creation flows only need a stable asset reference and
-                # display metadata.  Do not pull the provider's signed image
-                # URLs into Runtime context; they can be very large and are
-                # not needed to submit an image-hash creative.
-                "fields": "hash,name,original_width,original_height,created_time",
+                # Signed preview URLs are needed by the chat media gallery;
+                # the hash remains the stable reference used by ad creation.
+                "fields": (
+                    "hash,name,original_width,original_height,created_time,"
+                    "url,url_128"
+                ),
             },
         )
         # Meta's adimages edge returns an object keyed by filename/hash rather
@@ -2309,7 +2310,10 @@ class MetaAPIClient(BasePlatformClient):
             f"/act_{account_id}/advideos",
             {
                 "limit": limit,
-                "fields": "id,title,description,status,created_time,permalink_url",
+                "fields": (
+                    "id,title,description,status,created_time,"
+                    "source,picture,permalink_url"
+                ),
             },
         )
 

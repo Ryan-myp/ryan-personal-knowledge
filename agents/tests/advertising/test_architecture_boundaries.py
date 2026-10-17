@@ -70,7 +70,8 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "workflow.py",
         },
         "run": {
-            "ad_run_memory.py", "ad_run_projection.py", "ad_run_service.py",
+            "ad_run_media.py", "ad_run_memory.py", "ad_run_projection.py",
+            "ad_run_service.py",
             "ad_runtime_catalog.py", "ad_runtime_context.py",
             "ad_runtime_controls.py", "ad_runtime_lifecycle.py",
             "ad_runtime_policy.py", "ad_runtime_presentation.py",

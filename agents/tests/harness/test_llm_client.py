@@ -8,6 +8,7 @@ from agents.agent_harness.core.llm_client import (
     LLMStructuredOutputError,
     capture_llm_usage,
 )
+from agents.agent_harness.messages import InputMedia, MediaFrame
 
 
 def test_call_json_returns_only_json_objects(monkeypatch):
@@ -179,3 +180,145 @@ def test_tool_call_failure_logs_only_safe_provider_diagnostics(monkeypatch, capl
     assert "tool_schema_chars=" in caplog.text
     assert "private" not in caplog.text
     assert "raw request body" not in caplog.text
+
+
+def test_complete_passes_uploaded_images_as_openai_compatible_vision_content(monkeypatch):
+    client = LLMClient(model="test-model", api_key="test-key")
+    captured = {}
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="看到了图片"))],
+        usage=None,
+    )
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setattr(
+        client,
+        "_get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        ),
+    )
+    image = InputMedia(
+        attachment_id="image-1",
+        filename="product.png",
+        media_type="image/png",
+        content=b"png bytes",
+    )
+
+    result = client.complete(
+        [{"role": "user", "content": "请评价这张图片"}],
+        [],
+        SimpleNamespace(context={}, input_media=(image,)),
+    )
+
+    assert result.content == "看到了图片"
+    content = captured["messages"][0]["content"]
+    assert content[0] == {"type": "text", "text": "请评价这张图片"}
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"] == "data:image/png;base64,cG5nIGJ5dGVz"
+
+
+def test_complete_adds_only_bounded_video_frames_to_vision_request(monkeypatch):
+    client = LLMClient(model="test-model", api_key="test-key")
+    captured = {}
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="视频已分析"))],
+        usage=None,
+    )
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setattr(
+        client,
+        "_get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        ),
+    )
+    video = InputMedia(
+        attachment_id="video-1",
+        filename="story.mp4",
+        media_type="video/mp4",
+        content=b"video bytes",
+        frames=(
+            MediaFrame(
+                timestamp_seconds=1.5,
+                media_type="image/jpeg",
+                content=b"frame-1",
+            ),
+            MediaFrame(
+                timestamp_seconds=4.0,
+                media_type="image/jpeg",
+                content=b"frame-2",
+            ),
+        ),
+    )
+
+    client.complete(
+        [{"role": "user", "content": "总结视频内容"}],
+        [],
+        SimpleNamespace(context={}, input_media=(video,)),
+    )
+
+    content = captured["messages"][0]["content"]
+    assert "story.mp4" in content[0]["text"]
+    assert "1.5s" in content[0]["text"]
+    assert [item["type"] for item in content[1:]] == ["image_url", "image_url"]
+    assert all(
+        item["image_url"]["url"].startswith("data:image/jpeg;base64,")
+        for item in content[1:]
+    )
+
+
+def test_input_media_rejects_empty_content_and_unsupported_mime_types():
+    with pytest.raises(ValueError, match="media type"):
+        InputMedia(
+            attachment_id="bad",
+            filename="bad.svg",
+            media_type="image/svg+xml",
+            content=b"<svg/>",
+        )
+
+    with pytest.raises(ValueError, match="non-empty"):
+        InputMedia(
+            attachment_id="empty",
+            filename="empty.png",
+            media_type="image/png",
+            content=b"",
+        )
+
+
+def test_input_media_rejects_video_frame_counts_over_the_bound():
+    with pytest.raises(ValueError, match="frame limit"):
+        InputMedia(
+            attachment_id="video-many",
+            filename="large.mp4",
+            media_type="video/mp4",
+            content=b"video",
+            frames=tuple(
+                MediaFrame(
+                    timestamp_seconds=float(index),
+                    media_type="image/jpeg",
+                    content=b"frame",
+                )
+                for index in range(9)
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [float("nan"), float("inf"), float("-inf"), -0.1],
+)
+def test_media_frame_rejects_non_finite_or_negative_timestamps(timestamp):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        MediaFrame(
+            timestamp_seconds=timestamp,
+            media_type="image/jpeg",
+            content=b"frame",
+        )

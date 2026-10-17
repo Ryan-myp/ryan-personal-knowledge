@@ -30,9 +30,23 @@ def _schema(definition: Any) -> dict[str, Any]:
 def _is_write(definition: Any) -> bool:
     effect = _value(definition, "effect_class", _value(definition, "effect", "read"))
     effect = getattr(effect, "value", effect)
-    if str(effect or "").strip().lower() in {"write", "external_write"}:
+    if str(effect or "").strip().lower() in {
+        "write", "external_write", "internal_write",
+    }:
         return True
     return bool(_value(definition, "is_write_tool", False))
+
+
+def _requires_external_write_policy(definition: Any) -> bool:
+    effect = _value(definition, "effect_class", _value(definition, "effect", "read"))
+    effect = getattr(effect, "value", effect)
+    return str(effect or "").strip().lower() in {"write", "external_write"}
+
+
+def _is_internal_write(definition: Any) -> bool:
+    effect = _value(definition, "effect_class", _value(definition, "effect", "read"))
+    effect = getattr(effect, "value", effect)
+    return str(effect or "").strip().lower() == "internal_write"
 
 
 def _permissions(request: Any) -> frozenset[str]:
@@ -438,13 +452,15 @@ class ToolExecutionPolicy:
                 else self.idempotency_store is not None
             ),
         }
+        if _is_internal_write(definition) and not metadata["durable_idempotency"]:
+            errors.append("internal writes require a durable idempotency store")
         if errors:
             return PolicyDecision(
                 allowed=False,
                 errors=tuple(dict.fromkeys(errors)),
                 metadata=metadata,
             )
-        if _is_write(definition) and mode == "live":
+        if _requires_external_write_policy(definition) and mode == "live":
             if not _has_principal(request.principal):
                 return PolicyDecision(
                     allowed=False,
@@ -560,7 +576,7 @@ class ToolExecutionPolicy:
             )
 
         mode = _mode(request)
-        if _is_write(definition) and mode == "live":
+        if _requires_external_write_policy(definition) and mode == "live":
             if not _has_principal(getattr(request, "principal", None)):
                 return (
                     "principal_required",
@@ -660,6 +676,34 @@ class ToolExecutionPolicy:
                 if duplicate:
                     return "duplicate_request", (
                         "Duplicate write detected for the normalized Tool request"
+                    )
+            elif _is_internal_write(definition):
+                if self.idempotency_store is None:
+                    return (
+                        "idempotency_store_error",
+                        "internal writes require a durable idempotency store",
+                    )
+                request_hash = self._request_hash(arguments)
+                identity = self._durable_identity(
+                    definition,
+                    request,
+                    f"internal:{getattr(request, 'turn_id', '')}:{request_hash}",
+                )
+                try:
+                    duplicate = self._reserve_idempotency(
+                        identity,
+                        request_hash,
+                        request,
+                        call_id,
+                    )
+                except IdempotencyStoreUnavailable:
+                    return (
+                        "idempotency_store_error",
+                        "durable idempotency store is unavailable",
+                    )
+                if duplicate:
+                    return "duplicate_request", (
+                        "Duplicate internal Tool request in this turn"
                     )
         return None
 

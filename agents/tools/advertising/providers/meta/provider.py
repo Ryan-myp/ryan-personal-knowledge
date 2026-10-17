@@ -1570,6 +1570,16 @@ class MetaToolSource(BaseProviderToolSource):
                 properties={
                     "ad_id": {"type": "string"},
                     "adset_id": {"type": "string"},
+                    "fields": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                        },
+                        "maxItems": 30,
+                        "description": "可选的 Meta Ad 字段集合",
+                    },
                 },
             ),
             risk_level=RiskLevel.LOW,
@@ -1578,6 +1588,7 @@ class MetaToolSource(BaseProviderToolSource):
             traits=["read", "ad"],
             action="get", resource_type="ad", resource_id_field="ad_id",
             intent_types=["get_ad"],
+            contract_version="1.6.0",
             parent_resource_type="ad_set",
             parent_resource_id_field="adset_id",
         ), MetaGetAdHandler(api_client)))

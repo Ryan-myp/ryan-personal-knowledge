@@ -114,6 +114,23 @@ def test_user_text_that_resembles_a_tool_envelope_is_not_decoded():
     assert project_conversation_messages([message("user", content)])[0]["content"] == content
 
 
+def test_history_preserves_user_media_references_for_protected_replay():
+    attachment = {
+        "id": "85a42fc6-14e0-46d7-b595-b31864b198dd",
+        "filename": "launch.mp4",
+        "media_type": "video/mp4",
+        "size": 4096,
+    }
+    rows = [
+        message("user", "分析这段素材", metadata={"attachments": [attachment]}),
+        message("assistant", "视频展示了产品使用场景。"),
+    ]
+
+    visible = project_conversation_messages(rows)
+
+    assert visible[0]["attachments"] == [attachment]
+
+
 def test_a_tool_result_without_a_saved_final_reply_is_not_silently_lost():
     rows = [
         message("user", "执行"),
@@ -265,6 +282,104 @@ def test_non_model_error_does_not_claim_a_read_summary_is_complete():
     assert "本次请求执行失败" in reply
 
 
+def test_generic_model_failure_reply_shows_the_failed_tool_reason():
+    reply = visible_run_reply({
+        "status": "failed",
+        "reply": "本次请求执行失败，请查看执行记录。",
+        "results": [{
+            "tool": "meta_get_campaign",
+            "success": False,
+            "error": "Failed to get Meta campaign: Campaign not found",
+        }],
+    })
+
+    assert "meta_get_campaign" in reply
+    assert "Campaign not found" in reply
+    assert "本次请求执行失败，请查看执行记录。" not in reply
+
+
+def test_failed_tool_reason_is_redacted_before_it_is_shown_to_the_user():
+    reply = visible_run_reply({
+        "status": "failed",
+        "reply": "本次执行未完成，请查看执行轨迹中的失败步骤。",
+        "results": [{
+            "tool": "meta_get_campaign",
+            "success": False,
+            "error": "Provider rejected access_token=do-not-show",
+        }],
+    })
+
+    assert "Provider rejected" in reply
+    assert "do-not-show" not in reply
+    assert "<redacted>" in reply
+
+
+def test_turn_limit_after_successful_campaign_reads_shows_data_and_reason():
+    reply = visible_run_reply({
+        "status": "failed",
+        "error": "maximum agent turns exceeded",
+        "results": [
+            {
+                "tool": "meta_get_campaign",
+                "action": "get",
+                "effect_class": "read",
+                "resource_type": "campaign",
+                "success": True,
+                "data": {"campaign": {"id": "campaign-1", "name": "Spring A"}},
+            },
+            {
+                "tool": "meta_get_campaign",
+                "action": "get",
+                "effect_class": "read",
+                "resource_type": "campaign",
+                "success": True,
+                "data": {"campaign": {"id": "campaign-2", "name": "Spring B"}},
+            },
+        ],
+    })
+
+    assert "Spring A" in reply
+    assert "Spring B" in reply
+    assert "最大推理轮数" in reply
+    assert "未能完成后续分析" in reply
+    assert "创建或更新操作不要直接重试" not in reply
+
+
+def test_structured_model_error_keeps_successful_reads_and_names_failure_stage():
+    reply = visible_run_reply({
+        "status": "failed",
+        "error": "LLMStructuredOutputError",
+        "error_code": "tool_arguments_invalid_json",
+        "results": [{
+            "tool": "meta_get_campaign",
+            "action": "get",
+            "effect_class": "read",
+            "resource_type": "campaign",
+            "success": True,
+            "data": {"campaign": {"id": "campaign-1", "name": "Spring A"}},
+        }],
+    })
+
+    assert "Spring A" in reply
+    assert "模型返回的 Tool 调用参数不是有效 JSON" in reply
+    assert "查询已成功" in reply
+
+
+def test_unclassified_tool_records_do_not_claim_that_a_write_was_executed():
+    reply = visible_run_reply({
+        "error": "ProviderError",
+        "results": [{
+            "tool": "custom_tool",
+            "success": True,
+            "data": {"value": "result"},
+        }],
+    })
+
+    assert "无法确认是否发生外部写入" in reply
+    assert "确认前不要直接重试该 Tool" in reply
+    assert "创建或更新操作不要直接重试" not in reply
+
+
 def test_rate_limited_write_summary_does_not_claim_creation_succeeded():
     reply = visible_run_reply({
         "status": "failed",
@@ -274,6 +389,7 @@ def test_rate_limited_write_summary_does_not_claim_creation_succeeded():
             "tool": "meta_create_campaign",
             "platform": "meta",
             "action": "create",
+            "effect_class": "external_write",
             "resource_type": "campaign",
             "data": {"id": "campaign-123", "status": "PAUSED"},
         }],

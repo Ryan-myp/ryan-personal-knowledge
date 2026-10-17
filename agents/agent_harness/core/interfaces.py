@@ -30,8 +30,9 @@ class RiskLevel(Enum):
 class ToolEffect(Enum):
     """工具效果分类"""
     READ = "read"           # 纯读操作
-    WRITE = "write"         # 写操作
+    WRITE = "write"         # 外部或业务系统写操作
     EXTERNAL_WRITE = "external_write"  # 外部系统写入
+    INTERNAL_WRITE = "internal_write"  # Runtime/Platform 自身的持久化写入
 
 class ReplayPolicy(Enum):
     """重放策略"""
@@ -327,7 +328,11 @@ class ToolDefinition:
 
     @property
     def is_write_tool(self) -> bool:
-        return self.effect_class in (ToolEffect.WRITE, ToolEffect.EXTERNAL_WRITE)
+        return self.effect_class in (
+            ToolEffect.WRITE,
+            ToolEffect.EXTERNAL_WRITE,
+            ToolEffect.INTERNAL_WRITE,
+        )
 
     @property
     def is_read_tool(self) -> bool:

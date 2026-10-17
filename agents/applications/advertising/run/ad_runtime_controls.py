@@ -138,15 +138,21 @@ class AdvertisingRuntimeControls:
     def readiness(self) -> dict[str, Any]:
         runtime = self.runtime
         try:
-            tool_count = len(runtime.registry.list_all())
+            tools = runtime.registry.list_all()
+            tool_count = len(tools)
+            business_tool_count = sum(
+                1 for definition in tools
+                if definition.namespace != "agent-platform"
+            )
         except Exception:
             tool_count = 0
+            business_tool_count = 0
         model_ready = not runtime.require_llm or runtime._llm is not None
         supervisor_health = runtime.supervisor.health()
         checks = {
             "runtime": True,
             "llm": model_ready,
-            "tool_registry": tool_count > 0,
+            "tool_registry": business_tool_count > 0,
             "persistence": (
                 runtime._persistence_store is None
                 or supervisor_health.get("backend", {}).get("status") == "healthy"
@@ -288,6 +294,7 @@ class AdvertisingRuntimeControls:
             if definition.effect_class in (
                 ToolEffect.WRITE,
                 ToolEffect.EXTERNAL_WRITE,
+                ToolEffect.INTERNAL_WRITE,
             )
         ]
         for name in write_tools:

@@ -27,6 +27,7 @@ from agents.agent_platform import (
     PlatformDependencies,
 )
 from agents.agent_platform.runtime import DataLayer, InfrastructureLayer, IntegrationLayer
+from agents.agent_platform.tools import scheduling_tool_source
 from agents.agent_harness.core.memory import MemoryManager
 from agents.scenarios.advertising import (
     advertising_agent_definition,
@@ -264,6 +265,11 @@ class AdApplicationAssembly:
             runtime, store, security,
         )
         services.bind_scheduling(scheduling_service)
+        if store is not None and not runtime._read_only_mode:
+            runtime.registry.register_source(scheduling_tool_source(
+                lambda **kwargs: runtime.create_schedule(**kwargs),
+                required_permission="ads.plan",
+            ))
         return AdApplicationServiceGraph(
             outbox=outbox,
             services=services,

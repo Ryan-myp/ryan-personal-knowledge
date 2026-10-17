@@ -11,11 +11,14 @@ import json
 import queue
 from typing import Any, Mapping, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from agents.deployments.advertising.api.context import ApiContext
+from agents.deployments.advertising.api.context import (
+    ApiContext,
+    read_request_body_limited,
+)
 from agents.deployments.advertising.api.models import ChatRequest, ChatStreamRequest
 from agents.tools.advertising.shared.domain.conversation import visible_run_reply
 
@@ -101,9 +104,160 @@ def _chat_reply_content(result: Mapping[str, Any]) -> str:
     return visible_run_reply(result)
 
 
+def _validated_user_input(user_input: str, media_ids: list[str]) -> str:
+    content = str(user_input or "")
+    if not content.strip() and not media_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="请输入消息，或先添加图片/视频附件",
+        )
+    return content
+
+
+def _load_chat_input_media(
+    context: ApiContext,
+    media_ids: list[str],
+    *,
+    session_id: Optional[str],
+    principal: Any,
+) -> tuple[Any, ...]:
+    if not media_ids:
+        return ()
+    if not str(session_id or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="使用附件时必须指定 session_id",
+        )
+    store = context.chat_media_store()
+    if store is None:
+        raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
+    try:
+        return store.load_for_model(
+            media_ids,
+            session_id=session_id,
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+        )
+    except FileNotFoundError as error:
+        raise HTTPException(
+            status_code=404,
+            detail="附件不存在或无权访问",
+        ) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
 def create_chat_router(context: ApiContext) -> APIRouter:
     """Build the chat route group against application-owned callbacks."""
     router = APIRouter()
+
+    @router.post("/chat/media", status_code=201, tags=["chat"])
+    async def upload_chat_media(
+        http_request: Request,
+        session_id: str = Query(min_length=1, max_length=200),
+        filename: str = Query(min_length=1, max_length=240),
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        store = context.chat_media_store()
+        if store is None:
+            raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
+        content = await read_request_body_limited(
+            http_request,
+            max_bytes=int(store.max_video_bytes),
+        )
+        try:
+            metadata = await run_in_threadpool(
+                store.save,
+                content,
+                filename=filename,
+                content_type=http_request.headers.get("content-type", ""),
+                session_id=session_id,
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+        except ValueError as error:
+            message = str(error)
+            status_code = (
+                413
+                if "size limit" in message
+                or "storage limit" in message
+                or "at most 50 attachments" in message
+                else 415
+            )
+            raise HTTPException(status_code=status_code, detail=message) from error
+        return metadata
+
+    @router.get("/chat/media/{attachment_id}", tags=["chat"])
+    async def get_chat_media(
+        attachment_id: str,
+        http_request: Request,
+        session_id: str = Query(min_length=1, max_length=200),
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        store = context.chat_media_store()
+        if store is None:
+            raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
+        try:
+            media = await run_in_threadpool(
+                store.load,
+                attachment_id,
+                session_id=session_id,
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="附件不存在或无权访问",
+            ) from error
+        return Response(
+            content=media.content,
+            media_type=media.metadata["media_type"],
+            headers={
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Disposition": "inline",
+            },
+        )
+
+    @router.delete(
+        "/chat/media/{attachment_id}",
+        status_code=204,
+        tags=["chat"],
+    )
+    async def delete_chat_media(
+        attachment_id: str,
+        http_request: Request,
+        session_id: str = Query(min_length=1, max_length=200),
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        store = context.chat_media_store()
+        if store is None:
+            raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
+        try:
+            deleted = await run_in_threadpool(
+                store.delete,
+                attachment_id,
+                session_id=session_id,
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail="附件不存在或无权访问",
+            ) from error
+        if not deleted:
+            raise HTTPException(status_code=404, detail="附件不存在或无权访问")
+        return Response(status_code=204)
 
     @router.post("/chat", tags=["chat"])
     async def chat(
@@ -116,6 +270,14 @@ def create_chat_router(context: ApiContext) -> APIRouter:
             raise HTTPException(status_code=503, detail="服务未初始化")
         try:
             principal = context.authorize_request(x_api_key, http_request)
+            user_input = _validated_user_input(request.user_input, request.media_ids)
+            input_media = await run_in_threadpool(
+                _load_chat_input_media,
+                context,
+                request.media_ids,
+                session_id=request.session_id,
+                principal=principal,
+            )
             await run_in_threadpool(
                 context.activate_tenant_skills, principal
             )
@@ -129,9 +291,10 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 )
             result = await run_in_threadpool(
                 runtime.run,
-                user_input=request.user_input,
+                user_input=user_input,
                 session_id=request.session_id,
                 account_id=request.account_id or None,
+                input_media=input_media,
                 platform_params=request.platform_params,
                 confirmed=request.confirmed,
                 confirmation_payload=request.confirmation_payload,
@@ -192,6 +355,14 @@ def create_chat_router(context: ApiContext) -> APIRouter:
             )
         try:
             principal = context.authorize_request(x_api_key, http_request)
+            user_input = _validated_user_input(request.user_input, request.media_ids)
+            input_media = await run_in_threadpool(
+                _load_chat_input_media,
+                context,
+                request.media_ids,
+                session_id=request.session_id,
+                principal=principal,
+            )
             await run_in_threadpool(
                 context.activate_tenant_skills, principal
             )
@@ -228,9 +399,10 @@ def create_chat_router(context: ApiContext) -> APIRouter:
 
                 task = asyncio.create_task(run_in_threadpool(
                     runtime.run,
-                    user_input=request.user_input,
+                    user_input=user_input,
                     session_id=request.session_id,
                     account_id=request.account_id or None,
+                    input_media=input_media,
                     platform_params=request.platform_params,
                     confirmed=request.confirmed,
                     confirmation_payload=request.confirmation_payload,

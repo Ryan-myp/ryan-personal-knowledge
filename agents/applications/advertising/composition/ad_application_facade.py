@@ -6,6 +6,7 @@ import threading
 from typing import Any, Iterable, Optional
 
 from agents.agent_harness.core.execution_trace import ExecutionEventCallback
+from agents.agent_harness import InputMedia
 from agents.agent_harness.core.interfaces import (
     ExecutionMode,
     ToolDefinition,
@@ -164,6 +165,7 @@ class AdApplicationFacadeMixin:
         execution_mode: Optional[str] = None,
         tool_allowlist: Optional[list[str]] = None,
         task_id: Optional[str] = None,
+        input_media: tuple[InputMedia, ...] = (),
     ) -> dict:
         return self._run_service().run(
             user_input=user_input,
@@ -184,6 +186,7 @@ class AdApplicationFacadeMixin:
             execution_mode=execution_mode,
             tool_allowlist=tool_allowlist,
             task_id=task_id,
+            input_media=input_media,
         )
 
 

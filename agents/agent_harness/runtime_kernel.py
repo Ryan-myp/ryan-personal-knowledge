@@ -9,6 +9,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Literal, Mapping, Optional, Protocol
 
+from .messages import InputMedia
+
 
 SUPPORTED_EXECUTION_MODES = frozenset({"dry_run", "live"})
 
@@ -90,6 +92,7 @@ class TurnRequest:
     event_callback: Optional[Callable[[dict[str, Any]], None]] = None
     execution_mode: Optional[str] = None
     task_id: Optional[str] = None
+    input_media: tuple[InputMedia, ...] = ()
     tool_allowlist: Optional[tuple[str, ...]] = None
     initial_tool_choice: Optional[Literal["auto", "required"] | Mapping[str, Any]] = None
     run_id: Optional[str] = None
@@ -97,6 +100,12 @@ class TurnRequest:
     streaming: bool = False
 
     def __post_init__(self) -> None:
+        media = tuple(self.input_media or ())
+        if len(media) > 5:
+            raise ValueError("TurnRequest supports at most 5 media attachments")
+        if any(not isinstance(item, InputMedia) for item in media):
+            raise TypeError("TurnRequest.input_media entries must be InputMedia")
+        object.__setattr__(self, "input_media", media)
         choice = self.initial_tool_choice
         if isinstance(choice, Mapping):
             function = choice.get("function")

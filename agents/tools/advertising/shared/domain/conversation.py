@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
+from agents.agent_harness import redact_for_persistence
+
 
 _FAILED_STATUSES = {"failed", "partially_failed", "recovery_required", "unknown", "cancelled"}
 _MODEL_ERRORS = {
@@ -15,12 +17,46 @@ _MODEL_ERRORS = {
     "model_token_budget_exceeded": "本次请求超出模型上下文或输出预算，执行未完成。",
 }
 _READ_ACTIONS = frozenset({"get", "list", "read", "search", "query", "fetch", "retrieve"})
+_WRITE_ACTIONS = frozenset({
+    "archive", "create", "delete", "disable", "enable", "mutate", "pause",
+    "publish", "remove", "start", "stop", "submit", "update", "upload", "write",
+})
+_READ_EFFECTS = frozenset({"read", "query"})
+_WRITE_EFFECTS = frozenset({"write", "external_write", "internal_write"})
+_STRUCTURED_OUTPUT_ERRORS = {
+    "tool_arguments_invalid_json": "模型返回的 Tool 调用参数不是有效 JSON",
+    "tool_arguments_not_object": "模型返回的 Tool 参数不是 JSON 对象",
+    "tool_not_in_active_catalog": "模型请求调用当前 Agent 未开放的 Tool",
+    "duplicate_tool_call_id": "模型返回了重复的 Tool 调用 ID",
+    "transcript_tool_result_missing_call_id":
+        "对话执行记录缺少 Tool 结果关联 ID，模型无法继续处理上下文",
+    "incomplete_transcript_tool_call":
+        "对话执行记录中的 Tool 调用信息不完整，模型无法继续处理上下文",
+    "invalid_tool_catalog_name": "当前 Tool 注册信息不符合模型接口要求",
+    "response_choice_missing": "模型响应中没有可用候选内容",
+    "response_message_missing": "模型响应中缺少消息内容",
+    "response_tool_call_limit_exceeded": "模型返回的 Tool 调用数量超过单次限制",
+    "tool_arguments_too_large": "模型返回的 Tool 参数超过大小限制",
+    "tool_arguments_not_serializable": "模型返回的 Tool 参数无法序列化",
+}
+_RUN_ERROR_MESSAGES = {
+    "maximum agent turns exceeded": "Agent 达到本次运行的最大推理轮数限制",
+    "LLMStructuredOutputError": "模型返回的 Tool 调用或消息结构未通过校验",
+}
 _SENSITIVE_RESULT_FIELD = re.compile(
     r"token|secret|credential|password|private|signature|selection", re.I,
 )
 _RESULT_METADATA_FIELDS = frozenset({
     "data_status", "parameter_selections", "query_summary", "warnings",
 })
+_GENERIC_FAILURE_FRAGMENTS = (
+    "本次请求执行失败",
+    "本次执行未完成，请查看",
+    "本次处理未完成，请查看",
+    "请查看执行记录",
+    "请查看执行轨迹中的失败步骤",
+    "agent 执行失败",
+)
 
 
 def _tool_payload(item: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -33,11 +69,137 @@ def _tool_payload(item: Mapping[str, Any]) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _failed_tool_detail(
+    records: Sequence[Any],
+) -> tuple[str, str] | None:
+    for item in reversed(records):
+        if not isinstance(item, Mapping):
+            continue
+        payload = _tool_payload(item)
+        if any(
+            item.get(key) or payload.get(key)
+            for key in ("needs_input", "needs_confirmation")
+        ):
+            continue
+        if not (
+            item.get("is_error")
+            or item.get("success") is False
+            or payload.get("success") is False
+        ):
+            continue
+        content = item.get("content")
+        detail = (
+            payload.get("error")
+            or payload.get("message")
+            or payload.get("reason")
+            or payload.get("detail")
+            or item.get("error")
+        )
+        if not detail and isinstance(content, str):
+            detail = content
+        if not detail:
+            continue
+        reason = " ".join(
+            str(redact_for_persistence(detail)).split()
+        )[:800]
+        if "allow_live_writes is disabled" in reason:
+            reason = "当时未开启真实写入，服务端已拦截该次操作。"
+        tool_name = str(item.get("name") or payload.get("tool") or "").strip()
+        if reason:
+            return tool_name[:100] or "未知工具", reason
+    return None
+
+
+def _is_generic_failure_reply(reply: str) -> bool:
+    normalized = str(reply or "").strip().lower()
+    return any(fragment in normalized for fragment in _GENERIC_FAILURE_FRAGMENTS)
+
+
+def _run_failure_reason(error: str, error_code: str = "") -> str:
+    code = str(error_code or "").strip()
+    if code in _STRUCTURED_OUTPUT_ERRORS:
+        return _STRUCTURED_OUTPUT_ERRORS[code]
+    error_text = str(error or "").strip()
+    if error_text in _RUN_ERROR_MESSAGES:
+        return _RUN_ERROR_MESSAGES[error_text]
+    if error_text in _MODEL_ERRORS:
+        return _MODEL_ERRORS[error_text]
+    if error_text:
+        safe_text = " ".join(
+            str(redact_for_persistence(error_text)).split()
+        )[:300]
+        return f"运行阶段返回错误：{safe_text}"
+    return "服务端没有提供可识别的失败原因"
+
+
+def _operation_kind(item: Mapping[str, Any]) -> str:
+    payload = _tool_payload(item)
+    effect = str(
+        item.get("effect_class")
+        or payload.get("effect_class")
+        or item.get("effect")
+        or payload.get("effect")
+        or ""
+    ).strip().lower()
+    if effect in _READ_EFFECTS:
+        return "read"
+    if effect in _WRITE_EFFECTS:
+        return "write"
+
+    action = str(
+        item.get("action") or payload.get("action") or ""
+    ).strip().lower()
+    if action in _READ_ACTIONS:
+        return "read"
+    if action in _WRITE_ACTIONS:
+        return "write"
+    return "unknown"
+
+
+def _records_operation_kind(records: Sequence[Any]) -> str:
+    kinds = [
+        _operation_kind(item)
+        for item in records if isinstance(item, Mapping)
+    ]
+    if len(kinds) != len(records):
+        kinds.append("unknown")
+    if not kinds:
+        return "none"
+    if "write" in kinds:
+        return "write"
+    if "unknown" in kinds:
+        return "unknown"
+    return "read"
+
+
+def _with_tool_failure(
+    reply: str,
+    failure: tuple[str, str],
+) -> str:
+    tool_name, reason = failure
+    note = f"失败工具 {tool_name}：{reason}"
+    if not reply.strip() or _is_generic_failure_reply(reply):
+        return f"本次执行未完成。{note}"
+    if reason in reply:
+        return reply
+    return f"{reply.rstrip()}\n\n执行失败原因：{note}"
+
+
 def visible_run_reply(result: Mapping[str, Any]) -> str:
     """Use the same truthful text for the live response and its durable replay."""
     reply = str(result.get("reply") or "")
     records = result.get("results") or result.get("tool_results") or ()
     records = records if isinstance(records, (list, tuple)) else ()
+    failure = _failed_tool_detail(records)
+    status = str(result.get("status") or "").strip().lower()
+    should_show_failure = bool(
+        failure
+        and (
+            status in _FAILED_STATUSES
+            or _is_generic_failure_reply(reply)
+            or not reply.strip()
+        )
+    )
     error = str(result.get("error") or "")
     if error:
         generic_error_reply = _MODEL_ERRORS.get(error)
@@ -47,15 +209,42 @@ def visible_run_reply(result: Mapping[str, Any]) -> str:
         ):
             read_fallback = _successful_read_fallback(records)
             if read_fallback:
+                if should_show_failure and failure:
+                    return f"{read_fallback}\n\n执行失败原因：{failure[0]}：{failure[1]}"
+                return read_fallback
+        failure_reason = _run_failure_reason(
+            error, str(result.get("error_code") or ""),
+        )
+        if error in _RUN_ERROR_MESSAGES:
+            read_fallback = _successful_read_fallback(
+                records, interruption_reason=failure_reason,
+            )
+            if read_fallback:
                 return read_fallback
         if reply.strip():
+            if should_show_failure and failure:
+                return _with_tool_failure(reply, failure)
+            if _is_generic_failure_reply(reply):
+                return f"本次请求执行失败。失败原因：{failure_reason}。"
             return reply
-        text = _MODEL_ERRORS.get(error, "本次请求执行失败，请查看执行记录。")
-        if records and _contains_write_record(records):
+        text = _MODEL_ERRORS.get(
+            error, f"本次请求执行失败。失败原因：{failure_reason}。",
+        )
+        if should_show_failure and failure:
+            return _with_tool_failure(text, failure)
+        operation_kind = _records_operation_kind(records)
+        if operation_kind == "write":
             text += "已有工具执行记录；创建或更新操作不要直接重试，请先核实实际结果。"
-        elif records:
+        elif operation_kind == "read":
             text += "已有查询执行记录，请查看执行轨迹核实结果。"
+        elif operation_kind == "unknown":
+            text += (
+                "已有工具执行记录，但操作类型信息不足，无法确认是否发生外部写入；"
+                "请先核对执行轨迹，确认前不要直接重试该 Tool。"
+            )
         return text
+    if should_show_failure and failure:
+        return _with_tool_failure(reply, failure)
     if reply.strip():
         return reply
     confirmation = result.get("confirmation_payload")
@@ -97,23 +286,18 @@ def visible_run_reply(result: Mapping[str, Any]) -> str:
     return ""
 
 
-def _contains_write_record(records: Sequence[Any]) -> bool:
-    for item in records:
-        if not isinstance(item, Mapping):
-            return True
-        if str(item.get("action") or "").strip().lower() not in _READ_ACTIONS:
-            return True
-    return False
-
-
-def _successful_read_fallback(records: Sequence[Any]) -> str:
+def _successful_read_fallback(
+    records: Sequence[Any],
+    *,
+    interruption_reason: str = "",
+) -> str:
     reads = []
     failed_reads = 0
     for item in records:
-        if not isinstance(item, Mapping):
-            return ""
-        action = str(item.get("action") or "").strip().lower()
-        if action not in _READ_ACTIONS:
+        if (
+            not isinstance(item, Mapping)
+            or _operation_kind(item) != "read"
+        ):
             return ""
         if item.get("is_error") or item.get("success") is False:
             failed_reads += 1
@@ -137,15 +321,22 @@ def _successful_read_fallback(records: Sequence[Any]) -> str:
     if not summaries:
         return ""
     if failed_reads:
-        opening = (
-            f"部分查询已成功，另有 {failed_reads} 项查询失败。"
-            "模型摘要服务暂时不可用，以下仅列出成功结果：\n\n"
-        )
+        opening = f"部分查询已成功，另有 {failed_reads} 项查询失败。"
+        if interruption_reason:
+            opening += f"{interruption_reason}，以下仅列出成功结果：\n\n"
+        else:
+            opening += "模型摘要服务暂时不可用，以下仅列出成功结果：\n\n"
     else:
-        opening = (
-            "查询已成功。模型摘要服务暂时不可用，"
-            "以下内容直接来自本次工具结果：\n\n"
-        )
+        opening = "查询已成功。"
+        if interruption_reason:
+            opening += (
+                f"{interruption_reason}，未能完成后续分析；"
+                "以下内容直接来自本次工具结果：\n\n"
+            )
+        else:
+            opening += (
+                "模型摘要服务暂时不可用，以下内容直接来自本次工具结果：\n\n"
+            )
     return (
         opening + "\n\n".join(summaries)
     )
@@ -263,6 +454,7 @@ def _metadata(record: Mapping[str, Any]) -> Mapping[str, Any]:
 def _history_tool(record: Mapping[str, Any]) -> dict[str, Any]:
     metadata = _metadata(record)
     return {
+        "name": str(record.get("name") or ""),
         "content": record.get("content", ""),
         "is_error": bool(metadata.get("is_error")),
         **{
@@ -293,7 +485,17 @@ def _visible_turn(
     records: Sequence[Mapping[str, Any]], stored_ui: Any,
 ) -> list[dict[str, Any]]:
     visible = [
-        {key: record.get(key) for key in ("role", "content", "created_at", "turn_id")}
+        {
+            **{
+                key: record.get(key)
+                for key in ("role", "content", "created_at", "turn_id")
+            },
+            **(
+                {"attachments": list(_metadata(record)["attachments"])}
+                if isinstance(_metadata(record).get("attachments"), list)
+                else {}
+            ),
+        }
         for record in records if record.get("role") == "user"
     ]
     assistants = [row for row in records if row.get("role") == "assistant"]

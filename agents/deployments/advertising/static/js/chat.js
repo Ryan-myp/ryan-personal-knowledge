@@ -4,6 +4,7 @@
         'vendor/purify-3.4.17.min.js',
         'chat-markdown.js',
         'chat-state.js',
+        'chat-media.js',
         'chat-workbench.js',
         'chat-workspace.js',
         'chat-knowledge.js',
@@ -19,7 +20,7 @@
     const load = index => {
         if (index >= sources.length) return;
         const script = document.createElement('script');
-        script.src = `/static/js/${sources[index]}?v=20261015-confirmation-v4`;
+        script.src = `/static/js/${sources[index]}?v=20261017-mermaid-zoom-v2`;
         script.onload = () => load(index + 1);
         script.onerror = () => console.error(`Failed to load ${sources[index]}`);
         document.head.appendChild(script);

@@ -14,6 +14,7 @@ function environment(messages) {
         resetCreationWorkbench: () => {},
         restoreExecutionTrace: () => {},
         loadLatestDurableRun: async () => {},
+        clearPendingChatMedia: () => {},
         addMessage: (...args) => displayed.push(args),
     };
     const source = path.resolve(__dirname, '../../../deployments/advertising/static/js/chat-requests.js');
@@ -56,6 +57,14 @@ test('a meaningful card-only interaction remains visible, an empty bubble does n
     assert.equal(context.chatMessageHasPresentation('', null, { cards: [{}] }), true);
     assert.equal(context.chatMessageHasPresentation('  \n', [], {}), false);
     assert.equal(context.chatMessageHasPresentation('实际回复', null, null), true);
+});
+
+test('a media-gallery-only reply remains visible in conversation history', () => {
+    const { context } = environment([]);
+    assert.equal(
+        context.chatMessageHasPresentation('', null, { media_gallery: [{ kind: 'image' }] }),
+        true,
+    );
 });
 
 test('live rendering preserves the same persisted failure reply without another prefix', () => {

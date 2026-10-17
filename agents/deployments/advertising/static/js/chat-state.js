@@ -1,6 +1,8 @@
         let pendingRequest = null;
         let isSending = false;
         let sessionId = null;
+        let pendingChatAttachments = [];
+        const chatMediaObjectUrls = new Map();
         let apiCallCount = 0;
         let conversationCount = 0;
         let serviceApiKey = '';

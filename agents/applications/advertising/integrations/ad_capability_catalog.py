@@ -158,7 +158,7 @@ class AdvertisingCapabilityCatalog:
         effect = cls._field(tool, "effect_class")
         effect = str(getattr(effect, "value", effect) or "").casefold()
         is_write = bool(cls._field(tool, "is_write_tool", False)) or (
-            effect in {"write", "external_write"}
+            effect in {"write", "external_write", "internal_write"}
         )
         kind = "write" if is_write else "read"
         if live_support is True:

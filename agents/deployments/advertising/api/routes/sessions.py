@@ -14,6 +14,17 @@ from agents.deployments.advertising.api.models import SessionDeleteRequest, Sess
 def create_sessions_router(context: ApiContext) -> APIRouter:
     router = APIRouter()
 
+    def delete_session_media(session_ids: list[str], principal: object) -> None:
+        store = context.chat_media_store()
+        if store is None:
+            return
+        for session_id in session_ids:
+            store.delete_session(
+                str(session_id),
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+
     @router.get("/sessions", tags=["sessions"])
     async def list_sessions(
         http_request: Request,
@@ -147,6 +158,7 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         )
         if not deleted_session_ids:
             raise HTTPException(status_code=404, detail="没有找到可删除的会话")
+        await run_in_threadpool(delete_session_media, deleted_session_ids, principal)
         return {
             "deleted": True,
             "deleted_session_ids": deleted_session_ids,
@@ -172,6 +184,7 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         )
         if not deleted:
             raise HTTPException(status_code=404, detail="会话不存在或无权访问")
+        await run_in_threadpool(delete_session_media, [str(session_id)], principal)
         return {"deleted": True, "deleted_session_id": str(session_id)}
 
     return router

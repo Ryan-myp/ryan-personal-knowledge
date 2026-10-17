@@ -1,7 +1,106 @@
 {
-  "digest": "ea70252a165acd396a9504165fe99b4912fd2b91b18fcc84ad27d22e1befef03",
+  "digest": "d8f0a459af482280cd2a781126fa1c774e2e5d2024ff5a8ae5d0db8333a43d35",
   "format_version": 1,
   "platforms": {
+    "agent-platform": {
+      "digest": "14a641e04b3d5e5c8c6138222e460022cc3250c3c26e85dab9a5b74e43b976b9",
+      "tool_count": 1,
+      "tools": [
+        {
+          "action": "schedule",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "4bacbb8dac3f4b20ae1cd5f83d9a38b391aa6d12926dce61ddc71c149597e909",
+          "contract_version": "1.0.0",
+          "description": "仅在用户明确要求创建周期性 Agent 任务时调用。创建持久化调度记录，每次到期都重新进入同一 Agent Runtime；未来运行固定使用 dry_run，不会因为创建定时任务而开启广告渠道 live 写入。cron_expression 使用标准五字段表达式；时区默认为 Asia/Shanghai。若执行内容、频率或时区不明确，先向用户澄清，不要猜测。",
+          "effect_class": "internal_write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "cron_expression": {
+                "description": "标准五字段 cron 表达式",
+                "maxLength": 128,
+                "minLength": 9,
+                "type": "string"
+              },
+              "name": {
+                "description": "定时任务名称",
+                "maxLength": 120,
+                "type": "string"
+              },
+              "prompt": {
+                "description": "每次触发时交给 Agent 执行的指令",
+                "maxLength": 12000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "timezone": {
+                "default": "Asia/Shanghai",
+                "description": "IANA 时区",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "prompt",
+              "cron_expression"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "创建定时任务",
+            "新建定时任务",
+            "周期性任务",
+            "每天执行",
+            "每周执行",
+            "recurring agent task",
+            "create schedule"
+          ],
+          "intent_types": [
+            "schedule_create"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 32000,
+          "name": "agent_schedule_create",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "scheduled_task",
+          "result_id_fields": [
+            "schedule_id"
+          ],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "agent-scheduling",
+          "skill_refs": [],
+          "timeout_seconds": 10,
+          "traits": [
+            "agent_schedule",
+            "durable",
+            "internal_control_plane"
+          ]
+        }
+      ]
+    },
     "dv360": {
       "digest": "e87e10892dc088896c7f299ea833ca966c74ae7d39972e4bdb4558e4395ae372",
       "tool_count": 33,
@@ -18999,7 +19098,7 @@
       ]
     },
     "meta": {
-      "digest": "69fa928f7ecceaa29b8c9702881d4e0c7f6b0f77b606a1c7a68b4bc31320cee4",
+      "digest": "a247df83027043c8b3463a3b1b9a1fe7ebaeb5676e51e7b6f3cffe87149ec934",
       "tool_count": 82,
       "tools": [
         {
@@ -25125,8 +25224,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ede8b6c8ab4acab02d36b62d4276d316813a2559c16c9c9058bb4a54af2efd54",
-          "contract_version": "1.5.1",
+          "contract_hash": "23f32aae1b3533c1fcf60d77cea77a71ba61de32dee9fbe5b369cff675304362",
+          "contract_version": "1.6.0",
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -25184,6 +25283,16 @@
                   "adset_id"
                 ],
                 "type": "string"
+              },
+              "fields": {
+                "description": "可选的 Meta Ad 字段集合",
+                "items": {
+                  "maxLength": 100,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 30,
+                "type": "array"
               }
             },
             "required": [
@@ -53652,5 +53761,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 310
+  "tool_count": 311
 }

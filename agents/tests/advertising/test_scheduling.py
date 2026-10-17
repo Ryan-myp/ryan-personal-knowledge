@@ -4,6 +4,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
+from agents.agent_harness import ModelTurn, ToolCall
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.applications.advertising.persistence.models import ScheduledTaskRecord
 from agents.applications.advertising.persistence.store import AdAgentStore
@@ -108,6 +109,114 @@ def test_schedule_control_plane_is_independent_of_agent_chat_turns():
         assert runtime.delete_schedule(
             schedule["schedule_id"], user_id="operator-1", tenant_id="tenant-1"
         ) is True
+    finally:
+        runtime.close(wait=True)
+        store.close()
+
+
+def test_chat_can_create_a_durable_schedule_through_the_registered_tool():
+    class Model:
+        def __init__(self):
+            self.calls = []
+
+        def complete(self, messages, tools, _request):
+            self.calls.append((list(messages), list(tools)))
+            if any(message.role == "tool" for message in messages):
+                return ModelTurn(content="已创建每天上午 9 点的定时任务。")
+            return ModelTurn(tool_calls=[ToolCall(
+                id="schedule-create-call",
+                name="agent_schedule_create",
+                arguments={
+                    "name": "Daily campaign check",
+                    "prompt": "Check campaign status and summarize changes",
+                    "cron_expression": "0 9 * * *",
+                    "timezone": "Asia/Shanghai",
+                },
+            )])
+
+    store = AdAgentStore(":memory:")
+    model = Model()
+    runtime = AdvertisingComposition(
+        persistence_store=store,
+        llm_client=model,
+        require_llm=True,
+        start_background_workers=False,
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        tenant_id="tenant-1",
+        permissions=frozenset({"ads.plan", "ads.read"}),
+    )
+    try:
+        result = runtime.run(
+            "帮我创建一个定时任务，每天上午 9 点检查 campaign 状态",
+            user_id="operator-1",
+            tenant_id="tenant-1",
+            principal=principal,
+        )
+
+        schedules = runtime.list_schedules(
+            user_id="operator-1",
+            tenant_id="tenant-1",
+        )
+        assert result["status"] == "succeeded", result
+        assert len(schedules) == 1
+        assert schedules[0]["name"] == "Daily campaign check"
+        assert schedules[0]["cron_expression"] == "0 9 * * *"
+        assert schedules[0]["timezone"] == "Asia/Shanghai"
+        assert schedules[0]["payload"]["execution_mode"] == "dry_run"
+        schedule_definition, _handler = runtime.registry.get(
+            "agent_schedule_create"
+        )
+        assert schedule_definition.live_support is False
+        assert model.calls
+        assert "agent_schedule_create" in {
+            tool.name for tool in model.calls[0][1]
+        }
+    finally:
+        runtime.close(wait=True)
+        store.close()
+
+
+def test_chat_cannot_create_a_schedule_without_trusted_plan_permission():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(tool_calls=[ToolCall(
+                id="schedule-create-call",
+                name="agent_schedule_create",
+                arguments={
+                    "name": "Daily campaign check",
+                    "prompt": "Check campaign status and summarize changes",
+                    "cron_expression": "0 9 * * *",
+                    "timezone": "Asia/Shanghai",
+                },
+            )])
+
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        persistence_store=store,
+        llm_client=Model(),
+        require_llm=True,
+        start_background_workers=False,
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        tenant_id="tenant-1",
+        permissions=frozenset({"ads.read"}),
+    )
+    try:
+        result = runtime.run(
+            "帮我创建一个定时任务，每天上午 9 点检查 campaign 状态",
+            user_id="operator-1",
+            tenant_id="tenant-1",
+            principal=principal,
+        )
+
+        assert result["status"] == "failed"
+        assert runtime.list_schedules(
+            user_id="operator-1",
+            tenant_id="tenant-1",
+        ) == []
     finally:
         runtime.close(wait=True)
         store.close()

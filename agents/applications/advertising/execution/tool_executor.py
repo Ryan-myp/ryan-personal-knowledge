@@ -502,6 +502,9 @@ class ToolExecutor:
         mode = str((ctx.metadata if ctx else {}).get(
             "execution_mode", self.services.execution_mode,
         ))
+        effect = getattr(definition.effect_class, "value", definition.effect_class)
+        if str(effect or "").strip().lower() == "internal_write":
+            return None
         if not definition.is_write_tool or mode != "live":
             return None
         platform = self.services.normalize_namespace(definition.namespace)

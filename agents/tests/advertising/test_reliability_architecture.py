@@ -414,6 +414,8 @@ def test_runtime_readiness_includes_backend_and_started_worker_health():
     try:
         report = runtime.get_readiness()
         assert report["status"] == "not_ready"
+        assert report["tool_count"] == 1
+        assert runtime.registry.list_all_namespaces() == ["agent-platform"]
         assert report["checks"] == {
             "runtime": True,
             "llm": True,

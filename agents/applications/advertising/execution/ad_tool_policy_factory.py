@@ -69,9 +69,12 @@ class AdvertisingToolPolicyFactory:
         platform = runtime._canonical_platform(
             str(getattr(tool, "namespace", "") or "")
         )
+        effect = getattr(tool, "effect_class", "")
+        effect = str(getattr(effect, "value", effect) or "").lower()
         is_live_write = (
             str(getattr(request, "execution_mode", "") or "").lower() == "live"
             and bool(getattr(tool, "is_write_tool", False))
+            and effect != "internal_write"
         )
         if is_live_write and runtime.write_guard is None:
             return (
@@ -136,9 +139,11 @@ class AdvertisingToolPolicyFactory:
         runtime = self.runtime
         scope_required = getattr(tool, "scope_required", None)
         requires_account = (
-            is_write
-            or scope_required is True
-            or (runtime.enforce_account_scope and scope_required is None)
+            scope_required is True
+            or (
+                scope_required is None
+                and (is_write or runtime.enforce_account_scope)
+            )
         )
         if not account and requires_account:
             if is_write:

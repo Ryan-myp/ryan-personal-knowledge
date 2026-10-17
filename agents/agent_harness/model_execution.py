@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import threading
 import math
+import re
+import threading
 from contextvars import copy_context
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -421,14 +422,19 @@ class ModelExecutionCoordinator:
                 return self._attempt(provider, invocation, attempt)
             except _ModelInvocationFailure as failure:
                 error, retryable = failure.error, failure.retryable
-                self.emit(
-                    "model_error",
-                    invocation.request,
-                    provider=self._provider_name(provider),
-                    provider_index=invocation.provider_index,
-                    error_type=type(error).__name__,
-                    retryable=retryable,
-                )
+                error_event = {
+                    "provider": self._provider_name(provider),
+                    "provider_index": invocation.provider_index,
+                    "error_type": type(error).__name__,
+                    "retryable": retryable,
+                }
+                safe_reason_code = getattr(error, "safe_reason_code", None)
+                if (
+                    isinstance(safe_reason_code, str)
+                    and re.fullmatch(r"[a-z0-9_]{1,64}", safe_reason_code)
+                ):
+                    error_event["error_code"] = safe_reason_code
+                self.emit("model_error", invocation.request, **error_event)
                 if not retryable or attempt == self.options.max_retries:
                     raise
                 delay = self._retry_delay(error, attempt)

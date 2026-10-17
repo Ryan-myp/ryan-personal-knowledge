@@ -7,11 +7,12 @@ import threading
 import uuid
 from typing import Any, Mapping, Optional
 
-from agents.agent_harness import TurnRequest
+from agents.agent_harness import InputMedia, TurnRequest
 from agents.agent_harness.core.execution_trace import ExecutionEventCallback
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from .ad_run_memory import AdvertisingRunMemoryRecorder
 from .ad_run_projection import AdvertisingRunProjection
+from .ad_run_media import media_gallery_from_results
 from agents.tools.advertising.shared.domain.conversation import visible_run_reply
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ class AdvertisingRunService:
         execution_mode: Optional[str] = None,
         tool_allowlist: Optional[list[str]] = None,
         task_id: Optional[str] = None,
+        input_media: tuple[InputMedia, ...] = (),
     ) -> dict:
         runtime = self.runtime
         effective_session_id = str(session_id or uuid.uuid4())
@@ -78,6 +80,7 @@ class AdvertisingRunService:
             cancellation_event=cancellation_event,
             event_callback=event_callback,
             execution_mode=execution_mode,
+            input_media=input_media,
             tool_allowlist=(
                 tuple(tool_allowlist) if tool_allowlist is not None else None
             ),
@@ -136,6 +139,12 @@ class AdvertisingRunService:
         for key in ("resource_results", "clarification", "creation_validation"):
             if key in completed:
                 payload.setdefault(key, completed[key])
+        media_gallery = media_gallery_from_results(payload.get("results"))
+        if media_gallery:
+            ui = payload.get("ui")
+            projected_ui = dict(ui) if isinstance(ui, Mapping) else {}
+            projected_ui["media_gallery"] = media_gallery
+            payload["ui"] = projected_ui
         if creation_template_id:
             ui = payload.get("ui")
             cards = ui.get("cards") if isinstance(ui, Mapping) else None

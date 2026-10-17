@@ -34,7 +34,43 @@ from agents.tools.advertising.providers.meta.provider import _meta_update_adapte
 from agents.tools.advertising.providers.tiktok.provider import _tiktok_update_adapter
 from agents.tools.advertising.providers.google.provider import _google_update_adapter
 from agents.tools.advertising.providers.provider_base import CampaignUpdateHandler
+from agents.tools.advertising.providers.meta.ads import MetaGetAdHandler
 from agents.tools.advertising.providers.meta.creatives import MetaCreateCreativeHandler
+
+
+def test_meta_get_ad_declares_and_forwards_optional_fields():
+    source = create_meta_tool_source()
+    definition = next(
+        definition
+        for definition, _handler in source.register_tools()
+        if definition.name == "meta_get_ad"
+    )
+    fields = ["id", "name", "status", "creative"]
+    assert validate_tool_input(
+        definition.input_schema,
+        {"ad_id": "ad-123", "fields": fields},
+    ) == []
+
+    class Client:
+        def __init__(self):
+            self.calls = []
+
+        def get_ad(self, ad_id, fields=None):
+            self.calls.append((ad_id, fields))
+            return {"id": ad_id, "name": "QA Ad"}
+
+    client = Client()
+    result = MetaGetAdHandler(client).execute(
+        ToolContext(
+            session_id="meta-fields-test",
+            user_id="qa",
+            account_id="account-123",
+        ),
+        {"ad_id": "ad-123", "fields": fields},
+    )
+
+    assert result.success is True
+    assert client.calls == [("ad-123", fields)]
 
 
 @pytest.mark.parametrize(
@@ -514,6 +550,33 @@ def test_meta_image_asset_upload_normalizes_graph_image_map():
         client.upload_image_asset("123", {"image_url": "/tmp/creative.png"})
 
 
+def test_meta_image_asset_list_requests_displayable_image_urls():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, extra_params=None, **_kwargs: (
+        calls.append((method, endpoint, extra_params)) or {
+            "images": {
+                "creative.png": {
+                    "hash": "image-hash",
+                    "name": "creative.png",
+                    "url": "https://cdn.example/creative.png",
+                    "url_128": "https://cdn.example/creative-small.png",
+                }
+            }
+        }
+    )
+
+    assets = client.list_image_assets("123", limit=5)
+
+    assert assets[0]["url"] == "https://cdn.example/creative.png"
+    assert assets[0]["url_128"] == "https://cdn.example/creative-small.png"
+    assert calls[0][0:2] == ("GET", "/act_123/adimages")
+    assert calls[0][2]["fields"].split(",") == [
+        "hash", "name", "original_width", "original_height", "created_time",
+        "url", "url_128",
+    ]
+
+
 def test_meta_video_asset_upload_and_list_use_provider_edges():
     client = MetaAPIClient({"access_token": "test"})
     calls = []
@@ -522,7 +585,13 @@ def test_meta_video_asset_upload_and_list_use_provider_edges():
         calls.append((method, endpoint, data, kwargs))
         if method == "POST":
             return {"id": "video-1", "status": "processing"}
-        return {"data": [{"id": "video-1", "title": "Demo"}]}
+        return {"data": [{
+            "id": "video-1",
+            "title": "Demo",
+            "source": "https://video.example/demo.mp4?signature=short-lived",
+            "picture": "https://video.example/demo.jpg",
+            "permalink_url": "https://www.facebook.com/watch/?v=video-1",
+        }]}
 
     client.request = request
     uploaded = client.upload_video_asset(
@@ -535,7 +604,13 @@ def test_meta_video_asset_upload_and_list_use_provider_edges():
     listed = client.list_video_assets("123", limit=10)
 
     assert uploaded["id"] == "video-1"
-    assert listed == [{"id": "video-1", "title": "Demo"}]
+    assert listed == [{
+        "id": "video-1",
+        "title": "Demo",
+        "source": "https://video.example/demo.mp4?signature=short-lived",
+        "picture": "https://video.example/demo.jpg",
+        "permalink_url": "https://www.facebook.com/watch/?v=video-1",
+    }]
     assert calls[0][0:3] == (
         "POST", "/act_123/advideos",
         {
@@ -545,6 +620,10 @@ def test_meta_video_asset_upload_and_list_use_provider_edges():
         },
     )
     assert calls[1][0:2] == ("GET", "/act_123/advideos")
+    assert calls[1][3]["extra_params"]["fields"].split(",") == [
+        "id", "title", "description", "status", "created_time",
+        "source", "picture", "permalink_url",
+    ]
 
 
 def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():

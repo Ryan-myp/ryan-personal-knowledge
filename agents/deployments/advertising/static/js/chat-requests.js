@@ -1,8 +1,9 @@
-        function chatMessageHasPresentation(content, tools, ui) {
+        function chatMessageHasPresentation(content, tools, ui, attachments) {
             return Boolean(
                 String(content ?? '').trim() || tools?.length || ui?.cards?.length
                 || ui?.account_selection || ui?.confirmation?.payload
                 || ui?.clarification?.options?.length || ui?.clarification?.fields?.length
+                || ui?.media_gallery?.length || attachments?.length
             );
         }
 
@@ -551,6 +552,7 @@
                 let data = {};
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
                 if (!response.ok) throw new Error(data.detail || data.error || `对话加载失败（${response.status}）`);
+                clearPendingChatMedia({ revoke: true });
                 sessionId = data.session_id || targetSessionId;
                 selectedConversationId = sessionId;
                 loadedConversationTurnIds.clear();
@@ -565,7 +567,9 @@
                 let precedingUserInput = '';
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
                     if (!['user', 'assistant'].includes(message.role)) continue;
-                    if (!chatMessageHasPresentation(message.content, message.tools, message.ui)) continue;
+                    if (!chatMessageHasPresentation(
+                        message.content, message.tools, message.ui, message.attachments,
+                    )) continue;
                     const role = message.role === 'user' ? 'user' : 'agent';
                     if (role === 'user') {
                         precedingUserInput = String(message.content || '');
@@ -580,6 +584,7 @@
                         message.ui || null,
                         {
                             openWorkbench: false,
+                            attachments: message.attachments || [],
                             originalRequest: role === 'agent' && precedingUserInput
                                 ? { user_input: precedingUserInput, session_id: sessionId }
                                 : null,

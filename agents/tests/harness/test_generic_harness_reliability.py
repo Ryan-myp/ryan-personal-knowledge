@@ -14,6 +14,7 @@ from agents.agent_harness import (
     ToolCallContext,
     TurnRequest,
 )
+from agents.agent_harness.core.llm_client import LLMStructuredOutputError
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.persistence.adapters import (
@@ -371,6 +372,29 @@ def test_model_timeout_does_not_reset_the_budget_for_fallback():
         assert result.runtime_signals["model_timeout"] is True
         assert fallback.calls == 0
         assert any(event["type"] == "model_error" for event in events)
+    finally:
+        app.close()
+
+
+def test_structured_output_failure_persists_only_a_safe_reason_code():
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            raise LLMStructuredOutputError(
+                "LLM Tool arguments were not valid JSON"
+            )
+
+    events = []
+    app = AgentApplication.create(model=Model(), event_callback=events.append)
+    try:
+        result = app.prompt("query")
+        model_error = next(
+            event for event in events if event["type"] == "model_error"
+        )
+
+        assert result.data["error"] == "LLMStructuredOutputError"
+        assert result.data["error_code"] == "tool_arguments_invalid_json"
+        assert model_error["error_code"] == "tool_arguments_invalid_json"
+        assert "arguments were not valid JSON" not in str(result.data)
     finally:
         app.close()
 

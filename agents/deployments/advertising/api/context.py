@@ -66,9 +66,14 @@ class ApiContext:
     runtime_mcp_servers_getter: Callable[[], Any] | None = None
     builtin_skill_catalog_getter: Callable[[], Any] | None = None
     creation_template_manager_getter: Callable[[RequestPrincipal], Any] | None = None
+    chat_media_store_getter: Callable[[], Any] | None = None
 
     def runtime(self) -> Any:
         return self.runtime_getter()
+
+    def chat_media_store(self) -> Any:
+        getter = self.chat_media_store_getter
+        return getter() if callable(getter) else None
 
 
 __all__ = ["ApiContext", "read_request_body_limited"]

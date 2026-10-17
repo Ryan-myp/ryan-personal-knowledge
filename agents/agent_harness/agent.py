@@ -7,6 +7,7 @@ hooks; the loop never knows a provider, channel or business workflow.
 
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
 from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
+from .core.security import canonical_json
 from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
 from .model_execution import (
     ModelExecutionCoordinator,
@@ -602,6 +604,40 @@ class Agent:
         return str(fallback or "")
 
     @staticmethod
+    def _terminate_repeated_schema_repairs(
+        tool_calls: Sequence[ToolCall],
+        tool_results: Sequence[dict[str, Any]],
+        attempted_signatures: set[str],
+    ) -> None:
+        """Allow one model correction for an identical extra-field error."""
+        calls_by_id = {
+            str(call.id or ""): call for call in tool_calls if str(call.id or "")
+        }
+        for result in tool_results:
+            signals = result.get("runtime_signals")
+            if not (
+                isinstance(signals, Mapping)
+                and signals.get("tool_input_repairable")
+            ):
+                continue
+            call = calls_by_id.get(str(result.get("tool_call_id") or ""))
+            signature = canonical_json({
+                "tool": str(call.name if call else result.get("name") or ""),
+                "arguments": dict(call.arguments) if call else {},
+                "reason": str(result.get("content") or "") if call is None else "",
+            })
+            if signature not in attempted_signatures:
+                attempted_signatures.add(signature)
+                continue
+
+            result["terminate"] = True
+            updated_signals = dict(signals)
+            updated_signals.pop("tool_input_repairable", None)
+            updated_signals["non_retriable_tool_error"] = True
+            updated_signals["schema_repair_retry_exhausted"] = True
+            result["runtime_signals"] = updated_signals
+
+    @staticmethod
     def _run_interactions(
         tool_results: Sequence[Mapping[str, Any]],
     ) -> tuple[Mapping[str, Any], ...]:
@@ -908,6 +944,7 @@ class Agent:
         run_read_cache = ToolReadCache()
         run_write_cache = ToolWriteReplayCache()
         run_resource_history: list[Mapping[str, Any]] = []
+        schema_repair_attempts: set[str] = set()
         try:
             self._state_io.hydrate(request, state)
             checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
@@ -948,6 +985,11 @@ class Agent:
                 else request.user_input,
                 run_id=str(request.run_id or ""),
                 turn_id=str(request.turn_id or ""),
+                metadata={
+                    "attachments": [
+                        media.to_metadata() for media in request.input_media
+                    ],
+                } if request.input_media else {},
             )
             self._state_io.append_message(state, user_message, request=request)
             self._emit("message_end", request, message=user_message.to_dict())
@@ -1031,6 +1073,11 @@ class Agent:
                             resource_history=run_resource_history,
                         )
                         tool_call_count += requested_count
+                    self._terminate_repeated_schema_repairs(
+                        model_turn.tool_calls,
+                        tool_results,
+                        schema_repair_attempts,
+                    )
                     all_tool_results.extend(tool_results)
                     for result in tool_results:
                         tool_message = AgentMessage.tool(
@@ -1306,16 +1353,23 @@ class Agent:
             return result
         except Exception as error:
             state.error_message = type(error).__name__
+            error_code = getattr(error, "safe_reason_code", None)
+            failure_data = {
+                "messages": [item.to_dict() for item in state.messages],
+                "error": type(error).__name__,
+                "tool_results": list(all_tool_results),
+                "usage": dict(state.usage),
+            }
+            if (
+                isinstance(error_code, str)
+                and re.fullmatch(r"[a-z0-9_]{1,64}", error_code)
+            ):
+                failure_data["error_code"] = error_code
             result = RunResult(
                 run_id=str(request.run_id or ""),
                 turn_id=str(request.turn_id or ""),
                 status=RunStatus.FAILED,
-                data={
-                    "messages": [item.to_dict() for item in state.messages],
-                    "error": type(error).__name__,
-                    "tool_results": list(all_tool_results),
-                    "usage": dict(state.usage),
-                },
+                data=failure_data,
             )
             self._emit("agent_end", request, status=result.status.value)
             return result

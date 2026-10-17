@@ -381,7 +381,9 @@ def test_contract_snapshot_is_deterministic_and_partitioned_by_platform():
 
     assert first == second
     assert first["tool_count"] >= 124
-    assert set(first["platforms"]) == {"meta", "google-ads", "tiktok", "dv360"}
+    assert set(first["platforms"]) == {
+        "agent-platform", "meta", "google-ads", "tiktok", "dv360"
+    }
     assert all(details["digest"] for details in first["platforms"].values())
     assert set(first["provider_api_surfaces"]) == {
         "meta", "google-ads", "tiktok", "dv360"

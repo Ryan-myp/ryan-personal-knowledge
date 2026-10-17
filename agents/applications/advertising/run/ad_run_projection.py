@@ -67,6 +67,11 @@ class AdvertisingRunProjection:
                     result.setdefault(
                         "resource_type", getattr(definition, "resource_type", ""),
                     )
+                    effect_class = getattr(definition, "effect_class", "")
+                    result.setdefault(
+                        "effect_class",
+                        str(getattr(effect_class, "value", effect_class) or ""),
+                    )
                     tool_types.append(tuple(
                         str(value) for value in (
                             getattr(definition, "intent_types", ()) or ()

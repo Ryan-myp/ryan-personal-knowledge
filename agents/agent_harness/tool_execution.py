@@ -260,7 +260,9 @@ class ToolExecutionCoordinator:
             cls._tool_value(definition, "effect", "read"),
         )
         effect = getattr(effect, "value", effect)
-        return str(effect or "").strip().lower() in {"write", "external_write"}
+        return str(effect or "").strip().lower() in {
+            "write", "external_write", "internal_write",
+        }
 
     @staticmethod
     def _serialized_tool_value(value: Any) -> str:

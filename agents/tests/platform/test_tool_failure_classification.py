@@ -213,3 +213,63 @@ def test_harness_reenters_model_after_extra_argument_without_executing_invalid_c
         assert executed == [{"value": "given"}]
     finally:
         app.close()
+
+
+def test_harness_stops_after_repeating_the_same_schema_repairable_call():
+    class Model:
+        turn = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.turn += 1
+            if self.turn <= 3:
+                return ModelTurn(tool_calls=(
+                    ToolCall(
+                        f"bad-{self.turn}",
+                        "read",
+                        {"value": "given", "extra": "invalid"},
+                    ),
+                ))
+            return "This should not be reached."
+
+    executions = []
+    model = Model()
+    app = AgentApplication.create(
+        model=model, max_turns=6, tool_policy=ToolExecutionPolicy()
+    )
+    app.register_tool_source(
+        StaticToolSource(
+            "read-source",
+            [
+                ToolBinding(
+                    {
+                        "name": "read",
+                        "effect_class": "read",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {"value": {"type": "string"}},
+                            "required": ["value"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    lambda _ctx, values: executions.append(values) or {
+                        "success": True,
+                    },
+                ),
+            ],
+        )
+    )
+    try:
+        result = app.prompt("read the record")
+        tool_results = result.data["tool_results"]
+
+        assert result.status.value == "failed"
+        assert model.turn == 2
+        assert len(tool_results) == 2
+        assert tool_results[-1]["terminate"] is True
+        assert tool_results[-1]["runtime_signals"][
+            "schema_repair_retry_exhausted"
+        ] is True
+        assert "Field 'extra' is not allowed" in result.reply
+        assert executions == []
+    finally:
+        app.close()

@@ -40,6 +40,20 @@ _WRITE_NEGATIONS = (
 _INTENT_REVERSALS = ("but", "instead", "however", "但", "而是", "不过")
 _SCOPE_RELATION = re.compile(r"(?:下(?:面|的)?|之下|里面|\bunder\b|\bwithin\b|\bin\b)")
 _MULTI_TARGET = re.compile(r"(?:以及|同时|并且|和|与|、|\band\b|\balso\b)")
+_CONTEXT_REFERENCE_CUES = (
+    "this", "that", "these", "those", "same", "above", "previous",
+    "earlier", "continue", "again", "这个", "这些", "那个", "那些",
+    "它", "上面", "之前", "刚才", "刚刚", "继续", "再来", "接着",
+    "有模板吗", "有模板", "模板呢", "any template", "any templates",
+)
+_DIAGRAM_CUES = (
+    "流程图", "时序图", "执行图", "flowchart", "sequence diagram",
+    "runtime diagram", "architecture diagram", "system diagram",
+)
+_SYSTEM_FLOW_CUES = (
+    "系统", "架构", "运行时", "system", "architecture", "runtime",
+    "agent run", "run kernel",
+)
 _READ_ACTIONS = frozenset({
     "get", "list", "read", "search", "query", "fetch", "retrieve",
 })
@@ -153,6 +167,30 @@ def _has_unnegated_write_cue(user_input: str) -> bool:
             ):
                 return True
     return False
+
+
+def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
+    """Use prior turns only for operational requests or short references."""
+    text = str(user_input or "").strip()
+    if not text:
+        return False
+    verb_text = _request_verbs(text, tools)
+    if _is_read_only_request(verb_text) or _has_unnegated_write_cue(verb_text):
+        return True
+    if len(text) > 48:
+        return False
+    return any(
+        _contains_cue(text.casefold(), cue)
+        for cue in _CONTEXT_REFERENCE_CUES
+    )
+
+
+def _is_system_diagram_request(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    return (
+        any(_contains_cue(text, cue) for cue in _DIAGRAM_CUES)
+        and any(_contains_cue(text, cue) for cue in _SYSTEM_FLOW_CUES)
+    )
 
 
 def _is_read_tool(tool: Any) -> bool:
@@ -339,6 +377,8 @@ class ToolSelector:
         """
         if limit <= 0:
             raise ValueError("limit must be positive")
+        if _is_system_diagram_request(user_input):
+            return []
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
         prior_inputs = [
@@ -346,6 +386,8 @@ class ToolSelector:
             for item in (conversation_context or ())
             if str(item or "").strip()
         ][-4:]
+        if not _needs_conversation_context(user_input, available_tools):
+            prior_inputs = []
         prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
         active_namespaces = self.detect_namespaces(
             user_input, available_tools,

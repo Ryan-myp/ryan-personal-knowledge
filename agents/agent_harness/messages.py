@@ -3,12 +3,83 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Sequence
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
+_SUPPORTED_MEDIA_TYPES = frozenset({
+    "image/jpeg", "image/png", "image/gif", "image/webp",
+    "video/mp4", "video/quicktime", "video/webm",
+})
+
+
+@dataclass(frozen=True)
+class MediaFrame:
+    """One bounded image frame derived from a video input."""
+
+    timestamp_seconds: float
+    media_type: str
+    content: bytes
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.timestamp_seconds, (int, float))
+            or isinstance(self.timestamp_seconds, bool)
+            or not math.isfinite(self.timestamp_seconds)
+            or self.timestamp_seconds < 0
+        ):
+            raise ValueError(
+                "media frame timestamp must be finite and non-negative"
+            )
+        if self.media_type not in {
+            "image/jpeg", "image/png", "image/gif", "image/webp",
+        }:
+            raise ValueError("media frame must use a supported image media type")
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("media frame content must be non-empty bytes")
+
+
+@dataclass(frozen=True)
+class InputMedia:
+    """Ephemeral user media passed to a model adapter for one Run."""
+
+    attachment_id: str
+    filename: str
+    media_type: str
+    content: bytes
+    frames: Sequence[MediaFrame] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not str(self.attachment_id or "").strip():
+            raise ValueError("input media attachment_id must be non-empty")
+        if not str(self.filename or "").strip():
+            raise ValueError("input media filename must be non-empty")
+        if self.media_type not in _SUPPORTED_MEDIA_TYPES:
+            raise ValueError(f"unsupported input media type: {self.media_type}")
+        if not isinstance(self.content, bytes) or not self.content:
+            raise ValueError("input media content must be non-empty bytes")
+        frames = tuple(self.frames or ())
+        if len(frames) > 8:
+            raise ValueError("input media frame limit is 8")
+        if self.media_type.startswith("image/") and frames:
+            raise ValueError("image input media cannot contain video frames")
+        if self.media_type.startswith("video/") and any(
+            not isinstance(frame, MediaFrame) for frame in frames
+        ):
+            raise TypeError("video frames must use the MediaFrame contract")
+        object.__setattr__(self, "frames", frames)
+
+    def to_metadata(self) -> dict[str, Any]:
+        """Return the small transcript-safe attachment reference."""
+        return {
+            "id": str(self.attachment_id),
+            "filename": str(self.filename),
+            "media_type": str(self.media_type),
+            "size": len(self.content),
+        }
 
 
 def _json_safe(value: Any) -> Any:

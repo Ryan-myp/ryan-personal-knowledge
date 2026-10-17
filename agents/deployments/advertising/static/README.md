@@ -33,6 +33,11 @@ plain text rather than injecting HTML. Tool/system records are replayed in the
 execution trace, not as chat bubbles. Only the frontend rendering changes;
 stored messages, provider contracts and write gates are unchanged.
 
+Mermaid 12.2.0 Tiny (MIT) is also served locally. It is loaded only when an
+assistant message contains a Mermaid code fence, initialized in strict mode,
+and its SVG output is sanitized before insertion. Flowchart and sequence
+diagrams are supported; unsupported syntax remains visible as source text.
+
 Run message-rendering and lookup regressions with:
 
 ```bash

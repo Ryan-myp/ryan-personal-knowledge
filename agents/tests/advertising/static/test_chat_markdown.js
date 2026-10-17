@@ -7,6 +7,87 @@ const vm = require('node:vm');
 const scripts = path.resolve(__dirname, '../../../deployments/advertising/static/js');
 const marked = require(path.join(scripts, 'vendor/marked-18.1.1.umd.js'));
 const sanitizerCalls = [];
+
+class MockElement {
+    constructor(tagName) {
+        this.tagName = tagName.toUpperCase();
+        this.children = [];
+        this.attributes = {};
+        this.listeners = {};
+        this.style = {};
+        this.className = '';
+        this.textContent = '';
+        this.open = false;
+        this.classList = {
+            add: name => {
+                this.className = `${this.className} ${name}`.trim();
+            },
+        };
+    }
+
+    set innerHTML(value) {
+        this._innerHTML = value;
+        this.children = [];
+        if (String(value).includes('<svg')) this.appendChild(new MockElement('svg'));
+    }
+
+    get innerHTML() {
+        return this._innerHTML || '';
+    }
+
+    appendChild(child) {
+        child.parentElement = this;
+        this.children.push(child);
+        return child;
+    }
+
+    replaceChildren(...children) {
+        this.children = [];
+        children.forEach(child => this.appendChild(child));
+    }
+
+    setAttribute(name, value) {
+        this.attributes[name] = value;
+        if (name === 'class') this.className = value;
+    }
+
+    addEventListener(name, listener) {
+        this.listeners[name] = listener;
+    }
+
+    click() {
+        this.listeners.click?.({ target: this, currentTarget: this });
+    }
+
+    focus() {
+        this.focused = true;
+    }
+
+    showModal() {
+        this.open = true;
+    }
+
+    close() {
+        this.open = false;
+        this.listeners.close?.({ target: this });
+    }
+
+    querySelector(selector) {
+        const matches = element => selector.startsWith('.')
+            ? element.className.split(/\s+/).includes(selector.slice(1))
+            : element.tagName.toLowerCase() === selector.toLowerCase();
+        const visit = element => {
+            for (const child of element.children) {
+                if (matches(child)) return child;
+                const nested = visit(child);
+                if (nested) return nested;
+            }
+            return null;
+        };
+        return visit(this);
+    }
+}
+
 // This mock checks sanitizer invocation; the browser check exercises real DOMPurify.
 const context = {
     marked,
@@ -37,6 +118,131 @@ test('fenced code preserves line breaks and literal markdown', () => {
     const html = context.formatContent('```text\n## literal heading\n**literal bold**\nbudget = 50\n```');
     assert.match(html, /<pre><code[^>]*>## literal heading\n\*\*literal bold\*\*\nbudget = 50\n<\/code><\/pre>/);
     assert.doesNotMatch(html, /<h2>|<strong>/);
+});
+
+test('Mermaid code fences preserve their language marker for diagram rendering', () => {
+    const html = context.formatContent('```mermaid\ngraph TD\nA --> B\n```');
+
+    assert.match(html, /<code class="language-mermaid">graph TD\nA --&gt; B\n<\/code>/);
+});
+
+test('unlabelled Mermaid code fences remain identifiable for diagram rendering', () => {
+    const html = context.formatContent('```\ngraph TD\nA --> B\n```');
+
+    assert.match(html, /<pre><code>graph TD\nA --&gt; B\n<\/code><\/pre>/);
+});
+
+test('Mermaid flowcharts render with strict settings and sanitized SVG', async () => {
+    const rendered = [];
+    const options = [];
+    context.window = {
+        mermaid: {
+            initialize(value) {
+                options.push(value);
+            },
+            async render(id, source) {
+                rendered.push({ id, source });
+                return { svg: '<svg><path d="M0 0"></path></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement(tagName) {
+            return new MockElement(tagName);
+        },
+        body: new MockElement('body'),
+    };
+    const pre = {
+        classList: { add(name) { this[name] = true; } },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = { textContent: 'graph TD\nA --> B', parentElement: pre };
+    const root = {
+        querySelectorAll(selector) {
+            return selector === 'pre > code' ? [code] : [];
+        },
+    };
+
+    await context.renderMermaidDiagrams(root);
+
+    assert.equal(rendered.length, 1);
+    assert.equal(rendered[0].source, 'graph TD\nA --> B');
+    assert.equal(options[0].securityLevel, 'strict');
+    assert.equal(options[0].startOnLoad, false);
+    assert.equal(pre.replacedWith.className, 'mermaid-diagram');
+    assert.equal(pre.replacedWith.innerHTML, '<svg><path d="M0 0"></path></svg>');
+    assert.equal(pre.replacedWith.attributes.role, 'group');
+    const zoomButton = pre.replacedWith.children.find(
+        child => child.className === 'mermaid-diagram-zoom',
+    );
+    assert.ok(zoomButton, 'rendered diagrams expose a zoom button');
+    zoomButton.click();
+    const dialog = context.document.body.children[0];
+    assert.equal(dialog.tagName, 'DIALOG');
+    assert.equal(dialog.open, true);
+    const viewport = dialog.querySelector('.mermaid-viewer-viewport');
+    assert.equal(viewport.innerHTML, '<svg><path d="M0 0"></path></svg>');
+    assert.equal(viewport.querySelector('svg').style.maxWidth, 'none');
+    const zoomIn = dialog.querySelector('.mermaid-viewer-zoom-in');
+    zoomIn.click();
+    assert.equal(viewport.querySelector('svg').style.width, '125%');
+    const fit = dialog.querySelector('.mermaid-viewer-fit');
+    fit.click();
+    assert.equal(viewport.querySelector('svg').style.width, '100%');
+    dialog.querySelector('.mermaid-viewer-close').click();
+    assert.equal(dialog.open, false);
+    assert.equal(zoomButton.focused, true, 'closing restores focus to the opener');
+    const svgSanitizerOptions = sanitizerCalls.at(-1).options;
+    assert.ok(svgSanitizerOptions.USE_PROFILES.svg);
+    assert.ok(svgSanitizerOptions.USE_PROFILES.html);
+    assert.ok(svgSanitizerOptions.ADD_TAGS.includes('foreignObject'));
+    assert.equal(svgSanitizerOptions.HTML_INTEGRATION_POINTS.foreignobject, true);
+    delete context.window;
+    delete context.document;
+});
+
+test('Mermaid configuration directives stay visible and are not executed', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(_id, source) {
+                rendered.push(source);
+                return { svg: '<svg></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement() {
+            return {
+                attributes: {},
+                setAttribute(name, value) {
+                    this.attributes[name] = value;
+                },
+            };
+        },
+    };
+    const pre = {
+        classList: { add(name) { this[name] = true; } },
+        setAttribute(name, value) { this[name] = value; },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = {
+        className: 'language-mermaid',
+        textContent: '%%{init: {"securityLevel":"loose"}}%%\ngraph TD\nA --> B',
+        parentElement: pre,
+    };
+    const root = {
+        querySelectorAll: selector => selector === 'pre > code' ? [code] : [],
+    };
+
+    await context.renderMermaidDiagrams(root);
+
+    assert.deepEqual(rendered, []);
+    assert.equal(pre.replacedWith, undefined);
+    assert.equal(pre.title, '流程图内容超出限制或包含受限配置，已保留源码。');
+    delete context.window;
+    delete context.document;
 });
 
 test('tables retain empty cells, escaped pipes and inline code', () => {

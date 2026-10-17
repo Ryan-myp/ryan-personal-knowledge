@@ -9,10 +9,11 @@ from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
 class ChatRequest(BaseModel):
-    user_input: str = Field(min_length=1, max_length=12_000)
+    user_input: str = Field(default="", max_length=12_000)
     session_id: Optional[str] = None
     user_id: str = Field(default="web_user", min_length=1, max_length=200)
     account_id: str = Field(default="", max_length=200)
+    media_ids: list[str] = Field(default_factory=list, max_length=5)
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
     platform_params: Optional[dict] = None
@@ -204,10 +205,11 @@ class SkillVersionRequest(BaseModel):
 
 
 class ChatStreamRequest(BaseModel):
-    user_input: str = Field(min_length=1, max_length=12_000)
+    user_input: str = Field(default="", max_length=12_000)
     session_id: Optional[str] = None
     user_id: str = Field(default="web_user", min_length=1, max_length=200)
     account_id: str = Field(default="", max_length=200)
+    media_ids: list[str] = Field(default_factory=list, max_length=5)
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
     platform_params: Optional[dict] = None

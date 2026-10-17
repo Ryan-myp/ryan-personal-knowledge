@@ -5,6 +5,7 @@ clients or call an external advertising API.
 """
 
 import json
+import re
 import threading
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from fastapi.testclient import TestClient
 import agents.deployments.advertising.api_server as api_server
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.routes.chat import create_chat_router
+from agents.deployments.advertising.api.chat_media import ChatMediaStore
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
 
@@ -25,6 +27,7 @@ def _chat_page_javascript() -> str:
     """Read the bootstrap and split bundles as one browser contract."""
     names = [
         "chat.js", "chat-markdown.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat-media.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
         "chat-blueprint-editor.js", "chat-skills.js", "chat-creation.js",
         "chat-messages.js",
@@ -39,7 +42,7 @@ def _chat_page_styles() -> str:
     """Read the CSS bootstrap and split bundles as one browser contract."""
     names = [
         "chat.css", "chat-foundation.css", "chat-workspaces.css",
-        "chat-creation.css", "chat-overrides.css",
+        "chat-creation.css", "chat-overrides.css", "chat-media.css",
     ]
     return "\n".join(
         (api_server.STATIC_PATH / "css" / name).read_text(encoding="utf-8")
@@ -223,6 +226,186 @@ def test_chat_request_preparation_does_not_block_the_event_loop():
     assert runtime.calls[0]["tool_allowlist"] == ["read_record"]
     assert {name for name, _thread_id in callback_threads} == {"skills", "mcp"}
     assert all(thread_id != main_thread for _name, thread_id in callback_threads)
+
+
+def test_chat_media_upload_is_identity_scoped_and_reaches_the_model_runtime(tmp_path):
+    principal = RequestPrincipal(
+        user_id="media-user",
+        tenant_id="media-tenant",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        calls = []
+
+        def run(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"success": True, "reply": "看到了图片", "results": []}
+
+    runtime = Runtime()
+    store = ChatMediaStore(tmp_path)
+    context = ApiContext(
+        runtime_getter=lambda: runtime,
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: store,
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+    session_id = "media-session"
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+    )
+
+    with TestClient(app) as client:
+        uploaded = client.post(
+            f"/chat/media?session_id={session_id}&filename=creative.png",
+            content=png,
+            headers={"Content-Type": "image/png"},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        attachment = uploaded.json()
+
+        image_response = client.get(
+            f"/chat/media/{attachment['id']}?session_id={session_id}"
+        )
+        assert image_response.status_code == 200
+        assert image_response.content == png
+        assert image_response.headers["content-type"] == "image/png"
+
+        chat = client.post(
+            "/chat",
+            json={
+                "user_input": "请看这张图片",
+                "session_id": session_id,
+                "media_ids": [attachment["id"]],
+            },
+        )
+
+    assert chat.status_code == 200, chat.text
+    attached = runtime.calls[0]["input_media"]
+    assert len(attached) == 1
+    assert attached[0].attachment_id == attachment["id"]
+    assert attached[0].content == png
+
+    with TestClient(app) as client:
+        removed = client.delete(
+            f"/chat/media/{attachment['id']}?session_id={session_id}"
+        )
+        missing = client.get(
+            f"/chat/media/{attachment['id']}?session_id={session_id}"
+        )
+    assert removed.status_code == 204
+    assert missing.status_code == 404
+
+
+def test_chat_stream_preserves_media_gallery_in_reply_ui(tmp_path):
+    principal = RequestPrincipal(
+        user_id="media-user",
+        tenant_id="media-tenant",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        def run(self, **_kwargs):
+            return {
+                "session_id": "media-session",
+                "turn_id": "turn-1",
+                "status": "succeeded",
+                "reply": "找到一张图片",
+                "results": [{
+                    "success": True,
+                    "data": {
+                        "image_assets": [{
+                            "id": "image-1",
+                            "name": "Creative",
+                            "url": "https://cdn.example.test/image.jpg",
+                        }],
+                    },
+                }],
+                "ui": {
+                    "media_gallery": [{
+                        "kind": "image",
+                        "id": "image-1",
+                        "name": "Creative",
+                        "url": "https://cdn.example.test/image.jpg",
+                    }],
+                },
+            }
+
+    context = ApiContext(
+        runtime_getter=Runtime,
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: ChatMediaStore(tmp_path),
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/chat/stream",
+            json={"user_input": "查询图片素材"},
+        )
+
+    assert response.status_code == 200
+    reply = next(
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ") and '"type": "reply"' in line
+    )
+    assert reply["ui"]["media_gallery"][0]["url"].endswith("/image.jpg")
+
+
+def test_chat_media_route_rejects_cross_user_and_cross_tenant_reads(tmp_path):
+    image = ChatMediaStore(tmp_path).save(
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00",
+        filename="creative.png",
+        content_type="image/png",
+        session_id="media-session",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+    principal = RequestPrincipal(
+        user_id="user-b",
+        tenant_id="tenant-b",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        def run(self, **_kwargs):
+            return {"success": True, "reply": "ok", "results": []}
+
+    context = ApiContext(
+        runtime_getter=Runtime,
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: ChatMediaStore(tmp_path),
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+
+    with TestClient(app) as client:
+        response = client.get(
+            f"/chat/media/{image['id']}?session_id=media-session"
+        )
+
+    assert response.status_code == 404
 
 
 def test_operational_routes_are_owned_by_dedicated_route_modules():
@@ -713,6 +896,9 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "openCreationWorkbench", "closeCreationWorkbench",
         "reopenCreationCard", "creation-workbench-host",
         "message-card-launcher", "右侧工作区",
+        'id="chatMediaInput"', "handleChatMediaSelection", "handleChatPaste",
+        "media_ids", "media_gallery", "renderMessageAttachments",
+        "/chat/media/", "video/mp4", "video/webm",
     ):
         assert marker in html
     # The browser may hold the service API key in memory, but the page must
@@ -1158,9 +1344,30 @@ def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
         api_server.STATIC_PATH / "js" / "chat.js"
     ).read_text(encoding="utf-8")
 
-    assert "chat.css?v=20261015-confirmation-v4" in template
-    assert "chat.js?v=20261015-confirmation-v4" in template
-    assert "v=20261015-confirmation-v4" in bootstrap
+    css_version = re.search(
+        r'href="/static/css/chat\.css\?v=([^"]+)"',
+        template,
+    )
+    js_version = re.search(
+        r'src="/static/js/chat\.js\?v=([^"]+)"',
+        template,
+    )
+
+    assert css_version is not None
+    assert js_version is not None
+    assert css_version.group(1) == js_version.group(1)
+    assert f"?v={js_version.group(1)}" in bootstrap
+
+
+def test_pending_chat_media_is_positioned_above_the_input_box():
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    input_area = template.split('<div class="input-area">', 1)[1].split(
+        '<aside class="right-panel"', 1
+    )[0]
+
+    assert input_area.index('id="chatMediaPending"') < input_area.index(
+        'class="input-container"'
+    )
 
 
 def test_chat_markdown_dependencies_load_before_messages_and_history():
@@ -1173,6 +1380,47 @@ def test_chat_markdown_dependencies_load_before_messages_and_history():
     assert "formatContent(content)" in messages
     assert "function formatContent(" not in messages
     assert "markdownPreview(conversation.preview)" in history
+
+
+def test_mermaid_diagrams_use_a_lazy_local_renderer_and_svg_sanitizer():
+    markdown = (
+        api_server.STATIC_PATH / "js" / "chat-markdown.js"
+    ).read_text(encoding="utf-8")
+    vendor = (
+        api_server.STATIC_PATH / "js" / "vendor" / "mermaid-tiny-12.2.0.js"
+    )
+    license_file = vendor.with_name("mermaid-tiny-12.2.0.LICENSE")
+
+    assert "vendor/mermaid-tiny-12.2.0.js" in markdown
+    assert "securityLevel: 'strict'" in markdown
+    assert "DOMPurify.sanitize(result.svg" in markdown
+    assert vendor.is_file()
+    assert license_file.is_file()
+
+
+def test_mermaid_inline_preview_has_readable_width_and_non_overlapping_zoom_control():
+    styles = (
+        api_server.STATIC_PATH / "css" / "chat-markdown.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".message.agent:has(.mermaid-diagram)" in styles
+    assert "align-self: stretch" in styles
+    assert ".mermaid-diagram-zoom" in styles
+    assert "position: static" in styles
+
+
+def test_chat_messages_embed_supported_facebook_video_links_in_replayed_history():
+    messages = (
+        api_server.STATIC_PATH / "js" / "chat-messages.js"
+    ).read_text(encoding="utf-8")
+    media = (
+        api_server.STATIC_PATH / "js" / "chat-media.js"
+    ).read_text(encoding="utf-8")
+
+    assert "renderFacebookVideoEmbeds(" in messages
+    assert "msg.querySelector('.message-body')" in messages
+    assert "facebookVideoPermalinksFromText(content)" in media
+    assert "chatFacebookVideoFrame(facebookPermalink)" in media
 
 
 def test_conversation_replay_does_not_render_internal_tool_or_system_messages():
@@ -1510,7 +1758,7 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
     assert runtime is not None
     assert api_server.runtime_status["state"] == "ready"
     assert set(runtime.registry.list_all_namespaces()) == {
-        "meta", "google-ads", "tiktok", "dv360"
+        "agent-platform", "meta", "google-ads", "tiktok", "dv360"
     }
     assert len(runtime.registry.list_all()) >= 124
     runtime._session_manager.store.close()
@@ -1650,6 +1898,9 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
 
     store = AdAgentStore(str(tmp_path / "skills.db"))
     managed_runtime = AdvertisingComposition(require_llm=False, persistence_store=store, offline_mode=True)
+    registered_tool_names = {
+        definition.name for definition in managed_runtime.registry.list_all()
+    }
     monkeypatch.setattr(api_server, "runtime", managed_runtime)
     monkeypatch.setattr(api_server, "API_KEY", "")
     monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", False)
@@ -1707,7 +1958,9 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
         assert response.json()["files"]["SKILL.md"]["encoding"] == "base64"
 
     assert "growth-skill" in managed_runtime.get_managed_skills()
-    assert managed_runtime.registry.list_all() == []
+    assert {
+        definition.name for definition in managed_runtime.registry.list_all()
+    } == registered_tool_names
     store.close()
 
 

@@ -500,6 +500,10 @@ class AdvertisingToolExecutor:
             )
         return metadata
 
+    def _is_internal_write(self) -> bool:
+        effect = getattr(self.definition.effect_class, "value", self.definition.effect_class)
+        return str(effect or "").strip().lower() == "internal_write"
+
     def replay_key(self, context: Any, input_data: dict[str, Any]) -> Any:
         request = context.request
         request_context = (
@@ -567,6 +571,7 @@ class AdvertisingToolExecutor:
     def _is_dry_run_write(self, request: Any) -> bool:
         return (
             bool(getattr(self.definition, "is_write_tool", False))
+            and not self._is_internal_write()
             and str(request.execution_mode or "dry_run") == "dry_run"
         )
 
@@ -604,11 +609,17 @@ class AdvertisingToolExecutor:
                 self.definition, dict(input_data),
                 str(getattr(self.definition, "namespace", "") or ""),
             )
-        clients = self.owner._build_request_clients(
-            request_context.get("credentials"),
+        clients = (
+            None
+            if self._is_internal_write()
+            else self.owner._build_request_clients(
+                request_context.get("credentials"),
+            )
         )
         tool_context = copy.copy(session.ctx)
         tool_context.scope = dict(session.ctx.scope)
+        if self._is_internal_write():
+            tool_context.scope["principal"] = request.principal
         tool_context.account_id = self._request_account(
             request_context, input_data, session,
         )
@@ -646,6 +657,7 @@ class AdvertisingToolExecutor:
     def _is_uncertain_live_write(self, request: Any, result: Any) -> bool:
         return (
             bool(getattr(self.definition, "is_write_tool", False))
+            and not self._is_internal_write()
             and str(request.execution_mode or "dry_run").lower() == "live"
             and self.owner.write_guard is not None
             and self.owner.security.is_uncertain_provider_failure(

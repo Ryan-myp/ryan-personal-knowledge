@@ -62,6 +62,7 @@ from agents.agent_platform.management.skill_management import (
 from agents.applications.advertising.persistence.factory import create_persistence_store
 from agents.deployments.advertising.api.security import RequestAuthorizer
 from agents.deployments.advertising.api.context import ApiContext
+from agents.deployments.advertising.api.chat_media import ChatMediaStore
 from agents.deployments.advertising.api.routes.chat import create_chat_router
 from agents.deployments.advertising.api.routes.catalog import create_catalog_router
 from agents.deployments.advertising.api.routes.knowledge import create_knowledge_router
@@ -81,6 +82,13 @@ CONFIG_PATH = project_root / "agents" / "ad_agent" / "config.yaml"
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "chat.html"
 STATIC_PATH = Path(__file__).parent / "static"
 BUILTIN_SKILLS_ROOT = project_root / "agents" / "skills" / "advertising"
+CHAT_MEDIA_ROOT = Path(
+    os.environ.get(
+        "AD_AGENT_MEDIA_PATH",
+        project_root / "agents" / "ad_agent" / "chat_media",
+    )
+).expanduser().resolve()
+chat_media_store = ChatMediaStore(CHAT_MEDIA_ROOT)
 # Deployment-owned catalog. It is read-only and intentionally independent of
 # tenant Skill persistence; the Runtime remains the execution source of truth.
 builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
@@ -705,6 +713,7 @@ _chat_api_context = ApiContext(
     runtime_mcp_servers_getter=lambda: runtime_mcp_servers,
     builtin_skill_catalog_getter=lambda: builtin_skill_catalog,
     creation_template_manager_getter=_creation_template_manager_for_principal,
+    chat_media_store_getter=lambda: chat_media_store,
 )
 app.include_router(create_chat_router(_chat_api_context))
 app.include_router(create_catalog_router(_chat_api_context))
