@@ -50,6 +50,8 @@ Meta 常用 ODAX 目标包括 Awareness、Traffic、Engagement、Leads、App pro
 
 目标不是文案标签，而是决定可用的 Ad Set 优化、计费、受众扩量和报告解释。若用户只说“投转化广告”，至少还需确认业务结果、Pixel/事件、网站或 App、国家、预算和素材身份。
 
+面向业务结果的目标选择步骤、Catalog Sales / Messages / Conversion 的常见混淆与确认问题，见 [[Meta 投放目标选择：从业务结果到 Campaign Objective]]。
+
 ## 资产依赖
 
 Page/Instagram identity、Pixel、Catalog、Product Set、Lead Form、Custom Conversion 的所有权和状态独立于 Campaign。名称不能替代 ID；创建 Ad 前要逐项 lookup、校验账户归属、权限、审核和可投放状态。Catalog Ad 还要确认商品源、商品集、商品状态和落地页。

@@ -1,7 +1,7 @@
 ---
 name: meta-marketing-api-expert
 description: "Meta Ads 专家 Skill：负责账户与资产依赖、ODAX 目标、Ad Set 投放策略、素材/目录广告、Insights、Pixel/CAPI 和故障诊断"
-version: 2.0.1
+version: 2.1.0
 author: Ryan
 created: 2026-09-08
 tags: [meta, facebook, instagram, odax, advantage-plus, insights, pixel, capi, catalog]
@@ -40,6 +40,11 @@ Business / User
 Meta 的广告目标需要先确定用户真正要优化的结果，再映射到当前 Schema 支持的 objective、
 optimization_goal、billing_event 和 promoted object。不要把自然语言“转化/获客/互动”直接
 当作任意枚举，也不要把旧版 objective 名称和当前 ODAX 目标混用。
+
+对“Meta 投放目标怎么选”这类知识讲解，按通用 `knowledge-explainer` Skill 组织回答，并优先使用
+`agents/knowledge/advertising/wiki/queries/meta-objective-selection.md` 中的选择表与决策路径。
+Meta 专属事实以 Wiki 和当前获准来源为准；不要重复维护第二套目标枚举，也不要把账户/API 版本相关
+配置说成固定平台事实。
 
 | 层级 | 负责什么 | 创建/更新前必须确认 |
 |---|---|---|

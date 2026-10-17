@@ -27,6 +27,9 @@ _READ_CUES = (
     "查一下", "查询", "列出", "查看", "获取", "检索", "搜索", "有哪些", "有啥",
     "哪几个", "哪些",
 )
+_READ_ACTION_CUES = tuple(
+    cue for cue in _READ_CUES if cue not in {"which", "what", "available"}
+)
 _WRITE_CUES = (
     "create", "update", "delete", "pause", "enable", "disable", "launch",
     "submit", "save", "publish", "edit", "change", "modify", "set",
@@ -150,6 +153,11 @@ def _is_read_only_request(user_input: str) -> bool:
     return True
 
 
+def _has_explicit_read_action(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    return any(_contains_cue(text, cue) for cue in _READ_ACTION_CUES)
+
+
 def _has_unnegated_write_cue(user_input: str) -> bool:
     text = str(user_input or "").casefold()
     for cue in _WRITE_CUES:
@@ -253,6 +261,15 @@ def _is_knowledge_followup(text: str) -> bool:
         _contains_cue(normalized, cue)
         for cue in _KNOWLEDGE_FOLLOWUP_CUES
     )
+
+
+def _is_short_comparative_followup(text: str) -> bool:
+    normalized = " ".join(str(text or "").casefold().split())
+    if not normalized or len(normalized) > 64:
+        return False
+    if re.match(r"^(?:(?:and|so)\s+)?(?:what|how)\s+about\b", normalized):
+        return True
+    return re.search(r"(?:呢|怎么样|如何)[?？。！!]*$", normalized) is not None
 
 
 def _relevance_score(query_terms: set[str], tool: Any) -> int:
@@ -433,6 +450,12 @@ class ToolSelector:
             return []
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
+        if (
+            _is_short_comparative_followup(text)
+            and not _has_explicit_read_action(verb_text)
+            and not _has_unnegated_write_cue(verb_text)
+        ):
+            return []
         prior_inputs = [
             str(item or "").strip()
             for item in (conversation_context or ())

@@ -1,7 +1,7 @@
 # LLM Wiki 索引
 
-> **版本**: v2.5.0
-> **更新时间**: 2026-10-13
+> **版本**: v2.6.0
+> **更新时间**: 2026-10-18
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
@@ -62,6 +62,7 @@ knowledge_base/
 | 用户问题 | 优先知识 |
 |---|---|
 | “这个平台的层级和父子关系是什么？” | `cross-platform-hierarchy` + 对应平台 `hierarchy` |
+| “Meta 的广告目标应该怎么选，Catalog Sales/私信属于哪一层？” | `queries/meta-objective-selection` + Meta `hierarchy-and-objectives` |
 | “怎么创建/修改广告？” | 对应平台 `constraints-and-workflows` + 当前 Tool schema |
 | “预算/出价怎么设？” | `bidding-and-budget` + 对应平台优化文档 |
 | “素材、受众怎么测？” | `creative-testing` + `targeting-and-audiences` |
@@ -86,17 +87,18 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-10-13，Runtime 实际加载 **69 个发布 Markdown 文档**：
+截至 2026-10-18，Runtime 实际加载 **71 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
 | Google | 14 | 1 个实体页 + 13 篇平台规则、Search/PMax、Campaign/Search Runbook、转化、GAQL、报表与优化 |
-| Meta | 12 | 1 个实体页 + 11 篇平台规则、ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
+| Meta | 13 | 1 个实体页 + 11 篇平台规则 + 1 篇目标选择 Query，覆盖 ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
 | TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
 | DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |
 | 跨平台业务 | 14 | 四平台总览、层级、行业、预算节奏、边际效率、受众、创意、数据契约、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
 | 经验方法 | 4 | 诊断、实验、最佳实践、错误模式 |
 | 对比页 | 1 | 四个平台的对象、强项和优先核对项 |
+| 概念页 | 1 | Provider live E2E 的测试记忆与恢复规则 |
 
 平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。跨平台创意知识新增了证据驱动路线图、探索/扩量状态、制作产能和 Hook 到业务结果的诊断；审计知识区分健康度与证据覆盖率；实验与归因知识明确统计结论和因果边界；Google 报表知识补充搜索词可见性、转化动作粒度、日期口径和模拟数据边界。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
 

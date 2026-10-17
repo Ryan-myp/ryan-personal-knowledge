@@ -43,6 +43,17 @@ class _Completions:
         return self.response
 
 
+class _QueuedCompletions:
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.requests = []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        index = min(len(self.requests) - 1, len(self.responses) - 1)
+        return self.responses[index]
+
+
 def _client(message, *, usage=None):
     completions = _Completions(SimpleNamespace(
         choices=[SimpleNamespace(message=message, finish_reason="tool_calls")],
@@ -245,6 +256,86 @@ def test_llm_client_rejects_a_tool_not_in_the_active_catalog(caplog):
     assert "LLM Tool-call response rejected" in caplog.text
     assert "tool_not_in_active_catalog" in caplog.text
     assert "delete_everything" not in caplog.text
+
+
+def test_llm_client_retries_unknown_tool_once_without_executing_it():
+    rejected = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(
+                name="tiktok_unknown_tool",
+                arguments='{"account_id":"must-not-be-forwarded"}',
+            ),
+        )],
+    )
+    accepted = SimpleNamespace(
+        content="TikTok 目标应根据你要优化的业务结果来选。",
+        tool_calls=[],
+    )
+    responses = [
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=rejected, finish_reason="tool_calls")],
+            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+        ),
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=accepted, finish_reason="stop")],
+            usage=SimpleNamespace(prompt_tokens=13, completion_tokens=5),
+        ),
+    ]
+    completions = _QueuedCompletions(*responses)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("tiktok ads 呢")],
+        [_tool()],
+        TurnRequest(user_input="tiktok ads 呢"),
+    )
+
+    assert result.content == "TikTok 目标应根据你要优化的业务结果来选。"
+    assert result.tool_calls == ()
+    assert len(completions.requests) == 2
+    retry_messages = completions.requests[1]["messages"]
+    assert any(
+        "not included in the active Tool list" in str(item.get("content", ""))
+        for item in retry_messages
+    )
+    assert "must-not-be-forwarded" not in json.dumps(retry_messages)
+    assert result.usage["input_tokens"] == 24
+    assert result.usage["output_tokens"] == 12
+    assert result.usage["llm_requests"] == 2
+
+
+def test_llm_client_stops_after_one_failed_unknown_tool_repair(caplog):
+    invalid = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(name="private_write", arguments="{}"),
+        )],
+    )
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=invalid, finish_reason="tool_calls")],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    completions = _QueuedCompletions(response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    with pytest.raises(LLMStructuredOutputError):
+        client.complete(
+            [AgentMessage.user("do it")],
+            [_tool()],
+            TurnRequest(user_input="do it"),
+        )
+
+    assert len(completions.requests) == 2
+    assert "private_write" not in caplog.text
 
 
 def test_llm_client_rejects_duplicate_tool_call_ids():

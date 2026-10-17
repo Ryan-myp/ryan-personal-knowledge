@@ -298,6 +298,75 @@ def test_relevant_tool_selection_returns_empty_for_unmatched_request():
     assert ToolSelector().select_relevant("Tell me a joke", tools) == []
 
 
+def test_short_channel_comparison_followup_does_not_expose_provider_tools():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="List Meta campaigns",
+        ),
+        _definition(
+            "tiktok_list_campaigns",
+            namespace="tiktok",
+            action="list",
+            resource="campaign",
+            description="List TikTok campaigns",
+        ),
+        _definition(
+            "tiktok_create_campaign",
+            namespace="tiktok",
+            action="create",
+            resource="campaign",
+            description="Create a TikTok campaign",
+        ),
+    ]
+    selector = ToolSelector()
+
+    assert selector.select_relevant(
+        "tiktok ads 呢",
+        tools,
+        conversation_context=("Meta 广告投放目标应该怎么选？",),
+    ) == []
+    assert selector.select_relevant(
+        "What about TikTok Ads?",
+        tools,
+        conversation_context=("How should I choose a Meta campaign objective?",),
+    ) == []
+
+
+def test_actionable_channel_followup_still_selects_matching_provider_tool():
+    tools = [
+        _definition(
+            "tiktok_list_campaigns",
+            namespace="tiktok",
+            action="list",
+            resource="campaign",
+            description="List TikTok campaigns",
+        ),
+        _definition(
+            "tiktok_create_campaign",
+            namespace="tiktok",
+            action="create",
+            resource="campaign",
+            description="Create a TikTok campaign",
+        ),
+    ]
+    selector = ToolSelector()
+
+    assert [
+        item.name for item in selector.select_relevant(
+            "查询 TikTok campaign 列表",
+            tools,
+        )
+    ] == ["tiktok_list_campaigns"]
+    selected = selector.select_relevant("创建 TikTok campaign", tools)
+    assert "tiktok_create_campaign" in {
+        item.name for item in selected
+    }
+
+
 def test_self_contained_architecture_request_ignores_previous_provider_query():
     tools = [
         _definition(

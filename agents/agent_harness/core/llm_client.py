@@ -226,83 +226,157 @@ class LLMClient:
                     kwargs["max_tokens"] = max_tokens
 
         collector = _ACTIVE_USAGE_COLLECTOR.get()
-        if collector is not None:
-            collector.add({"llm_requests": 1})
-        try:
-            response = self._get_client().chat.completions.create(**kwargs)
-        except Exception as error:
-            error_details = self._safe_error_details(error)
-            request_shape = self._request_shape(provider_messages, provider_tools)
-            logger.error(
-                "LLM Tool-call generation failed: error_class=%s "
-                "status_code=%s api_error_type=%s api_error_code=%s "
-                "api_error_param=%s api_error_category=%s "
-                "message_count=%s tool_count=%s request_chars=%s "
-                "max_message_chars=%s system_chars=%s user_chars=%s "
-                "assistant_chars=%s tool_result_chars=%s tool_schema_chars=%s",
-                type(error).__name__,
-                error_details["status_code"],
-                error_details["api_error_type"],
-                error_details["api_error_code"],
-                error_details["api_error_param"],
-                error_details["api_error_category"],
-                request_shape["message_count"],
-                request_shape["tool_count"],
-                request_shape["request_chars"],
-                request_shape["max_message_chars"],
-                request_shape["system_chars"],
-                request_shape["user_chars"],
-                request_shape["assistant_chars"],
-                request_shape["tool_result_chars"],
-                request_shape["tool_schema_chars"],
+        usage_totals = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_write_input_tokens": 0,
+            "llm_requests": 0,
+        }
+        attempt_messages = provider_messages
+        attempt = 0
+        while True:
+            kwargs["messages"] = attempt_messages
+            if collector is not None:
+                collector.add({"llm_requests": 1})
+            try:
+                response = self._get_client().chat.completions.create(**kwargs)
+            except Exception as error:
+                error_details = self._safe_error_details(error)
+                request_shape = self._request_shape(attempt_messages, provider_tools)
+                logger.error(
+                    "LLM Tool-call generation failed: error_class=%s "
+                    "status_code=%s api_error_type=%s api_error_code=%s "
+                    "api_error_param=%s api_error_category=%s "
+                    "message_count=%s tool_count=%s request_chars=%s "
+                    "max_message_chars=%s system_chars=%s user_chars=%s "
+                    "assistant_chars=%s tool_result_chars=%s tool_schema_chars=%s",
+                    type(error).__name__,
+                    error_details["status_code"],
+                    error_details["api_error_type"],
+                    error_details["api_error_code"],
+                    error_details["api_error_param"],
+                    error_details["api_error_category"],
+                    request_shape["message_count"],
+                    request_shape["tool_count"],
+                    request_shape["request_chars"],
+                    request_shape["max_message_chars"],
+                    request_shape["system_chars"],
+                    request_shape["user_chars"],
+                    request_shape["assistant_chars"],
+                    request_shape["tool_result_chars"],
+                    request_shape["tool_schema_chars"],
+                )
+                raise
+
+            response_usage = self._normalize_usage(
+                getattr(response, "usage", None)
             )
-            raise
-        try:
-            choice = next(iter(getattr(response, "choices", ()) or ()), None)
-            if choice is None:
-                raise LLMStructuredOutputError(
-                    "LLM response did not contain a choice"
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "cache_read_input_tokens",
+                "cache_write_input_tokens",
+            ):
+                usage_totals[key] += response_usage[key]
+            usage_totals["llm_requests"] += 1
+            if collector is not None:
+                collected_usage = dict(response_usage)
+                collected_usage["llm_requests"] = 0
+                collector.add(collected_usage)
+
+            try:
+                choice = next(iter(getattr(response, "choices", ()) or ()), None)
+                if choice is None:
+                    raise LLMStructuredOutputError(
+                        "LLM response did not contain a choice"
+                    )
+                message = getattr(choice, "message", None)
+                if message is None:
+                    raise LLMStructuredOutputError(
+                        "LLM response did not contain a message"
+                    )
+                allowed_names = {
+                    self._tool_value(tool, "name") for tool in tools or ()
+                }
+                raw_calls = tuple(getattr(message, "tool_calls", None) or ())
+                if len(raw_calls) > self.max_tool_calls_per_response:
+                    raise LLMStructuredOutputError(
+                        "LLM returned too many Tool calls in one response"
+                    )
+                calls = tuple(
+                    self._tool_call(item, allowed_names) for item in raw_calls
                 )
-            message = getattr(choice, "message", None)
-            if message is None:
-                raise LLMStructuredOutputError(
-                    "LLM response did not contain a message"
+                call_ids = [item.id for item in calls]
+                if len(call_ids) != len(set(call_ids)):
+                    raise LLMStructuredOutputError(
+                        "LLM returned duplicate Tool call ids"
+                    )
+            except LLMStructuredOutputError as error:
+                can_repair = (
+                    attempt == 0
+                    and bool(provider_tools)
+                    and getattr(request, "initial_tool_choice", None)
+                    in (None, "auto")
+                    and error.safe_reason_code == "tool_not_in_active_catalog"
                 )
-            allowed_names = {
-                self._tool_value(tool, "name") for tool in tools or ()
-            }
-            raw_calls = tuple(getattr(message, "tool_calls", None) or ())
-            if len(raw_calls) > self.max_tool_calls_per_response:
-                raise LLMStructuredOutputError(
-                    "LLM returned too many Tool calls in one response"
+                if can_repair:
+                    logger.warning(
+                        "LLM requested a Tool outside the active catalog; "
+                        "retrying once with a constrained reminder"
+                    )
+                    attempt_messages = self._tool_catalog_repair_messages(
+                        provider_messages
+                    )
+                    attempt += 1
+                    continue
+                logger.error(
+                    "LLM Tool-call response rejected: reason=%s",
+                    self._structured_error_reason(error),
                 )
-            calls = tuple(
-                self._tool_call(item, allowed_names) for item in raw_calls
+                raise
+
+            return ModelTurn(
+                content=getattr(message, "content", None) or "",
+                tool_calls=calls,
+                stop_reason=(
+                    "tool_call" if calls
+                    else str(getattr(choice, "finish_reason", None) or "stop")
+                ),
+                usage=usage_totals,
             )
-            call_ids = [item.id for item in calls]
-            if len(call_ids) != len(set(call_ids)):
-                raise LLMStructuredOutputError(
-                    "LLM returned duplicate Tool call ids"
-                )
-        except LLMStructuredOutputError as error:
-            logger.error(
-                "LLM Tool-call response rejected: reason=%s",
-                self._structured_error_reason(error),
-            )
-            raise
-        usage = self._normalize_usage(getattr(response, "usage", None))
-        if collector is not None:
-            usage["llm_requests"] = 0
-            collector.add(usage)
-        return ModelTurn(
-            content=getattr(message, "content", None) or "",
-            tool_calls=calls,
-            stop_reason=(
-                "tool_call" if calls
-                else str(getattr(choice, "finish_reason", None) or "stop")
+
+    @staticmethod
+    def _tool_catalog_repair_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Add a bounded correction without preserving rejected Tool payloads."""
+        repaired = [dict(item) for item in messages]
+        correction = {
+            "role": "system",
+            "content": (
+                "Your previous response requested a Tool that is not included in "
+                "the active Tool list. That request was rejected and no Tool was "
+                "executed. Retry this turn using only the exact Tools supplied. "
+                "If this is an informational question and no supplied Tool is "
+                "needed, answer directly from the conversation and provided "
+                "context; do not invent Tool names or claim that an operation ran."
             ),
-            usage=usage,
+        }
+        last_user_index = next(
+            (
+                index for index in range(len(repaired) - 1, -1, -1)
+                if repaired[index].get("role") == "user"
+            ),
+            None,
         )
+        if last_user_index is None:
+            repaired.append(correction)
+        else:
+            repaired.insert(last_user_index, correction)
+        return repaired
 
     @classmethod
     def _attach_input_media(

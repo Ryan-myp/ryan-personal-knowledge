@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0 - 2026-10-18
+
+- Meta 目标选择问题统一使用 `knowledge-explainer` 的通用回答方法。
+- 目标选择事实以 Wiki Query 为来源，避免重复维护枚举和账户/API 版本相关配置。
+
 ## 2.0.0 - 2026-09-08
 
 - 重写 Meta Campaign/Ad Set/Ad、资产依赖和 ODAX 目标判断。

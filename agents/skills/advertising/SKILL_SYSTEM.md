@@ -57,6 +57,7 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 
 | 本地来源 | 系统落点 | 不导入的部分 |
 |---|---|---|
+| 本项目广告 Wiki 与已验证的知识问答模式 | `practices/knowledge-explainer` 的结论优先、层级解释、场景分支和证据边界 | 不复制 Wiki 中的平台事实；不增加 Tool、账户查询或执行权限 |
 | `ad-creative` 2.10.0 | `practices/creative-strategy` 与 Wiki 的创意路线图、Hook 漏斗诊断 | 生成素材的外部服务、抓取/上传脚本和特定平台规格副本 |
 | `ads` 2.4.6；上游 `operating-check` 参考（2026-10-18） | `practices/account-diagnostics` 的通用审计、Google Search Terms/转化、Meta Insights 解读和日/周 HOLD/FIX/TEST/INVESTIGATE 运营检查 | 未注册报表能力对应的审计项、外部抓取流程和固定表现阈值 |
 | `ab-testing` 2.0.1 | `practices/experimentation-design`、Wiki 的实验方法；触发后按需加载实验设计 reference | 上游固定样本量表、统计计算器或自动平台实验执行 |

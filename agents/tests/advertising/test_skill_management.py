@@ -31,6 +31,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "creative-strategy", "account-diagnostics", "experimentation-design",
         "measurement-attribution", "measurement-instrumentation",
         "ad-copywriting", "paid-landing-page-review",
+        "knowledge-explainer",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -59,6 +60,9 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     landing_page = catalog.get_version("paid-landing-page-review", "1.0.0")
     assert landing_page["location"] == "practices/paid-landing-page-review"
     assert "references/post-click-audit.md" in landing_page["files"]
+    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.0")
+    assert knowledge_explainer["location"] == "practices/knowledge-explainer"
+    assert "references/answer-structure.md" in knowledge_explainer["files"]
 
 
 def _files(name="business-growth"):
@@ -241,6 +245,30 @@ def test_marketplace_copywriting_and_post_click_skills_are_advisory():
         assert "[skill guidance: paid-landing-page-review]" in landing_context
         assert "references/post-click-audit.md" in landing_context
         assert "不代表已经访问页面" in landing_context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_builtin_knowledge_explainer_guides_explanations_without_routing_queries():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        skill = runtime.skill_loader.get("knowledge-explainer")
+        assert skill is not None
+        assert skill.get_tools() == []
+
+        context = runtime.tool_selector._triggered_skill_context(
+            "Meta Catalog Sales 和 conversion 有什么区别，应该怎么理解？"
+        )
+        assert "[skill guidance: knowledge-explainer]" in context
+        assert "先给结论" in context
+        assert "平台事实" in context
+        assert "references/answer-structure.md" in context
+        assert "不会新增 Tool、权限或账户范围" in context
+
+        query_context = runtime.tool_selector._triggered_skill_context(
+            "查询 TikTok campaign 列表"
+        )
+        assert "[skill guidance: knowledge-explainer]" not in query_context
     finally:
         runtime.close(wait=True)
 

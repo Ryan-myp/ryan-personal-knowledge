@@ -1,5 +1,13 @@
 # LLM Wiki 更新日志
 
+## 2026-10-18
+
+- 根据 Meta“投放目标”对话整理一篇可复用 Query 页面，按业务结果区分六类 Objective，并澄清 Catalog Sales、Messages、Conversion 与 Ad Set 优化目标的层级。
+- 对照 Meta 官方 Business 目标入口及官方 Marketing API SDK；动态可用组合仍要求按当前账户、API 版本和 Tool schema 验证。
+- Meta Skill 增加目标讲解回答结构与固定阈值、能力清单边界。
+- 新增 4 条 Meta 目标选择检索回归用例；运行前 Hit@3 从 1.000 降至 0.879，新增 Query 后复测。
+- Wiki 运行时文档统计更新为 71 篇。
+
 ## 2026-10-13
 
 - 将创意路线图、按探索/扩量状态规划、制作产能约束、Hook 漏斗诊断和复盘闭环
