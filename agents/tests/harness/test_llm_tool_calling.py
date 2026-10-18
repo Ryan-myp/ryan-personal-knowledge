@@ -309,6 +309,54 @@ def test_llm_client_retries_unknown_tool_once_without_executing_it():
     assert result.usage["llm_requests"] == 2
 
 
+def test_llm_client_recovers_from_unoffered_tool_call_when_catalog_is_empty():
+    rejected = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(
+                name="tiktok_list_targeting_options",
+                arguments='{"account_id":"must-not-be-forwarded"}',
+            ),
+        )],
+    )
+    accepted = SimpleNamespace(
+        content="定向设置用于约束广告触达的人群范围。",
+        tool_calls=[],
+    )
+    completions = _QueuedCompletions(
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=rejected, finish_reason="tool_calls")],
+            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+        ),
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=accepted, finish_reason="stop")],
+            usage=SimpleNamespace(prompt_tokens=13, completion_tokens=5),
+        ),
+    )
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("定向设置详解")],
+        [],
+        TurnRequest(user_input="定向设置详解"),
+    )
+
+    assert result.content == "定向设置用于约束广告触达的人群范围。"
+    assert result.tool_calls == ()
+    assert len(completions.requests) == 2
+    assert all("tools" not in request for request in completions.requests)
+    retry_messages = completions.requests[1]["messages"]
+    assert any(
+        "not included in the active Tool list" in str(item.get("content", ""))
+        for item in retry_messages
+    )
+    assert "must-not-be-forwarded" not in json.dumps(retry_messages)
+
+
 def test_llm_client_stops_after_one_failed_unknown_tool_repair(caplog):
     invalid = SimpleNamespace(
         content="",

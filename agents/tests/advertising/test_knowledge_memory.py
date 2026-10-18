@@ -113,6 +113,77 @@ def test_builtin_wiki_exposes_navigation_categories_for_each_platform():
     assert "campaign_operations" in categories["dv360"]
 
 
+def test_builtin_platform_overviews_do_not_rank_reference_only_sections():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    cases = (
+        ("讲下 Google Ads 相关知识", "google-ads-entity"),
+        ("介绍一下 Meta Ads 的基础知识", "meta-ads-entity"),
+        ("介绍一下 TikTok Ads 的基础知识", "tiktok-ads-entity"),
+        ("讲下 DV360 程序化广告的基础知识", "dv360-entity"),
+    )
+    link_only_headings = {
+        "参考", "官方参考", "references", "official references", "知识入口",
+    }
+
+    for query, expected_top_document in cases:
+        results = provider.query(query, limit=4)
+
+        assert results, query
+        assert results[0].document_id == expected_top_document, query
+        assert all(
+            result.section.casefold() not in link_only_headings
+            for result in results
+        ), query
+        assert any(
+            result.excerpt.strip() and "https://" not in result.excerpt
+            for result in results
+        ), query
+
+
+def test_wiki_recognizes_described_wikilink_navigation_sections():
+    is_navigation = MarkdownWikiKnowledgeProvider._is_link_only_navigation_section
+
+    assert is_navigation(
+        ("知识入口",),
+        "- [[Google Ads Runbook]]：资源关系、创建前检查与回读。\n"
+        "- [[Google Ads Reporting]]：GAQL、分页和报表口径。",
+    )
+    assert not is_navigation(
+        ("知识入口",),
+        "Google Ads 的 Campaign 组织预算和目标，Ad Group 管理关键词与广告。\n"
+        "- [[Google Ads Runbook]]：创建与回读。",
+    )
+
+
+def test_wiki_does_not_retrieve_reference_only_chunks_as_knowledge(tmp_path):
+    (tmp_path / "platforms" / "google").mkdir(parents=True)
+    (tmp_path / "platforms" / "google" / "overview.md").write_text(
+        "---\n"
+        "id: google-platform-overview\n"
+        "title: Google Ads 基础概览\n"
+        "platform: google-ads\n"
+        "source_ref: https://developers.google.com/google-ads/api/docs\n"
+        "status: published\n"
+        "---\n\n"
+        "# Google Ads 基础概览\n\n"
+        "## 平台结构\n\n"
+        "Google Ads 使用 Customer、Campaign、Ad Group 和 Ad 等资源层级；"
+        "不同广告系列类型会使用不同的子资源与素材。\n\n"
+        "## 官方参考\n\n"
+        "- [Google Ads API campaigns](https://developers.google.com/google-ads/api/docs/campaigns/overview)\n"
+        "- [Google Ads API ads](https://developers.google.com/google-ads/api/docs/ads/overview)\n",
+        encoding="utf-8",
+    )
+    provider = MarkdownWikiKnowledgeProvider(tmp_path)
+
+    results = provider.query("Google Ads platform campaign ad hierarchy", limit=3)
+
+    assert len(results) == 1
+    assert results[0].section == "平台结构"
+    assert "Customer" in results[0].excerpt
+
+
 def test_builtin_wiki_retrieves_audit_evidence_coverage_guidance():
     provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
 

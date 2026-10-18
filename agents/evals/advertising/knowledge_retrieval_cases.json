@@ -1,5 +1,9 @@
 [
   {"query": "Google Search 关键词和广告组怎么创建", "expected": ["google-canonical-campaign-and-search-runbook", "google-campaign-hierarchy"]},
+  {"query": "讲下 Google Ads 相关知识", "expected": ["google-ads-entity"], "expected_top": "google-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
+  {"query": "介绍一下 Meta Ads 的基础知识", "expected": ["meta-ads-entity"], "expected_top": "meta-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
+  {"query": "介绍一下 TikTok Ads 的基础知识", "expected": ["tiktok-ads-entity"], "expected_top": "tiktok-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
+  {"query": "讲下 DV360 程序化广告的基础知识", "expected": ["dv360-entity"], "expected_top": "dv360-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
   {"query": "Google PMax 商品源 资产组 价值出价", "expected": ["google-pmax-feed-assets-and-value-bidding", "google-shopping-pmax-operations"]},
   {"query": "Google 增强型转化 离线回传", "expected": ["google-conversion-tracking-and-enhanced-conversions", "google-ads-measurement-and-diagnostics"]},
   {"query": "Google GAQL 分段分页报表", "expected": ["google-gaql-segmentation-and-reporting-diagnostics", "google-api-operations-and-reporting"]},

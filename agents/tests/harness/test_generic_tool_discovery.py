@@ -87,6 +87,42 @@ def test_read_request_does_not_select_write_tools_and_remains_bounded():
     assert [item.name for item in selected] == ["find_campaigns"]
 
 
+def test_compound_list_and_detail_request_keeps_both_read_tools():
+    tools = [
+        _definition(
+            "meta_list_campaigns",
+            namespace="meta",
+            action="list",
+            resource="campaign",
+            description="List Meta campaigns",
+        ),
+        _definition(
+            "meta_get_campaign",
+            namespace="meta",
+            action="get",
+            resource="campaign",
+            description="Get one Meta campaign by ID",
+        ),
+    ]
+
+    selector = ToolSelector()
+    list_only = selector.select_relevant(
+        "查询 Meta campaign 列表",
+        tools,
+    )
+    assert [item.name for item in list_only] == ["meta_list_campaigns"]
+
+    selected = selector.select_relevant(
+        "查询 Meta campaign 列表和详情",
+        tools,
+    )
+
+    assert {item.name for item in selected} == {
+        "meta_list_campaigns",
+        "meta_get_campaign",
+    }
+
+
 def test_explicit_tool_name_narrows_selection_to_the_named_registered_tool():
     tools = [
         _definition(
@@ -475,6 +511,116 @@ def test_advertising_process_explanations_do_not_select_provider_tools():
             tools,
             conversation_context=("查询 Meta campaign 列表",),
         ) == []
+
+
+def test_targeting_setting_explanation_does_not_select_provider_tools():
+    tools = [
+        _definition(
+            "tiktok_list_targeting_options",
+            namespace="tiktok",
+            action="list",
+            resource="targeting_options",
+            description="查询 TikTok 定向和兴趣选项",
+        ),
+        _definition(
+            "tiktok_update_ad_group",
+            namespace="tiktok",
+            action="update",
+            resource="ad_group",
+            description="更新 TikTok 广告组定向设置",
+        ),
+    ]
+    selector = ToolSelector()
+
+    for request in (
+        "定向设置详解",
+        "详细讲解 TikTok 受众定向设置",
+        "What is audience targeting?",
+    ):
+        assert selector.select_relevant(
+            request,
+            tools,
+            conversation_context=("查询 TikTok campaign 列表",),
+        ) == [], request
+
+    assert [
+        item.name for item in selector.select_relevant(
+            "查询 TikTok 定向选项",
+            tools,
+        )
+    ] == ["tiktok_list_targeting_options"]
+    updated = {
+        item.name for item in selector.select_relevant(
+            "帮我更新 TikTok 广告组定向",
+            tools,
+        )
+    }
+    assert "tiktok_update_ad_group" in updated
+
+
+def test_broad_channel_knowledge_requests_do_not_select_account_tools():
+    tools = [
+        _definition(
+            "google_list_accounts",
+            namespace="google-ads",
+            action="list",
+            resource="account",
+            description="List Google Ads accounts",
+        ),
+        _definition(
+            "google_list_campaigns",
+            namespace="google-ads",
+            action="list",
+            resource="campaign",
+            description="List campaigns for a Google Ads account",
+        ),
+        _definition(
+            "google_get_campaign",
+            namespace="google-ads",
+            action="get",
+            resource="campaign",
+            description="Get a Google Ads campaign",
+        ),
+        _definition(
+            "google_update_campaign",
+            namespace="google-ads",
+            action="update",
+            resource="campaign",
+            description="Update a Google Ads campaign",
+        ),
+        _definition(
+            "tiktok_list_accounts",
+            namespace="tiktok",
+            action="list",
+            resource="account",
+            description="List TikTok advertiser accounts",
+        ),
+    ]
+    selector = ToolSelector()
+
+    for request in (
+        "讲下Google ads相关知识",
+        "讲下Google Ads相关知识，使用账户 1234567890 继续",
+        "介绍一下 TikTok Ads 的基础知识",
+    ):
+        assert selector.select_relevant(
+            request,
+            tools,
+            conversation_context=("查询 Google Ads campaign 列表",),
+        ) == [], request
+
+    assert [
+        item.name for item in selector.select_relevant(
+            "查询 Google Ads campaign 列表",
+            tools,
+        )
+    ] == ["google_list_campaigns"]
+    assert "google_update_campaign" in {
+        item.name for item in selector.select_relevant(
+            "讲下 Google Ads 相关知识，并更新 campaign budget",
+            tools,
+        )
+    }
 
 
 def test_explicit_campaign_operations_remain_routable_with_process_language():

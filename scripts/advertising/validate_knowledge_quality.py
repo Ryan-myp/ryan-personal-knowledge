@@ -59,10 +59,26 @@ def main() -> int:
         leakage = 0
         negative_cases = 0
         negative_failures = 0
+        top1_cases = 0
+        top1_hits = 0
+        link_only_section_leakage = 0
         for case in cases:
             expected = set(case["expected"])
             results = current_provider.query(case["query"], limit=3)
             result_ids = [result.document_id for result in results]
+            expected_top = str(case.get("expected_top") or "").strip()
+            if expected_top:
+                top1_cases += 1
+                top1_hits += bool(result_ids and result_ids[0] == expected_top)
+            forbidden_sections = {
+                str(item).strip().casefold()
+                for item in case.get("forbidden_sections", [])
+            }
+            if any(
+                result.section.strip().casefold() in forbidden_sections
+                for result in results
+            ):
+                link_only_section_leakage += 1
             is_negative = bool(
                 case.get("expect_empty")
                 or case.get("forbidden_platforms")
@@ -123,6 +139,11 @@ def main() -> int:
             "mrr": round(sum(reciprocal_ranks) / positive_total, 3),
             "leakage": leakage,
             "negative_failures": negative_failures,
+            "top1_cases": top1_cases,
+            "top1_accuracy": round(
+                top1_hits / top1_cases if top1_cases else 1.0, 3
+            ),
+            "link_only_section_leakage": link_only_section_leakage,
         }
 
     semantic_provider = MarkdownWikiKnowledgeProvider(
@@ -159,10 +180,14 @@ def main() -> int:
         lexical["hit_at_3"] < 0.9
         or lexical["leakage"] > 1
         or lexical["negative_failures"]
+        or lexical["top1_accuracy"] < 1.0
+        or lexical["link_only_section_leakage"]
         or metrics["semantic"]["leakage"] > 1
         or metrics["semantic"]["negative_failures"]
+        or metrics["semantic"]["link_only_section_leakage"]
         or metrics["hybrid"]["leakage"] > 1
         or metrics["hybrid"]["negative_failures"]
+        or metrics["hybrid"]["link_only_section_leakage"]
     ):
         return 1
     return 0

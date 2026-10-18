@@ -201,6 +201,94 @@ test('Mermaid flowcharts render with strict settings and sanitized SVG', async (
     delete context.document;
 });
 
+test('Mermaid repairs quoted edge labels from generated diagrams before rendering', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(_id, source) {
+                rendered.push(source);
+                return { svg: '<svg></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement(tagName) {
+            return new MockElement(tagName);
+        },
+        body: new MockElement('body'),
+    };
+    const pre = {
+        classList: { add() {} },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = {
+        className: 'language-mermaid',
+        textContent: [
+            'flowchart TB',
+            'subgraph Traditional["传统手动模式"]',
+            '    T1["手动选受众"]',
+            'end',
+            'Traditional --> "操作复杂<br>学习成本高"',
+            'Smart --> "简单易用<br>算法驱动"',
+        ].join('\n'),
+        parentElement: pre,
+    };
+    const root = {
+        querySelectorAll: selector => selector === 'pre > code' ? [code] : [],
+    };
+
+    await context.renderMermaidDiagrams(root);
+
+    assert.equal(rendered.length, 1);
+    assert.match(
+        rendered[0],
+        /Traditional --> ChatGeneratedNode1\["操作复杂<br>学习成本高"\]/,
+    );
+    assert.match(
+        rendered[0],
+        /Smart --> ChatGeneratedNode2\["简单易用<br>算法驱动"\]/,
+    );
+    assert.equal(pre.replacedWith.className, 'mermaid-diagram');
+    delete context.window;
+    delete context.document;
+});
+
+test('Mermaid render failures preserve source and identify syntax errors', async () => {
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render() {
+                throw new Error('parser detail is not exposed');
+            },
+        },
+    };
+    context.document = { createElement: tagName => new MockElement(tagName) };
+    const pre = {
+        attributes: {},
+        classList: { add() {} },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        replaceWith() {},
+    };
+    const code = {
+        className: 'language-mermaid',
+        textContent: 'flowchart TB\nA --> B',
+        parentElement: pre,
+    };
+
+    await context.renderMermaidDiagrams({
+        querySelectorAll: selector => selector === 'pre > code' ? [code] : [],
+    });
+
+    assert.equal(pre.attributes['data-render-failure'], 'syntax');
+    assert.equal(
+        pre.attributes.title,
+        '流程图语法或安全校验失败，已保留源码；请检查节点 ID 和连线写法。',
+    );
+    delete context.window;
+    delete context.document;
+});
+
 test('Mermaid configuration directives stay visible and are not executed', async () => {
     const rendered = [];
     context.window = {

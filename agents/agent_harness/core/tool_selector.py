@@ -132,12 +132,11 @@ class DynamicToolSelector:
     ) -> dict:
         """Build bounded Skill context before intent parsing.
 
-        Intent parsing used to happen before the selector was consulted, which
-        meant the LLM never saw the channel tool contracts or expert guidance
-        that the selector had already prepared.  Use an intentionally neutral
-        intent here: it only narrows by detected namespace and keeps the first
-        few registered tools, while the authoritative post-parse route still
-        comes from ``IntentRouter``.
+        Keep the namespace-filtered Tool set policy-safe, then rank it against
+        the current request. Conceptual questions receive advisory Wiki/Skill
+        context without account-operation Tool contracts; operational requests
+        still expose only relevant registered Tools. The authoritative
+        post-parse route remains owned by ``IntentRouter``.
         """
         namespaces = self._detect_namespaces(user_input, available_tools)
         probe_intent = ParsedIntent(
@@ -146,6 +145,13 @@ class DynamicToolSelector:
             namespaces=namespaces,
         )
         selection = self.select_tools(user_input, probe_intent, available_tools)
+        selection.selected_tools = self._selector.select_relevant(
+            user_input,
+            selection.selected_tools,
+        )
+        selection.expert_knowledge = self._merge_expert_knowledge(
+            selection.selected_tools
+        )
         knowledge = self._query_knowledge(
             user_input, namespaces, intent_type=intent_type, tenant_id=tenant_id
         )

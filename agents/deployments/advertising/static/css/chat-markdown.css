@@ -48,6 +48,15 @@ body .message .message-content-text > :last-child { margin-bottom: 0; }
     line-height: 1.5;
     white-space: normal;
 }
+.message-content-text pre.mermaid-render-fallback[data-render-failure="syntax"]::before {
+    content: "流程图语法或安全校验失败，已保留源码；请检查节点 ID 和连线写法";
+}
+.message-content-text pre.mermaid-render-fallback[data-render-failure="renderer"]::before {
+    content: "本地流程图渲染器加载失败，已保留原始源码";
+}
+.message-content-text pre.mermaid-render-fallback[data-render-failure="restricted"]::before {
+    content: "流程图超出安全限制，已保留原始源码";
+}
 .mermaid-diagram {
     position: relative;
     box-sizing: border-box;

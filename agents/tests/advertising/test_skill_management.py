@@ -60,7 +60,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     landing_page = catalog.get_version("paid-landing-page-review", "1.0.0")
     assert landing_page["location"] == "practices/paid-landing-page-review"
     assert "references/post-click-audit.md" in landing_page["files"]
-    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.0")
+    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.4")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
 
@@ -257,13 +257,42 @@ def test_builtin_knowledge_explainer_guides_explanations_without_routing_queries
         assert skill.get_tools() == []
 
         context = runtime.tool_selector._triggered_skill_context(
-            "Meta Catalog Sales 和 conversion 有什么区别，应该怎么理解？"
+            "定向设置详解"
         )
         assert "[skill guidance: knowledge-explainer]" in context
         assert "先给结论" in context
         assert "平台事实" in context
         assert "references/answer-structure.md" in context
         assert "不会新增 Tool、权限或账户范围" in context
+
+        for flow_request in (
+            "我现在不创建，先给我讲 TikTok Smart+ Campaign 流程吧",
+            "帮我画一下 TikTok Smart+ Campaign 的创建流程图",
+        ):
+            flow_context = runtime.tool_selector._triggered_skill_context(
+                flow_request
+            )
+            assert "[skill guidance: knowledge-explainer]" in flow_context
+            assert "连线端点都使用明确的节点 ID" in flow_context
+
+        for knowledge_request in (
+            "讲下Google ads相关知识",
+            "介绍一下 TikTok Ads 的基础知识",
+        ):
+            knowledge_context = runtime.tool_selector._triggered_skill_context(
+                knowledge_request
+            )
+            assert "[skill guidance: knowledge-explainer]" in knowledge_context
+
+        context = runtime.tool_selector.build_context_for_input(
+            "讲下Google ads相关知识",
+            runtime.registry.list_all(),
+        )
+        assert context["tool_prompt"] == "暂无可用工具"
+        assert any(
+            item["document_id"] == "google-ads-entity"
+            for item in context["knowledge"]
+        )
 
         query_context = runtime.tool_selector._triggered_skill_context(
             "查询 TikTok campaign 列表"

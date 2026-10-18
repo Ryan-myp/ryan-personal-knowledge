@@ -10,7 +10,7 @@
 
 ```text
 raw：原始来源、论文、代码片段和未经审核的材料
-entities：Google Ads / Meta Ads / TikTok Ads / DV360 等稳定实体
+entities：Google Ads / Meta Ads / TikTok Ads / DV360 等稳定实体，含中文概览与知识导航
 concepts：平台规则、业务方法、经验与诊断知识
 comparisons：跨平台对象模型、测量和策略对比
 queries：经过筛选、可复用的问答归档
@@ -61,6 +61,7 @@ knowledge_base/
 
 | 用户问题 | 优先知识 |
 |---|---|
+| “介绍一下某个广告平台/讲讲基础知识” | 对应 `entities/` 概览页，再按其知识入口深入专题 |
 | “这个平台的层级和父子关系是什么？” | `cross-platform-hierarchy` + 对应平台 `hierarchy` |
 | “Meta 的广告目标应该怎么选，Catalog Sales/私信属于哪一层？” | `queries/meta-objective-selection` + Meta `hierarchy-and-objectives` |
 | “怎么创建/修改广告？” | 对应平台 `constraints-and-workflows` + 当前 Tool schema |
@@ -101,6 +102,8 @@ knowledge_base/
 | 概念页 | 1 | Provider live E2E 的测试记忆与恢复规则 |
 
 平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。跨平台创意知识新增了证据驱动路线图、探索/扩量状态、制作产能和 Hook 到业务结果的诊断；审计知识区分健康度与证据覆盖率；实验与归因知识明确统计结论和因果边界；Google 报表知识补充搜索词可见性、转化动作粒度、日期口径和模拟数据边界。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
+
+四个平台的实体页提供中文概览、核心对象职责和专题入口，适合回答“讲讲某渠道/基础知识”这类宽问题；遇到具体决策、字段、策略和排障时，继续引用对应专题，而不是把实体页当作完整事实来源。纯链接参考章节不参与知识片段排名，但文章级来源仍随检索结果返回。
 
 `ARCHITECTURE.md`、`SCHEMA.md`、`QUALITY_STANDARD.md`、`UPGRADE_SUMMARY.md`、`USAGE_GUIDE.md`、`index.md` 和 `log.md` 是维护文档，不进入 Agent 业务检索和前端知识目录；它们只用于解释知识库自身如何维护。
 

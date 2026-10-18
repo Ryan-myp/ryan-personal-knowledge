@@ -43,6 +43,7 @@ function formatContent(content) {
 const MAX_MERMAID_SOURCE_LENGTH = 12000;
 const MAX_MERMAID_DIAGRAMS_PER_MESSAGE = 8;
 const MERMAID_DIAGRAM_HEADER = /^(?:graph|flowchart|sequencediagram|classdiagram|statediagram(?:-v2)?|erdiagram|journey|gantt|pie|gitgraph|mindmap|timeline|quadrantchart|sankey-beta|xychart-beta)\b/i;
+const QUOTED_EDGE_LABEL = /^([ \t]*)([A-Za-z_][\w-]*)\s+-->\s+"([^"\r\n]+)"[ \t]*$/gm;
 let mermaidLoadPromise = null;
 let mermaidInitializedApi = null;
 let mermaidRenderSequence = 0;
@@ -191,10 +192,28 @@ function loadMermaidRenderer() {
     return mermaidLoadPromise;
 }
 
-function keepMermaidSource(code, message) {
+function keepMermaidSource(code, message, failureKind = 'render') {
     const pre = code?.parentElement;
     pre?.classList?.add('mermaid-render-fallback');
+    pre?.setAttribute?.('data-render-failure', failureKind);
     if (message) pre?.setAttribute?.('title', message);
+}
+
+function normalizeMermaidSource(source) {
+    const original = String(source || '');
+    let nextNodeNumber = 0;
+    const generatedNodeIds = new Set();
+    return original.replace(
+        QUOTED_EDGE_LABEL,
+        (line, indentation, sourceId, label) => {
+            let targetId;
+            do {
+                targetId = `ChatGeneratedNode${++nextNodeNumber}`;
+            } while (original.includes(targetId) || generatedNodeIds.has(targetId));
+            generatedNodeIds.add(targetId);
+            return `${indentation}${sourceId} --> ${targetId}["${label}"]`;
+        },
+    );
 }
 
 function isMermaidCodeBlock(code) {
@@ -221,13 +240,21 @@ async function renderMermaidDiagrams(root) {
                 || source.length > MAX_MERMAID_SOURCE_LENGTH
                 || /^\s*%%\s*\{(?:init|config)\s*:/im.test(source)
             ) {
-                keepMermaidSource(code, '流程图内容超出限制或包含受限配置，已保留源码。');
+                keepMermaidSource(
+                    code,
+                    '流程图内容超出限制或包含受限配置，已保留源码。',
+                    'restricted',
+                );
                 return false;
             }
             return true;
         });
     codeBlocks.slice(MAX_MERMAID_DIAGRAMS_PER_MESSAGE).forEach(code => {
-        keepMermaidSource(code, '单条消息中的流程图数量超出限制，已保留源码。');
+        keepMermaidSource(
+            code,
+            '单条消息中的流程图数量超出限制，已保留源码。',
+            'restricted',
+        );
     });
     if (!renderable.length) return 0;
 
@@ -254,7 +281,11 @@ async function renderMermaidDiagrams(root) {
         }
     } catch (_error) {
         renderable.forEach(code => {
-            keepMermaidSource(code, '流程图渲染器不可用，已保留原始源码。');
+            keepMermaidSource(
+                code,
+                '本地流程图渲染器加载失败，已保留原始源码。',
+                'renderer',
+            );
         });
         return 0;
     }
@@ -265,7 +296,10 @@ async function renderMermaidDiagrams(root) {
         if (!pre?.replaceWith) continue;
         try {
             const id = `chat-mermaid-${++mermaidRenderSequence}`;
-            const result = await api.render(id, String(code.textContent || '').trim());
+            const source = normalizeMermaidSource(
+                String(code.textContent || '').trim(),
+            );
+            const result = await api.render(id, source);
             const svg = DOMPurify.sanitize(result.svg, {
                 USE_PROFILES: { html: true, svg: true },
                 ADD_TAGS: ['foreignObject'],
@@ -290,7 +324,11 @@ async function renderMermaidDiagrams(root) {
             pre.replaceWith(diagram);
             renderedCount += 1;
         } catch (_error) {
-            keepMermaidSource(code, '流程图语法无法解析，已保留原始源码。');
+            keepMermaidSource(
+                code,
+                '流程图语法或安全校验失败，已保留源码；请检查节点 ID 和连线写法。',
+                'syntax',
+            );
             console.warn('Mermaid diagram rendering failed; original source was kept.');
         }
     }

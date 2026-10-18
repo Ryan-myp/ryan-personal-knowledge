@@ -238,6 +238,20 @@ class MarkdownWikiKnowledgeProvider:
     )
     _TOKEN_RE = re.compile(r"[\u4e00-\u9fff]+|[a-z0-9_]+")
     _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
+    _MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\([^)]*\)")
+    _NAVIGATION_LINK_ITEM_RE = re.compile(
+        r"^\s*(?:(?:[-*+])\s+|\d+[.)]\s+)?"
+        r"(?:\[\[[^\]]+\]\]|\[[^\]]+\]\([^)]*\))"
+        r"(?:\s*(?:[:：—–-]\s*)?.*)?$"
+    )
+    _WIKILINK_RE = re.compile(r"\[\[[^\]]+\]\]")
+    _URL_RE = re.compile(r"(?i)https?://\S+")
+    _LINK_ONLY_HEADINGS = frozenset({
+        "参考", "参考资料", "参考文献", "官方参考", "官方来源",
+        "references", "official references", "sources", "citations",
+        "further reading", "知识入口", "相关知识", "相关文档", "相关阅读",
+        "related documents", "see also", "knowledge navigation",
+    })
     _CHUNK_SIZE = 1800
     _CHUNK_OVERLAP = 180
     _CONTROL_DOCUMENTS = frozenset({
@@ -714,7 +728,11 @@ class MarkdownWikiKnowledgeProvider:
             sections = [((), document.excerpt.strip(), [])]
 
         chunks: list[KnowledgeDocument] = []
+        skipped_reference_only = False
         for heading_path, section_body, _ in sections:
+            if cls._is_link_only_navigation_section(heading_path, section_body):
+                skipped_reference_only = True
+                continue
             heading_prefix = f"## {heading_path[-1]}\n\n" if heading_path else ""
             for part in cls._split_section_text(section_body):
                 excerpt = f"{heading_prefix}{part}".strip()
@@ -731,6 +749,8 @@ class MarkdownWikiKnowledgeProvider:
                         }
                     )
                 )
+        if not chunks and skipped_reference_only:
+            return []
         chunk_count = len(chunks) or 1
         return [
             KnowledgeDocument(**{**chunk.__dict__, "chunk_count": chunk_count})
@@ -744,6 +764,30 @@ class MarkdownWikiKnowledgeProvider:
                 }
             )
         ]
+
+    @classmethod
+    def _is_link_only_navigation_section(
+        cls,
+        heading_path: tuple[str, ...],
+        section_body: str,
+    ) -> bool:
+        if not heading_path:
+            return False
+        heading = cls._normalise_text(heading_path[-1]).rstrip(":：")
+        if heading not in cls._LINK_ONLY_HEADINGS:
+            return False
+        body = str(section_body or "")
+        lines = [line.strip() for line in body.splitlines() if line.strip()]
+        if lines and all(cls._NAVIGATION_LINK_ITEM_RE.fullmatch(line) for line in lines):
+            return True
+        remainder = cls._MARKDOWN_LINK_RE.sub(" ", body)
+        remainder = cls._WIKILINK_RE.sub(" ", remainder)
+        remainder = cls._URL_RE.sub(" ", remainder)
+        remainder = re.sub(r"(?m)^\s*[-*+]\s*", "", remainder)
+        remainder = re.sub(r"(?im)^\s*(?:wiki|knowledge base)\s*:\s*", "", remainder)
+        remainder = re.sub(r"\d+", "", remainder)
+        remainder = re.sub(r"[\W_]+", "", remainder)
+        return not remainder
 
     @staticmethod
     def _chunk_id(scope: str, document: KnowledgeDocument, chunk_index: int) -> str:

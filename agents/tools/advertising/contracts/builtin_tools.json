@@ -1,5 +1,5 @@
 {
-  "digest": "2c2ca9891c40dd3f8fd754441b3e54028066b5e40e8f9b2dfca4487c0add263d",
+  "digest": "7b190007ea89cb8cf27baf73afb15fe655cd7afd18553544b514e75b8eef7485",
   "format_version": 1,
   "platforms": {
     "agent-platform": {
@@ -31057,7 +31057,7 @@
       ]
     },
     "tiktok": {
-      "digest": "ccf5a8ef37404c902647411a4c3682f152fe62620ec8e6b67265a800d639daa7",
+      "digest": "003b4ad3cc08c643defa6f489cc975048c5d01a9a3ec128cc4d1565e25251388",
       "tool_count": 89,
       "tools": [
         {
@@ -42302,7 +42302,11 @@
             "type": "object"
           },
           "integration_api_version": "v1.3",
-          "intent_aliases": [],
+          "intent_aliases": [
+            "广告组列表",
+            "Ad Group 列表",
+            "list ad groups"
+          ],
           "intent_types": [
             "list_adgroups"
           ],

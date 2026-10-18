@@ -317,7 +317,6 @@ class LLMClient:
             except LLMStructuredOutputError as error:
                 can_repair = (
                     attempt == 0
-                    and bool(provider_tools)
                     and getattr(request, "initial_tool_choice", None)
                     in (None, "auto")
                     and error.safe_reason_code == "tool_not_in_active_catalog"

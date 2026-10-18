@@ -24,9 +24,11 @@ _TOKEN_STOPWORDS = frozenset({
 _READ_CUES = (
     "get", "list", "read", "search", "query", "fetch", "retrieve", "show",
     "which", "what", "available",
-    "查一下", "查询", "列出", "查看", "获取", "检索", "搜索", "有哪些", "有啥",
-    "哪几个", "哪些",
+    "查一下", "查询", "列出", "列表", "清单", "查看", "获取", "检索", "搜索",
+    "有哪些", "有啥", "哪几个", "哪些",
 )
+_LIST_READ_CUES = ("list", "列出", "列表", "清单")
+_DETAIL_READ_CUES = ("detail", "details", "详情", "详细信息", "具体信息")
 _READ_ACTION_CUES = tuple(
     cue for cue in _READ_CUES if cue not in {"which", "what", "available"}
 )
@@ -39,6 +41,15 @@ _WRITE_CUES = (
 _WRITE_NEGATIONS = (
     "do not", "don't", "dont", "never", "without", "avoid", "no need to",
     "不要", "别", "禁止", "不需要", "无需", "不用",
+)
+_AMBIGUOUS_OPERATION_CUES = frozenset({"set", "设置"})
+_KNOWLEDGE_EXPLANATION_CUES = (
+    "相关知识", "基础知识", "基础概念", "知识介绍", "讲下", "讲讲", "讲一讲",
+    "介绍一下", "介绍下", "给我介绍", "告诉我", "科普一下",
+    "详解", "详细讲解", "详细解释", "讲解一下", "讲解下", "解释一下", "解释下",
+    "怎么理解", "是什么意思", "是什么概念", "原理是什么", "有什么区别",
+    "有何区别", "对比一下", "what is", "what are", "tell me about",
+    "overview", "basics", "fundamentals", "explain", "difference between",
 )
 _INTENT_REVERSALS = ("but", "instead", "however", "但", "而是", "不过")
 _SCOPE_RELATION = re.compile(r"(?:下(?:面|的)?|之下|里面|\bunder\b|\bwithin\b|\bin\b)")
@@ -158,9 +169,14 @@ def _has_explicit_read_action(user_input: str) -> bool:
     return any(_contains_cue(text, cue) for cue in _READ_ACTION_CUES)
 
 
-def _has_unnegated_write_cue(user_input: str) -> bool:
+def _is_explicit_list_request(user_input: str) -> bool:
     text = str(user_input or "").casefold()
-    for cue in _WRITE_CUES:
+    return any(_contains_cue(text, cue) for cue in _LIST_READ_CUES)
+
+
+def _has_unnegated_action_cue(user_input: str, cues: Sequence[str]) -> bool:
+    text = str(user_input or "").casefold()
+    for cue in cues:
         for match in _cue_matches(text, cue):
             prefix = text[max(0, match.start() - 32):match.start()]
             negation_positions = [
@@ -177,6 +193,10 @@ def _has_unnegated_write_cue(user_input: str) -> bool:
             ):
                 return True
     return False
+
+
+def _has_unnegated_write_cue(user_input: str) -> bool:
+    return _has_unnegated_action_cue(user_input, _WRITE_CUES)
 
 
 def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
@@ -220,6 +240,24 @@ def _is_process_explanation_request(
         ):
             return False
     return True
+
+
+def _is_knowledge_explanation_request(
+    user_input: str,
+    tools: Sequence[Any],
+) -> bool:
+    """Keep explicit conceptual explanations out of the executable Tool set."""
+    text = str(user_input or "").casefold()
+    if not any(_contains_cue(text, cue) for cue in _KNOWLEDGE_EXPLANATION_CUES):
+        return False
+
+    action_text = _request_verbs(text, tools)
+    if _has_explicit_read_action(action_text):
+        return False
+    strong_write_cues = tuple(
+        cue for cue in _WRITE_CUES if cue not in _AMBIGUOUS_OPERATION_CUES
+    )
+    return not _has_unnegated_action_cue(action_text, strong_write_cues)
 
 
 def _is_read_tool(tool: Any) -> bool:
@@ -448,6 +486,8 @@ class ToolSelector:
             raise ValueError("limit must be positive")
         if _is_process_explanation_request(user_input, available_tools):
             return []
+        if _is_knowledge_explanation_request(user_input, available_tools):
+            return []
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
         if (
@@ -555,6 +595,23 @@ class ToolSelector:
                 item for item in relevant
                 if _is_read_tool(item[2])
             ]
+            has_detail_read = any(
+                _contains_cue(verb_text, cue) for cue in _DETAIL_READ_CUES
+            )
+            if _is_explicit_list_request(verb_text) and not has_detail_read:
+                list_tools = [
+                    item for item in relevant
+                    if str(_tool_field(item[2], "action", "")).casefold() == "list"
+                ]
+                if list_tools:
+                    explicit_resource_tools = [
+                        item for item in list_tools
+                        if (resource_terms := _terms(
+                            _tool_field(item[2], "resource_type")
+                        ))
+                        and resource_terms <= current_terms
+                    ]
+                    relevant = explicit_resource_tools or list_tools
         relevant.sort(key=lambda item: (-item[0], item[1]))
         effective_limit = (
             min(limit, self.max_read_tools_per_turn)
