@@ -254,6 +254,101 @@ test('Mermaid repairs quoted edge labels from generated diagrams before renderin
     delete context.document;
 });
 
+test('Mermaid mindmaps render as hierarchy diagrams with escaped labels', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(_id, source) {
+                rendered.push(source);
+                return { svg: '<svg></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement(tagName) {
+            return new MockElement(tagName);
+        },
+        body: new MockElement('body'),
+    };
+    const pre = {
+        classList: { add() {} },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = {
+        className: 'language-mermaid',
+        textContent: [
+            'mindmap',
+            '  root((TikTok 层级约束))',
+            '    Campaign层',
+            '      Objective决定AdGroup可选项',
+            '      Smart+/Spark类型影响素材来源',
+            '    Ad Group层',
+            '      定向规模<10k导致探索受限',
+            '      修改预算>20%重置学习期',
+            '    Ad/Creative层',
+            '      Spark必须绑定已授权Identity',
+        ].join('\n'),
+        parentElement: pre,
+    };
+
+    const renderedCount = await context.renderMermaidDiagrams({
+        querySelectorAll: selector => selector === 'pre > code' ? [code] : [],
+    });
+
+    assert.equal(renderedCount, 1);
+    assert.equal(pre.replacedWith.className, 'mermaid-diagram');
+    assert.match(rendered[0], /^flowchart TB\n/);
+    assert.match(rendered[0], /ChatMindmapNode0\(\("TikTok 层级约束"\)\)/);
+    assert.match(rendered[0], /ChatMindmapNode0 --> ChatMindmapNode1\["Campaign层"\]/);
+    assert.match(rendered[0], /ChatMindmapNode1 --> ChatMindmapNode2\["Objective决定AdGroup可选项"\]/);
+    assert.match(rendered[0], /Smart\+\/Spark类型影响素材来源/);
+    assert.match(rendered[0], /定向规模&lt;10k导致探索受限/);
+    assert.match(rendered[0], /修改预算&gt;20%重置学习期/);
+    assert.match(rendered[0], /ChatMindmapNode0 --> ChatMindmapNode\d+\["Ad\/Creative层"\]/);
+    delete context.window;
+    delete context.document;
+});
+
+test('Mermaid mindmaps keep malformed top-level nodes as source', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(_id, source) {
+                rendered.push(source);
+                return { svg: '<svg></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement: tagName => new MockElement(tagName),
+        body: new MockElement('body'),
+    };
+    const pre = {
+        attributes: {},
+        classList: { add() {} },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = {
+        className: 'language-mermaid',
+        textContent: 'mindmap\n  root((Root))\n    Child\n  Orphan',
+        parentElement: pre,
+    };
+
+    const renderedCount = await context.renderMermaidDiagrams({
+        querySelectorAll: selector => selector === 'pre > code' ? [code] : [],
+    });
+
+    assert.equal(renderedCount, 0);
+    assert.deepEqual(rendered, []);
+    assert.equal(pre.replacedWith, undefined);
+    assert.equal(pre.attributes['data-render-failure'], 'syntax');
+    delete context.window;
+    delete context.document;
+});
+
 test('Mermaid renders all diagrams in a long answer beyond the previous limit', async () => {
     const rendered = [];
     context.window = {

@@ -42,6 +42,7 @@ function formatContent(content) {
 
 const MAX_MERMAID_SOURCE_LENGTH = 12000;
 const MAX_MERMAID_DIAGRAMS_PER_MESSAGE = 32;
+const MAX_MINDMAP_NODES = 200;
 const MERMAID_DIAGRAM_HEADER = /^(?:graph|flowchart|sequencediagram|classdiagram|statediagram(?:-v2)?|erdiagram|journey|gantt|pie|gitgraph|mindmap|timeline|quadrantchart|sankey-beta|xychart-beta)\b/i;
 const QUOTED_EDGE_LABEL = /^([ \t]*)([A-Za-z_][\w-]*)\s+-->\s+"([^"\r\n]+)"[ \t]*$/gm;
 let mermaidLoadPromise = null;
@@ -200,10 +201,14 @@ function keepMermaidSource(code, message, failureKind = 'render') {
 }
 
 function normalizeMermaidSource(source) {
-    const original = String(source || '');
+    const original = String(source || '').trim();
+    const mindmapHeader = original.match(/^mindmap\s*\r?\n/i);
+    const normalizedSource = mindmapHeader
+        ? compileMindmapAsFlowchart(original.slice(mindmapHeader[0].length))
+        : original;
     let nextNodeNumber = 0;
     const generatedNodeIds = new Set();
-    return original.replace(
+    return normalizedSource.replace(
         QUOTED_EDGE_LABEL,
         (line, indentation, sourceId, label) => {
             let targetId;
@@ -214,6 +219,58 @@ function normalizeMermaidSource(source) {
             return `${indentation}${sourceId} --> ${targetId}["${label}"]`;
         },
     );
+}
+
+function compileMindmapAsFlowchart(source) {
+    const nodes = [];
+    const parents = [];
+    const lines = String(source || '').replace(/\t/g, '    ').split('\n');
+
+    for (const line of lines) {
+        if (!line.trim() || line.trimStart().startsWith('%%')) continue;
+        const indentation = line.match(/^[ ]*/)[0].length;
+        let label = line.trim();
+        const shapedNode = label.match(
+            /^[A-Za-z_][\w-]*(?:\(\(([\s\S]*)\)\)|\(([\s\S]*)\)|\[([\s\S]*)\]|\{([\s\S]*)\})$/,
+        );
+        if (shapedNode) {
+            label = shapedNode.slice(1).find(value => value !== undefined) || '';
+        }
+        if (!label) throw new Error('Mindmap nodes must have labels');
+
+        while (parents.length && parents.at(-1).indentation >= indentation) {
+            parents.pop();
+        }
+        const parent = parents.at(-1) || null;
+        if (nodes.length && !parent) {
+            throw new Error('Mindmap nodes must be nested under the root');
+        }
+        if (nodes.length >= MAX_MINDMAP_NODES) {
+            throw new Error('Mindmap exceeds the supported node limit');
+        }
+
+        const node = {
+            id: `ChatMindmapNode${nodes.length}`,
+            label: label
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;'),
+            parentId: parent?.id || null,
+            indentation,
+        };
+        nodes.push(node);
+        parents.push(node);
+    }
+    if (!nodes.length) throw new Error('Mindmap must contain a root node');
+
+    return [
+        'flowchart TB',
+        `  ${nodes[0].id}(("${nodes[0].label}"))`,
+        ...nodes.slice(1).map(node => (
+            `  ${node.parentId} --> ${node.id}["${node.label}"]`
+        )),
+    ].join('\n');
 }
 
 function isMermaidCodeBlock(code) {
