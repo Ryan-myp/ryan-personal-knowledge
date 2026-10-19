@@ -439,9 +439,11 @@
             const selectedId = String(accountId).trim();
             if (!sourceText || !selectedId) return;
 
-            const userInput = `${sourceText}\n使用账户 ${selectedId} 继续`;
+            const userInput = `使用账户 ${selectedId} 继续`;
+            const continuationRequest = { ...(originalRequest || {}) };
+            delete continuationRequest.media_ids;
             const requestParams = {
-                ...(originalRequest || {}),
+                ...continuationRequest,
                 user_input: userInput,
                 user_id: 'web_user',
                 session_id: sessionId,

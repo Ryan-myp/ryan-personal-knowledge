@@ -111,6 +111,32 @@ test('asking for an account resumes planning, not approval of a write', async ()
     assert.equal(requests[0].platform_params['google-ads'].google_create_campaign.daily_budget, 20);
 });
 
+test('selecting an account continues the existing request without repeating its prompt or attachments', async () => {
+    const { context, requests, displayed } = environment();
+    const previousPrompt = '查询 Meta campaign 并导出';
+    context.renderStreamResult = () => {};
+    context.streamChatRequest = async params => {
+        requests.push(params);
+        return { session_id: 'session', status: 'succeeded', content: '查询完成', results: [] };
+    };
+
+    await context.continueWithSelectedAccount('meta-account-1', {
+        user_input: previousPrompt,
+        session_id: 'session',
+        media_ids: ['already-submitted-image'],
+        execution_mode: 'live',
+    });
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].user_input, '使用账户 meta-account-1 继续');
+    assert.equal(requests[0].account_id, 'meta-account-1');
+    assert.equal(requests[0].session_id, 'session');
+    assert.equal(requests[0].execution_mode, 'live');
+    assert.equal('media_ids' in requests[0], false);
+    assert.equal(displayed[0][0], '使用账户 meta-account-1 继续');
+    assert.doesNotMatch(displayed[0][0], new RegExp(previousPrompt));
+});
+
 test('missing parameters merge only into the indicated namespace while preserving the draft', async () => {
     const { context, requests, nodes, node } = environment();
     context.showConfirm({ type: 'ask_params', platform: 'google-ads', missing: ['campaign_id'] }, original());
