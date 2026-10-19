@@ -84,6 +84,10 @@ _STRUCTURED_OUTPUT_REASON_CODES = {
         "response_tool_call_limit_exceeded",
     "LLM requested a Tool outside the active catalog":
         "tool_not_in_active_catalog",
+    "LLM returned Tool-call protocol as plain text":
+        "tool_protocol_returned_as_text",
+    "LLM Tool gateway rejected the user identity":
+        "tool_gateway_invalid_user_id",
     "LLM returned duplicate Tool call ids":
         "duplicate_tool_call_id",
     "LLM Tool arguments exceeded the configured size limit":
@@ -95,6 +99,27 @@ _STRUCTURED_OUTPUT_REASON_CODES = {
     "LLM Tool arguments were not JSON serializable":
         "tool_arguments_not_serializable",
 }
+_TEXT_TOOL_PROTOCOL = re.compile(
+    r"(?:<tool_call>\s*<function=[^>]+>[\s\S]*?</function>"
+    r"\s*</tool_call>\s*)+",
+    re.IGNORECASE,
+)
+_HARMONY_TOOL_MARKER = re.compile(
+    r"<\|tool_(?:calls_section_end|call_begin|call_argument_begin|call_end)\|>",
+    re.IGNORECASE,
+)
+_GATEWAY_INVALID_USER_ID = re.compile(
+    r"(?is)error_code\s*=\s*40400\b.{0,160}?"
+    r"message\s*=\s*invalid_user_id\b",
+)
+_PRIVATE_THINK_BLOCK = re.compile(
+    r"<think(?:\s[^>]*)?>[\s\S]*?</think\s*>",
+    re.IGNORECASE,
+)
+_OPEN_THINK_BLOCK = re.compile(
+    r"<think(?:\s[^>]*)?>[\s\S]*$",
+    re.IGNORECASE,
+)
 
 
 class LLMStructuredOutputError(ValueError):
@@ -236,6 +261,7 @@ class LLMClient:
         }
         attempt_messages = provider_messages
         attempt = 0
+        gateway_invalid_user_id = False
         while True:
             kwargs["messages"] = attempt_messages
             if collector is not None:
@@ -314,6 +340,40 @@ class LLMClient:
                     raise LLMStructuredOutputError(
                         "LLM returned duplicate Tool call ids"
                     )
+                content = str(
+                    self._tool_value(message, "content", "") or ""
+                )
+                protocol_action = self._text_tool_protocol_action(
+                    content,
+                    has_calls=bool(calls),
+                    attempt=attempt,
+                    gateway_error_seen=gateway_invalid_user_id,
+                )
+                if protocol_action in {"retry", "retry_gateway"}:
+                    gateway_invalid_user_id |= protocol_action == "retry_gateway"
+                    logger.warning(
+                        "LLM returned an unexecuted Tool protocol; "
+                        "retrying once through the structured Tool interface "
+                        "(gateway_identity_error=%s)",
+                        gateway_invalid_user_id,
+                    )
+                    attempt_messages = self._tool_protocol_repair_messages(
+                        provider_messages
+                    )
+                    attempt += 1
+                    continue
+                if protocol_action == "gateway_error":
+                    raise LLMStructuredOutputError(
+                        "LLM Tool gateway rejected the user identity"
+                    )
+                if protocol_action == "protocol_error":
+                    raise LLMStructuredOutputError(
+                        "LLM returned Tool-call protocol as plain text"
+                    )
+                if protocol_action == "suppress":
+                    content = ""
+                else:
+                    content = self._strip_private_think(content)
             except LLMStructuredOutputError as error:
                 can_repair = (
                     attempt == 0
@@ -338,7 +398,7 @@ class LLMClient:
                 raise
 
             return ModelTurn(
-                content=getattr(message, "content", None) or "",
+                content=content,
                 tool_calls=calls,
                 stop_reason=(
                     "tool_call" if calls
@@ -346,6 +406,81 @@ class LLMClient:
                 ),
                 usage=usage_totals,
             )
+
+    @staticmethod
+    def _is_text_tool_protocol(content: str) -> bool:
+        text = str(content or "")
+        if _TEXT_TOOL_PROTOCOL.fullmatch(text):
+            return True
+        markers = _HARMONY_TOOL_MARKER.findall(text)
+        return (
+            "<|tool_call_begin|>" in {
+                marker.lower() for marker in markers
+            }
+            and len(markers) >= 2
+        )
+
+    @staticmethod
+    def _is_gateway_invalid_user_id(content: str) -> bool:
+        return bool(_GATEWAY_INVALID_USER_ID.search(str(content or "")))
+
+    @classmethod
+    def _text_tool_protocol_action(
+        cls,
+        content: str,
+        *,
+        has_calls: bool,
+        attempt: int,
+        gateway_error_seen: bool,
+    ) -> str:
+        if has_calls and cls._is_text_tool_protocol(content):
+            return "suppress"
+        if gateway_error_seen and attempt > 0 and not has_calls:
+            return "gateway_error"
+        if not cls._is_text_tool_protocol(content):
+            return "normal"
+        is_gateway_error = cls._is_gateway_invalid_user_id(content)
+        if attempt == 0:
+            return "retry_gateway" if is_gateway_error else "retry"
+        if gateway_error_seen or is_gateway_error:
+            return "gateway_error"
+        return "protocol_error"
+
+    @staticmethod
+    def _strip_private_think(content: str) -> str:
+        text = _PRIVATE_THINK_BLOCK.sub("", str(content or ""))
+        return _OPEN_THINK_BLOCK.sub("", text).strip()
+
+    @staticmethod
+    def _tool_protocol_repair_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Ask once for native Tool calls instead of executable-looking prose."""
+        repaired = [dict(item) for item in messages]
+        correction = {
+            "role": "system",
+            "content": (
+                "Your previous response emitted Tool-call protocol as ordinary "
+                "assistant text. It was not executed. Handle the user's request "
+                "again from scratch. When a Tool is needed, call only Tools in "
+                "the active catalog through the structured Tool-call interface; "
+                "do not write Tool-call protocol as plain text. Otherwise, answer "
+                "from trusted context. Never claim a Tool ran without its "
+                "structured result."
+            ),
+        }
+        last_user_index = next(
+            (
+                index for index in range(len(repaired) - 1, -1, -1)
+                if repaired[index].get("role") == "user"
+            ),
+            None,
+        )
+        if last_user_index is None:
+            repaired.append(correction)
+        else:
+            repaired.insert(last_user_index, correction)
+        return repaired
 
     @staticmethod
     def _tool_catalog_repair_messages(

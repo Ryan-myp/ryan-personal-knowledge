@@ -1,7 +1,7 @@
 # LLM Wiki 索引
 
-> **版本**: v2.6.0
-> **更新时间**: 2026-10-18
+> **版本**: v2.7.0
+> **更新时间**: 2026-10-19
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
@@ -28,11 +28,14 @@ knowledge_base/
 ├── business/
 │   ├── cross-platform-hierarchy.md
 │   ├── industry-playbooks.md
+│   ├── full-funnel-campaign-planning.md
 │   ├── bidding-and-budget.md
 │   ├── targeting-and-audiences.md
 │   ├── creative-testing.md
 │   ├── measurement-and-attribution.md
 │   ├── measurement-data-contracts-and-incrementality.md
+│   ├── conversion-signal-quality-operations.md
+│   ├── catalog-feed-quality-operations.md
 │   ├── budget-pacing-and-marginal-efficiency.md
 │   ├── evidence-driven-performance-diagnosis.md
 │   ├── four-platform-ad-agent-handbook.md
@@ -69,6 +72,9 @@ knowledge_base/
 | “素材、受众怎么测？” | `creative-testing` + `targeting-and-audiences` |
 | “下一批创意应该做什么，如何按证据和产能排优先级？” | `creative-testing` + `agents/skills/advertising/practices/creative-strategy/` |
 | “如何设计广告 A/B 实验、规划样本并解释结果？” | `expertise/experimentation-and-learning` + `agents/skills/advertising/practices/experimentation-design/` |
+| “如何从业务目标设计渠道、漏斗、优化事件、预算和实验？” | `business/full-funnel-campaign-planning` |
+| “平台转化和 CRM/订单对不上，事件回传/去重/质量怎么排查？” | `business/conversion-signal-quality-operations` + 对应平台事件专题 |
+| “商品目录/Feed 有拒绝、缺货、ID/价格不匹配，广告为什么没量？” | `business/catalog-feed-quality-operations` + Google/Meta/TikTok 商品目录专题 |
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
 | “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “Google 搜索词/转化报表或 Meta Insights 数据可信吗，指标如何解读？” | `agents/skills/advertising/practices/account-diagnostics/` + 对应平台 measurement/reporting 文档 |
@@ -88,7 +94,7 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-10-18，Runtime 实际加载 **71 个发布 Markdown 文档**：
+截至 2026-10-19，Runtime 实际加载 **74 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
@@ -96,7 +102,7 @@ knowledge_base/
 | Meta | 13 | 1 个实体页 + 11 篇平台规则 + 1 篇目标选择 Query，覆盖 ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
 | TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
 | DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |
-| 跨平台业务 | 14 | 四平台总览、层级、行业、预算节奏、边际效率、受众、创意、数据契约、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
+| 跨平台业务 | 17 | 四平台总览、层级、全漏斗规划、行业、预算节奏、边际效率、受众、创意、数据契约、转化信号质量、商品 Feed、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
 | 经验方法 | 4 | 诊断、实验、最佳实践、错误模式 |
 | 对比页 | 1 | 四个平台的对象、强项和优先核对项 |
 | 概念页 | 1 | Provider live E2E 的测试记忆与恢复规则 |
@@ -104,6 +110,8 @@ knowledge_base/
 平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。跨平台创意知识新增了证据驱动路线图、探索/扩量状态、制作产能和 Hook 到业务结果的诊断；审计知识区分健康度与证据覆盖率；实验与归因知识明确统计结论和因果边界；Google 报表知识补充搜索词可见性、转化动作粒度、日期口径和模拟数据边界。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
 
 四个平台的实体页提供中文概览、核心对象职责和专题入口，适合回答“讲讲某渠道/基础知识”这类宽问题；遇到具体决策、字段、策略和排障时，继续引用对应专题，而不是把实体页当作完整事实来源。纯链接参考章节不参与知识片段排名，但文章级来源仍随检索结果返回。
+
+全漏斗规划页把业务结果映射到媒体任务和优化信号；转化信号页补充事件生命周期、CRM 离线结果回传、隐私与失败恢复；商品 Feed 页补充跨渠道商品身份、资格链路和端到端诊断。这些方法页是 provisional 运营框架，平台动态字段和账户能力仍以官方文档、账户证据和当前 Tool schema 为准。
 
 `ARCHITECTURE.md`、`SCHEMA.md`、`QUALITY_STANDARD.md`、`UPGRADE_SUMMARY.md`、`USAGE_GUIDE.md`、`index.md` 和 `log.md` 是维护文档，不进入 Agent 业务检索和前端知识目录；它们只用于解释知识库自身如何维护。
 

@@ -933,6 +933,35 @@ def test_chat_forwards_request_to_runtime(fake_server):
     assert "user_id" not in fake_server.calls[0]
 
 
+def test_chat_never_returns_unexecuted_tool_protocol_as_assistant_text(fake_server):
+    fake_server.run = lambda **_kwargs: {
+        "status": "succeeded",
+        "reply": (
+            "<think>正在搜索</think>"
+            "<|tool_calls_section_end|> API Error: channel_id=\"\" "
+            "error_code=40400 message=invalid_user_id "
+            "<|tool_call_begin|> agent-platform:knowledge_search "
+            "<|tool_call_argument_begin|>{\"query\":\"Meta 广告\"}"
+            "<|tool_call_end|>"
+        ),
+        "results": [],
+    }
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "讲下 Meta 广告吧"},
+        )
+
+    assert response.status_code == 200
+    reply = response.json()["reply"]
+    assert "<think>" not in reply
+    assert "<|" not in reply
+    assert "40400 / invalid_user_id" in reply
+    assert "未执行" in reply
+
+
 def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",

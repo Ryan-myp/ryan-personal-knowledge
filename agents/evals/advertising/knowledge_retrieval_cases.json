@@ -36,6 +36,9 @@
   {"query": "广告素材疲劳如何实验", "expected": ["cross-platform-creative-testing", "tiktok-creative-lifecycle-and-testing"]},
   {"query": "广告报表为空应该怎么诊断", "expected": ["google-ads-measurement-and-diagnostics", "dv360-reporting-and-diagnostics"]},
   {"query": "广告 Agent 写入需要什么安全门禁", "expected": ["four-platform-ad-agent-handbook", "ad-best-practices"]},
+  {"query": "如何从业务目标和漏斗规划渠道、平台目标、预算、KPI 与实验", "expected": ["full-funnel-campaign-planning"]},
+  {"query": "CRM 有线索但广告事件质量差，离线转化回传、去重、隐私和诊断怎么做", "expected": ["conversion-signal-quality-operations"]},
+  {"query": "商品目录 feed 价格库存 ID 不匹配，商品广告资格和购买漏斗怎么排查", "expected": ["catalog-feed-quality-operations"]},
   {"query": "Meta Campaign Ad Set Ad 层级边界", "expected": ["meta-canonical-campaign-and-adset-runbook"], "forbidden_platforms": ["google-ads", "tiktok", "dv360"]},
   {"query": "原始来源 raw ingest 文档", "expected": [], "forbidden_wiki_types": ["raw"]},
   {"query": "待审核 draft 页面", "expected": [], "forbidden_statuses": ["draft", "deprecated"]}

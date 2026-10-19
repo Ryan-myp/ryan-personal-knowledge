@@ -53,10 +53,9 @@ def _chat_result_for_response(context: ApiContext, result: Any) -> Any:
     safe_result = context.redact(result)
     if not isinstance(result, dict) or not isinstance(safe_result, dict):
         return safe_result
-    if not str(result.get("reply") or "").strip():
-        fallback = _chat_reply_content(safe_result)
-        if fallback:
-            safe_result["reply"] = context.redact(fallback)
+    visible_reply = _chat_reply_content(safe_result)
+    if visible_reply:
+        safe_result["reply"] = context.redact(visible_reply)
     if isinstance(result.get("confirmation_payload"), dict):
         safe_result["confirmation_payload"] = _confirmation_payload_for_response(
             context, result["confirmation_payload"],

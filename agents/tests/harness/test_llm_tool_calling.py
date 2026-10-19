@@ -386,6 +386,262 @@ def test_llm_client_stops_after_one_failed_unknown_tool_repair(caplog):
     assert "private_write" not in caplog.text
 
 
+def test_llm_client_repairs_tool_protocol_returned_as_plain_text():
+    protocol_text = (
+        "<tool_call>\n<function=lookup_record>\n"
+        "<parameter=record_id>r-17</parameter>\n"
+        "</function>\n</tool_call>"
+    )
+    protocol_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=protocol_text, tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+    )
+    structured_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(
+                content="正在查询记录。",
+                tool_calls=[SimpleNamespace(
+                    id="call-1",
+                    function=SimpleNamespace(
+                        name="lookup_record",
+                        arguments='{"record_id":"r-17"}',
+                    ),
+                )],
+            ),
+            finish_reason="tool_calls",
+        )],
+        usage=SimpleNamespace(prompt_tokens=13, completion_tokens=5),
+    )
+    completions = _QueuedCompletions(protocol_response, structured_response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("Find record r-17.")],
+        [_tool()],
+        TurnRequest(user_input="Find record r-17."),
+    )
+
+    assert result.content == "正在查询记录。"
+    assert result.tool_calls == (
+        ToolCall(
+            id="call-1",
+            name="lookup_record",
+            arguments={"record_id": "r-17"},
+        ),
+    )
+    assert len(completions.requests) == 2
+    retry_messages = completions.requests[1]["messages"]
+    assert any(
+        "do not write Tool-call protocol as plain text"
+        in str(item.get("content", ""))
+        for item in retry_messages
+    )
+    assert protocol_text not in json.dumps(retry_messages, ensure_ascii=False)
+    assert result.usage["llm_requests"] == 2
+    assert result.usage["input_tokens"] == 24
+    assert result.usage["output_tokens"] == 12
+
+
+def test_llm_client_fails_clearly_if_tool_protocol_remains_plain_text():
+    protocol_text = (
+        "<tool_call><function=lookup_record>"
+        "<parameter=record_id>r-17</parameter>"
+        "</function></tool_call>"
+    )
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=protocol_text, tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    completions = _QueuedCompletions(response, response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    with pytest.raises(LLMStructuredOutputError) as caught:
+        client.complete(
+            [AgentMessage.user("Find record r-17.")],
+            [_tool()],
+            TurnRequest(user_input="Find record r-17."),
+        )
+
+    assert caught.value.safe_reason_code == "tool_protocol_returned_as_text"
+    assert len(completions.requests) == 2
+
+
+def test_llm_client_does_not_repair_normal_text_that_mentions_tool_syntax():
+    content = (
+        "This example is not an instruction: "
+        "<tool_call><function=lookup_record></function></tool_call>"
+    )
+    client, completions = _client(SimpleNamespace(content=content, tool_calls=[]))
+
+    result = client.complete(
+        [AgentMessage.user("Explain this example.")],
+        [_tool()],
+        TurnRequest(user_input="Explain this example."),
+    )
+
+    assert result.content == content
+    assert result.tool_calls == ()
+    assert len(completions.requests) == 1
+
+
+def test_llm_client_repairs_harmony_tool_protocol_returned_as_plain_text():
+    protocol_text = (
+        "<think>need to search</think>"
+        "<|tool_calls_section_end|> API Error: channel_id=\"\" "
+        "error_code=40400 message=invalid_user_id "
+        "<|tool_call_begin|> agent-platform:knowledge_search "
+        "<|tool_call_argument_begin|>{\"query\":\"Meta Ad Set fields\"}"
+        "<|tool_call_end|>"
+    )
+    protocol_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=protocol_text, tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=8, completion_tokens=9),
+    )
+    structured_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(
+                content="",
+                tool_calls=[SimpleNamespace(
+                    id="call-knowledge",
+                    function=SimpleNamespace(
+                        name="lookup_record",
+                        arguments='{"record_id":"meta-adset"}',
+                    ),
+                )],
+            ),
+            finish_reason="tool_calls",
+        )],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+    )
+    completions = _QueuedCompletions(protocol_response, structured_response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("Explain Meta Ad Set fields.")],
+        [_tool()],
+        TurnRequest(user_input="Explain Meta Ad Set fields."),
+    )
+
+    assert result.content == ""
+    assert [call.name for call in result.tool_calls] == ["lookup_record"]
+    assert len(completions.requests) == 2
+    assert protocol_text not in json.dumps(
+        completions.requests[1]["messages"], ensure_ascii=False,
+    )
+
+
+def test_llm_client_strips_private_think_block_from_normal_answer():
+    client, completions = _client(SimpleNamespace(
+        content="<think>internal reasoning</think>Here is the answer.",
+        tool_calls=[],
+    ))
+
+    result = client.complete(
+        [AgentMessage.user("Answer.")],
+        [_tool()],
+        TurnRequest(user_input="Answer."),
+    )
+
+    assert result.content == "Here is the answer."
+    assert "internal reasoning" not in result.content
+    assert len(completions.requests) == 1
+
+
+def test_llm_client_reports_safe_gateway_identity_code_after_retry_fails():
+    protocol_text = (
+        "<|tool_calls_section_end|> API Error: channel_id=\"\" "
+        "error_code=40400 message=invalid_user_id "
+        "<|tool_call_begin|> agent-platform:knowledge_search "
+        "<|tool_call_argument_begin|>{\"query\":\"Meta\"}"
+        "<|tool_call_end|>"
+    )
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=protocol_text, tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    completions = _QueuedCompletions(response, response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    with pytest.raises(LLMStructuredOutputError) as caught:
+        client.complete(
+            [AgentMessage.user("Explain Meta.")],
+            [_tool()],
+            TurnRequest(user_input="Explain Meta."),
+        )
+
+    assert caught.value.safe_reason_code == "tool_gateway_invalid_user_id"
+    assert len(completions.requests) == 2
+    assert protocol_text not in json.dumps(
+        completions.requests[1]["messages"], ensure_ascii=False,
+    )
+
+
+def test_llm_client_rejects_unverified_answer_after_gateway_identity_error():
+    protocol_text = (
+        "<|tool_calls_section_end|> API Error: channel_id=\"\" "
+        "error_code=40400 message=invalid_user_id "
+        "<|tool_call_begin|> agent-platform:knowledge_search "
+        "<|tool_call_argument_begin|>{\"query\":\"Meta\"}"
+        "<|tool_call_end|>"
+    )
+    gateway_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=protocol_text, tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    unverified_answer = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(
+                content="Meta 的广告层级是 Campaign、Ad Set 和 Ad。",
+                tool_calls=[],
+            ),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    completions = _QueuedCompletions(gateway_response, unverified_answer)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    with pytest.raises(LLMStructuredOutputError) as caught:
+        client.complete(
+            [AgentMessage.user("Explain Meta.")],
+            [_tool()],
+            TurnRequest(user_input="Explain Meta."),
+        )
+
+    assert caught.value.safe_reason_code == "tool_gateway_invalid_user_id"
+    assert len(completions.requests) == 2
+
+
 def test_llm_client_rejects_duplicate_tool_call_ids():
     call = SimpleNamespace(
         id="call-1",

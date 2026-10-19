@@ -27,6 +27,11 @@ _STRUCTURED_OUTPUT_ERRORS = {
     "tool_arguments_invalid_json": "模型返回的 Tool 调用参数不是有效 JSON",
     "tool_arguments_not_object": "模型返回的 Tool 参数不是 JSON 对象",
     "tool_not_in_active_catalog": "模型请求调用当前 Agent 未开放的 Tool",
+    "tool_protocol_returned_as_text":
+        "模型连续以普通文本输出 Tool 调用协议；本次没有执行这些文本",
+    "tool_gateway_invalid_user_id":
+        "模型服务侧工具路由返回身份错误（40400 / invalid_user_id）；"
+        "本次知识检索未执行。请检查模型服务侧的用户身份配置后重试",
     "duplicate_tool_call_id": "模型返回了重复的 Tool 调用 ID",
     "transcript_tool_result_missing_call_id":
         "对话执行记录缺少 Tool 结果关联 ID，模型无法继续处理上下文",
@@ -56,6 +61,26 @@ _GENERIC_FAILURE_FRAGMENTS = (
     "请查看执行记录",
     "请查看执行轨迹中的失败步骤",
     "agent 执行失败",
+)
+_TOOL_PROTOCOL_BLOCK = re.compile(
+    r"<tool_call>\s*<function=[^>]+>[\s\S]*?</function>\s*</tool_call>",
+    re.IGNORECASE,
+)
+_HARMONY_TOOL_MARKER = re.compile(
+    r"<\|tool_(?:calls_section_end|call_begin|call_argument_begin|call_end)\|>",
+    re.IGNORECASE,
+)
+_GATEWAY_INVALID_USER_ID = re.compile(
+    r"(?is)error_code\s*=\s*40400\b.{0,160}?"
+    r"message\s*=\s*invalid_user_id\b",
+)
+_PRIVATE_THINK_BLOCK = re.compile(
+    r"<think(?:\s[^>]*)?>[\s\S]*?</think\s*>",
+    re.IGNORECASE,
+)
+_OPEN_THINK_BLOCK = re.compile(
+    r"<think(?:\s[^>]*)?>[\s\S]*$",
+    re.IGNORECASE,
 )
 
 
@@ -113,6 +138,37 @@ def _failed_tool_detail(
 def _is_generic_failure_reply(reply: str) -> bool:
     normalized = str(reply or "").strip().lower()
     return any(fragment in normalized for fragment in _GENERIC_FAILURE_FRAGMENTS)
+
+
+def _is_tool_protocol_only(reply: str) -> bool:
+    text = str(reply or "")
+    blocks = list(_TOOL_PROTOCOL_BLOCK.finditer(text))
+    if bool(blocks) and not _TOOL_PROTOCOL_BLOCK.sub("", text).strip():
+        return True
+    markers = {
+        marker.lower() for marker in _HARMONY_TOOL_MARKER.findall(text)
+    }
+    return (
+        "<|tool_call_begin|>" in markers
+        and len(markers) >= 2
+    )
+
+
+def _strip_private_think(reply: str) -> str:
+    text = _PRIVATE_THINK_BLOCK.sub("", str(reply or ""))
+    return _OPEN_THINK_BLOCK.sub("", text).strip()
+
+
+def _protocol_failure_notice(reply: str) -> str:
+    if _GATEWAY_INVALID_USER_ID.search(str(reply or "")):
+        return (
+            "模型服务侧工具路由返回身份错误（40400 / invalid_user_id），"
+            "本次知识检索未执行。请检查模型服务侧的用户身份配置后重试。"
+        )
+    return (
+        "模型返回了未执行的内部 Tool 协议文本，本次没有执行任何操作。"
+        "请重试；若持续发生，请检查模型服务的原生 Tool 调用配置。"
+    )
 
 
 def _run_failure_reason(error: str, error_code: str = "") -> str:
@@ -187,7 +243,14 @@ def _with_tool_failure(
 
 def visible_run_reply(result: Mapping[str, Any]) -> str:
     """Use the same truthful text for the live response and its durable replay."""
-    reply = str(result.get("reply") or "")
+    raw_reply = str(result.get("reply") or "")
+    protocol_notice = (
+        _protocol_failure_notice(raw_reply)
+        if _is_tool_protocol_only(raw_reply) else ""
+    )
+    reply = _strip_private_think(raw_reply)
+    if protocol_notice:
+        reply = ""
     records = result.get("results") or result.get("tool_results") or ()
     records = records if isinstance(records, (list, tuple)) else ()
     failure = _failed_tool_detail(records)
@@ -201,6 +264,10 @@ def visible_run_reply(result: Mapping[str, Any]) -> str:
         )
     )
     error = str(result.get("error") or "")
+    if protocol_notice:
+        return _protocol_failure_reply(
+            protocol_notice, records, should_show_failure, failure,
+        )
     if error:
         generic_error_reply = _MODEL_ERRORS.get(error)
         if (
@@ -342,6 +409,146 @@ def _successful_read_fallback(
     )
 
 
+def _knowledge_search_fallback(records: Sequence[Any]) -> str:
+    collected = _collect_knowledge_search_results(records)
+    if collected is None:
+        return ""
+    results, failed_searches = collected
+    unique_results = _unique_knowledge_results(results)
+    return _format_knowledge_search_results(
+        unique_results, failed_searches,
+    )
+
+
+def _collect_knowledge_search_results(
+    records: Sequence[Any],
+) -> tuple[list[Mapping[str, Any]], int] | None:
+    results: list[Mapping[str, Any]] = []
+    successful_search = False
+    failed_searches = 0
+    for item in records:
+        if not isinstance(item, Mapping):
+            continue
+        payload = _tool_payload(item)
+        is_knowledge_search = (
+            str(item.get("tool") or item.get("name") or "")
+            == "agent_knowledge_search"
+            or str(item.get("resource_type") or "") == "knowledge"
+        )
+        if not is_knowledge_search:
+            return ""
+        data = item.get("data")
+        if not isinstance(data, Mapping):
+            data = payload.get("data")
+        failed = (
+            item.get("is_error")
+            or item.get("success") is False
+            or payload.get("success") is False
+        )
+        if failed:
+            failed_searches += 1
+            continue
+        if not isinstance(data, Mapping):
+            continue
+        successful_search = True
+        candidates = data.get("results")
+        if isinstance(candidates, list):
+            results.extend(
+                value for value in candidates if isinstance(value, Mapping)
+            )
+    if not successful_search:
+        return None
+    return results, failed_searches
+
+
+def _unique_knowledge_results(
+    results: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    unique_results: list[Mapping[str, Any]] = []
+    seen: set[str] = set()
+    for item in results:
+        key = str(
+            item.get("document_id")
+            or (
+                f"{item.get('title', '')}|{item.get('source_ref', '')}"
+                f"|{item.get('excerpt', '')}"
+            )
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_results.append(item)
+    return unique_results
+
+
+def _format_knowledge_search_results(
+    results: Sequence[Mapping[str, Any]],
+    failed_searches: int,
+) -> str:
+    if not results:
+        if failed_searches:
+            return (
+                f"知识库检索部分完成，另有 {failed_searches} 项检索失败，"
+                "未找到可展示的条目。"
+            )
+        return "知识库检索已完成，没有找到相关内容。"
+
+    lines = [f"知识库检索到 {len(results)} 条相关内容："]
+    for index, item in enumerate(results[:5], start=1):
+        title = _display_text(
+            item.get("title") or item.get("topic") or "知识条目", 300,
+        )
+        excerpt = _display_text(item.get("excerpt") or "", 1200)
+        citation = item.get("citation")
+        citation = citation if isinstance(citation, Mapping) else {}
+        section = _display_text(citation.get("section") or "", 200)
+        source = _display_text(
+            item.get("source_ref") or citation.get("source_ref")
+            or citation.get("source") or "",
+            500,
+        )
+        lines.append(f"\n### {index}. {title}")
+        if excerpt:
+            lines.append(f"\n{excerpt}")
+        details = []
+        if section:
+            details.append(f"章节：`{_escape_inline(section)}`")
+        if source:
+            details.append(f"来源：`{_escape_inline(source)}`")
+        if details:
+            lines.append("\n\n" + " · ".join(details))
+    if failed_searches:
+        lines.append(f"\n\n另有 {failed_searches} 项检索未完成。")
+    return "\n".join(lines)
+
+
+def _protocol_failure_reply(
+    protocol_notice: str,
+    records: Sequence[Any],
+    should_show_failure: bool,
+    failure: tuple[str, str] | None,
+) -> str:
+    if should_show_failure and failure:
+        return _with_tool_failure("", failure)
+    for fallback in (
+        _knowledge_search_fallback(records),
+        _successful_read_fallback(records),
+    ):
+        if fallback:
+            return f"{fallback}\n\n{protocol_notice}"
+    return protocol_notice
+
+
+def _display_text(value: Any, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return str(redact_for_persistence(value)).strip()[:limit]
+
+
+def _escape_inline(value: str) -> str:
+    return str(value).replace("\\", "\\\\").replace("`", "\\`")
+
+
 def _format_read_data(resource: str, data: Mapping[str, Any]) -> str:
     rows = _read_rows(resource, data)
     if not rows:
@@ -453,8 +660,10 @@ def _metadata(record: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def _history_tool(record: Mapping[str, Any]) -> dict[str, Any]:
     metadata = _metadata(record)
-    return {
-        "name": str(record.get("name") or ""),
+    name = str(record.get("name") or "")
+    payload = _tool_payload(record)
+    result = {
+        "name": name,
         "content": record.get("content", ""),
         "is_error": bool(metadata.get("is_error")),
         **{
@@ -463,6 +672,17 @@ def _history_tool(record: Mapping[str, Any]) -> dict[str, Any]:
             ) if key in metadata
         },
     }
+    if name == "agent_knowledge_search":
+        result.update({
+            "action": "search",
+            "effect_class": "read",
+            "resource_type": "knowledge",
+        })
+    if isinstance(payload, Mapping):
+        for key in ("success", "data", "error"):
+            if key in payload:
+                result[key] = payload[key]
+    return result
 
 
 def _tool_badges(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -507,15 +727,21 @@ def _visible_turn(
     ]
     candidate = (presented or native or assistants or tools or [{}])[-1]
     metadata = _metadata(candidate)
-    reply = str(metadata.get("display_reply") or (candidate.get("content") if native and not presented else "") or "")
+    raw_reply = _stored_turn_reply(metadata, candidate, native, presented)
+    reply = _strip_private_think(raw_reply)
     ui = next((
         _metadata(row)["ui"] for row in reversed(assistants)
         if isinstance(_metadata(row).get("ui"), Mapping) and _metadata(row)["ui"]
     ), stored_ui)
     ui = ui if isinstance(ui, Mapping) else {}
     tool_results = [_history_tool(row) for row in tools]
-    if not reply.strip():
-        reply = visible_run_reply({"tool_results": tool_results, "ui": ui})
+    if not reply.strip() or _is_tool_protocol_only(raw_reply):
+        reply = visible_run_reply({
+            "reply": raw_reply,
+            "tool_results": tool_results,
+            "ui": ui,
+            "status": metadata.get("display_status"),
+        })
     if not reply.strip() and not ui:
         return visible
     status = str(metadata.get("display_status") or "")
@@ -535,6 +761,18 @@ def _visible_turn(
         **({"tools": badges} if (badges := _tool_badges(tools)) else {}),
     })
     return visible
+
+
+def _stored_turn_reply(
+    metadata: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    native: Sequence[Mapping[str, Any]],
+    presented: Sequence[Mapping[str, Any]],
+) -> str:
+    value = metadata.get("display_reply")
+    if not value and native and not presented:
+        value = candidate.get("content")
+    return str(value or "")
 
 
 def project_conversation_messages(

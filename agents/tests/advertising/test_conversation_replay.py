@@ -114,6 +114,181 @@ def test_user_text_that_resembles_a_tool_envelope_is_not_decoded():
     assert project_conversation_messages([message("user", content)])[0]["content"] == content
 
 
+def test_tool_protocol_text_is_not_shown_as_the_knowledge_search_reply():
+    leaked_protocol = (
+        "<tool_call>\n<function=agent_knowledge_search>\n"
+        "<parameter=query>知识库检索流程使用方法</parameter>\n"
+        "</function>\n</tool_call>\n"
+        "<tool_call>\n<function=agent_knowledge_search>\n"
+        "<parameter=query>知识文档结构类型</parameter>\n"
+        "</function>\n</tool_call>"
+    )
+    knowledge_tool_result = {
+        "tool": "agent_knowledge_search",
+        "action": "search",
+        "effect_class": "read",
+        "resource_type": "knowledge",
+        "success": True,
+        "data": {
+            "data_status": "local",
+            "count": 1,
+            "results": [{
+                "document_id": "knowledge-search-guide",
+                "title": "知识库检索流程",
+                "excerpt": "检索会先识别问题范围，再返回相关知识片段与来源。",
+                "source_ref": "agents/knowledge/advertising/wiki/index.md",
+                "citation": {
+                    "section": "检索流程",
+                    "evidence_level": "reviewed",
+                },
+            }],
+        },
+    }
+    result = {
+        "reply": leaked_protocol,
+        "results": [knowledge_tool_result, knowledge_tool_result],
+    }
+
+    reply = visible_run_reply(result)
+
+    assert "<tool_call>" not in reply
+    assert "<parameter=" not in reply
+    assert "知识库检索到 1 条相关内容" in reply
+    assert "知识库检索流程" in reply
+    assert "检索会先识别问题范围" in reply
+    assert "agents/knowledge/advertising/wiki/index.md" in reply
+
+
+def test_history_replaces_persisted_tool_protocol_with_knowledge_results():
+    leaked_protocol = (
+        "<tool_call><function=agent_knowledge_search>"
+        "<parameter=query>知识库流程</parameter>"
+        "</function></tool_call>"
+    )
+    rows = [
+        message("user", "知识库流程是怎么样的"),
+        tool_assistant(metadata={"display_reply": leaked_protocol}),
+        message(
+            "tool",
+            json.dumps({
+                "success": True,
+                "data": {
+                    "data_status": "local",
+                    "count": 1,
+                    "results": [{
+                        "document_id": "knowledge-search-guide",
+                        "title": "知识库检索流程",
+                        "excerpt": "知识检索会返回相关片段及出处。",
+                        "source_ref": "wiki/knowledge-search.md",
+                        "citation": {"section": "检索流程"},
+                    }],
+                },
+            }, ensure_ascii=False),
+            name="agent_knowledge_search",
+        ),
+    ]
+
+    visible = project_conversation_messages(rows)
+
+    assert len(visible) == 2
+    assert "<tool_call>" not in visible[-1]["content"]
+    assert "知识库检索到 1 条相关内容" in visible[-1]["content"]
+    assert "检索会返回相关片段及出处" in visible[-1]["content"]
+
+
+def test_unexecuted_tool_protocol_has_a_truthful_nonempty_reply():
+    leaked_protocol = (
+        "<tool_call><function=agent_knowledge_search>"
+        "<parameter=query>Meta 广告层级结构</parameter>"
+        "</function></tool_call>"
+    )
+
+    reply = visible_run_reply({
+        "status": "succeeded",
+        "reply": leaked_protocol,
+        "results": [],
+    })
+
+    assert reply
+    assert "<tool_call>" not in reply
+    assert "没有执行任何操作" in reply
+    assert "检索到" not in reply
+
+
+def test_history_replays_unexecuted_tool_protocol_as_a_clear_notice():
+    leaked_protocol = (
+        "<tool_call><function=agent_knowledge_search>"
+        "<parameter=query>Meta 广告层级结构</parameter>"
+        "</function></tool_call>"
+    )
+    rows = [
+        message("user", "讲下 Meta 广告吧"),
+        message("assistant", leaked_protocol),
+    ]
+
+    visible = project_conversation_messages(rows)
+
+    assert len(visible) == 2
+    assert "<tool_call>" not in visible[-1]["content"]
+    assert "没有执行任何操作" in visible[-1]["content"]
+
+
+def test_harmony_tool_protocol_error_is_sanitized_with_a_useful_cause():
+    leaked_reply = (
+        "<think>内部推理不应显示</think>"
+        "<|tool_calls_section_end|> API Error: channel_id=\"\" "
+        "error_code=40400 message=invalid_user_id "
+        "<|tool_call_begin|> agent-platform:knowledge_search "
+        "<|tool_call_argument_begin|>{\"query\":\"Meta Ad Set fields\"}"
+        "<|tool_call_end|>"
+    )
+
+    reply = visible_run_reply({
+        "status": "succeeded",
+        "reply": leaked_reply,
+        "results": [],
+    })
+
+    assert "<think>" not in reply
+    assert "内部推理" not in reply
+    assert "<|" not in reply
+    assert "tool_call" not in reply
+    assert "40400" in reply
+    assert "invalid_user_id" in reply
+    assert "未执行" in reply
+
+
+def test_history_sanitizes_harmony_protocol_and_private_reasoning():
+    leaked_reply = (
+        "<think>internal reasoning</think>"
+        "<|tool_call_begin|> agent-platform:knowledge_search "
+        "<|tool_call_argument_begin|>{\"query\":\"Meta\"}"
+        "<|tool_call_end|>"
+    )
+
+    visible = project_conversation_messages([
+        message("user", "查 Meta 知识"),
+        message("assistant", leaked_reply),
+    ])
+
+    assert len(visible) == 2
+    assert "<think>" not in visible[-1]["content"]
+    assert "internal reasoning" not in visible[-1]["content"]
+    assert "<|" not in visible[-1]["content"]
+    assert "没有执行" in visible[-1]["content"]
+
+
+def test_private_think_block_is_removed_from_a_valid_visible_reply():
+    reply = visible_run_reply({
+        "status": "succeeded",
+        "reply": "<think>private thought</think>正常回答。",
+        "results": [],
+    })
+
+    assert reply == "正常回答。"
+    assert "private thought" not in reply
+
+
 def test_history_preserves_user_media_references_for_protected_replay():
     attachment = {
         "id": "85a42fc6-14e0-46d7-b595-b31864b198dd",
@@ -151,6 +326,14 @@ def test_a_tool_result_without_a_saved_final_reply_is_not_silently_lost():
     ({"needs_confirmation": True, "confirmation_payload": {"question": "请确认暂停创建"}}, "请确认暂停创建"),
     ({"status": "failed", "tool_results": [{"content": "permission denied", "is_error": True}]}, "permission denied"),
     ({"status": "failed"}, "本次执行未完成"),
+    (
+        {
+            "status": "failed",
+            "error": "LLMStructuredOutputError",
+            "error_code": "tool_protocol_returned_as_text",
+        },
+        "模型连续以普通文本输出 Tool 调用协议",
+    ),
     ({"status": "recovery_required"}, "核实"),
     ({"status": "cancelled"}, "取消"),
 ])
