@@ -334,6 +334,8 @@
         .service-settings-form { display: grid; gap: 13px; min-width: 0; }
         .service-settings-form > label { display: grid; gap: 6px; color: #c2d2e0; font-size: 11px; }
         .service-settings-form input:not([type="checkbox"]) { width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid #29465c; border-radius: 6px; outline: none; color: #e4eef7; background: #091824; font: inherit; font-size: 11px; }
+        .service-settings-form select { width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid #29465c; border-radius: 6px; outline: none; color: #e4eef7; background: #091824; font: inherit; font-size: 11px; }
+        .service-settings-form > label[hidden], .service-provider-clear[hidden] { display: none !important; }
         .service-settings-form input:not([type="checkbox"]):focus { border-color: #2bb5a4; box-shadow: 0 0 0 2px rgba(45, 212, 191, .12); }
         .service-settings-form input:disabled { opacity: .52; }
         .service-settings-form-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }

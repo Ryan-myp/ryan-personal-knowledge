@@ -15,6 +15,9 @@ from urllib.parse import urlsplit
 from cryptography.fernet import Fernet, InvalidToken
 
 
+_WEB_SEARCH_PROVIDERS = frozenset({"duckduckgo", "brave"})
+
+
 class SettingsVaultError(RuntimeError):
     """The encrypted settings store is unavailable or cannot be trusted."""
 
@@ -238,6 +241,7 @@ class AgentSettingsService:
             return {
                 "models": self._model_snapshot(state),
                 "providers": self._provider_snapshot(state),
+                "web_search": self._web_search_snapshot(state),
             }
 
     def _model_snapshot(self, state: Mapping[str, Any]) -> dict[str, Any]:
@@ -301,6 +305,99 @@ class AgentSettingsService:
             }
             for provider, allowed_fields in self.PROVIDER_FIELDS.items()
         }
+
+    def web_search_configuration(self) -> dict[str, str]:
+        """Resolve the selected search backend and its private configuration."""
+        with self._lock:
+            return self._web_search_configuration(self.vault.read())
+
+    def _web_search_snapshot(self, state: Mapping[str, Any]) -> dict[str, Any]:
+        configuration = self._web_search_configuration(state)
+        provider = configuration["provider"]
+        requires_api_key = provider == "brave"
+        provider_source = self._web_search_provider_source(state)
+        source = (
+            configuration["api_key_source"]
+            if requires_api_key and configuration["api_key"]
+            else "in_process" if provider == "duckduckgo" else ""
+        )
+        return {
+            "backend": provider,
+            "provider": "DuckDuckGo" if provider == "duckduckgo" else "Brave Search",
+            "requires_api_key": requires_api_key,
+            "api_key_configured": (
+                requires_api_key and bool(configuration["api_key"])
+            ),
+            "source": source,
+            "provider_source": provider_source,
+        }
+
+    @staticmethod
+    def _web_search_provider_source(state: Mapping[str, Any]) -> str:
+        if os.environ.get("WEB_SEARCH_PROVIDER", "").strip():
+            return "environment"
+        settings = state.get("web_search")
+        settings = settings if isinstance(settings, Mapping) else {}
+        return "vault" if settings.get("provider") else "default"
+
+    @staticmethod
+    def _web_search_configuration(state: Mapping[str, Any]) -> dict[str, str]:
+        settings = state.get("web_search")
+        settings = settings if isinstance(settings, Mapping) else {}
+        provider = (
+            os.environ.get("WEB_SEARCH_PROVIDER", "").strip().lower()
+            or str(settings.get("provider") or "duckduckgo").strip().lower()
+        )
+        if provider not in _WEB_SEARCH_PROVIDERS:
+            provider = "duckduckgo"
+        api_key = settings.get("api_key")
+        api_key_source = "vault" if isinstance(api_key, str) and api_key.strip() else ""
+        if not api_key_source:
+            api_key = os.environ.get("BRAVE_API_KEY", "").strip()
+            api_key_source = "environment" if api_key else ""
+        return {
+            "provider": provider,
+            "api_key": api_key.strip() if isinstance(api_key, str) else "",
+            "api_key_source": api_key_source,
+        }
+
+    def update_web_search_credentials(
+        self,
+        *,
+        provider: str | None = None,
+        api_key: str = "",
+        clear: bool = False,
+    ) -> dict[str, Any]:
+        """Select a search backend and optionally store or clear its key."""
+        if not isinstance(clear, bool):
+            raise ValueError("clear must be a boolean")
+        cleaned_provider = None
+        if provider is not None:
+            cleaned_provider = str(provider).strip().lower()
+            if cleaned_provider not in _WEB_SEARCH_PROVIDERS:
+                raise ValueError("unsupported web-search provider")
+        if api_key not in (None, ""):
+            cleaned_key = self._clean_secret(api_key, "api_key")
+        else:
+            cleaned_key = ""
+        if clear and cleaned_key:
+            raise ValueError("the API key cannot be updated and cleared")
+
+        with self._lock:
+            if cleaned_provider is None and not cleaned_key and not clear:
+                return self.snapshot()
+            previous = self.vault.read()
+            next_state = copy.deepcopy(previous)
+            web_search = next_state.setdefault("web_search", {})
+            if not isinstance(web_search, dict):
+                web_search = {}
+                next_state["web_search"] = web_search
+            if cleaned_provider is not None:
+                web_search["provider"] = cleaned_provider
+            if cleaned_key or clear:
+                web_search["api_key"] = None if clear else cleaned_key
+            self.vault.write(next_state)
+            return self.snapshot()
 
     def update_provider_credentials(
         self,

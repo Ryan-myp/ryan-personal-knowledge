@@ -24,6 +24,12 @@ class ProviderCredentialsRequest(BaseModel):
     clear_fields: list[str] = Field(default_factory=list, max_length=20)
 
 
+class WebSearchCredentialsRequest(BaseModel):
+    provider: str | None = Field(default=None, max_length=40)
+    api_key: str = Field(default="", max_length=8192)
+    clear: bool = False
+
+
 def _require_secure_secret_transport(request: Request) -> None:
     if request.url.scheme == "https":
         return
@@ -142,12 +148,30 @@ def create_settings_router(context: ApiContext) -> APIRouter:
             )
         )
 
+    @router.put("/settings/web-search", tags=["settings"])
+    async def update_web_search_credentials(
+        body: WebSearchCredentialsRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        authorize(http_request, x_api_key)
+        if body.api_key or body.clear:
+            _require_secure_secret_transport(http_request)
+        return invoke(
+            lambda: service().update_web_search_credentials(
+                provider=body.provider,
+                api_key=body.api_key,
+                clear=body.clear,
+            )
+        )
+
     return router
 
 
 __all__ = [
     "ModelProfileRequest",
     "ProviderCredentialsRequest",
+    "WebSearchCredentialsRequest",
     "_require_secure_secret_transport",
     "create_settings_router",
 ]

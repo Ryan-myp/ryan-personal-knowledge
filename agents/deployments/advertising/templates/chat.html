@@ -232,6 +232,7 @@
                 <div class="service-settings-tabs" role="tablist" aria-label="设置分类">
                     <button class="service-settings-tab active" id="settingsModelsTab" type="button" role="tab" aria-selected="true" onclick="selectAgentSettingsTab('models')">模型</button>
                     <button class="service-settings-tab" id="settingsProvidersTab" type="button" role="tab" aria-selected="false" onclick="selectAgentSettingsTab('providers')">渠道密钥</button>
+                    <button class="service-settings-tab" id="settingsWebSearchTab" type="button" role="tab" aria-selected="false" onclick="selectAgentSettingsTab('web-search')">网页搜索</button>
                 </div>
                 <div class="service-settings-status" id="agentSettingsStatus" role="status" aria-live="polite"></div>
                 <section class="service-settings-panel" id="settingsModelsPanel" role="tabpanel" aria-labelledby="settingsModelsTab">
@@ -264,6 +265,18 @@
                         <div class="service-settings-transport-note">远程访问时需 HTTPS；本机访问可使用回环地址。</div>
                         <div class="service-settings-form-actions">
                             <button class="btn btn-primary" type="submit">保存渠道密钥</button>
+                        </div>
+                    </form>
+                </section>
+                <section class="service-settings-panel" id="settingsWebSearchPanel" role="tabpanel" aria-labelledby="settingsWebSearchTab" hidden>
+                    <form class="service-settings-form" id="webSearchSettingsForm" onsubmit="saveWebSearchCredentials(event)">
+                        <label>搜索后端<select id="webSearchProvider" onchange="toggleWebSearchProviderFields()"><option value="duckduckgo">DuckDuckGo（免 API Key）</option><option value="brave">Brave Search（需要 API Key）</option></select></label>
+                        <div class="service-provider-field-status" id="webSearchKeyStatus">DuckDuckGo 已启用，无需 API Key 或独立搜索服务</div>
+                        <label id="webSearchApiKeyField" hidden>Brave Search API Key<input id="webSearchApiKey" type="password" maxlength="8192" autocomplete="new-password" placeholder="可选：输入 Brave Search API Key"></label>
+                        <label class="service-provider-clear"><input id="webSearchClearKey" type="checkbox" onchange="toggleWebSearchKeyInput()"><span>清除已保存密钥</span></label>
+                        <div class="service-settings-transport-note">默认通过当前 Agent 进程直接调用 DuckDuckGo，不需要额外端口或 API Key；公开搜索可能受到上游限流或验证。Brave 是可选后端，密钥保存在服务端加密设置中；也可通过 BRAVE_API_KEY 环境变量提供。远程保存密钥需使用 HTTPS。</div>
+                        <div class="service-settings-form-actions">
+                            <button class="btn btn-primary" type="submit">保存网页搜索设置</button>
                         </div>
                     </form>
                 </section>

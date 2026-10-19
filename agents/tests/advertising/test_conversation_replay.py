@@ -159,6 +159,41 @@ def test_tool_protocol_text_is_not_shown_as_the_knowledge_search_reply():
     assert "agents/knowledge/advertising/wiki/index.md" in reply
 
 
+def test_tool_protocol_text_is_replaced_with_cited_web_search_results():
+    leaked_protocol = (
+        "<tool_call><function=agent_web_search>"
+        "<parameter=query>latest platform API changes</parameter>"
+        "</function></tool_call>"
+    )
+    reply = visible_run_reply({
+        "reply": leaked_protocol,
+        "results": [{
+            "tool": "agent_web_search",
+            "action": "search",
+            "effect_class": "read",
+            "resource_type": "web",
+            "success": True,
+            "data": {
+                "provider": "brave",
+                "data_status": "web",
+                "count": 1,
+                "results": [{
+                    "title": "Official API guide",
+                    "url": "https://example.com/guide_(v2)",
+                    "snippet": "The current guide. access_token=private-token",
+                    "age": "2 days ago",
+                }],
+            },
+        }],
+    })
+
+    assert "<tool_call>" not in reply
+    assert "网页搜索找到 1 条结果" in reply
+    assert "[Official API guide](https://example.com/guide_%28v2%29)" in reply
+    assert "The current guide." in reply
+    assert "private-token" not in reply
+
+
 def test_history_replaces_persisted_tool_protocol_with_knowledge_results():
     leaked_protocol = (
         "<tool_call><function=agent_knowledge_search>"

@@ -17,6 +17,7 @@ from agents.applications.advertising.composition.ad_application import (
 from agents.applications.advertising.integrations.integration import (
     AdvertisingContextProvider,
 )
+from agents.agent_platform.tools.web_search import web_search_tool_source
 from agents.scenarios.advertising import advertising_agent_definition
 
 
@@ -106,6 +107,7 @@ def test_core_agent_contract_forbids_inventing_model_identity():
     assert "Do not volunteer underlying model, provider, or developer identity in" in prompt
     assert "self-introductions or capability answers" in prompt
     assert "If no active Tool can satisfy an actionable request" in prompt
+    assert "Do not say a capability is unsupported solely because no Tool" in prompt
     assert "Never leave the response empty" in prompt
 
 
@@ -263,6 +265,28 @@ def test_capability_catalog_does_not_claim_tools_outside_request_allowlist():
 
     assert "campaign" in catalog
     assert "-> get(" not in catalog
+
+
+def test_capability_catalog_explicitly_identifies_registered_web_search():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    runtime.register_tool_source(web_search_tool_source(
+        configuration_provider=lambda: {"provider": "duckduckgo"},
+        required_permission="ads.read",
+    ))
+    try:
+        catalog = AdvertisingContextProvider(runtime)._capability_catalog(
+            TurnRequest(user_input="你支持网页搜索吗？")
+        )
+    finally:
+        runtime.close(wait=True)
+
+    assert "agent_web_search" in catalog
+    assert "网页搜索" in catalog
+    assert "引用来源" in catalog
 
 
 def test_capability_catalog_truncation_stays_within_context_budget():

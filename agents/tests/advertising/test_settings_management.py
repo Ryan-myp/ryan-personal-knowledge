@@ -220,6 +220,90 @@ def test_provider_names_and_fields_are_allowlisted(tmp_path):
     assert runtime.credentials == {}
 
 
+def test_web_search_key_is_encrypted_and_only_configuration_status_is_exposed(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    service, _runtime, vault, _clients = make_service(tmp_path)
+
+    result = service.update_web_search_credentials(
+        provider="brave",
+        api_key="private-brave-search-key",
+    )
+
+    assert service.web_search_configuration() == {
+        "provider": "brave",
+        "api_key": "private-brave-search-key",
+        "api_key_source": "vault",
+    }
+    assert result["web_search"] == {
+        "backend": "brave",
+        "provider": "Brave Search",
+        "requires_api_key": True,
+        "api_key_configured": True,
+        "source": "vault",
+        "provider_source": "vault",
+    }
+    assert "private-brave-search-key" not in repr(result)
+    assert b"private-brave-search-key" not in vault.path.read_bytes()
+
+    service.update_web_search_credentials(clear=True)
+    assert service.web_search_configuration()["api_key"] == ""
+    assert service.snapshot()["web_search"]["api_key_configured"] is False
+
+
+def test_web_search_key_uses_environment_as_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRAVE_API_KEY", "environment-brave-key")
+    service, _runtime, _vault, _clients = make_service(tmp_path)
+
+    service.update_web_search_credentials(provider="brave")
+
+    assert service.web_search_configuration()["api_key"] == (
+        "environment-brave-key"
+    )
+    assert service.snapshot()["web_search"] == {
+        "backend": "brave",
+        "provider": "Brave Search",
+        "requires_api_key": True,
+        "api_key_configured": True,
+        "source": "environment",
+        "provider_source": "vault",
+    }
+
+    service.update_web_search_credentials(api_key="vault-brave-key")
+    assert service.web_search_configuration()["api_key"] == "vault-brave-key"
+    assert service.snapshot()["web_search"]["source"] == "vault"
+
+
+def test_web_search_defaults_to_keyless_duckduckgo(tmp_path, monkeypatch):
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    monkeypatch.delenv("WEB_SEARCH_PROVIDER", raising=False)
+    service, _runtime, _vault, _clients = make_service(tmp_path)
+
+    assert service.web_search_configuration() == {
+        "provider": "duckduckgo",
+        "api_key": "",
+        "api_key_source": "",
+    }
+    assert service.snapshot()["web_search"] == {
+        "backend": "duckduckgo",
+        "provider": "DuckDuckGo",
+        "requires_api_key": False,
+        "api_key_configured": False,
+        "source": "in_process",
+        "provider_source": "default",
+    }
+
+
+def test_web_search_provider_is_selected_from_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEB_SEARCH_PROVIDER", "duckduckgo")
+    service, _runtime, _vault, _clients = make_service(tmp_path)
+
+    assert service.web_search_configuration()["provider"] == "duckduckgo"
+    assert service.snapshot()["web_search"]["provider_source"] == "environment"
+
+
 @pytest.mark.parametrize(
     "scheme,client,accepted",
     [
@@ -307,3 +391,60 @@ def test_settings_api_requires_permission_and_never_echoes_secret(tmp_path):
     ).get("/settings")
 
     assert denied_response.status_code == 403
+
+
+def test_web_search_settings_api_is_authorized_secure_and_never_echoes_key(
+    tmp_path,
+):
+    service, runtime, vault, _clients = make_service(tmp_path)
+    principal = RequestPrincipal(
+        user_id="settings-admin",
+        permissions=frozenset({"settings.manage"}),
+    )
+    context = ApiContext(
+        runtime_getter=lambda: runtime,
+        authorize_request=lambda _api_key, _request: principal,
+        require_permission=lambda request_principal, permission: (
+            None if permission in request_principal.permissions
+            else (_ for _ in ()).throw(
+                HTTPException(status_code=403, detail="forbidden")
+            )
+        ),
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: type(error).__name__,
+        redact=lambda value: value,
+        settings_service_getter=lambda: service,
+    )
+    app = FastAPI()
+    app.include_router(create_settings_router(context))
+    client = TestClient(app, base_url="http://testserver")
+
+    response = client.put(
+        "/settings/web-search",
+        json={"provider": "duckduckgo"},
+    )
+    assert response.status_code == 200
+    assert response.json()["web_search"]["backend"] == "duckduckgo"
+
+    response = client.put(
+        "/settings/web-search",
+        json={"api_key": "private-brave-search-key"},
+    )
+
+    assert response.status_code == 400
+    assert service.web_search_configuration()["api_key"] == ""
+
+    secure_client = TestClient(app, base_url="https://testserver")
+    response = secure_client.put(
+        "/settings/web-search",
+        json={
+            "provider": "brave",
+            "api_key": "private-brave-search-key",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "private-brave-search-key" not in response.text
+    assert b"private-brave-search-key" not in vault.path.read_bytes()
+    assert response.json()["web_search"]["api_key_configured"] is True

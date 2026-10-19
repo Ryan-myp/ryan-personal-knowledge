@@ -112,6 +112,7 @@ class AdvertisingCapabilityCatalog:
     def _tool_lines(cls, tools: list[Any]) -> tuple[list[str], bool]:
         groups: dict[tuple[str, str], set[tuple[str, str]]] = {}
         fallback_tools: set[str] = set()
+        platform_tools: set[str] = set()
         has_live_adapter = False
         for tool in tools:
             state, declared_live = cls._tool_state(tool)
@@ -126,14 +127,23 @@ class AdvertisingCapabilityCatalog:
             action = cls._single_line(
                 cls._field(tool, "action", ""), limit=80,
             )
+            name = cls._single_line(
+                cls._field(tool, "name", ""), limit=160,
+            )
+            if namespace == "agent-platform" and name:
+                description = cls._single_line(
+                    cls._field(tool, "description", ""), limit=180,
+                )
+                suffix = f": {description}" if description else ""
+                platform_tools.add(
+                    f"{name}{suffix} [{kind},{support}]"
+                )
+                continue
             if namespace and resource and action:
                 groups.setdefault((namespace, resource), set()).add(
                     (action, f"{kind},{support}")
                 )
                 continue
-            name = cls._single_line(
-                cls._field(tool, "name", ""), limit=160,
-            )
             if name:
                 fallback_tools.add(f"{name} [{kind},{support}]")
         lines = [
@@ -147,6 +157,10 @@ class AdvertisingCapabilityCatalog:
                 for action, state in sorted(action_states)
             )
             lines.append(f"- {namespace}: {resource} -> {actions}")
+        lines.extend(
+            f"- agent-platform Tool: {name}"
+            for name in sorted(platform_tools)
+        )
         lines.extend(f"- {name}" for name in sorted(fallback_tools))
         if not groups and not fallback_tools:
             lines.append("- none registered")

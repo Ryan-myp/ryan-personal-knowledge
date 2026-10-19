@@ -28,6 +28,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
+from agents.agent_harness.core.plugins import PluginKind
 
 from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -78,6 +79,7 @@ from agents.deployments.advertising.settings import (
     AgentSettingsService,
     EncryptedSettingsVault,
 )
+from agents.agent_platform.tools import web_search_tool_source
 from agents.applications.advertising.creation.templates import (
     creation_template_manager_for_runtime,
 )
@@ -355,6 +357,19 @@ def _init_runtime():
         runtime.assert_llm_ready()
         active_settings_service.configure(runtime=runtime)
         settings_service = active_settings_service
+        web_search_source = web_search_tool_source(
+            configuration_provider=(
+                active_settings_service.web_search_configuration
+            ),
+            required_permission="ads.read",
+        )
+        runtime.register_tool_source(web_search_source)
+        runtime._register_builtin_plugin(
+            web_search_source.source_id,
+            web_search_source,
+            (PluginKind.TOOL_SOURCE.value,),
+            description="Built-in bounded read-only web search Tool",
+        )
         
         # 自动加载 Skills
         skills_root = BUILTIN_SKILLS_ROOT

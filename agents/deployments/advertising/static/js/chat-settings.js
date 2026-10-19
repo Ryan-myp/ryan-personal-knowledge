@@ -81,19 +81,29 @@
         }
 
         function selectAgentSettingsTab(tab) {
-            agentSettingsState.tab = tab === 'providers' ? 'providers' : 'models';
+            agentSettingsState.tab = ['providers', 'web-search'].includes(tab)
+                ? tab
+                : 'models';
             const modelsActive = agentSettingsState.tab === 'models';
+            const providersActive = agentSettingsState.tab === 'providers';
+            const webSearchActive = agentSettingsState.tab === 'web-search';
             const modelsTab = document.getElementById('settingsModelsTab');
             const providersTab = document.getElementById('settingsProvidersTab');
+            const webSearchTab = document.getElementById('settingsWebSearchTab');
             const modelsPanel = document.getElementById('settingsModelsPanel');
             const providersPanel = document.getElementById('settingsProvidersPanel');
+            const webSearchPanel = document.getElementById('settingsWebSearchPanel');
             modelsTab?.classList.toggle('active', modelsActive);
             modelsTab?.setAttribute('aria-selected', String(modelsActive));
-            providersTab?.classList.toggle('active', !modelsActive);
-            providersTab?.setAttribute('aria-selected', String(!modelsActive));
+            providersTab?.classList.toggle('active', providersActive);
+            providersTab?.setAttribute('aria-selected', String(providersActive));
+            webSearchTab?.classList.toggle('active', webSearchActive);
+            webSearchTab?.setAttribute('aria-selected', String(webSearchActive));
             if (modelsPanel) modelsPanel.hidden = !modelsActive;
-            if (providersPanel) providersPanel.hidden = modelsActive;
-            if (!modelsActive) renderAgentProviderFields();
+            if (providersPanel) providersPanel.hidden = !providersActive;
+            if (webSearchPanel) webSearchPanel.hidden = !webSearchActive;
+            if (providersActive) renderAgentProviderFields();
+            if (webSearchActive) renderWebSearchSettings();
         }
 
         async function loadAgentSettings() {
@@ -102,6 +112,7 @@
                 agentSettingsState.snapshot = await settingsRequest('/settings');
                 renderAgentModelProfiles();
                 renderAgentProviderFields();
+                renderWebSearchSettings();
                 setAgentSettingsStatus('');
             } catch (error) {
                 setAgentSettingsStatus(error.message || '读取设置失败。', true);
@@ -336,5 +347,115 @@
                 setAgentSettingsStatus('渠道凭证已保存。');
             } catch (error) {
                 setAgentSettingsStatus(error.message || '渠道凭证保存失败。', true);
+            }
+        }
+
+        function renderWebSearchSettings() {
+            const settings = agentSettingsState.snapshot?.web_search || {};
+            const provider = document.getElementById('webSearchProvider');
+            if (provider && ['duckduckgo', 'brave'].includes(settings.backend)) {
+                provider.value = settings.backend;
+            }
+            const apiKeyInput = document.getElementById('webSearchApiKey');
+            if (apiKeyInput) apiKeyInput.value = '';
+            const clearKeyInput = document.getElementById('webSearchClearKey');
+            if (clearKeyInput) clearKeyInput.checked = false;
+            if (provider) {
+                provider.disabled = settings.provider_source === 'environment';
+            }
+            toggleWebSearchProviderFields();
+        }
+
+        function toggleWebSearchProviderFields() {
+            const settings = agentSettingsState.snapshot?.web_search || {};
+            const provider = document.getElementById('webSearchProvider');
+            const input = document.getElementById('webSearchApiKey');
+            const keyField = document.getElementById('webSearchApiKeyField');
+            const status = document.getElementById('webSearchKeyStatus');
+            const clear = document.getElementById('webSearchClearKey');
+            const selectedBackend = provider?.value === 'brave'
+                ? 'brave'
+                : 'duckduckgo';
+            const currentBackend = settings.backend === 'brave'
+                ? 'brave'
+                : 'duckduckgo';
+            const isBrave = selectedBackend === 'brave';
+            if (keyField) keyField.hidden = !isBrave;
+            if (input) {
+                input.placeholder = settings.api_key_configured
+                    ? '已配置，留空表示不轮换'
+                    : '输入 Brave Search API Key';
+            }
+            if (status) {
+                const source = settings.source === 'environment'
+                    ? '环境变量'
+                    : settings.source === 'vault' ? '加密设置' : '';
+                const message = selectedBackend !== currentBackend
+                    ? isBrave
+                        ? settings.api_key_configured
+                            ? '保存后将切换到 Brave Search'
+                            : '切换后需要配置 Brave Search API Key'
+                        : '保存后将切换到免 Key 的 DuckDuckGo'
+                    : isBrave
+                        ? settings.api_key_configured
+                            ? `Brave Search 已配置${source ? ` · ${source}` : ''}`
+                            : 'Brave Search 需要 API Key 才能搜索'
+                        : 'DuckDuckGo 已选中，无需 API Key 或独立搜索服务';
+                status.textContent = message;
+                status.className = `service-provider-field-status${isBrave && settings.api_key_configured ? ' configured' : ''}`;
+            }
+            if (input) input.disabled = !isBrave;
+            if (clear) clear.closest('.service-provider-clear')?.toggleAttribute(
+                'hidden',
+                !isBrave || !settings.api_key_configured,
+            );
+        }
+
+        function toggleWebSearchKeyInput() {
+            const input = document.getElementById('webSearchApiKey');
+            const clear = document.getElementById('webSearchClearKey');
+            if (!input || !clear) return;
+            input.disabled = clear.checked;
+            if (clear.checked) input.value = '';
+        }
+
+        async function saveWebSearchCredentials(event) {
+            event?.preventDefault();
+            const provider = String(
+                document.getElementById('webSearchProvider')?.value || 'duckduckgo',
+            );
+            const apiKey = provider === 'brave'
+                ? String(
+                    document.getElementById('webSearchApiKey')?.value || '',
+                ).trim()
+                : '';
+            const clear = provider === 'brave' && Boolean(
+                document.getElementById('webSearchClearKey')?.checked,
+            );
+            if ((apiKey || clear) && !isSecureSettingsOrigin()) {
+                setAgentSettingsStatus('远程连接请使用 HTTPS 后再保存网页搜索密钥。', true);
+                return;
+            }
+            if (apiKey && clear) {
+                setAgentSettingsStatus('不能同时更新和清除密钥。', true);
+                return;
+            }
+            setAgentSettingsStatus('保存网页搜索密钥中…');
+            try {
+                agentSettingsState.snapshot = await settingsRequest(
+                    '/settings/web-search',
+                    {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                            provider,
+                            api_key: apiKey,
+                            clear,
+                        }),
+                    },
+                );
+                renderWebSearchSettings();
+                setAgentSettingsStatus('网页搜索密钥设置已保存。');
+            } catch (error) {
+                setAgentSettingsStatus(error.message || '网页搜索密钥保存失败。', true);
             }
         }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from agents.agent_harness import redact_for_persistence
 
@@ -399,9 +400,14 @@ def _successful_read_fallback(
         platform = str(item.get("platform") or item.get("namespace") or "").strip()
         if platform:
             resource = f"{platform} · {resource}"
-        data_status = str(data.get("data_status") or "")
-        source = "真实渠道 API" if data_status == "live" else "查询工具"
-        summary = _format_read_data(resource, data)
+        tool_name = str(item.get("tool") or item.get("name") or "")
+        if tool_name == "agent_web_search":
+            source = "网页搜索"
+            summary = _format_web_search_results(data)
+        else:
+            data_status = str(data.get("data_status") or "")
+            source = "真实渠道 API" if data_status == "live" else "查询工具"
+            summary = _format_read_data(resource, data)
         if summary:
             summaries.append(f"**{resource}**（{source}）\n\n{summary}")
     if not summaries:
@@ -638,7 +644,7 @@ def _format_account_list_failure(
 
 def _knowledge_search_fallback(records: Sequence[Any]) -> str:
     collected = _collect_knowledge_search_results(records)
-    if collected is None:
+    if not isinstance(collected, tuple):
         return ""
     results, failed_searches = collected
     unique_results = _unique_knowledge_results(results)
@@ -663,7 +669,7 @@ def _collect_knowledge_search_results(
             or str(item.get("resource_type") or "") == "knowledge"
         )
         if not is_knowledge_search:
-            return ""
+            return None
         data = item.get("data")
         if not isinstance(data, Mapping):
             data = payload.get("data")
@@ -818,6 +824,55 @@ def _format_read_data(resource: str, data: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _format_web_search_results(data: Mapping[str, Any]) -> str:
+    candidates = data.get("results")
+    results = (
+        [item for item in candidates if isinstance(item, Mapping)]
+        if isinstance(candidates, list) else []
+    )
+    if not results:
+        return "网页搜索已完成，没有找到相关结果。"
+
+    lines = [f"网页搜索找到 {len(results)} 条结果："]
+    for index, item in enumerate(results[:5], start=1):
+        title = _display_text(item.get("title") or "网页来源", 300)
+        snippet = _display_text(item.get("snippet") or "", 1200)
+        url = _safe_markdown_url(item.get("url"))
+        age = _display_text(item.get("age") or "", 100)
+        heading = f"### {index}. [{title}]({url})" if url else f"### {index}. {title}"
+        lines.extend(["", heading])
+        if snippet:
+            lines.extend(["", snippet])
+        if age:
+            lines.extend(["", f"时间：{age}"])
+    return "\n".join(lines)
+
+
+def _safe_markdown_url(value: Any) -> str:
+    if not isinstance(value, str) or len(value) > 2048:
+        return ""
+    try:
+        parsed = urlsplit(value.strip())
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            return ""
+        parsed.port
+    except ValueError:
+        return ""
+    normalized = urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc,
+        parsed.path,
+        parsed.query,
+        "",
+    ))
+    return quote(normalized, safe=":/?#[]@!$&+,;=%-._~")
+
+
 def _read_rows(resource: str, data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     candidates = [
         [row for row in value if isinstance(row, Mapping)]
@@ -904,6 +959,12 @@ def _history_tool(record: Mapping[str, Any]) -> dict[str, Any]:
             "action": "search",
             "effect_class": "read",
             "resource_type": "knowledge",
+        })
+    if name == "agent_web_search":
+        result.update({
+            "action": "search",
+            "effect_class": "read",
+            "resource_type": "web",
         })
     if isinstance(payload, Mapping):
         for key in ("success", "data", "error"):
