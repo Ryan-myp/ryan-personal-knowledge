@@ -1,12 +1,12 @@
 # LLM Wiki 索引
 
-> **版本**: v2.8.0
+> **版本**: v2.9.0
 > **更新时间**: 2026-10-19
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
 
-本知识库围绕 Google Ads、Meta Ads、TikTok Ads、DV360 四个平台，覆盖“理解对象 → 设计投放 → 执行前校验 → 运行中优化 → 归因复盘”的完整链路。
+本知识库围绕 Google Ads、Meta Ads、TikTok Ads、DV360 四个平台，以及跨平台计算广告基础，覆盖“理解对象 → 设计投放 → 执行前校验 → 运行中优化 → 归因复盘”的链路。
 
 ```text
 raw：原始来源、论文、代码片段和未经审核的材料
@@ -25,6 +25,10 @@ knowledge_base/
 │   ├── meta/        # Campaign/Ad Set/Ad、ODAX、Catalog、CAPI、Insights
 │   ├── tiktok/      # Campaign/Ad Group/Ad、Spark、Smart+、事件、报表
 │   └── dv360/       # Partner/Advertiser、IO/Line Item、Deal、Floodlight、报告
+├── entities/
+│   └── programmatic-advertising.md # 计算广告生态角色、交易模式与专题导航
+├── concepts/
+│   └── programmatic/ # RTB/OpenRTB、DSP、SSP/ADX、供应链、测量诊断
 ├── business/
 │   ├── cross-platform-hierarchy.md
 │   ├── industry-playbooks.md
@@ -66,6 +70,12 @@ knowledge_base/
 | 用户问题 | 优先知识 |
 |---|---|
 | “介绍一下某个广告平台/讲讲基础知识” | 对应 `entities/` 概览页，再按其知识入口深入专题 |
+| “计算广告、程序化广告是什么，DSP/SSP/ADX 有何区别？” | `entities/programmatic-advertising` + `concepts/programmatic/` 专题 |
+| “RTB/OpenRTB 一次竞价如何运行，no-bid 或超时怎么排查？” | `concepts/programmatic/rtb-and-openrtb-auction` |
+| “DSP 如何估值出价、控制预算节奏和 bid shading？” | `concepts/programmatic/dsp-decisioning-and-bidding` |
+| “SSP、ADX、Header Bidding、Waterfall 如何影响收益？” | `concepts/programmatic/ssp-exchange-and-yield` |
+| “ads.txt、sellers.json、schain 怎么判断供应路径质量？” | `concepts/programmatic/supply-path-transparency-and-quality` |
+| “程序化广告的 fill、win、eCPM、IVT 异常怎么定位？” | `concepts/programmatic/measurement-and-diagnostics` |
 | “这个平台的层级和父子关系是什么？” | `cross-platform-hierarchy` + 对应平台 `hierarchy` |
 | “Meta 的广告目标应该怎么选，Catalog Sales/私信属于哪一层？” | `queries/meta-objective-selection` + Meta `hierarchy-and-objectives` |
 | “怎么创建/修改广告？” | 对应平台 `constraints-and-workflows` + 当前 Tool schema |
@@ -96,7 +106,7 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-10-19，Runtime 实际加载 **75 个发布 Markdown 文档**：
+截至 2026-10-19，Runtime 实际加载 **81 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
@@ -105,13 +115,16 @@ knowledge_base/
 | TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
 | DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |
 | 跨平台业务 | 18 | 四平台总览、层级、全漏斗规划、行业、预算节奏、边际效率、受众、创意、数据契约、转化信号质量、商品 Feed、审核拒登恢复、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
+| 程序化广告 | 6 | 1 个实体导航页 + 5 篇概念专题，覆盖生态/交易类型、RTB/OpenRTB、DSP 决策、SSP/ADX/Header Bidding、供应链质量、隐私与指标诊断 |
 | 经验方法 | 4 | 诊断、实验、最佳实践、错误模式 |
 | 对比页 | 1 | 四个平台的对象、强项和优先核对项 |
 | 概念页 | 1 | Provider live E2E 的测试记忆与恢复规则 |
 
 平台专题文档当前已从“示例条目”升级为“资源模型 + 数据契约 + 决策框架 + 诊断路径 + API 执行边界”。跨平台创意知识新增了证据驱动路线图、探索/扩量状态、制作产能和 Hook 到业务结果的诊断；审计知识区分健康度与证据覆盖率；实验与归因知识明确统计结论和因果边界；Google 报表知识补充搜索词可见性、转化动作粒度、日期口径和模拟数据边界。实体页只负责导航，不复制平台规则；固定数值、策略枚举和规格仍需按账户、地区、接口版本与平台政策复核。
 
-四个平台的实体页提供中文概览、核心对象职责和专题入口，适合回答“讲讲某渠道/基础知识”这类宽问题；遇到具体决策、字段、策略和排障时，继续引用对应专题，而不是把实体页当作完整事实来源。纯链接参考章节不参与知识片段排名，但文章级来源仍随检索结果返回。
+四个平台及程序化广告的实体页提供中文概览、核心对象职责和专题入口，适合回答“讲讲某渠道/基础知识”这类宽问题；遇到具体决策、字段、策略和排障时，继续引用对应专题，而不是把实体页当作完整事实来源。纯链接参考章节不参与知识片段排名，但文章级来源仍随检索结果返回。
+
+程序化知识从个人知识库中的 RTB、OpenRTB、DSP 竞价、SSP、Header Bidding 与拍卖笔记中抽取，并按 IAB Tech Lab 的 2026 Programmatic Auction Definitions、OpenRTB 发布记录和 Prebid 文档复核边界。旧资料中的固定 QPS、延迟、收益提升、案例“生产数据”和简化拍卖代码不作为事实发布；性能需要在具体系统测量，平台/账号能力仍需单独核验。程序化知识属于 advisory context，不代表本 Agent 已有 DSP/SSP/ADX 的可执行能力。
 
 全漏斗规划页把业务结果映射到媒体任务和优化信号；转化信号页补充事件生命周期、CRM 离线结果回传、隐私与失败恢复；商品 Feed 页补充跨渠道商品身份、资格链路和端到端诊断。这些方法页是 provisional 运营框架，平台动态字段和账户能力仍以官方文档、账户证据和当前 Tool schema 为准。
 

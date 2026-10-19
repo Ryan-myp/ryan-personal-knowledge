@@ -46,6 +46,15 @@
   {"query": "TikTok 广告被拒审后提交 One Click Appeal，申诉中能否编辑广告组，哪些对象会重新审核", "expected": ["tiktok-ads-constraints-and-workflows", "cross-platform-ad-review-and-recovery"], "expected_top": "tiktok-ads-constraints-and-workflows"},
   {"query": "DV360 Creative review status DV360 status Exchange status，一个 Exchange rejected 会影响哪些库存", "expected": ["dv360-constraints-and-workflows", "cross-platform-ad-review-and-recovery"], "expected_top": "dv360-constraints-and-workflows"},
   {"query": "Meta Campaign Ad Set Ad 层级边界", "expected": ["meta-canonical-campaign-and-adset-runbook"], "expected_top": "meta-canonical-campaign-and-adset-runbook"},
+  {"query": "解释计算广告程序化广告生态里广告主、DSP、SSP、Ad Exchange ADX、广告服务器和数据平台分别做什么", "expected": ["programmatic-advertising-entity"], "expected_top": "programmatic-advertising-entity"},
+  {"query": "程序化广告交易类型 Open Auction、PMP、Preferred Deal、Programmatic Guaranteed 的采购确定性和拍卖区别", "expected": ["programmatic-advertising-entity"], "expected_top": "programmatic-advertising-entity"},
+  {"query": "IAB Programmatic Auction Definitions 的 Ad Inventory Controller、Ad Request Initiator、Selling Platform、Buying Platform、Auctioneer、Final Auctioneer 是什么", "expected": ["programmatic-advertising-entity", "programmatic-rtb-and-openrtb-auction"], "expected_top": "programmatic-advertising-entity"},
+  {"query": "程序化供应链多跳中每层都可能竞价，Selling Platform 赢标为什么不等于 Publisher Ad Server 最终渲染", "expected": ["programmatic-rtb-and-openrtb-auction", "programmatic-advertising-entity"], "expected_top": "programmatic-rtb-and-openrtb-auction"},
+  {"query": "RTB 是什么，OpenRTB Bid Request BidResponse impression bid floor tmax no-bid 如何串起一次展示竞价", "expected": ["programmatic-rtb-and-openrtb-auction"], "expected_top": "programmatic-rtb-and-openrtb-auction"},
+  {"query": "DSP 如何利用 pCTR pCVR 转化价值估值出价，first-price bid shading 和预算 pacing 如何配合", "expected": ["programmatic-dsp-decisioning-and-bidding"], "expected_top": "programmatic-dsp-decisioning-and-bidding"},
+  {"query": "SSP 和 Ad Exchange ADX 有什么区别，Header Bidding、Waterfall、多路竞价和底价怎么影响收益", "expected": ["programmatic-ssp-exchange-and-yield"], "expected_top": "programmatic-ssp-exchange-and-yield"},
+  {"query": "ads.txt app-ads.txt sellers.json SupplyChain object schain 如何检查广告供应链和转售路径透明度", "expected": ["programmatic-supply-path-transparency-and-quality"], "expected_top": "programmatic-supply-path-transparency-and-quality"},
+  {"query": "程序化广告 bid rate win rate fill rate eCPM viewability IVT 转化效果异常如何分层诊断", "expected": ["programmatic-measurement-and-diagnostics"], "expected_top": "programmatic-measurement-and-diagnostics"},
   {"query": "原始来源 raw ingest 文档", "expected": [], "forbidden_wiki_types": ["raw"]},
   {"query": "待审核 draft 页面", "expected": [], "forbidden_statuses": ["draft", "deprecated"]}
 ]

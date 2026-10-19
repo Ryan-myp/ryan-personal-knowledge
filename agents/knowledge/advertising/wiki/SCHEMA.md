@@ -11,6 +11,7 @@ knowledge_base/
 ├── raw/                         # 不可变来源；仅供 ingest/provenance
 ├── entities/                    # 平台、产品等稳定实体
 ├── concepts/                    # 逻辑概念层说明
+│   └── <domain>/                # 跨平台稳定概念专题
 ├── comparisons/                 # 跨平台/方案对比
 ├── queries/                     # 可复用问答归档
 ├── platforms/<platform>/
@@ -115,6 +116,7 @@ subcategory: conversion-and-diagnostics
 | `budget_bidding` | 跨平台预算、成本、价值和边际收益 |
 | `audience_targeting` | 受众、定向、排除、重叠与增量 |
 | `creative` | 创意策略、格式、测试与疲劳 |
+| `programmatic_advertising` | 跨平台计算广告、RTB、DSP、SSP/ADX、供应链质量与程序化测量 |
 | `diagnostics` | 故障、异常、排查和失败恢复 |
 | `experimentation` | 实验设计、学习期、分流与放量 |
 | `system` | 架构、规范、索引和维护说明 |

@@ -2,6 +2,10 @@
 
 ## 2026-10-19
 
+- 新增程序化广告知识分类 `programmatic_advertising`：一个生态实体导航页与五篇 RTB/OpenRTB、DSP 决策与出价、SSP/ADX/Header Bidding、供应链质量/隐私、测量诊断专题；由个人知识库资料去重提炼，并按 IAB Tech Lab 的 Programmatic Auction Definitions / OpenRTB 与 Prebid 文档复核边界。
+- 根据 IAB/MRC 2026 拍卖术语补充多角色、多层拍卖与 Final Auctioneer 流程；加入 OpenRTB `2.6-202606` 版本提示和 ads.txt 1.1 的 OWNERDOMAIN/MANAGERDOMAIN 边界。
+- 新增 9 条程序化知识检索回归用例；明确旧笔记中的固定性能数字、未核验生产案例、过度简化的拍卖结算公式及设备指纹方案不进入发布结论。
+- 更新 Wiki 分类规范、实体/概念导航和索引；Runtime 发布知识文档增至 81 篇。知识页仅提供 advisory context，不扩展 Tool、Provider 或账号权限。
 - 新增跨平台广告审核、拒登诊断与恢复手册，覆盖状态/影响范围区分、素材与落地页 preflight、修复/申诉决策、DV360 Exchange 状态差异和回读验收；渠道流程依据官方帮助资料，动态 SLA/申诉限额不固化为承诺。
 - 重写 `ad-best-practices`，移除无来源的固定日预算、广告组数量、Target CPA 倍数和 ROAS 提升幅度，改为基于业务经济性、数据成熟度、实验设计和回退条件的操作护栏。
 - 新增审核/拒登检索回归用例，覆盖跨平台恢复决策、Google 政策复核、TikTok 申诉期间边界和 DV360 多层审核状态。
