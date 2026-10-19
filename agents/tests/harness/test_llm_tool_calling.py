@@ -145,6 +145,54 @@ def test_llm_client_honors_an_explicit_named_initial_tool_choice():
     assert completions.requests[0]["tool_choice"] == choice
 
 
+@pytest.mark.parametrize(
+    "protocol_text",
+    [
+        (
+            "<tool_call>\n"
+            "<function=agent_platform_knowledge_search>\n"
+            "<parameter=query>TikTok Ads campaign ad group</parameter>\n"
+            "</function>\n"
+            "</tool_call>"
+        ),
+        (
+            "<|tool_calls_section_end|> API Error: invalid_user_id "
+            "<|tool_call_begin|> agent-platform:knowledge_search "
+            "<|tool_call_argument_begin|>{\"query\":\"TikTok Ads\"}"
+            "<|tool_call_end|>"
+        ),
+    ],
+)
+def test_llm_client_does_not_replay_unexecuted_tool_protocol_from_history(
+    protocol_text,
+):
+    client, completions = _client(SimpleNamespace(
+        content="TikTok Ads 的广告层级是 Campaign、Ad Group 和 Ad。",
+        tool_calls=[],
+    ))
+
+    client.complete(
+        [
+            AgentMessage.assistant(protocol_text),
+            AgentMessage.user("讲讲tiktok ads知识"),
+        ],
+        [_tool()],
+        TurnRequest(user_input="讲讲tiktok ads知识"),
+    )
+
+    provider_history = json.dumps(
+        completions.requests[0]["messages"], ensure_ascii=False,
+    )
+    assert protocol_text not in provider_history
+    assert "agent_platform_knowledge_search" not in provider_history
+    assert "agent-platform:knowledge_search" not in provider_history
+    assert "<|tool_call" not in provider_history
+    assert (
+        "The previous assistant turn contained an unexecuted Tool protocol"
+        in provider_history
+    )
+
+
 def test_llm_client_round_trips_assistant_tool_call_and_tool_result_messages():
     client, completions = _client(SimpleNamespace(content="Done.", tool_calls=[]))
     messages = [

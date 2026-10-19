@@ -222,7 +222,7 @@ function renderPendingChatMedia() {
             remove.disabled = true;
             try {
                 const query = new URLSearchParams({ session_id: sessionId || '' });
-                const response = await authenticatedFetch(
+                const response = await serviceFetch(
                     `/chat/media/${encodeURIComponent(attachment.id)}?${query}`,
                     { method: 'DELETE' },
                 );
@@ -277,7 +277,7 @@ async function uploadChatMediaFiles(files) {
                 session_id: activeSessionId,
                 filename: file.name,
             });
-            const response = await authenticatedFetch(`/chat/media?${query}`, {
+                const response = await serviceFetch(`/chat/media?${query}`, {
                 method: 'POST',
                 headers: { 'Content-Type': file.type },
                 body: file,
@@ -361,7 +361,7 @@ function observeProtectedChatMedia(placeholder, attachment, activeSessionId) {
 async function loadProtectedChatMedia(placeholder, attachment, activeSessionId) {
     try {
         const query = new URLSearchParams({ session_id: activeSessionId || '' });
-        const response = await authenticatedFetch(
+        const response = await serviceFetch(
             `/chat/media/${encodeURIComponent(attachment.id)}?${query}`,
         );
         if (!response.ok) throw new Error('附件不可用');
@@ -432,7 +432,7 @@ function clearPendingChatMedia({
             for (const attachment of attachmentsToDelete) {
                 if (!activeSessionId) continue;
                 const query = new URLSearchParams({ session_id: activeSessionId });
-                void authenticatedFetch(
+                void serviceFetch(
                     `/chat/media/${encodeURIComponent(attachment.id)}?${query}`,
                     { method: 'DELETE' },
                 ).catch(() => {});

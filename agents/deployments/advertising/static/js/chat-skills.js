@@ -2,7 +2,6 @@
             closeWorkspacePopovers();
             document.getElementById('skillOverlay').classList.add('active');
             document.getElementById('skillOverlay').setAttribute('aria-hidden', 'false');
-            document.getElementById('skillApiKey').value = serviceApiKey;
             loadManagedSkills();
         }
 
@@ -35,7 +34,6 @@
 
         async function loadManagedSkills(select = null) {
             clearSkillNotice();
-            serviceApiKey = document.getElementById('skillApiKey').value.trim();
             try {
                 const data = await apiFetch('/skills?limit=200');
                 const managedSkills = Array.isArray(data.managed_skills) ? data.managed_skills : (data.skills || []);

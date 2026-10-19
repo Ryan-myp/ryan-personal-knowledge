@@ -8,7 +8,7 @@
         }
 
         async function streamChatRequest(requestParams) {
-            const response = await authenticatedFetch('/chat/stream', {
+            const response = await serviceFetch('/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
                 body: JSON.stringify(requestParams)
@@ -164,13 +164,15 @@
 
         function requestHeaders(extra = {}) {
             const headers = new Headers(extra);
-            const key = serviceApiKey || document.getElementById('skillApiKey')?.value.trim() || '';
-            if (key) headers.set('X-API-Key', key);
+            headers.delete('X-API-Key');
             return headers;
         }
 
-        function authenticatedFetch(url, options = {}) {
-            return fetch(url, { ...options, headers: requestHeaders(options.headers || {}) });
+        async function serviceFetch(url, options = {}) {
+            return fetch(url, {
+                ...options,
+                headers: requestHeaders(options.headers || {}),
+            });
         }
 
         function conversationTime(value) {
@@ -438,6 +440,7 @@
             const container = document.getElementById('chatHistory');
             if (!container) return;
             updateHistoryControls();
+            updateConversationListPagination();
             container.replaceChildren();
             if (!conversations.length) {
                 const empty = document.createElement('div');
@@ -528,25 +531,35 @@
 
         async function refreshConversationHistory({ silent = false } = {}) {
             const requestId = ++conversationHistoryRequest;
+            conversationHistoryListPage = {
+                nextCursor: null, hasMore: false, loading: false, error: '',
+            };
+            updateConversationListPagination();
             if (!silent) {
                 const status = document.getElementById('chatHistoryStatus');
                 if (status) status.textContent = '正在加载历史对话…';
             }
             try {
-                const response = await authenticatedFetch('/sessions?limit=50');
+                const response = await serviceFetch('/sessions?limit=50');
                 const text = await response.text();
                 let data = {};
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
                 if (!response.ok) throw new Error(data.detail || data.error || `历史对话加载失败（${response.status}）`);
                 if (requestId !== conversationHistoryRequest) return;
                 conversationHistory = Array.isArray(data.sessions) ? data.sessions : [];
+                conversationHistoryListPage.nextCursor = data.next_cursor || null;
+                conversationHistoryListPage.hasMore = Boolean(
+                    data.has_more && conversationHistoryListPage.nextCursor,
+                );
                 renderConversationHistory();
+                updateConversationListPagination();
             } catch (error) {
                 if (requestId !== conversationHistoryRequest) return;
                 conversationHistory = [];
+                conversationHistoryListPage.error = '历史对话暂时不可用，请稍后重试。';
                 const message = error?.message || '';
-                const status = /401|403|授权|API key/i.test(message)
-                    ? '历史对话暂不可用，请检查服务 API Key。'
+                const status = /401|403|授权/i.test(message)
+                    ? '历史对话暂不可用，请检查当前共享服务身份的访问权限。'
                     : '历史对话暂时不可用，请稍后重试。';
                 const container = document.getElementById('chatHistory');
                 if (container) {
@@ -556,6 +569,68 @@
                     errorNode.textContent = status;
                     container.appendChild(errorNode);
                 }
+                updateConversationListPagination(conversationHistoryListPage.error);
+            }
+        }
+
+        function updateConversationListPagination(errorMessage = '') {
+            const page = conversationHistoryListPage;
+            const panel = document.getElementById('conversationListPagination');
+            const button = document.getElementById('loadOlderConversationSessions');
+            const status = document.getElementById('conversationListPaginationStatus');
+            if (!panel || !button || !status) return;
+            panel.hidden = !page.hasMore && !page.loading && !errorMessage;
+            button.disabled = page.loading || !page.hasMore;
+            button.textContent = page.loading ? '正在加载…' : '加载更早的对话';
+            status.textContent = errorMessage || (page.loading ? '正在读取更早的对话…' : '');
+        }
+
+        async function loadMoreConversationSessions() {
+            const page = conversationHistoryListPage;
+            const cursor = page.nextCursor;
+            if (page.loading || !page.hasMore || !cursor) return;
+            const requestId = conversationHistoryRequest;
+            page.loading = true;
+            page.error = '';
+            updateConversationListPagination();
+            try {
+                const query = new URLSearchParams({
+                    limit: '50',
+                    before_updated_at: cursor.updated_at,
+                    before_session_id: cursor.session_id,
+                });
+                const response = await serviceFetch(`/sessions?${query.toString()}`);
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                if (!response.ok) {
+                    throw new Error(data.detail || data.error || `历史对话加载失败（${response.status}）`);
+                }
+                if (requestId !== conversationHistoryRequest || page !== conversationHistoryListPage) {
+                    return;
+                }
+                const knownSessionIds = new Set(
+                    conversationHistory.map(item => String(item.session_id || '')),
+                );
+                for (const session of Array.isArray(data.sessions) ? data.sessions : []) {
+                    const sessionId = String(session.session_id || '');
+                    if (sessionId && !knownSessionIds.has(sessionId)) {
+                        knownSessionIds.add(sessionId);
+                        conversationHistory.push(session);
+                    }
+                }
+                page.nextCursor = data.next_cursor || null;
+                page.hasMore = Boolean(data.has_more && page.nextCursor);
+                renderConversationHistory();
+            } catch (error) {
+                if (requestId === conversationHistoryRequest && page === conversationHistoryListPage) {
+                    page.error = error?.message || '历史对话加载失败，请重试。';
+                }
+            } finally {
+                if (requestId === conversationHistoryRequest && page === conversationHistoryListPage) {
+                    page.loading = false;
+                    updateConversationListPagination(page.error);
+                }
             }
         }
 
@@ -563,7 +638,7 @@
             if (!targetSessionId) return;
             const requestSequence = ++conversationLoadSequence;
             try {
-                const response = await authenticatedFetch(
+                const response = await serviceFetch(
                     `/sessions/${encodeURIComponent(targetSessionId)}?limit=10`,
                 );
                 const text = await response.text();
@@ -690,7 +765,7 @@
                     limit: '10',
                     before_message_id: cursor,
                 });
-                const response = await authenticatedFetch(
+                const response = await serviceFetch(
                     `/sessions/${encodeURIComponent(page.sessionId)}?${query.toString()}`,
                 );
                 const text = await response.text();
@@ -724,13 +799,13 @@
         }
 
         async function apiFetch(url, options = {}) {
-            const response = await authenticatedFetch(url, options);
+            const response = await serviceFetch(url, options);
             const text = await response.text();
             let data = {};
             try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { detail: text }; }
             if (!response.ok) {
                 if (response.status === 401 || response.status === 403) {
-                    showSkillNotice('请求未授权。请填写当前 ad-agent 服务 API Key；它不是任何渠道的 Provider Token。', true);
+                    showSkillNotice('当前共享服务身份没有执行此操作的权限。', true);
                 }
                 const error = new Error(data.detail || data.error || `请求失败（${response.status}）`);
                 error.status = response.status;
@@ -742,6 +817,8 @@
         function bindConversationHistoryPagination() {
             const chatArea = document.getElementById('chatArea');
             const button = document.getElementById('loadOlderConversationButton');
+            const sessionButton = document.getElementById('loadOlderConversationSessions');
+            sessionButton?.addEventListener('click', () => loadMoreConversationSessions());
             if (!chatArea || !button) return;
             button.addEventListener('click', () => {
                 return loadOlderConversationMessages();

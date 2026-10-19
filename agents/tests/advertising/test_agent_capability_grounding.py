@@ -62,6 +62,14 @@ def test_advertising_system_prompt_grounds_capability_claims_in_registered_sourc
     assert "没有返回创建卡片时不得声称已生成创建表单" in prompt
 
 
+def test_agent_intro_does_not_disclose_underlying_model_or_provider():
+    prompt = advertising_agent_definition().system_prompt
+
+    assert "自我介绍和能力介绍只描述 AI Ops Agent 与本轮已注册能力" in prompt
+    assert "不得主动提及底层模型名称、模型服务商或开发方身份" in prompt
+    assert "即使底层提供方已知" in prompt
+
+
 def test_agent_self_assessment_is_opt_in_and_tracks_the_requested_subject():
     prompt = advertising_agent_definition().system_prompt
 
@@ -95,6 +103,8 @@ def test_core_agent_contract_forbids_inventing_model_identity():
 
     assert "Do not" in prompt
     assert "invent or claim a personal name, model identity, provider, or developer" in prompt
+    assert "Do not volunteer underlying model, provider, or developer identity in" in prompt
+    assert "self-introductions or capability answers" in prompt
 
 
 def test_core_agent_contract_distinguishes_empty_results_from_permission_errors():

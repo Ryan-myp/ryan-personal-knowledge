@@ -15,27 +15,50 @@ logger = logging.getLogger(__name__)
 class AdProviderRuntimeServicesMixin:
     def set_credentials(self, credentials: dict) -> None:
         """Set in-process credentials without expanding account scope."""
+        previous_platforms = {
+            self._canonical_platform(str(platform))
+            for platform in self._credentials
+        }
         self._credentials = copy.deepcopy(credentials or {})
-        self._refresh_unbound_clients()
+        self._refresh_provider_clients(
+            previous_platforms,
+            replace_bound_clients=True,
+        )
 
-    def _refresh_unbound_clients(self) -> None:
-        """Attach configured clients only to handlers without an injected client."""
-        if not self._credentials:
-            return
+    def _refresh_provider_clients(
+        self,
+        previous_platforms: set[str],
+        *,
+        replace_bound_clients: bool = False,
+    ) -> None:
+        """Replace bound clients after a credential rotation without a new Tool registry."""
         clients: dict[str, Any] = {}
         for tool_def in self.registry.list_all():
             try:
                 _, handler = self._get_registered_tool(tool_def.name)
             except KeyError:
                 continue
-            if not hasattr(handler, "client") or getattr(handler, "client") is not None:
+            if not hasattr(handler, "client"):
+                continue
+            if (
+                not replace_bound_clients
+                and getattr(handler, "client", None) is not None
+            ):
                 continue
             platform = self._canonical_platform(tool_def.namespace)
+            if (
+                platform not in previous_platforms
+                and not self._credentials_for_platform(platform)
+                and getattr(handler, "client", None) is None
+            ):
+                continue
             if platform not in clients:
-                clients[platform] = self._get_api_client(platform)
-            client = clients[platform]
-            if client is not None:
-                handler.client = client
+                clients[platform] = (
+                    self._get_api_client(platform)
+                    if self._credentials_for_platform(platform)
+                    else None
+                )
+            handler.client = clients[platform]
 
     def _get_api_client(self, platform: str):
         if not self._credentials:

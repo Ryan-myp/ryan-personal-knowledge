@@ -406,6 +406,130 @@ def test_rate_limited_summary_reports_partial_read_results_truthfully():
     assert "PAUSED" in reply
 
 
+def test_partial_read_fallback_keeps_provider_failure_beside_catalog_interruption():
+    reply = visible_run_reply({
+        "status": "failed",
+        "error": "LLMStructuredOutputError",
+        "error_code": "tool_not_in_active_catalog",
+        "results": [
+            {
+                "success": False,
+                "tool": "google_list_campaigns",
+                "platform": "google-ads",
+                "action": "list",
+                "resource_type": "campaign",
+                "error": (
+                    "Failed to list Google campaigns: "
+                    "Google Ads: The caller does not have permission"
+                ),
+            },
+            {
+                "success": True,
+                "tool": "tiktok_list_campaigns",
+                "platform": "tiktok",
+                "action": "list",
+                "resource_type": "campaign",
+                "data": {
+                    "data_status": "live",
+                    "campaigns": [{"campaign_id": "tt-123", "campaign_name": "Test"}],
+                },
+            },
+        ],
+    })
+
+    assert "部分查询已成功" in reply
+    assert "tiktok · campaign" in reply
+    assert "tt-123" in reply
+    assert "google_list_campaigns" in reply
+    assert "does not have permission" in reply
+    assert "当前 Agent 未开放的 Tool" in reply
+
+
+def test_account_list_partial_failure_does_not_claim_zero_or_scope_denial():
+    reply = visible_run_reply({
+        "status": "completed",
+        "reply": (
+            "Meta 和 TikTok 各有一个账户。Google Ads 当前授权范围不包含该账户。"
+        ),
+        "results": [
+            {
+                "success": True,
+                "tool": "meta_list_accounts",
+                "platform": "meta",
+                "action": "list",
+                "resource_type": "account",
+                "data": {
+                    "query_summary": {"returned_count": 1},
+                    "accounts": [{
+                        "account_id": "meta-test-account",
+                        "name": "Meta Test",
+                    }],
+                },
+            },
+            {
+                "success": False,
+                "tool": "google_list_customer_clients",
+                "platform": "google-ads",
+                "action": "list",
+                "resource_type": "customer_client",
+                "error": (
+                    "Failed to call provider method list_customer_clients: "
+                    "Google Ads: The caller does not have permission"
+                ),
+            },
+            {
+                "success": True,
+                "tool": "tiktok_list_accounts",
+                "platform": "tiktok",
+                "action": "list",
+                "resource_type": "account",
+                "data": {
+                    "query_summary": {"returned_count": 1},
+                    "accounts": [{
+                        "advertiser_id": "tiktok-test-account",
+                        "name": "TikTok Test",
+                    }],
+                },
+            },
+        ],
+    })
+
+    assert "账户查询部分完成" in reply
+    assert "Meta" in reply and "meta-test-account" in reply
+    assert "TikTok" in reply and "tiktok-test-account" in reply
+    assert "Google Ads" in reply
+    assert "Provider API 权限拒绝" in reply
+    assert "账户数量未知" in reply
+    assert "does not have permission" in reply
+    assert "授权范围不包含" not in reply
+    assert "| Google Ads |" in reply
+    assert "| Google Ads | Provider API 权限拒绝 | 未能读取 |" in reply
+
+
+def test_account_list_policy_scope_failure_is_not_labeled_provider_denial():
+    reply = visible_run_reply({
+        "status": "completed",
+        "reply": "查询失败。",
+        "results": [{
+            "success": False,
+            "tool": "meta_list_accounts",
+            "platform": "meta",
+            "action": "list",
+            "resource_type": "account",
+            "error": "账户不在当前身份的授权范围内",
+            "error_detail": {
+                "category": "scope_denied",
+                "code": "ACCOUNT_SCOPE_DENIED",
+            },
+        }],
+    })
+
+    assert "账户查询未成功" in reply
+    assert "应用账户范围拒绝" in reply
+    assert "Provider API 权限拒绝" not in reply
+    assert "账户数量未知" in reply
+
+
 def test_rate_limited_empty_read_result_reports_zero_rows():
     reply = visible_run_reply({
         "error": "RateLimitError",

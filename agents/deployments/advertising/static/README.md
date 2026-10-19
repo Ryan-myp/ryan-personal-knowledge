@@ -17,7 +17,7 @@ The web UI is split by responsibility and loaded in a stable order:
 - `js/chat-workspace.js` owns runtime mode, monitoring, schedules, memory, and popovers.
 - `js/chat-knowledge.js` owns knowledge catalog, search, editing, and publication actions.
 - `js/chat-trace.js` owns execution trace rendering and durable-run updates.
-- `js/chat-requests.js` owns request streaming, authentication, and conversation history.
+- `js/chat-requests.js` owns shared service requests, streaming, and conversation history.
 - `js/chat-blueprint-core.js` and `js/chat-blueprint-editor.js` own Blueprint data and editor UI.
 - `js/chat-skills.js` owns Skills management and evaluation UI.
 - `js/chat-creation.js` owns ad creation card fields, lookups, validation, and review.

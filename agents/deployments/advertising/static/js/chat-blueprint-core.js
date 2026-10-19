@@ -458,7 +458,7 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                     if (account) params.set('account_id', account);
                     if (Object.keys(lookupContext).length) params.set('lookup_context', JSON.stringify(lookupContext));
                     if (field?.lookup?.query_field && effectiveQuery) params.set('query', effectiveQuery);
-                    const response = await authenticatedFetch(`/parameter-options/resolve?${params.toString()}`);
+                    const response = await serviceFetch(`/parameter-options/resolve?${params.toString()}`);
                     const body = await response.text();
                     let data = {};
                     try { data = body ? JSON.parse(body) : {}; } catch (_) { data = {}; }

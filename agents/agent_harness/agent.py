@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from dataclasses import replace
 import uuid
@@ -70,6 +71,9 @@ class AgentCancelledError(RuntimeError):
 
 class AgentLeaseLostError(RuntimeError):
     """The current Agent Run lost its durable Runtime session lease."""
+
+
+_MODEL_SNAPSHOT_UNSET = object()
 
 
 @dataclass
@@ -182,6 +186,10 @@ class Agent:
         if tool_retry_delay_seconds < 0:
             raise ValueError("tool_retry_delay_seconds must be non-negative")
         self.model = model
+        self._run_model_snapshot: ContextVar[Any] = ContextVar(
+            f"agent_run_model_snapshot_{id(self)}",
+            default=_MODEL_SNAPSHOT_UNSET,
+        )
         self.tool_catalog = tool_catalog
         self.skill_catalog = skill_catalog
         application_prompt = str(system_prompt or "").strip()
@@ -262,7 +270,7 @@ class Agent:
                 max_output_tokens=self.max_output_tokens,
                 max_total_tokens=self.max_total_tokens,
             ),
-            providers=lambda: (self.model, *self.model_fallbacks),
+            providers=self._model_providers_for_current_run,
             prepare=self._model_inputs,
             normalize=self._normalize_turn,
             emit=self._emit,
@@ -287,6 +295,13 @@ class Agent:
             max_tool_result_chars=self.max_tool_result_chars,
             max_interaction_chars=self.max_interaction_chars,
         )
+
+    def _model_for_current_run(self) -> Any:
+        snapshot = self._run_model_snapshot.get()
+        return self.model if snapshot is _MODEL_SNAPSHOT_UNSET else snapshot
+
+    def _model_providers_for_current_run(self) -> tuple[Any, ...]:
+        return (self._model_for_current_run(), *self.model_fallbacks)
 
     @staticmethod
     def _session_key(
@@ -541,7 +556,7 @@ class Agent:
         state: AgentState,
     ) -> Mapping[str, Any]:
         """Allow a model adapter to shape application results at Run end."""
-        callback = getattr(self.model, "on_run_end", None)
+        callback = getattr(self._model_for_current_run(), "on_run_end", None)
         if not callable(callback):
             return {}
         try:
@@ -654,7 +669,7 @@ class Agent:
         state: AgentState,
     ) -> None:
         """Release adapter-owned state after every Run, including failures."""
-        callback = getattr(self.model, "on_run_cleanup", None)
+        callback = getattr(self._model_for_current_run(), "on_run_cleanup", None)
         if callable(callback):
             try:
                 callback(request, state)
@@ -945,6 +960,7 @@ class Agent:
         run_write_cache = ToolWriteReplayCache()
         run_resource_history: list[Mapping[str, Any]] = []
         schema_repair_attempts: set[str] = set()
+        model_snapshot_token = self._run_model_snapshot.set(self.model)
         try:
             self._state_io.hydrate(request, state)
             checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
@@ -1380,6 +1396,7 @@ class Agent:
                 self._event_sequences.pop(str(request.run_id or ""), None)
             self._notify_model_run_cleanup(request, state)
             self._notify_context_cleanup(request, state)
+            self._run_model_snapshot.reset(model_snapshot_token)
 
     def execute(self, request: TurnRequest) -> RunResult:
         """Execute one Run through the shared TurnPipeline contract."""

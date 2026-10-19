@@ -175,7 +175,7 @@ class AdToolSourceRegistrationMixin:
             self.write_guard = runtime.write_guard
             if self._session_manager and hasattr(self.write_guard, "bind_store"):
                 self.write_guard.bind_store(self._session_manager.store)
-        self._refresh_unbound_clients()
+        self._refresh_provider_clients(set())
         return runtime
 
     def _register_ad_format_catalog(

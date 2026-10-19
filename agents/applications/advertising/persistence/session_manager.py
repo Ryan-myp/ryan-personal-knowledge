@@ -66,9 +66,17 @@ class SessionManager:
     def list_sessions(
         self, user_id: str = None, limit: int = 50,
         tenant_id: Optional[str] = None,
+        before_updated_at: Optional[str] = None,
+        before_session_id: Optional[str] = None,
     ) -> list:
         """列出会话"""
-        return self.store.list_sessions(user_id, limit, tenant_id)
+        return self.store.list_sessions(
+            user_id=user_id,
+            limit=limit,
+            tenant_id=tenant_id,
+            before_updated_at=before_updated_at,
+            before_session_id=before_session_id,
+        )
 
     def acquire_session_lease(
         self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,

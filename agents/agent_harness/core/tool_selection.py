@@ -327,6 +327,47 @@ def _relevance_score(query_terms: set[str], tool: Any) -> int:
     return score + len(query_terms & _schema_terms(tool))
 
 
+def _explicit_resource_list_tools(
+    user_input: str,
+    tools: Sequence[Any],
+) -> list[Any]:
+    """Keep one list Tool per explicitly requested resource and namespace."""
+    text = str(user_input or "").casefold()
+    query_terms = _terms(user_input)
+    selected: dict[tuple[str, str], tuple[int, int, Any]] = {}
+    for index, tool in enumerate(tools):
+        if (
+            not _is_read_tool(tool)
+            or str(_tool_field(tool, "action", "")).casefold() != "list"
+        ):
+            continue
+        resource = str(_tool_field(tool, "resource_type", "") or "").strip()
+        resource_terms = _terms(resource)
+        aliases = _tool_field(tool, "intent_aliases", ()) or ()
+        if isinstance(aliases, str):
+            aliases = (aliases,)
+        explicitly_named = bool(
+            resource_terms and resource_terms <= query_terms
+        ) or any(
+            len(alias_text := str(alias).strip()) >= 3
+            and alias_text.casefold() in text
+            for alias in aliases
+        )
+        if not explicitly_named:
+            continue
+        key = (
+            normalize_namespace(_tool_field(tool, "namespace", "")),
+            resource,
+        )
+        score = _relevance_score(query_terms, tool)
+        previous = selected.get(key)
+        if previous is None or score > previous[1]:
+            selected[key] = (index, score, tool)
+
+    matches = sorted(selected.values(), key=lambda item: item[0])
+    return [tool for _index, _score, tool in matches]
+
+
 def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
     """Honor explicit publisher query aliases without a domain vocabulary."""
     text = str(user_input or "").casefold()
@@ -352,8 +393,20 @@ def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
         for tool in matched
         if (parent := _tool_field(tool, "parent_resource_type", None))
     }
-    if not _SCOPE_RELATION.search(text) or _MULTI_TARGET.search(text):
+    has_single_parent_scope = (
+        bool(_SCOPE_RELATION.search(text))
+        and not _MULTI_TARGET.search(text)
+    )
+    if not has_single_parent_scope:
         parent_scopes.clear()
+    elif parent_scopes:
+        matched = [
+            tool for tool in matched
+            if str(_tool_field(tool, "resource_type")) not in parent_scopes
+        ]
+        matched_resources = {
+            str(_tool_field(tool, "resource_type")) for tool in matched
+        }
     namespace_terms = set().union(*(
         _terms(_tool_field(tool, "namespace")) for tool in tools
     ))
@@ -473,6 +526,7 @@ class ToolSelector:
         *,
         limit: int = 16,
         conversation_context: Sequence[str] = (),
+        contextual_namespaces: Sequence[str] = (),
     ) -> list[Any]:
         """Rank a bounded Tool subset using only publisher-owned metadata.
 
@@ -507,6 +561,16 @@ class ToolSelector:
         active_namespaces = self.detect_namespaces(
             user_input, available_tools,
         )
+        if not active_namespaces:
+            registered_namespaces = set(
+                self.registered_namespaces(available_tools)
+            )
+            active_namespaces = list(dict.fromkeys(
+                normalized
+                for namespace in (contextual_namespaces or ())
+                if (normalized := normalize_namespace(namespace))
+                and normalized in registered_namespaces
+            ))
         if active_namespaces:
             prior_inputs = []
         else:
@@ -618,7 +682,38 @@ class ToolSelector:
             if read_only_request
             else limit
         )
-        return [tool for _score, _index, tool in relevant[:effective_limit]]
+        ranked_tools = [tool for _score, _index, tool in relevant]
+        explicit_resources = {
+            str(_tool_field(tool, "resource_type", "") or "")
+            for tool in _explicit_resource_list_tools(
+                user_input, candidates,
+            )
+        }
+        has_multi_resource_list = (
+            read_only_request
+            and not any(
+                _contains_cue(verb_text, cue) for cue in _DETAIL_READ_CUES
+            )
+            and len(explicit_resources) >= 2
+        )
+        if has_multi_resource_list:
+            priority_tools = _explicit_resource_list_tools(
+                user_input, candidates,
+            )
+            priority_ids = {id(tool) for tool in priority_tools}
+            ranked_tools = [
+                *priority_tools,
+                *(tool for tool in ranked_tools if id(tool) not in priority_ids),
+            ]
+        return ranked_tools[:effective_limit]
+
+    @staticmethod
+    def is_read_only_request(
+        user_input: str,
+        tools: Sequence[Any] = (),
+    ) -> bool:
+        """Expose the selector's read/write classification to app adapters."""
+        return _is_read_only_request(_request_verbs(user_input, tools))
 
     def requires_tool_call(
         self,

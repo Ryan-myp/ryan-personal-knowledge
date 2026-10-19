@@ -1,5 +1,5 @@
 {
-  "digest": "810e03b2c6ddaab3deca00f7df350eafbca307a1fc039c60c462dedaad00b82d",
+  "digest": "0aa79537728e46c6fea0d9998192d986595b6a5ae70e5478027ca2d803f98bd8",
   "format_version": 1,
   "platforms": {
     "agent-platform": {
@@ -2972,7 +2972,7 @@
       ]
     },
     "google-ads": {
-      "digest": "5e1e71a76319522847a4be8b995c613c6bb7cbb6dee9b7c7ac8e7f5a620e6df9",
+      "digest": "9178cbc0bc3d8c57e3b4866e6e8edb5580b29c18caa30a3695d958932e1b45ac",
       "tool_count": 106,
       "tools": [
         {
@@ -14929,7 +14929,13 @@
             "type": "object"
           },
           "integration_api_version": "v24",
-          "intent_aliases": [],
+          "intent_aliases": [
+            "Ad Set",
+            "Ad Set 列表",
+            "ad set list",
+            "Ad Group 列表",
+            "广告组列表"
+          ],
           "intent_types": [
             "list_adgroups"
           ],
@@ -19357,7 +19363,7 @@
       ]
     },
     "meta": {
-      "digest": "a247df83027043c8b3463a3b1b9a1fe7ebaeb5676e51e7b6f3cffe87149ec934",
+      "digest": "451aadbdcf6770738a3a6bd33544a423532dc03b67b601e7a48ef9b0eebd1721",
       "tool_count": 82,
       "tools": [
         {
@@ -27136,7 +27142,15 @@
             "type": "object"
           },
           "integration_api_version": "v25.0",
-          "intent_aliases": [],
+          "intent_aliases": [
+            "Ad Set",
+            "Ad Set 列表",
+            "ad set list",
+            "Ad Group",
+            "Ad Group 列表",
+            "ad group list",
+            "广告组列表"
+          ],
           "intent_types": [
             "list_adsets"
           ],
@@ -31131,7 +31145,7 @@
       ]
     },
     "tiktok": {
-      "digest": "003b4ad3cc08c643defa6f489cc975048c5d01a9a3ec128cc4d1565e25251388",
+      "digest": "3db1d6819f6facdcda9425fa9a017992617231407abb0a415b84f8869d651006",
       "tool_count": 89,
       "tools": [
         {
@@ -42377,6 +42391,9 @@
           },
           "integration_api_version": "v1.3",
           "intent_aliases": [
+            "Ad Set",
+            "Ad Set 列表",
+            "ad set list",
             "广告组列表",
             "Ad Group 列表",
             "list ad groups"

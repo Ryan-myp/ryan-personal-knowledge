@@ -3916,7 +3916,11 @@ class AdAgentStore:
     def list_sessions(
         self, user_id: str = None, limit: int = 50,
         tenant_id: Optional[str] = None,
+        before_updated_at: Optional[str] = None,
+        before_session_id: Optional[str] = None,
     ) -> List[dict]:
+        if (before_updated_at is None) != (before_session_id is None):
+            raise ValueError("session cursor requires updated_at and session_id")
         with self._lock:
             conn = self._get_conn()
             clauses: list[str] = []
@@ -3927,11 +3931,20 @@ class AdAgentStore:
             if tenant_id is not None:
                 clauses.append("tenant_id = ?")
                 params.append(str(tenant_id))
+            if before_updated_at is not None:
+                clauses.append(
+                    "(updated_at < ? OR (updated_at = ? AND session_id < ?))"
+                )
+                params.extend((
+                    str(before_updated_at),
+                    str(before_updated_at),
+                    str(before_session_id),
+                ))
             where = " WHERE " + " AND ".join(clauses) if clauses else ""
             params.append(limit)
             rows = conn.execute(
                 "SELECT * FROM sessions" + where
-                + " ORDER BY updated_at DESC LIMIT ?", params
+                + " ORDER BY updated_at DESC, session_id DESC LIMIT ?", params
             ).fetchall()
             return [dict(r) for r in rows]
 

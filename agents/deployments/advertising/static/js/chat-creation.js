@@ -151,7 +151,7 @@
             const pendingWrapper = document.querySelector(`.creation-card[data-card-id="${CSS.escape(card.id)}"]`);
             if (pendingWrapper) updateCreationCardIndicators(pendingWrapper, card);
             try {
-                const response = await authenticatedFetch(`/creation-blueprints/${encodeURIComponent(card.blueprint_id)}/evaluate`, {
+                const response = await serviceFetch(`/creation-blueprints/${encodeURIComponent(card.blueprint_id)}/evaluate`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ values: creationCardDraftValues(card), version: card.blueprint_version, changed_fields: changedPath ? [changedPath] : [] })
                 });

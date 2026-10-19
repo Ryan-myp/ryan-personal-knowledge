@@ -1359,7 +1359,17 @@ class MetaAPIClient(BasePlatformClient):
     
     def get_campaign(self, campaign_id: str, fields: list = None) -> dict:
         """获取 Campaign 详情"""
-        params = {'fields': ','.join(fields) if fields else 'id,name,status,daily_budget,budget_remaining,objective,adsets,ads'}
+        selected_fields = fields or [
+            "id", "name", "status", "daily_budget", "budget_remaining",
+            "objective", "stop_time", "adsets", "ads",
+        ]
+        # Meta Campaign uses ``stop_time``; normalize the generic field name
+        # used by other providers before building the Graph API request.
+        selected_fields = list(dict.fromkeys(
+            "stop_time" if field == "end_time" else field
+            for field in selected_fields
+        ))
+        params = {'fields': ','.join(selected_fields)}
         return self.require_resource_object(
             self.request('GET', f"/{campaign_id}", extra_params=params),
             "Meta campaign get",

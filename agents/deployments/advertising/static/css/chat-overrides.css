@@ -305,6 +305,49 @@
         .theme-toggle { min-width: 68px; }
         .global-action-label { color: #91a8bc; white-space: nowrap; }
         .global-readonly:hover, .global-action:hover, .global-readonly.active, .global-action.active { color: #e7f0fa; border-color: #6674cf; background: #10243a; }
+        .global-action.connected { color: #73d8bf; border-color: #197f71; }
+        .global-action.connected .global-action-label { color: inherit; }
+        .service-settings-overlay { z-index: 980; }
+        .service-settings-console { width: min(960px, 100%); height: min(760px, 100%); border-radius: 10px; }
+        .service-settings-header { align-items: center; }
+        .service-settings-body { display: flex; flex-direction: column; gap: 16px; }
+        .service-settings-tabs, .service-provider-tabs { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid #233d50; border-radius: 8px; background: #0a1926; }
+        .service-settings-tab, .service-provider-tab { min-height: 32px; padding: 0 12px; border: 0; border-radius: 5px; color: #8ea5b9; background: transparent; cursor: pointer; font: inherit; font-size: 11px; }
+        .service-settings-tab.active, .service-provider-tab.active { color: #e6f4f2; background: #0d766e; }
+        .service-settings-status { display: none; min-height: 18px; color: #7bdac2; font-size: 11px; line-height: 1.45; }
+        .service-settings-status.active { display: block; }
+        .service-settings-status.error { color: #f3a0a8; }
+        .service-settings-panel[hidden] { display: none; }
+        .service-settings-model-layout { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr); gap: 18px; align-items: start; }
+        .service-settings-list-panel { min-width: 0; padding-right: 16px; border-right: 1px solid #203b4d; }
+        .service-settings-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; color: #d9e8e9; font-size: 12px; }
+        .service-settings-profile-list { display: grid; gap: 7px; }
+        .service-settings-profile { min-width: 0; padding: 8px; border: 1px solid #223b4d; border-radius: 7px; background: #0b1a27; }
+        .service-settings-profile.active { border-color: #159989; background: #0c252a; }
+        .service-settings-profile-main { display: grid; width: 100%; min-width: 0; gap: 4px; padding: 2px; border: 0; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+        .service-settings-profile-main strong { overflow: hidden; color: #e0ecee; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+        .service-settings-profile-main span { overflow-wrap: anywhere; color: #8ea5b9; font-size: 10px; }
+        .service-settings-profile-main small { color: #71cdbb; font-size: 9px; }
+        .service-settings-profile-actions { display: flex; gap: 6px; margin-top: 7px; }
+        .service-settings-profile-actions .btn { min-height: 25px; padding: 3px 8px; font-size: 10px; }
+        .service-settings-empty { padding: 12px 2px; color: #8197a9; font-size: 11px; }
+        .service-settings-form { display: grid; gap: 13px; min-width: 0; }
+        .service-settings-form > label { display: grid; gap: 6px; color: #c2d2e0; font-size: 11px; }
+        .service-settings-form input:not([type="checkbox"]) { width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid #29465c; border-radius: 6px; outline: none; color: #e4eef7; background: #091824; font: inherit; font-size: 11px; }
+        .service-settings-form input:not([type="checkbox"]):focus { border-color: #2bb5a4; box-shadow: 0 0 0 2px rgba(45, 212, 191, .12); }
+        .service-settings-form input:disabled { opacity: .52; }
+        .service-settings-form-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 4px; }
+        .service-provider-tabs { width: max-content; max-width: 100%; margin-bottom: 16px; }
+        .service-provider-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+        .service-provider-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: end; min-width: 0; padding: 8px 0; border-bottom: 1px solid #203849; }
+        .service-settings-field { display: grid; grid-column: 1 / 2; gap: 6px; min-width: 0; color: #c2d2e0; font-size: 11px; }
+        .service-settings-field input { grid-column: 1 / -1; }
+        .service-provider-field-status { grid-column: 1 / 2; color: #8095a8; font-size: 9px; }
+        .service-provider-field-status.configured { color: #70cdbc; }
+        .service-provider-clear { display: inline-flex; grid-column: 2; grid-row: 1 / span 2; align-items: center; gap: 5px; padding: 4px 0; color: #aab7c4; font-size: 10px; cursor: pointer; }
+        .service-provider-clear input { accent-color: #0d9488; }
+        .service-settings-transport-note { color: #92a6b8; font-size: 10px; line-height: 1.45; }
+        .service-settings-console :focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }
         .global-avatar { display: grid; place-items: center; min-width: 38px; height: 27px; padding: 0 7px; border-radius: 14px; color: #d9d2ff; background: #33285f; font-size: 10px; font-weight: 650; }
         .global-chevron, .session-chevron { color: #60788e; }
         .workspace-popover { position: fixed; top: 69px; right: 20px; z-index: 850; display: none; width: min(360px, calc(100vw - 32px)); padding: 14px; border: 1px solid #29435d; border-radius: 12px; background: #0b1a29; box-shadow: 0 18px 42px rgba(0,0,0,.42); }
@@ -445,6 +488,7 @@
         body.light-theme .global-readonly, body.light-theme .global-action { color: #526579; background: #f7f9fc; border-color: var(--border-light); }
         body.light-theme .global-action-label { color: #526579; }
         body.light-theme .global-readonly:hover, body.light-theme .global-action:hover, body.light-theme .global-readonly.active, body.light-theme .global-action.active { color: #26384d; background: #e8eef7; border-color: var(--accent); }
+        body.light-theme .global-action.connected { color: #087d73; border-color: #5eaaa0; }
         body.light-theme .session-pill { color: #718096; background: #f7f9fc; border-color: var(--border); }
         body.light-theme .session-pill b, body.light-theme .session-pill em { color: #44566b; }
         body.light-theme .knowledge-console, body.light-theme .skill-console { background: #ffffff; border-color: #cbd6e2; }
@@ -570,6 +614,24 @@
         body.light-theme .history-delete-cancel:hover { color: #162235; background: #e8eef5; }
         body.light-theme .history-delete-confirm { border-color: #a42c43; background: #b8324b; }
         body.light-theme .history-delete-confirm:hover { background: #962a40; }
+        body.light-theme .service-settings-tabs, body.light-theme .service-provider-tabs { border-color: #c9d9dc; background: #edf4f5; }
+        body.light-theme .service-settings-tab, body.light-theme .service-provider-tab { color: #526d79; }
+        body.light-theme .service-settings-tab.active, body.light-theme .service-provider-tab.active { color: #fff; background: #087d73; }
+        body.light-theme .service-settings-section-heading { color: #274650; }
+        body.light-theme .service-settings-list-panel { border-right-color: #d3e0e2; }
+        body.light-theme .service-settings-profile { border-color: #d2dfe1; background: #fff; }
+        body.light-theme .service-settings-profile.active { border-color: #54a99e; background: #eff9f7; }
+        body.light-theme .service-settings-profile-main strong { color: #263f49; }
+        body.light-theme .service-settings-profile-main span, body.light-theme .service-settings-empty { color: #64808a; }
+        body.light-theme .service-settings-profile-main small, body.light-theme .service-provider-field-status.configured { color: #087d73; }
+        body.light-theme .service-settings-form > label, body.light-theme .service-settings-field { color: #405b66; }
+        body.light-theme .service-settings-form input:not([type="checkbox"]) { color: #263f49; background: #f5f9fa; border-color: #c2d3d7; }
+        body.light-theme .service-provider-field { border-bottom-color: #d7e3e5; }
+        body.light-theme .service-provider-clear, body.light-theme .service-provider-field-status, body.light-theme .service-settings-transport-note { color: #64808a; }
+        body.light-theme .service-settings-console { color: #294b55; background: #f6fbfb; border-color: #b8ced1; }
+        body.light-theme .service-settings-header { border-bottom-color: #d4e4e5; background: linear-gradient(120deg, #e6f4f3, #f5fbfb 70%, #edf0fa); }
+        body.light-theme .service-settings-console .monitoring-console-title { color: #16333b; }
+        body.light-theme .service-settings-console .monitoring-console-subtitle { color: #64808a; }
         body.light-theme .chat-history-open { color: inherit; }
         body.light-theme .history-rename-input { color: #26384d; background: #f4f7fb; border-color: #bdcbd9; }
         body.light-theme .history-rename-input:focus { border-color: #6952c7; box-shadow: 0 0 0 2px rgba(105, 82, 199, .14); }
@@ -4367,6 +4429,14 @@
             }
         }
         @media (max-width: 760px) {
+            .service-settings-overlay { padding: 0; }
+            .service-settings-console { width: 100%; height: 100%; border-radius: 0; }
+            .service-settings-header { align-items: flex-start; padding: 18px 18px 15px; }
+            .service-settings-body { padding: 16px 18px 22px; }
+            .service-settings-model-layout { grid-template-columns: 1fr; }
+            .service-settings-list-panel { padding-right: 0; padding-bottom: 14px; border-right: 0; border-bottom: 1px solid #203b4d; }
+            .service-settings-profile-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .service-provider-fields { grid-template-columns: 1fr; }
             .blueprint-flowbar-label {
                 min-width: 68px;
                 padding-right: 6px;

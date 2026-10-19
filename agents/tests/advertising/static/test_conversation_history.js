@@ -32,9 +32,21 @@ function environment(messages, fetchHandler = null) {
         addEventListener(name, callback) { buttonListeners[name] = callback; },
     };
     const paginationStatus = { textContent: '' };
+    const sessionPaginationPanel = { hidden: true };
+    const sessionPaginationButton = {
+        disabled: false,
+        textContent: '',
+        addEventListener(name, callback) { buttonListeners[`sessions:${name}`] = callback; },
+    };
+    const sessionPaginationStatus = { textContent: '' };
     const nodes = {
         chatContainer: container,
         chatArea,
+        chatHistory: container,
+        chatHistoryStatus: { textContent: '' },
+        conversationListPagination: sessionPaginationPanel,
+        loadOlderConversationSessions: sessionPaginationButton,
+        conversationListPaginationStatus: sessionPaginationStatus,
         conversationHistoryPagination: paginationPanel,
         loadOlderConversationButton: paginationButton,
         conversationHistoryPaginationStatus: paginationStatus,
@@ -42,6 +54,11 @@ function environment(messages, fetchHandler = null) {
     const context = {
         sessionId: null, selectedConversationId: null,
         loadedConversationTurnIds: new Set(), pendingRequest: null,
+        conversationHistory: [],
+        conversationHistoryRequest: 0,
+        conversationHistoryListPage: {
+            nextCursor: null, hasMore: false, loading: false, error: '',
+        },
         URLSearchParams,
         conversationLoadSequence: 0,
         conversationHistoryPage: {
@@ -74,7 +91,7 @@ function environment(messages, fetchHandler = null) {
     const source = path.resolve(__dirname, '../../../deployments/advertising/static/js/chat-requests.js');
     vm.runInNewContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
     const calls = [];
-    context.authenticatedFetch = async url => {
+    context.serviceFetch = async url => {
         calls.push(url);
         const payload = fetchHandler
             ? await fetchHandler(url, calls.length)
@@ -85,6 +102,7 @@ function environment(messages, fetchHandler = null) {
     return {
         context, displayed, calls, chatArea, container, scrollListeners,
         paginationPanel, paginationButton, buttonListeners, paginationStatus,
+        sessionPaginationPanel, sessionPaginationButton, sessionPaginationStatus,
     };
 }
 
@@ -172,6 +190,49 @@ test('conversation history loads the newest page, then prepends older pages with
     );
     assert.equal(chatArea.scrollTop, 24 + chatArea.scrollHeight - previousHeight);
     assert.equal(paginationPanel.hidden, true);
+});
+
+test('conversation list appends older scoped pages and deduplicates session IDs', async () => {
+    const { context, calls, sessionPaginationPanel } = environment(
+        [],
+        (url, requestNumber) => requestNumber === 1
+            ? {
+                sessions: [
+                    { session_id: 'newer', title: '最近对话' },
+                    { session_id: 'duplicate', title: '重复记录' },
+                ],
+                has_more: true,
+                next_cursor: {
+                    updated_at: '2026-10-19T12:00:00+00:00',
+                    session_id: 'duplicate',
+                },
+            }
+            : {
+                sessions: [
+                    { session_id: 'duplicate', title: '不应重复' },
+                    { session_id: 'older', title: '更早的对话' },
+                ],
+                has_more: false,
+                next_cursor: null,
+            },
+    );
+
+    await context.refreshConversationHistory({ silent: true });
+    assert.equal(context.conversationHistory.length, 2);
+    assert.equal(context.conversationHistoryListPage.hasMore, true);
+    assert.equal(sessionPaginationPanel.hidden, false);
+    await context.loadMoreConversationSessions();
+
+    assert.match(calls[0], /\/sessions\?limit=50$/);
+    assert.match(calls[1], /before_updated_at=2026-10-19T12%3A00%3A00%2B00%3A00/);
+    assert.match(calls[1], /before_session_id=duplicate/);
+    assert.deepEqual(
+        Array.from(context.conversationHistory, item => item.session_id),
+        ['newer', 'duplicate', 'older'],
+    );
+    assert.equal(context.conversationHistoryListPage.hasMore, false);
+    assert.equal(context.conversationHistoryListPage.loading, false);
+    assert.equal(sessionPaginationPanel.hidden, true);
 });
 
 test('live rendering preserves the same persisted failure reply without another prefix', () => {

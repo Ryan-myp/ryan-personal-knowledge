@@ -81,7 +81,7 @@ function installLookupEnvironment(options) {
     context.crypto = { randomUUID: () => 'lookup-session' };
     context.sessionId = '';
     context.lookupRequests = [];
-    context.authenticatedFetch = async () => ({
+    context.serviceFetch = async () => ({
         ok: true,
         status: 200,
         text: async () => JSON.stringify({ options }),
@@ -232,7 +232,7 @@ test('lookup query does not authorize a prefilled value missing from current res
 
 test('template-prefilled asset selection resolves automatically by its exact ID', async () => {
     installLookupEnvironment([]);
-    context.authenticatedFetch = async url => {
+    context.serviceFetch = async url => {
         context.lookupRequests.push(String(url));
         return {
             ok: true,
@@ -309,7 +309,7 @@ test('template-prefilled asset selection stays unresolved when lookup misses', a
 
 test('template-prefilled selection refreshes a token when lookup has no query field', async () => {
     installLookupEnvironment([]);
-    context.authenticatedFetch = async url => {
+    context.serviceFetch = async url => {
         context.lookupRequests.push(String(url));
         return {
             ok: true,
@@ -350,7 +350,7 @@ test('template-prefilled selection refreshes a token when lookup has no query fi
 
 test('template-prefilled exact lookup sends the selected ID to the lookup query field', async () => {
     installLookupEnvironment([]);
-    context.authenticatedFetch = async url => {
+    context.serviceFetch = async url => {
         context.lookupRequests.push(String(url));
         return {
             ok: true,
@@ -396,7 +396,7 @@ test('template-prefilled exact lookup sends the selected ID to the lookup query 
 
 test('template-prefilled asset-picker video resolves by exact ID before submission', async () => {
     installLookupEnvironment([]);
-    context.authenticatedFetch = async url => {
+    context.serviceFetch = async url => {
         context.lookupRequests.push(String(url));
         return {
             ok: true,
@@ -442,7 +442,7 @@ test('template-prefilled asset-picker video resolves by exact ID before submissi
 
 test('template-prefilled selection without query field stays unverified when lookup misses', async () => {
     installLookupEnvironment([]);
-    context.authenticatedFetch = async url => {
+    context.serviceFetch = async url => {
         context.lookupRequests.push(String(url));
         return {
             ok: true,

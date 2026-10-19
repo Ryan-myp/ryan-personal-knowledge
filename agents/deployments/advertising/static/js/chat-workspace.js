@@ -238,7 +238,7 @@
                 const message = error?.status === 404
                     ? '当前服务进程尚未加载监控接口（404）。请重启 ad-agent 服务后再刷新。'
                     : error?.status === 401 || error?.status === 403
-                        ? '没有读取系统运维数据的权限，请检查服务 API Key 或 ads.read 权限。'
+                        ? '当前共享服务身份没有读取系统运维数据的权限。'
                         : error?.message || '监控数据读取失败';
                 monitoringSetStatus('critical', message);
                 document.getElementById('monitoringUpdated').textContent = '读取失败';
@@ -501,7 +501,7 @@
             workspaceMode.loading = true;
             renderWorkspaceMode();
             try {
-                const response = await authenticatedFetch('/settings/execution-mode');
+                const response = await serviceFetch('/settings/execution-mode');
                 const text = await response.text();
                 let data = {};
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
@@ -560,7 +560,7 @@
             clearWorkspaceModeStatus();
             renderWorkspaceMode();
             try {
-                const response = await authenticatedFetch('/settings/execution-mode', {
+                const response = await serviceFetch('/settings/execution-mode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mode })
@@ -612,8 +612,6 @@
                 loadKnowledgeCatalog();
                 loadManagedKnowledgeDocuments();
             }
-            const keyInput = document.getElementById('knowledgeApiKey');
-            if (keyInput && !keyInput.value) keyInput.value = serviceApiKey;
         }
 
         function renderMemories(items) {

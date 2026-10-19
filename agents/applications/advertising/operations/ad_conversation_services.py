@@ -53,14 +53,23 @@ class AdConversationServices:
         }
 
     def list_conversations(
-        self, user_id: str, tenant_id: str = "default", limit: int = 50,
+        self,
+        user_id: str,
+        tenant_id: str = "default",
+        limit: int = 50,
+        before_updated_at: Optional[str] = None,
+        before_session_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """List only the authenticated principal's durable conversations."""
         if not self.runtime._session_manager:
             return []
         conversations = []
         for session in self.runtime._session_manager.list_sessions(
-            user_id, limit=limit, tenant_id=tenant_id
+            user_id,
+            limit=limit,
+            tenant_id=tenant_id,
+            before_updated_at=before_updated_at,
+            before_session_id=before_session_id,
         ):
             records = self.runtime._session_manager.list_conversation_messages(
                 str(session.get("session_id") or ""), limit=500

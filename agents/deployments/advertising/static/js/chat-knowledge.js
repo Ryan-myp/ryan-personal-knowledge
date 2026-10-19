@@ -618,14 +618,12 @@
                 await loadKnowledgeCatalog();
                 return;
             }
-            const keyInput = document.getElementById('knowledgeApiKey');
-            if (keyInput?.value.trim()) serviceApiKey = keyInput.value.trim();
             setKnowledgeStatus('正在检索已发布知识…');
             try {
                 const summarize = document.getElementById('knowledgeSmartSummary')?.checked || false;
                 const params = new URLSearchParams({ query, limit: '10', summarize: String(summarize) });
                 if (platform) params.set('platform', platform);
-                const response = await authenticatedFetch(`/knowledge/search?${params.toString()}`);
+                const response = await serviceFetch(`/knowledge/search?${params.toString()}`);
                 const text = await response.text();
                 let data = {};
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
@@ -647,7 +645,7 @@
             try {
                 const params = new URLSearchParams({ limit: '100' });
                 if (platform) params.set('platform', platform);
-                const response = await authenticatedFetch(`/knowledge/catalog?${params.toString()}`);
+                const response = await serviceFetch(`/knowledge/catalog?${params.toString()}`);
                 const text = await response.text();
                 let data = {};
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
@@ -664,8 +662,6 @@
         async function saveKnowledgeDocument(publishNow = false) {
             const title = document.getElementById('knowledgeTitle')?.value.trim() || '';
             const content = document.getElementById('knowledgeContent')?.value.trim() || '';
-            const keyInput = document.getElementById('knowledgeApiKey');
-            if (keyInput?.value.trim()) serviceApiKey = keyInput.value.trim();
             if (!title || !content) {
                 setKnowledgeWriteStatus('请填写标题和 Markdown 正文。', true);
                 return;

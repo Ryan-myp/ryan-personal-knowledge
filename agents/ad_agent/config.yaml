@@ -41,6 +41,7 @@ granted_permissions:
   # not grant it execution permission.
   - mcp.read
   - mcp.manage
+  - settings.manage
 
 # For multi-user HTTP deployments prefer AD_AGENT_API_KEY_PRINCIPALS, whose
 # values contain trusted user_id/tenant_id/permissions/account_scope claims.
@@ -48,7 +49,7 @@ granted_permissions:
 
 # LLM 配置（必需；Agent 不提供无 LLM 的规则解析运行模式）
 models:
-  default: "agnes-2.5-flash"
+  default: "agnes-3.0-flash"
   openai:
     base_url: ""  # 留空使用默认
 

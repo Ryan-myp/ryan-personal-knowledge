@@ -7,7 +7,7 @@ from agents.applications.advertising.composition.ad_application_assembly import 
 from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
-def _selection(account, text, scope, read_scopes=None):
+def _selection(account, text, scope, read_scopes=None, history=None):
     tools = [
         binding.definition
         for namespace in ("google-ads", "meta", "tiktok")
@@ -26,7 +26,7 @@ def _selection(account, text, scope, read_scopes=None):
         context={
             "account_id": account,
             "_agent_read_account_scopes": read_scopes or {},
-            "_agent_tool_selection_context": (
+            "_agent_tool_selection_context": history or (
                 "查询 campaign 123 的详情", "查询 campaign 123 的详情",
             ),
         },
@@ -83,3 +83,82 @@ def test_explicit_channel_switch_overrides_remembered_read_scope():
         read_scopes={"tiktok": "tiktok-test"},
     )
     assert {tool.namespace for tool in selected} == {"google-ads"}
+
+
+def test_explicit_multi_account_query_overrides_stale_single_channel_history():
+    selected, context = _selection(
+        None,
+        "用这几个账号测试一下 campaign、ad group、ad 的查询",
+        {
+            "google-ads": {"google-test"},
+            "meta": {"meta-test"},
+            "tiktok": {"tiktok-test"},
+        },
+        history=(
+            "在讲下 Meta 广告吧",
+            "现在的测试账号是有哪几个",
+            "咱们不是内置了几个账号吗",
+        ),
+    )
+
+    assert {tool.namespace for tool in selected} == {
+        "google-ads", "meta", "tiktok",
+    }
+    names = {tool.name for tool in selected}
+    assert {
+        "google_list_campaigns",
+        "google_list_ad_groups",
+        "google_list_ads",
+        "meta_list_campaigns",
+        "meta_list_ad_sets",
+        "meta_list_ads",
+        "tiktok_list_campaigns",
+        "tiktok_list_adgroups",
+        "tiktok_list_ads",
+    } <= names
+    assert context["_agent_tool_namespaces"] == [
+        "google-ads", "meta", "tiktok",
+    ]
+
+
+def test_multi_account_query_never_expands_beyond_principal_scope():
+    selected, _context = _selection(
+        None,
+        "用这几个账号查询 campaign 列表",
+        {
+            "meta": {"meta-test"},
+            "tiktok": {"tiktok-test"},
+        },
+        history=("在讲下 Meta 广告吧",),
+    )
+
+    assert {tool.namespace for tool in selected} == {"meta", "tiktok"}
+
+
+def test_pronoun_followup_reuses_multi_channel_scope_and_ad_set_aliases():
+    selected, context = _selection(
+        None,
+        "测试一下他们对campaign、ad set、ad 的查询",
+        {
+            "google-ads": {"google-test"},
+            "meta": {"meta-test"},
+            "tiktok": {"tiktok-test"},
+        },
+        history=("现在有几个内容的账户呀",),
+    )
+
+    assert set(context["_agent_tool_namespaces"]) == {
+        "google-ads", "meta", "tiktok",
+    }
+    names = {tool.name for tool in selected}
+    assert {
+        "google_list_campaigns",
+        "google_list_ad_groups",
+        "google_list_ads",
+        "meta_list_campaigns",
+        "meta_list_ad_sets",
+        "meta_list_ads",
+        "tiktok_list_campaigns",
+        "tiktok_list_adgroups",
+        "tiktok_list_ads",
+    } <= names

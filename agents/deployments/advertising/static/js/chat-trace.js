@@ -213,7 +213,7 @@
             if (!targetSessionId) return;
             const token = durableRunPollToken;
             try {
-                const response = await authenticatedFetch(
+                const response = await serviceFetch(
                     `/sessions/${encodeURIComponent(targetSessionId)}/runs/latest`,
                 );
                 if (!response.ok) return;

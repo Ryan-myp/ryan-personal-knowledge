@@ -2088,6 +2088,58 @@ class TestSessionManager:
         sessions = sm.list_sessions("user-1")
         assert len(sessions) == 2
 
+    def test_list_sessions_paginates_with_stable_scoped_cursor(self, store):
+        sm = SessionManager(store)
+        for session_id in ("session-a", "session-b", "session-c"):
+            sm.create_session(
+                session_id,
+                "user-1",
+                metadata={"tenant_id": "tenant-a"},
+            )
+        sm.create_session(
+            "other-tenant-session",
+            "user-1",
+            metadata={"tenant_id": "tenant-b"},
+        )
+        sm.create_session(
+            "other-user-session",
+            "user-2",
+            metadata={"tenant_id": "tenant-a"},
+        )
+        with store._lock:
+            connection = store._get_conn()
+            connection.execute(
+                """
+                UPDATE sessions
+                SET updated_at = ?
+                WHERE tenant_id = ? AND user_id = ?
+                """,
+                ("2026-10-19T12:00:00+00:00", "tenant-a", "user-1"),
+            )
+            connection.commit()
+
+        first_page = sm.list_sessions(
+            "user-1",
+            limit=2,
+            tenant_id="tenant-a",
+        )
+        second_page = sm.list_sessions(
+            "user-1",
+            limit=2,
+            tenant_id="tenant-a",
+            before_updated_at=first_page[-1]["updated_at"],
+            before_session_id=first_page[-1]["session_id"],
+        )
+
+        assert [row["session_id"] for row in first_page] == [
+            "session-c",
+            "session-b",
+        ]
+        assert [row["session_id"] for row in second_page] == ["session-a"]
+        assert {
+            row["session_id"] for row in first_page + second_page
+        } == {"session-a", "session-b", "session-c"}
+
     def test_delete_session_cascades_local_conversation_records(self, store):
         sm = SessionManager(store)
         sm.create_session("sess-delete", "user-1")

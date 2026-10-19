@@ -12,6 +12,7 @@ the Harness owns the only Run/Session/Turn entry point.
 from __future__ import annotations
 
 import logging
+import re
 from contextvars import ContextVar
 from typing import Any, Callable, Mapping, Optional
 
@@ -78,6 +79,14 @@ from .ad_application_components import (
 logger = logging.getLogger(__name__)
 
 MAX_RELEVANT_TOOLS_PER_TURN = 32
+_MULTI_ACCOUNT_REFERENCE = re.compile(
+    r"(?:这\s*(?:几个|些)|所有|每(?:个|一个)|各(?:个)?)"
+    r"(?:测试|广告)?(?:账号|账户|渠道|平台)"
+    r"|(?:他们|它们|这些|上述|以上)"
+    r"|\b(?:these|all|each|every|both|multiple|the following)"
+    r"\s+(?:(?:test|ad)\s+)?(?:accounts?|channels?|platforms?)\b",
+    re.IGNORECASE,
+)
 
 
 def _select_blueprint_tools(
@@ -175,6 +184,45 @@ def _creation_blueprint_request_error(
 
 class AdApplicationAssembly:
     """Build the advertising application graph over generic runtime ports."""
+
+    @staticmethod
+    def _multi_account_context_namespaces(
+        runtime: Any,
+        selector: ToolSelector,
+        request: TurnRequest,
+        tools: Any,
+    ) -> tuple[str, ...]:
+        """Resolve plural account references from trusted principal scope."""
+        text = str(getattr(request, "user_input", "") or "")
+        principal = getattr(request, "principal", None)
+        scope = getattr(principal, "account_scope", None)
+        if (
+            not isinstance(scope, Mapping)
+            or not scope
+            or not _MULTI_ACCOUNT_REFERENCE.search(text)
+            or not selector.is_read_only_request(text, tools)
+        ):
+            return ()
+
+        registered = set(selector.registered_namespaces(tools))
+        account_provider = getattr(
+            runtime, "_available_accounts_for_request", None,
+        )
+        namespaces: set[str] = set()
+        for raw_namespace, accounts in scope.items():
+            if isinstance(accounts, (str, bytes)) or not accounts:
+                continue
+            namespace = runtime._canonical_platform(str(raw_namespace))
+            if namespace not in registered:
+                continue
+            authorized_accounts = (
+                account_provider(namespace, scope)
+                if callable(account_provider)
+                else accounts
+            )
+            if authorized_accounts:
+                namespaces.add(namespace)
+        return tuple(sorted(namespaces))
 
     @classmethod
     def compose(
@@ -541,6 +589,11 @@ class AdApplicationAssembly:
                 conversation_context = tuple(
                     request_context.get("_agent_tool_selection_context", ()) or ()
                 )
+                contextual_namespaces = (
+                    AdApplicationAssembly._multi_account_context_namespaces(
+                        runtime, selector, request, tools,
+                    )
+                )
                 account_namespace = AdApplicationAssembly._authorized_account_namespace(
                     runtime, request, tools,
                 )
@@ -551,6 +604,7 @@ class AdApplicationAssembly:
                     tools,
                     limit=MAX_RELEVANT_TOOLS_PER_TURN,
                     conversation_context=conversation_context,
+                    contextual_namespaces=contextual_namespaces,
                 )
                 if selected and selector.requires_tool_call(
                     request.user_input,

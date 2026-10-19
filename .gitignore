@@ -63,3 +63,6 @@ agents/ad_agent/ad_agent.db
 agents/ad_agent/ad_agent.db-wal
 agents/ad_agent/ad_agent.db-shm
 agents/ad_agent/chat_media/
+agents/ad_agent/private/
+outputs/
+agents/tools/advertising/contracts/provider_query_e2e_evidence_20260930_candidate*.json

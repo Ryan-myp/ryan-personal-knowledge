@@ -45,9 +45,10 @@ granted_permissions:
   - knowledge.write
   - mcp.read
   - mcp.manage
+  - settings.manage
 
 models:
-  default: "agnes-2.5-flash"
+  default: "agnes-3.0-flash"
   openai:
     base_url: ""
 log_level: INFO

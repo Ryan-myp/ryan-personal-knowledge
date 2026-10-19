@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20261019-mindmap-render-v1">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20261019-shared-access-v1">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -13,6 +13,7 @@
         <div class="global-brand-mark">A</div>
         <div class="global-brand-name">AI Ops Agent</div>
         <div class="global-actions">
+            <button class="global-action" id="agentSettingsButton" type="button" onclick="openAgentSettings()" aria-label="模型与密钥管理" title="模型与渠道密钥管理"><span aria-hidden="true">⚙</span><span class="global-action-label">模型与密钥</span></button>
             <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span id="modeToggleIcon">◈</span> <span id="modeToggleLabel">dry-run</span></button>
             <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
             <div class="system-ops-wrap">
@@ -89,9 +90,6 @@
                         </label>
                         <label class="workspace-form">平台
                             <select id="knowledgePlatform" onchange="if (!document.getElementById('knowledgeQuery')?.value.trim()) loadKnowledgeCatalog()"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
-                        </label>
-                        <label class="workspace-form">服务 API Key（如服务开启鉴权）
-                            <input id="knowledgeApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内" oninput="serviceApiKey = this.value.trim()">
                         </label>
                         <label class="knowledge-smart-toggle">
                             <span><input id="knowledgeSmartSummary" type="checkbox"> 智能总结</span>
@@ -215,6 +213,60 @@
             <div class="history-delete-actions">
                 <button class="history-delete-btn history-delete-cancel" type="button" onclick="closeHistoryRenameDialog()">取消</button>
                 <button class="history-delete-btn history-delete-confirm" id="historyRenameConfirmButton" type="button" onclick="confirmHistoryRename()">保存名称</button>
+            </div>
+        </section>
+    </div>
+    <div class="monitoring-overlay service-settings-overlay" id="agentSettingsOverlay" aria-hidden="true" onclick="if (event.target === this) closeAgentSettings()">
+        <section class="monitoring-console service-settings-console" role="dialog" aria-modal="true" aria-labelledby="agentSettingsTitle" onclick="event.stopPropagation()">
+            <header class="monitoring-console-header service-settings-header">
+                <div>
+                    <div class="monitoring-console-kicker">MODEL & PROVIDER CONFIGURATION</div>
+                    <div class="monitoring-console-title" id="agentSettingsTitle">模型与密钥</div>
+                    <div class="monitoring-console-subtitle">密钥仅写入服务端加密存储，读取接口只返回配置状态。</div>
+                </div>
+                <div class="monitoring-console-actions">
+                    <button class="icon-btn" type="button" onclick="closeAgentSettings()" aria-label="关闭模型与密钥管理">×</button>
+                </div>
+            </header>
+            <div class="monitoring-console-body service-settings-body">
+                <div class="service-settings-tabs" role="tablist" aria-label="设置分类">
+                    <button class="service-settings-tab active" id="settingsModelsTab" type="button" role="tab" aria-selected="true" onclick="selectAgentSettingsTab('models')">模型</button>
+                    <button class="service-settings-tab" id="settingsProvidersTab" type="button" role="tab" aria-selected="false" onclick="selectAgentSettingsTab('providers')">渠道密钥</button>
+                </div>
+                <div class="service-settings-status" id="agentSettingsStatus" role="status" aria-live="polite"></div>
+                <section class="service-settings-panel" id="settingsModelsPanel" role="tabpanel" aria-labelledby="settingsModelsTab">
+                    <div class="service-settings-model-layout">
+                        <aside class="service-settings-list-panel">
+                            <div class="service-settings-section-heading"><strong>配置列表</strong><button class="btn btn-secondary" type="button" onclick="newAgentModelProfile()">新建</button></div>
+                            <div class="service-settings-profile-list" id="agentModelProfileList"></div>
+                        </aside>
+                        <form class="service-settings-form" id="agentModelForm" onsubmit="saveAgentModelProfile(event)">
+                            <input id="agentModelProfileId" type="hidden">
+                            <label>配置名称<input id="agentModelName" type="text" maxlength="80" required placeholder="例如：主模型"></label>
+                            <label>模型 ID<input id="agentModelId" type="text" maxlength="160" required placeholder="例如：agnes-3.0-flash"></label>
+                            <label>兼容接口 Base URL<input id="agentModelBaseUrl" type="url" maxlength="2048" placeholder="留空使用 SDK 默认地址"></label>
+                            <label>模型 API Key<input id="agentModelApiKey" type="password" maxlength="8192" autocomplete="new-password" placeholder="已保存配置留空表示不轮换"></label>
+                            <div class="service-settings-form-actions">
+                                <button class="btn btn-primary" type="submit">保存并切换</button>
+                                <button class="btn btn-secondary" type="button" onclick="newAgentModelProfile()">新建配置</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+                <section class="service-settings-panel" id="settingsProvidersPanel" role="tabpanel" aria-labelledby="settingsProvidersTab" hidden>
+                    <div class="service-provider-tabs" role="tablist" aria-label="广告渠道">
+                        <button class="service-provider-tab active" type="button" data-provider="google" onclick="selectSettingsProvider('google')">Google Ads</button>
+                        <button class="service-provider-tab" type="button" data-provider="meta" onclick="selectSettingsProvider('meta')">Meta</button>
+                        <button class="service-provider-tab" type="button" data-provider="tiktok" onclick="selectSettingsProvider('tiktok')">TikTok</button>
+                    </div>
+                    <form class="service-settings-form service-provider-form" id="agentProviderForm" onsubmit="saveAgentProviderCredentials(event)">
+                        <div class="service-provider-fields" id="agentProviderFields"></div>
+                        <div class="service-settings-transport-note">远程访问时需 HTTPS；本机访问可使用回环地址。</div>
+                        <div class="service-settings-form-actions">
+                            <button class="btn btn-primary" type="submit">保存渠道密钥</button>
+                        </div>
+                    </form>
+                </section>
             </div>
         </section>
     </div>
@@ -342,6 +394,10 @@
         </div>
         <div class="chat-history" id="chatHistory">
             <div class="chat-history-status" id="chatHistoryStatus">正在加载历史对话…</div>
+        </div>
+        <div class="chat-history-pagination" id="conversationListPagination" hidden>
+            <button type="button" id="loadOlderConversationSessions">加载更早的对话</button>
+            <span id="conversationListPaginationStatus" role="status" aria-live="polite"></span>
         </div>
         
         <div class="sidebar-footer">
@@ -531,8 +587,6 @@
                 <button class="icon-btn" type="button" onclick="closeSkillManager()" aria-label="关闭">×</button>
             </header>
             <div class="skill-toolbar">
-                <label for="skillApiKey">服务 API Key</label>
-                <input id="skillApiKey" type="password" autocomplete="off" placeholder="仅保存在当前页面内">
                 <button class="btn btn-secondary" type="button" onclick="loadManagedSkills()">刷新</button>
                 <button class="btn btn-primary" type="button" onclick="newSkillDraft()">新建 Skill 版本</button>
                 <label for="skillZipInput">ZIP 导入</label>
@@ -726,6 +780,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20261019-mindmap-render-v1" defer></script>
+    <script src="/static/js/chat.js?v=20261019-shared-access-v1" defer></script>
 </body>
 </html>

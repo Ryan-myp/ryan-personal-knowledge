@@ -53,6 +53,60 @@ def test_tool_calls_are_executed_in_dependency_batches():
         app.close()
 
 
+def test_model_switch_during_run_takes_effect_on_the_next_run():
+    class InitialModel:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.calls += 1
+            if self.calls == 1:
+                return ModelTurn(tool_calls=(ToolCall("switch", "switch_model", {}),))
+            return "completed with initial model"
+
+    class NextModel:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, _messages, _tools, _request):
+            self.calls += 1
+            return "completed with next model"
+
+    initial_model = InitialModel()
+    next_model = NextModel()
+    app = AgentApplication.create(
+        model=initial_model,
+        tool_execution="sequential",
+        max_turns=3,
+    )
+    app.register_tool_source(StaticToolSource(
+        "model-switch",
+        [ToolBinding(
+            {"name": "switch_model", "effect_class": "read"},
+            lambda _context, _value: (
+                setattr(app.agent, "model", next_model) or {"switched": True}
+            ),
+        )],
+    ))
+    try:
+        first_result = app.prompt("complete with the current model")
+
+        assert first_result.status.value == "succeeded"
+        assert first_result.reply == "completed with initial model"
+        assert initial_model.calls == 2
+        assert next_model.calls == 0
+
+        second_result = app.prompt(
+            "use the selected model",
+            session_id="next-run",
+        )
+
+        assert second_result.reply == "completed with next model"
+        assert next_model.calls == 1
+    finally:
+        app.close()
+
+
 def test_dependency_binding_uses_prior_tool_output_without_domain_runtime():
     executed = []
 

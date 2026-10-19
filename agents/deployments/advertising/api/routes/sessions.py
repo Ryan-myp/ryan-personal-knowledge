@@ -30,9 +30,16 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         http_request: Request,
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
         limit: int = Query(50, ge=1, le=200),
+        before_updated_at: Optional[str] = Query(None, min_length=1, max_length=64),
+        before_session_id: Optional[str] = Query(None, min_length=1, max_length=200),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "ads.read")
+        if (before_updated_at is None) != (before_session_id is None):
+            raise HTTPException(
+                status_code=422,
+                detail="会话游标必须同时包含更新时间和会话 ID",
+            )
         runtime = context.runtime()
         if not runtime or not callable(getattr(runtime, "list_conversations", None)):
             raise HTTPException(status_code=503, detail="会话存储未初始化")
@@ -40,9 +47,26 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
             runtime.list_conversations,
             user_id=principal.user_id,
             tenant_id=principal.tenant_id,
-            limit=limit,
+            limit=limit + 1,
+            before_updated_at=before_updated_at,
+            before_session_id=before_session_id,
         )
-        return {"sessions": conversations}
+        has_more = len(conversations) > limit
+        page = conversations[:limit]
+        last_session = page[-1] if page else {}
+        next_cursor = (
+            {
+                "updated_at": last_session.get("updated_at"),
+                "session_id": last_session.get("session_id"),
+            }
+            if has_more and last_session.get("updated_at") and last_session.get("session_id")
+            else None
+        )
+        return {
+            "sessions": page,
+            "has_more": bool(has_more and next_cursor),
+            "next_cursor": next_cursor,
+        }
 
     @router.get("/sessions/{session_id}", tags=["sessions"])
     async def get_session_history(

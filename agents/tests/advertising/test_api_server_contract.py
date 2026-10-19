@@ -8,8 +8,10 @@ import json
 import re
 import subprocess
 import threading
+import asyncio
 from pathlib import Path
 
+import httpx
 import pytest
 from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
 import yaml
@@ -30,6 +32,7 @@ def _chat_page_javascript() -> str:
         "chat.js", "chat-markdown.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
         "chat-media.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
+        "chat-settings.js",
         "chat-blueprint-editor.js", "chat-skills.js", "chat-creation.js",
         "chat-messages.js",
     ]
@@ -109,6 +112,23 @@ def test_service_config_path_defaults_to_checked_in_safe_config(monkeypatch):
     assert api_server._configured_config_path() == api_server.CONFIG_PATH.resolve()
 
 
+def test_model_defaults_use_the_supported_agnes_three_flash_identifier():
+    deployment_config = yaml.safe_load(
+        api_server.CONFIG_PATH.read_text(encoding="utf-8")
+    )
+    test_config_path = api_server.project_root / "agents" / "ad_agent" / "config.test-live.yaml"
+    test_config = yaml.safe_load(test_config_path.read_text(encoding="utf-8"))
+    env_example = (
+        api_server.project_root / "agents" / "ad_agent" / ".env.example"
+    ).read_text(encoding="utf-8")
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+
+    assert deployment_config["models"]["default"] == "agnes-3.0-flash"
+    assert test_config["models"]["default"] == "agnes-3.0-flash"
+    assert "LLM_MODEL=agnes-3.0-flash" in env_example
+    assert 'placeholder="例如：agnes-3.0-flash"' in template
+
+
 def test_runtime_initialization_uses_isolated_config_account_allowlist(
     tmp_path, monkeypatch
 ):
@@ -121,7 +141,7 @@ def test_runtime_initialization_uses_isolated_config_account_allowlist(
                 "allow_live_writes": False,
                 "live_approved_tools": [],
                 "granted_permissions": ["ads.read", "ads.plan"],
-                "models": {"default": "agnes-2.5-flash"},
+                "models": {"default": "agnes-3.0-flash"},
             }
         ),
         encoding="utf-8",
@@ -905,10 +925,19 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "/chat/media/", "video/mp4", "video/webm",
     ):
         assert marker in html
-    # The browser may hold the service API key in memory, but the page must
-    # never offer fields or examples for advertising-provider credentials.
-    for forbidden in ("access_token", "refresh_token", "client_secret", "developer_token"):
-        assert forbidden not in html
+    # Credential field names are exposed only by the settings manager; values
+    # are never returned by the status API or rendered into the page.
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    settings_js = (
+        api_server.STATIC_PATH / "js" / "chat-settings.js"
+    ).read_text(encoding="utf-8")
+    for credential_field in (
+        "access_token", "refresh_token", "client_secret", "developer_token",
+    ):
+        assert credential_field not in template
+        assert credential_field in settings_js
+    assert "api_key_configured" in settings_js
+    assert "input.value = profile.api_key" not in settings_js
 
 
 def test_chat_requires_api_key(fake_server):
@@ -916,6 +945,59 @@ def test_chat_requires_api_key(fake_server):
         response = client.post("/chat", json={"user_input": "查询 Meta campaign"})
     assert response.status_code == 401
     assert fake_server.calls == []
+
+
+def test_shared_unauthenticated_local_and_remote_clients_share_session_scope(
+    fake_server, monkeypatch,
+):
+    monkeypatch.setattr(api_server, "ALLOW_UNAUTHENTICATED", True)
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "separate-user-key": {
+                "user_id": "separate-user",
+                "tenant_id": "separate-tenant",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    fake_server._granted_permissions = {"ads.read", "ads.plan"}
+    calls = []
+    fake_server.list_conversations = lambda **kwargs: (
+        calls.append(kwargs)
+        or [{
+            "session_id": "shared-session",
+            "title": "Shared history",
+            "updated_at": "2026-10-19T10:00:00+00:00",
+        }]
+    )
+
+    async def get_sessions(client_host, port):
+        transport = httpx.ASGITransport(
+            app=api_server.app,
+            client=(client_host, port),
+        )
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://ad-agent.test",
+        ) as client:
+            return await client.get("/sessions")
+
+    async def get_both():
+        return await asyncio.gather(
+            get_sessions("127.0.0.1", 51001),
+            get_sessions("10.53.48.25", 51002),
+        )
+
+    local_response, remote_response = asyncio.run(get_both())
+
+    assert local_response.status_code == remote_response.status_code == 200
+    assert local_response.json() == remote_response.json()
+    assert [call["user_id"] for call in calls] == [
+        "ad-agent-service",
+        "ad-agent-service",
+    ]
+    assert [call["tenant_id"] for call in calls] == ["default", "default"]
 
 
 def test_chat_forwards_request_to_runtime(fake_server):
@@ -1057,6 +1139,87 @@ def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, 
     assert calls[1][1]["limit"] == 7
     assert calls[1][1]["before_message_id"] == "cursor-1"
     assert detail.json()["has_more"] is True
+
+
+def test_session_list_returns_and_consumes_scoped_keyset_cursor(
+    monkeypatch,
+    fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    calls = []
+    sessions = [
+        {
+            "session_id": "session-c",
+            "updated_at": "2026-10-19T12:00:00+00:00",
+        },
+        {
+            "session_id": "session-b",
+            "updated_at": "2026-10-19T12:00:00+00:00",
+        },
+        {
+            "session_id": "session-a",
+            "updated_at": "2026-10-19T11:00:00+00:00",
+        },
+    ]
+
+    def list_conversations(**kwargs):
+        calls.append(kwargs)
+        if kwargs.get("before_session_id") == "session-b":
+            return sessions[2:]
+        return sessions
+
+    fake_server.list_conversations = list_conversations
+    with TestClient(api_server.app) as client:
+        first = client.get(
+            "/sessions",
+            headers={"X-API-Key": "scoped-key"},
+            params={"limit": 2, "user_id": "untrusted-user"},
+        )
+        cursor = first.json()["next_cursor"]
+        second = client.get(
+            "/sessions",
+            headers={"X-API-Key": "scoped-key"},
+            params={
+                "limit": 2,
+                "before_updated_at": cursor["updated_at"],
+                "before_session_id": cursor["session_id"],
+            },
+        )
+        partial_cursor = client.get(
+            "/sessions",
+            headers={"X-API-Key": "scoped-key"},
+            params={"before_session_id": "session-b"},
+        )
+
+    assert first.status_code == 200
+    assert [row["session_id"] for row in first.json()["sessions"]] == [
+        "session-c",
+        "session-b",
+    ]
+    assert first.json()["has_more"] is True
+    assert cursor == {
+        "updated_at": "2026-10-19T12:00:00+00:00",
+        "session_id": "session-b",
+    }
+    assert second.status_code == 200
+    assert [row["session_id"] for row in second.json()["sessions"]] == ["session-a"]
+    assert second.json()["has_more"] is False
+    assert calls[0]["limit"] == 3
+    assert calls[0]["user_id"] == "gateway-user"
+    assert calls[0]["tenant_id"] == "tenant-a"
+    assert calls[0]["before_updated_at"] is None
+    assert calls[1]["before_updated_at"] == cursor["updated_at"]
+    assert calls[1]["before_session_id"] == cursor["session_id"]
+    assert partial_cursor.status_code == 422
 
 
 def test_session_detail_hides_other_principal_sessions(monkeypatch, fake_server):
@@ -1429,6 +1592,33 @@ def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
     assert js_version is not None
     assert css_version.group(1) == js_version.group(1)
     assert f"?v={js_version.group(1)}" in bootstrap
+
+
+def test_chat_template_uses_shared_access_without_service_key_ui():
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    javascript = _chat_page_javascript()
+    requests = (
+        api_server.STATIC_PATH / "js" / "chat-requests.js"
+    ).read_text(encoding="utf-8")
+    settings = (
+        api_server.STATIC_PATH / "js" / "chat-settings.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'id="serviceAuthButton"' not in template
+    assert 'id="serviceAuthOverlay"' not in template
+    assert 'id="serviceApiKeyInput"' not in template
+    assert "sessionStorage" not in requests
+    assert "headers.set('X-API-Key'" not in requests
+    assert "headers.delete('X-API-Key')" in requests
+    assert "async function serviceFetch(" in requests
+    assert 'id="skillApiKey"' not in template
+    assert 'id="knowledgeApiKey"' not in template
+    assert 'id="agentSettingsOverlay"' in template
+    assert 'id="agentModelForm"' in template
+    assert 'id="agentProviderForm"' in template
+    assert "function saveAgentModelProfile(event)" in javascript
+    assert "function saveAgentProviderCredentials(event)" in javascript
+    assert "input.value = profile.api_key" not in settings
 
 
 def test_pending_chat_media_is_positioned_above_the_input_box():

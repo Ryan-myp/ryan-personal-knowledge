@@ -11,6 +11,7 @@ from agents.applications.advertising.persistence.errors import PersistenceError
 from agents.applications.advertising.persistence.adapters import PersistenceIdempotencyStore
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
 from agents.tools.advertising.shared.domain.account_scope import tool_call_accounts
+from agents.tools.advertising.shared.domain.auth import normalize_account_id
 from .ad_tool_interaction import AdvertisingToolInteractionProvider
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,18 @@ class AdvertisingToolPolicyFactory:
             allowed, message = runtime._validate_account_with_principal(
                 platform, str(account), is_write, account_scope,
             )
+            if not allowed:
+                other_namespace = self._authorized_namespace_for_account(
+                    account_scope, str(account), platform,
+                )
+                if other_namespace:
+                    return (
+                        "scope_mismatch",
+                        f"该账户 ID 配置在当前身份的 {other_namespace} scope 中，"
+                        f"但本次使用的是 {platform} Tool。请改用 "
+                        f"{other_namespace} 对应的查询 Tool；这属于渠道不匹配，"
+                        "不代表 Provider API 权限已验证。",
+                    )
         elif is_write or runtime.enforce_account_scope:
             allowed, message = runtime._validate_account_for_tool(
                 platform, str(account), is_write,
@@ -191,6 +204,30 @@ class AdvertisingToolPolicyFactory:
         else:
             return None
         return None if allowed else ("scope_denied", str(message))
+
+    def _authorized_namespace_for_account(
+        self,
+        account_scope: Mapping[str, Any],
+        account_id: str,
+        current_platform: str,
+    ) -> str:
+        """Identify a unique other principal scope without probing providers."""
+        normalized_account = normalize_account_id(account_id)
+        if not normalized_account:
+            return ""
+        matches: set[str] = set()
+        for raw_namespace, accounts in account_scope.items():
+            if isinstance(accounts, (str, bytes)):
+                continue
+            namespace = self.runtime._canonical_platform(str(raw_namespace))
+            if namespace == current_platform:
+                continue
+            if any(
+                normalize_account_id(value) == normalized_account
+                for value in (accounts or ())
+            ):
+                matches.add(namespace)
+        return next(iter(matches)) if len(matches) == 1 else ""
 
     def _creation_blueprint_argument_error(
         self,

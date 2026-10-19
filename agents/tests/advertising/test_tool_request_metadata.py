@@ -83,3 +83,32 @@ def test_candidate_tool_namespaces_do_not_turn_a_scoped_request_into_multi_accou
         "test-google",
         None,
     )
+
+
+def test_account_authorized_on_another_channel_is_reported_as_channel_mismatch():
+    owner = SimpleNamespace(
+        _canonical_platform=lambda value: value,
+        _resolve_platform_identifier=lambda value: value,
+        _validate_account_with_principal=lambda *_args: (
+            False, "账户不在当前身份的授权范围内",
+        ),
+    )
+    factory = AdvertisingToolPolicyFactory(owner)
+    request = SimpleNamespace(
+        principal=SimpleNamespace(
+            account_scope={"tiktok": frozenset({"test-tiktok-account"})},
+        )
+    )
+
+    error = factory._account_authorization_error(
+        request,
+        "meta",
+        "test-tiktok-account",
+        False,
+    )
+
+    assert error is not None
+    assert error[0] == "scope_mismatch"
+    assert "tiktok" in error[1]
+    assert "meta" in error[1]
+    assert "授权范围内" not in error[1]

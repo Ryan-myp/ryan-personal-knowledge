@@ -83,6 +83,8 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def list_sessions(
         self, user_id: Optional[str] = None, limit: int = 50,
         tenant_id: Optional[str] = None,
+        before_updated_at: Optional[str] = None,
+        before_session_id: Optional[str] = None,
     ) -> list[dict]: ...
     def acquire_session_lease(
         self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,

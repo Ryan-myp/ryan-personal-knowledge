@@ -38,42 +38,41 @@ class RequestAuthorizer:
         api_key: Optional[str],
         request: Optional[Request] = None,
     ) -> RequestPrincipal:
-        """Authorize a request and return only deployment-trusted identity."""
+        """Resolve a deployment-trusted identity for shared or keyed access."""
         if self._allow_unauthenticated_getter():
-            client_host = request.client.host if request and request.client else None
-            if client_host in {"127.0.0.1", "::1", "localhost"}:
-                return self._configured_service_principal()
-            raise HTTPException(
-                status_code=403,
-                detail="Unauthenticated mode is restricted to localhost",
-            )
+            # Shared mode deliberately ignores browser keys and client address:
+            # localhost and remote clients must share one persisted identity.
+            return self._configured_service_principal()
 
         principals = self._principals_getter()
-        if principals:
-            claims = principals.get(api_key or "")
-            if not isinstance(claims, dict):
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            try:
-                return RequestPrincipal.from_claims(claims)
-            except (TypeError, ValueError) as exc:
-                logger.error("API key principal 配置无效: %s", exc)
-                raise HTTPException(
-                    status_code=503,
-                    detail="API principal configuration is invalid",
-                ) from exc
-
         configured_key = self._api_key_getter()
-        if not configured_key:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "API authentication is not configured; set AD_AGENT_API_KEY "
-                    "or explicitly enable local unauthenticated mode"
-                ),
-            )
-        if not api_key or not hmac.compare_digest(api_key, configured_key):
+
+        if api_key:
+            if principals:
+                claims = principals.get(api_key)
+                if not isinstance(claims, dict):
+                    raise HTTPException(status_code=401, detail="Invalid API key")
+                try:
+                    return RequestPrincipal.from_claims(claims)
+                except (TypeError, ValueError) as exc:
+                    logger.error("API key principal 配置无效: %s", exc)
+                    raise HTTPException(
+                        status_code=503,
+                        detail="API principal configuration is invalid",
+                    ) from exc
+            if configured_key and hmac.compare_digest(api_key, configured_key):
+                return self._configured_service_principal()
             raise HTTPException(status_code=401, detail="Invalid API key")
-        return self._configured_service_principal()
+
+        if principals or configured_key:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "API authentication is not configured; set AD_AGENT_API_KEY "
+                "or enable AD_AGENT_ALLOW_UNAUTHENTICATED=1 for shared access"
+            ),
+        )
 
     def require_permission(
         self,
@@ -126,5 +125,5 @@ class RequestAuthorizer:
             tenant_id="default",
             permissions=frozenset(permissions),
             account_scope=account_scope,
-            source="api-key-service",
+            source="shared-service",
         )

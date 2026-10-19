@@ -1385,6 +1385,9 @@ class TikTokToolSource(BaseProviderToolSource):
             parent_resource_id_field="campaign_id",
             intent_types=["list_adgroups"],
             intent_aliases=[
+                "Ad Set",
+                "Ad Set 列表",
+                "ad set list",
                 "广告组列表", "Ad Group 列表", "list ad groups",
             ],
             risk_level=RiskLevel.LOW,

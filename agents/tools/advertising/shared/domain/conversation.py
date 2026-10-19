@@ -130,7 +130,9 @@ def _failed_tool_detail(
         )[:800]
         if "allow_live_writes is disabled" in reason:
             reason = "当时未开启真实写入，服务端已拦截该次操作。"
-        tool_name = str(item.get("name") or payload.get("tool") or "").strip()
+        tool_name = str(
+            item.get("name") or item.get("tool") or payload.get("tool") or ""
+        ).strip()
         if reason:
             return tool_name[:100] or "未知工具", reason
     return None
@@ -264,6 +266,9 @@ def visible_run_reply(result: Mapping[str, Any]) -> str:
         reply = ""
     records = result.get("results") or result.get("tool_results") or ()
     records = records if isinstance(records, (list, tuple)) else ()
+    account_listing_reply = _account_listing_partial_reply(records)
+    if account_listing_reply:
+        return account_listing_reply
     failure = _failed_tool_detail(records)
     status = str(result.get("status") or "").strip().lower()
     should_show_failure = bool(
@@ -391,6 +396,9 @@ def _successful_read_fallback(
     summaries = []
     for item, data in reads:
         resource = str(item.get("resource_type") or "查询结果")
+        platform = str(item.get("platform") or item.get("namespace") or "").strip()
+        if platform:
+            resource = f"{platform} · {resource}"
         data_status = str(data.get("data_status") or "")
         source = "真实渠道 API" if data_status == "live" else "查询工具"
         summary = _format_read_data(resource, data)
@@ -398,6 +406,13 @@ def _successful_read_fallback(
             summaries.append(f"**{resource}**（{source}）\n\n{summary}")
     if not summaries:
         return ""
+    failure_details = []
+    for item in records:
+        if not isinstance(item, Mapping):
+            continue
+        detail = _failed_tool_detail([item])
+        if detail:
+            failure_details.append(f"- {detail[0]}：{detail[1]}")
     if failed_reads:
         opening = f"部分查询已成功，另有 {failed_reads} 项查询失败。"
         if interruption_reason:
@@ -415,8 +430,209 @@ def _successful_read_fallback(
             opening += (
                 "模型摘要服务暂时不可用，以下内容直接来自本次工具结果：\n\n"
             )
+    if failure_details:
+        opening += "失败项详情：\n" + "\n".join(failure_details) + "\n\n"
     return (
         opening + "\n\n".join(summaries)
+    )
+
+
+def _account_listing_partial_reply(records: Sequence[Any]) -> str:
+    """Render partial account-list results without inferring failed counts."""
+    items = [item for item in records if isinstance(item, Mapping)]
+    if not items or len(items) != len(records):
+        return ""
+    for item in items:
+        payload = _tool_payload(item)
+        action = str(item.get("action") or payload.get("action") or "").lower()
+        resource = str(
+            item.get("resource_type") or payload.get("resource_type") or ""
+        ).lower()
+        if (
+            _operation_kind(item) != "read"
+            or action != "list"
+            or resource not in {"account", "advertiser", "customer_client"}
+        ):
+            return ""
+
+    failed_items = [
+        item for item in items
+        if (
+            item.get("is_error")
+            or item.get("success") is False
+            or _tool_payload(item).get("success") is False
+        )
+    ]
+    if not failed_items:
+        return ""
+
+    rows: list[str] = []
+    failure_details: list[str] = []
+    successful_count = 0
+    labels = {
+        "google-ads": "Google Ads",
+        "meta": "Meta",
+        "tiktok": "TikTok",
+    }
+    for item in items:
+        payload = _tool_payload(item)
+        platform = str(
+            item.get("platform") or item.get("namespace")
+            or payload.get("platform") or payload.get("namespace") or ""
+        ).strip()
+        label = labels.get(platform.casefold(), platform or "未知平台")
+        failed = (
+            item.get("is_error")
+            or item.get("success") is False
+            or payload.get("success") is False
+        )
+        if failed:
+            category, reason = _account_list_failure(item, payload)
+            count = "未能读取"
+            account_text = "未返回账户列表"
+            failure_details.append(
+                _format_account_list_failure(label, category, reason)
+            )
+        else:
+            data = item.get("data")
+            if not isinstance(data, Mapping):
+                data = payload.get("data")
+            data = data if isinstance(data, Mapping) else {}
+            returned_count = _account_list_returned_count(data)
+            count = str(returned_count) if returned_count is not None else "未知"
+            account_text = _account_list_account_labels(data)
+            successful_count += 1
+        rows.append(
+            "| "
+            + " | ".join((
+                _escape_cell(label),
+                _escape_cell(
+                    category if failed else "查询成功"
+                ),
+                _escape_cell(count),
+                _escape_cell(account_text),
+            ))
+            + " |"
+        )
+
+    title = (
+        "账户查询部分完成"
+        if successful_count
+        else "账户查询未成功"
+    )
+    summary = (
+        f"已从 {successful_count} 个渠道读取账户信息；"
+        f"{len(failed_items)} 个渠道未能读取。"
+        if successful_count
+        else f"{len(failed_items)} 个渠道的账户查询失败。"
+    )
+    output = [
+        f"## {title}",
+        "",
+        summary,
+        "",
+        "| 平台 | 查询状态 | 数量 | 账户 |",
+        "| --- | --- | --- | --- |",
+        *rows,
+    ]
+    if failure_details:
+        output.extend(["", "失败详情：", *failure_details])
+    return "\n".join(output)
+
+
+def _account_list_failure(
+    item: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> tuple[str, str]:
+    detail = item.get("error_detail") or payload.get("error_detail")
+    detail = detail if isinstance(detail, Mapping) else {}
+    category = str(detail.get("category") or "").strip().lower()
+    failure = _failed_tool_detail([item])
+    reason = failure[1] if failure else str(
+        payload.get("error") or item.get("error") or "账户查询失败"
+    )
+    normalized = reason.casefold()
+    if (
+        category in {"scope_denied", "scope_mismatch", "account_scope_denied"}
+        or "账户不在当前身份的授权范围" in reason
+        or "not in the current identity's authorized scope" in normalized
+    ):
+        return "应用账户范围拒绝", reason
+    if (
+        category == "provider_permission"
+        or "caller does not have permission" in normalized
+        or "permission denied" in normalized
+        or "not authorized" in normalized
+        or "http 403" in normalized
+    ):
+        return "Provider API 权限拒绝", reason
+    return "查询失败", reason
+
+
+def _account_list_returned_count(data: Mapping[str, Any]) -> int | None:
+    summary = data.get("query_summary")
+    summary = summary if isinstance(summary, Mapping) else {}
+    for value in (summary.get("returned_count"), data.get("total_count")):
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    for key in ("accounts", "customer_clients", "advertisers"):
+        values = data.get(key)
+        if isinstance(values, list):
+            return sum(isinstance(value, Mapping) for value in values)
+    return None
+
+
+def _account_list_account_labels(data: Mapping[str, Any]) -> str:
+    values: list[Mapping[str, Any]] = []
+    for key in ("accounts", "customer_clients", "advertisers"):
+        rows = data.get(key)
+        if isinstance(rows, list):
+            values = [row for row in rows if isinstance(row, Mapping)]
+            if values:
+                break
+    labels: list[str] = []
+    for account in values[:5]:
+        account_id = next((
+            str(account[key]).strip()
+            for key in ("account_id", "advertiser_id", "customer_id", "id")
+            if account.get(key) not in (None, "")
+        ), "")
+        name = str(account.get("name") or "").strip()
+        label = account_id or _display_text(name, 100)
+        if account_id and name:
+            label += f" ({_display_text(name, 100)})"
+        if label:
+            labels.append(label)
+    if not labels:
+        return "无账户" if _account_list_returned_count(data) == 0 else "未返回账户详情"
+    count = _account_list_returned_count(data)
+    if count is not None and count > len(labels):
+        labels.append(f"另有 {count - len(labels)} 个")
+    return "; ".join(labels)
+
+
+def _format_account_list_failure(
+    platform: str,
+    category: str,
+    reason: str,
+) -> str:
+    safe_reason = _display_text(reason, 500) or "工具没有提供错误详情"
+    if category == "Provider API 权限拒绝":
+        explanation = (
+            "Provider API 返回权限拒绝，因此账户数量未知；"
+            "这不能证明应用侧 account scope "
+            "不包含该账户，也无法仅凭此错误确定具体授权配置原因。"
+        )
+    elif category == "应用账户范围拒绝":
+        explanation = (
+            "应用侧 principal account scope 拒绝了请求，因此账户数量未知；"
+            "这次没有证据表明 Provider API 已被调用。"
+        )
+    else:
+        explanation = "查询未返回账户列表，因此账户数量未知。"
+    return (
+        f"- **{_escape_inline(platform)}**：{explanation} "
+        f"原始错误：`{_escape_inline(safe_reason)}`"
     )
 
 

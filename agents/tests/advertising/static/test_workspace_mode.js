@@ -85,7 +85,7 @@ test('a failed mode switch restores the last server-confirmed mode', async () =>
     context.document.getElementById = id => (
         id === 'executionModeSelect' ? select : id === 'workspaceModeStatus' ? status : null
     );
-    context.authenticatedFetch = async () => ({
+    context.serviceFetch = async () => ({
         ok: false, status: 409, text: async () => JSON.stringify({ detail: 'live not configured' }),
     });
     await context.applyWorkspaceMode();

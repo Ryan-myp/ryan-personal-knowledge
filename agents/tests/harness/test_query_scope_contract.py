@@ -76,6 +76,24 @@ def test_meta_child_ad_query_selects_the_ad_list_tool_once():
     assert [tool.name for tool in selected] == ["meta_list_ads"]
 
 
+def test_explicit_comma_separated_resource_list_keeps_parent_and_children():
+    tools = [
+        binding.definition for binding in create_tool_source("meta").list_bindings()
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "查询 Meta campaign, ad set, ad 列表",
+        tools,
+        limit=32,
+    )
+
+    assert {
+        "meta_list_campaigns",
+        "meta_list_ad_sets",
+        "meta_list_ads",
+    } <= {tool.name for tool in selected}
+
+
 def test_all_three_account_queries_expose_only_account_discovery_tools():
     for provider in ("google-ads", "meta", "tiktok"):
         tools = [

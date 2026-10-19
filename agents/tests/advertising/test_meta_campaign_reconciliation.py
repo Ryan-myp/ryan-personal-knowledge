@@ -21,6 +21,39 @@ def test_exact_name_lookup_uses_provider_filter_instead_of_first_account_page():
     assert calls[0][2]["extra_params"]["limit"] == 2
 
 
+def test_campaign_detail_maps_generic_end_time_to_meta_stop_time():
+    client = MetaAPIClient({"access_token": "fixture"})
+    calls = []
+    client.request = lambda method, endpoint, **kwargs: (
+        calls.append((method, endpoint, kwargs))
+        or {"id": "456", "name": "QA", "stop_time": "2026-10-31T23:59:00+0000"}
+    )
+
+    result = client.get_campaign(
+        "456",
+        fields=["id", "name", "end_time", "stop_time", "status"],
+    )
+
+    fields = calls[0][2]["extra_params"]["fields"].split(",")
+    assert fields == ["id", "name", "stop_time", "status"]
+    assert "end_time" not in fields
+    assert result["stop_time"] == "2026-10-31T23:59:00+0000"
+
+
+def test_campaign_detail_default_fields_use_meta_stop_time():
+    client = MetaAPIClient({"access_token": "fixture"})
+    calls = []
+    client.request = lambda method, endpoint, **kwargs: (
+        calls.append((method, endpoint, kwargs)) or {"id": "456"}
+    )
+
+    client.get_campaign("456")
+
+    fields = calls[0][2]["extra_params"]["fields"].split(",")
+    assert "stop_time" in fields
+    assert "end_time" not in fields
+
+
 def test_name_lookup_rejects_partial_matches_and_ambiguous_exact_names():
     class Client:
         def list_campaigns(self, account_id, limit=25):

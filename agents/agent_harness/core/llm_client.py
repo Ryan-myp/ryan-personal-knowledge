@@ -121,6 +121,11 @@ _OPEN_THINK_BLOCK = re.compile(
     r"<think(?:\s[^>]*)?>[\s\S]*$",
     re.IGNORECASE,
 )
+_UNEXECUTED_TOOL_HISTORY_NOTICE = (
+    "The previous assistant turn contained an unexecuted Tool protocol and "
+    "did not perform an action. Ignore that representation. Handle the latest "
+    "user request using only the current context and structured Tools."
+)
 
 
 class LLMStructuredOutputError(ValueError):
@@ -828,13 +833,19 @@ class LLMClient:
             content = cls._message_content(
                 cls._tool_value(message, "content", "")
             )
+            metadata = cls._tool_value(message, "metadata", {})
+            raw_calls = (
+                metadata.get("tool_calls", [])
+                if isinstance(metadata, dict) else []
+            )
+            if (
+                role == "assistant"
+                and not raw_calls
+                and cls._is_text_tool_protocol(content)
+            ):
+                content = _UNEXECUTED_TOOL_HISTORY_NOTICE
             item: dict[str, Any] = {"role": role, "content": content}
             if role == "assistant":
-                metadata = cls._tool_value(message, "metadata", {})
-                raw_calls = (
-                    metadata.get("tool_calls", [])
-                    if isinstance(metadata, dict) else []
-                )
                 calls = []
                 for call in raw_calls or ():
                     name = str(cls._tool_value(call, "name", "") or "").strip()

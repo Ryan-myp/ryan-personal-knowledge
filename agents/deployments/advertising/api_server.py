@@ -70,8 +70,13 @@ from agents.deployments.advertising.api.routes.management import create_manageme
 from agents.deployments.advertising.api.routes.sessions import create_sessions_router
 from agents.deployments.advertising.api.routes.tasks import create_tasks_router
 from agents.deployments.advertising.api.routes.workflows import create_workflows_router
+from agents.deployments.advertising.api.routes.settings import create_settings_router
 from agents.deployments.advertising.api.models import (
     ExecutionModeRequest,
+)
+from agents.deployments.advertising.settings import (
+    AgentSettingsService,
+    EncryptedSettingsVault,
 )
 from agents.applications.advertising.creation.templates import (
     creation_template_manager_for_runtime,
@@ -82,6 +87,20 @@ CONFIG_PATH = project_root / "agents" / "ad_agent" / "config.yaml"
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "chat.html"
 STATIC_PATH = Path(__file__).parent / "static"
 BUILTIN_SKILLS_ROOT = project_root / "agents" / "skills" / "advertising"
+SETTINGS_VAULT_PATH = Path(os.environ.get(
+    "AD_AGENT_SETTINGS_VAULT_PATH",
+    project_root / "agents" / "ad_agent" / "private" / "settings.vault",
+)).expanduser().resolve()
+SETTINGS_VAULT_KEY_PATH = os.environ.get(
+    "AD_AGENT_SETTINGS_ENCRYPTION_KEY_FILE"
+)
+settings_vault = EncryptedSettingsVault(
+    SETTINGS_VAULT_PATH,
+    key_path=(
+        Path(SETTINGS_VAULT_KEY_PATH).expanduser()
+        if SETTINGS_VAULT_KEY_PATH else None
+    ),
+)
 CHAT_MEDIA_ROOT = Path(
     os.environ.get(
         "AD_AGENT_MEDIA_PATH",
@@ -95,6 +114,7 @@ builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 
 # 全局 runtime
 runtime: Optional[AdvertisingApplication] = None
+settings_service: Optional[AgentSettingsService] = None
 mcp_manager: Optional[MCPServerManager] = None
 runtime_mcp_servers: Optional[RuntimeMCPServers] = None
 runtime_mcp_servers_app = None
@@ -122,9 +142,8 @@ def _database_path() -> Path:
     )
     return path.resolve()
 
-# The service may hold platform credentials in memory, so HTTP access is
-# authenticated by default.  Local development can explicitly opt into an
-# unauthenticated localhost-only mode with AD_AGENT_ALLOW_UNAUTHENTICATED=1.
+# Shared no-login mode gives every reachable client the same service identity.
+# Enable it only for a trusted network; otherwise requests require an API key.
 API_KEY = os.environ.get("AD_AGENT_API_KEY", "")
 ALLOW_UNAUTHENTICATED = os.environ.get("AD_AGENT_ALLOW_UNAUTHENTICATED", "0") == "1"
 CORS_ORIGINS = [
@@ -166,7 +185,7 @@ def _configured_service_principal() -> RequestPrincipal:
         tenant_id=os.environ.get("AD_AGENT_SERVICE_TENANT", "default"),
         permissions=frozenset(permissions),
         account_scope=account_scope,
-        source="api-key-service",
+        source="shared-service",
     )
 
 
@@ -209,7 +228,7 @@ def _require_principal_permission(principal: RequestPrincipal, permission: str) 
 
 
 def _init_runtime():
-    global runtime
+    global runtime, settings_service
     runtime_status.update({"state": "initializing", "error": None})
     try:
         # Load the YAML once and make the execution contract explicit.  The
@@ -290,16 +309,40 @@ def _init_runtime():
             credentials = config.get('credentials', {})
             models_config = config.get('models', {})
         
-        # 设置凭证到 runtime
+        model_defaults = {
+            "name": "环境变量配置",
+            "model": (
+                os.environ.get("LLM_MODEL", "").strip()
+                or models_config.get("default")
+                or ""
+            ),
+            "api_key": os.environ.get("OPENAI_API_KEY", ""),
+            "base_url": (
+                models_config.get("openai", {}).get("base_url")
+                or os.environ.get("OPENAI_BASE_URL")
+                or ""
+            ),
+        }
+        active_settings_service = AgentSettingsService(
+            settings_vault,
+            provider_credentials=credentials,
+            model_defaults=model_defaults,
+        )
+        credentials = active_settings_service.effective_provider_credentials()
+        active_model = active_settings_service.active_model_configuration()
+
+        # Settings remain deployment-owned; only the active provider clients
+        # and LLM adapter are injected into the Runtime.
         runtime.set_credentials(credentials)
-        llm_model = os.environ.get("LLM_MODEL", "").strip() or models_config.get("default")
-        api_key = os.environ.get('OPENAI_API_KEY', '')
+        llm_model = active_model["model"]
+        api_key = active_model["api_key"]
         
         if api_key:
             from agents.agent_harness.core.llm_client import create_llm_client
-            base_url = models_config.get("openai", {}).get("base_url") or os.environ.get("OPENAI_BASE_URL")
             llm = create_llm_client(
-                model=llm_model, api_key=api_key, base_url=base_url,
+                model=llm_model,
+                api_key=api_key,
+                base_url=active_model["base_url"] or None,
                 timeout_seconds=execution_timeout,
             )
             runtime.inject_llm(llm)
@@ -310,6 +353,8 @@ def _init_runtime():
             )
 
         runtime.assert_llm_ready()
+        active_settings_service.configure(runtime=runtime)
+        settings_service = active_settings_service
         
         # 自动加载 Skills
         skills_root = BUILTIN_SKILLS_ROOT
@@ -357,6 +402,7 @@ def _init_runtime():
         return runtime
     except Exception as e:
         runtime = None
+        settings_service = None
         runtime_status.update({"state": "failed", "error": f"{type(e).__name__}: {e}"})
         logger.exception("ad-agent Runtime 初始化失败")
         return None
@@ -714,6 +760,7 @@ _chat_api_context = ApiContext(
     builtin_skill_catalog_getter=lambda: builtin_skill_catalog,
     creation_template_manager_getter=_creation_template_manager_for_principal,
     chat_media_store_getter=lambda: chat_media_store,
+    settings_service_getter=lambda: settings_service,
 )
 app.include_router(create_chat_router(_chat_api_context))
 app.include_router(create_catalog_router(_chat_api_context))
@@ -722,6 +769,7 @@ app.include_router(create_management_router(_chat_api_context))
 app.include_router(create_sessions_router(_chat_api_context))
 app.include_router(create_tasks_router(_chat_api_context))
 app.include_router(create_workflows_router(_chat_api_context))
+app.include_router(create_settings_router(_chat_api_context))
 
 
 # FastMCP's own streamable HTTP endpoint is mounted after the FastAPI routes
