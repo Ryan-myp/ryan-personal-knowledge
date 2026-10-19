@@ -548,6 +548,54 @@ def test_llm_client_repairs_harmony_tool_protocol_returned_as_plain_text():
     )
 
 
+def test_llm_client_repairs_harmony_tool_calls_section_begin_text():
+    protocol_text = (
+        "<|tool_calls_section_begin|> meta_list_creation_templates "
+        "<|tool_call_argument_begin|> "
+        "{\"account_id\":\"account-1\",\"query\":\"Canvas\"} "
+        "<|tool_call_end|>"
+    )
+    protocol_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content=protocol_text, tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=8, completion_tokens=9),
+    )
+    answer_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(
+                content="TikTok Ads 是 TikTok 的广告投放平台。",
+                tool_calls=[],
+            ),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+    )
+    completions = _QueuedCompletions(protocol_response, answer_response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("讲讲 TikTok Ads。")],
+        [_tool()],
+        TurnRequest(user_input="讲讲 TikTok Ads。"),
+    )
+
+    assert result.content == "TikTok Ads 是 TikTok 的广告投放平台。"
+    assert result.tool_calls == ()
+    assert len(completions.requests) == 2
+    retry_messages = completions.requests[1]["messages"]
+    assert any(
+        "do not write Tool-call protocol as plain text"
+        in str(item.get("content", ""))
+        for item in retry_messages
+    )
+    assert protocol_text not in json.dumps(retry_messages, ensure_ascii=False)
+
+
 def test_llm_client_strips_private_think_block_from_normal_answer():
     client, completions = _client(SimpleNamespace(
         content="<think>internal reasoning</think>Here is the answer.",
