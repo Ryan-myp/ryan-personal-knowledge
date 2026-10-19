@@ -5,17 +5,17 @@ title: Meta Ads 预算、定向与创建工作流
 layer: platform
 knowledge_type: constraint
 platform: meta
-source: Meta Marketing API 官方文档 + 当前 Tool Source schema
-source_ref: "https://developers.facebook.com/docs/marketing-api/campaign-structure/creation"
-version: "1.0.0"
+source: Meta Marketing API 与 Meta Advertising Standards 官方资料
+source_ref: "https://storage.googleapis.com/understanding_meta_advertising_standards/Understanding_Meta_Advertising_Standards.pdf"
+version: "1.1.0"
 confidence: 0.88
-updated_at: "2026-09-08"
-tags: [meta, budget, targeting, optimization, special-ad-category, workflow]
+updated_at: "2026-10-19"
+tags: [meta, budget, targeting, optimization, special-ad-category, workflow, review, rejection, appeal]
 status: published
 source_kind: "official"
 authority: "official"
 evidence_level: "reviewed"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-19"
 ---
 
 # Meta Ads 预算、定向与创建工作流
@@ -52,3 +52,13 @@ Broad/Advantage+、兴趣、行为、地域、年龄、再营销和 Lookalike �
 ## 素材与审核
 
 Ad Creative 的身份、媒体、文案、链接、CTA、目录和追踪组合要在 Ad 之前校验。上传成功、Creative 创建成功、Ad 创建成功、审核通过、开始投放是五个不同状态；拒审时保留平台原因和修订方向，不用重复创建绕过审核。
+
+### 拒登和账户限制
+
+- 在 Ads Manager 当前状态/Delivery 信息中定位具体对象，读取广告被拒原因；分别检查文案、图片/视频、CTA、目标页和广告所引用的 Page、Instagram identity、商品或表单。
+- 若内容确有问题，修复对应素材或落地页，再按平台要求重新审核；若判定疑似错误，带上对应政策点和事实证据，通过 Meta 当前 Business Support / Account Quality 支持入口查看复核选项。
+- 单条广告拒绝与 Ad Account、Page 或 Business 资产限制范围不同。先确认被限制主体与关联资产，不能只重建单条广告，也不能以换账户、换身份绕开审核。
+- Meta 的支持入口与界面文案会变化；提交前检查当前界面是否提供复核，以及申诉对象、状态和范围。
+- 状态解除后重新检查父级、预算、排期、素材关联和实际交付；“审核通过”本身不证明已投放。
+
+该排查顺序与素材/目的地检查参考 Meta 官方 Advertising Standards 培训资料；具体资格和支持入口以账户当前界面为准。

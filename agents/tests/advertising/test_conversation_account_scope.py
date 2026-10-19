@@ -418,6 +418,25 @@ def test_tiktok_directory_validates_plural_scope_without_a_selected_http_account
 
 
 @pytest.mark.parametrize("endpoint", ["/chat", "/chat/stream"])
+def test_empty_model_final_reply_returns_a_visible_reason(tmp_path, endpoint):
+    runtime = _runtime(tmp_path, client=QueryClient("meta"))
+    install(runtime, ModelTurn(content=""))
+    try:
+        with _chat_client(runtime, _principal()) as client:
+            result = _prompt(
+                client,
+                "帮我查一下纽约今天的天气",
+                endpoint=endpoint,
+            )
+        content = result.get("content") or result.get("reply")
+        assert result["status"] == "failed", result
+        assert "没有生成文字回复" in content
+        assert "没有执行工具操作" in content
+    finally:
+        _close(runtime)
+
+
+@pytest.mark.parametrize("endpoint", ["/chat", "/chat/stream"])
 def test_model_rate_limit_has_a_readable_failure_instead_of_empty_content(tmp_path, endpoint):
     class RateLimitError(RuntimeError):
         pass

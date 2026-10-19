@@ -63,6 +63,8 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | `ab-testing` 2.0.1 | `practices/experimentation-design`、Wiki 的实验方法；触发后按需加载实验设计 reference | 上游固定样本量表、统计计算器或自动平台实验执行 |
 | `attribution` 1.1.4 | `practices/measurement-attribution`、Wiki 的归因/增量方法；触发后按需加载对账 reference | 未接入数据源时声称运行 GA4、CRM、MTA 或 MMM |
 | `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约；触发后按需加载事件契约 reference | GA4/GTM/Pixel/CAPI 配置代码、外部集成和未注册的实施 Tool |
+| `aso` 2.0.2 | `practices/app-growth`：商店页与广告主张匹配、页面审查和安装后 cohort 诊断 | 商店爬取、App Store Connect/Google Play Console 修改、固定评分和过时规格 |
+| `marketing-loops` 1.4.0 | `practices/ad-growth-operations`：检查频率与动作条件分离、循环契约、跨运行去重需求、失败停止和人工审批 | 将通用定时任务包装成第二套 Runtime、自动调预算/暂停/轮换或跨运行状态能力 |
 | Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
 | Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |
 
@@ -77,6 +79,13 @@ Source 自动发现。其 `SKILL.md`、references 和 provenance 可进入受限
 `ad-creative` 和 `marketing-psychology` 条目后，保留三项非重复增量：账户运营决策
 检查、广告文案/证据 brief、付费流量落地页审查。Marketplace 的通用文案与 CRO 方法
 被改写为广告场景；未注册的网页抓取、分析、第三方平台或写操作能力不会随 Skill 引入。
+
+2026-10-19 复核本机 `customer-research`、`marketing-plan`、`marketing-loops`、`aso`、
+`onboarding`、`signup`、`paywalls`、`churn-prevention`、`revops` 和 `launch`：
+客户语言采样已覆盖在创意策略；CRO/分析/归因/实验已有专门 practice；整套营销计划、
+发布、订阅和销售流程不适合作为广告 Agent 的新 Tool 权限。新增 ASO/App 漏斗分析与安全
+广告运营循环两个 advisory Skills。循环可以使用当前通用 Scheduler 登记只读复盘，但跨运行
+业务去重、GA4/CRM/MMP/商店数据、创意生成与自动预算/暂停仍需独立 Tool/Data 能力及授权。
 
 ## 跨渠道 Campaign 管理
 

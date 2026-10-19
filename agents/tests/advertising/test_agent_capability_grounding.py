@@ -105,6 +105,8 @@ def test_core_agent_contract_forbids_inventing_model_identity():
     assert "invent or claim a personal name, model identity, provider, or developer" in prompt
     assert "Do not volunteer underlying model, provider, or developer identity in" in prompt
     assert "self-introductions or capability answers" in prompt
+    assert "If no active Tool can satisfy an actionable request" in prompt
+    assert "Never leave the response empty" in prompt
 
 
 def test_core_agent_contract_distinguishes_empty_results_from_permission_errors():

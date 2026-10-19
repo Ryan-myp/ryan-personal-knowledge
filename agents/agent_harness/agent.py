@@ -1215,6 +1215,21 @@ class Agent:
                         if awaiting_input
                         else last_reply
                     )
+                    missing_final_reply = (
+                        not awaiting_input
+                        and not model_turn.tool_calls
+                        and not last_reply.strip()
+                    )
+                    if missing_final_reply:
+                        if terminal_status == RunStatus.SUCCEEDED:
+                            terminal_status = RunStatus.FAILED
+                        terminal_reply = (
+                            "本回合已有工具执行记录，但模型没有生成最终文字说明。"
+                            "请先核实执行状态后再决定是否重试。"
+                            if all_tool_results
+                            else "模型本回合没有生成文字回复，也没有执行工具操作。"
+                            "请重试，或换一种问法。"
+                        )
                     if non_retriable_tool_failure:
                         terminal_reply = self._non_retriable_error_reply(
                             tool_results,

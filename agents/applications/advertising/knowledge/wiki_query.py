@@ -54,6 +54,28 @@ def _entry(document: KnowledgeDocument) -> WikiEntry:
     )
 
 
+def _matching_markdown_section(content: str, heading_query: str) -> Optional[str]:
+    """Return one matching heading section from a bounded Wiki excerpt."""
+    text = str(content or "").strip()
+    query = str(heading_query or "").strip().casefold()
+    if not text or not query:
+        return None
+
+    headings = list(re.finditer(r"(?m)^(#{1,6})\s+(.+?)\s*$", text))
+    for index, heading in enumerate(headings):
+        if query not in heading.group(2).casefold():
+            continue
+        level = len(heading.group(1))
+        end = len(text)
+        for following in headings[index + 1:]:
+            if len(following.group(1)) <= level:
+                end = following.start()
+                break
+        section = text[heading.start():end].strip()
+        return section or None
+    return None
+
+
 class MarkdownWikiLoader:
     """Cached loader backed by ``MarkdownWikiKnowledgeProvider``."""
 
@@ -179,9 +201,14 @@ class WikiQueryTool:
         solutions = []
         for result in results:
             content = str(result.content.get("raw_content", ""))
+            section = _matching_markdown_section(content, error_code)
+            if section:
+                solutions.append(section)
+                continue
             match = re.search(r"解决方案[：:]\s*(.*)", content, re.DOTALL)
-            if match:
-                solutions.append(match.group(1).strip())
+            solution = match.group(1).strip() if match else content.strip()
+            if solution:
+                solutions.append(solution)
         return solutions[:limit] if limit else solutions
 
     def get_workflow(self, platform: str, workflow_type: str = None) -> Dict[str, Any]:

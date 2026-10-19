@@ -5,17 +5,17 @@ title: Google Ads API 工作流
 layer: platform
 knowledge_type: workflow
 platform: google-ads
-source: Google Ads API 官方文档
+source: Google Ads API 官方文档 + 当前 Google Tool Source schema
 source_ref: "repository://ad-agent/knowledge/google-workflows"
-version: "1.0.0"
+version: "1.1.0"
 confidence: 0.9
-updated_at: "2026-08-26"
+updated_at: "2026-10-19"
 tags: [google, workflow, api]
 status: published
 source_kind: "code"
 authority: "repository"
 evidence_level: "reviewed"
-last_verified_at: "2026-08-26"
+last_verified_at: "2026-10-19"
 ---
 
 # Google Ads API 工作流

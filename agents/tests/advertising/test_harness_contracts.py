@@ -403,6 +403,68 @@ def test_harness_executes_model_requested_tools_from_registered_catalog():
     assert [item["success"] for item in result["results"]] == [True, True]
 
 
+def test_empty_final_model_reply_is_a_failed_run_not_a_silent_success():
+    model = _ScriptedHarnessModel(ModelTurn(content=""))
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        llm_client=model,
+        offline_mode=True,
+    )
+    try:
+        result = runtime.run("帮我查一下纽约今天的天气")
+
+        assert result["status"] == "failed"
+        assert "没有生成文字回复" in result["reply"]
+        assert "没有执行工具操作" in result["reply"]
+    finally:
+        runtime.close(wait=True)
+
+
+def test_empty_final_reply_after_tool_use_warns_to_verify_execution_records():
+    class Handler:
+        def execute(self, _ctx, _input_data):
+            return ToolResult.ok({"value": "read"})
+
+    model = _ScriptedHarnessModel(
+        ModelTurn(tool_calls=(ToolCall("read-call", "route_read", {}),)),
+        ModelTurn(content=""),
+    )
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        llm_client=model,
+        offline_mode=True,
+        whitelist_validator=_whitelist(meta=["m1"]),
+    )
+    runtime.register_tool(
+        ToolDefinition(
+            name="route_read",
+            skill="route-test",
+            namespace="meta",
+            description="Read a test value",
+            input_schema=ToolSchema(properties={
+                "account_id": {"type": "string"},
+            }),
+            action="get",
+            resource_type="campaign",
+            effect_class=ToolEffect.READ,
+            required_permissions=["ads.read"],
+        ),
+        Handler(),
+    )
+    try:
+        result = runtime.run(
+            "调用 route_read 读取测试值",
+            account_id="m1",
+        )
+
+        assert result["status"] == "failed"
+        assert "工具执行记录" in result["reply"]
+        assert "没有执行工具操作" not in result["reply"]
+        assert result["results"][0]["success"] is True
+    finally:
+        runtime.close(wait=True)
+
+
 def test_knowledge_context_is_read_only_bounded_and_source_addressable():
     class Provider:
         def __init__(self):
@@ -1556,6 +1618,8 @@ def test_wiki_error_lookup_honors_limit_without_runtime_name_error():
 
     assert len(solutions) == 1
     assert "重试" in solutions[0]
+    assert "RESOURCE_EXHAUSTED" in solutions[0]
+    assert "Meta Marketing API" not in solutions[0]
     assert len(wiki_get_errors("RESOURCE_EXHAUSTED", platform="google", limit=1)) == 1
 
 

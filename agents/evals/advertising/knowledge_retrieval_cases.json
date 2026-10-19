@@ -1,5 +1,8 @@
 [
   {"query": "Google Search 关键词和广告组怎么创建", "expected": ["google-canonical-campaign-and-search-runbook", "google-campaign-hierarchy"]},
+  {"query": "Google Ads Performance Max PMax PERFORMANCE_MAX AssetGroup AssetGroupListingGroupFilter 与普通 Search Ad Group 的层级差异", "expected": ["google-campaign-hierarchy", "google-pmax-feed-assets-and-value-bidding"], "expected_top": "google-campaign-hierarchy"},
+  {"query": "Google Ads API field error 或 partial failure 后应该重试吗，如何依据 field path 和 resource name 恢复", "expected": ["google-constraints", "google-api-errors-quota-and-versioning", "ad-error-patterns"], "expected_top": "google-constraints"},
+  {"query": "Google Ads 广告 disapproved 后怎么查 Policy details，是修复素材还是 appeal 复核", "expected": ["google-constraints", "cross-platform-ad-review-and-recovery"]},
   {"query": "讲下 Google Ads 相关知识", "expected": ["google-ads-entity"], "expected_top": "google-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
   {"query": "介绍一下 Meta Ads 的基础知识", "expected": ["meta-ads-entity"], "expected_top": "meta-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
   {"query": "介绍一下 TikTok Ads 的基础知识", "expected": ["tiktok-ads-entity"], "expected_top": "tiktok-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
@@ -39,7 +42,10 @@
   {"query": "如何从业务目标和漏斗规划渠道、平台目标、预算、KPI 与实验", "expected": ["full-funnel-campaign-planning"]},
   {"query": "CRM 有线索但广告事件质量差，离线转化回传、去重、隐私和诊断怎么做", "expected": ["conversion-signal-quality-operations"]},
   {"query": "商品目录 feed 价格库存 ID 不匹配，商品广告资格和购买漏斗怎么排查", "expected": ["catalog-feed-quality-operations"]},
-  {"query": "Meta Campaign Ad Set Ad 层级边界", "expected": ["meta-canonical-campaign-and-adset-runbook"], "forbidden_platforms": ["google-ads", "tiktok", "dv360"]},
+  {"query": "广告审核中、拒登、账户受限的诊断顺序是什么，怎么判断修复还是申诉并验收恢复", "expected": ["cross-platform-ad-review-and-recovery"], "expected_top": "cross-platform-ad-review-and-recovery"},
+  {"query": "TikTok 广告被拒审后提交 One Click Appeal，申诉中能否编辑广告组，哪些对象会重新审核", "expected": ["tiktok-ads-constraints-and-workflows", "cross-platform-ad-review-and-recovery"], "expected_top": "tiktok-ads-constraints-and-workflows"},
+  {"query": "DV360 Creative review status DV360 status Exchange status，一个 Exchange rejected 会影响哪些库存", "expected": ["dv360-constraints-and-workflows", "cross-platform-ad-review-and-recovery"], "expected_top": "dv360-constraints-and-workflows"},
+  {"query": "Meta Campaign Ad Set Ad 层级边界", "expected": ["meta-canonical-campaign-and-adset-runbook"], "expected_top": "meta-canonical-campaign-and-adset-runbook"},
   {"query": "原始来源 raw ingest 文档", "expected": [], "forbidden_wiki_types": ["raw"]},
   {"query": "待审核 draft 页面", "expected": [], "forbidden_statuses": ["draft", "deprecated"]}
 ]

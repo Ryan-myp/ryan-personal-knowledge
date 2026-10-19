@@ -54,6 +54,7 @@ function environment(messages, fetchHandler = null) {
     const context = {
         sessionId: null, selectedConversationId: null,
         loadedConversationTurnIds: new Set(), pendingRequest: null,
+        pendingCreationReview: false,
         conversationHistory: [],
         conversationHistoryRequest: 0,
         conversationHistoryListPage: {
@@ -244,4 +245,17 @@ test('live rendering preserves the same persisted failure reply without another 
     }, {});
     assert.equal(displayed[0][0], content);
     assert.equal(displayed[0][3], true);
+});
+
+test('empty stream replies explain that no operation ran instead of pointing to the trace panel', () => {
+    const { context, displayed } = environment([]);
+    context.renderStreamResult({
+        session_id: 'history',
+        status: 'succeeded',
+        content: '',
+        results: [],
+    }, {});
+
+    assert.match(displayed[0][0], /没有执行工具操作/);
+    assert.doesNotMatch(displayed[0][0], /右侧|执行轨迹/);
 });

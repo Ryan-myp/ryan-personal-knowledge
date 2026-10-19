@@ -31,7 +31,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "creative-strategy", "account-diagnostics", "experimentation-design",
         "measurement-attribution", "measurement-instrumentation",
         "ad-copywriting", "paid-landing-page-review",
-        "knowledge-explainer",
+        "knowledge-explainer", "app-growth", "ad-growth-operations",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -63,6 +63,12 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.4")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
+    app_growth = catalog.get_version("app-growth", "1.0.0")
+    assert app_growth["location"] == "practices/app-growth"
+    assert "references/store-listing-review.md" in app_growth["files"]
+    growth_operations = catalog.get_version("ad-growth-operations", "1.0.0")
+    assert growth_operations["location"] == "practices/ad-growth-operations"
+    assert "references/loop-contract.md" in growth_operations["files"]
 
 
 def _files(name="business-growth"):
@@ -245,6 +251,37 @@ def test_marketplace_copywriting_and_post_click_skills_are_advisory():
         assert "[skill guidance: paid-landing-page-review]" in landing_context
         assert "references/post-click-audit.md" in landing_context
         assert "不代表已经访问页面" in landing_context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_app_growth_and_recurring_loop_skills_are_context_only():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        cases = (
+            (
+                "app-growth",
+                "审查这个 App Store 页面和 App Promotion 广告承诺是否匹配，并分析安装后留存",
+                "references/store-listing-review.md",
+                "没有商店页面、MMP、GA4、CRM 或订单读取 Tool 时",
+            ),
+            (
+                "ad-growth-operations",
+                "给我设计一个每周 paid media review loop，作为定时任务只读检查并通知异常",
+                "references/loop-contract.md",
+                "循环必须保持只读并报告重复项",
+            ),
+        )
+        for name, request, reference, boundary in cases:
+            skill = runtime.skill_loader.get(name)
+            assert skill is not None, name
+            assert skill.get_tools() == [], name
+
+            context = runtime.tool_selector._triggered_skill_context(request)
+
+            assert f"[skill guidance: {name}]" in context
+            assert reference in context
+            assert boundary in context
     finally:
         runtime.close(wait=True)
 

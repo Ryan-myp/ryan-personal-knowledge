@@ -5,17 +5,17 @@ title: TikTok Ads 预算、定向与素材创建工作流
 layer: platform
 knowledge_type: constraint
 platform: tiktok
-source: TikTok Ads API 官方文档 + 当前 Tool Source schema
-source_ref: "https://business-api.tiktok.com/portal/docs?id=1739385842588674"
-version: "1.0.0"
+source: TikTok for Business 官方 Ads API 与审核帮助文档
+source_ref: "https://ads.tiktok.com/resources/help/article/one-click-appeal-for-other-ad-types?lang=en"
+version: "1.1.0"
 confidence: 0.88
-updated_at: "2026-09-08"
-tags: [tiktok, budget, targeting, placement, spark-ads, catalog, workflow]
+updated_at: "2026-10-19"
+tags: [tiktok, budget, targeting, placement, spark-ads, catalog, workflow, review, rejection, appeal]
 status: published
 source_kind: "official"
 authority: "official"
 evidence_level: "reviewed"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-19"
 ---
 
 # TikTok Ads 预算、定向与素材创建工作流
@@ -52,3 +52,16 @@ Spark 是对原生 TikTok 内容的授权使用，不等同于上传普通视频
 ## 变更与失败恢复
 
 写入默认 dry-run。超时或未知状态先 readback，已存在则核对或 update，不能重复 create。对限流和暂态网络错误做有界退避；参数、权限、资产不存在、政策拒审和账号资格错误要停止重试并返回具体缺口。
+
+## Ad/Ad Group 拒登与 One Click Appeal
+
+- 从 Campaign 下的 Ad 或 Ad Group 读取平台拒登详情、政策说明与状态；同时核对该 Ad Group 中所有广告、素材、落地页和相关身份资产。
+- 若确有问题，编辑具体内容并重新提交审核；只有怀疑误判且能说明证据时才申请复核。
+- TikTok 当前 One Click Appeal 帮助文档说明：从 Ad 或 Ad Group 提交的复核可能覆盖整个 Ad Group；复核进行期间不能编辑该广告组或其广告。提交前必须确认整个组内容并保存当前版本。
+- 同一文档说明，如果账户处于 suspended 状态，需先处理账户暂停状态，才能提交该流程的申诉。入口资格与当前账户状态可能不同，应以当下 UI 和官方说明为准。
+- 审核通过后仍须回读 Campaign/Ad Group/Ad 状态、排期、预算、身份、事件和实际 delivery；不能把复核结果当作开始投放的证据。
+
+## 官方审核参考
+
+- [What to do if your ad or ad group was rejected](https://ads.tiktok.com/resources/help/article/what-to-do-if-your-ad-or-ad-group-was-rejected-on-tiktok)
+- [One Click Appeal for Other Ad Types](https://ads.tiktok.com/resources/help/article/one-click-appeal-for-other-ad-types?lang=en)

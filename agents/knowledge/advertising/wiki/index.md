@@ -1,6 +1,6 @@
 # LLM Wiki 索引
 
-> **版本**: v2.7.0
+> **版本**: v2.8.0
 > **更新时间**: 2026-10-19
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
@@ -36,6 +36,7 @@ knowledge_base/
 │   ├── measurement-data-contracts-and-incrementality.md
 │   ├── conversion-signal-quality-operations.md
 │   ├── catalog-feed-quality-operations.md
+│   ├── ad-review-and-recovery.md
 │   ├── budget-pacing-and-marginal-efficiency.md
 │   ├── evidence-driven-performance-diagnosis.md
 │   ├── four-platform-ad-agent-handbook.md
@@ -75,6 +76,7 @@ knowledge_base/
 | “如何从业务目标设计渠道、漏斗、优化事件、预算和实验？” | `business/full-funnel-campaign-planning` |
 | “平台转化和 CRM/订单对不上，事件回传/去重/质量怎么排查？” | `business/conversion-signal-quality-operations` + 对应平台事件专题 |
 | “商品目录/Feed 有拒绝、缺货、ID/价格不匹配，广告为什么没量？” | `business/catalog-feed-quality-operations` + Google/Meta/TikTok 商品目录专题 |
+| “广告审核中、被拒登、账户受限，怎么诊断、修复或申诉并验证恢复？” | `business/ad-review-and-recovery` + 对应平台审核/约束专题 |
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
 | “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “Google 搜索词/转化报表或 Meta Insights 数据可信吗，指标如何解读？” | `agents/skills/advertising/practices/account-diagnostics/` + 对应平台 measurement/reporting 文档 |
@@ -94,7 +96,7 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-10-19，Runtime 实际加载 **74 个发布 Markdown 文档**：
+截至 2026-10-19，Runtime 实际加载 **75 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
@@ -102,7 +104,7 @@ knowledge_base/
 | Meta | 13 | 1 个实体页 + 11 篇平台规则 + 1 篇目标选择 Query，覆盖 ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
 | TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
 | DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |
-| 跨平台业务 | 17 | 四平台总览、层级、全漏斗规划、行业、预算节奏、边际效率、受众、创意、数据契约、转化信号质量、商品 Feed、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
+| 跨平台业务 | 18 | 四平台总览、层级、全漏斗规划、行业、预算节奏、边际效率、受众、创意、数据契约、转化信号质量、商品 Feed、审核拒登恢复、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
 | 经验方法 | 4 | 诊断、实验、最佳实践、错误模式 |
 | 对比页 | 1 | 四个平台的对象、强项和优先核对项 |
 | 概念页 | 1 | Provider live E2E 的测试记忆与恢复规则 |

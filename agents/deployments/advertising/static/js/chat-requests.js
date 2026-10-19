@@ -85,13 +85,24 @@
                 return '已打开广告创建草稿，尚未提交。请在卡片中补充标记项后继续。';
             }
 
-            if (data.status === 'failed') return '本次处理未完成，请查看执行轨迹中的失败步骤。';
+            if (data.status === 'failed') {
+                const failedResult = [...(data.results || [])]
+                    .reverse()
+                    .find(item => item?.success === false && item?.error);
+                if (failedResult) {
+                    return `本次处理未完成。失败原因：${String(failedResult.error).slice(0, 500)}`;
+                }
+                return '本次处理未完成，但服务端没有返回失败说明。请先核实执行记录，再决定是否重试。';
+            }
             if (data.status === 'recovery_required') {
                 return '本次处理需要核实后恢复，请先查看执行轨迹，不要重复提交。';
             }
             if (data.status === 'unknown') return '本次处理状态暂时无法确认，请先检查执行记录。';
             if (data.status === 'awaiting_input') return '还需要补充一项信息才能继续。';
-            return '本回合没有返回文字说明，请查看右侧的实际执行状态。';
+            if (data.results?.length) {
+                return '本回合已有工具执行记录，但没有最终文字说明。请先核实执行结果后再继续。';
+            }
+            return '模型本回合没有生成文字回复，也没有执行工具操作。请重试，或换一种问法。';
         }
 
         function renderStreamResult(data, requestParams) {

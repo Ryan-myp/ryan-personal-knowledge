@@ -302,6 +302,25 @@ def test_business_skill_policy_is_loaded_and_enforced_outside_runtime(tmp_path):
     assert runtime._validate_policies(intent) == errors
 
 
+def test_app_business_policy_does_not_block_registered_cross_channel_app_types():
+    skills_root = Path(__file__).resolve().parents[2] / "skills" / "advertising"
+    policy = BusinessSkillPolicy.from_skill_file("app", str(skills_root))
+
+    assert policy.allowed_platforms == ()
+    assert policy.denied_platforms == ()
+    assert policy.allowed_campaign_types == ()
+
+    for platform in ("meta", "tiktok"):
+        intent = ParsedIntent(
+            intent_type="create_campaign",
+            raw_input="create app promotion campaign",
+            namespaces=[platform],
+            campaign_type="REGULAR_CAMPAIGN",
+        )
+        assert policy.filter_namespaces([platform]) == [platform]
+        assert policy.validate_intent(intent) == []
+
+
 def test_execution_plan_is_provider_neutral_and_validates_dependencies():
     campaign = ToolDefinition(
         name="provider_create_campaign",

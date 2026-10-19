@@ -9,11 +9,12 @@
 ### CLI
 
 ```bash
-./scripts/ad-agent-python agents/tools/advertising/wiki_query.py --action stats
-./scripts/ad-agent-python agents/tools/advertising/wiki_query.py --action search --query "Meta CAPI 去重"
-./scripts/ad-agent-python agents/tools/advertising/wiki_query.py --action search --query "DV360 Line Item 预算"
-./scripts/ad-agent-python agents/tools/advertising/wiki_query.py --action search --query "TikTok Spark 授权"
-./scripts/ad-agent-python agents/tools/advertising/wiki_query.py --action search --query "Google PMax 商品分组"
+./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action stats
+./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action search --query "Meta CAPI 去重"
+./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action search --query "DV360 Line Item 预算"
+./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action search --query "TikTok Spark 授权"
+./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action search --query "Google PMax 商品分组"
+./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action search --query "广告拒登后怎么判断修复还是申诉"
 ```
 
 ### Python
@@ -51,7 +52,7 @@ Runtime 通过 `KnowledgeProvider` 读取同一批 Markdown。查询结果是有
 | `platforms/meta` | ODAX、Ad Set、Catalog、特殊类别、Pixel/CAPI、Insights |
 | `platforms/tiktok` | Smart+、Spark、Commerce、素材事件、定向和报表 |
 | `platforms/dv360` | IO/Line Item、采购、定向 assignment、创意审批、异步报告 |
-| `business` | 层级对照、行业打法、预算、受众、创意、归因增量 |
+| `business` | 层级对照、行业打法、预算、受众、创意、归因增量、审核拒登恢复 |
 | `expertise` | 全链路诊断、实验设计、最佳实践和错误模式 |
 
 ## 新增或修改文档
@@ -62,8 +63,8 @@ Runtime 通过 `KnowledgeProvider` 读取同一批 Markdown。查询结果是有
 
 ```bash
 ./scripts/ad-agent-python -m compileall -q agents
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. ./scripts/ad-agent-python -m pytest agents/tests/advertising/test_knowledge_memory.py -q
-make ad-agent-audit
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=. ./scripts/ad-agent-python -m pytest agents/tests/advertising/test_knowledge_memory.py agents/tests/platform/test_knowledge_audit.py -q
+make ad-agent-knowledge-check
 git diff --check
 ```
 

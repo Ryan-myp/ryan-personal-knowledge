@@ -134,6 +134,38 @@ def test_llm_client_honors_required_initial_tool_choice():
     assert completions.requests[0]["tool_choice"] == "required"
 
 
+def test_llm_client_retries_once_when_final_response_is_empty():
+    def response(content):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content=content, tool_calls=[]),
+                finish_reason="stop",
+            )],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+
+    completions = _QueuedCompletions(response(""), response(
+        "当前没有可用的实时天气查询工具，无法核实纽约今天的天气。"
+    ))
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("帮我查一下纽约今天的天气")],
+        [],
+        TurnRequest(user_input="帮我查一下纽约今天的天气"),
+    )
+
+    assert result.content == "当前没有可用的实时天气查询工具，无法核实纽约今天的天气。"
+    assert len(completions.requests) == 2
+    assert any(
+        "previous response was empty" in str(item.get("content", ""))
+        for item in completions.requests[1]["messages"]
+    )
+
+
 def test_llm_client_honors_an_explicit_named_initial_tool_choice():
     client, completions = _client(SimpleNamespace(content="", tool_calls=[]))
     choice = {"type": "function", "function": {"name": "lookup_record"}}

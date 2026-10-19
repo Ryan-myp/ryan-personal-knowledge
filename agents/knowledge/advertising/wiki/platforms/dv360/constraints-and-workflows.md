@@ -5,17 +5,17 @@ title: DV360 预算、定向、创意与投放工作流
 layer: platform
 knowledge_type: constraint
 platform: dv360
-source: Display & Video 360 API 官方文档 + 当前 Tool Source schema
-source_ref: "https://developers.google.com/display-video/api/concepts/targeting"
-version: "1.0.0"
+source: Display & Video 360 API 与 Creative review 官方帮助文档
+source_ref: "https://support.google.com/displayvideo/answer/6063030?hl=en"
+version: "1.1.0"
 confidence: 0.88
-updated_at: "2026-09-08"
-tags: [dv360, budget, flight, targeting, brand-safety, creative, workflow]
+updated_at: "2026-10-19"
+tags: [dv360, budget, flight, targeting, brand-safety, creative, workflow, review, rejection, exchange]
 status: published
 source_kind: "official"
 authority: "official"
 evidence_level: "reviewed"
-last_verified_at: "2026-09-08"
+last_verified_at: "2026-10-19"
 ---
 
 # DV360 预算、定向、创意与投放工作流
@@ -50,3 +50,17 @@ asset uploaded -> creative definition -> associated to Line Item -> review pendi
 ## 故障恢复
 
 异步报告和长任务要记录 definition、run/result 关联、状态、轮询次数、超时和错误摘要。未知写入状态先 readback；参数、权限、父级、定向组合和创意审核问题停止重试。所有写操作默认 dry-run，并经过 live 权限、确认、幂等和审计。
+
+## Creative 审核状态与恢复
+
+- 在 Creative status 中分别读取 DV360 status 与 Exchange status。它们代表不同审核层；Exchange status 是汇总状态：`Servable` 表示至少一个自有审核流程的 Exchange 已批准，`Approved` 表示全部通过，`Rejected` 表示至少一个 Exchange 拒绝。
+- 汇总的 `Rejected` 不证明所有供给都拒绝，也不能仅凭聚合状态断言是某一个 Exchange；通过 Creative status 详情确认具体 Exchange/Publisher 和适用库存后再描述范围。
+- 先通过 rejection details 判断是素材/格式/目的地不符合政策、CM360 placement/tag 配置问题，还是特定 Exchange/Publisher 的要求。
+- 在 DV360 内修复后读取是否已重新进入审核；若素材或 tag 在 Campaign Manager 360 等外部系统修改，按当前官方流程确认同步和重新提交状态。
+- 将已确认的审核范围映射到目标 Line Item/供给；如果仍有 pending/rejected，说明具体影响和未确认项，而不是宣称整体 creative 通过/失败。
+- 状态恢复后继续验收 Line Item 资格、flight、targeting、预算/出价和报告；Creative 获批与实际赢得竞价/开始 delivery 是不同状态。
+
+## 官方审核参考
+
+- [About the creative review process](https://support.google.com/displayvideo/answer/6063030?hl=en)
+- [Find and fix rejected creatives](https://support.google.com/displayvideo/answer/12726387?hl=en)

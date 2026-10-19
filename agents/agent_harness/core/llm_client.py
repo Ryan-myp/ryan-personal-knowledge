@@ -380,6 +380,16 @@ class LLMClient:
                     content = ""
                 else:
                     content = self._strip_private_think(content)
+                if not calls and not content.strip() and attempt == 0:
+                    logger.warning(
+                        "LLM returned an empty final response; retrying once "
+                        "with a user-facing response reminder"
+                    )
+                    attempt_messages = self._empty_response_repair_messages(
+                        provider_messages
+                    )
+                    attempt += 1
+                    continue
             except LLMStructuredOutputError as error:
                 can_repair = (
                     attempt == 0
@@ -513,6 +523,36 @@ class LLMClient:
                 "If this is an informational question and no supplied Tool is "
                 "needed, answer directly from the conversation and provided "
                 "context; do not invent Tool names or claim that an operation ran."
+            ),
+        }
+        last_user_index = next(
+            (
+                index for index in range(len(repaired) - 1, -1, -1)
+                if repaired[index].get("role") == "user"
+            ),
+            None,
+        )
+        if last_user_index is None:
+            repaired.append(correction)
+        else:
+            repaired.insert(last_user_index, correction)
+        return repaired
+
+    @staticmethod
+    def _empty_response_repair_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Retry once with instructions to explain unsupported requests plainly."""
+        repaired = [dict(item) for item in messages]
+        correction = {
+            "role": "system",
+            "content": (
+                "Your previous response was empty. Reply to the user's request "
+                "with a concise, user-facing answer. If the request needs "
+                "real-time data or an action that is not supported by the "
+                "active Tools and trusted context, clearly say that you cannot "
+                "verify or perform it. Do not invent results or claim an "
+                "operation ran."
             ),
         }
         last_user_index = next(

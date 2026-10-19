@@ -56,13 +56,12 @@ business:
 business:
   name: app
   description: "App 推广投放"
-  allowed_channels: [google]  # 只用 Google
-  allowed_campaign_types: [APP_INSTALL, APP_engagement]
   business_rules:
-    min_budget: 50
-    max_budget: 50000
     focus_metrics: [CPI, Retention, LTV]
 ```
+
+App 推广的渠道、目标与平台原生 Campaign 类型由当前注册 Tool、蓝图和账户资格决定。
+除非业务确实需要强制限制，否则不要在 App Skill 中写过时的静态渠道/类型白名单或统一预算范围。
 
 ### social (社交业务)
 ```yaml
