@@ -8,6 +8,11 @@
             }
         }
 
+        function updateChatLoadingStatus(text) {
+            const status = document.getElementById('loadingStatus');
+            if (status && text) status.textContent = text;
+        }
+
         function renderTraceDetail(node) {
             const detail = document.getElementById('traceDetail');
             if (!node) {
@@ -300,8 +305,74 @@
         function normalizeExecutionEvent(rawEvent) {
             const raw = rawEvent && typeof rawEvent === 'object' ? rawEvent : {};
             const type = String(raw.type || raw.event_type || '').trim();
-            if (!type || !['agent_start', 'agent_end', 'tool_execution_start', 'tool_execution_end', 'turn_start', 'turn_end', 'message_end', 'model_usage'].includes(type)) {
+            if (type === 'model_delta') return null;
+            if (!type || ![
+                'agent_start', 'agent_end', 'tool_execution_start', 'tool_execution_end',
+                'turn_start', 'turn_end', 'message_end', 'model_usage',
+                'model_start', 'model_end', 'model_error', 'model_retry',
+                'model_fallback', 'progress',
+            ].includes(type)) {
                 return { ...raw, type: type || raw.event_type };
+            }
+            if (type === 'model_start' || type === 'model_end' || type === 'model_error') {
+                const stageId = [
+                    'model', raw.turn_id || traceState.activeTurn,
+                    raw.model_call_id || '',
+                    raw.provider_index ?? 0, raw.attempt ?? 1,
+                ].join(':');
+                const failure = type === 'model_error';
+                return {
+                    ...raw,
+                    type: type === 'model_start' ? 'stage_started' : 'stage_status',
+                    event_type: type === 'model_start' ? 'stage_started' : 'stage_status',
+                    node_id: `stage:${stageId}`,
+                    stage_id: stageId,
+                    title: '模型分析',
+                    subtitle: failure
+                        ? (raw.retryable
+                            ? '模型请求暂未完成，正在检查重试或备用方案'
+                            : '模型请求未完成，正在整理可说明的失败原因')
+                        : type === 'model_start'
+                            ? '正在理解请求、检查上下文并判断下一步'
+                            : Number(raw.tool_call_count) > 0
+                                ? `已判断需要调用 ${Number(raw.tool_call_count)} 个工具，接下来执行并核验结果`
+                                : raw.has_content
+                                    ? '已完成请求分析，正在整理答复'
+                                    : '当前分析完成，正在继续处理',
+                    platform: 'Runtime',
+                    status: type === 'model_start'
+                        ? 'running'
+                        : failure ? 'failed' : 'succeeded',
+                    safe_metadata: {
+                        ...(raw.safe_metadata || {}),
+                        ...(Number.isFinite(Number(raw.duration_ms))
+                            ? { duration_ms: Number(raw.duration_ms) }
+                            : {}),
+                        reason: failure ? 'model_request_incomplete' : 'model_analysis',
+                    },
+                };
+            }
+            if (type === 'model_retry' || type === 'model_fallback') {
+                return {
+                    ...raw,
+                    type: 'progress',
+                    event_type: 'progress',
+                    status: 'running',
+                    progress_label: type === 'model_retry'
+                        ? `模型请求未完成，正在等待第 ${Number(raw.attempt || 0) + 1} 次尝试`
+                        : '当前模型暂不可用，正在切换备用模型继续处理',
+                };
+            }
+            if (type === 'progress') {
+                const activeStage = [...(traceState.nodes || [])]
+                    .reverse()
+                    .find(node => node.state === 'running');
+                return {
+                    ...raw,
+                    progress_label: activeStage
+                        ? `${activeStage.title}：${activeStage.subtitle || '正在处理当前步骤'}`
+                        : '正在理解请求并确定下一步处理方式',
+                };
             }
             if (type === 'agent_start') {
                 return { ...raw, type: 'start', event_type: 'start', status: 'running' };
@@ -433,12 +504,13 @@
         function applyExecutionEvent(event) {
             if (!event || !(event.type || event.event_type)) return null;
             event = normalizeExecutionEvent(event);
-            if (!event.type) return null;
+            if (!event || !event.type) return null;
             const duplicateStart = event.type === 'start' && traceState.events.some(item => item.type === 'start');
             if (event.type === 'start') {
                 traceState.traceId = event.trace_id || traceState.traceId;
                 if (event.turn_id) traceState.activeTurn = event.turn_id;
                 updateTraceHeader('running', 'Agent 正在处理本回合');
+                updateChatLoadingStatus('已收到请求，正在启动 Agent…');
             }
             if (event.type === 'plan' && event.execution_plan) updateExecutionTrace({ execution_plan: event.execution_plan });
             if (event.type === 'stage_started' || event.type === 'stage_status') {
@@ -462,6 +534,11 @@
                 traceState.nodes = traceState.nodes.filter(item => item.id !== id);
                 traceState.nodes.push(node);
                 updateTraceHeader(event.status || 'unknown', `${node.title} · ${traceStatusLabel(event.status)}`);
+                updateChatLoadingStatus(
+                    event.status === 'running'
+                        ? `${node.title}：${node.subtitle || '正在处理'}`
+                        : node.subtitle || `已完成：${node.title}，正在继续处理`,
+                );
             }
             if (event.type === 'node_discovered') {
                 const id = event.node_id;
@@ -484,6 +561,7 @@
                 traceState.nodes = traceState.nodes.filter(item => item.id !== id);
                 traceState.nodes.push(node);
                 updateTraceHeader(node.state, `${node.title} · ${traceStatusLabel(node.state)}`);
+                updateChatLoadingStatus(`${node.title}：${traceStatusLabel(node.state)}`);
             }
             if (event.type === 'node_started' || event.type === 'node_status' || event.type === 'confirmation') {
                 const node = upsertTraceToolNode(event);
@@ -498,6 +576,24 @@
                     traceState.selectedId = node.state === 'failed' || node.state === 'recovery_required' ? node.id : traceState.selectedId;
                 }
                 updateTraceHeader(event.status || 'unknown', node ? `${node.tool || node.title} · ${traceStatusLabel(event.status)}` : 'Tool 事件已到达');
+                if (node && event.type === 'node_started') {
+                    updateChatLoadingStatus(`正在执行 ${node.tool || node.title}…`);
+                } else if (node && event.type === 'node_status') {
+                    updateChatLoadingStatus(
+                        event.status === 'failed'
+                            ? `${node.tool || node.title} 执行失败，正在整理原因…`
+                            : `已完成 ${node.tool || node.title}，正在继续处理…`,
+                    );
+                }
+            }
+            if (event.type === 'progress') {
+                const elapsed = Number(event.safe_metadata?.elapsed_seconds);
+                const elapsedLabel = Number.isFinite(elapsed) && elapsed > 0
+                    ? ` · 已运行 ${elapsed} 秒`
+                    : '';
+                const label = `${event.progress_label || 'Agent 仍在处理中'}${elapsedLabel}`;
+                updateTraceHeader('running', label);
+                updateChatLoadingStatus(label);
             }
             if (event.type === 'done') updateTraceHeader(event.status || 'succeeded', event.status === 'awaiting_confirmation' ? '等待用户确认后继续' : '本回合已完成');
             if (event.type === 'error') updateTraceHeader('failed', '本回合未完成，请查看安全事件');

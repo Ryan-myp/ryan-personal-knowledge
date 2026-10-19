@@ -401,6 +401,7 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
         self, now: str, lease_owner: str, lease_seconds: float = 60.0,
         limit: int = 20,
     ) -> list[tuple[Any, Any]]: ...
+    def create_scheduled_task_run(self, record: Any) -> Any: ...
     def advance_scheduled_task(
         self, schedule_id: str, expected_next_run_at: str, next_run_at: str,
         lease_owner: Optional[str] = None,

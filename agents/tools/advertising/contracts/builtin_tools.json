@@ -1,10 +1,10 @@
 {
-  "digest": "7b190007ea89cb8cf27baf73afb15fe655cd7afd18553544b514e75b8eef7485",
+  "digest": "810e03b2c6ddaab3deca00f7df350eafbca307a1fc039c60c462dedaad00b82d",
   "format_version": 1,
   "platforms": {
     "agent-platform": {
-      "digest": "36d77966fd216104d252a2fe1fc17daeee66fb52436cb0fbc11df6fe69f25ef8",
-      "tool_count": 3,
+      "digest": "926383b340fd8e648445111654a75745a1b0c547cc9462e5fb1e7ac490708c6a",
+      "tool_count": 4,
       "tools": [
         {
           "action": "search",
@@ -269,6 +269,80 @@
           "resource_type": "scheduled_task",
           "result_id_fields": [
             "schedule_id"
+          ],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "agent-scheduling",
+          "skill_refs": [],
+          "timeout_seconds": 10,
+          "traits": [
+            "agent_schedule",
+            "durable",
+            "internal_control_plane"
+          ]
+        },
+        {
+          "action": "schedule_run_now",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "aa185215ea6122a34e50105cff356b6fccb5ab1089c7f5f7e106ae4bea018a85",
+          "contract_version": "1.0.0",
+          "description": "仅在用户明确要求立即执行一个已存在的定时任务时调用。此 Tool 只把该任务提交到持久化 Agent Task 队列，然后由同一个 Agent Runtime 执行；不会在当前对话中直接重放任务指令，也不会绕过权限、幂等和审计。必须使用对话上下文中明确的 schedule_id；若无法确定目标任务，先询问用户，不要猜测 ID，也不要改为创建任务或执行别的业务操作。调用成功代表已排队，不是任务已完成。",
+          "effect_class": "internal_write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "schedule_id": {
+                "description": "要立即触发的现有定时任务 ID",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "schedule_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "立即执行定时任务",
+            "运行定时任务",
+            "执行这个定时任务",
+            "现在运行这个任务",
+            "run scheduled task now",
+            "run schedule now"
+          ],
+          "intent_types": [
+            "schedule_run_now"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 8000,
+          "name": "agent_schedule_run_now",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "scheduled_task",
+          "result_id_fields": [
+            "schedule_run_id",
+            "task_id"
           ],
           "result_items_key": null,
           "risk_level": "medium",
@@ -53950,5 +54024,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 313
+  "tool_count": 314
 }

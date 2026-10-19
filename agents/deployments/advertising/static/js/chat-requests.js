@@ -145,6 +145,21 @@
                 ui,
                 { originalRequest: requestParams },
             );
+            const awaitingInteraction = data.status === 'awaiting_input'
+                || data.needs_confirmation
+                || ui?.confirmation?.payload
+                || ui?.clarification
+                || ui?.account_selection;
+            if (
+                !runFailed
+                && !data.ui?.cards?.length
+                && !awaitingInteraction
+                && !pendingCreationReview
+                && !pendingRequest
+                && typeof clearCreationWorkbenchDraft === 'function'
+            ) {
+                clearCreationWorkbenchDraft();
+            }
         }
 
         function requestHeaders(extra = {}) {

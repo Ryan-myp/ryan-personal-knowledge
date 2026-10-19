@@ -92,6 +92,23 @@
             count.hidden = !size;
         }
 
+        function clearCreationWorkbenchDraft() {
+            workbenchState.activeCardId = null;
+            workbenchState.cards.clear();
+            const host = document.getElementById('creation-workbench-host');
+            if (host) {
+                host.replaceChildren();
+                host.hidden = true;
+            }
+            const confirmationHost = document.getElementById('confirmation-workbench-host');
+            if (confirmationHost) {
+                confirmationHost.replaceChildren();
+                confirmationHost.hidden = true;
+            }
+            if (workbenchState.activeView === 'creation') setWorkbenchView('trace');
+            updateCreationWorkbenchCount();
+        }
+
         function renderCreationCardInWorkbench(card, { open = true } = {}) {
             if (!card?.id) return null;
             workbenchState.cards.set(String(card.id), card);
@@ -107,7 +124,9 @@
 
         function renderCreationCardLauncher(card) {
             if (!card?.id) return null;
-            workbenchState.cards.set(String(card.id), card);
+            if (typeof creationCardState !== 'undefined') {
+                creationCardState.set(String(card.id), card);
+            }
             const launcher = document.createElement('section');
             launcher.className = 'message-card-launcher';
             launcher.dataset.cardLauncherId = String(card.id);

@@ -40,7 +40,10 @@ from agents.scenarios.advertising import (
 )
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.tools.advertising.shared.domain.security import ACCOUNT_SCOPE_FIELDS
-from agents.applications.advertising.persistence.models import ScheduledTaskRecord
+from agents.applications.advertising.persistence.models import (
+    ScheduledTaskRecord,
+    ScheduledTaskRunRecord,
+)
 from agents.applications.advertising.persistence.session_manager import SessionManager
 from agents.applications.advertising.persistence.adapters import (
     PersistenceTranscriptStore,
@@ -294,6 +297,13 @@ class AdApplicationAssembly:
             runtime.registry.register_source(scheduling_tool_source(
                 lambda **kwargs: runtime.create_schedule(**kwargs),
                 required_permission="ads.plan",
+                run_schedule_now=lambda schedule_id, user_id, tenant_id: (
+                    runtime.run_schedule_now(
+                        schedule_id,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                    )
+                ),
             ))
         return AdApplicationServiceGraph(
             outbox=outbox,
@@ -329,6 +339,7 @@ class AdApplicationAssembly:
             validate_input=security.validate_input_redline,
             max_prompt_chars=runtime.max_user_input_chars,
             schedule_record_factory=ScheduledTaskRecord,
+            schedule_run_record_factory=ScheduledTaskRunRecord,
             task_kind="agent.turn",
             principal_from_metadata=lambda claims: RequestPrincipal.from_claims(claims),
             default_principal=lambda user, tenant: RequestPrincipal(

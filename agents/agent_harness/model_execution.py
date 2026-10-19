@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 import threading
+import uuid
 from contextvars import copy_context
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -87,6 +88,8 @@ class _ModelInvocation:
     provider_index: int = 0
     deadline: float | None = None
     stream_output_started: bool = False
+    attempt_started_at: float | None = None
+    model_call_id: str = ""
 
 
 class ModelExecutionCoordinator:
@@ -328,6 +331,7 @@ class ModelExecutionCoordinator:
             abort_event=abort_event,
             lifecycle_events=bool(
                 request.streaming
+                or callable(request.event_callback)
                 or self.options.timeout_seconds is not None
                 or len(providers) > 1
             ),
@@ -376,13 +380,18 @@ class ModelExecutionCoordinator:
                 "model_timeout_seconds": remaining,
             })
         invocation.stream_output_started = False
+        invocation.attempt_started_at = time.monotonic()
+        invocation.model_call_id = uuid.uuid4().hex
+
         def mark_stream_output() -> None:
             invocation.stream_output_started = True
+
         provider_name = self._provider_name(provider)
         if invocation.lifecycle_events:
             self.emit(
                 "model_start",
                 request,
+                model_call_id=invocation.model_call_id,
                 provider=provider_name,
                 provider_index=invocation.provider_index,
                 attempt=attempt + 1,
@@ -407,9 +416,19 @@ class ModelExecutionCoordinator:
             self.emit(
                 "model_end",
                 request,
+                model_call_id=invocation.model_call_id,
                 provider=provider_name,
                 provider_index=invocation.provider_index,
                 usage=dict(model_turn.usage),
+                tool_call_count=len(model_turn.tool_calls or ()),
+                has_content=bool(str(model_turn.content or "").strip()),
+                duration_ms=round(
+                    (
+                        time.monotonic()
+                        - (invocation.attempt_started_at or time.monotonic())
+                    ) * 1000,
+                    2,
+                ),
             )
         return model_turn
 
@@ -423,10 +442,19 @@ class ModelExecutionCoordinator:
             except _ModelInvocationFailure as failure:
                 error, retryable = failure.error, failure.retryable
                 error_event = {
+                    "model_call_id": invocation.model_call_id,
                     "provider": self._provider_name(provider),
                     "provider_index": invocation.provider_index,
                     "error_type": type(error).__name__,
                     "retryable": retryable,
+                    "duration_ms": round(
+                        (
+                            time.monotonic()
+                            - (invocation.attempt_started_at or time.monotonic())
+                        ) * 1000,
+                        2,
+                    ),
+                    "attempt": attempt + 1,
                 }
                 safe_reason_code = getattr(error, "safe_reason_code", None)
                 if (

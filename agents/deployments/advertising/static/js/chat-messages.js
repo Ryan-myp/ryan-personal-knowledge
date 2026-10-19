@@ -189,6 +189,7 @@
                     <div class="loading-indicator">
                         <span></span><span></span><span></span>
                     </div>
+                    <div class="loading-status" id="loadingStatus">正在分析你的请求…</div>
                 </div>
             `;
 

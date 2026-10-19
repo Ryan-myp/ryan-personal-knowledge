@@ -91,6 +91,9 @@
                 tool_execution_start: 'Tool 开始执行', tool_execution_end: 'Tool 执行完成',
                 turn_start: 'Agent Turn 开始', turn_end: 'Agent Turn 完成',
                 message_end: '消息处理完成', model_usage: '模型调用完成',
+                model_start: '模型开始分析', model_end: '模型分析完成',
+                model_error: '模型调用异常', model_retry: '模型正在重试',
+                model_fallback: '切换备用模型', progress: '仍在处理中',
             };
             const node = event.node_id ? ` · ${event.title || event.tool || event.node_id}` : '';
             return `${labels[event.type] || '执行事件'}${node}`;

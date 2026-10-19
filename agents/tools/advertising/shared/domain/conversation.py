@@ -67,7 +67,8 @@ _TOOL_PROTOCOL_BLOCK = re.compile(
     re.IGNORECASE,
 )
 _HARMONY_TOOL_MARKER = re.compile(
-    r"<\|tool_(?:calls_section_end|call_begin|call_argument_begin|call_end)\|>",
+    r"<\|tool_(?:calls_section_begin|calls_section_end|call_begin|"
+    r"call_argument_begin|call_end)\|>",
     re.IGNORECASE,
 )
 _GATEWAY_INVALID_USER_ID = re.compile(
@@ -149,8 +150,18 @@ def _is_tool_protocol_only(reply: str) -> bool:
         marker.lower() for marker in _HARMONY_TOOL_MARKER.findall(text)
     }
     return (
-        "<|tool_call_begin|>" in markers
-        and len(markers) >= 2
+        bool(
+            markers.intersection({
+                "<|tool_calls_section_begin|>",
+                "<|tool_call_begin|>",
+            })
+        )
+        and bool(
+            markers.intersection({
+                "<|tool_call_argument_begin|>",
+                "<|tool_call_end|>",
+            })
+        )
     )
 
 

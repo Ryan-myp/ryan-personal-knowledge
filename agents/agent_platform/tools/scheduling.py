@@ -13,6 +13,7 @@ from agents.agent_harness.core.interfaces import (
     ToolResult,
     ToolSchema,
 )
+from agents.agent_harness.core.security import redact_sensitive_text
 
 
 class _ScheduleCreateExecutor:
@@ -59,15 +60,75 @@ class _ScheduleCreateExecutor:
         })
 
 
+class _ScheduleRunNowExecutor:
+    def __init__(
+        self,
+        run_schedule_now: Callable[..., Mapping[str, Any] | None],
+    ) -> None:
+        self._run_schedule_now = run_schedule_now
+
+    def execute(self, context: Any, arguments: dict[str, Any]) -> ToolResult:
+        request = getattr(context, "request", None)
+        principal = (
+            getattr(request, "principal", None)
+            if request is not None
+            else getattr(context, "principal", None)
+        )
+        user_id = str(getattr(principal, "user_id", "") or "").strip()
+        tenant_id = str(getattr(principal, "tenant_id", "") or "").strip()
+        if not user_id or not tenant_id:
+            return ToolResult.error("执行定时任务需要可信的已认证用户身份")
+
+        schedule_id = arguments.get("schedule_id")
+        if not isinstance(schedule_id, str) or not schedule_id.strip():
+            return ToolResult.error("必须提供要执行的定时任务 ID")
+        schedule_id = schedule_id.strip()
+        if len(schedule_id) > 200:
+            return ToolResult.error("定时任务 ID 超过长度限制")
+
+        try:
+            result = self._run_schedule_now(
+                schedule_id=schedule_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            )
+        except PermissionError:
+            return ToolResult.error("当前身份无权执行该定时任务")
+        except (RuntimeError, TypeError, ValueError) as error:
+            reason = redact_sensitive_text(str(error))[:500]
+            return ToolResult.error(
+                f"定时任务未能提交：{reason or type(error).__name__}"
+            )
+
+        if not isinstance(result, Mapping):
+            return ToolResult.error("定时任务不存在或当前身份无权访问")
+        task = result.get("task")
+        run = result.get("run")
+        if not isinstance(task, Mapping) or not isinstance(run, Mapping):
+            return ToolResult.error("定时任务服务返回了无效的运行记录")
+
+        return ToolResult.ok({
+            "schedule_id": str(run.get("schedule_id") or schedule_id),
+            "schedule_run_id": str(run.get("schedule_run_id") or ""),
+            "task_id": str(run.get("task_id") or task.get("task_id") or ""),
+            "status": str(run.get("status") or task.get("status") or "queued"),
+            "created": bool(result.get("created", False)),
+            "data_status": "local",
+        })
+
+
 def scheduling_tool_source(
     create_schedule: Callable[..., Mapping[str, Any]],
     *,
     required_permission: str,
+    run_schedule_now: Callable[..., Mapping[str, Any] | None],
 ) -> StaticToolSource:
-    """Publish the generic schedule-creation Tool through a trusted callback."""
+    """Publish generic schedule Tools through trusted application callbacks."""
     permission = str(required_permission or "").strip()
     if not callable(create_schedule):
         raise TypeError("create_schedule must be callable")
+    if not callable(run_schedule_now):
+        raise TypeError("run_schedule_now must be callable")
     if not permission:
         raise ValueError("required_permission is required")
 
@@ -140,7 +201,61 @@ def scheduling_tool_source(
         definition,
         _ScheduleCreateExecutor(create_schedule),
     )
-    return StaticToolSource("agent-platform:scheduling", [binding])
+    run_definition = ToolDefinition(
+        name="agent_schedule_run_now",
+        skill="agent-scheduling",
+        namespace="agent_platform",
+        description=(
+            "仅在用户明确要求立即执行一个已存在的定时任务时调用。此 Tool 只把"
+            "该任务提交到持久化 Agent Task 队列，然后由同一个 Agent Runtime 执行；"
+            "不会在当前对话中直接重放任务指令，也不会绕过权限、幂等和审计。"
+            "必须使用对话上下文中明确的 schedule_id；若无法确定目标任务，先询问用户，"
+            "不要猜测 ID，也不要改为创建任务或执行别的业务操作。调用成功代表已排队，"
+            "不是任务已完成。"
+        ),
+        input_schema=ToolSchema(
+            properties={
+                "schedule_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "要立即触发的现有定时任务 ID",
+                },
+            },
+            required=["schedule_id"],
+            additional_properties=False,
+        ),
+        action="schedule_run_now",
+        resource_type="scheduled_task",
+        intent_types=["schedule_run_now"],
+        intent_aliases=[
+            "立即执行定时任务",
+            "运行定时任务",
+            "执行这个定时任务",
+            "现在运行这个任务",
+            "run scheduled task now",
+            "run schedule now",
+        ],
+        risk_level=RiskLevel.MEDIUM,
+        effect_class=ToolEffect.INTERNAL_WRITE,
+        replay_policy=ReplayPolicy.UNSAFE,
+        traits=["agent_schedule", "durable", "internal_control_plane"],
+        live_support=False,
+        timeout_seconds=10,
+        max_output_bytes=8_000,
+        required_permissions=[permission],
+        scope_required=False,
+        result_id_fields=["schedule_run_id", "task_id"],
+        contract_version="1.0.0",
+    )
+    run_binding = ToolBinding(
+        run_definition,
+        _ScheduleRunNowExecutor(run_schedule_now),
+    )
+    return StaticToolSource(
+        "agent-platform:scheduling",
+        [binding, run_binding],
+    )
 
 
 __all__ = ["scheduling_tool_source"]

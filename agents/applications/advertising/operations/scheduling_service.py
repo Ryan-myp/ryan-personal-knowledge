@@ -7,7 +7,7 @@ It does not parse business requests, select Tools or call Providers.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
 
 from agents.agent_platform.infrastructure.durable import CronExpression, next_run_at, validate_timezone
@@ -25,6 +25,7 @@ class SchedulingService:
         validate_input: Callable[[Any], list[str]],
         max_prompt_chars: int,
         schedule_record_factory: Callable[..., Any],
+        schedule_run_record_factory: Callable[..., Any],
         task_kind: str,
         principal_from_metadata: Optional[Callable[[Mapping[str, Any]], Any]] = None,
         default_principal: Optional[Callable[[str, str], Any]] = None,
@@ -35,6 +36,7 @@ class SchedulingService:
         self.validate_input = validate_input
         self.max_prompt_chars = int(max_prompt_chars)
         self.schedule_record_factory = schedule_record_factory
+        self.schedule_run_record_factory = schedule_run_record_factory
         self.task_kind = str(task_kind or "").strip()
         if not self.task_kind:
             raise ValueError("task_kind is required")
@@ -150,18 +152,71 @@ class SchedulingService:
             return {}
         return self.store.get_scheduled_task_metrics(tenant_id=tenant_id, user_id=user_id)
 
-    def run_now(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
+    def run_now(
+        self, schedule_id: str, *, user_id: str, tenant_id: str,
+    ) -> Optional[dict[str, Any]]:
         record = self.store.get_scheduled_task(
             schedule_id, tenant_id=tenant_id, user_id=user_id
         )
         if record is None:
             return None
-        principal = self._principal_for(record, user_id, tenant_id)
-        task, _created = self.submit_task(
-            self.task_kind, dict(record.payload or {}), principal=principal,
-            idempotency_key=f"schedule:{schedule_id}:manual:{uuid.uuid4().hex}",
+        now = datetime.now(timezone.utc).isoformat()
+        schedule_run = self.schedule_run_record_factory(
+            schedule_run_id=str(uuid.uuid4()),
+            schedule_id=record.schedule_id,
+            tenant_id=record.tenant_id,
+            user_id=record.user_id,
+            scheduled_for=now,
+            created_at=now,
         )
-        return task
+        self.store.create_scheduled_task_run(schedule_run)
+        try:
+            principal = self._principal_for(record, user_id, tenant_id)
+            task, created = self.submit_task(
+                self.task_kind, dict(record.payload or {}), principal=principal,
+                idempotency_key=f"schedule:{schedule_id}:manual:{uuid.uuid4().hex}",
+            )
+        except Exception as error:
+            self.store.update_scheduled_task_run(
+                schedule_run.schedule_run_id,
+                "failed",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                error=type(error).__name__,
+            )
+            raise
+        task_id = str(task.get("task_id") or "") if isinstance(task, Mapping) else ""
+        if not task_id:
+            self.store.update_scheduled_task_run(
+                schedule_run.schedule_run_id,
+                "failed",
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                error="task_id_missing",
+            )
+            raise RuntimeError("scheduled Agent task did not return task_id")
+        if not self.store.attach_scheduled_task_run(
+            schedule_run.schedule_run_id,
+            task_id,
+            status=str(task.get("status") or "queued"),
+        ):
+            self.store.update_scheduled_task_run(
+                schedule_run.schedule_run_id,
+                "recovery_required",
+                task_id=task_id,
+                finished_at=datetime.now(timezone.utc).isoformat(),
+                error="task_link_failed",
+            )
+            raise RuntimeError("scheduled task run could not be linked")
+        saved_run = self.store.list_scheduled_task_runs(
+            schedule_id=schedule_id,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            limit=1,
+        )
+        return {
+            "task": task,
+            "run": saved_run[0].to_dict() if saved_run else schedule_run.to_dict(),
+            "created": bool(created),
+        }
 
     def submit_occurrence(
         self, schedule: Any, occurrence: Any,

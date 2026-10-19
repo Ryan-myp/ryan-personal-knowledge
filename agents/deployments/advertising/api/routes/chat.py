@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import time
 from typing import Any, Mapping, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -383,6 +384,8 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 event_queue: queue.Queue[dict[str, Any]] = queue.Queue(
                     maxsize=256
                 )
+                started_at = time.monotonic()
+                last_heartbeat_at = started_at
                 yield event({
                     "type": "start",
                     "event_type": "start",
@@ -424,11 +427,24 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                         except queue.Empty:
                             if task.done():
                                 break
+                            now = time.monotonic()
+                            if now - last_heartbeat_at >= 15:
+                                last_heartbeat_at = now
+                                yield event({
+                                    "type": "progress",
+                                    "status": "running",
+                                    "safe_metadata": {
+                                        "elapsed_seconds": int(now - started_at),
+                                        "reason": "agent_still_processing",
+                                    },
+                                })
                             continue
                         if payload.get("type") == "done":
                             final_event = payload
                         elif payload.get("type") == "reply":
                             reply_marker = payload
+                        elif payload.get("type") == "model_delta":
+                            continue
                         else:
                             yield event(payload)
                     result = await task
@@ -509,6 +525,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
                 },
             )
         except HTTPException:

@@ -6,6 +6,7 @@ clients or call an external advertising API.
 
 import json
 import re
+import subprocess
 import threading
 from pathlib import Path
 
@@ -962,6 +963,33 @@ def test_chat_never_returns_unexecuted_tool_protocol_as_assistant_text(fake_serv
     assert "未执行" in reply
 
 
+def test_chat_hides_tool_calls_section_begin_protocol(fake_server):
+    fake_server.run = lambda **_kwargs: {
+        "status": "succeeded",
+        "reply": (
+            "<|tool_calls_section_begin|> meta_list_creation_templates "
+            "<|tool_call_argument_begin|> "
+            "{\"account_id\":\"account-1\",\"query\":\"Canvas\"} "
+            "<|tool_call_end|>"
+        ),
+        "results": [],
+    }
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "查找 Canvas 广告创建 API 示例"},
+        )
+
+    assert response.status_code == 200
+    reply = response.json()["reply"]
+    assert "<|tool_" not in reply
+    assert "meta_list_creation_templates" not in reply
+    assert "account-1" not in reply
+    assert "没有执行任何操作" in reply
+
+
 def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",
@@ -1310,7 +1338,10 @@ def test_history_cards_restore_as_launchers_without_opening_workbench():
     html = _chat_page_javascript()
     assert "function renderUiCards(ui, options = {})" in html
     assert "const openWorkbench = options.openWorkbench !== false;" in html
+    assert "if (openWorkbench && typeof renderCreationCardInWorkbench === 'function')" in html
     assert "openWorkbench: false" in html
+    assert "function clearCreationWorkbenchDraft()" in html
+    assert "clearCreationWorkbenchDraft();" in html
 
 
 def test_creation_card_uses_provider_resource_hierarchy_for_all_field_groups():
@@ -1734,6 +1765,111 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
     assert '"type": "thinking"' not in body
     assert '"type": "tool_status"' not in body
     assert body.index('"type": "node_started"') < body.index('"type": "reply"') < body.index('"type": "done"')
+
+
+def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server):
+    received = {}
+    protocol_text = (
+        "<|tool_calls_section_end|> API Error: channel_id=\"\" "
+        "error_code=40400 message=invalid_user_id "
+        "<|tool_call_begin|> agent-platform:knowledge_search "
+        "<|tool_call_argument_begin|>{\"query\":\"Meta Canvas\"}"
+        "<|tool_call_end|>"
+    )
+
+    def run(**kwargs):
+        received.update(kwargs)
+        observe = kwargs["event_callback"]
+        observe({
+            "type": "model_start",
+            "provider": "configured-model",
+            "provider_index": 0,
+            "attempt": 1,
+        })
+        observe({
+            "type": "model_delta",
+            "delta": protocol_text,
+        })
+        observe({
+            "type": "model_end",
+            "provider": "configured-model",
+            "provider_index": 0,
+            "usage": {"input_tokens": 12, "output_tokens": 4},
+        })
+        return {"status": "failed", "reply": protocol_text, "results": []}
+
+    fake_server.run = run
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={"user_input": "执行这个任务"},
+        )
+
+    assert response.status_code == 200
+    assert callable(received["event_callback"])
+    assert '"type": "model_start"' in response.text
+    assert '"type": "model_end"' in response.text
+    assert "<|tool_" not in response.text
+    assert "API Error:" not in response.text
+    assert "40400 / invalid_user_id" in response.text
+    assert "本次知识检索未执行" in response.text
+
+
+def test_schedule_run_list_is_available_as_one_scoped_collection(fake_server, monkeypatch):
+    calls = []
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "test-key": {
+                "user_id": "ad-agent-service",
+                "tenant_id": "default",
+                "permissions": ["ads.read", "ads.plan"],
+            }
+        }),
+    )
+    fake_server.list_schedule_runs = lambda **kwargs: (
+        calls.append(kwargs) or [{
+            "schedule_run_id": "run-1",
+            "schedule_id": "schedule-1",
+            "status": "queued",
+        }]
+    )
+    fake_server.run_schedule_now = lambda schedule_id, **kwargs: {
+        "task": {"task_id": "task-1", "status": "queued"},
+        "run": {"schedule_id": schedule_id, "task_id": "task-1", "status": "queued"},
+        "created": True,
+    }
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/schedule-runs?limit=25",
+            headers={"X-API-Key": "test-key"},
+        )
+        run_response = client.post(
+            "/schedules/schedule-1/run-now",
+            headers={"X-API-Key": "test-key"},
+        )
+    assert response.status_code == 200
+    assert response.json()["runs"][0]["schedule_run_id"] == "run-1"
+    assert calls == [{
+        "user_id": "ad-agent-service",
+        "tenant_id": "default",
+        "limit": 25,
+    }]
+    assert run_response.status_code == 200
+    assert run_response.json()["task"]["task_id"] == "task-1"
+    assert run_response.json()["run"]["schedule_id"] == "schedule-1"
+
+
+def test_chat_progress_and_schedule_ui_node_contracts():
+    javascript_test = (
+        Path(__file__).parent / "static" / "test_chat_trace_progress.js"
+    )
+    subprocess.run(
+        ["node", "--test", str(javascript_test)],
+        check=True,
+        timeout=30,
+    )
 
 
 def test_chat_stream_forwards_creation_blueprint_context(fake_server):

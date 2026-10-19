@@ -53,7 +53,12 @@ def test_workspace_execution_mode_javascript_regressions():
     if node is None:
         pytest.skip("Node.js is required for browser state contract tests")
     result = subprocess.run(
-        [node, "--test", str(Path(__file__).parent / "static/test_workspace_mode.js")],
+        [
+            node,
+            "--test",
+            str(Path(__file__).parent / "static/test_workspace_mode.js"),
+            str(Path(__file__).parent / "static/test_chat_workbench.js"),
+        ],
         capture_output=True, text=True, timeout=30,
     )
     assert result.returncode == 0, result.stdout + result.stderr

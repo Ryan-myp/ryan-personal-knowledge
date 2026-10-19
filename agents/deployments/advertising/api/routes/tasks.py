@@ -232,6 +232,25 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         )
         return {"schedules": schedules}
 
+    @router.get("/schedule-runs", tags=["schedules"])
+    async def list_schedule_runs(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+        limit: int = Query(100, ge=1, le=500),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        runtime = context.runtime()
+        if not runtime or not callable(getattr(runtime, "list_schedule_runs", None)):
+            raise HTTPException(status_code=503, detail="定时任务服务未初始化")
+        runs = await run_in_threadpool(
+            runtime.list_schedule_runs,
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            limit=limit,
+        )
+        return {"runs": runs}
+
     async def _schedule(
         schedule_id: str,
         http_request: Request,
@@ -342,15 +361,15 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         runtime = context.runtime()
         if not runtime or not callable(getattr(runtime, "run_schedule_now", None)):
             raise HTTPException(status_code=503, detail="定时任务服务未初始化")
-        task = await run_in_threadpool(
+        result = await run_in_threadpool(
             runtime.run_schedule_now,
             schedule_id,
             user_id=principal.user_id,
             tenant_id=principal.tenant_id,
         )
-        if not task:
+        if not result:
             raise HTTPException(status_code=404, detail="schedule not found")
-        return {"task": task}
+        return result
 
     @router.delete("/schedules/{schedule_id}", tags=["schedules"])
     async def delete_schedule(

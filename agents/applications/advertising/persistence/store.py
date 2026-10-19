@@ -2166,6 +2166,35 @@ class AdAgentStore:
                 raise
         return claimed
 
+    def create_scheduled_task_run(
+        self, record: ScheduledTaskRunRecord,
+    ) -> ScheduledTaskRunRecord:
+        with self._lock:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO scheduled_task_runs
+                   (schedule_run_id, schedule_id, tenant_id, user_id, scheduled_for,
+                    status, task_id, started_at, finished_at, error, result, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    record.schedule_run_id,
+                    record.schedule_id,
+                    record.tenant_id,
+                    record.user_id,
+                    record.scheduled_for,
+                    record.status,
+                    record.task_id,
+                    record.started_at,
+                    record.finished_at,
+                    record.error,
+                    json.dumps(record.result, ensure_ascii=False)
+                    if record.result is not None else None,
+                    record.created_at,
+                ),
+            )
+            conn.commit()
+        return record
+
     def attach_scheduled_task_run(
         self, schedule_run_id: str, task_id: str, status: str = "queued",
         lease_owner: Optional[str] = None,

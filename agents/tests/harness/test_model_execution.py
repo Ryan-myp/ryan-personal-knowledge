@@ -156,6 +156,33 @@ def test_streaming_retry_does_not_repeat_already_emitted_text():
         app.close()
 
 
+def test_observer_receives_model_lifecycle_without_streaming_response_tokens():
+    from agents.agent_harness import AgentApplication, ModelTurn
+
+    events = []
+    app = AgentApplication.create(
+        model=lambda *_args: ModelTurn(content="done"),
+        model_timeout_seconds=None,
+    )
+    try:
+        result = app.prompt(
+            "hello",
+            event_callback=events.append,
+        )
+
+        assert result.reply == "done"
+        assert [event["type"] for event in events if event["type"].startswith("model_")] == [
+            "model_start",
+            "model_end",
+        ]
+        model_end = next(event for event in events if event["type"] == "model_end")
+        assert model_end["tool_call_count"] == 0
+        assert model_end["has_content"] is True
+        assert all(event["type"] != "model_delta" for event in events)
+    finally:
+        app.close()
+
+
 def test_llm_adapter_passes_the_remaining_deadline_to_the_sdk():
     from agents.agent_harness import TurnRequest
     from agents.agent_harness.core.llm_client import LLMClient

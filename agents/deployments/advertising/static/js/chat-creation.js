@@ -1510,7 +1510,7 @@
             const fragment = document.createDocumentFragment();
             const openWorkbench = options.openWorkbench !== false;
             (ui?.cards || []).forEach(card => {
-                if (typeof renderCreationCardInWorkbench === 'function') {
+                if (openWorkbench && typeof renderCreationCardInWorkbench === 'function') {
                     renderCreationCardInWorkbench(card, { open: openWorkbench });
                 }
                 const launcher = typeof renderCreationCardLauncher === 'function'
