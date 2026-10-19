@@ -561,15 +561,26 @@
 
         async function loadConversation(targetSessionId) {
             if (!targetSessionId) return;
+            const requestSequence = ++conversationLoadSequence;
             try {
-                const response = await authenticatedFetch(`/sessions/${encodeURIComponent(targetSessionId)}?limit=500`);
+                const response = await authenticatedFetch(
+                    `/sessions/${encodeURIComponent(targetSessionId)}?limit=10`,
+                );
                 const text = await response.text();
                 let data = {};
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
                 if (!response.ok) throw new Error(data.detail || data.error || `对话加载失败（${response.status}）`);
+                if (requestSequence !== conversationLoadSequence) return;
                 clearPendingChatMedia({ revoke: true });
                 sessionId = data.session_id || targetSessionId;
                 selectedConversationId = sessionId;
+                conversationHistoryPage = {
+                    sessionId,
+                    nextCursor: data.next_cursor || null,
+                    hasMore: Boolean(data.has_more && data.next_cursor),
+                    loading: false,
+                    generation: requestSequence,
+                };
                 loadedConversationTurnIds.clear();
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
                     if (message.turn_id) loadedConversationTurnIds.add(message.turn_id);
@@ -579,44 +590,136 @@
                 if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
                 const container = document.getElementById('chatContainer');
                 container.replaceChildren();
-                let precedingUserInput = '';
-                for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
-                    if (!['user', 'assistant'].includes(message.role)) continue;
-                    if (!chatMessageHasPresentation(
-                        message.content, message.tools, message.ui, message.attachments,
-                    )) continue;
-                    const role = message.role === 'user' ? 'user' : 'agent';
-                    if (role === 'user') {
-                        precedingUserInput = String(message.content || '');
-                    }
-                    addMessage(
-                        message.content || '',
-                        role,
-                        message.tools || null,
-                        Boolean(message.is_error),
-                        '',
-                        message.created_at,
-                        message.ui || null,
-                        {
-                            openWorkbench: false,
-                            attachments: message.attachments || [],
-                            originalRequest: role === 'agent' && precedingUserInput
-                                ? { user_input: precedingUserInput, session_id: sessionId }
-                                : null,
-                        },
-                    );
-                }
+                renderConversationHistoryMessages(data.messages, { position: 'append' });
                 if (!data.messages?.length) {
                     const empty = document.createElement('div');
                     empty.className = 'chat-history-empty';
-                    empty.textContent = '这个对话还没有可展示的消息。';
+                    empty.textContent = conversationHistoryPage.hasMore
+                        ? '当前页没有可展示的消息，可继续加载更早的历史。'
+                        : '这个对话还没有可展示的消息。';
                     container.appendChild(empty);
+                }
+                updateConversationHistoryPagination();
+                const chatArea = document.getElementById('chatArea');
+                if (chatArea) {
+                    const previousBehavior = chatArea.style?.scrollBehavior;
+                    if (chatArea.style) chatArea.style.scrollBehavior = 'auto';
+                    chatArea.scrollTop = chatArea.scrollHeight;
+                    if (chatArea.style) chatArea.style.scrollBehavior = previousBehavior || '';
                 }
                 restoreExecutionTrace(data.execution_traces);
                 await loadLatestDurableRun(sessionId);
+                if (requestSequence !== conversationLoadSequence) return;
                 renderConversationHistory();
             } catch (error) {
+                if (requestSequence !== conversationLoadSequence) return;
                 addMessage(error?.message || '对话加载失败，请稍后重试。', 'agent', null, true);
+            }
+        }
+
+        function renderConversationHistoryMessages(messages, { position = 'append' } = {}) {
+            const container = document.getElementById('chatContainer');
+            if (!container) return 0;
+            if (position === 'prepend') {
+                container.querySelector?.('.chat-history-empty')?.remove();
+            }
+            const insertBefore = position === 'prepend' ? container.firstChild : null;
+            let precedingUserInput = '';
+            let rendered = 0;
+            for (const message of Array.isArray(messages) ? messages : []) {
+                if (message.turn_id) loadedConversationTurnIds.add(message.turn_id);
+                if (!['user', 'assistant'].includes(message.role)) continue;
+                if (!chatMessageHasPresentation(
+                    message.content, message.tools, message.ui, message.attachments,
+                )) continue;
+                const role = message.role === 'user' ? 'user' : 'agent';
+                if (role === 'user') precedingUserInput = String(message.content || '');
+                addMessage(
+                    message.content || '',
+                    role,
+                    message.tools || null,
+                    Boolean(message.is_error),
+                    '',
+                    message.created_at,
+                    message.ui || null,
+                    {
+                        openWorkbench: false,
+                        suppressScroll: true,
+                        ...(insertBefore ? { insertBefore } : {}),
+                        attachments: message.attachments || [],
+                        originalRequest: role === 'agent' && precedingUserInput
+                            ? { user_input: precedingUserInput, session_id: sessionId }
+                            : null,
+                    },
+                );
+                rendered += 1;
+            }
+            return rendered;
+        }
+
+        function updateConversationHistoryPagination(errorMessage = '') {
+            const page = conversationHistoryPage;
+            const panel = document.getElementById('conversationHistoryPagination');
+            const button = document.getElementById('loadOlderConversationButton');
+            const status = document.getElementById('conversationHistoryPaginationStatus');
+            if (!panel || !button || !status) return;
+            panel.hidden = !page.hasMore && !page.loading && !errorMessage;
+            button.disabled = page.loading || !page.hasMore;
+            button.textContent = page.loading ? '正在加载…' : '加载更早的消息';
+            status.textContent = errorMessage || (page.loading ? '正在读取更早的消息…' : '');
+        }
+
+        async function loadOlderConversationMessages() {
+            const page = conversationHistoryPage;
+            if (
+                !page.hasMore || page.loading || !page.sessionId || !page.nextCursor
+                || page.sessionId !== sessionId
+            ) return;
+            const generation = page.generation;
+            const cursor = page.nextCursor;
+            const chatArea = document.getElementById('chatArea');
+            const container = document.getElementById('chatContainer');
+            if (!chatArea || !container) return;
+            const previousHeight = chatArea.scrollHeight;
+            const previousTop = chatArea.scrollTop;
+            page.loading = true;
+            let failureMessage = '';
+            updateConversationHistoryPagination();
+            try {
+                const query = new URLSearchParams({
+                    limit: '10',
+                    before_message_id: cursor,
+                });
+                const response = await authenticatedFetch(
+                    `/sessions/${encodeURIComponent(page.sessionId)}?${query.toString()}`,
+                );
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                if (!response.ok) {
+                    throw new Error(data.detail || data.error || `历史消息加载失败（${response.status}）`);
+                }
+                if (
+                    generation !== conversationLoadSequence
+                    || page !== conversationHistoryPage
+                    || sessionId !== page.sessionId
+                ) return;
+                renderConversationHistoryMessages(data.messages, { position: 'prepend' });
+                page.nextCursor = data.next_cursor || null;
+                page.hasMore = Boolean(data.has_more && page.nextCursor);
+                const previousBehavior = chatArea.style?.scrollBehavior;
+                if (chatArea.style) chatArea.style.scrollBehavior = 'auto';
+                chatArea.scrollTop = previousTop + chatArea.scrollHeight - previousHeight;
+                if (chatArea.style) chatArea.style.scrollBehavior = previousBehavior || '';
+            } catch (error) {
+                if (generation === conversationLoadSequence && page === conversationHistoryPage) {
+                    failureMessage = error?.message || '历史消息加载失败，请重试。';
+                }
+            } finally {
+                if (generation === conversationLoadSequence && page === conversationHistoryPage) {
+                    page.loading = false;
+                    updateConversationHistoryPagination(failureMessage);
+                }
             }
         }
 
@@ -635,3 +738,20 @@
             }
             return data;
         }
+
+        function bindConversationHistoryPagination() {
+            const chatArea = document.getElementById('chatArea');
+            const button = document.getElementById('loadOlderConversationButton');
+            if (!chatArea || !button) return;
+            button.addEventListener('click', () => {
+                return loadOlderConversationMessages();
+            });
+            chatArea.addEventListener('scroll', () => {
+                if (chatArea.scrollTop <= 56) {
+                    return loadOlderConversationMessages();
+                }
+                return undefined;
+            }, { passive: true });
+        }
+
+        bindConversationHistoryPagination();

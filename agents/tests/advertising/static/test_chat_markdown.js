@@ -254,6 +254,91 @@ test('Mermaid repairs quoted edge labels from generated diagrams before renderin
     delete context.document;
 });
 
+test('Mermaid renders all diagrams in a long answer beyond the previous limit', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(_id, source) {
+                rendered.push(source);
+                return { svg: '<svg></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement(tagName) {
+            return new MockElement(tagName);
+        },
+        body: new MockElement('body'),
+    };
+    const codeBlocks = Array.from({ length: 10 }, (_, index) => {
+        const pre = {
+            classList: { add() {} },
+            replaceWith(element) { this.replacedWith = element; },
+        };
+        return {
+            className: 'language-mermaid',
+            textContent: `flowchart TD\nA${index} --> B${index}`,
+            parentElement: pre,
+            pre,
+        };
+    });
+
+    const renderedCount = await context.renderMermaidDiagrams({
+        querySelectorAll: selector => selector === 'pre > code' ? codeBlocks : [],
+    });
+
+    assert.equal(renderedCount, 10);
+    assert.equal(rendered.length, 10);
+    assert.ok(codeBlocks.every(code => code.pre.replacedWith?.className === 'mermaid-diagram'));
+    delete context.window;
+    delete context.document;
+});
+
+test('Mermaid preserves source beyond the expanded per-message safety limit', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(_id, source) {
+                rendered.push(source);
+                return { svg: '<svg></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement(tagName) {
+            return new MockElement(tagName);
+        },
+        body: new MockElement('body'),
+    };
+    const codeBlocks = Array.from({ length: 33 }, (_, index) => {
+        const pre = {
+            attributes: {},
+            classList: { add() {} },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            replaceWith(element) { this.replacedWith = element; },
+        };
+        return {
+            className: 'language-mermaid',
+            textContent: `flowchart TD\nA${index} --> B${index}`,
+            parentElement: pre,
+            pre,
+        };
+    });
+
+    const renderedCount = await context.renderMermaidDiagrams({
+        querySelectorAll: selector => selector === 'pre > code' ? codeBlocks : [],
+    });
+
+    assert.equal(renderedCount, 32);
+    assert.equal(rendered.length, 32);
+    assert.equal(codeBlocks[32].pre.replacedWith, undefined);
+    assert.equal(codeBlocks[32].pre.attributes['data-render-failure'], 'restricted');
+    delete context.window;
+    delete context.document;
+});
+
 test('Mermaid render failures preserve source and identify syntax errors', async () => {
     context.window = {
         mermaid: {

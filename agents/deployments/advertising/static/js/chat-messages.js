@@ -162,13 +162,17 @@
                 });
             });
 
-            container.appendChild(msg);
+            if (uiOptions?.insertBefore) container.insertBefore(msg, uiOptions.insertBefore);
+            else container.appendChild(msg);
             if (type === 'agent') {
                 void renderMermaidDiagrams(
                     msg.querySelector('.message-content-text'),
                 );
             }
-            document.getElementById('chatArea').scrollTop = document.getElementById('chatArea').scrollHeight;
+            const chatArea = document.getElementById('chatArea');
+            if (chatArea && !uiOptions?.suppressScroll) {
+                chatArea.scrollTop = chatArea.scrollHeight;
+            }
 
             return msg;
         }
@@ -562,6 +566,17 @@
         function newChat() {
             stopDurableRunPolling();
             clearPendingChatMedia({ revoke: true });
+            conversationLoadSequence += 1;
+            conversationHistoryPage = {
+                sessionId: null,
+                nextCursor: null,
+                hasMore: false,
+                loading: false,
+                generation: conversationLoadSequence,
+            };
+            if (typeof updateConversationHistoryPagination === 'function') {
+                updateConversationHistoryPagination();
+            }
             sessionId = null;
             selectedConversationId = null;
             loadedConversationTurnIds.clear();

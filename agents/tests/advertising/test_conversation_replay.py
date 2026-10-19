@@ -619,6 +619,59 @@ def test_visible_reply_is_durable_without_replacing_internal_protocol(runtime):
     assert runtime.get_conversation("history", user_id="operator", tenant_id="other") is None
 
 
+def test_conversation_history_pages_complete_turns_from_newest_to_oldest(runtime):
+    runtime._ensure_session("paged-history", "operator", None, None, tenant_id="tenant")
+    rows = [
+        ("a-user", "turn-a", "user", "old question", "2026-10-01T00:00:00+00:00", {}),
+        ("a-call", "turn-a", "assistant", "", "2026-10-01T00:00:01+00:00",
+         {"tool_calls": [{"id": "call-a", "name": "list_campaigns"}]}),
+        ("a-tool", "turn-a", "tool", '{"success": true}', "2026-10-01T00:00:02+00:00", {}),
+        ("a-reply", "turn-a", "assistant", "", "2026-10-01T00:00:03+00:00",
+         {"display_reply": "old answer"}),
+        ("b-user", "turn-b", "user", "middle question", "2026-10-01T00:00:04+00:00", {}),
+        ("b-reply", "turn-b", "assistant", "middle answer", "2026-10-01T00:00:05+00:00", {}),
+        ("c-user", "turn-c", "user", "new question", "2026-10-01T00:00:06+00:00", {}),
+        ("c-reply", "turn-c", "assistant", "new answer", "2026-10-01T00:00:07+00:00", {}),
+    ]
+    for message_id, turn_id, role, content, created_at, metadata in rows:
+        runtime.persistence_store.record_conversation_message(ConversationMessageRecord(
+            message_id=message_id,
+            session_id="paged-history",
+            turn_id=turn_id,
+            role=role,
+            content=content,
+            created_at=created_at,
+            name="list_campaigns" if role == "tool" else None,
+            metadata=metadata,
+        ))
+
+    newest = runtime.get_conversation(
+        "paged-history", user_id="operator", tenant_id="tenant", limit=2,
+    )
+    assert [row["content"] for row in newest["messages"]] == [
+        "middle question", "middle answer", "new question", "new answer",
+    ]
+    assert newest["has_more"] is True
+    assert newest["next_cursor"] == "b-user"
+    assert "message_count" not in newest
+
+    oldest = runtime.get_conversation(
+        "paged-history", user_id="operator", tenant_id="tenant",
+        limit=2, before_message_id=newest["next_cursor"],
+    )
+    assert [row["content"] for row in oldest["messages"]] == [
+        "old question", "old answer",
+    ]
+    assert oldest["has_more"] is False
+    assert oldest["next_cursor"] is None
+
+    with pytest.raises(ValueError, match="游标"):
+        runtime.get_conversation(
+            "paged-history", user_id="operator", tenant_id="tenant",
+            limit=2, before_message_id="missing-cursor",
+        )
+
+
 def test_a_failure_before_the_first_model_assistant_is_still_persisted(runtime):
     session = runtime._ensure_session("failure", "operator", None, None, tenant_id="tenant")
     runtime._session_manager.record_conversation_message("failure", "turn", "user", "你好")

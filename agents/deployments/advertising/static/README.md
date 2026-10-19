@@ -37,6 +37,8 @@ Mermaid 12.2.0 Tiny (MIT) is also served locally. It is loaded only when an
 assistant message contains a Mermaid code fence, initialized in strict mode,
 and its SVG output is sanitized before insertion. Flowchart and sequence
 diagrams are supported; unsupported syntax remains visible as source text.
+Rendering is bounded to 32 diagrams per message, 12,000 source characters and
+200 edges per diagram; Mermaid configuration directives remain blocked.
 
 Run message-rendering and lookup regressions with:
 

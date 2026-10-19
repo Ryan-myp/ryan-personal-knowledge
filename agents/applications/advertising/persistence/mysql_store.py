@@ -20,11 +20,14 @@ from typing import Any, Optional
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .models import (
-    ConversationMessageRecord,
+    ConversationMessagePage, ConversationMessageRecord,
     OutboxEvent,
     TaskRecord,
     ScheduledTaskRecord,
     ScheduledTaskRunRecord,
+)
+from .conversation_pagination import (
+    list_conversation_message_page as query_conversation_message_page,
 )
 from .store import AdAgentStore
 
@@ -586,6 +589,19 @@ class MySQLStore(AdAgentStore):
             for row in reversed(rows)
         ]
 
+    def list_conversation_message_page(
+        self,
+        session_id: str,
+        limit: int = 10,
+        before_message_id: Optional[str] = None,
+    ) -> ConversationMessagePage:
+        return query_conversation_message_page(
+            self._get_conn(),
+            session_id,
+            limit=limit,
+            before_message_id=before_message_id,
+        )
+
     def update_conversation_message_metadata(
         self,
         session_id: str,
@@ -930,6 +946,13 @@ class MySQLStore(AdAgentStore):
                 self._add_mysql_column_if_missing(
                     conn, "conversation_messages", column, definition,
                 )
+        elif version == 22:
+            conn.executescript(_mysql_schema(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history
+                    ON conversation_messages(session_id, turn_id, created_at, message_id);
+                """
+            ))
 
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,

@@ -871,7 +871,10 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "X-API-Key", "let streamError = ''", "streamError || '事件流未返回最终回复'",
             "最近对话", "服务已连接", "grid-template-columns: 228px minmax(0, 1fr) minmax(450px, 460px)",
         "global-action-label", "知识库", "/sessions?limit=50",
-        "/sessions/${encodeURIComponent(targetSessionId)}?limit=500",
+        "/sessions/${encodeURIComponent(targetSessionId)}?limit=10",
+        "before_message_id",
+        "loadOlderConversationMessages",
+        "conversationHistoryPagination",
         "refreshConversationHistory", "loadConversation", "检索总结",
         "historyManageButton", "toggleHistorySelectionMode", "deleteSelectedConversations",
         "historySearchInput", "filterConversationHistory", "最近 7 天", "更早",
@@ -1025,6 +1028,8 @@ def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, 
                 {"role": "user", "content": "查询 Meta 广告系列"},
                 {"role": "assistant", "content": "已找到 2 个广告系列"},
             ],
+            "has_more": True,
+            "next_cursor": "cursor-1",
         }
 
     fake_server.list_conversations = list_conversations
@@ -1034,7 +1039,11 @@ def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, 
         detail = client.get(
             "/sessions/session-a",
             headers={"X-API-Key": "scoped-key"},
-            params={"user_id": "forged-user"},
+            params={
+                "user_id": "forged-user",
+                "limit": 7,
+                "before_message_id": "cursor-1",
+            },
         )
 
     assert listing.status_code == 200
@@ -1045,6 +1054,9 @@ def test_session_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, 
     assert calls[0][1]["tenant_id"] == "tenant-a"
     assert calls[1][1]["user_id"] == "gateway-user"
     assert calls[1][1]["tenant_id"] == "tenant-a"
+    assert calls[1][1]["limit"] == 7
+    assert calls[1][1]["before_message_id"] == "cursor-1"
+    assert detail.json()["has_more"] is True
 
 
 def test_session_detail_hides_other_principal_sessions(monkeypatch, fake_server):

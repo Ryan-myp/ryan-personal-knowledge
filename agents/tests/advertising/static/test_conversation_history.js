@@ -4,26 +4,88 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function environment(messages) {
+function environment(messages, fetchHandler = null) {
     const displayed = [];
-    const container = { replaceChildren: () => {} };
+    const container = {
+        children: [],
+        get firstChild() { return this.children[0] || null; },
+        replaceChildren() { this.children = []; },
+        appendChild(node) { this.children.push(node); return node; },
+        insertBefore(node, before) {
+            const index = this.children.indexOf(before);
+            this.children.splice(index < 0 ? this.children.length : index, 0, node);
+            return node;
+        },
+    };
+    const scrollListeners = {};
+    const chatArea = {
+        scrollTop: 0,
+        scrollHeight: 100,
+        clientHeight: 500,
+        addEventListener(name, callback) { scrollListeners[name] = callback; },
+    };
+    const buttonListeners = {};
+    const paginationPanel = { hidden: true };
+    const paginationButton = {
+        disabled: false,
+        textContent: '',
+        addEventListener(name, callback) { buttonListeners[name] = callback; },
+    };
+    const paginationStatus = { textContent: '' };
+    const nodes = {
+        chatContainer: container,
+        chatArea,
+        conversationHistoryPagination: paginationPanel,
+        loadOlderConversationButton: paginationButton,
+        conversationHistoryPaginationStatus: paginationStatus,
+    };
     const context = {
         sessionId: null, selectedConversationId: null,
         loadedConversationTurnIds: new Set(), pendingRequest: null,
-        document: { getElementById: id => id === 'chatContainer' ? container : null },
+        URLSearchParams,
+        conversationLoadSequence: 0,
+        conversationHistoryPage: {
+            sessionId: null, nextCursor: null, hasMore: false, loading: false, generation: 0,
+        },
+        document: {
+            getElementById: id => nodes[id] || null,
+            createElement: tag => ({
+                tagName: tag,
+                className: '',
+                textContent: '',
+                children: [],
+                appendChild(node) { this.children.push(node); return node; },
+            }),
+        },
         resetCreationWorkbench: () => {},
         restoreExecutionTrace: () => {},
         loadLatestDurableRun: async () => {},
         clearPendingChatMedia: () => {},
-        addMessage: (...args) => displayed.push(args),
+        addMessage: (...args) => {
+            displayed.push(args);
+            const node = { content: args[0] };
+            const options = args[7] || {};
+            if (options.insertBefore) container.insertBefore(node, options.insertBefore);
+            else container.appendChild(node);
+            chatArea.scrollHeight += 100;
+            return node;
+        },
     };
     const source = path.resolve(__dirname, '../../../deployments/advertising/static/js/chat-requests.js');
     vm.runInNewContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
-    context.authenticatedFetch = async () => ({
-        ok: true, text: async () => JSON.stringify({ session_id: 'history', messages }),
-    });
+    const calls = [];
+    context.authenticatedFetch = async url => {
+        calls.push(url);
+        const payload = fetchHandler
+            ? await fetchHandler(url, calls.length)
+            : { session_id: 'history', messages };
+        return { ok: true, text: async () => JSON.stringify(payload) };
+    };
     context.renderConversationHistory = () => {};
-    return { context, displayed };
+    return {
+        context, displayed, calls, chatArea, container, scrollListeners,
+        paginationPanel, paginationButton, buttonListeners, paginationStatus,
+    };
 }
 
 test('history ignores empty internal assistant placeholders and non-chat roles', async () => {
@@ -65,6 +127,51 @@ test('a media-gallery-only reply remains visible in conversation history', () =>
         context.chatMessageHasPresentation('', null, { media_gallery: [{ kind: 'image' }] }),
         true,
     );
+});
+
+test('conversation history loads the newest page, then prepends older pages without moving the viewport', async () => {
+    const {
+        context, displayed, calls, chatArea, container, scrollListeners, paginationPanel,
+    } = environment(
+        [],
+        (_url, requestNumber) => requestNumber === 1
+            ? {
+                session_id: 'history',
+                messages: [
+                    { role: 'user', content: 'new question', turn_id: 'new' },
+                    { role: 'assistant', content: 'new answer', turn_id: 'new' },
+                ],
+                has_more: true,
+                next_cursor: 'older-turn-message',
+            }
+            : {
+                session_id: 'history',
+                messages: [
+                    { role: 'user', content: 'old question', turn_id: 'old' },
+                    { role: 'assistant', content: 'old answer', turn_id: 'old' },
+                ],
+                has_more: false,
+                next_cursor: null,
+            },
+    );
+
+    await context.loadConversation('history');
+    assert.match(calls[0], /limit=10/);
+    assert.deepEqual(displayed.map(args => args[0]), ['new question', 'new answer']);
+    assert.equal(chatArea.scrollTop, chatArea.scrollHeight);
+    assert.equal(paginationPanel.hidden, false);
+
+    chatArea.scrollTop = 24;
+    const previousHeight = chatArea.scrollHeight;
+    await scrollListeners.scroll();
+
+    assert.match(calls[1], /before_message_id=older-turn-message/);
+    assert.deepEqual(
+        container.children.map(node => node.content),
+        ['old question', 'old answer', 'new question', 'new answer'],
+    );
+    assert.equal(chatArea.scrollTop, 24 + chatArea.scrollHeight - previousHeight);
+    assert.equal(paginationPanel.hidden, true);
 });
 
 test('live rendering preserves the same persisted failure reply without another prefix', () => {

@@ -9,6 +9,10 @@
         let conversationHistory = [];
         let selectedConversationId = null;
         let conversationHistoryRequest = 0;
+        let conversationLoadSequence = 0;
+        let conversationHistoryPage = {
+            sessionId: null, nextCursor: null, hasMore: false, loading: false, generation: 0,
+        };
         let historySelectionMode = false;
         const selectedConversationIds = new Set();
         let historySearchQuery = '';

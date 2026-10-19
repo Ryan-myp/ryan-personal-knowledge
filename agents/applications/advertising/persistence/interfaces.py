@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional, Protocol
 
+from .models import ConversationMessagePage
+
 
 class KnowledgeStorePort(Protocol):
     """Narrow port consumed by Wiki management and ingest services."""
@@ -108,6 +110,10 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def list_conversation_messages(
         self, session_id: str, limit: int = 200,
     ) -> list[Any]: ...
+    def list_conversation_message_page(
+        self, session_id: str, limit: int = 10,
+        before_message_id: Optional[str] = None,
+    ) -> ConversationMessagePage: ...
     def update_conversation_message_metadata(
         self, session_id: str, turn_id: str, role: str,
         metadata: Optional[dict[str, Any]] = None,

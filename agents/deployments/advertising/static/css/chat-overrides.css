@@ -1562,7 +1562,28 @@
         .topbar { min-height: 58px; padding-inline: 28px; }
         .topbar-title { letter-spacing: -.025em; }
         .platform-tag { border-radius: 999px; font-weight: 650; letter-spacing: -.01em; }
-        .chat-area { scroll-behavior: smooth; }
+        .chat-area { scroll-behavior: smooth; overflow-anchor: none; }
+        .conversation-history-pagination {
+            max-width: 860px;
+            min-height: 36px;
+            margin: 0 auto 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        .conversation-history-pagination[hidden] { display: none; }
+        .conversation-history-pagination button {
+            min-height: 32px;
+            padding: 0 12px;
+            border: 1px solid var(--border);
+            border-radius: 7px;
+            background: var(--surface);
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .conversation-history-pagination button:disabled { cursor: wait; opacity: .65; }
+        .conversation-history-pagination span { color: var(--text-secondary); font-size: 12px; }
         .welcome-page { position: relative; max-width: 900px; padding-top: 22px; }
         .welcome-page::before {
             position: absolute;

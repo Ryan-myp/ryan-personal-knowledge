@@ -41,7 +41,7 @@ function formatContent(content) {
 }
 
 const MAX_MERMAID_SOURCE_LENGTH = 12000;
-const MAX_MERMAID_DIAGRAMS_PER_MESSAGE = 8;
+const MAX_MERMAID_DIAGRAMS_PER_MESSAGE = 32;
 const MERMAID_DIAGRAM_HEADER = /^(?:graph|flowchart|sequencediagram|classdiagram|statediagram(?:-v2)?|erdiagram|journey|gantt|pie|gitgraph|mindmap|timeline|quadrantchart|sankey-beta|xychart-beta)\b/i;
 const QUOTED_EDGE_LABEL = /^([ \t]*)([A-Za-z_][\w-]*)\s+-->\s+"([^"\r\n]+)"[ \t]*$/gm;
 let mermaidLoadPromise = null;

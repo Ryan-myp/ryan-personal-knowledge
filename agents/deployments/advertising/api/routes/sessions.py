@@ -49,20 +49,25 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         session_id: str,
         http_request: Request,
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-        limit: int = Query(500, ge=1, le=1000),
+        limit: int = Query(10, ge=1, le=100),
+        before_message_id: Optional[str] = Query(None, min_length=1, max_length=128),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "ads.read")
         runtime = context.runtime()
         if not runtime or not callable(getattr(runtime, "get_conversation", None)):
             raise HTTPException(status_code=503, detail="会话存储未初始化")
-        conversation = await run_in_threadpool(
-            runtime.get_conversation,
-            session_id=session_id,
-            user_id=principal.user_id,
-            tenant_id=principal.tenant_id,
-            limit=limit,
-        )
+        try:
+            conversation = await run_in_threadpool(
+                runtime.get_conversation,
+                session_id=session_id,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+                limit=limit,
+                before_message_id=before_message_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         if not conversation:
             raise HTTPException(status_code=404, detail="会话不存在或无权访问")
         return conversation

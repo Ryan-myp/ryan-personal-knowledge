@@ -21,11 +21,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
 
 from .models import (
-    CampaignRecord, ConversationMessageRecord, KnowledgeDocumentRecord,
+    CampaignRecord, ConversationMessagePage, ConversationMessageRecord, KnowledgeDocumentRecord,
     RawKnowledgeSourceRecord,
     ExecutionRunRecord, TaskRecord, ToolCallRecord,
     OutboxEvent, ScheduledTaskRecord, ScheduledTaskRunRecord,
     CreationTemplateRecord,
+)
+from .conversation_pagination import (
+    list_conversation_message_page as query_conversation_message_page,
 )
 from .errors import PersistenceConflictError
 from agents.agent_harness.core.memory import MEMORY_SOURCE_PRIORITIES, MemoryRecord
@@ -87,7 +90,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 21
+    SCHEMA_VERSION = 22
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -273,6 +276,8 @@ class AdAgentStore:
     CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(session_id, turn_id);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_session
         ON conversation_messages(session_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history
+        ON conversation_messages(session_id, turn_id, created_at, message_id);
     CREATE INDEX IF NOT EXISTS idx_knowledge_documents_scope
         ON knowledge_documents(tenant_id, status, updated_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_version
@@ -1000,6 +1005,11 @@ class AdAgentStore:
                 cls._add_column_if_missing(
                     conn, "conversation_messages", column, definition,
                 )
+        elif version == 22:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history "
+                "ON conversation_messages(session_id, turn_id, created_at, message_id)"
+            )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
     
@@ -4013,6 +4023,20 @@ class AdAgentStore:
                 ConversationMessageRecord.from_row(dict(row))
                 for row in reversed(rows)
             ]
+
+    def list_conversation_message_page(
+        self,
+        session_id: str,
+        limit: int = 10,
+        before_message_id: Optional[str] = None,
+    ) -> ConversationMessagePage:
+        with self._lock:
+            return query_conversation_message_page(
+                self._get_conn(),
+                session_id,
+                limit=limit,
+                before_message_id=before_message_id,
+            )
 
     def update_conversation_message_metadata(
         self,

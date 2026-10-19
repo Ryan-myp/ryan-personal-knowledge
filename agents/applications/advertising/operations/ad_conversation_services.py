@@ -212,7 +212,7 @@ class AdConversationServices:
 
     def get_conversation(
         self, session_id: str, user_id: str, tenant_id: str = "default",
-        limit: int = 500,
+        limit: int = 10, before_message_id: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Load one conversation after enforcing user and tenant ownership."""
         if not self.runtime._session_manager:
@@ -223,16 +223,25 @@ class AdConversationServices:
         if not session:
             return None
         metadata = AdConversationServices._decode_session_metadata(session)
-        records = self.runtime._session_manager.list_conversation_messages(session_id, limit=limit)
+        page = self.runtime._session_manager.list_conversation_message_page(
+            session_id,
+            limit=limit,
+            before_message_id=before_message_id,
+        )
         messages = self.runtime._redact_for_persistence(project_conversation_messages(
-            [record.to_dict() for record in records],
+            [record.to_dict() for record in page.records],
             metadata.get("conversation_ui"),
         ))
         summary = AdConversationServices._conversation_summary(session, messages)
+        if page.has_more:
+            summary.pop("message_count", None)
         traces = metadata.get("execution_traces")
         return {
             **summary,
             "messages": messages,
+            "loaded_message_count": len(messages),
+            "has_more": page.has_more,
+            "next_cursor": page.next_cursor,
             "execution_traces": traces if isinstance(traces, dict) else {},
         }
 

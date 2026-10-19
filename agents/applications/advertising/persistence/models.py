@@ -209,6 +209,15 @@ class ConversationMessageRecord:
         return cls(**data)
 
 
+@dataclass(frozen=True)
+class ConversationMessagePage:
+    """One chronological page of complete conversation turns."""
+
+    records: list[ConversationMessageRecord]
+    has_more: bool
+    next_cursor: str | None = None
+
+
 @dataclass
 class KnowledgeDocumentRecord:
     """A tenant-scoped, versioned Markdown Wiki document snapshot."""

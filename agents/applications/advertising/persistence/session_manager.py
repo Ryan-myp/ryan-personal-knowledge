@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from .interfaces import PersistenceBackend
 from .models import (
-    ConversationMessageRecord, ToolCallRecord, CampaignRecord,
+    ConversationMessagePage, ConversationMessageRecord, ToolCallRecord, CampaignRecord,
     ExecutionRunRecord,
 )
 from agents.agent_harness.core.namespace import normalize_namespace as normalize_platform
@@ -105,6 +105,19 @@ class SessionManager:
     def list_conversation_messages(self, session_id: str, limit: int = 200) -> list:
         """Return the durable chat messages in chronological order."""
         return self.store.list_conversation_messages(session_id, limit=limit)
+
+    def list_conversation_message_page(
+        self,
+        session_id: str,
+        limit: int = 10,
+        before_message_id: Optional[str] = None,
+    ) -> ConversationMessagePage:
+        """Return a chronological page without splitting visible conversation turns."""
+        return self.store.list_conversation_message_page(
+            session_id,
+            limit=limit,
+            before_message_id=before_message_id,
+        )
 
     def update_conversation_message_metadata(
         self,
