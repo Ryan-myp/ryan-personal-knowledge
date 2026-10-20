@@ -23,6 +23,10 @@ class Element {
     setAttribute(name, value) {
         this.attributes[name] = value;
     }
+
+    replaceWith(replacement) {
+        this.replacement = replacement;
+    }
 }
 
 class VideoElement extends Element {
@@ -34,6 +38,11 @@ class VideoElement extends Element {
 const context = {
     URL,
     HTMLVideoElement: VideoElement,
+    location: { origin: 'https://agent.example' },
+    serviceFetch: async () => ({
+        ok: true,
+        blob: async () => new Blob(['creative']),
+    }),
     document: {
         createElement(tagName) {
             return tagName === 'video'
@@ -65,6 +74,54 @@ test('remote media previews accept only credential-free HTTPS URLs', () => {
     ]) {
         assert.equal(context.safeRemoteChatMediaUrl(value), '');
     }
+});
+
+test('internal creative asset paths are exact same-origin routes', () => {
+    assert.equal(
+        context.safeInternalCreativeAssetUrl(
+            '/creative/assets/1234567890abcdef1234567890abcdef',
+        ),
+        '/creative/assets/1234567890abcdef1234567890abcdef',
+    );
+    for (const value of [
+        '//attacker.example/creative/assets/1234567890abcdef1234567890abcdef',
+        '/creative/assets/1234567890abcdef1234567890abcdef/extra',
+        '/creative/assets/../settings',
+        '/chat/media/1234567890abcdef1234567890abcdef',
+        'https://attacker.example/creative/assets/1234567890abcdef1234567890abcdef',
+    ]) {
+        assert.equal(context.safeInternalCreativeAssetUrl(value), '');
+    }
+});
+
+test('internal creative media loads through authenticated fetch and displays inline', async () => {
+    const requests = [];
+    context.serviceFetch = async url => {
+        requests.push(url);
+        return {
+            ok: true,
+            blob: async () => new Blob(['creative']),
+        };
+    };
+    context.URL.createObjectURL = () => 'blob:creative-preview';
+    const placeholder = new Element('div');
+    placeholder.isConnected = true;
+    const item = {
+        kind: 'video',
+        id: '1234567890abcdef1234567890abcdef',
+        name: 'Generated video',
+        url: '/creative/assets/1234567890abcdef1234567890abcdef',
+    };
+
+    await context.loadInternalCreativeAsset(placeholder, item);
+
+    assert.deepEqual(requests, [item.url]);
+    const player = placeholder.replacement.children.find(
+        child => child.tagName === 'VIDEO',
+    );
+    assert.ok(player);
+    assert.equal(player.src, 'blob:creative-preview');
+    assert.equal(player.controls, true);
 });
 
 test('media gallery ignores unsafe URLs and writes labels as text nodes', () => {

@@ -14,8 +14,20 @@ from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from agents.tools.creative_media.models import (
+    FREE_AGNES_MEDIA_MODELS,
+    profile_supports_free_media_model,
+    public_media_model_catalog,
+    validate_free_media_configuration,
+)
+
 
 _WEB_SEARCH_PROVIDERS = frozenset({"duckduckgo", "brave"})
+_MODEL_PURPOSES = frozenset({
+    "chat",
+    "image_generation",
+    "video_generation",
+})
 
 
 class SettingsVaultError(RuntimeError):
@@ -216,22 +228,42 @@ class AgentSettingsService:
         return credentials
 
     def active_model_configuration(self) -> dict[str, str]:
+        """Return the active conversational model configuration."""
+        return self.model_configuration_for("chat")
+
+    def model_configuration_for(self, purpose: str) -> dict[str, str]:
+        """Resolve a secret model configuration without exposing it in snapshots."""
+        purpose = self._model_purpose(purpose)
         state = self.vault.read()
         profiles = state.get("models", [])
-        active_id = state.get("active_model_profile_id")
+        active_id = self._active_model_profiles(state).get(purpose)
         profile = next(
             (
                 item for item in profiles
-                if isinstance(item, dict) and item.get("id") == active_id
+                if (
+                    isinstance(item, dict)
+                    and item.get("id") == active_id
+                    and self._profile_purpose(item) == purpose
+                )
             ),
             None,
         )
         if profile is None:
-            return copy.deepcopy(self.model_defaults)
+            return copy.deepcopy(self.model_defaults) if purpose == "chat" else {}
+        base_url = str(profile.get("base_url") or "")
+        if purpose != "chat":
+            try:
+                base_url = validate_free_media_configuration(
+                    purpose,
+                    profile.get("model"),
+                    base_url,
+                )
+            except ValueError:
+                return {}
         return {
             "name": str(profile.get("name") or ""),
             "model": str(profile.get("model") or ""),
-            "base_url": str(profile.get("base_url") or ""),
+            "base_url": base_url,
             "api_key": str(profile.get("api_key") or ""),
         }
 
@@ -240,6 +272,7 @@ class AgentSettingsService:
             state = self.vault.read()
             return {
                 "models": self._model_snapshot(state),
+                "media_model_catalog": public_media_model_catalog(),
                 "providers": self._provider_snapshot(state),
                 "web_search": self._web_search_snapshot(state),
             }
@@ -250,11 +283,12 @@ class AgentSettingsService:
             for item in state.get("models", [])
             if isinstance(item, dict) and item.get("id")
         ]
-        active_id = state.get("active_model_profile_id")
-        active = next(
-            (item for item in safe_profiles if item["id"] == active_id),
-            None,
-        )
+        active_profiles = self._active_model_profiles(state)
+        active_id = active_profiles.get("chat")
+        active = next((
+            item for item in safe_profiles
+            if item["id"] == active_id and item["purpose"] == "chat"
+        ), None)
         if active is None:
             active_id = self.ENVIRONMENT_PROFILE_ID
             active = {
@@ -264,6 +298,7 @@ class AgentSettingsService:
                 "base_url": self.model_defaults["base_url"],
                 "api_key_configured": bool(self.model_defaults["api_key"]),
                 "source": "environment",
+                "purpose": "chat",
                 "active": True,
             }
         else:
@@ -274,8 +309,19 @@ class AgentSettingsService:
             item for item in safe_profiles
             if item["id"] != self.ENVIRONMENT_PROFILE_ID
         )
+        resolved_active_profiles = {
+            purpose: active_profiles.get(purpose)
+            for purpose in sorted(_MODEL_PURPOSES)
+        }
+        resolved_active_profiles["chat"] = active_id
+        for profile in profiles:
+            purpose = profile["purpose"]
+            profile["active"] = profile["id"] == resolved_active_profiles.get(
+                purpose
+            )
         return {
             "active_profile_id": active_id,
+            "active_profiles": resolved_active_profiles,
             "active": active,
             "profiles": profiles,
         }
@@ -288,6 +334,7 @@ class AgentSettingsService:
             "base_url": self.model_defaults["base_url"],
             "api_key_configured": bool(self.model_defaults["api_key"]),
             "source": "environment",
+            "purpose": "chat",
             "active": active_id == self.ENVIRONMENT_PROFILE_ID,
         }
 
@@ -451,8 +498,10 @@ class AgentSettingsService:
         model: str,
         base_url: str,
         api_key: str,
+        purpose: str = "chat",
         profile_id: str | None = None,
     ) -> str:
+        purpose = self._model_purpose(purpose)
         cleaned_name = self._bounded_text(name, "name", 80)
         cleaned_model = self._bounded_text(
             model, "model", self.MAX_MODEL_NAME_LENGTH
@@ -471,16 +520,24 @@ class AgentSettingsService:
                 model=cleaned_model,
                 base_url=cleaned_url,
                 api_key=cleaned_key,
+                purpose=purpose,
             )
-            client = self.model_client_factory(
-                model=cleaned_model,
-                api_key=cleaned_key,
-                base_url=cleaned_url or None,
+            client = (
+                self.model_client_factory(
+                    model=cleaned_model,
+                    api_key=cleaned_key,
+                    base_url=cleaned_url or None,
+                )
+                if purpose == "chat"
+                else None
             )
             self._commit_and_apply(
                 previous,
                 state,
-                lambda: self.runtime.inject_llm(client),
+                (
+                    lambda: self.runtime.inject_llm(client)
+                    if client is not None else None
+                ),
                 "model configuration could not be applied",
             )
             return resolved_id
@@ -494,6 +551,7 @@ class AgentSettingsService:
         model: str,
         base_url: str,
         api_key: str,
+        purpose: str,
     ) -> tuple[str, str]:
         profiles = state.setdefault("models", [])
         existing = next(
@@ -505,6 +563,14 @@ class AgentSettingsService:
         ) if profile_id else None
         if profile_id and existing is None:
             raise ValueError("model profile does not exist")
+        if existing is not None and self._profile_purpose(existing) != purpose:
+            raise ValueError("model profile purpose cannot be changed")
+        if purpose != "chat":
+            base_url = validate_free_media_configuration(
+                purpose,
+                model,
+                base_url,
+            )
         if existing is None and not api_key:
             raise ValueError("a new model profile requires an API key")
         resolved_key = api_key or str((existing or {}).get("api_key") or "")
@@ -517,12 +583,17 @@ class AgentSettingsService:
             "model": model,
             "base_url": base_url,
             "api_key": resolved_key,
+            "purpose": purpose,
         }
         if existing is None:
             profiles.append(profile)
         else:
             profiles[profiles.index(existing)] = profile
-        state["active_model_profile_id"] = resolved_id
+        active_profiles = self._active_model_profiles(state)
+        active_profiles[purpose] = resolved_id
+        state["active_model_profiles"] = active_profiles
+        if purpose == "chat":
+            state["active_model_profile_id"] = resolved_id
         return resolved_id, resolved_key
 
     def _commit_and_apply(
@@ -541,10 +612,11 @@ class AgentSettingsService:
 
     def activate_model_profile(self, profile_id: str) -> None:
         with self._lock:
-            if self.runtime is None:
-                raise RuntimeError("agent runtime is not ready")
             if profile_id == self.ENVIRONMENT_PROFILE_ID:
+                if self.runtime is None:
+                    raise RuntimeError("agent runtime is not ready")
                 configuration = copy.deepcopy(self.model_defaults)
+                purpose = "chat"
             else:
                 state = self.vault.read()
                 profile = next(
@@ -556,35 +628,56 @@ class AgentSettingsService:
                 )
                 if profile is None:
                     raise ValueError("model profile does not exist")
+                purpose = self._profile_purpose(profile)
+                if purpose != "chat":
+                    validate_free_media_configuration(
+                        purpose,
+                        profile.get("model"),
+                        profile.get("base_url"),
+                    )
                 configuration = {
                     "model": profile["model"],
                     "api_key": profile["api_key"],
                     "base_url": profile["base_url"] or None,
                 }
+            if purpose == "chat" and self.runtime is None:
+                raise RuntimeError("agent runtime is not ready")
             if not configuration.get("api_key"):
                 raise ValueError("model API key is not configured")
-            client = self.model_client_factory(
-                model=configuration["model"],
-                api_key=configuration["api_key"],
-                base_url=configuration.get("base_url") or None,
+            client = (
+                self.model_client_factory(
+                    model=configuration["model"],
+                    api_key=configuration["api_key"],
+                    base_url=configuration.get("base_url") or None,
+                )
+                if purpose == "chat"
+                else None
             )
             previous = self.vault.read()
             next_state = copy.deepcopy(previous)
+            active_profiles = self._active_model_profiles(next_state)
             if profile_id == self.ENVIRONMENT_PROFILE_ID:
                 next_state.pop("active_model_profile_id", None)
+                active_profiles.pop("chat", None)
             else:
-                next_state["active_model_profile_id"] = profile_id
+                active_profiles[purpose] = profile_id
+                if purpose == "chat":
+                    next_state["active_model_profile_id"] = profile_id
+            next_state["active_model_profiles"] = active_profiles
             self._commit_and_apply(
                 previous,
                 next_state,
-                lambda: self.runtime.inject_llm(client),
+                (
+                    lambda: self.runtime.inject_llm(client)
+                    if client is not None else None
+                ),
                 "model profile could not be activated",
             )
 
     def delete_model_profile(self, profile_id: str) -> None:
         with self._lock:
             state = self.vault.read()
-            if state.get("active_model_profile_id") == profile_id:
+            if profile_id in self._active_model_profiles(state).values():
                 raise ValueError("cannot delete the active model profile")
             profiles = state.get("models", [])
             retained = [
@@ -602,10 +695,58 @@ class AgentSettingsService:
             "name": str(profile.get("name") or ""),
             "model": str(profile.get("model") or ""),
             "base_url": str(profile.get("base_url") or ""),
+            "purpose": self._profile_purpose(profile),
+            "supported": self._profile_supports_free_media(profile),
             "api_key_configured": bool(profile.get("api_key")),
             "source": "vault",
             "active": False,
         }
+
+    @staticmethod
+    def _model_purpose(value: Any) -> str:
+        purpose = str(value or "chat").strip().lower()
+        if purpose not in _MODEL_PURPOSES:
+            raise ValueError("unsupported model purpose")
+        return purpose
+
+    @classmethod
+    def _profile_purpose(cls, profile: Mapping[str, Any]) -> str:
+        return cls._model_purpose(profile.get("purpose", "chat"))
+
+    @classmethod
+    def _profile_supports_free_media(cls, profile: Mapping[str, Any]) -> bool:
+        purpose = cls._profile_purpose(profile)
+        if purpose not in FREE_AGNES_MEDIA_MODELS:
+            return True
+        if not profile_supports_free_media_model(profile):
+            return False
+        try:
+            validate_free_media_configuration(
+                purpose,
+                profile.get("model"),
+                profile.get("base_url"),
+            )
+        except ValueError:
+            return False
+        return True
+
+    @classmethod
+    def _active_model_profiles(cls, state: Mapping[str, Any]) -> dict[str, str]:
+        configured = state.get("active_model_profiles")
+        result = {
+            str(purpose): str(profile_id)
+            for purpose, profile_id in configured.items()
+            if (
+                isinstance(configured, Mapping)
+                and purpose in _MODEL_PURPOSES
+                and isinstance(profile_id, str)
+                and profile_id.strip()
+            )
+        } if isinstance(configured, Mapping) else {}
+        legacy_id = state.get("active_model_profile_id")
+        if "chat" not in result and isinstance(legacy_id, str) and legacy_id:
+            result["chat"] = legacy_id
+        return result
 
     @classmethod
     def _clean_secret(cls, value: Any, field: str) -> str:

@@ -221,6 +221,32 @@ def test_provider_media_gallery_keeps_safe_image_and_video_previews():
     ]
 
 
+def test_media_gallery_allows_only_internal_creative_asset_paths():
+    gallery = media_gallery_from_results([{
+        "success": True,
+        "data": {
+            "image_assets": [
+                {
+                    "id": "1234567890abcdef1234567890abcdef",
+                    "name": "Generated image",
+                    "url": "/creative/assets/1234567890abcdef1234567890abcdef",
+                },
+                {
+                    "id": "external",
+                    "url": "/chat/media/another-user-asset",
+                },
+            ],
+        },
+    }])
+
+    assert gallery == [{
+        "kind": "image",
+        "id": "1234567890abcdef1234567890abcdef",
+        "name": "Generated image",
+        "url": "/creative/assets/1234567890abcdef1234567890abcdef",
+    }]
+
+
 def test_provider_video_gallery_uses_media_source_not_permalink():
     gallery = media_gallery_from_results([{
         "success": True,

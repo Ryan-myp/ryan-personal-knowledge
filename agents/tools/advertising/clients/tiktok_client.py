@@ -3447,11 +3447,51 @@ class TikTokAPIClient(BasePlatformClient):
     # ==================== 创意素材上传 ====================
 
     @staticmethod
-    def _validate_media_file(file_path: str, allowed_suffixes: set[str], label: str) -> Path:
+    def _matches_media_signature(path: Path, suffix: str) -> bool:
+        try:
+            with path.open("rb") as stream:
+                header = stream.read(16)
+        except OSError:
+            return False
+        checks = {
+            ".jpg": lambda value: value.startswith(b"\xff\xd8\xff"),
+            ".jpeg": lambda value: value.startswith(b"\xff\xd8\xff"),
+            ".png": lambda value: value.startswith(b"\x89PNG\r\n\x1a\n"),
+            ".webp": lambda value: (
+                len(value) >= 12
+                and value.startswith(b"RIFF")
+                and value[8:12] == b"WEBP"
+            ),
+            ".mp4": lambda value: len(value) >= 12 and value[4:8] == b"ftyp",
+            ".mov": lambda value: len(value) >= 12 and value[4:8] == b"ftyp",
+            ".m4v": lambda value: len(value) >= 12 and value[4:8] == b"ftyp",
+            ".avi": lambda value: (
+                len(value) >= 12
+                and value.startswith(b"RIFF")
+                and value[8:12] == b"AVI "
+            ),
+            ".webm": lambda value: value.startswith(b"\x1a\x45\xdf\xa3"),
+        }
+        matcher = checks.get(str(suffix or "").lower())
+        return bool(matcher and matcher(header))
+
+    @staticmethod
+    def _validate_media_file(
+        file_path: str,
+        allowed_suffixes: set[str],
+        label: str,
+        filename: Optional[str] = None,
+    ) -> Path:
         path = Path(str(file_path or "")).expanduser()
         if not path.is_file():
             raise ValueError(f"{label} file_path must point to an existing file")
-        if path.suffix.lower() not in allowed_suffixes:
+        declared_suffix = Path(str(filename or "")).suffix.lower()
+        actual_suffix = path.suffix.lower()
+        if actual_suffix not in allowed_suffixes and not (
+            actual_suffix == ".bin"
+            and declared_suffix in allowed_suffixes
+            and TikTokAPIClient._matches_media_signature(path, declared_suffix)
+        ):
             suffixes = ", ".join(sorted(allowed_suffixes))
             raise ValueError(f"{label} file_path must use one of: {suffixes}")
         if path.stat().st_size <= 0:
@@ -3528,7 +3568,10 @@ class TikTokAPIClient(BasePlatformClient):
         path = None
         if file_path:
             path = self._validate_media_file(
-                file_path, {".jpg", ".jpeg", ".png", ".webp"}, "image"
+                file_path,
+                {".jpg", ".jpeg", ".png", ".webp"},
+                "image",
+                file_name,
             )
         name = self._media_upload_name(file_name, path, "image") if (file_name or path) else None
         form_data: dict[str, Any] = {
@@ -3594,7 +3637,10 @@ class TikTokAPIClient(BasePlatformClient):
         path = None
         if file_path:
             path = self._validate_media_file(
-                file_path, {".mp4", ".mov", ".m4v", ".avi", ".webm"}, "video"
+                file_path,
+                {".mp4", ".mov", ".m4v", ".avi", ".webm"},
+                "video",
+                file_name,
             )
         name = self._media_upload_name(file_name, path, "video") if (file_name or path) else None
         form_data: dict[str, Any] = {

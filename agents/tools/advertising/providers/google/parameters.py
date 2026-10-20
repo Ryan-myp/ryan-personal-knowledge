@@ -2422,13 +2422,45 @@ def google_asset_create_schema() -> dict[str, Any]:
             {"id": "text_asset_dependency", "if": {"asset_type": "TEXT"},
              "required": ["text"], "message": "TEXT assets require text"},
             {"id": "image_asset_dependency", "if": {"asset_type": "IMAGE"},
-             "required": ["file_path", "mime_type"], "message": "IMAGE assets require file_path and mime_type"},
+             "required": ["file_path", "mime_type"],
+             "message": "IMAGE assets require file_path and mime_type"},
             {"id": "youtube_asset_dependency", "if": {"asset_type": "YOUTUBE_VIDEO"},
              "required": ["youtube_video_id", "youtube_video_title"],
              "message": "YOUTUBE_VIDEO assets require youtube_video_id and youtube_video_title"},
             {"id": "media_bundle_dependency", "if": {"asset_type": "MEDIA_BUNDLE"},
              "required": ["file_path"], "message": "MEDIA_BUNDLE assets require file_path"},
         ],
+    }
+
+
+def google_generated_image_upload_schema() -> dict[str, Any]:
+    """Narrow live-upload contract for an identity-scoped generated image."""
+    return {
+        "required": ["customer_id", "creative_asset_id"],
+        "properties": {
+            "customer_id": _field("string", "Google Ads customer ID"),
+            "creative_asset_id": _field(
+                "string",
+                "Ready image generated into this user's private creative library",
+                minLength=32,
+                maxLength=32,
+                pattern=r"^[0-9a-f]{32}$",
+                **{
+                    "x-creative-asset": {
+                        "target_field": "file_path",
+                        "media_types": ["image/png", "image/jpeg"],
+                        "mime_type_field": "mime_type",
+                        "mime_type_values": {
+                            "image/png": "IMAGE_PNG",
+                            "image/jpeg": "IMAGE_JPEG",
+                        },
+                        "filename_field": "file_name",
+                        "name_field": "name",
+                    },
+                },
+            ),
+            "name": _field("string", "Optional Google Asset name", minLength=1, maxLength=255),
+        },
     }
 
 

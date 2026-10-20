@@ -15,6 +15,7 @@ _FACEBOOK_VIDEO_PATHS = (
     re.compile(r"^/[^/]+/videos/\d+/?$"),
     re.compile(r"^/reel/\d+/?$"),
 )
+_CREATIVE_ASSET_PATH = re.compile(r"^/creative/assets/[0-9a-f]{32}$")
 
 
 def _facebook_video_permalink(value: Any) -> str:
@@ -87,11 +88,21 @@ def _safe_remote_url(value: Any) -> str:
     return url
 
 
+def _safe_creative_asset_url(value: Any) -> str:
+    """Accept only opaque IDs on the authenticated creative-asset route."""
+    raw = str(value or "").strip()
+    return raw if _CREATIVE_ASSET_PATH.fullmatch(raw) else ""
+
+
+def _safe_media_url(value: Any) -> str:
+    return _safe_creative_asset_url(value) or _safe_remote_url(value)
+
+
 def _first_url(row: Mapping[str, Any], fields: tuple[str, ...]) -> str:
     return next(
         (
             url for field in fields
-            if (url := _safe_remote_url(row.get(field)))
+            if (url := _safe_media_url(row.get(field)))
         ),
         "",
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -17,6 +17,7 @@ class ModelProfileRequest(BaseModel):
     model: str = Field(min_length=1, max_length=160)
     base_url: str = Field(default="", max_length=2048)
     api_key: str = Field(default="", max_length=8192)
+    purpose: Literal["chat", "image_generation", "video_generation"] = "chat"
 
 
 class ProviderCredentialsRequest(BaseModel):

@@ -416,12 +416,31 @@ def tiktok_image_upload_schema() -> dict[str, Any]:
     return {
         "required": ["account_id"],
         "requires": [],
-        "requires_exactly_one_of": [["file_path", "image_url", "file_id"]],
+        "requires_exactly_one_of": [
+            ["file_path", "image_url", "file_id", "creative_asset_id"],
+        ],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "file_path": _field("string", "Local image path; only used with UPLOAD_BY_FILE"),
             "image_url": _field("string", "Provider-reachable image URL; only used with UPLOAD_BY_URL"),
             "file_id": _field("string", "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID"),
+            "creative_asset_id": _field(
+                "string",
+                "Image generated into this user's private creative library",
+                minLength=32,
+                maxLength=32,
+                pattern=r"^[0-9a-f]{32}$",
+                **{
+                    "x-creative-asset": {
+                        "target_field": "file_path",
+                        "media_types": [
+                            "image/png", "image/jpeg", "image/webp",
+                        ],
+                        "filename_field": "file_name",
+                        "fixed_fields": {"upload_type": "UPLOAD_BY_FILE"},
+                    },
+                },
+            ),
             "file_name": _field("string", "Optional Asset Library filename", maxLength=100),
             "upload_type": _field("string", "TikTok upload mode", enum=TIKTOK_MEDIA_UPLOAD_TYPES),
         },
@@ -433,13 +452,33 @@ def tiktok_video_upload_schema() -> dict[str, Any]:
     return {
         "required": ["account_id"],
         "requires": [],
-        "requires_exactly_one_of": [["file_path", "video_url", "video_id", "file_id"]],
+        "requires_exactly_one_of": [
+            [
+                "file_path", "video_url", "video_id", "file_id",
+                "creative_asset_id",
+            ],
+        ],
         "properties": {
             "account_id": _field("string", "TikTok advertiser ID"),
             "file_path": _field("string", "Local video path; only used with UPLOAD_BY_FILE"),
             "video_url": _field("string", "Provider-reachable video URL; only used with UPLOAD_BY_URL"),
             "video_id": _field("string", "Existing TikTok video ID to bind to this advertiser"),
             "file_id": _field("string", "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID"),
+            "creative_asset_id": _field(
+                "string",
+                "Video generated into this user's private creative library",
+                minLength=32,
+                maxLength=32,
+                pattern=r"^[0-9a-f]{32}$",
+                **{
+                    "x-creative-asset": {
+                        "target_field": "file_path",
+                        "media_types": ["video/mp4"],
+                        "filename_field": "file_name",
+                        "fixed_fields": {"upload_type": "UPLOAD_BY_FILE"},
+                    },
+                },
+            ),
             "file_name": _field("string", "Optional Asset Library filename", maxLength=100),
             "upload_type": _field("string", "TikTok upload mode", enum=TIKTOK_MEDIA_UPLOAD_TYPES),
             "flaw_detect": _field("boolean", "Enable video flaw detection"),

@@ -137,12 +137,20 @@
                 const name = document.createElement('strong');
                 name.textContent = profile.name || '未命名配置';
                 const model = document.createElement('span');
-                model.textContent = profile.model || '未配置模型 ID';
+                const purposeLabels = {
+                    chat: '对话与文案',
+                    image_generation: '图片生成',
+                    video_generation: '视频生成',
+                };
+                model.textContent = `${purposeLabels[profile.purpose] || '对话与文案'} · ${profile.model || '未配置模型 ID'}`;
                 const status = document.createElement('small');
-                status.textContent = profile.active
-                    ? '当前使用'
-                    : (profile.api_key_configured ? '已配置 Key' : '未配置 Key');
+                status.textContent = profile.supported === false
+                    ? '已禁用：请更换为免费 Agnes Flash'
+                    : profile.active
+                        ? '当前使用'
+                        : (profile.api_key_configured ? '已配置 Key' : '未配置 Key');
                 activate.append(name, model, status);
+                activate.disabled = profile.supported === false;
                 activate.addEventListener('click', () => activateAgentModelProfile(profile.id));
                 row.appendChild(activate);
 
@@ -173,14 +181,123 @@
                 empty.textContent = '暂无模型配置。';
                 list.appendChild(empty);
             }
+            renderAgentMediaModelCatalog();
             if (!document.getElementById('agentModelProfileId')?.value) {
                 const active = (settings.profiles || []).find(item => item.active);
                 if (active?.source === 'vault') editAgentModelProfile(active);
                 else {
                     const form = document.getElementById('agentModelForm');
                     if (form) form.reset();
+                    updateAgentModelChoices();
                 }
             }
+        }
+
+        function renderAgentMediaModelCatalog() {
+            const list = document.getElementById('agentMediaModelCatalog');
+            if (!list) return;
+            const catalog = agentSettingsState.snapshot?.media_model_catalog || {};
+            const profiles = agentSettingsState.snapshot?.models?.profiles || [];
+            list.replaceChildren();
+            const available = Object.entries(catalog).filter(([purpose]) => {
+                const profile = profiles.find(item => item.purpose === purpose);
+                return !profile
+                    || profile.supported === false
+                    || !profile.api_key_configured;
+            });
+            if (!available.length) {
+                const configured = document.createElement('div');
+                configured.className = 'service-settings-empty';
+                configured.textContent = '图片与视频模型都已配置，可在上方列表中编辑。';
+                list.appendChild(configured);
+                return;
+            }
+            for (const [purpose, option] of available) {
+                const profile = profiles.find(item => item.purpose === purpose);
+                const row = document.createElement('div');
+                row.className = `service-settings-profile${profile?.active ? ' active' : ''}`;
+                const choose = document.createElement('button');
+                choose.className = 'service-settings-profile-main';
+                choose.type = 'button';
+                choose.addEventListener('click', () => configureMediaModel(purpose));
+                const name = document.createElement('strong');
+                name.textContent = option.name || option.model;
+                const model = document.createElement('span');
+                model.textContent = option.model || '';
+                const status = document.createElement('small');
+                status.textContent = option.availability === 'free_limited_time'
+                    ? '免费（限时）'
+                    : '免费';
+                choose.append(name, model, status);
+                row.appendChild(choose);
+                const details = document.createElement('div');
+                details.className = 'service-settings-model-catalog-status';
+                details.textContent = profile?.supported === false
+                    ? '旧配置已禁用，点击后替换为当前免费型号'
+                    : profile?.api_key_configured
+                        ? '已配置，可点击编辑'
+                        : '未配置 API Key';
+                row.appendChild(details);
+                list.appendChild(row);
+            }
+        }
+
+        function configureMediaModel(purpose) {
+            const settings = agentSettingsState.snapshot;
+            const option = settings?.media_model_catalog?.[purpose];
+            if (!option) return;
+            const existing = (settings.models?.profiles || []).find(
+                profile => profile.purpose === purpose && profile.source === 'vault',
+            );
+            if (existing) {
+                editAgentModelProfile(existing);
+            } else {
+                newAgentModelProfile();
+                document.getElementById('agentModelPurpose').value = purpose;
+                updateAgentModelChoices();
+                document.getElementById('agentModelName').value = option.name || '';
+            }
+            document.getElementById('agentModelApiKey')?.focus();
+            setAgentSettingsStatus(
+                `${option.name} 已选定。填写 Agnes API Key 后保存即可使用。`,
+            );
+        }
+
+        function updateAgentModelChoices({ preserveChatModel = false } = {}) {
+            const purpose = document.getElementById('agentModelPurpose')?.value || 'chat';
+            const model = document.getElementById('agentModelId');
+            const baseUrl = document.getElementById('agentModelBaseUrl');
+            const hint = document.getElementById('agentModelHint');
+            if (!model) return;
+            const option = agentSettingsState.snapshot?.media_model_catalog?.[purpose];
+            if (option) {
+                model.value = option.model || '';
+                model.readOnly = true;
+                model.title = '仅允许当前 Agnes 免费型号';
+                if (baseUrl) {
+                    baseUrl.value = option.base_url || '';
+                    baseUrl.placeholder = '使用 Agnes 官方 API';
+                    baseUrl.readOnly = true;
+                }
+                if (hint) {
+                    hint.textContent = option.availability === 'free_limited_time'
+                        ? '仅接入当前免费 Flash 型号；视频模型为限时免费。'
+                        : '仅接入当前最新免费 Flash 型号；收费型号不会被启用。';
+                }
+                return;
+            }
+            const wasReadOnly = model.readOnly;
+            model.readOnly = false;
+            model.title = '';
+            if (wasReadOnly && !preserveChatModel) {
+                model.value = '';
+                if (baseUrl) baseUrl.value = '';
+            }
+            if (baseUrl) {
+                baseUrl.readOnly = false;
+                baseUrl.placeholder = '留空使用 SDK 默认地址';
+            }
+            if (hint) hint.textContent = '对话模型由当前模型服务商配置。';
         }
 
         function newAgentModelProfile() {
@@ -188,6 +305,12 @@
             form?.reset();
             const profileId = document.getElementById('agentModelProfileId');
             if (profileId) profileId.value = '';
+            const purpose = document.getElementById('agentModelPurpose');
+            if (purpose) {
+                purpose.value = 'chat';
+                purpose.disabled = false;
+            }
+            updateAgentModelChoices();
             setAgentSettingsStatus('');
             document.getElementById('agentModelName')?.focus();
         }
@@ -195,9 +318,12 @@
         function editAgentModelProfile(profile) {
             document.getElementById('agentModelProfileId').value = profile.id;
             document.getElementById('agentModelName').value = profile.name || '';
+            document.getElementById('agentModelPurpose').value = profile.purpose || 'chat';
+            document.getElementById('agentModelPurpose').disabled = true;
             document.getElementById('agentModelId').value = profile.model || '';
             document.getElementById('agentModelBaseUrl').value = profile.base_url || '';
             document.getElementById('agentModelApiKey').value = '';
+            updateAgentModelChoices({ preserveChatModel: true });
             setAgentSettingsStatus('');
         }
 
@@ -210,6 +336,7 @@
             const profileId = document.getElementById('agentModelProfileId')?.value || '';
             const body = {
                 name: document.getElementById('agentModelName')?.value || '',
+                purpose: document.getElementById('agentModelPurpose')?.value || 'chat',
                 model: document.getElementById('agentModelId')?.value || '',
                 base_url: document.getElementById('agentModelBaseUrl')?.value || '',
                 api_key: document.getElementById('agentModelApiKey')?.value || '',
@@ -226,7 +353,7 @@
                 document.getElementById('agentModelApiKey').value = '';
                 document.getElementById('agentModelProfileId').value = '';
                 renderAgentModelProfiles();
-                setAgentSettingsStatus('模型配置已保存并切换。');
+                setAgentSettingsStatus('模型配置已保存并切换；对话、图片和视频模型互不影响。');
             } catch (error) {
                 setAgentSettingsStatus(error.message || '模型配置保存失败。', true);
             }

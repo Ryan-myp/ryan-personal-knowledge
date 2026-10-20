@@ -1,5 +1,5 @@
 {
-  "digest": "0aa79537728e46c6fea0d9998192d986595b6a5ae70e5478027ca2d803f98bd8",
+  "digest": "cda9f257c07ac036077fda356367b00ce3c468cee846bf51d18fa4a7bded2bd6",
   "format_version": 1,
   "platforms": {
     "agent-platform": {
@@ -2972,8 +2972,8 @@
       ]
     },
     "google-ads": {
-      "digest": "9178cbc0bc3d8c57e3b4866e6e8edb5580b29c18caa30a3695d958932e1b45ac",
-      "tool_count": 106,
+      "digest": "cd0fadcb9dda67f2f3927c2b1e9d32a0a34017a16d8c9a97011598a7579fceb0",
+      "tool_count": 107,
       "tools": [
         {
           "action": "get",
@@ -4189,7 +4189,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "b225aaf1253c61c7ea0b101599e6e900fb47954f29cb2c23ed30f61c93a6138d",
           "contract_version": "1.5.0",
-          "description": "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；默认仅生成 dry-run 计划。",
+          "description": "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP），默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -19278,6 +19278,102 @@
           "action": "upload",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
+          "contract_hash": "5f7d7db9f443ab97276ca335a4b2072b6279610c5fc09ed6e3ede4851bf102b4",
+          "contract_version": "1.5.0",
+          "description": "将当前用户创意素材库中的 PNG/JPEG 图片上传为 Google Ads Asset。仅上传素材，不创建广告；真实上传仍受账户白名单、live、确认和审计门禁控制。",
+          "effect_class": "write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "creative_asset_id": {
+                "description": "Ready image generated into this user's private creative library",
+                "maxLength": 32,
+                "minLength": 32,
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string",
+                "x-creative-asset": {
+                  "filename_field": "file_name",
+                  "media_types": [
+                    "image/png",
+                    "image/jpeg"
+                  ],
+                  "mime_type_field": "mime_type",
+                  "mime_type_values": {
+                    "image/jpeg": "IMAGE_JPEG",
+                    "image/png": "IMAGE_PNG"
+                  },
+                  "name_field": "name",
+                  "target_field": "file_path"
+                }
+              },
+              "customer_id": {
+                "description": "Google Ads customer ID",
+                "type": "string"
+              },
+              "name": {
+                "description": "Optional Google Asset name",
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "customer_id",
+              "creative_asset_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [
+            "上传 Google 图片素材",
+            "上传生成的 Google 图片"
+          ],
+          "intent_types": [
+            "upload_image_asset",
+            "upload_asset"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 16000,
+          "name": "google_upload_image_asset",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": "google_get_asset",
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan",
+            "ads.write"
+          ],
+          "resource_id_field": "asset_id",
+          "resource_type": "asset",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500,
+          "traits": [
+            "write",
+            "asset",
+            "image_asset",
+            "source_upload"
+          ]
+        },
+        {
+          "action": "upload",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "2c02a1a2932ec8e6a267fd5d0954910f77d4f6065e5504e03a4361757ff919c0",
           "contract_version": "1.5.0",
           "description": "向 Google Ads Customer Match User List 上传仅含 SHA-256 邮箱/手机号的本地 CSV/TSV；默认仅生成 dry-run 计划。",
@@ -19363,7 +19459,7 @@
       ]
     },
     "meta": {
-      "digest": "451aadbdcf6770738a3a6bd33544a423532dc03b67b601e7a48ef9b0eebd1721",
+      "digest": "8322d312dfaad0f4bfbe15d0188eb8b0645420c78be4c134af7abafcc70c5e02",
       "tool_count": 82,
       "tools": [
         {
@@ -27867,7 +27963,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "b1d4be4158a3738935cb38967f81b7dcc5b626a2e101b94bd620de91bac3c036",
+          "contract_hash": "7202a02a70ef59f2e634e80abdab320981d7e2b1be2841ca26c8a83080f2522c",
           "contract_version": "1.5.1",
           "description": "查询 Meta 广告账户已上传的图片素材。",
           "effect_class": "read",
@@ -27879,6 +27975,12 @@
             "properties": {
               "account_id": {
                 "description": "Meta ad account ID",
+                "type": "string"
+              },
+              "hash": {
+                "description": "可选：精确过滤 Meta 图片 hash",
+                "maxLength": 128,
+                "minLength": 1,
                 "type": "string"
               },
               "limit": {
@@ -27913,7 +28015,7 @@
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "hash",
           "resource_type": "image_asset",
           "result_id_fields": [],
           "result_items_key": "image_assets",
@@ -28344,7 +28446,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f8cd5f94e47633bf308aad986f0d92cd3eeeb8910a55fba728958d64b4b39c35",
+          "contract_hash": "fe169fd28041e372d1df2bfbe71e1860122e34370bacb830ea1cb13ff92ee0e7",
           "contract_version": "1.5.1",
           "description": "查询 Meta 广告账户已上传的视频素材。",
           "effect_class": "read",
@@ -28363,6 +28465,27 @@
                 "maximum": 1000,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "video_id": {
+                "description": "可选：精确过滤 Meta 视频 ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_result_key": "video_assets",
+                "lookup_tool": "meta_list_video_assets",
+                "maxLength": 128,
+                "minLength": 1,
+                "selection_label_fields": [
+                  "title",
+                  "name",
+                  "video_id",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "video_id"
+                ],
+                "type": "string"
               }
             },
             "required": [],
@@ -28390,7 +28513,7 @@
           "required_permissions": [
             "ads.read"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "video_id",
           "resource_type": "video_asset",
           "result_id_fields": [],
           "result_items_key": "video_assets",
@@ -30975,7 +31098,7 @@
           "action": "upload",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "e610b928fa229d6a3d2044cd5aa4f3d49e6ba3c93546487ac4926465222ee909",
+          "contract_hash": "07723637e375ccac7b47ce1993513f87b6e87fc46c89b22d6869ba4aacda1802",
           "contract_version": "1.5.1",
           "description": "上传可由 Meta 获取的 HTTPS 图片素材；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -30988,6 +31111,23 @@
               "account_id": {
                 "description": "Meta ad account ID",
                 "type": "string"
+              },
+              "creative_asset_id": {
+                "description": "Image generated into this user's private creative library",
+                "maxLength": 32,
+                "minLength": 32,
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string",
+                "x-creative-asset": {
+                  "content_type_field": "media_type",
+                  "filename_field": "file_name",
+                  "media_types": [
+                    "image/png",
+                    "image/jpeg"
+                  ],
+                  "name_field": "name",
+                  "target_field": "file_path"
+                }
               },
               "image_url": {
                 "description": "HTTPS URL of an image that Meta can fetch",
@@ -31008,13 +31148,16 @@
               }
             },
             "required": [
-              "account_id",
-              "image_url"
+              "account_id"
             ],
-            "requires": [
-              "image_url"
-            ],
+            "requires": [],
             "requires_any_of": [],
+            "requires_exactly_one_of": [
+              [
+                "image_url",
+                "creative_asset_id"
+              ]
+            ],
             "type": "object"
           },
           "integration_api_version": "v25.0",
@@ -31024,20 +31167,20 @@
             "upload_asset"
           ],
           "live_permission": null,
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_upload_image_asset",
           "namespace": "meta",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
-          "readback_tool": null,
+          "readback_tool": "meta_list_image_assets",
           "related_resource_id_fields": [],
           "related_resource_type": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "hash",
           "resource_type": "image_asset",
           "result_id_fields": [],
           "result_items_key": null,
@@ -31058,7 +31201,7 @@
           "action": "upload",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "72d8ffbe8da9262058883c23b6b6231eb3ed7100fc4450c1611e09bce7662d69",
+          "contract_hash": "f3bd759b47a91c91764193763cd1cad4fd7a496d4f87f5c5723dc3a7209b46f9",
           "contract_version": "1.5.1",
           "description": "上传可由 Meta 获取的 HTTPS 视频素材；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -31071,6 +31214,22 @@
               "account_id": {
                 "description": "Meta ad account ID",
                 "type": "string"
+              },
+              "creative_asset_id": {
+                "description": "Video generated into this user's private creative library",
+                "maxLength": 32,
+                "minLength": 32,
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string",
+                "x-creative-asset": {
+                  "content_type_field": "media_type",
+                  "filename_field": "file_name",
+                  "media_types": [
+                    "video/mp4"
+                  ],
+                  "name_field": "title",
+                  "target_field": "file_path"
+                }
               },
               "description": {
                 "description": "Optional video description",
@@ -31096,13 +31255,16 @@
               }
             },
             "required": [
-              "account_id",
-              "file_url"
+              "account_id"
             ],
-            "requires": [
-              "file_url"
-            ],
+            "requires": [],
             "requires_any_of": [],
+            "requires_exactly_one_of": [
+              [
+                "file_url",
+                "creative_asset_id"
+              ]
+            ],
             "type": "object"
           },
           "integration_api_version": "v25.0",
@@ -31112,20 +31274,20 @@
             "upload_asset"
           ],
           "live_permission": null,
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "meta_upload_video_asset",
           "namespace": "meta",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
-          "readback_tool": null,
+          "readback_tool": "meta_list_video_assets",
           "related_resource_id_fields": [],
           "related_resource_type": null,
           "replay_policy": "unsafe",
           "required_permissions": [
             "ads.plan"
           ],
-          "resource_id_field": null,
+          "resource_id_field": "id",
           "resource_type": "video_asset",
           "result_id_fields": [],
           "result_items_key": null,
@@ -31145,7 +31307,7 @@
       ]
     },
     "tiktok": {
-      "digest": "3db1d6819f6facdcda9425fa9a017992617231407abb0a415b84f8869d651006",
+      "digest": "a36a88e91e2b2490a0f25ef0f960e044d536e545f62e7ef5ae9d99eb6ec065db",
       "tool_count": 89,
       "tools": [
         {
@@ -49693,9 +49855,9 @@
           "action": "upload",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "fcfad3873c547567f9e75be622eb5c36a56c38158a9532c6b5cd0ee866ceb738",
+          "contract_hash": "ed06fef669616f03b9e0a65f3b86f3d53ee14c6b889b370155d51eb9992abfc2",
           "contract_version": "1.3.0",
-          "description": "上传或绑定 TikTok 广告图片素材；默认仅生成 dry-run 计划。",
+          "description": "上传或绑定 TikTok 广告图片素材，包括当前用户创意素材库中的生成图片；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -49706,6 +49868,25 @@
               "account_id": {
                 "description": "TikTok advertiser ID",
                 "type": "string"
+              },
+              "creative_asset_id": {
+                "description": "Image generated into this user's private creative library",
+                "maxLength": 32,
+                "minLength": 32,
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string",
+                "x-creative-asset": {
+                  "filename_field": "file_name",
+                  "fixed_fields": {
+                    "upload_type": "UPLOAD_BY_FILE"
+                  },
+                  "media_types": [
+                    "image/png",
+                    "image/jpeg",
+                    "image/webp"
+                  ],
+                  "target_field": "file_path"
+                }
               },
               "file_id": {
                 "description": "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID",
@@ -49744,7 +49925,8 @@
               [
                 "file_path",
                 "image_url",
-                "file_id"
+                "file_id",
+                "creative_asset_id"
               ]
             ],
             "type": "object"
@@ -49755,13 +49937,13 @@
             "upload_image"
           ],
           "live_permission": null,
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_upload_image",
           "namespace": "tiktok",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
-          "readback_tool": null,
+          "readback_tool": "tiktok_get_image",
           "related_resource_id_fields": [],
           "related_resource_type": null,
           "replay_policy": "unsafe",
@@ -49790,9 +49972,9 @@
           "action": "upload",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "59a6a004cd2f942305d1f34da00351dd24c260962a810b5efaf61b4ea93f1b47",
+          "contract_hash": "8e1e80a898b075af5746c9d237ad21895a30d524d6c3df33874a985c4970b0a0",
           "contract_version": "1.3.0",
-          "description": "上传或绑定 TikTok 广告视频素材；默认仅生成 dry-run 计划。",
+          "description": "上传或绑定 TikTok 广告视频素材，包括当前用户创意素材库中的生成视频；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -49811,6 +49993,23 @@
               "auto_fix_enabled": {
                 "description": "Automatically fix detected video flaws",
                 "type": "boolean"
+              },
+              "creative_asset_id": {
+                "description": "Video generated into this user's private creative library",
+                "maxLength": 32,
+                "minLength": 32,
+                "pattern": "^[0-9a-f]{32}$",
+                "type": "string",
+                "x-creative-asset": {
+                  "filename_field": "file_name",
+                  "fixed_fields": {
+                    "upload_type": "UPLOAD_BY_FILE"
+                  },
+                  "media_types": [
+                    "video/mp4"
+                  ],
+                  "target_field": "file_path"
+                }
               },
               "file_id": {
                 "description": "TikTok file repository ID; only used with UPLOAD_BY_FILE_ID",
@@ -49875,7 +50074,8 @@
                 "file_path",
                 "video_url",
                 "video_id",
-                "file_id"
+                "file_id",
+                "creative_asset_id"
               ]
             ],
             "type": "object"
@@ -49886,13 +50086,13 @@
             "upload_video"
           ],
           "live_permission": null,
-          "live_support": false,
+          "live_support": true,
           "max_output_bytes": 1000000,
           "name": "tiktok_upload_video",
           "namespace": "tiktok",
           "parent_resource_id_field": null,
           "parent_resource_type": null,
-          "readback_tool": null,
+          "readback_tool": "tiktok_get_video",
           "related_resource_id_fields": [],
           "related_resource_type": null,
           "replay_policy": "unsafe",
@@ -54041,5 +54241,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 314
+  "tool_count": 315
 }

@@ -67,6 +67,7 @@ class ApiContext:
     builtin_skill_catalog_getter: Callable[[], Any] | None = None
     creation_template_manager_getter: Callable[[RequestPrincipal], Any] | None = None
     chat_media_store_getter: Callable[[], Any] | None = None
+    creative_asset_store_getter: Callable[[], Any] | None = None
     settings_service_getter: Callable[[], Any] | None = None
 
     def runtime(self) -> Any:
@@ -78,6 +79,10 @@ class ApiContext:
 
     def chat_media_store(self) -> Any:
         getter = self.chat_media_store_getter
+        return getter() if callable(getter) else None
+
+    def creative_asset_store(self) -> Any:
+        getter = self.creative_asset_store_getter
         return getter() if callable(getter) else None
 
 

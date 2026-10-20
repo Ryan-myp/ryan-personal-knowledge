@@ -81,10 +81,16 @@ _WEB_SEARCH_INTENT_ALIASES = [
     "从网上查",
     "查一下最新",
     "查找最新信息",
+    "今天天气",
+    "今日天气",
+    "实时天气",
+    "天气预报",
     "web search",
     "search the web",
     "look up online",
     "internet search",
+    "weather",
+    "forecast",
 ]
 
 

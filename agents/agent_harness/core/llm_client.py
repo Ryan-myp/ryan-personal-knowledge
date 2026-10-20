@@ -109,6 +109,19 @@ _HARMONY_TOOL_MARKER = re.compile(
     r"call_argument_begin|call_end)\|>",
     re.IGNORECASE,
 )
+_TEXT_FUNCTION_NAME = re.compile(
+    r"<function=([A-Za-z0-9_.:-]{1,128})>",
+    re.IGNORECASE,
+)
+_HARMONY_CALL_NAME = re.compile(
+    r"<\|tool_call_begin\|>\s*([A-Za-z0-9_.:-]{1,128})(?=\s|<|$)",
+    re.IGNORECASE,
+)
+_HARMONY_SECTION_NAME = re.compile(
+    r"<\|tool_calls_section_begin\|>\s*"
+    r"([A-Za-z0-9_.:-]{1,128})(?=\s|<|$)",
+    re.IGNORECASE,
+)
 _GATEWAY_INVALID_USER_ID = re.compile(
     r"(?is)error_code\s*=\s*40400\b.{0,160}?"
     r"message\s*=\s*invalid_user_id\b",
@@ -357,6 +370,16 @@ class LLMClient:
                 )
                 if protocol_action in {"retry", "retry_gateway"}:
                     gateway_invalid_user_id |= protocol_action == "retry_gateway"
+                    requested_tool_choice = getattr(
+                        request, "initial_tool_choice", None,
+                    )
+                    if requested_tool_choice in (None, "auto"):
+                        targeted_choice = self._text_protocol_tool_choice(
+                            content,
+                            allowed_names,
+                        )
+                        if targeted_choice is not None:
+                            kwargs["tool_choice"] = targeted_choice
                     logger.warning(
                         "LLM returned an unexecuted Tool protocol; "
                         "retrying once through the structured Tool interface "
@@ -471,6 +494,30 @@ class LLMClient:
         if gateway_error_seen or is_gateway_error:
             return "gateway_error"
         return "protocol_error"
+
+    @staticmethod
+    def _text_protocol_tool_choice(
+        content: str,
+        allowed_names: set[str],
+    ) -> dict[str, Any] | None:
+        """Use a text protocol's exact active Tool name only as a retry hint."""
+        text = str(content or "")
+        function_names = _TEXT_FUNCTION_NAME.findall(text)
+        if function_names:
+            candidates = function_names
+        else:
+            call_names = _HARMONY_CALL_NAME.findall(text)
+            candidates = (
+                call_names
+                if call_names
+                else _HARMONY_SECTION_NAME.findall(text)
+            )
+        if len(candidates) != 1 or candidates[0] not in allowed_names:
+            return None
+        return {
+            "type": "function",
+            "function": {"name": candidates[0]},
+        }
 
     @staticmethod
     def _strip_private_think(content: str) -> str:

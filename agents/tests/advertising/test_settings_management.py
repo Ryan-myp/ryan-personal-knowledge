@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +21,24 @@ from agents.deployments.advertising.settings import (
     EncryptedSettingsVault,
     SettingsVaultError,
 )
+
+
+def test_model_settings_frontend_lists_free_media_models():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is required for browser settings regressions")
+    script = (
+        Path(__file__).parent
+        / "static"
+        / "test_chat_settings_models.js"
+    )
+    result = subprocess.run(
+        [node, "--test", str(script)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 class FakeRuntime:
@@ -183,6 +204,204 @@ def test_model_profile_can_be_activated_and_active_profile_cannot_be_deleted(tmp
     with pytest.raises(ValueError, match="active"):
         service.delete_model_profile(first)
     service.delete_model_profile(second)
+
+
+def test_media_model_profiles_do_not_replace_the_chat_model(tmp_path):
+    service, runtime, _vault, clients = make_service(tmp_path)
+    chat_profile = service.save_model_profile(
+        name="Chat",
+        model="chat-model",
+        base_url="https://llm.example/v1",
+        api_key="chat-key",
+    )
+    chat_client = runtime.llm
+
+    image_profile = service.save_model_profile(
+        name="Image",
+        model="agnes-image-2.5-flash",
+        base_url="https://apihub.agnes-ai.com/v1",
+        api_key="image-key",
+        purpose="image_generation",
+    )
+    video_profile = service.save_model_profile(
+        name="Video",
+        model="agnes-video-2.5-flash",
+        base_url="https://apihub.agnes-ai.com/v1",
+        api_key="video-key",
+        purpose="video_generation",
+    )
+
+    assert runtime.llm is chat_client
+    assert len(clients) == 1
+    assert service.active_model_configuration()["model"] == "chat-model"
+    assert service.model_configuration_for("image_generation") == {
+        "name": "Image",
+        "model": "agnes-image-2.5-flash",
+        "base_url": "https://apihub.agnes-ai.com/v1",
+        "api_key": "image-key",
+    }
+    assert service.model_configuration_for("video_generation")["model"] == (
+        "agnes-video-2.5-flash"
+    )
+    models = service.snapshot()["models"]
+    assert models["active_profiles"] == {
+        "chat": chat_profile,
+        "image_generation": image_profile,
+        "video_generation": video_profile,
+    }
+    assert "image-key" not in repr(models)
+    assert "video-key" not in repr(models)
+
+
+def test_model_profiles_cannot_change_purpose_or_delete_while_active(tmp_path):
+    service, _runtime, _vault, _clients = make_service(tmp_path)
+    profile_id = service.save_model_profile(
+        name="Image",
+        model="agnes-image-2.5-flash",
+        base_url="https://apihub.agnes-ai.com/v1",
+        api_key="image-key",
+        purpose="image_generation",
+    )
+
+    with pytest.raises(ValueError, match="purpose"):
+        service.save_model_profile(
+            profile_id=profile_id,
+            name="Image",
+            model="agnes-image-2.5-flash",
+            base_url="https://apihub.agnes-ai.com/v1",
+            api_key="",
+            purpose="video_generation",
+        )
+    with pytest.raises(ValueError, match="active"):
+        service.delete_model_profile(profile_id)
+
+
+@pytest.mark.parametrize(
+    ("purpose", "model"),
+    [
+        ("image_generation", "agnes-image-2.5"),
+        ("image_generation", "custom-image-model"),
+        ("video_generation", "agnes-video-2.5"),
+        ("video_generation", "custom-video-model"),
+    ],
+)
+def test_media_model_profiles_reject_paid_or_unapproved_models(
+    tmp_path,
+    purpose,
+    model,
+):
+    service, runtime, vault, clients = make_service(tmp_path)
+
+    with pytest.raises(ValueError, match="free Agnes"):
+        service.save_model_profile(
+            name="Unsupported media model",
+            model=model,
+            base_url="https://apihub.agnes-ai.com/v1",
+            api_key="media-key",
+            purpose=purpose,
+        )
+
+    assert runtime.llm is None
+    assert vault.read() == {}
+    assert clients == []
+
+
+def test_media_model_profile_defaults_to_official_endpoint_and_catalog_is_public(
+    tmp_path,
+):
+    service, _runtime, _vault, _clients = make_service(tmp_path)
+
+    service.save_model_profile(
+        name="Image",
+        model="agnes-image-2.5-flash",
+        base_url="",
+        api_key="image-key",
+        purpose="image_generation",
+    )
+
+    snapshot = service.snapshot()
+    assert service.model_configuration_for("image_generation")["base_url"] == (
+        "https://apihub.agnes-ai.com/v1"
+    )
+    assert snapshot["media_model_catalog"] == {
+        "image_generation": {
+            "model": "agnes-image-2.5-flash",
+            "name": "Agnes Image 2.5 Flash",
+            "availability": "free",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+        },
+        "video_generation": {
+            "model": "agnes-video-2.5-flash",
+            "name": "Agnes Video 2.5 Flash",
+            "availability": "free_limited_time",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+        },
+    }
+
+
+def test_media_model_profile_rejects_non_agnes_endpoint(tmp_path):
+    service, runtime, vault, clients = make_service(tmp_path)
+
+    with pytest.raises(ValueError, match="official Agnes API URL"):
+        service.save_model_profile(
+            name="Image",
+            model="agnes-image-2.5-flash",
+            base_url="https://proxy.example/v1",
+            api_key="image-key",
+            purpose="image_generation",
+        )
+
+    assert runtime.llm is None
+    assert vault.read() == {}
+    assert clients == []
+
+
+def test_legacy_paid_media_profile_is_disabled_and_cannot_be_activated(tmp_path):
+    service, _runtime, vault, _clients = make_service(tmp_path)
+    profile_id = service.save_model_profile(
+        name="Image",
+        model="agnes-image-2.5-flash",
+        base_url="",
+        api_key="image-key",
+        purpose="image_generation",
+    )
+    state = vault.read()
+    state["models"][0]["model"] = "agnes-image-2.5"
+    vault.write(state)
+
+    assert service.model_configuration_for("image_generation") == {}
+    profile = next(
+        item for item in service.snapshot()["models"]["profiles"]
+        if item["id"] == profile_id
+    )
+    assert profile["supported"] is False
+    with pytest.raises(ValueError, match="free Agnes"):
+        service.activate_model_profile(profile_id)
+
+
+def test_legacy_model_profiles_remain_chat_profiles(tmp_path):
+    service, runtime, _vault, clients = make_service(tmp_path)
+    profile_id = service.save_model_profile(
+        name="Legacy Chat",
+        model="chat-model",
+        base_url="https://llm.example/v1",
+        api_key="chat-key",
+    )
+    state = service.vault.read()
+    state["models"][0].pop("purpose")
+    state.pop("active_model_profiles", None)
+    service.vault.write(state)
+    previous_client = runtime.llm
+
+    assert service.model_configuration_for("chat")["model"] == "chat-model"
+    assert service.model_configuration_for("image_generation") == {}
+    assert service.snapshot()["models"]["active_profiles"] == {
+        "chat": profile_id,
+        "image_generation": None,
+        "video_generation": None,
+    }
+    assert runtime.llm is previous_client
+    assert len(clients) == 1
 
 
 @pytest.mark.parametrize(
@@ -372,6 +591,40 @@ def test_settings_api_requires_permission_and_never_echoes_secret(tmp_path):
     assert "private-api-token" not in response.text
     assert runtime.credentials["meta"]["access_token"] == "private-api-token"
     assert b"private-api-token" not in vault.path.read_bytes()
+
+    settings_response = client.get(
+        "/settings",
+        headers={"X-API-Key": "trusted-key"},
+    )
+    assert settings_response.status_code == 200
+    assert settings_response.json()["media_model_catalog"]["image_generation"][
+        "model"
+    ] == "agnes-image-2.5-flash"
+
+    paid_model_response = client.post(
+        "/settings/models",
+        headers={"X-API-Key": "trusted-key"},
+        json={
+            "name": "Paid image",
+            "purpose": "image_generation",
+            "model": "agnes-image-2.5",
+            "api_key": "private-media-key",
+        },
+    )
+    assert paid_model_response.status_code == 422
+
+    media_model_response = client.post(
+        "/settings/models",
+        headers={"X-API-Key": "trusted-key"},
+        json={
+            "name": "Free image",
+            "purpose": "image_generation",
+            "model": "agnes-image-2.5-flash",
+            "api_key": "private-media-key",
+        },
+    )
+    assert media_model_response.status_code == 200
+    assert "private-media-key" not in media_model_response.text
 
     denied_context = ApiContext(
         runtime_getter=lambda: runtime,

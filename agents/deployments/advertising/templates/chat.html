@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20261019-shared-access-v1">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20261020-creative-media-v1">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -240,11 +240,15 @@
                         <aside class="service-settings-list-panel">
                             <div class="service-settings-section-heading"><strong>配置列表</strong><button class="btn btn-secondary" type="button" onclick="newAgentModelProfile()">新建</button></div>
                             <div class="service-settings-profile-list" id="agentModelProfileList"></div>
+                            <div class="service-settings-section-heading"><strong>可添加的免费创意模型</strong></div>
+                            <div class="service-settings-profile-list" id="agentMediaModelCatalog"></div>
                         </aside>
                         <form class="service-settings-form" id="agentModelForm" onsubmit="saveAgentModelProfile(event)">
                             <input id="agentModelProfileId" type="hidden">
                             <label>配置名称<input id="agentModelName" type="text" maxlength="80" required placeholder="例如：主模型"></label>
+                            <label>模型用途<select id="agentModelPurpose" onchange="updateAgentModelChoices()"><option value="chat">对话与文案</option><option value="image_generation">图片生成</option><option value="video_generation">视频生成</option></select></label>
                             <label>模型 ID<input id="agentModelId" type="text" maxlength="160" required placeholder="例如：agnes-3.0-flash"></label>
+                            <small class="service-settings-model-hint" id="agentModelHint"></small>
                             <label>兼容接口 Base URL<input id="agentModelBaseUrl" type="url" maxlength="2048" placeholder="留空使用 SDK 默认地址"></label>
                             <label>模型 API Key<input id="agentModelApiKey" type="password" maxlength="8192" autocomplete="new-password" placeholder="已保存配置留空表示不轮换"></label>
                             <div class="service-settings-form-actions">
@@ -793,6 +797,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20261019-shared-access-v1" defer></script>
+    <script src="/static/js/chat.js?v=20261020-creative-media-v1" defer></script>
 </body>
 </html>

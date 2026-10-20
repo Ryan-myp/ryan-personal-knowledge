@@ -34,6 +34,7 @@ from .parameters import (
     google_app_ad_schema, google_shopping_product_ad_schema, google_ad_schema,
     google_asset_schema, google_asset_create_schema, google_campaign_asset_schema,
     google_asset_group_asset_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
+    google_generated_image_upload_schema,
     google_product_group_schema, google_responsive_display_ad_schema,
     google_video_ad_schema, google_campaign_budget_schema,
     google_demand_gen_multi_asset_ad_schema, google_demand_gen_carousel_ad_schema,
@@ -285,7 +286,8 @@ class GoogleToolSource(BaseProviderToolSource):
         "delete_ad_group": ["google_delete_ad_group"], "delete_ad": ["google_delete_ad"],
         "list_keywords": ["google_list_keywords"], "list_asset_groups": ["google_list_asset_groups"],
         "list_assets": ["google_list_assets"], "get_asset": ["google_get_asset"],
-        "create_asset": ["google_create_asset"], "delete_asset": ["google_delete_asset"],
+        "create_asset": ["google_create_asset", "google_upload_image_asset"],
+        "delete_asset": ["google_delete_asset"],
         "list_campaign_assets": ["google_list_campaign_assets"],
         "create_campaign_asset": ["google_create_campaign_asset"],
         "delete_campaign_asset": ["google_delete_campaign_asset"],
@@ -431,6 +433,7 @@ class GoogleToolSource(BaseProviderToolSource):
         }
         asset_schema = google_asset_schema()
         asset_create_schema = google_asset_create_schema()
+        generated_image_schema = google_generated_image_upload_schema()
         campaign_asset_schema = google_campaign_asset_schema()
         asset_group_asset_schema = google_asset_group_asset_schema()
         asset_group_schema = google_asset_group_schema()
@@ -698,7 +701,7 @@ class GoogleToolSource(BaseProviderToolSource):
                 namespace="google-ads", skill="google-ads-api-expert",
                 name="google_create_asset",
                 description=(
-                    "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP）；"
+                    "创建 Google Ads 可复用 Asset（文本、图片、YouTube 视频或 HTML5 ZIP），"
                     "默认仅生成 dry-run 计划。"
                 ),
                 method_name="create_asset", result_key="asset_id",
@@ -711,11 +714,42 @@ class GoogleToolSource(BaseProviderToolSource):
                 argument_builder=lambda _ctx, data: (({
                     key: data.get(key)
                     for key in (
-                        "asset_type", "name", "text", "file_path", "mime_type",
+                        "asset_type", "name", "text", "file_path",
+                        "mime_type",
                         "youtube_video_id", "youtube_video_title", "final_urls",
                         "final_mobile_urls", "tracking_url_template", "final_url_suffix",
                     )
                     if data.get(key) is not None
+                },), {}),
+                live_support=False,
+            ),
+            method_tool(
+                namespace="google-ads", skill="google-ads-api-expert",
+                name="google_upload_image_asset",
+                description=(
+                    "将当前用户创意素材库中的 PNG/JPEG 图片上传为 Google Ads Asset。"
+                    "仅上传素材，不创建广告；真实上传仍受账户白名单、live、确认和审计门禁控制。"
+                ),
+                method_name="create_asset", result_key="asset_id",
+                properties=generated_image_schema["properties"],
+                required=generated_image_schema["required"],
+                action="upload", resource_type="asset",
+                resource_id_field="asset_id",
+                intent_types=["upload_image_asset", "upload_asset"],
+                intent_aliases=["上传 Google 图片素材", "上传生成的 Google 图片"],
+                traits=["write", "asset", "image_asset", "source_upload"],
+                write=True,
+                live_support=True,
+                required_permissions=["ads.plan", "ads.write"],
+                timeout_seconds=500,
+                max_output_bytes=16_000,
+                readback_tool="google_get_asset",
+                argument_builder=lambda _ctx, data: (({
+                    "asset_type": "IMAGE",
+                    "file_path": data["file_path"],
+                    "file_name": data["file_name"],
+                    "mime_type": data["mime_type"],
+                    "name": data.get("name"),
                 },), {}),
             ),
             method_tool(

@@ -33,9 +33,9 @@ _READ_ACTION_CUES = tuple(
     cue for cue in _READ_CUES if cue not in {"which", "what", "available"}
 )
 _WRITE_CUES = (
-    "create", "update", "delete", "pause", "enable", "disable", "launch",
+    "create", "generate", "update", "delete", "pause", "enable", "disable", "launch",
     "submit", "save", "publish", "edit", "change", "modify", "set",
-    "创建", "新建", "更新", "修改", "删除", "暂停", "启用", "停用",
+    "创建", "新建", "生成", "更新", "修改", "删除", "暂停", "启用", "停用",
     "上线", "提交", "保存", "发布", "设置", "调整",
 )
 _WRITE_NEGATIONS = (
@@ -281,6 +281,15 @@ def _is_knowledge_tool(tool: Any) -> bool:
     return "knowledge" in normalized_traits or resource == "knowledge"
 
 
+def _is_web_search_tool(tool: Any) -> bool:
+    traits = _tool_field(tool, "traits", ()) or ()
+    if isinstance(traits, str):
+        traits = (traits,)
+    return "web_search" in {
+        str(item).strip().casefold() for item in traits
+    }
+
+
 def _matches_tool_alias(text: str, tool: Any) -> bool:
     normalized = str(text or "").casefold()
     aliases = _tool_field(tool, "intent_aliases", ()) or ()
@@ -290,6 +299,20 @@ def _matches_tool_alias(text: str, tool: Any) -> bool:
         len(alias_text := str(alias).strip()) >= 3
         and alias_text.casefold() in normalized
         for alias in aliases
+    )
+
+
+def _matches_short_cjk_alias(text: str, tool: Any) -> bool:
+    """Match publisher-declared two-character CJK aliases without fuzzy terms."""
+    normalized = str(text or "").casefold()
+    aliases = _tool_field(tool, "intent_aliases", ()) or ()
+    if isinstance(aliases, str):
+        aliases = (aliases,)
+    return any(
+        re.fullmatch(r"[\u3400-\u9fff]{2}", alias_text)
+        and alias_text.casefold() in normalized
+        for alias in aliases
+        if (alias_text := str(alias).strip())
     )
 
 
@@ -591,6 +614,11 @@ class ToolSelector:
             if _is_read_tool(tool)
             and _matches_tool_alias(text, tool)
         ]
+        explicitly_aliased_writes = [
+            tool for tool in (available_tools or ())
+            if not _is_read_tool(tool)
+            and _matches_short_cjk_alias(text, tool)
+        ]
         explicitly_aliased_knowledge = [
             tool for tool in explicitly_aliased_reads
             if _is_knowledge_tool(tool)
@@ -613,6 +641,11 @@ class ToolSelector:
             candidates = explicitly_named
         elif explicitly_aliased_knowledge:
             candidates = explicitly_aliased_knowledge
+        elif (
+            len(explicitly_aliased_writes) == 1
+            and _has_unnegated_write_cue(verb_text)
+        ):
+            candidates = explicitly_aliased_writes
         elif explicitly_aliased_transform:
             candidates = explicitly_aliased_transform
         elif contextual_knowledge and _is_knowledge_followup(text):
@@ -755,6 +788,18 @@ class ToolSelector:
         )) and any(cue in text for cue in (
             "刚才", "之前", "上述", "previous", "earlier",
         ))
+        web_search_match = any(
+            _is_read_tool(tool)
+            and _is_web_search_tool(tool)
+            and _matches_tool_alias(text, tool)
+            for tool in (selected_tools or ())
+        )
+        if web_search_match and not historical_summary:
+            if any(cue in text for cue in (
+                "支持", "能力", "capabilities", "support",
+            )):
+                return False
+            return True
         if historical_summary or not (write_request or read_request):
             return False
         terms = _terms(user_input)

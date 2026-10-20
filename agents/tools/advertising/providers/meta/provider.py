@@ -497,13 +497,25 @@ class MetaToolSource(BaseProviderToolSource):
                 name="meta_list_image_assets",
                 description="查询 Meta 广告账户已上传的图片素材。",
                 method_name="list_image_assets", result_key="image_assets",
-                properties={key: image_asset_schema["properties"][key]
-                            for key in ("account_id", "limit")},
+                properties={
+                    **{
+                        key: image_asset_schema["properties"][key]
+                        for key in ("account_id", "limit")
+                    },
+                    "hash": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "description": "可选：精确过滤 Meta 图片 hash",
+                    },
+                },
                 required=["account_id"], action="list", resource_type="image_asset",
+                resource_id_field="hash", result_items_key="image_assets",
                 intent_types=["list_image_assets", "list_assets"],
                 traits=["read", "creative", "image_asset"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "limit": data.get("limit", 25),
+                    "image_hash": data.get("hash"),
                 }),
             ),
             method_tool(
@@ -513,11 +525,21 @@ class MetaToolSource(BaseProviderToolSource):
                 method_name="upload_image_asset", result_key="image_asset",
                 properties=image_asset_schema["properties"],
                 required=image_asset_schema["upload_required"],
-                requires=["image_url"], action="upload", resource_type="image_asset",
+                requires_exactly_one_of=(
+                    image_asset_schema["upload_requires_exactly_one_of"]
+                ),
+                action="upload", resource_type="image_asset",
+                resource_id_field="hash",
                 intent_types=["upload_image_asset", "upload_asset"],
-                traits=["write", "creative", "image_asset"], write=True, live_support=False,
+                traits=["write", "creative", "image_asset"], write=True,
+                live_support=True,
+                readback_tool="meta_list_image_assets",
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
-                    key: data[key] for key in ("image_url", "name") if key in data
+                    key: data[key]
+                    for key in (
+                        "image_url", "file_path", "file_name", "media_type", "name",
+                    )
+                    if key in data
                 }), {}),
             ),
             method_tool(
@@ -525,13 +547,25 @@ class MetaToolSource(BaseProviderToolSource):
                 name="meta_list_video_assets",
                 description="查询 Meta 广告账户已上传的视频素材。",
                 method_name="list_video_assets", result_key="video_assets",
-                properties={key: video_asset_schema["properties"][key]
-                            for key in ("account_id", "limit")},
+                properties={
+                    **{
+                        key: video_asset_schema["properties"][key]
+                        for key in ("account_id", "limit")
+                    },
+                    "video_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128,
+                        "description": "可选：精确过滤 Meta 视频 ID",
+                    },
+                },
                 required=["account_id"], action="list", resource_type="video_asset",
+                resource_id_field="video_id", result_items_key="video_assets",
                 intent_types=["list_video_assets", "list_assets"],
                 traits=["read", "creative", "video_asset"],
                 argument_builder=lambda ctx, data: ((account(ctx, data),), {
                     "limit": data.get("limit", 25),
+                    "video_id": data.get("video_id"),
                 }),
             ),
             method_tool(
@@ -541,11 +575,22 @@ class MetaToolSource(BaseProviderToolSource):
                 method_name="upload_video_asset", result_key="video_asset",
                 properties=video_asset_schema["properties"],
                 required=video_asset_schema["upload_required"],
-                requires=["file_url"], action="upload", resource_type="video_asset",
+                requires_exactly_one_of=(
+                    video_asset_schema["upload_requires_exactly_one_of"]
+                ),
+                action="upload", resource_type="video_asset",
+                resource_id_field="id",
                 intent_types=["upload_video_asset", "upload_asset"],
-                traits=["write", "creative", "video_asset"], write=True, live_support=False,
+                traits=["write", "creative", "video_asset"], write=True,
+                live_support=True,
+                readback_tool="meta_list_video_assets",
                 argument_builder=lambda ctx, data: ((account(ctx, data), {
-                    key: data[key] for key in ("file_url", "title", "description") if key in data
+                    key: data[key]
+                    for key in (
+                        "file_url", "file_path", "file_name", "media_type",
+                        "title", "description",
+                    )
+                    if key in data
                 }), {}),
             ),
             method_tool(

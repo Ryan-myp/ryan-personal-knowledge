@@ -783,10 +783,29 @@ def meta_image_asset_schema() -> dict[str, Any]:
                 "string", "HTTPS URL of an image that Meta can fetch",
                 minLength=1, maxLength=2048,
             ),
+            "creative_asset_id": _field(
+                "string",
+                "Image generated into this user's private creative library",
+                minLength=32,
+                maxLength=32,
+                pattern=r"^[0-9a-f]{32}$",
+                **{
+                    "x-creative-asset": {
+                        "target_field": "file_path",
+                        "media_types": ["image/png", "image/jpeg"],
+                        "filename_field": "file_name",
+                        "content_type_field": "media_type",
+                        "name_field": "name",
+                    },
+                },
+            ),
             "name": _field("string", "Optional image asset name", maxLength=400),
             "limit": _field("integer", "Maximum number of image assets", minimum=1, maximum=1000),
         },
-        "upload_required": ["account_id", "image_url"],
+        "upload_required": ["account_id"],
+        "upload_requires_exactly_one_of": [
+            ["image_url", "creative_asset_id"],
+        ],
     }
 
 
@@ -799,11 +818,30 @@ def meta_video_asset_schema() -> dict[str, Any]:
                 "string", "HTTPS URL of a video file that Meta can fetch",
                 minLength=1, maxLength=2048,
             ),
+            "creative_asset_id": _field(
+                "string",
+                "Video generated into this user's private creative library",
+                minLength=32,
+                maxLength=32,
+                pattern=r"^[0-9a-f]{32}$",
+                **{
+                    "x-creative-asset": {
+                        "target_field": "file_path",
+                        "media_types": ["video/mp4"],
+                        "filename_field": "file_name",
+                        "content_type_field": "media_type",
+                        "name_field": "title",
+                    },
+                },
+            ),
             "title": _field("string", "Optional video title", maxLength=400),
             "description": _field("string", "Optional video description", maxLength=2000),
             "limit": _field("integer", "Maximum number of video assets", minimum=1, maximum=1000),
         },
-        "upload_required": ["account_id", "file_url"],
+        "upload_required": ["account_id"],
+        "upload_requires_exactly_one_of": [
+            ["file_url", "creative_asset_id"],
+        ],
     }
 
 

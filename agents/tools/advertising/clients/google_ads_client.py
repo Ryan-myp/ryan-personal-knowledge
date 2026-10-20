@@ -3491,9 +3491,22 @@ class GoogleAdsAPIClient(BasePlatformClient):
         raise APIError(f"Google asset {asset_id} was not found")
 
     @classmethod
-    def _read_asset_file(cls, file_path: str, *, allowed_suffixes: set[str]) -> bytes:
+    def _read_asset_file(
+        cls,
+        file_path: str,
+        *,
+        allowed_suffixes: set[str],
+        file_name: str | None = None,
+    ) -> bytes:
         path = Path(str(file_path or "")).expanduser()
-        if path.suffix.lower() not in allowed_suffixes:
+        declared_suffix = Path(str(file_name or "")).suffix.lower()
+        if (
+            path.suffix.lower() not in allowed_suffixes
+            and not (
+                path.suffix.lower() == ".bin"
+                and declared_suffix in allowed_suffixes
+            )
+        ):
             suffixes = ", ".join(sorted(allowed_suffixes))
             raise ValueError(f"file_path must use one of: {suffixes}")
         if not path.is_file():
@@ -3569,7 +3582,18 @@ class GoogleAdsAPIClient(BasePlatformClient):
                     "IMAGE_GIF": {".gif"},
                     "IMAGE_PNG": {".png"},
                 }[mime_type]
-                raw = self._read_asset_file(file_path, allowed_suffixes=suffixes)
+                raw = self._read_asset_file(
+                    file_path,
+                    allowed_suffixes=suffixes,
+                    file_name=asset.get("file_name"),
+                )
+                signatures = {
+                    "IMAGE_JPEG": lambda value: value.startswith(b"\xff\xd8\xff"),
+                    "IMAGE_GIF": lambda value: value.startswith((b"GIF87a", b"GIF89a")),
+                    "IMAGE_PNG": lambda value: value.startswith(b"\x89PNG\r\n\x1a\n"),
+                }
+                if not signatures[mime_type](raw):
+                    raise ValueError("image file content does not match mime_type")
                 payload["imageAsset"] = {
                     "data": base64.b64encode(raw).decode("ascii"),
                     "fileSize": len(raw),

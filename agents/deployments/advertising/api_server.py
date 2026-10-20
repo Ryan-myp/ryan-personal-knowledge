@@ -61,6 +61,9 @@ from agents.agent_platform.management.skill_management import (
     ManagedSkillManager,
 )
 from agents.applications.advertising.persistence.factory import create_persistence_store
+from agents.agent_platform.infrastructure.durable.filesystem_asset_store import (
+    FilesystemCreativeAssetStore,
+)
 from agents.deployments.advertising.api.security import RequestAuthorizer
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.chat_media import ChatMediaStore
@@ -72,6 +75,9 @@ from agents.deployments.advertising.api.routes.sessions import create_sessions_r
 from agents.deployments.advertising.api.routes.tasks import create_tasks_router
 from agents.deployments.advertising.api.routes.workflows import create_workflows_router
 from agents.deployments.advertising.api.routes.settings import create_settings_router
+from agents.deployments.advertising.api.routes.creative import (
+    create_creative_router,
+)
 from agents.deployments.advertising.api.models import (
     ExecutionModeRequest,
 )
@@ -80,6 +86,7 @@ from agents.deployments.advertising.settings import (
     EncryptedSettingsVault,
 )
 from agents.agent_platform.tools import web_search_tool_source
+from agents.tools.creative_media.source import creative_media_tool_source
 from agents.applications.advertising.creation.templates import (
     creation_template_manager_for_runtime,
 )
@@ -117,6 +124,7 @@ builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 # 全局 runtime
 runtime: Optional[AdvertisingApplication] = None
 settings_service: Optional[AgentSettingsService] = None
+creative_asset_store: Optional[FilesystemCreativeAssetStore] = None
 mcp_manager: Optional[MCPServerManager] = None
 runtime_mcp_servers: Optional[RuntimeMCPServers] = None
 runtime_mcp_servers_app = None
@@ -230,7 +238,7 @@ def _require_principal_permission(principal: RequestPrincipal, permission: str) 
 
 
 def _init_runtime():
-    global runtime, settings_service
+    global runtime, settings_service, creative_asset_store
     runtime_status.update({"state": "initializing", "error": None})
     try:
         # Load the YAML once and make the execution contract explicit.  The
@@ -279,7 +287,7 @@ def _init_runtime():
                     "granted_permissions",
                     [
                         "ads.read", "ads.plan", "knowledge.read", "knowledge.write",
-                        "mcp.read", "mcp.manage",
+                        "mcp.read", "mcp.manage", "creative.generate",
                     ],
                 ) or []
             ),
@@ -357,6 +365,25 @@ def _init_runtime():
         runtime.assert_llm_ready()
         active_settings_service.configure(runtime=runtime)
         settings_service = active_settings_service
+        creative_store_root = Path(os.environ.get(
+            "AD_AGENT_CREATIVE_ASSET_PATH",
+            project_root / "agents" / "ad_agent" / "creative_assets",
+        )).expanduser().resolve()
+        creative_asset_store = FilesystemCreativeAssetStore(creative_store_root)
+        runtime.creative_asset_store = creative_asset_store
+        creative_source = creative_media_tool_source(
+            configuration_provider=(
+                active_settings_service.model_configuration_for
+            ),
+            asset_store=creative_asset_store,
+        )
+        runtime.register_tool_source(creative_source)
+        runtime._register_builtin_plugin(
+            creative_source.source_id,
+            creative_source,
+            (PluginKind.TOOL_SOURCE.value,),
+            description="Built-in identity-scoped image and video generation Tools",
+        )
         web_search_source = web_search_tool_source(
             configuration_provider=(
                 active_settings_service.web_search_configuration
@@ -418,6 +445,7 @@ def _init_runtime():
     except Exception as e:
         runtime = None
         settings_service = None
+        creative_asset_store = None
         runtime_status.update({"state": "failed", "error": f"{type(e).__name__}: {e}"})
         logger.exception("ad-agent Runtime 初始化失败")
         return None
@@ -775,6 +803,7 @@ _chat_api_context = ApiContext(
     builtin_skill_catalog_getter=lambda: builtin_skill_catalog,
     creation_template_manager_getter=_creation_template_manager_for_principal,
     chat_media_store_getter=lambda: chat_media_store,
+    creative_asset_store_getter=lambda: creative_asset_store,
     settings_service_getter=lambda: settings_service,
 )
 app.include_router(create_chat_router(_chat_api_context))
@@ -785,6 +814,7 @@ app.include_router(create_sessions_router(_chat_api_context))
 app.include_router(create_tasks_router(_chat_api_context))
 app.include_router(create_workflows_router(_chat_api_context))
 app.include_router(create_settings_router(_chat_api_context))
+app.include_router(create_creative_router(_chat_api_context))
 
 
 # FastMCP's own streamable HTTP endpoint is mounted after the FastAPI routes

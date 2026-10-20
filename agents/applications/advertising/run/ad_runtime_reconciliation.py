@@ -56,9 +56,25 @@ class AdvertisingRuntimeReconciliation:
         platform: str,
         runtime: Any,
     ) -> bool:
+        action = str(getattr(candidate, "action", "") or "")
+        identity_field = str(
+            getattr(candidate, "resource_id_field", "") or ""
+        ).strip()
+        properties = getattr(
+            getattr(candidate, "input_schema", None),
+            "properties",
+            {},
+        )
+        list_is_identity_filtered = (
+            action == "list"
+            and bool(identity_field)
+            and isinstance(properties, dict)
+            and identity_field in properties
+            and bool(getattr(candidate, "result_items_key", None))
+        )
         return bool(
             candidate.is_read_tool
-            and candidate.action == "get"
+            and (action == "get" or list_is_identity_filtered)
             and candidate.resource_type == write_definition.resource_type
             and candidate.parent_resource_type
             == write_definition.parent_resource_type

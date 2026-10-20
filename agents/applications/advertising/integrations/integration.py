@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import copy
+import re
+from pathlib import Path
 from typing import Any, Mapping
 
 from agents.agent_harness import (
@@ -11,7 +13,8 @@ from agents.agent_harness import (
     StaticToolSource,
     ToolBinding,
 )
-from agents.agent_harness.core.interfaces import ToolResult
+from agents.agent_harness.core.interfaces import ToolError, ToolResult
+from agents.tools.creative_media.contracts import CreativeAssetStore
 from agents.tools.advertising.shared.domain.account_scope import tool_call_accounts
 from .ad_capability_catalog import AdvertisingCapabilityCatalog
 from .ad_turn_context import AdTurnContextService
@@ -615,6 +618,11 @@ class AdvertisingToolExecutor:
         self, request: Any, request_context: Mapping[str, Any],
         session: Any, input_data: Mapping[str, Any],
     ) -> ToolResult:
+        provider_input, asset_paths, asset_error = (
+            self._creative_asset_arguments(request, input_data)
+        )
+        if asset_error:
+            return ToolResult.error(asset_error)
         if self._is_dry_run_write(request):
             return self.owner._simulate_write(
                 self.definition, dict(input_data),
@@ -641,8 +649,9 @@ class AdvertisingToolExecutor:
             "lease_lost_event": request.lease_lost_event,
         }
         result = self.owner.tool_executor.execute(
-            tool_context, self.definition.name, dict(input_data), clients,
+            tool_context, self.definition.name, provider_input, clients,
         )
+        result = _scrub_creative_asset_paths(result, asset_paths)
         result = self.owner.security.filter_account_discovery_result(
             self.definition,
             result,
@@ -664,6 +673,154 @@ class AdvertisingToolExecutor:
                 "requires_reconciliation": True, "effect_state": "unknown",
             }
         return result
+
+    def _creative_asset_arguments(
+        self,
+        request: Any,
+        input_data: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], tuple[str, ...], str]:
+        """Resolve only Tool-declared asset references under trusted identity."""
+        arguments = dict(input_data)
+        properties = getattr(self.definition.input_schema, "properties", {})
+        declarations = [
+            (name, schema["x-creative-asset"])
+            for name, schema in properties.items()
+            if isinstance(schema, Mapping)
+            and isinstance(schema.get("x-creative-asset"), Mapping)
+            and arguments.get(name) not in (None, "")
+        ]
+        if not declarations:
+            for name, schema in properties.items():
+                if (
+                    not isinstance(schema, Mapping)
+                    or not isinstance(schema.get("x-creative-asset"), Mapping)
+                ):
+                    continue
+                target_field = str(
+                    schema["x-creative-asset"].get("target_field") or "",
+                ).strip()
+                if target_field and arguments.get(target_field) not in (None, ""):
+                    return {}, (), (
+                        "服务器本地路径不接受对话输入，请从当前用户的创意素材库选择素材。"
+                    )
+            return arguments, (), ""
+        if len(declarations) != 1:
+            return {}, (), "一次素材上传只能选择一个创意素材。"
+
+        asset_field, raw_declaration = declarations[0]
+        asset_id = str(arguments.get(asset_field) or "").strip()
+        if not re.fullmatch(r"[0-9a-f]{32}", asset_id):
+            return {}, (), "创意素材 ID 无效，请从素材库重新选择。"
+        declaration = dict(raw_declaration)
+        target_field = str(declaration.get("target_field") or "").strip()
+        if (
+            not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", target_field)
+            or target_field != "file_path"
+        ):
+            return {}, (), "当前上传 Tool 的素材映射配置无效。"
+        if arguments.get(target_field) not in (None, ""):
+            return {}, (), "请只选择素材库素材或本地文件中的一种来源。"
+
+        principal = getattr(request, "principal", None)
+        tenant_id = str(getattr(principal, "tenant_id", "") or "").strip()
+        user_id = str(getattr(principal, "user_id", "") or "").strip()
+        if not tenant_id or not user_id:
+            return {}, (), "素材上传缺少可信的用户或租户身份。"
+        store: CreativeAssetStore | None = getattr(
+            self.owner, "creative_asset_store", None,
+        )
+        if store is None:
+            return {}, (), "创意素材存储未初始化。"
+        try:
+            asset = store.get(
+                asset_id,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                include_content=False,
+            )
+        except (FileNotFoundError, OSError, ValueError):
+            return {}, (), "创意素材不存在、尚未完成生成或无权访问。"
+
+        metadata = asset.metadata
+        media_types = declaration.get("media_types")
+        media_type = str(metadata.get("media_type") or "").lower()
+        if (
+            metadata.get("asset_id") != asset_id
+            or metadata.get("status") != "ready"
+            or not isinstance(media_types, list)
+            or media_type not in media_types
+        ):
+            return {}, (), "所选素材类型或状态不符合当前平台上传要求。"
+        path = getattr(asset, "path", None)
+        if path is None:
+            return {}, (), "创意素材文件不可用，请重新生成或选择素材。"
+
+        mime_type_field = str(declaration.get("mime_type_field") or "").strip()
+        mime_type_values = declaration.get("mime_type_values")
+        if mime_type_field:
+            if not isinstance(mime_type_values, Mapping):
+                return {}, (), "当前 Tool 的素材 MIME 映射配置无效。"
+            mapped_type = mime_type_values.get(media_type)
+            if not isinstance(mapped_type, str) or not mapped_type:
+                return {}, (), "该图片格式暂不支持上传到此平台。"
+            if (
+                arguments.get(mime_type_field) not in (None, "")
+                and arguments[mime_type_field] != mapped_type
+            ):
+                return {}, (), "图片类型与所选创意素材不一致。"
+            arguments[mime_type_field] = mapped_type
+
+        filename_field = str(declaration.get("filename_field") or "").strip()
+        filename = str(metadata.get("filename") or "").strip()
+        if filename_field:
+            if (
+                not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", filename_field)
+                or not filename
+                or Path(filename).name != filename
+            ):
+                return {}, (), "当前素材文件名无效，无法安全上传。"
+            if arguments.get(filename_field) not in (None, "", filename):
+                return {}, (), "上传文件名必须与素材库中的原始文件名一致。"
+            arguments[filename_field] = filename
+
+        content_type_field = str(
+            declaration.get("content_type_field") or "",
+        ).strip()
+        if content_type_field:
+            if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", content_type_field):
+                return {}, (), "当前上传 Tool 的 MIME 字段配置无效。"
+            if (
+                arguments.get(content_type_field) not in (None, "", media_type)
+            ):
+                return {}, (), "上传 MIME 类型与素材库记录不一致。"
+            arguments[content_type_field] = media_type
+
+        fixed_fields = declaration.get("fixed_fields") or {}
+        if not isinstance(fixed_fields, Mapping):
+            return {}, (), "当前上传 Tool 的固定参数配置无效。"
+        for raw_field, expected in fixed_fields.items():
+            field = str(raw_field).strip()
+            if (
+                not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", field)
+                or not isinstance(expected, (str, int, float, bool))
+            ):
+                return {}, (), "当前上传 Tool 的固定参数配置无效。"
+            if arguments.get(field) not in (None, "", expected):
+                return {}, (), "素材上传参数与选定文件类型不兼容。"
+            arguments[field] = expected
+
+        name_field = str(declaration.get("name_field") or "").strip()
+        asset_name = str(metadata.get("name") or "").strip()
+        if name_field and asset_name and arguments.get(name_field) in (None, ""):
+            arguments[name_field] = asset_name
+
+        # Dry-run plans retain the opaque asset ID; only a live provider call
+        # receives the verified server-side path.
+        if not self._is_dry_run_write(request):
+            arguments[target_field] = str(path)
+            arguments.pop(asset_field, None)
+            return arguments, (str(path),), ""
+        return arguments, (), ""
 
     def _is_uncertain_live_write(self, request: Any, result: Any) -> bool:
         return (
@@ -745,6 +902,67 @@ class AdvertisingToolExecutor:
         session.ctx.metadata["read_account_scopes"] = scopes
         if isinstance(request_context, dict):
             request_context["_agent_read_account_scopes"] = dict(scopes)
+
+
+def _scrub_creative_asset_paths(
+    result: Any,
+    asset_paths: tuple[str, ...],
+) -> Any:
+    """Remove private local paths from every provider result surface."""
+    replacements = tuple(
+        (str(path), "[private creative asset]")
+        for path in asset_paths
+        if str(path)
+    )
+    if not replacements or not isinstance(result, ToolResult):
+        return result
+
+    result.data = _scrub_path_value(result.data, replacements)
+    result.card_payload = _scrub_path_value(
+        result.card_payload, replacements,
+    )
+    result.error = _scrub_path_text(result.error, replacements)
+    detail = result.error_detail
+    if detail is not None:
+        result.error_detail = ToolError(
+            category=_scrub_path_text(detail.category, replacements) or "",
+            code=_scrub_path_text(detail.code, replacements) or "",
+            message=_scrub_path_text(detail.message, replacements) or "",
+            suggestion=_scrub_path_text(detail.suggestion, replacements) or "",
+        )
+    return result
+
+
+def _scrub_path_value(
+    value: Any,
+    replacements: tuple[tuple[str, str], ...],
+) -> Any:
+    if isinstance(value, str):
+        return _scrub_path_text(value, replacements)
+    if isinstance(value, Mapping):
+        return {
+            _scrub_path_text(str(key), replacements) or "": _scrub_path_value(
+                item, replacements,
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_scrub_path_value(item, replacements) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_path_value(item, replacements) for item in value)
+    return value
+
+
+def _scrub_path_text(
+    value: Any,
+    replacements: tuple[tuple[str, str], ...],
+) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    for private_path, replacement in replacements:
+        text = text.replace(private_path, replacement)
+    return text
 
 
 __all__ = [

@@ -277,7 +277,7 @@ async function uploadChatMediaFiles(files) {
                 session_id: activeSessionId,
                 filename: file.name,
             });
-                const response = await serviceFetch(`/chat/media?${query}`, {
+            const response = await serviceFetch(`/chat/media?${query}`, {
                 method: 'POST',
                 headers: { 'Content-Type': file.type },
                 body: file,
@@ -339,20 +339,31 @@ function renderMessageAttachments(container, attachments, activeSessionId) {
     });
 }
 
-function observeProtectedChatMedia(placeholder, attachment, activeSessionId) {
-    if (!chatMediaObserver) {
-        chatMediaObserver = new IntersectionObserver(entries => {
-            for (const entry of entries) {
-                if (!entry.isIntersecting) continue;
-                chatMediaObserver.unobserve(entry.target);
+function ensureChatMediaObserver() {
+    if (chatMediaObserver) return chatMediaObserver;
+    chatMediaObserver = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            chatMediaObserver.unobserve(entry.target);
+            if (entry.target.chatCreativeAsset) {
+                void loadInternalCreativeAsset(
+                    entry.target,
+                    entry.target.chatCreativeAsset,
+                );
+            } else {
                 void loadProtectedChatMedia(
                     entry.target,
                     entry.target.chatAttachment,
                     entry.target.chatSessionId,
                 );
             }
-        }, { root: document.getElementById('chatArea'), rootMargin: '240px' });
-    }
+        }
+    }, { root: document.getElementById('chatArea'), rootMargin: '240px' });
+    return chatMediaObserver;
+}
+
+function observeProtectedChatMedia(placeholder, attachment, activeSessionId) {
+    ensureChatMediaObserver();
     placeholder.chatAttachment = attachment;
     placeholder.chatSessionId = activeSessionId;
     chatMediaObserver.observe(placeholder);
@@ -392,12 +403,85 @@ function safeRemoteChatMediaUrl(value) {
     }
 }
 
+function safeInternalCreativeAssetUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw || raw.length > 128 || !raw.startsWith('/') || raw.startsWith('//')) {
+        return '';
+    }
+    try {
+        const url = new URL(raw, location.origin);
+        return url.origin === location.origin
+            && !url.search
+            && !url.hash
+            && /^\/creative\/assets\/[0-9a-f]{32}$/.test(url.pathname)
+            ? url.pathname
+            : '';
+    } catch (_) {
+        return '';
+    }
+}
+
+async function loadInternalCreativeAsset(placeholder, item) {
+    const url = safeInternalCreativeAssetUrl(item?.url);
+    if (!url) {
+        if (placeholder?.isConnected) placeholder.textContent = '素材地址无效';
+        return;
+    }
+    const cacheKey = `creative:${String(item.id || '')}`;
+    const cachedUrl = chatMediaObjectUrls.get(cacheKey);
+    if (cachedUrl) {
+        if (placeholder?.isConnected) {
+            placeholder.replaceWith(chatMediaElement({
+                ...item,
+                media_type: item.media_type
+                    || (item.kind === 'video' ? 'video/mp4' : 'image/jpeg'),
+            }, cachedUrl, { gallery: true }));
+        }
+        return;
+    }
+    try {
+        const response = await serviceFetch(url);
+        if (!response.ok) throw new Error('creative asset unavailable');
+        const objectUrl = URL.createObjectURL(await response.blob());
+        if (!placeholder?.isConnected) {
+            URL.revokeObjectURL(objectUrl);
+            return;
+        }
+        chatMediaObjectUrls.set(cacheKey, objectUrl);
+        placeholder.replaceWith(chatMediaElement({
+            ...item,
+            media_type: item.media_type
+                || (item.kind === 'video' ? 'video/mp4' : 'image/jpeg'),
+        }, objectUrl, { gallery: true }));
+    } catch (_) {
+        if (placeholder?.isConnected) placeholder.textContent = '创意素材暂时无法加载';
+    }
+}
+
+function observeInternalCreativeAsset(placeholder, item) {
+    placeholder.chatCreativeAsset = item;
+    ensureChatMediaObserver();
+    chatMediaObserver.observe(placeholder);
+}
+
 function renderMediaGallery(container, items) {
     if (!Array.isArray(items) || !items.length) return;
     const gallery = document.createElement('div');
     gallery.className = 'chat-media-gallery';
     items.slice(0, 12).forEach(item => {
         if (!item || !['image', 'video'].includes(item.kind)) return;
+        const internalUrl = safeInternalCreativeAssetUrl(item.url);
+        if (internalUrl) {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'chat-media-loading';
+            placeholder.textContent = '加载创意素材…';
+            gallery.appendChild(placeholder);
+            observeInternalCreativeAsset(placeholder, {
+                ...item,
+                url: internalUrl,
+            });
+            return;
+        }
         const url = safeRemoteChatMediaUrl(item.url);
         const permalink = item.kind === 'video'
             ? safeRemoteChatMediaUrl(item.permalink_url)

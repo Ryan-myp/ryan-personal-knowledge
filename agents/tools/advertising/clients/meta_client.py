@@ -15,6 +15,7 @@ import re
 import time
 import threading
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 import requests
@@ -111,7 +112,24 @@ class MetaAPIClient(BasePlatformClient):
             if method == 'GET':
                 resp = requests.get(url, params=final_params, headers=headers, timeout=self.http_timeout())
             elif method == 'POST':
-                resp = requests.post(url, params=final_params, json=kwargs.get('data'), headers=headers, timeout=self.http_timeout())
+                files = kwargs.get("files")
+                if files:
+                    resp = requests.post(
+                        url,
+                        params=final_params,
+                        data=kwargs.get("data"),
+                        files=files,
+                        headers=headers,
+                        timeout=self.http_timeout(),
+                    )
+                else:
+                    resp = requests.post(
+                        url,
+                        params=final_params,
+                        json=kwargs.get('data'),
+                        headers=headers,
+                        timeout=self.http_timeout(),
+                    )
             elif method == 'DELETE':
                 resp = requests.delete(url, params=final_params, headers=headers, timeout=self.http_timeout())
             else:
@@ -2252,22 +2270,36 @@ class MetaAPIClient(BasePlatformClient):
             raise ValueError(f"{field_name} must be an absolute HTTP(S) URL")
         return url
 
-    def list_image_assets(self, account_id: str, limit: int = 25) -> list:
-        """List image assets uploaded to a Meta ad account."""
+    def list_image_assets(
+        self,
+        account_id: str,
+        limit: int = 25,
+        image_hash: str | None = None,
+    ) -> list:
+        """List account images, optionally narrowed to one exact image hash."""
         account_id = self._clean_meta_id(account_id, "account_id")
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
             raise ValueError("image asset limit must be between 1 and 1000")
+        image_hash = str(image_hash or "").strip()
+        if image_hash and (
+            len(image_hash) > 128
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", image_hash)
+        ):
+            raise ValueError("image_hash must be a bounded Meta image hash")
+        params = {
+            "limit": 1 if image_hash else limit,
+            # Signed preview URLs are needed by the chat media gallery;
+            # the hash remains the stable reference used by ad creation.
+            "fields": (
+                "hash,name,original_width,original_height,created_time,"
+                "url,url_128"
+            ),
+        }
+        if image_hash:
+            params["hashes"] = json.dumps([image_hash])
         result = self.request(
             "GET", f"/act_{account_id}/adimages",
-            extra_params={
-                "limit": limit,
-                # Signed preview URLs are needed by the chat media gallery;
-                # the hash remains the stable reference used by ad creation.
-                "fields": (
-                    "hash,name,original_width,original_height,created_time,"
-                    "url,url_128"
-                ),
-            },
+            extra_params=params,
         )
         # Meta's adimages edge returns an object keyed by filename/hash rather
         # than the usual Graph ``data`` list. Normalize it at the Provider
@@ -2278,29 +2310,69 @@ class MetaAPIClient(BasePlatformClient):
                 if isinstance(value, dict):
                     asset = dict(value)
                     asset.setdefault("name", key)
+                    asset.setdefault("hash", key)
                     assets.append(asset)
-            return assets[:limit]
-        if isinstance(result, dict) and isinstance(result.get("data"), list):
-            return result["data"][:limit]
-        return result[:limit] if isinstance(result, list) else []
+        elif isinstance(result, dict) and isinstance(result.get("data"), list):
+            assets = result["data"]
+        elif isinstance(result, list):
+            assets = result
+        else:
+            assets = []
+        if image_hash:
+            return [
+                asset for asset in assets
+                if isinstance(asset, dict)
+                and str(asset.get("hash") or "") == image_hash
+            ][:1]
+        return assets[:limit]
 
     def upload_image_asset(self, account_id: str, asset: dict) -> dict:
-        """Upload one remotely hosted image and return its provider hash."""
+        """Upload one HTTPS-hosted or private generated image."""
         account_id = self._clean_meta_id(account_id, "account_id")
         if not isinstance(asset, dict):
             raise ValueError("image asset must be an object")
-        unknown = sorted(set(asset) - {"image_url", "name"})
+        unknown = sorted(set(asset) - {
+            "image_url", "file_path", "file_name", "media_type", "name",
+        })
         if unknown:
             raise ValueError(f"unsupported Meta image asset fields: {', '.join(unknown)}")
-        image_url = self._require_https_asset_url(asset.get("image_url"), "image_url")
-        data: dict[str, Any] = {"url": image_url}
+        image_url = str(asset.get("image_url") or "").strip()
+        file_path = str(asset.get("file_path") or "").strip()
+        if bool(image_url) == bool(file_path):
+            raise ValueError("Meta image upload requires exactly one of image_url or file_path")
+        data: dict[str, Any] = {}
+        files = None
+        stream = None
+        if image_url:
+            data["url"] = self._require_https_asset_url(image_url, "image_url")
+        else:
+            path = self._validated_local_asset_path(
+                file_path, max_bytes=20 * 1024 * 1024,
+            )
+            media_type = str(asset.get("media_type") or "").lower()
+            if media_type not in {"image/png", "image/jpeg"}:
+                raise ValueError("Meta image upload supports PNG and JPEG files")
+            filename = self._validated_upload_filename(
+                asset.get("file_name"), path.name,
+            )
+            stream = path.open("rb")
+            files = {"source": (filename, stream, media_type)}
         if asset.get("name") is not None:
             name = str(asset["name"]).strip()
             if not name:
                 raise ValueError("image asset name must be non-empty when provided")
             data["name"] = name
         self.acquire_rate_limit(self._get_account_limiter(account_id))
-        result = self.request("POST", f"/act_{account_id}/adimages", data=data)
+        try:
+            result = self.request(
+                "POST",
+                f"/act_{account_id}/adimages",
+                data=data,
+                files=files,
+            )
+        finally:
+            if stream is not None:
+                stream.close()
         if isinstance(result, dict) and isinstance(result.get("images"), dict):
             entries = [value for value in result["images"].values() if isinstance(value, dict)]
             if len(entries) == 1:
@@ -2310,33 +2382,80 @@ class MetaAPIClient(BasePlatformClient):
             raise APIError("Meta image asset upload response did not contain an image hash")
         return result
 
-    def list_video_assets(self, account_id: str, limit: int = 25) -> list:
-        """List video assets uploaded to a Meta ad account."""
+    def list_video_assets(
+        self,
+        account_id: str,
+        limit: int = 25,
+        video_id: str | None = None,
+    ) -> list:
+        """List account videos, optionally matching one ID in a bounded scan."""
         account_id = self._clean_meta_id(account_id, "account_id")
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 1000:
             raise ValueError("video asset limit must be between 1 and 1000")
-        return self._list_graph_pages(
+        video_id = str(video_id or "").strip()
+        if video_id and (
+            len(video_id) > 128
+            or not re.fullmatch(r"[A-Za-z0-9_-]+", video_id)
+        ):
+            raise ValueError("video_id must be a bounded Meta video ID")
+        rows = self._list_graph_pages(
             account_id,
             f"/act_{account_id}/advideos",
             {
-                "limit": limit,
+                "limit": 1000 if video_id else limit,
                 "fields": (
                     "id,title,description,status,created_time,"
                     "source,picture,permalink_url"
                 ),
             },
         )
+        if video_id:
+            assets = [
+                {
+                    **row,
+                    "video_id": str(row.get("id") or row.get("video_id") or ""),
+                }
+                for row in rows
+                if isinstance(row, dict)
+            ]
+            return [
+                asset for asset in assets
+                if asset["video_id"] == video_id
+            ][:1]
+        return [row for row in rows if isinstance(row, dict)][:limit]
 
     def upload_video_asset(self, account_id: str, asset: dict) -> dict:
-        """Start a Meta video upload from a remotely hosted file URL."""
+        """Upload a hosted video URL or a private generated MP4."""
         account_id = self._clean_meta_id(account_id, "account_id")
         if not isinstance(asset, dict):
             raise ValueError("video asset must be an object")
-        unknown = sorted(set(asset) - {"file_url", "title", "description"})
+        unknown = sorted(set(asset) - {
+            "file_url", "file_path", "file_name", "media_type",
+            "title", "description",
+        })
         if unknown:
             raise ValueError(f"unsupported Meta video asset fields: {', '.join(unknown)}")
-        file_url = self._require_https_asset_url(asset.get("file_url"), "file_url")
-        data: dict[str, Any] = {"file_url": file_url}
+        file_url = str(asset.get("file_url") or "").strip()
+        file_path = str(asset.get("file_path") or "").strip()
+        if bool(file_url) == bool(file_path):
+            raise ValueError("Meta video upload requires exactly one of file_url or file_path")
+        data: dict[str, Any] = {}
+        files = None
+        stream = None
+        if file_url:
+            data["file_url"] = self._require_https_asset_url(file_url, "file_url")
+        else:
+            path = self._validated_local_asset_path(
+                file_path, max_bytes=120 * 1024 * 1024,
+            )
+            media_type = str(asset.get("media_type") or "").lower()
+            if media_type != "video/mp4":
+                raise ValueError("Meta generated video upload currently supports MP4")
+            filename = self._validated_upload_filename(
+                asset.get("file_name"), path.name,
+            )
+            stream = path.open("rb")
+            files = {"source": (filename, stream, media_type)}
         for field_name in ("title", "description"):
             if asset.get(field_name) is not None:
                 value = str(asset[field_name]).strip()
@@ -2344,13 +2463,48 @@ class MetaAPIClient(BasePlatformClient):
                     raise ValueError(f"video asset {field_name} must be non-empty when provided")
                 data[field_name] = value
         self.acquire_rate_limit(self._get_account_limiter(account_id))
-        result = self.require_resource_object(
-            self.request("POST", f"/act_{account_id}/advideos", data=data),
-            "Meta video asset upload",
-        )
+        try:
+            result = self.require_resource_object(
+                self.request(
+                    "POST",
+                    f"/act_{account_id}/advideos",
+                    data=data,
+                    files=files,
+                ),
+                "Meta video asset upload",
+            )
+        finally:
+            if stream is not None:
+                stream.close()
         if not str(result.get("id") or "").strip():
             raise APIError("Meta video asset upload response did not contain a video ID")
         return result
+
+    @staticmethod
+    def _validated_local_asset_path(
+        file_path: str,
+        *,
+        max_bytes: int,
+    ) -> Path:
+        candidate = Path(file_path).expanduser()
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ValueError("local creative asset must be a regular non-symlink file")
+        path = candidate.resolve(strict=True)
+        if path.stat().st_size <= 0 or path.stat().st_size > max_bytes:
+            raise ValueError("local creative asset is empty or exceeds the upload limit")
+        return path
+
+    @staticmethod
+    def _validated_upload_filename(value: Any, fallback: str) -> str:
+        filename = str(value or fallback).strip()
+        if (
+            not filename
+            or len(filename) > 200
+            or Path(filename).name != filename
+            or filename in {".", ".."}
+        ):
+            raise ValueError("creative asset filename is invalid")
+        return filename
 
     def get_creative(self, account_id: str, creative_id: str, fields: list = None) -> dict:
         """Get one Creative after verifying account ownership."""

@@ -474,6 +474,22 @@ def test_web_search_is_selected_for_online_lookup_not_local_knowledge_search():
     assert [tool.name for tool in selected] == ["agent_web_search"]
 
 
+def test_current_weather_query_selects_and_requires_web_search():
+    source = web_search_tool_source(
+        configuration_provider=_brave_configuration,
+        required_permission="ads.read",
+    )
+    tool = source.list_bindings()[0].definition
+    selector = ToolSelector()
+
+    selected = selector.select_relevant("深圳今天天气", [tool])
+
+    assert [item.name for item in selected] == ["agent_web_search"]
+    assert selector.requires_tool_call("深圳今天天气", selected)
+    assert not selector.requires_tool_call("能查天气不", selected)
+    assert not selector.requires_tool_call("深圳今天天气支持吗", selected)
+
+
 def test_web_search_can_be_registered_into_the_existing_application_runtime():
     runtime = AdvertisingComposition(
         require_llm=False,

@@ -466,12 +466,27 @@ def test_llm_client_stops_after_one_failed_unknown_tool_repair(caplog):
     assert "private_write" not in caplog.text
 
 
-def test_llm_client_repairs_tool_protocol_returned_as_plain_text():
-    protocol_text = (
-        "<tool_call>\n<function=lookup_record>\n"
-        "<parameter=record_id>r-17</parameter>\n"
-        "</function>\n</tool_call>"
-    )
+@pytest.mark.parametrize(
+    "protocol_text",
+    [
+        (
+            "<tool_call>\n<function=lookup_record>\n"
+            "<parameter=record_id>r-17</parameter>\n"
+            "</function>\n</tool_call>"
+        ),
+        (
+            "<|tool_call_begin|> lookup_record "
+            "<|tool_call_argument_begin|>{\"record_id\":\"r-17\"}"
+            "<|tool_call_end|>"
+        ),
+        (
+            "<|tool_calls_section_begin|> lookup_record "
+            "<|tool_call_argument_begin|>{\"record_id\":\"r-17\"}"
+            "<|tool_call_end|>"
+        ),
+    ],
+)
+def test_llm_client_repairs_tool_protocol_returned_as_plain_text(protocol_text):
     protocol_response = SimpleNamespace(
         choices=[SimpleNamespace(
             message=SimpleNamespace(content=protocol_text, tool_calls=[]),
@@ -516,6 +531,10 @@ def test_llm_client_repairs_tool_protocol_returned_as_plain_text():
         ),
     )
     assert len(completions.requests) == 2
+    assert completions.requests[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "lookup_record"},
+    }
     retry_messages = completions.requests[1]["messages"]
     assert any(
         "do not write Tool-call protocol as plain text"
@@ -526,6 +545,50 @@ def test_llm_client_repairs_tool_protocol_returned_as_plain_text():
     assert result.usage["llm_requests"] == 2
     assert result.usage["input_tokens"] == 24
     assert result.usage["output_tokens"] == 12
+
+
+def test_llm_client_preserves_explicit_tool_choice_during_protocol_repair():
+    protocol_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(
+                content=(
+                    "<tool_call><function=lookup_record>"
+                    "<parameter=record_id>r-17</parameter>"
+                    "</function></tool_call>"
+                ),
+                tool_calls=[],
+            ),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    structured_response = SimpleNamespace(
+        choices=[SimpleNamespace(
+            message=SimpleNamespace(content="", tool_calls=[]),
+            finish_reason="stop",
+        )],
+        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+    )
+    completions = _QueuedCompletions(protocol_response, structured_response)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    client.complete(
+        [AgentMessage.user("Find record r-17.")],
+        [_tool()],
+        TurnRequest(
+            user_input="Find record r-17.",
+            initial_tool_choice="required",
+        ),
+    )
+
+    assert len(completions.requests) == 2
+    assert all(
+        request["tool_choice"] == "required"
+        for request in completions.requests
+    )
 
 
 def test_llm_client_fails_clearly_if_tool_protocol_remains_plain_text():
@@ -667,6 +730,7 @@ def test_llm_client_repairs_harmony_tool_calls_section_begin_text():
     assert result.content == "TikTok Ads 是 TikTok 的广告投放平台。"
     assert result.tool_calls == ()
     assert len(completions.requests) == 2
+    assert completions.requests[1]["tool_choice"] == "auto"
     retry_messages = completions.requests[1]["messages"]
     assert any(
         "do not write Tool-call protocol as plain text"

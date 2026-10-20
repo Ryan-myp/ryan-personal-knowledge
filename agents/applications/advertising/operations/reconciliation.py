@@ -82,7 +82,11 @@ class ToolReadbackReconciler(EffectReconciler):
             )
 
         id_field = self._resource_id_field(read_definition)
-        resource = self._extract_resource(data, id_field)
+        resource = self._extract_resource(
+            data,
+            id_field,
+            expected_id=resource_id,
+        )
         if not resource:
             return self._unknown(sequence, "provider read-back returned no declared resource")
         observed_id = self._resource_id(resource, id_field)
@@ -176,25 +180,50 @@ class ToolReadbackReconciler(EffectReconciler):
 
     @classmethod
     def _extract_resource(
-        cls, data: Mapping[str, Any], id_field: str
+        cls,
+        data: Mapping[str, Any],
+        id_field: str,
+        *,
+        expected_id: str | None = None,
     ) -> dict[str, Any]:
         """Find a resource object by the declared identity field."""
         if not id_field:
             return {}
         if id_field in data:
             return dict(data)
+        fallback: dict[str, Any] = {}
         for value in data.values():
             if isinstance(value, dict):
-                resource = cls._extract_resource(value, id_field)
+                resource = cls._extract_resource(
+                    value,
+                    id_field,
+                    expected_id=expected_id,
+                )
                 if resource:
-                    return resource
+                    if (
+                        expected_id is None
+                        or cls._resource_id(resource, id_field) == expected_id
+                    ):
+                        return resource
+                    if not fallback:
+                        fallback = resource
             elif isinstance(value, list):
                 for item in value:
                     if isinstance(item, dict):
-                        resource = cls._extract_resource(item, id_field)
+                        resource = cls._extract_resource(
+                            item,
+                            id_field,
+                            expected_id=expected_id,
+                        )
                         if resource:
-                            return resource
-        return {}
+                            if (
+                                expected_id is None
+                                or cls._resource_id(resource, id_field) == expected_id
+                            ):
+                                return resource
+                            if not fallback:
+                                fallback = resource
+        return fallback
 
     @staticmethod
     def _resource_id(resource: Mapping[str, Any], id_field: str) -> str | None:

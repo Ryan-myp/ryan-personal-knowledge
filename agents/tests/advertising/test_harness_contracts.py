@@ -1676,6 +1676,45 @@ def test_readback_resolution_uses_explicit_metadata_not_tool_name_conventions():
     assert runtime._resolve_readback_definition(write.name) is read
 
 
+def test_declared_list_readback_requires_an_identity_filter():
+    runtime = AdvertisingComposition(require_llm=False, enforce_account_scope=False)
+    write = ToolDefinition(
+        name="vendor_upload_asset",
+        skill="vendor",
+        namespace="vendor",
+        description="Upload an asset",
+        input_schema=ToolSchema(properties={"asset_id": {"type": "string"}}),
+        action="upload",
+        resource_type="asset",
+        resource_id_field="asset_id",
+        intent_types=["upload_asset"],
+        effect_class=ToolEffect.WRITE,
+        readback_tool="vendor_list_assets",
+    )
+    read = ToolDefinition(
+        name="vendor_list_assets",
+        skill="vendor",
+        namespace="vendor",
+        description="List assets, optionally filtered by ID",
+        input_schema=ToolSchema(
+            properties={"asset_id": {"type": "string"}},
+        ),
+        action="list",
+        resource_type="asset",
+        resource_id_field="asset_id",
+        result_items_key="assets",
+        intent_types=["list_assets"],
+        effect_class=ToolEffect.READ,
+    )
+    runtime.registry.register(write, lambda _ctx, _input: ToolResult.ok({}))
+    runtime.registry.register(read, lambda _ctx, _input: ToolResult.ok({"assets": []}))
+
+    assert runtime._resolve_readback_definition(write.name) is read
+
+    read.input_schema = ToolSchema(properties={"limit": {"type": "integer"}})
+    assert runtime._resolve_readback_definition(write.name) is None
+
+
 def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
     read = ToolDefinition(
         name="vendor_fetch_widget",
@@ -1712,6 +1751,52 @@ def test_generic_readback_uses_tool_declared_identity_for_arbitrary_resource():
         )
     )
 
-    assert observation.status == "succeeded"
+    assert observation.status == "succeeded", observation.error
     assert observation.external_resource_id == "w-1"
     assert calls == [(read.name, {"widget_key": "w-1"})]
+
+
+def test_list_readback_verifies_the_exact_resource_identity():
+    read = ToolDefinition(
+        name="vendor_list_assets",
+        skill="vendor",
+        namespace="vendor",
+        description="List assets filtered by asset ID",
+        input_schema=ToolSchema(
+            properties={"asset_id": {"type": "string"}},
+        ),
+        action="list",
+        resource_type="asset",
+        resource_id_field="asset_id",
+        result_items_key="assets",
+        intent_types=["list_assets"],
+        effect_class=ToolEffect.READ,
+    )
+    calls = []
+
+    observation = ToolReadbackReconciler("vendor").reconcile(
+        ReconciliationContext(
+            workflow={},
+            item={
+                "sequence": 8,
+                "tool_name": "vendor_upload_asset",
+                "account_id": "acct-1",
+                "provider_resource_id": "asset-42",
+            },
+            tool_context=ToolContext("session-1", "user-1", account_id="acct-1"),
+            execute_read=lambda name, payload: (
+                calls.append((name, payload))
+                or ToolResult.ok({
+                    "assets": [
+                        {"asset_id": "asset-41"},
+                        {"asset_id": payload["asset_id"]},
+                    ],
+                })
+            ),
+            resolve_read_tool=lambda _write_name: read,
+        )
+    )
+
+    assert observation.status == "succeeded", observation.error
+    assert observation.external_resource_id == "asset-42"
+    assert calls == [(read.name, {"asset_id": "asset-42"})]

@@ -38,6 +38,7 @@ granted_permissions:
   - ads.read
   - ads.plan
   - ads.write
+  - creative.generate
   - skills.read
   - skills.write
   - skills.evaluate

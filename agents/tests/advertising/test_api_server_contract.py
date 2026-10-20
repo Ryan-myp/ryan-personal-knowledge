@@ -2112,6 +2112,10 @@ def test_chat_stream_exposes_runtime_error_event(fake_server):
 
 def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, tmp_path):
     monkeypatch.setenv("AD_AGENT_DB_PATH", str(tmp_path / "runtime.db"))
+    monkeypatch.setenv(
+        "AD_AGENT_CREATIVE_ASSET_PATH",
+        str(tmp_path / "creative-assets"),
+    )
     monkeypatch.setenv("OPENAI_API_KEY", "test-llm-key")
     monkeypatch.setattr(api_server, "runtime", None)
     monkeypatch.setattr(
@@ -2125,10 +2129,38 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
     assert runtime is not None
     assert api_server.runtime_status["state"] == "ready"
     assert set(runtime.registry.list_all_namespaces()) == {
-        "agent-platform", "meta", "google-ads", "tiktok", "dv360"
+        "agent-platform", "meta", "google-ads", "tiktok", "dv360",
+        "creative-media",
     }
-    assert len(runtime.registry.list_all()) >= 124
+    definitions = runtime.registry.list_all()
+    assert len(definitions) >= 128
+    assert {
+        "creative_generate_image",
+        "creative_submit_video",
+        "creative_check_video",
+        "creative_list_assets",
+    } <= {definition.name for definition in definitions}
+    assert "creative.generate" in runtime._granted_permissions
+    assert "creative-production" in runtime._composition.skill_loader.list_all()
+    assert api_server.creative_asset_store.root == (
+        tmp_path / "creative-assets"
+    ).resolve()
     runtime._session_manager.store.close()
+
+
+def test_creative_asset_route_is_mounted_in_api_server():
+    routes = list(api_server.app.routes)
+    for included in routes:
+        original = getattr(included, "original_router", None)
+        if original is not None:
+            routes.extend(original.routes)
+
+    assert any(
+        getattr(route, "path", None) == "/creative/assets/{asset_id}"
+        and route.endpoint.__module__
+        == "agents.deployments.advertising.api.routes.creative"
+        for route in routes
+    )
 
 
 def test_runtime_initialization_fails_without_llm(monkeypatch, tmp_path):

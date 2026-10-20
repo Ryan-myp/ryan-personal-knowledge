@@ -1,5 +1,6 @@
 """Ensure existing provider creation schemas reach their API adapters."""
 
+import base64
 import json
 import hashlib
 import pytest
@@ -422,12 +423,22 @@ def test_creation_tools_publish_provider_payload_requirements():
     assert definitions["meta"]["meta_create_product_set"].input_schema.requires == [
         "catalog_id", "name"
     ]
-    assert definitions["meta"]["meta_upload_image_asset"].input_schema.requires == [
-        "image_url"
+    assert definitions["meta"]["meta_upload_image_asset"].input_schema.requires == []
+    assert definitions["meta"]["meta_upload_image_asset"].input_schema.requires_exactly_one_of == [
+        ["image_url", "creative_asset_id"]
     ]
-    assert definitions["meta"]["meta_upload_video_asset"].input_schema.requires == [
-        "file_url"
+    assert definitions["meta"]["meta_upload_video_asset"].input_schema.requires == []
+    assert definitions["meta"]["meta_upload_video_asset"].input_schema.requires_exactly_one_of == [
+        ["file_url", "creative_asset_id"]
     ]
+    assert definitions["meta"]["meta_upload_image_asset"].readback_tool == (
+        "meta_list_image_assets"
+    )
+    assert definitions["meta"]["meta_upload_video_asset"].readback_tool == (
+        "meta_list_video_assets"
+    )
+    assert "hash" in definitions["meta"]["meta_list_image_assets"].input_schema.properties
+    assert "video_id" in definitions["meta"]["meta_list_video_assets"].input_schema.properties
 
     assert definitions["tiktok"]["tiktok_create_pixel"].input_schema.requires == [
         "name", "object_type"
@@ -550,6 +561,36 @@ def test_meta_image_asset_upload_normalizes_graph_image_map():
         client.upload_image_asset("123", {"image_url": "/tmp/creative.png"})
 
 
+def test_meta_image_asset_upload_accepts_local_file_multipart(tmp_path):
+    image_path = tmp_path / "generated.png"
+    image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    image_path.write_bytes(image_bytes)
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, files=None, **_kwargs):
+        calls.append((method, endpoint, data, files))
+        assert files["source"][1].read() == image_bytes
+        return {"images": {"generated.png": {"hash": "generated-hash"}}}
+
+    client.request = request
+    result = client.upload_image_asset(
+        "123",
+        {
+            "file_path": str(image_path),
+            "media_type": "image/png",
+            "name": "generated",
+        },
+    )
+
+    assert result["hash"] == "generated-hash"
+    assert calls[0][0:3] == (
+        "POST", "/act_123/adimages", {"name": "generated"},
+    )
+    assert calls[0][3]["source"][0] == "generated.png"
+    assert calls[0][3]["source"][1].closed
+
+
 def test_meta_image_asset_list_requests_displayable_image_urls():
     client = MetaAPIClient({"access_token": "test"})
     calls = []
@@ -575,6 +616,22 @@ def test_meta_image_asset_list_requests_displayable_image_urls():
         "hash", "name", "original_width", "original_height", "created_time",
         "url", "url_128",
     ]
+
+
+def test_meta_image_asset_list_can_filter_one_uploaded_hash():
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+    client.request = lambda method, endpoint, extra_params=None, **_kwargs: (
+        calls.append((method, endpoint, extra_params))
+        or {"images": {"creative.png": {"hash": "wanted-hash"}}}
+    )
+
+    assets = client.list_image_assets("123", image_hash="wanted-hash")
+
+    assert [asset["hash"] for asset in assets] == ["wanted-hash"]
+    assert calls[0][0:2] == ("GET", "/act_123/adimages")
+    assert json.loads(calls[0][2]["hashes"]) == ["wanted-hash"]
+    assert calls[0][2]["limit"] == 1
 
 
 def test_meta_video_asset_upload_and_list_use_provider_edges():
@@ -626,6 +683,106 @@ def test_meta_video_asset_upload_and_list_use_provider_edges():
     ]
 
 
+def test_meta_video_asset_list_can_filter_one_video_id():
+    client = MetaAPIClient({"access_token": "test"})
+    client.request = lambda *_args, **_kwargs: {
+        "data": [
+            {"id": "video-other", "title": "Other"},
+            {"id": "video-target", "title": "Target"},
+        ]
+    }
+
+    assets = client.list_video_assets("123", video_id="video-target")
+
+    assert assets == [{"id": "video-target", "video_id": "video-target", "title": "Target"}]
+
+
+def test_meta_video_asset_upload_accepts_local_file_multipart(tmp_path):
+    video_path = tmp_path / "generated.mp4"
+    video_bytes = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16
+    video_path.write_bytes(video_bytes)
+    client = MetaAPIClient({"access_token": "test"})
+    calls = []
+
+    def request(method, endpoint, data=None, files=None, **_kwargs):
+        calls.append((method, endpoint, data, files))
+        assert files["source"][1].read() == video_bytes
+        return {"id": "generated-video", "status": "processing"}
+
+    client.request = request
+    result = client.upload_video_asset(
+        "123",
+        {
+            "file_path": str(video_path),
+            "media_type": "video/mp4",
+            "title": "Generated video",
+            "description": "Product demonstration",
+        },
+    )
+
+    assert result["id"] == "generated-video"
+    assert calls[0][0:3] == (
+        "POST",
+        "/act_123/advideos",
+        {"title": "Generated video", "description": "Product demonstration"},
+    )
+    assert calls[0][3]["source"][0] == "generated.mp4"
+    assert calls[0][3]["source"][1].closed
+
+
+def test_generated_asset_id_is_a_valid_source_for_existing_provider_upload_tools():
+    generated_asset_id = "11111111111141118111111111111111"
+    definitions = {
+        definition.name: definition
+        for source in (
+            create_meta_tool_source(),
+            create_google_tool_source(),
+            create_tiktok_tool_source(),
+        )
+        for definition, _handler in source.register_tools()
+    }
+
+    cases = (
+        ("meta_upload_image_asset", {
+            "account_id": "123",
+            "creative_asset_id": generated_asset_id,
+        }),
+        ("meta_upload_video_asset", {
+            "account_id": "123",
+            "creative_asset_id": generated_asset_id,
+        }),
+        ("tiktok_upload_image", {
+            "account_id": "123",
+            "creative_asset_id": generated_asset_id,
+        }),
+        ("tiktok_upload_video", {
+            "account_id": "123",
+            "creative_asset_id": generated_asset_id,
+        }),
+        ("google_upload_image_asset", {
+            "customer_id": "123",
+            "creative_asset_id": generated_asset_id,
+        }),
+    )
+    for name, arguments in cases:
+        assert validate_tool_input(
+            definitions[name].input_schema,
+            arguments,
+            include_tool_requirements=True,
+        ) == []
+
+    assert validate_tool_input(
+        definitions["meta_upload_image_asset"].input_schema,
+        {"account_id": "123"},
+        include_tool_requirements=True,
+    )
+    assert validate_tool_input(
+        definitions["google_upload_image_asset"].input_schema,
+        {"customer_id": "123"},
+        include_tool_requirements=True,
+    )
+
+
 def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():
     client = TikTokAPIClient({"access_token": "test"})
     with pytest.raises(ValueError, match="exactly one"):
@@ -637,9 +794,9 @@ def test_tiktok_media_upload_rejects_ambiguous_sources_and_exposes_tools():
     }
     assert {"tiktok_upload_image", "tiktok_upload_video"} <= definitions.keys()
     assert definitions["tiktok_upload_image"].input_schema.requires_exactly_one_of == [
-        ["file_path", "image_url", "file_id"]
+        ["file_path", "image_url", "file_id", "creative_asset_id"]
     ]
-    assert definitions["tiktok_upload_video"].live_support is False
+    assert definitions["tiktok_upload_video"].live_support is True
     errors = validate_tool_input(
         definitions["tiktok_upload_image"].input_schema,
         {"account_id": "123", "image_url": "https://cdn.example/a.png", "file_id": "f1"},
@@ -3015,13 +3172,16 @@ def test_google_asset_creation_builds_text_and_binary_asset_payloads(tmp_path):
     }})
 
     image = tmp_path / "creative.png"
-    image.write_bytes(b"png-bytes")
+    image_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
+    image.write_bytes(image_bytes)
     assert client.create_asset({
         "asset_type": "IMAGE", "file_path": str(image), "mime_type": "IMAGE_PNG",
     }) == "9"
     image_payload = calls[1][1]["create"]["imageAsset"]
     assert image_payload == {
-        "data": "cG5nLWJ5dGVz", "fileSize": 9, "mimeType": "IMAGE_PNG",
+        "data": base64.b64encode(image_bytes).decode("ascii"),
+        "fileSize": len(image_bytes),
+        "mimeType": "IMAGE_PNG",
     }
 
 
@@ -3041,6 +3201,10 @@ def test_google_asset_creation_rejects_wrong_payload_variants_and_exposes_tool()
     }
     create_tool = definitions["google_create_asset"]
     assert create_tool.live_support is False
+    upload_tool = definitions["google_upload_image_asset"]
+    assert upload_tool.live_support is True
+    assert upload_tool.required_permissions == ["ads.plan", "ads.write"]
+    assert upload_tool.readback_tool == "google_get_asset"
     assert create_tool.input_schema.properties["asset_type"]["enum"] == [
         "TEXT", "IMAGE", "YOUTUBE_VIDEO", "MEDIA_BUNDLE",
     ]
