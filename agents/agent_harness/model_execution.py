@@ -136,13 +136,14 @@ class ModelExecutionCoordinator:
         invoke: Callable[[], Any],
         *,
         timeout_seconds: float | None = None,
+        interrupt_check: Optional[Callable[[], None]] = None,
     ) -> Any:
         timeout = self.options.timeout_seconds if timeout_seconds is None else timeout_seconds
         if timeout is not None and timeout <= 0:
             raise ModelTimeoutError("model execution budget exhausted")
         if not self._model_slots.acquire(blocking=False):
             raise ModelCapacityError("model execution capacity exhausted")
-        if timeout is None:
+        if timeout is None and interrupt_check is None:
             try:
                 return invoke()
             finally:
@@ -159,11 +160,35 @@ class ModelExecutionCoordinator:
                 executor.shutdown(wait=False, cancel_futures=True)
             raise
         future.add_done_callback(lambda _completed: self._model_slots.release())
+        deadline = time.monotonic() + timeout if timeout is not None else None
         try:
-            return future.result(timeout=timeout)
-        except FutureTimeoutError as error:
-            future.cancel()
-            raise ModelTimeoutError("model provider timed out") from error
+            while True:
+                if interrupt_check is not None:
+                    interrupt_check()
+                remaining = (
+                    deadline - time.monotonic()
+                    if deadline is not None else None
+                )
+                if remaining is not None and remaining <= 0:
+                    future.cancel()
+                    raise ModelTimeoutError("model provider timed out")
+                wait_seconds = (
+                    min(0.1, remaining)
+                    if remaining is not None
+                    else 0.1
+                )
+                try:
+                    return future.result(timeout=wait_seconds)
+                except FutureTimeoutError as error:
+                    if future.done():
+                        raise
+                    if interrupt_check is not None:
+                        interrupt_check()
+                    if deadline is not None and time.monotonic() >= deadline:
+                        future.cancel()
+                        raise ModelTimeoutError(
+                            "model provider timed out"
+                        ) from error
         finally:
             # A provider that ignores cancellation may continue in its own
             # thread, but the Run never waits unboundedly for it.
@@ -180,6 +205,9 @@ class ModelExecutionCoordinator:
         on_output: Optional[Callable[[], None]] = None,
     ) -> ModelTurn:
         stream = getattr(provider, "stream", None)
+        interrupt_check = lambda: self.assert_not_interrupted(
+            request, abort_event,
+        )
         if not callable(stream):
             return self.invoke(
                 lambda: (
@@ -188,6 +216,7 @@ class ModelExecutionCoordinator:
                     else provider(messages, tools, request)
                 ),
                 timeout_seconds=timeout_seconds,
+                interrupt_check=interrupt_check,
             )
         # Consume the iterator inside the bounded worker. A timeout around
         # only ``stream(...)`` is insufficient because most providers return
@@ -200,6 +229,7 @@ class ModelExecutionCoordinator:
                 on_output,
             ),
             timeout_seconds=timeout_seconds,
+            interrupt_check=interrupt_check,
         )
 
     def _consume_stream(
@@ -301,6 +331,9 @@ class ModelExecutionCoordinator:
                     else provider(messages, tools, request)
                 ),
                 timeout_seconds=timeout_seconds,
+                interrupt_check=lambda: self.assert_not_interrupted(
+                    request, abort_event,
+                ),
             )
         )
         self.assert_not_interrupted(request, abort_event)

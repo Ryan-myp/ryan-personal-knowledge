@@ -20,7 +20,11 @@ from agents.deployments.advertising.api.context import (
     ApiContext,
     read_request_body_limited,
 )
-from agents.deployments.advertising.api.models import ChatRequest, ChatStreamRequest
+from agents.deployments.advertising.api.models import (
+    ChatCancelRequest,
+    ChatRequest,
+    ChatStreamRequest,
+)
 from agents.tools.advertising.shared.domain.conversation import visible_run_reply
 
 _STREAM_RUN_STATUSES = frozenset({
@@ -258,6 +262,39 @@ def create_chat_router(context: ApiContext) -> APIRouter:
         if not deleted:
             raise HTTPException(status_code=404, detail="附件不存在或无权访问")
         return Response(status_code=204)
+
+    @router.post("/chat/cancel", tags=["chat"])
+    async def cancel_chat_run(
+        request: ChatCancelRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        runtime = context.runtime()
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="服务未初始化")
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        cancel = getattr(runtime, "cancel_run", None)
+        if not callable(cancel):
+            raise HTTPException(status_code=503, detail="Run 取消能力未初始化")
+        try:
+            requested = await run_in_threadpool(
+                cancel,
+                request.session_id,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+            )
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(
+                status_code=503,
+                detail=context.safe_exception_text(error),
+            ) from error
+        if requested:
+            return JSONResponse(
+                content={"status": "cancellation_requested"},
+                status_code=202,
+            )
+        return JSONResponse(content={"status": "not_running"})
 
     @router.post("/chat", tags=["chat"])
     async def chat(

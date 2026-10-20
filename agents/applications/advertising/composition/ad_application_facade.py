@@ -189,5 +189,18 @@ class AdApplicationFacadeMixin:
             input_media=input_media,
         )
 
+    def cancel_run(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+        tenant_id: str,
+    ) -> bool:
+        return self._platform_application.cancel_run(
+            session_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        )
+
 
 __all__ = ["AdApplicationFacadeMixin"]

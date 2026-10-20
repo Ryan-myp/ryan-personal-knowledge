@@ -10,6 +10,7 @@ function environment(messages, fetchHandler = null) {
         children: [],
         get firstChild() { return this.children[0] || null; },
         replaceChildren() { this.children = []; },
+        prepend(node) { this.children.unshift(node); },
         appendChild(node) { this.children.push(node); return node; },
         insertBefore(node, before) {
             const index = this.children.indexOf(before);
@@ -53,6 +54,7 @@ function environment(messages, fetchHandler = null) {
     };
     const context = {
         sessionId: null, selectedConversationId: null,
+        isSending: false, activeRunSessionId: null,
         loadedConversationTurnIds: new Set(), pendingRequest: null,
         pendingCreationReview: false,
         conversationHistory: [],
@@ -75,10 +77,13 @@ function environment(messages, fetchHandler = null) {
                 appendChild(node) { this.children.push(node); return node; },
             }),
         },
+        window: { setTimeout() {} },
         resetCreationWorkbench: () => {},
         restoreExecutionTrace: () => {},
         loadLatestDurableRun: async () => {},
         clearPendingChatMedia: () => {},
+        updateChatQueuePanel: () => {},
+        showHistoryNotice: () => {},
         addMessage: (...args) => {
             displayed.push(args);
             const node = { content: args[0] };
@@ -116,6 +121,16 @@ test('history ignores empty internal assistant placeholders and non-chat roles',
     ]);
     await context.loadConversation('history');
     assert.deepEqual(displayed.map(args => args[0]), ['有模板吗', '有三个模板。']);
+});
+
+test('conversation switching is blocked while a Run is active', async () => {
+    const { context, calls } = environment([]);
+    context.isSending = true;
+
+    await context.loadConversation('history');
+
+    assert.equal(calls.length, 0);
+    assert.equal(context.sessionId, null);
 });
 
 test('history preserves the reply text, error style, Tool badges and card launcher', async () => {

@@ -239,6 +239,201 @@ def test_agent_can_be_embedded_directly_in_the_generic_runtime():
     assert result.run_id
 
 
+def test_generic_runtime_cancels_only_the_active_matching_session():
+    results = {}
+    agent = Agent(model=lambda _messages, _tools, _request: "done")
+    runtime = AgentRuntime(
+        agent=agent,
+        ports=RuntimePorts(
+            session_manager=None,
+            session_locks={},
+            session_locks_guard=threading.RLock(),
+            lease_owner="test",
+            lease_seconds=30,
+            mode_context=ContextVar("agent_loop_cancel_wrong_identity", default=None),
+            validate_mode=lambda value: value or "dry_run",
+            resolve_mode=lambda _tenant, _user, _requested: "dry_run",
+            assert_ready=lambda: None,
+            ensure_session=lambda _request: None,
+        ),
+    )
+    cancel_results = []
+
+    def request_wrong_identity(payload):
+        if payload["type"] == "agent_start":
+            cancel_results.append(runtime.cancel_run(
+                "session-a", user_id="other-user", tenant_id="tenant-a",
+            ))
+
+    agent.event_callback = request_wrong_identity
+    try:
+        results["wrong_identity"] = runtime.run(TurnRequest(
+            user_input="hello",
+            session_id="session-a",
+            user_id="user-a",
+            tenant_id="tenant-a",
+        ))
+        results["inactive"] = runtime.cancel_run(
+            "session-a", user_id="user-a", tenant_id="tenant-a",
+        )
+    finally:
+        runtime.close()
+
+    assert cancel_results == [False]
+    assert results["wrong_identity"].status.value == "succeeded"
+    assert results["inactive"] is False
+
+
+def test_generic_runtime_cooperatively_cancels_the_active_run():
+    agent = Agent(model=lambda _messages, _tools, _request: "done")
+    runtime = AgentRuntime(
+        agent=agent,
+        ports=RuntimePorts(
+            session_manager=None,
+            session_locks={},
+            session_locks_guard=threading.RLock(),
+            lease_owner="test",
+            lease_seconds=30,
+            mode_context=ContextVar("agent_loop_cancel_active", default=None),
+            validate_mode=lambda value: value or "dry_run",
+            resolve_mode=lambda _tenant, _user, _requested: "dry_run",
+            assert_ready=lambda: None,
+            ensure_session=lambda _request: None,
+        ),
+    )
+    cancel_results = []
+
+    def request_cancel(payload):
+        if payload["type"] == "agent_start":
+            cancel_results.append(runtime.cancel_run(
+                "session-a", user_id="user-a", tenant_id="tenant-a",
+            ))
+
+    agent.event_callback = request_cancel
+    try:
+        result = runtime.run(TurnRequest(
+            user_input="hello",
+            session_id="session-a",
+            user_id="user-a",
+            tenant_id="tenant-a",
+        ))
+    finally:
+        runtime.close()
+
+    assert cancel_results == [True]
+    assert result.status.value == "cancelled"
+
+
+def test_generic_runtime_stops_waiting_for_a_cancelled_model_call():
+    model_started = threading.Event()
+    release_model = threading.Event()
+    results = []
+    agent = Agent(model=lambda *_args: "done")
+    agent.model = type("BlockingModel", (), {
+        "complete": lambda _self, *_args: (
+            model_started.set(),
+            release_model.wait(3),
+            "done",
+        )[-1],
+    })()
+    runtime = AgentRuntime(
+        agent=agent,
+        ports=RuntimePorts(
+            session_manager=None,
+            session_locks={},
+            session_locks_guard=threading.RLock(),
+            lease_owner="test",
+            lease_seconds=30,
+            mode_context=ContextVar("agent_loop_cancel_blocked_model", default=None),
+            validate_mode=lambda value: value or "dry_run",
+            resolve_mode=lambda _tenant, _user, _requested: "dry_run",
+            assert_ready=lambda: None,
+            ensure_session=lambda _request: None,
+        ),
+    )
+    worker = threading.Thread(target=lambda: results.append(runtime.run(
+        TurnRequest(
+            user_input="hello",
+            session_id="session-a",
+            user_id="user-a",
+            tenant_id="tenant-a",
+        )
+    )))
+
+    try:
+        worker.start()
+        assert model_started.wait(1)
+        assert runtime.cancel_run(
+            "session-a", user_id="user-a", tenant_id="tenant-a",
+        ) is True
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert results[0].status.value == "cancelled"
+    finally:
+        release_model.set()
+        worker.join(timeout=3)
+        runtime.close()
+
+
+def test_cancelling_an_inflight_write_returns_recovery_and_keeps_signal_set():
+    tool_started = threading.Event()
+    release_tool = threading.Event()
+    tool_finished = threading.Event()
+    observed_cancel = []
+    results = []
+
+    class Model:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(
+                tool_calls=(ToolCall("write-1", "publish", {}),),
+            )
+
+    class BlockingWrite:
+        def execute(self, context, _arguments):
+            tool_started.set()
+            release_tool.wait(3)
+            observed_cancel.append(context.request.cancellation_event.is_set())
+            tool_finished.set()
+            return {"success": True}
+
+    app = AgentApplication.create(model=Model(), max_turns=1)
+    app.register_tool_source(StaticToolSource(
+        "writes",
+        [ToolBinding({
+            "name": "publish",
+            "effect_class": "write",
+            "cancellation_mode": "interruptible",
+        }, BlockingWrite())],
+    ))
+    runtime = app.runtime
+    worker = threading.Thread(target=lambda: results.append(runtime.run(
+        TurnRequest(
+            user_input="publish",
+            session_id="session-a",
+            user_id="user-a",
+            tenant_id="tenant-a",
+        )
+    )))
+
+    try:
+        worker.start()
+        assert tool_started.wait(1)
+        assert runtime.cancel_run(
+            "session-a", user_id="user-a", tenant_id="tenant-a",
+        ) is True
+        worker.join(timeout=1)
+        assert not worker.is_alive()
+        assert results[0].status.value == "recovery_required"
+        assert results[0].recovery_required is True
+    finally:
+        release_tool.set()
+        worker.join(timeout=3)
+        assert tool_finished.wait(1)
+        app.close()
+
+    assert observed_cancel == [True]
+
+
 def test_agent_prompt_and_subscribe_are_reusable_interactive_apis():
     events = []
     agent = Agent(model=lambda _messages, _tools, _request: "done")

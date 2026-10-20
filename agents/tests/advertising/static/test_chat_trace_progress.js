@@ -42,7 +42,9 @@ function environment() {
         setWorkbenchView() {},
         closeAgentWorkbench() {},
     };
-    for (const filename of ['chat-state.js', 'chat-knowledge.js', 'chat-trace.js']) {
+    for (const filename of [
+        'chat-queue.js', 'chat-state.js', 'chat-knowledge.js', 'chat-trace.js',
+    ]) {
         const source = path.resolve(
             __dirname, '../../../deployments/advertising/static/js', filename,
         );

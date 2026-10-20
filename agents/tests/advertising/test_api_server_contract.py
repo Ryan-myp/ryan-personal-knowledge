@@ -29,7 +29,8 @@ from agents.agent_platform.governance.identity.principal import RequestPrincipal
 def _chat_page_javascript() -> str:
     """Read the bootstrap and split bundles as one browser contract."""
     names = [
-        "chat.js", "chat-markdown.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat.js", "chat-markdown.js", "chat-queue.js", "chat-state.js",
+        "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
         "chat-feedback.js",
         "chat-media.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
@@ -180,13 +181,137 @@ def test_chat_routes_are_owned_by_a_dedicated_route_module():
     chat_routes = {
         route.path: route.endpoint.__module__
         for route in routes
-        if getattr(route, "path", None) in {"/chat", "/chat/stream"}
+        if getattr(route, "path", None) in {
+            "/chat", "/chat/cancel", "/chat/stream",
+        }
     }
 
     assert chat_routes == {
         "/chat": "agents.deployments.advertising.api.routes.chat",
+        "/chat/cancel": "agents.deployments.advertising.api.routes.chat",
         "/chat/stream": "agents.deployments.advertising.api.routes.chat",
     }
+
+
+def test_chat_cancel_uses_authenticated_identity_and_session(fake_server, monkeypatch):
+    calls = []
+    fake_server.cancel_run = lambda session_id, **kwargs: (
+        calls.append((session_id, kwargs)) or True
+    )
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "operator-key": {
+                "user_id": "operator",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/cancel",
+            headers={"X-API-Key": "operator-key"},
+            json={
+                "session_id": "session-a",
+                "user_id": "forged-user",
+                "tenant_id": "forged-tenant",
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json() == {"status": "cancellation_requested"}
+    assert calls == [(
+        "session-a",
+        {"user_id": "operator", "tenant_id": "tenant-a"},
+    )]
+
+
+def test_chat_cancel_reports_no_active_run_without_leaking_other_sessions(
+    fake_server, monkeypatch,
+):
+    calls = []
+    fake_server.cancel_run = lambda session_id, **kwargs: (
+        calls.append((session_id, kwargs)) or False
+    )
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "operator-key": {
+                "user_id": "operator",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/cancel",
+            headers={"X-API-Key": "operator-key"},
+            json={"session_id": "session-not-running"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "not_running"}
+    assert calls == [(
+        "session-not-running",
+        {"user_id": "operator", "tenant_id": "tenant-a"},
+    )]
+
+
+def test_chat_cancel_maps_runtime_state_errors_to_service_unavailable(
+    fake_server, monkeypatch,
+):
+    def fail_cancel(_session_id, **_identity):
+        raise RuntimeError("runtime unavailable")
+
+    fake_server.cancel_run = fail_cancel
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "operator-key": {
+                "user_id": "operator",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/cancel",
+            headers={"X-API-Key": "operator-key"},
+            json={"session_id": "session-a"},
+        )
+
+    assert response.status_code == 503
+
+
+def test_chat_ui_exposes_stop_and_bounded_queue_contract():
+    javascript = _chat_page_javascript()
+    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    styles = _chat_page_styles()
+
+    assert 'id="stopBtn"' in template
+    assert 'id="chatQueuePanel"' in template
+    assert "requestChatCancellation" in javascript
+    assert "processNextQueuedMessage" in javascript
+    assert "MAX_CHAT_QUEUE_SIZE = 10" in javascript
+    assert ".chat-stop-btn" in styles
+    assert ".chat-queue-panel" in styles
+
+    subprocess.run(
+        [
+            "node",
+            "--test",
+            str(Path(__file__).parent / "static" / "test_chat_queue.js"),
+            str(Path(__file__).parent / "static" / "test_chat_queue_ui.js"),
+        ],
+        check=True,
+        timeout=30,
+    )
 
 
 def test_execution_trace_is_opt_in_while_creation_workbench_remains_available():

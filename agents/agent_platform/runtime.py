@@ -562,6 +562,23 @@ class PlatformApplication:
         self.start()
         return self.runtime.run(self._request_for_scenario(request))
 
+    def cancel_run(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+        tenant_id: str,
+    ) -> bool:
+        """Delegate cancellation through the shared Runtime lifecycle."""
+        cancel = getattr(self.runtime, "cancel_run", None)
+        if not callable(cancel):
+            return False
+        return bool(cancel(
+            session_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        ))
+
     def register_tool(
         self, definition: Any, executor: Any, *, source_id: str = "local",
     ) -> Any:

@@ -422,6 +422,431 @@
             addMessage('❌ 操作已取消', 'agent');
         }
 
+        function updateChatQueuePanel() {
+            const panel = document.getElementById('chatQueuePanel');
+            const sendButton = document.getElementById('sendBtn');
+            const stopButton = document.getElementById('stopBtn');
+            const hint = document.getElementById('chatInputHint');
+            const queue = sessionId ? chatMessageQueue.list(sessionId) : [];
+            const paused = Boolean(sessionId && pausedChatQueueSessions.has(sessionId));
+            const editingQueuedMessage = queueMessageEditBlocksSession(sessionId);
+            const queueSize = sessionId ? chatMessageQueue.size(sessionId) : 0;
+
+            if (panel) {
+                panel.replaceChildren();
+                panel.hidden = queue.length === 0;
+                if (queue.length) {
+                    const header = document.createElement('div');
+                    header.className = 'chat-queue-header';
+                    const title = document.createElement('span');
+                    title.textContent = editingQueuedMessage
+                        ? `编辑中 · ${queue.length} 条待发送`
+                        : paused
+                            ? `已暂停 · ${queue.length} 条待发送`
+                            : `后续消息 · ${queue.length}/${MAX_CHAT_QUEUE_SIZE}`;
+                    header.appendChild(title);
+                    if (paused && !editingQueuedMessage) {
+                        const resume = document.createElement('button');
+                        resume.className = 'chat-queue-resume';
+                        resume.type = 'button';
+                        resume.textContent = '继续发送';
+                        resume.disabled = isSending;
+                        resume.title = isSending ? '等待当前运行停止后继续' : '继续发送排队消息';
+                        resume.addEventListener('click', resumeQueuedMessages);
+                        header.appendChild(resume);
+                    }
+                    panel.appendChild(header);
+
+                    const list = document.createElement('div');
+                    list.className = 'chat-queue-items';
+                    queue.forEach((item, index) => {
+                        const row = document.createElement('div');
+                        row.className = 'chat-queue-item';
+                        const isEditing = editingQueueMessage
+                            && editingQueueMessage.sessionId === sessionId
+                            && String(editingQueueMessage.itemId) === String(item.id);
+                        if (isEditing) {
+                            row.classList.add('chat-queue-item-editing');
+                            const editor = document.createElement('textarea');
+                            editor.className = 'chat-queue-edit-input';
+                            editor.rows = 2;
+                            editor.maxLength = 12_000;
+                            editor.value = editingQueueMessage.draft;
+                            editor.setAttribute(
+                                'aria-label',
+                                `编辑第 ${index + 1} 条排队消息`,
+                            );
+                            editor.addEventListener('input', () => {
+                                editingQueueMessage.draft = editor.value;
+                                editingQueueMessage.error = '';
+                                const save = row.querySelector('.chat-queue-save');
+                                if (save) {
+                                    save.disabled = !editor.value.trim()
+                                        && !item.attachments?.length;
+                                }
+                                const error = row.querySelector('.chat-queue-edit-error');
+                                if (error) error.textContent = '';
+                            });
+                            editor.addEventListener('keydown', event => {
+                                if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    cancelQueuedMessageEdit(sessionId, item.id);
+                                } else if (
+                                    event.key === 'Enter'
+                                    && (event.ctrlKey || event.metaKey)
+                                ) {
+                                    event.preventDefault();
+                                    saveQueuedMessageEdit(sessionId, item.id);
+                                }
+                            });
+                            row.appendChild(editor);
+
+                            if (item.attachments?.length) {
+                                const metadata = document.createElement('span');
+                                metadata.className = 'chat-queue-item-meta chat-queue-edit-meta';
+                                metadata.textContent = `保留 ${item.attachments.length} 个附件`;
+                                row.appendChild(metadata);
+                            }
+
+                            const error = document.createElement('span');
+                            error.className = 'chat-queue-edit-error';
+                            error.setAttribute('role', 'status');
+                            error.textContent = editingQueueMessage.error || '';
+                            row.appendChild(error);
+
+                            const actions = document.createElement('div');
+                            actions.className = 'chat-queue-actions';
+                            const save = document.createElement('button');
+                            save.className = 'chat-queue-action chat-queue-save';
+                            save.type = 'button';
+                            save.textContent = '保存';
+                            save.disabled = !editingQueueMessage.draft.trim()
+                                && !item.attachments?.length;
+                            save.addEventListener('click', () => {
+                                saveQueuedMessageEdit(sessionId, item.id);
+                            });
+                            actions.appendChild(save);
+
+                            const cancel = document.createElement('button');
+                            cancel.className = 'chat-queue-action chat-queue-cancel';
+                            cancel.type = 'button';
+                            cancel.textContent = '取消';
+                            cancel.addEventListener('click', () => {
+                                cancelQueuedMessageEdit(sessionId, item.id);
+                            });
+                            actions.appendChild(cancel);
+                            row.appendChild(actions);
+                        } else {
+                            const text = document.createElement('span');
+                            text.className = 'chat-queue-item-text';
+                            text.textContent = item.text || '分析图片或视频附件';
+                            text.title = item.text || '分析图片或视频附件';
+                            row.appendChild(text);
+                            if (item.attachments?.length) {
+                                const metadata = document.createElement('span');
+                                metadata.className = 'chat-queue-item-meta';
+                                metadata.textContent = `${item.attachments.length} 个附件`;
+                                row.appendChild(metadata);
+                            }
+
+                            const actions = document.createElement('div');
+                            actions.className = 'chat-queue-actions';
+                            const edit = document.createElement('button');
+                            edit.className = 'chat-queue-action chat-queue-edit';
+                            edit.type = 'button';
+                            edit.textContent = '编辑';
+                            edit.title = `编辑第 ${index + 1} 条排队消息`;
+                            edit.setAttribute('aria-label', edit.title);
+                            edit.addEventListener('click', () => {
+                                beginQueuedMessageEdit(sessionId, item);
+                            });
+                            actions.appendChild(edit);
+
+                            const remove = document.createElement('button');
+                            remove.className = 'chat-queue-remove';
+                            remove.type = 'button';
+                            remove.textContent = '×';
+                            remove.title = `移除第 ${index + 1} 条排队消息`;
+                            remove.setAttribute('aria-label', remove.title);
+                            remove.addEventListener('click', () => {
+                                removeQueuedChatMessage(item.id);
+                            });
+                            actions.appendChild(remove);
+                            row.appendChild(actions);
+                        }
+                        list.appendChild(row);
+                    });
+                    panel.appendChild(list);
+                }
+            }
+
+            if (sendButton) {
+                sendButton.disabled = Boolean(
+                    chatMediaUploading
+                    || ((isSending || paused || queue.length > 0)
+                        && queueSize >= MAX_CHAT_QUEUE_SIZE),
+                );
+                const queueMode = Boolean(isSending || paused || queue.length);
+                sendButton.classList.toggle('is-queue-mode', queueMode);
+                sendButton.setAttribute(
+                    'aria-label',
+                    queueMode ? '加入排队消息' : '发送',
+                );
+                sendButton.title = queueMode ? '按顺序排队发送' : '发送';
+                if (isSending) sendButton.setAttribute('aria-busy', 'true');
+                else sendButton.removeAttribute('aria-busy');
+            }
+
+            if (stopButton) {
+                stopButton.hidden = !isSending;
+                stopButton.disabled = isStopping;
+                stopButton.setAttribute(
+                    'aria-label',
+                    isStopping ? '正在停止当前运行' : '停止当前运行',
+                );
+                stopButton.title = isStopping ? '正在请求停止…' : '停止当前运行';
+            }
+
+            if (hint) {
+                if (isStopping) {
+                    hint.textContent = '正在请求停止；已提交的写操作不会回滚，排队消息将暂停';
+                } else if (isSending) {
+                    hint.textContent = `Agent 正在运行；继续发送会排队（${queueSize}/${MAX_CHAT_QUEUE_SIZE}）`;
+                } else if (editingQueuedMessage) {
+                    hint.textContent = '排队消息正在编辑；保存或取消后继续发送';
+                } else if (paused && queue.length) {
+                    hint.textContent = '当前队列已暂停，可移除消息或点击“继续发送”';
+                } else {
+                    hint.textContent = '按 Enter 发送，Shift+Enter 换行；可添加图片或视频';
+                }
+            }
+        }
+
+        function queueMessageEditBlocksSession(targetSessionId) {
+            if (
+                !editingQueueMessage
+                || editingQueueMessage.sessionId !== targetSessionId
+            ) return false;
+            return chatMessageQueue
+                .list(targetSessionId)
+                .some(item => String(item.id) === String(editingQueueMessage.itemId));
+        }
+
+        function beginQueuedMessageEdit(targetSessionId, item) {
+            editingQueueMessage = {
+                sessionId: targetSessionId,
+                itemId: item.id,
+                draft: item.text || '',
+                error: '',
+            };
+            updateChatQueuePanel();
+            document.querySelector('.chat-queue-edit-input')?.focus();
+        }
+
+        function cancelQueuedMessageEdit(targetSessionId, itemId) {
+            if (
+                !editingQueueMessage
+                || editingQueueMessage.sessionId !== targetSessionId
+                || String(editingQueueMessage.itemId) !== String(itemId)
+            ) return;
+            editingQueueMessage = null;
+            updateChatQueuePanel();
+            processNextQueuedMessage();
+        }
+
+        function saveQueuedMessageEdit(targetSessionId, itemId) {
+            if (
+                !editingQueueMessage
+                || editingQueueMessage.sessionId !== targetSessionId
+                || String(editingQueueMessage.itemId) !== String(itemId)
+            ) return;
+            const item = chatMessageQueue
+                .list(targetSessionId)
+                .find(queued => String(queued.id) === String(itemId));
+            if (!item) {
+                editingQueueMessage = null;
+                updateChatQueuePanel();
+                processNextQueuedMessage();
+                return;
+            }
+            const text = String(editingQueueMessage.draft || '').trim();
+            if (text.length > 12_000) {
+                editingQueueMessage.error = '消息不能超过 12000 个字符。';
+                updateChatQueuePanel();
+                document.querySelector('.chat-queue-edit-input')?.focus();
+                return;
+            }
+            if (!text && !item.attachments?.length) {
+                editingQueueMessage.error = '消息内容不能为空。';
+                updateChatQueuePanel();
+                document.querySelector('.chat-queue-edit-input')?.focus();
+                return;
+            }
+            if (!chatMessageQueue.updateText(targetSessionId, itemId, text)) return;
+            editingQueueMessage = null;
+            updateChatQueuePanel();
+            processNextQueuedMessage();
+        }
+
+        function removeQueuedChatMessage(itemId) {
+            if (!sessionId) return;
+            const queued = chatMessageQueue
+                .list(sessionId)
+                .find(item => String(item.id) === String(itemId));
+            if (!queued || !chatMessageQueue.remove(sessionId, itemId)) return;
+            if (
+                editingQueueMessage
+                && editingQueueMessage.sessionId === sessionId
+                && String(editingQueueMessage.itemId) === String(itemId)
+            ) {
+                editingQueueMessage = null;
+            }
+            const query = new URLSearchParams({ session_id: sessionId });
+            for (const attachmentId of queued.requestParams.media_ids || []) {
+                void serviceFetch(
+                    `/chat/media/${encodeURIComponent(attachmentId)}?${query}`,
+                    { method: 'DELETE' },
+                ).catch(() => {});
+            }
+            if (!chatMessageQueue.size(sessionId)) {
+                pausedChatQueueSessions.delete(sessionId);
+            }
+            updateChatQueuePanel();
+        }
+
+        function resumeQueuedMessages() {
+            if (!sessionId || isSending) return;
+            pausedChatQueueSessions.delete(sessionId);
+            updateChatQueuePanel();
+            processNextQueuedMessage();
+        }
+
+        function processNextQueuedMessage() {
+            if (
+                isSending || !sessionId
+                || pausedChatQueueSessions.has(sessionId)
+                || queueMessageEditBlocksSession(sessionId)
+            ) return;
+            const next = chatMessageQueue.dequeue(sessionId);
+            updateChatQueuePanel();
+            if (next) void executeChatMessage(next);
+        }
+
+        function finishChatTurn() {
+            const finishedSessionId = activeRunSessionId;
+            if (finishedSessionId) {
+                const hasQueuedMessages = chatMessageQueue.size(finishedSessionId) > 0;
+                if (isStopping && hasQueuedMessages) {
+                    pausedChatQueueSessions.add(finishedSessionId);
+                } else if (!hasQueuedMessages) {
+                    pausedChatQueueSessions.delete(finishedSessionId);
+                }
+            }
+            isSending = false;
+            isStopping = false;
+            activeRunSessionId = null;
+            updateChatQueuePanel();
+            processNextQueuedMessage();
+        }
+
+        async function requestChatCancellation() {
+            if (!isSending || !activeRunSessionId || isStopping) return;
+            isStopping = true;
+            pausedChatQueueSessions.add(activeRunSessionId);
+            updateChatQueuePanel();
+            try {
+                const response = await serviceFetch('/chat/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: activeRunSessionId }),
+                });
+                const text = await response.text();
+                let data = {};
+                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
+                if (!response.ok) {
+                    throw new Error(
+                        data.detail || data.error || `停止请求失败（${response.status}）`,
+                    );
+                }
+                if (data.status === 'not_running') {
+                    isStopping = false;
+                    updateChatQueuePanel();
+                }
+            } catch (error) {
+                isStopping = false;
+                updateChatQueuePanel();
+                addMessage(
+                    `停止请求未能送达：${String(error?.message || error)}`,
+                    'agent',
+                    null,
+                    true,
+                );
+            }
+        }
+
+        function queueItemId() {
+            return globalThis.crypto?.randomUUID?.()
+                || `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        function captureChatMessage(text, submittedAttachments) {
+            const targetSessionId = sessionId || ensureChatMediaSession();
+            const requestParams = {
+                ...(pendingBlueprintRequest || {}),
+                user_input: text,
+                session_id: targetSessionId,
+            };
+            if (submittedAttachments.length) {
+                requestParams.media_ids = submittedAttachments.map(item => item.id);
+            } else if (!Array.isArray(requestParams.media_ids)) {
+                delete requestParams.media_ids;
+            }
+            return {
+                id: queueItemId(),
+                session_id: targetSessionId,
+                requestParams,
+                attachments: submittedAttachments,
+                text,
+            };
+        }
+
+        async function executeChatMessage(item) {
+            if (isSending || item.session_id !== sessionId) return;
+            isSending = true;
+            isStopping = false;
+            activeRunSessionId = item.session_id;
+            updateChatQueuePanel();
+            const { requestParams, attachments } = item;
+            const text = String(requestParams.user_input || '');
+            addMessage(text, 'user', null, false, '', null, null, {
+                attachments,
+            });
+            addLoading();
+            startExecutionTrace(text || '分析图片或视频附件');
+            conversationCount++;
+            const statToday = document.getElementById('statToday');
+            if (statToday) statToday.textContent = conversationCount;
+
+            try {
+                const data = await streamChatRequest(requestParams);
+                removeLoading();
+                apiCallCount++;
+                const statApiCalls = document.getElementById('statAPICalls');
+                if (statApiCalls) statApiCalls.textContent = apiCallCount;
+                renderStreamResult(data, requestParams);
+                if (['cancelled', 'recovery_required'].includes(data.status)) {
+                    pausedChatQueueSessions.add(item.session_id);
+                }
+                await refreshConversationHistory({ silent: true });
+            } catch (error) {
+                removeLoading();
+                pausedChatQueueSessions.add(item.session_id);
+                addMessage(markChatRequestFailure(error), 'agent', null, true);
+            } finally {
+                finishChatTurn();
+            }
+        }
+
         // Execute confirmation
         async function executeConfirm() {
             if (!pendingRequest || isSending) return;
@@ -493,6 +918,9 @@
             const authorizing = confirmationCanExecute(payload);
             addMessage(authorizing ? '确认并继续执行' : '补充信息并重新生成确认计划', 'user');
             isSending = true;
+            isStopping = false;
+            activeRunSessionId = originalRequest.session_id || sessionId;
+            updateChatQueuePanel();
             addLoading();
             startExecutionTrace(originalRequest?.user_input || '确认并继续执行');
 
@@ -508,9 +936,12 @@
 
             } catch (error) {
                 removeLoading();
+                if (activeRunSessionId) {
+                    pausedChatQueueSessions.add(activeRunSessionId);
+                }
                 addMessage(markChatRequestFailure(error), 'agent', null, true);
             } finally {
-                isSending = false;
+                finishChatTurn();
             }
         }
 
@@ -531,12 +962,9 @@
                 account_id: selectedId,
             };
             isSending = true;
-            const sendButton = document.getElementById('sendBtn');
-            if (sendButton) {
-                sendButton.disabled = true;
-                sendButton.classList.add('is-sending');
-                sendButton.setAttribute('aria-busy', 'true');
-            }
+            isStopping = false;
+            activeRunSessionId = sessionId;
+            updateChatQueuePanel();
             addMessage(userInput, 'user');
             addLoading();
             startExecutionTrace(userInput);
@@ -547,14 +975,12 @@
                 await refreshConversationHistory({ silent: true });
             } catch (error) {
                 removeLoading();
+                if (activeRunSessionId) {
+                    pausedChatQueueSessions.add(activeRunSessionId);
+                }
                 addMessage(markChatRequestFailure(error), 'agent', null, true);
             } finally {
-                isSending = false;
-                if (sendButton) {
-                    sendButton.disabled = false;
-                    sendButton.classList.remove('is-sending');
-                    sendButton.removeAttribute('aria-busy');
-                }
+                finishChatTurn();
             }
         }
 
@@ -562,70 +988,57 @@
         async function sendMessage() {
             const input = document.getElementById('userInput');
             const text = input.value.trim();
-            if ((!text && !pendingChatAttachments.length) || isSending || chatMediaUploading) return;
+            if ((!text && !pendingChatAttachments.length) || chatMediaUploading) return;
             const submittedAttachments = pendingChatAttachments.map(item => ({
                 id: item.id,
                 filename: item.filename,
                 media_type: item.media_type,
                 size: item.size,
             }));
+            const item = captureChatMessage(text, submittedAttachments);
+            const pendingCount = chatMessageQueue.size(item.session_id);
+            if (!pendingCount) pausedChatQueueSessions.delete(item.session_id);
+            const sessionPaused = pendingCount > 0
+                && pausedChatQueueSessions.has(item.session_id);
 
-            isSending = true;
-            const sendButton = document.getElementById('sendBtn');
-            if (sendButton) {
-                sendButton.disabled = true;
-                sendButton.classList.add('is-sending');
-                sendButton.setAttribute('aria-busy', 'true');
-                sendButton.setAttribute('aria-label', 'Agent 正在处理');
-                sendButton.title = 'Agent 正在处理';
+            if (
+                isSending || sessionPaused || pendingCount > 0
+            ) {
+                if (isSending && activeRunSessionId !== item.session_id) {
+                    addMessage(
+                        '当前运行属于另一个会话，请等待它结束后再发送。',
+                        'agent',
+                        null,
+                        true,
+                    );
+                    return;
+                }
+                const queued = chatMessageQueue.enqueue(item.session_id, item);
+                if (!queued.accepted) {
+                    addMessage(
+                        queued.reason === 'total_limit'
+                            ? `当前页面的待发送消息已满（最多 ${MAX_CHAT_QUEUE_TOTAL_SIZE} 条），请先清理其他会话中的队列。`
+                            : `本会话排队已满（最多 ${MAX_CHAT_QUEUE_SIZE} 条），请等一条完成或移除队列消息后再发送。`,
+                        'agent',
+                        null,
+                        true,
+                    );
+                    return;
+                }
+                pendingBlueprintRequest = null;
+                input.value = '';
+                input.style.height = 'auto';
+                clearPendingChatMedia({ revoke: true, deleteStored: false });
+                updateChatQueuePanel();
+                if (!isSending && !sessionPaused) processNextQueuedMessage();
+                return;
             }
 
+            pendingBlueprintRequest = null;
             input.value = '';
             input.style.height = 'auto';
-
-            addMessage(text, 'user', null, false, '', null, null, {
-                attachments: submittedAttachments,
-            });
-            addLoading();
-            startExecutionTrace(text || '分析图片或视频附件');
-
-            conversationCount++;
-            const statToday = document.getElementById('statToday');
-            if (statToday) statToday.textContent = conversationCount;
-
-            try {
-                const requestParams = {
-                    user_input: text,
-                    user_id: 'web_user',
-                    session_id: sessionId,
-                    ...(submittedAttachments.length
-                        ? { media_ids: submittedAttachments.map(item => item.id) }
-                        : {}),
-                    ...(pendingBlueprintRequest || {}),
-                };
-                pendingBlueprintRequest = null;
-                const data = await streamChatRequest(requestParams);
-                removeLoading();
-                apiCallCount++;
-                const statApiCalls = document.getElementById('statAPICalls');
-                if (statApiCalls) statApiCalls.textContent = apiCallCount;
-                renderStreamResult(data, requestParams);
-                clearPendingChatMedia({ revoke: false });
-                await refreshConversationHistory({ silent: true });
-
-            } catch (error) {
-                removeLoading();
-                addMessage(markChatRequestFailure(error), 'agent', null, true);
-            } finally {
-                isSending = false;
-                if (sendButton) {
-                    sendButton.disabled = false;
-                    sendButton.classList.remove('is-sending');
-                    sendButton.removeAttribute('aria-busy');
-                    sendButton.setAttribute('aria-label', '发送');
-                    sendButton.title = '发送';
-                }
-            }
+            clearPendingChatMedia({ revoke: true, deleteStored: false });
+            void executeChatMessage(item);
         }
 
         // Render response
@@ -647,6 +1060,10 @@
 
         // New chat
         function newChat() {
+            if (isSending) {
+                showHistoryNotice('当前对话仍在运行。可以先停止或等它完成，再新建对话。');
+                return;
+            }
             stopDurableRunPolling();
             clearPendingChatMedia({ revoke: true });
             conversationLoadSequence += 1;
@@ -661,6 +1078,7 @@
                 updateConversationHistoryPagination();
             }
             sessionId = null;
+            updateChatQueuePanel();
             selectedConversationId = null;
             loadedConversationTurnIds.clear();
             pendingRequest = null;

@@ -246,14 +246,6 @@ class ToolExecutionCoordinator:
         return self._tool_replay_safe(getattr(binding, "definition", None))
 
     @classmethod
-    def _tool_cancellation_mode(cls, definition: Any) -> str:
-        value = str(
-            cls._tool_value(definition, "cancellation_mode", "cooperative")
-            or "cooperative"
-        ).strip().lower()
-        return value if value in TOOL_CANCELLATION_MODES else "cooperative"
-
-    @classmethod
     def _tool_is_write(cls, definition: Any) -> bool:
         effect = cls._tool_value(
             definition,
@@ -508,51 +500,117 @@ class ToolExecutionCoordinator:
             for attempt in range(max_retries + 1):
                 self.assert_not_interrupted(context.request)
                 try:
-                    if self.tool_timeout_seconds is None:
-                        output = execute(context, dict(call.arguments))
-                    else:
-                        if not self._inflight_tool_slots.acquire(blocking=False):
-                            raise ToolCapacityError(
-                                "Tool execution capacity exhausted"
-                            )
-                        pool = None
-                        try:
-                            pool = ThreadPoolExecutor(
-                                max_workers=1,
-                                thread_name_prefix="agent-tool-call",
-                            )
-                            future: Future[Any] = pool.submit(
-                                copy_context().run,
-                                execute,
-                                context,
-                                dict(call.arguments),
-                            )
-                        except Exception:
-                            self._inflight_tool_slots.release()
-                            if pool is not None:
-                                pool.shutdown(wait=False, cancel_futures=True)
-                            raise
-                        future.add_done_callback(
-                            lambda _completed: self._inflight_tool_slots.release()
+                    if not self._inflight_tool_slots.acquire(blocking=False):
+                        raise ToolCapacityError(
+                            "Tool execution capacity exhausted"
                         )
-                        try:
-                            output = future.result(
-                                timeout=self.tool_timeout_seconds
-                            )
-                        except FutureTimeoutError as error:
-                            future.cancel()
-                            self.emit(
-                                "tool_timeout",
-                                context.request,
-                                tool_call_id=call.id,
-                                tool_name=call.name,
-                                timeout_seconds=self.tool_timeout_seconds,
-                            )
-                            raise TimeoutError(
-                                f"Tool '{call.name}' timed out"
-                            ) from error
-                        finally:
+                    pool = None
+                    try:
+                        pool = ThreadPoolExecutor(
+                            max_workers=1,
+                            thread_name_prefix="agent-tool-call",
+                        )
+                        future: Future[Any] = pool.submit(
+                            copy_context().run,
+                            execute,
+                            context,
+                            dict(call.arguments),
+                        )
+                    except Exception:
+                        self._inflight_tool_slots.release()
+                        if pool is not None:
                             pool.shutdown(wait=False, cancel_futures=True)
+                        raise
+                    future.add_done_callback(
+                        lambda _completed: self._inflight_tool_slots.release()
+                    )
+                    try:
+                        deadline = (
+                            time.monotonic() + self.tool_timeout_seconds
+                            if self.tool_timeout_seconds is not None else None
+                        )
+                        while True:
+                            remaining = (
+                                deadline - time.monotonic()
+                                if deadline is not None else None
+                            )
+                            if remaining is not None and remaining <= 0:
+                                future.cancel()
+                                self.emit(
+                                    "tool_timeout",
+                                    context.request,
+                                    tool_call_id=call.id,
+                                    tool_name=call.name,
+                                    timeout_seconds=self.tool_timeout_seconds,
+                                )
+                                raise TimeoutError(
+                                    f"Tool '{call.name}' timed out"
+                                )
+                            wait_seconds = (
+                                min(0.1, remaining)
+                                if remaining is not None else 0.1
+                            )
+                            try:
+                                output = future.result(timeout=wait_seconds)
+                                break
+                            except FutureTimeoutError as error:
+                                if future.done():
+                                    raise
+                                interrupted = self.interrupt_reason(
+                                    context.request,
+                                )
+                                if interrupted is not None:
+                                    cancelled_before_start = future.cancel()
+                                    unsafe_write = (
+                                        interrupted in {
+                                            "cancelled",
+                                            "session_lease_lost",
+                                        }
+                                        and self._tool_is_write(definition)
+                                        and not cancelled_before_start
+                                    )
+                                    output = {
+                                        "success": False,
+                                        "execution_status": interrupted,
+                                        "cancelled": interrupted == "cancelled",
+                                        "cancelled_before_execution": (
+                                            cancelled_before_start
+                                        ),
+                                        "error": (
+                                            "Run cancellation requested"
+                                            if interrupted == "cancelled"
+                                            else "Runtime session lease was lost"
+                                        ),
+                                        "effect_state": (
+                                            "unknown" if unsafe_write else "none"
+                                        ),
+                                        "recovery_required": unsafe_write,
+                                        "runtime_signals": {
+                                            interrupted: True,
+                                            **(
+                                                {"effect_state": "unknown"}
+                                                if unsafe_write else {}
+                                            ),
+                                        },
+                                    }
+                                    break
+                                if (
+                                    deadline is not None
+                                    and time.monotonic() >= deadline
+                                ):
+                                    future.cancel()
+                                    self.emit(
+                                        "tool_timeout",
+                                        context.request,
+                                        tool_call_id=call.id,
+                                        tool_name=call.name,
+                                        timeout_seconds=self.tool_timeout_seconds,
+                                    )
+                                    raise TimeoutError(
+                                        f"Tool '{call.name}' timed out"
+                                    ) from error
+                    finally:
+                        pool.shutdown(wait=False, cancel_futures=True)
                     if isinstance(output, ToolResult):
                         output = output.to_dict()
                     return output, retry_count
@@ -711,7 +769,9 @@ class ToolExecutionCoordinator:
                 batch_read_cache,
                 write_cache,
             )
-            self.tool_circuit.record_success(call.name)
+            interrupted = self.interrupt_reason(request)
+            if interrupted is None:
+                self.tool_circuit.record_success(call.name)
             safe_output = redact_for_persistence(output)
             output_data = (
                 safe_output.get("data")
@@ -815,15 +875,17 @@ class ToolExecutionCoordinator:
                         "provider_effect_unknown": True,
                     },
                 })
-            cancellation_mode = self._tool_cancellation_mode(
-                getattr(binding, "definition", None),
-            )
-            interrupted = self.interrupt_reason(request)
             if interrupted == "cancelled":
                 result["cancelled"] = True
                 result["terminate"] = True
-                if cancellation_mode != "interruptible" and self._tool_is_write(
-                    getattr(binding, "definition", None),
+                cancelled_before_execution = bool(
+                    isinstance(safe_output, Mapping)
+                    and safe_output.get("cancelled_before_execution")
+                    and safe_output.get("effect_state") == "none"
+                )
+                if (
+                    self._tool_is_write(getattr(binding, "definition", None))
+                    and not cancelled_before_execution
                 ):
                     result["recovery_required"] = True
                     result["effect_state"] = "unknown"

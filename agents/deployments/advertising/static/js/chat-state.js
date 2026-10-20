@@ -1,5 +1,15 @@
         let pendingRequest = null;
         let isSending = false;
+        let isStopping = false;
+        let activeRunSessionId = null;
+        const MAX_CHAT_QUEUE_SIZE = 10;
+        const MAX_CHAT_QUEUE_TOTAL_SIZE = 50;
+        const chatMessageQueue = new ChatMessageQueue(
+            MAX_CHAT_QUEUE_SIZE,
+            MAX_CHAT_QUEUE_TOTAL_SIZE,
+        );
+        const pausedChatQueueSessions = new Set();
+        let editingQueueMessage = null;
         let sessionId = null;
         let pendingChatAttachments = [];
         const chatMediaObjectUrls = new Map();

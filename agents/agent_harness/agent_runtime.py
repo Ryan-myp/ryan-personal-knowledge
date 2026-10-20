@@ -137,6 +137,30 @@ class AgentRuntime:
             result.setdefault("turn_id", request.turn_id)
         return result
 
+    def cancel_run(
+        self,
+        session_id: str,
+        *,
+        user_id: str,
+        tenant_id: str,
+    ) -> bool:
+        """Request cooperative cancellation for one active scoped Run."""
+        if self._closed:
+            return False
+        scoped_session_id = str(session_id or "").strip()
+        scoped_user_id = str(user_id or "").strip()
+        scoped_tenant_id = str(tenant_id or "").strip()
+        if not scoped_session_id or not scoped_user_id or not scoped_tenant_id:
+            raise ValueError("session_id, user_id, and tenant_id are required")
+        cancel = getattr(self.pipeline, "abort", None)
+        if not callable(cancel):
+            return False
+        return bool(cancel(
+            scoped_session_id,
+            user_id=scoped_user_id,
+            tenant_id=scoped_tenant_id,
+        ))
+
     def _execute_pipeline(self, request: TurnRequest) -> Any:
         store = self.run_store
         original_callback = request.event_callback

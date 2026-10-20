@@ -33,8 +33,8 @@ class RuntimeSessionLeaseLostError(RuntimeError):
     """The durable owner lease was lost while a turn was running."""
 
 
-class _AnyEvent:
-    """Read-only event view that is set when any source event is set."""
+class AnyCancellationToken:
+    """Event view that is set when any source event is set."""
 
     def __init__(self, *events: Optional[threading.Event]) -> None:
         self._events = tuple(event for event in events if event is not None)
@@ -53,6 +53,16 @@ class _AnyEvent:
         while not self.is_set() and time.monotonic() < deadline:
             time.sleep(min(0.01, max(0.0, deadline - time.monotonic())))
         return self.is_set()
+
+class CancellationEventGroup(AnyCancellationToken):
+    """Combined signal for caller cancellation and Run cancellation."""
+
+    def set(self) -> None:
+        """Forward cancellation to mutable source events."""
+        for event in self._events:
+            setter = getattr(event, "set", None)
+            if callable(setter):
+                setter()
 
 
 class SessionLeaseStore(Protocol):
@@ -355,7 +365,7 @@ class AgentRuntimeKernel:
                             self.refresh_session(normalized)
                         normalized = replace(
                             normalized,
-                            lease_lost_event=_AnyEvent(
+                            lease_lost_event=AnyCancellationToken(
                                 normalized.lease_lost_event,
                                 lease.lost_event,
                             ),
@@ -407,6 +417,8 @@ class AgentRuntimeKernel:
 
 __all__ = [
     "AgentRuntimeKernel",
+    "AnyCancellationToken",
+    "CancellationEventGroup",
     "CancellationToken",
     "RuntimeSessionBusyError",
     "RuntimeSessionLeaseLostError",

@@ -55,6 +55,8 @@ from .skills import (
 )
 from .runtime_kernel import (
     AgentRuntimeKernel,
+    AnyCancellationToken,
+    CancellationEventGroup,
     CancellationToken,
     RuntimeSessionBusyError,
     RuntimeSessionLeaseLostError,
@@ -85,6 +87,8 @@ __all__ = [
     "AlertSink",
     "AgentState",
     "AgentRuntimeKernel",
+    "AnyCancellationToken",
+    "CancellationEventGroup",
     "CancellationToken",
     "InMemoryToolCatalog",
     "InMemorySkillCatalog",

@@ -36,11 +36,22 @@ function environment() {
         startExecutionTrace() {}, refreshConversationHistory: async () => {},
         markChatRequestFailure: error => error.message,
     };
-    for (const file of ['chat-workbench.js', 'chat-messages.js', 'chat-requests.js']) {
+    for (const file of [
+        'chat-queue.js', 'chat-workbench.js', 'chat-messages.js',
+        'chat-requests.js',
+    ]) {
         vm.runInNewContext(fs.readFileSync(path.resolve(
             __dirname, '../../../deployments/advertising/static/js', file,
         ), 'utf8'), context, { filename: file });
     }
+    context.chatMessageQueue = vm.runInNewContext(
+        'new ChatMessageQueue(10)', context,
+    );
+    context.pausedChatQueueSessions = new Set();
+    context.editingQueueMessage = null;
+    context.MAX_CHAT_QUEUE_SIZE = 10;
+    context.isStopping = false;
+    context.activeRunSessionId = null;
     context.addMessage = (...args) => displayed.push(args);
     context.addLoading = () => {};
     context.removeLoading = () => {};

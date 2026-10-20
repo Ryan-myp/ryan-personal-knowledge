@@ -94,8 +94,11 @@
                 }
                 return '本次处理未完成，但服务端没有返回失败说明。请先核实执行记录，再决定是否重试。';
             }
+            if (data.status === 'cancelled') {
+                return '已停止当前运行。已完成的操作不会自动撤销；如执行轨迹显示写操作状态不确定，请先核实平台状态再继续。';
+            }
             if (data.status === 'recovery_required') {
-                return '本次处理需要核实后恢复，请先查看执行轨迹，不要重复提交。';
+                return '停止或中断后有操作结果需要核实。停止不会撤销已提交的广告变更，请先查看执行轨迹并回查平台状态，不要直接重试。';
             }
             if (data.status === 'unknown') return '本次处理状态暂时无法确认，请先检查执行记录。';
             if (data.status === 'awaiting_input') return '还需要补充一项信息才能继续。';
@@ -423,6 +426,9 @@
         async function performConversationDeletion(requestedIds) {
             const ids = [...new Set((requestedIds || []).map(String))].filter(Boolean);
             if (!ids.length) return;
+            if (isSending && ids.includes(String(activeRunSessionId || ''))) {
+                throw new Error('该对话仍在运行，请停止或等待完成后再删除。');
+            }
             const data = await apiFetch('/sessions', {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
@@ -653,6 +659,10 @@
 
         async function loadConversation(targetSessionId) {
             if (!targetSessionId) return;
+            if (isSending) {
+                showHistoryNotice('当前对话仍在运行。可以先停止或等它完成，再切换会话。');
+                return;
+            }
             const requestSequence = ++conversationLoadSequence;
             try {
                 const response = await serviceFetch(
@@ -663,9 +673,14 @@
                 try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
                 if (!response.ok) throw new Error(data.detail || data.error || `对话加载失败（${response.status}）`);
                 if (requestSequence !== conversationLoadSequence) return;
+                if (isSending) {
+                    showHistoryNotice('当前对话已开始运行，请等它完成后再切换会话。');
+                    return;
+                }
                 clearPendingChatMedia({ revoke: true });
                 sessionId = data.session_id || targetSessionId;
                 selectedConversationId = sessionId;
+                updateChatQueuePanel();
                 conversationHistoryPage = {
                     sessionId,
                     nextCursor: data.next_cursor || null,

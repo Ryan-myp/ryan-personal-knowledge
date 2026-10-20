@@ -24,6 +24,10 @@ class ChatRequest(BaseModel):
     tool_allowlist: Optional[list[str]] = Field(default=None, max_length=128)
 
 
+class ChatCancelRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=200)
+
+
 class ExecutionModeRequest(BaseModel):
     mode: str = Field(min_length=1, max_length=16)
 
@@ -232,6 +236,7 @@ class WorkflowReconcileRequest(BaseModel):
 __all__ = [
     "BlueprintEvaluationRequest",
     "BlueprintResolveRequest",
+    "ChatCancelRequest",
     "ChatRequest",
     "ChatStreamRequest",
     "ConversationFeedbackRequest",

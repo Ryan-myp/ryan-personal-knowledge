@@ -34,7 +34,7 @@ from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
 from .results import RunResult, RunStatus, tool_outcome_status
 from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
-from .runtime_kernel import TurnRequest
+from .runtime_kernel import CancellationEventGroup, TurnRequest
 from .skills import SkillCatalog
 from .tool_catalog import ToolCatalog
 from .tool_execution import (
@@ -460,9 +460,22 @@ class Agent:
 
         return unsubscribe
 
-    def abort(self, session_id: str | None = None) -> None:
-        """Request cooperative cancellation for one session."""
-        self._abort_event_for(session_id).set()
+    def abort(
+        self,
+        session_id: str | None = None,
+        *,
+        user_id: str = "anonymous",
+        tenant_id: str = "default",
+    ) -> bool:
+        """Request cancellation only for an active, identity-scoped session."""
+        key = self._session_key(session_id, user_id, tenant_id)
+        with self._session_guard:
+            state = self._session_states.get(key)
+            event = self._abort_events.get(key)
+            if state is None or event is None or not state.is_running:
+                return False
+            event.set()
+            return True
 
     def prompt(
         self,
@@ -944,6 +957,13 @@ class Agent:
             request.user_id,
             request.tenant_id,
         )
+        request = replace(
+            request,
+            cancellation_event=CancellationEventGroup(
+                request.cancellation_event,
+                abort_event,
+            ),
+        )
         with session_lock:
             if state.is_running:
                 raise RuntimeError("Agent is already running")
@@ -1405,8 +1425,16 @@ class Agent:
             self._emit("agent_end", request, status=result.status.value)
             return result
         finally:
-            state.is_running = False
-            abort_event.clear()
+            with session_lock:
+                with self._session_guard:
+                    state.is_running = False
+                    key = self._session_key(
+                        request.session_id,
+                        request.user_id,
+                        request.tenant_id,
+                    )
+                    if self._abort_events.get(key) is abort_event:
+                        self._abort_events.pop(key, None)
             with self._event_guard:
                 self._event_sequences.pop(str(request.run_id or ""), None)
             self._notify_model_run_cleanup(request, state)

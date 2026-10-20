@@ -833,7 +833,7 @@
 
         .input-box {
             width: 100%;
-            padding: 14px 50px 14px 16px;
+            padding: 14px 104px 14px 16px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border);
             border-radius: 12px;
@@ -882,6 +882,26 @@
             cursor: not-allowed;
             transform: none;
         }
+
+        .chat-stop-btn {
+            position: absolute;
+            right: 57px;
+            bottom: 12px;
+            display: grid;
+            width: 32px;
+            height: 32px;
+            place-items: center;
+            border: 1px solid rgba(229, 99, 99, .45);
+            border-radius: 8px;
+            color: #f08a8a;
+            background: rgba(112, 37, 44, .2);
+            cursor: pointer;
+        }
+
+        .chat-stop-btn:hover { background: rgba(145, 44, 52, .42); }
+        .chat-stop-btn:disabled { opacity: .6; cursor: wait; }
+        .chat-stop-btn[hidden] { display: none; }
+        .chat-stop-btn svg { width: 16px; height: 16px; }
 
         .input-hint {
             text-align: center;
