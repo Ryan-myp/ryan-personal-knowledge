@@ -120,6 +120,13 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
         self, session_id: str, turn_id: str, role: str,
         metadata: Optional[dict[str, Any]] = None,
     ) -> int: ...
+    def save_conversation_feedback(
+        self, session_id: str, turn_id: str, *, user_id: str, tenant_id: str,
+        feedback: dict[str, Any],
+    ) -> bool: ...
+    def get_conversation_feedback_trend(
+        self, *, days: int, user_id: str, tenant_id: str,
+    ) -> dict[str, Any]: ...
 
     # -- Campaign creation templates ------------------------------------
     def create_creation_template(self, record: Any) -> Any: ...

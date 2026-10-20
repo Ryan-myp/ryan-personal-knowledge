@@ -30,6 +30,10 @@ from .models import (
 from .conversation_pagination import (
     list_conversation_message_page as query_conversation_message_page,
 )
+from .conversation_feedback_store import (
+    get_conversation_feedback_trend as query_conversation_feedback_trend,
+    save_conversation_feedback as persist_conversation_feedback,
+)
 from .errors import PersistenceConflictError
 from agents.agent_harness.core.memory import MEMORY_SOURCE_PRIORITIES, MemoryRecord
 
@@ -90,7 +94,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 22
+    SCHEMA_VERSION = 23
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -150,6 +154,20 @@ class AdAgentStore:
         metadata TEXT NOT NULL DEFAULT '{}',
         FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS conversation_feedback (
+        feedback_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        rating TEXT NOT NULL,
+        submitted_at TEXT NOT NULL,
+        UNIQUE (session_id, turn_id),
+        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversation_feedback_scope_time
+        ON conversation_feedback(tenant_id, user_id, submitted_at);
 
     CREATE TABLE IF NOT EXISTS knowledge_documents (
         document_id TEXT PRIMARY KEY,
@@ -1009,6 +1027,45 @@ class AdAgentStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history "
                 "ON conversation_messages(session_id, turn_id, created_at, message_id)"
+            )
+        elif version == 23:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS conversation_feedback (
+                    feedback_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    turn_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    rating TEXT NOT NULL,
+                    submitted_at TEXT NOT NULL,
+                    UNIQUE (session_id, turn_id),
+                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_conversation_feedback_scope_time
+                    ON conversation_feedback(tenant_id, user_id, submitted_at);
+                """
+            )
+            conn.execute(
+                """INSERT OR IGNORE INTO conversation_feedback
+                   (feedback_id, session_id, turn_id, tenant_id, user_id, rating, submitted_at)
+                   SELECT lower(hex(randomblob(16))), cm.session_id, cm.turn_id,
+                          s.tenant_id, s.user_id,
+                          CASE WHEN json_valid(cm.metadata)
+                               THEN json_extract(cm.metadata, '$.user_feedback.rating')
+                               ELSE NULL END,
+                          CASE WHEN json_valid(cm.metadata)
+                               THEN json_extract(cm.metadata, '$.user_feedback.submitted_at')
+                               ELSE NULL END
+                   FROM conversation_messages cm
+                   JOIN sessions s ON s.session_id = cm.session_id
+                   WHERE cm.role = 'assistant'
+                     AND CASE WHEN json_valid(cm.metadata)
+                              THEN json_extract(cm.metadata, '$.user_feedback.rating')
+                              ELSE NULL END IN ('positive', 'negative')
+                     AND CASE WHEN json_valid(cm.metadata)
+                              THEN json_extract(cm.metadata, '$.user_feedback.submitted_at')
+                              ELSE NULL END IS NOT NULL"""
             )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
@@ -4089,6 +4146,43 @@ class AdAgentStore:
             )
             conn.commit()
             return len(updates)
+
+    def save_conversation_feedback(
+        self,
+        session_id: str,
+        turn_id: str,
+        *,
+        user_id: str,
+        tenant_id: str,
+        feedback: dict[str, Any],
+    ) -> bool:
+        """Atomically persist one feedback write and its analytics aggregate."""
+        with self._lock:
+            return persist_conversation_feedback(
+                self._get_conn(),
+                mysql=getattr(self, "backend_name", "sqlite") == "mysql",
+                session_id=str(session_id),
+                turn_id=str(turn_id),
+                user_id=str(user_id),
+                tenant_id=str(tenant_id),
+                feedback=dict(feedback),
+            )
+
+    def get_conversation_feedback_trend(
+        self,
+        *,
+        days: int,
+        user_id: str,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Return bounded daily aggregates scoped to one principal."""
+        with self._lock:
+            return query_conversation_feedback_trend(
+                self._get_conn(),
+                days=int(days),
+                user_id=str(user_id),
+                tenant_id=str(tenant_id),
+            )
 
     def delete_conversation_messages(self, session_id: str) -> None:
         """Delete one session transcript after the adapter checked its scope."""

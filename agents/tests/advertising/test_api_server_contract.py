@@ -30,6 +30,7 @@ def _chat_page_javascript() -> str:
     """Read the bootstrap and split bundles as one browser contract."""
     names = [
         "chat.js", "chat-markdown.js", "chat-state.js", "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat-feedback.js",
         "chat-media.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
         "chat-settings.js",
@@ -47,6 +48,7 @@ def _chat_page_styles() -> str:
     names = [
         "chat.css", "chat-foundation.css", "chat-workspaces.css",
         "chat-creation.css", "chat-overrides.css", "chat-media.css",
+        "chat-feedback.css",
     ]
     return "\n".join(
         (api_server.STATIC_PATH / "css" / name).read_text(encoding="utf-8")
@@ -199,6 +201,19 @@ def test_execution_trace_is_opt_in_while_creation_workbench_remains_available():
     assert "function openTraceWorkbench()" in javascript
     assert "function openCreationWorkbench" in javascript
     assert "function openConfirmationWorkbench" in javascript
+
+
+def test_chat_messages_include_persistent_assistant_feedback_controls():
+    javascript = _chat_page_javascript()
+    styles = _chat_page_styles()
+
+    assert "submitAssistantFeedback" in javascript
+    assert "/turns/${encodeURIComponent(turnId)}/feedback" in javascript
+    assert "feedback_rating" in javascript
+    assert "['positive', '👍'" in javascript
+    assert "['negative', '👎'" in javascript
+    assert "保存失败：" in javascript
+    assert ".message-feedback" in styles
 
 
 def test_chat_request_preparation_does_not_block_the_event_loop():
@@ -913,6 +928,8 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "live_mode_reason", "应用模式", "live · 受控执行", "handleWorkspaceModeChange",
         "系统运维", "systemOpsMenu", "toggleSystemOpsMenu", "运行监控", "/monitoring/overview", "monitoringTaskBars",
         "monitoringLeaseList", "Tool 调用审计", "当前实例",
+        "反馈趋势", "/feedback/trend", "feedbackTrendChart",
+        "主动提交", "data-feedback-days",
         "sidebar > .new-chat-btn", "nav-icon", "blueprintOverlay",
         "!event.target.closest('.blueprint-overlay')",
         "closeBlueprintManager()", "event.stopPropagation()",
@@ -1240,6 +1257,150 @@ def test_session_detail_hides_other_principal_sessions(monkeypatch, fake_server)
             headers={"X-API-Key": "scoped-key"},
         )
     assert response.status_code == 404
+
+
+def test_conversation_feedback_uses_authenticated_scope_and_hides_reason(
+    monkeypatch, fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            }
+        }),
+    )
+    calls = []
+
+    def submit_feedback(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    fake_server.submit_conversation_feedback = submit_feedback
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/sessions/session-a/turns/turn-a/feedback",
+            headers={"X-API-Key": "scoped-key"},
+            json={
+                "rating": "negative",
+                "reason": "结果缺少预算说明",
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "saved": True,
+        "session_id": "session-a",
+        "turn_id": "turn-a",
+        "rating": "negative",
+    }
+    assert calls == [{
+        "session_id": "session-a",
+        "turn_id": "turn-a",
+        "rating": "negative",
+        "reason": "结果缺少预算说明",
+        "user_id": "gateway-user",
+        "tenant_id": "tenant-a",
+    }]
+
+
+def test_conversation_feedback_rejects_invalid_rating_and_unauthorized_principal(
+    monkeypatch, fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "readless-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan"],
+            }
+        }),
+    )
+    calls = []
+    fake_server.submit_conversation_feedback = lambda **kwargs: calls.append(kwargs)
+
+    with TestClient(api_server.app) as client:
+        invalid = client.post(
+            "/sessions/session-a/turns/turn-a/feedback",
+            headers={"X-API-Key": "readless-key"},
+            json={"rating": "maybe"},
+        )
+        denied = client.post(
+            "/sessions/session-a/turns/turn-a/feedback",
+            headers={"X-API-Key": "readless-key"},
+            json={"rating": "positive"},
+        )
+
+    assert invalid.status_code == 422
+    assert denied.status_code == 403
+    assert calls == []
+
+
+def test_feedback_trend_uses_authenticated_scope_and_supported_windows(
+    monkeypatch, fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "scoped-key": {
+                "user_id": "gateway-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            },
+            "readless-key": {
+                "user_id": "other-user",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.plan"],
+            },
+        }),
+    )
+    calls = []
+
+    def get_feedback_trend(**kwargs):
+        calls.append(kwargs)
+        return {
+            "days": kwargs["days"],
+            "total": 1,
+            "positive": 1,
+            "negative": 0,
+            "positive_rate": 1.0,
+            "daily": [{
+                "date": "2026-10-20",
+                "positive": 1,
+                "negative": 0,
+                "total": 1,
+            }],
+        }
+
+    fake_server.get_conversation_feedback_trend = get_feedback_trend
+    with TestClient(api_server.app) as client:
+        response = client.get(
+            "/feedback/trend?days=7",
+            headers={"X-API-Key": "scoped-key"},
+        )
+        unsupported_window = client.get(
+            "/feedback/trend?days=14",
+            headers={"X-API-Key": "scoped-key"},
+        )
+        denied = client.get(
+            "/feedback/trend?days=30",
+            headers={"X-API-Key": "readless-key"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 1
+    assert "reason" not in response.text
+    assert "session_id" not in response.text
+    assert unsupported_window.status_code == 422
+    assert denied.status_code == 403
+    assert calls == [{
+        "days": 7,
+        "user_id": "gateway-user",
+        "tenant_id": "tenant-a",
+    }]
 
 
 def test_session_delete_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, fake_server):

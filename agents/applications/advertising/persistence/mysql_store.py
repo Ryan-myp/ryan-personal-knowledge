@@ -953,6 +953,52 @@ class MySQLStore(AdAgentStore):
                     ON conversation_messages(session_id, turn_id, created_at, message_id);
                 """
             ))
+        elif version == 23:
+            conn.executescript(_mysql_schema(
+                """
+                CREATE TABLE IF NOT EXISTS conversation_feedback (
+                    feedback_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    turn_id TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    rating TEXT NOT NULL,
+                    submitted_at TEXT NOT NULL,
+                    UNIQUE (session_id, turn_id),
+                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_conversation_feedback_scope_time
+                    ON conversation_feedback(tenant_id, user_id, submitted_at);
+                """
+            ))
+            conn.execute(
+                """INSERT IGNORE INTO conversation_feedback
+                   (feedback_id, session_id, turn_id, tenant_id, user_id, rating, submitted_at)
+                   SELECT UUID(), cm.session_id, cm.turn_id, s.tenant_id, s.user_id,
+                          CASE WHEN JSON_VALID(cm.metadata)
+                               THEN JSON_UNQUOTE(JSON_EXTRACT(
+                                   cm.metadata, '$.user_feedback.rating'
+                               ))
+                               ELSE NULL END,
+                          CASE WHEN JSON_VALID(cm.metadata)
+                               THEN JSON_UNQUOTE(JSON_EXTRACT(
+                                   cm.metadata, '$.user_feedback.submitted_at'
+                               ))
+                               ELSE NULL END
+                   FROM conversation_messages cm
+                   JOIN sessions s ON s.session_id = cm.session_id
+                   WHERE cm.role = 'assistant'
+                     AND CASE WHEN JSON_VALID(cm.metadata)
+                              THEN JSON_UNQUOTE(JSON_EXTRACT(
+                                  cm.metadata, '$.user_feedback.rating'
+                              ))
+                              ELSE NULL END IN ('positive', 'negative')
+                     AND CASE WHEN JSON_VALID(cm.metadata)
+                              THEN JSON_UNQUOTE(JSON_EXTRACT(
+                                  cm.metadata, '$.user_feedback.submitted_at'
+                              ))
+                              ELSE NULL END IS NOT NULL"""
+            )
 
     def claim_task(
         self, task_id: str, lease_owner: str, lease_seconds: float = 300.0,

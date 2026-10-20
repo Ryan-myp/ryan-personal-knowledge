@@ -41,6 +41,7 @@
 
         function addMessage(content, type = 'agent', tools = null, isError = false, toolSummaryHtml = '', messageTime = null, ui = null, uiOptions = null) {
             const attachments = uiOptions?.attachments || [];
+            const feedbackTurnId = String(uiOptions?.feedback?.turnId || '').trim();
             if (!toolSummaryHtml && !chatMessageHasPresentation(content, tools, ui, attachments)) return null;
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
@@ -103,6 +104,9 @@
                     }).join('')}</div>`;
                 }
             }
+            if (type === 'agent' && feedbackTurnId) {
+                bodyHtml += '<div class="message-feedback-host"></div>';
+            }
 
             msg.innerHTML = `
                 <div class="message-avatar">${type === 'user' ? '👤' : '🤖'}</div>
@@ -132,6 +136,14 @@
             const attachmentHost = msg.querySelector('.message-attachments-host');
             if (attachmentHost) {
                 renderMessageAttachments(attachmentHost, attachments, sessionId);
+            }
+            const feedbackHost = msg.querySelector('.message-feedback-host');
+            if (feedbackHost) {
+                renderAssistantFeedback(
+                    feedbackHost,
+                    feedbackTurnId,
+                    uiOptions?.feedback?.rating || '',
+                );
             }
             const mediaGalleryHost = msg.querySelector('.message-media-gallery-host');
             if (mediaGalleryHost) {
@@ -175,6 +187,75 @@
             }
 
             return msg;
+        }
+
+        function renderAssistantFeedback(host, turnId, savedRating = '') {
+            const controls = document.createElement('div');
+            controls.className = 'message-feedback';
+            controls.setAttribute('aria-label', '对回答提供反馈');
+
+            const label = document.createElement('span');
+            label.className = 'message-feedback-label';
+            label.textContent = '这条回答有帮助吗？';
+            controls.appendChild(label);
+
+            const status = document.createElement('span');
+            status.className = 'message-feedback-status';
+            status.setAttribute('aria-live', 'polite');
+
+            let currentRating = ['positive', 'negative'].includes(savedRating)
+                ? savedRating
+                : '';
+            let saving = false;
+            for (const [rating, symbol, labelText] of [
+                ['positive', '👍', '有帮助'],
+                ['negative', '👎', '没帮助'],
+            ]) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'message-feedback-button';
+                button.dataset.rating = rating;
+                button.textContent = symbol;
+                button.title = labelText;
+                button.setAttribute('aria-label', labelText);
+                button.setAttribute('aria-pressed', String(currentRating === rating));
+                if (currentRating === rating) button.classList.add('selected');
+                button.addEventListener('click', async () => {
+                    if (saving || currentRating === rating) return;
+                    saving = true;
+                    status.textContent = '保存中…';
+                    controls.querySelectorAll('button').forEach(item => {
+                        item.disabled = true;
+                    });
+                    try {
+                        await submitAssistantFeedback(
+                            sessionId,
+                            turnId,
+                            rating,
+                        );
+                        currentRating = rating;
+                        status.textContent = '已记录';
+                        controls.querySelectorAll('button').forEach(item => {
+                            const selected = item.dataset.rating === currentRating;
+                            item.classList.toggle('selected', selected);
+                            item.setAttribute('aria-pressed', String(selected));
+                        });
+                    } catch (error) {
+                        const detail = String(error?.message || '').trim();
+                        status.textContent = detail
+                            ? `保存失败：${detail.slice(0, 100)}`
+                            : '保存失败，请稍后重试';
+                    } finally {
+                        saving = false;
+                        controls.querySelectorAll('button').forEach(item => {
+                            item.disabled = false;
+                        });
+                    }
+                });
+                controls.appendChild(button);
+            }
+            controls.appendChild(status);
+            host.appendChild(controls);
         }
 
         // Add loading indicator

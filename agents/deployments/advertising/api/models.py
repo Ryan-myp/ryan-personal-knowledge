@@ -36,6 +36,11 @@ class SessionRenameRequest(BaseModel):
     title: str = Field(min_length=1, max_length=32)
 
 
+class ConversationFeedbackRequest(BaseModel):
+    rating: Literal["positive", "negative"]
+    reason: Optional[str] = Field(default=None, max_length=1000)
+
+
 class TaskSubmitRequest(BaseModel):
     kind: str = Field(default="agent.turn", min_length=1, max_length=64)
     payload: dict = Field(default_factory=dict)
@@ -229,6 +234,7 @@ __all__ = [
     "BlueprintResolveRequest",
     "ChatRequest",
     "ChatStreamRequest",
+    "ConversationFeedbackRequest",
     "CreationTemplateDuplicateRequest",
     "CreationTemplateRequest",
     "CreationTemplateUpdateRequest",

@@ -148,6 +148,40 @@ class SessionManager:
             str(role),
             dict(metadata or {}),
         ))
+
+    def save_conversation_feedback(
+        self,
+        session_id: str,
+        turn_id: str,
+        *,
+        user_id: str,
+        tenant_id: str,
+        feedback: dict[str, Any],
+    ) -> bool:
+        """Persist user feedback and its aggregate row in one backend transaction."""
+        saver = getattr(self.store, "save_conversation_feedback", None)
+        if not callable(saver):
+            raise TypeError("persistence backend lacks conversation feedback storage")
+        return bool(saver(
+            str(session_id),
+            str(turn_id),
+            user_id=str(user_id),
+            tenant_id=str(tenant_id),
+            feedback=dict(feedback),
+        ))
+
+    def get_conversation_feedback_trend(
+        self, *, days: int, user_id: str, tenant_id: str,
+    ) -> dict[str, Any]:
+        """Read the daily aggregate for one authenticated principal."""
+        getter = getattr(self.store, "get_conversation_feedback_trend", None)
+        if not callable(getter):
+            raise TypeError("persistence backend lacks conversation feedback analytics")
+        return getter(
+            days=int(days),
+            user_id=str(user_id),
+            tenant_id=str(tenant_id),
+        )
     
     def restore_session(self, session_id: str) -> dict:
         """

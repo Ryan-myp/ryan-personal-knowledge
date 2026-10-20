@@ -2009,6 +2009,42 @@
             }
         }
 
+        .message-feedback {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-height: 30px;
+            margin-top: 9px;
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+        .message-feedback-label { margin-right: 3px; }
+        .message-feedback-button {
+            display: inline-grid;
+            width: 28px;
+            height: 28px;
+            place-items: center;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+        .message-feedback-button:hover:not(:disabled),
+        .message-feedback-button.selected {
+            border-color: var(--border-light);
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+        .message-feedback-button:disabled { cursor: wait; opacity: .65; }
+        .message-feedback-button:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 1px;
+        }
+        .message-feedback-status { margin-left: 3px; }
+
         /* Knowledge reader: a quiet library rail paired with one focused page. */
         .knowledge-console .knowledge-results {
             display: grid;

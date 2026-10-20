@@ -13,11 +13,13 @@ from typing import Any, Mapping, Optional
 from agents.agent_harness.core.context import ContextQuery
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
 from agents.tools.advertising.shared.domain.conversation import project_conversation_messages
+from .ad_conversation_feedback_services import AdConversationFeedbackServices
 
 
 class AdConversationServices:
     def __init__(self, runtime: Any) -> None:
         self.runtime = runtime
+        self.feedback_services = AdConversationFeedbackServices(runtime)
 
     @staticmethod
     def _decode_session_metadata(session: Mapping[str, Any]) -> dict[str, Any]:
@@ -112,6 +114,12 @@ class AdConversationServices:
                 "conversation_title_source": "manual",
             })
         return {"session_id": str(session_id), "title": safe_title}
+
+    def submit_conversation_feedback(self, **kwargs: Any) -> bool:
+        return self.feedback_services.submit_conversation_feedback(**kwargs)
+
+    def get_conversation_feedback_trend(self, **kwargs: Any) -> dict[str, Any]:
+        return self.feedback_services.get_conversation_feedback_trend(**kwargs)
 
     def search_knowledge(
         self, query: str, *, tenant_id: str = "default",

@@ -139,7 +139,10 @@
                     '',
                     null,
                     ui,
-                    { originalRequest: requestParams },
+                    {
+                        originalRequest: requestParams,
+                        feedback: { turnId: data.turn_id },
+                    },
                 );
                 showConfirm(data.confirmation_payload, confirmationRequest);
                 return;
@@ -154,7 +157,10 @@
                 '',
                 null,
                 ui,
-                { originalRequest: requestParams },
+                {
+                    originalRequest: requestParams,
+                    feedback: { turnId: data.turn_id },
+                },
             );
             const awaitingInteraction = data.status === 'awaiting_input'
                 || data.needs_confirmation
@@ -733,6 +739,10 @@
                         suppressScroll: true,
                         ...(insertBefore ? { insertBefore } : {}),
                         attachments: message.attachments || [],
+                        feedback: {
+                            turnId: message.turn_id,
+                            rating: message.feedback_rating,
+                        },
                         originalRequest: role === 'agent' && precedingUserInput
                             ? { user_input: precedingUserInput, session_id: sessionId }
                             : null,
@@ -823,6 +833,17 @@
                 throw error;
             }
             return data;
+        }
+
+        async function submitAssistantFeedback(session, turnId, rating) {
+            return apiFetch(
+                `/sessions/${encodeURIComponent(session)}/turns/${encodeURIComponent(turnId)}/feedback`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rating }),
+                },
+            );
         }
 
         function bindConversationHistoryPagination() {

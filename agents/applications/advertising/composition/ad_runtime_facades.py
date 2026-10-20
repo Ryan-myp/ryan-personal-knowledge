@@ -129,6 +129,18 @@ class AdConversationRuntimeFacade:
     ) -> Optional[dict[str, Any]]:
         return self.conversation_services.rename_conversation(*args, **kwargs)
 
+    def submit_conversation_feedback(self, *args: Any, **kwargs: Any) -> bool:
+        return self.conversation_services.submit_conversation_feedback(
+            *args, **kwargs
+        )
+
+    def get_conversation_feedback_trend(
+        self, *args: Any, **kwargs: Any,
+    ) -> dict[str, Any]:
+        return self.conversation_services.get_conversation_feedback_trend(
+            *args, **kwargs
+        )
+
     def search_knowledge(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         return self.conversation_services.search_knowledge(*args, **kwargs)
 

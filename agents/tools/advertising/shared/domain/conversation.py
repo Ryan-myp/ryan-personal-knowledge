@@ -1033,6 +1033,12 @@ def _visible_turn(
     if not reply.strip() and not ui:
         return visible
     status = str(metadata.get("display_status") or "")
+    user_feedback = metadata.get("user_feedback")
+    feedback_rating = (
+        str(user_feedback.get("rating") or "")
+        if isinstance(user_feedback, Mapping)
+        else ""
+    )
     waiting = bool(tool_results) and any(
         tool_results[-1].get(key) or _tool_payload(tool_results[-1]).get(key)
         for key in ("needs_input", "needs_confirmation")
@@ -1045,6 +1051,11 @@ def _visible_turn(
         "role": "assistant", "content": reply,
         "turn_id": candidate.get("turn_id"), "created_at": candidate.get("created_at"),
         "is_error": is_error,
+        **(
+            {"feedback_rating": feedback_rating}
+            if feedback_rating in {"positive", "negative"}
+            else {}
+        ),
         **({"ui": dict(ui)} if ui else {}),
         **({"tools": badges} if (badges := _tool_badges(tools)) else {}),
     })

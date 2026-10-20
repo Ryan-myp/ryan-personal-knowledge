@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
-from agents.deployments.advertising.api.models import SessionDeleteRequest, SessionRenameRequest
+from agents.deployments.advertising.api.models import (
+    ConversationFeedbackRequest,
+    SessionDeleteRequest,
+    SessionRenameRequest,
+)
 
 
 def create_sessions_router(context: ApiContext) -> APIRouter:
@@ -121,6 +125,81 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         if not conversation:
             raise HTTPException(status_code=404, detail="会话不存在或无权访问")
         return conversation
+
+    @router.post(
+        "/sessions/{session_id}/turns/{turn_id}/feedback",
+        tags=["sessions"],
+    )
+    async def submit_conversation_feedback(
+        session_id: Annotated[str, Path(min_length=1, max_length=200)],
+        turn_id: Annotated[str, Path(min_length=1, max_length=128)],
+        body: ConversationFeedbackRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        runtime = context.runtime()
+        submit = getattr(runtime, "submit_conversation_feedback", None)
+        if not callable(submit):
+            raise HTTPException(status_code=503, detail="会话反馈服务未初始化")
+        try:
+            saved = await run_in_threadpool(
+                submit,
+                session_id=session_id,
+                turn_id=turn_id,
+                rating=body.rating,
+                reason=body.reason,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="会话反馈存储暂不可用",
+            ) from error
+        if not saved:
+            raise HTTPException(status_code=404, detail="会话或 assistant 回合不存在")
+        return {
+            "saved": True,
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "rating": body.rating,
+        }
+
+    @router.get("/feedback/trend", tags=["sessions"])
+    async def get_conversation_feedback_trend(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+        days: int = Query(30, ge=7, le=90),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        if days not in {7, 30, 90}:
+            raise HTTPException(
+                status_code=422,
+                detail="统计范围仅支持 7、30 或 90 天",
+            )
+        runtime = context.runtime()
+        getter = getattr(runtime, "get_conversation_feedback_trend", None)
+        if not callable(getter):
+            raise HTTPException(status_code=503, detail="反馈趋势服务未初始化")
+        try:
+            return await run_in_threadpool(
+                getter,
+                days=days,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(
+                status_code=503,
+                detail="反馈趋势存储暂不可用",
+            ) from error
 
     @router.get("/sessions/{session_id}/runs/latest", tags=["runs"])
     async def get_latest_session_run(

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20261020-creative-media-v1">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20261020-feedback-trend-v1">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -21,6 +21,7 @@
                 <div class="system-ops-menu" id="systemOpsMenu" role="menu" aria-label="系统运维菜单">
                     <div class="system-ops-menu-head"><strong>系统运维</strong><span>服务状态与运行现场</span></div>
                     <button class="system-ops-item active" type="button" role="menuitem" onclick="openMonitoring()"><span class="system-ops-item-icon">◉</span><span><strong>运行监控</strong><small>队列、租约、恢复与 Tool 审计</small></span><span class="system-ops-item-arrow">›</span></button>
+                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openFeedbackTrend()"><span class="system-ops-item-icon">↗</span><span><strong>反馈趋势</strong><small>回答评分与每日变化</small></span><span class="system-ops-item-arrow">›</span></button>
                     <button class="system-ops-item active" type="button" role="menuitem" onclick="openSchedules()"><span class="system-ops-item-icon">◷</span><span><strong>定时任务</strong><small>调度列表、执行记录与暂停恢复</small></span><span class="system-ops-item-arrow">›</span></button>
                     <button class="system-ops-item active" type="button" role="menuitem" onclick="openMemoryManager()"><span class="system-ops-item-icon">✦</span><span><strong>用户记忆</strong><small>偏好、事实与记忆生命周期</small></span><span class="system-ops-item-arrow">›</span></button>
                     <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">◇</span><span><strong>服务健康</strong><small>健康检查与依赖状态 · 即将支持</small></span></button>
@@ -365,6 +366,53 @@
                     <div class="monitoring-panel-heading"><div><h2>Tool 调用审计</h2><p>调用次数、失败次数与平均延迟；原始输入输出仍按现有审计权限查看</p></div><span class="monitoring-panel-mark">05</span></div>
                     <div class="monitoring-tool-table-wrap"><table class="monitoring-tool-table"><thead><tr><th>Tool</th><th>平台</th><th>调用</th><th>失败</th></tr></thead><tbody id="monitoringToolRows"><tr><td colspan="4" class="monitoring-empty">等待数据…</td></tr></tbody></table></div>
                 </section>
+            </div>
+        </section>
+    </div>
+    <div class="monitoring-overlay feedback-trend-overlay" id="feedbackTrendOverlay" aria-hidden="true">
+        <section class="monitoring-console feedback-trend-console" role="dialog" aria-modal="true" aria-labelledby="feedbackTrendTitle">
+            <header class="monitoring-console-header">
+                <div>
+                    <div class="monitoring-console-kicker">ANSWER FEEDBACK</div>
+                    <div class="monitoring-console-title" id="feedbackTrendTitle">反馈趋势</div>
+                    <div class="monitoring-console-subtitle">查看用户对 Agent 回答主动提交的正向与负向评分。</div>
+                </div>
+                <div class="monitoring-console-actions">
+                    <span class="monitoring-updated" id="feedbackTrendUpdated">尚未读取</span>
+                    <button class="btn btn-secondary" type="button" onclick="loadFeedbackTrend()">刷新</button>
+                    <button class="icon-btn" type="button" onclick="closeFeedbackTrend()" aria-label="关闭反馈趋势">×</button>
+                </div>
+            </header>
+            <div class="monitoring-console-body">
+                <div class="monitoring-status-banner" id="feedbackTrendStatus" role="status" aria-live="polite">
+                    <span class="monitoring-status-dot"></span><span id="feedbackTrendStatusText">选择统计范围以查看反馈。</span>
+                </div>
+                <div class="feedback-trend-toolbar">
+                    <div class="feedback-trend-windows" role="group" aria-label="反馈统计范围">
+                        <button type="button" data-feedback-days="7" aria-pressed="false" onclick="loadFeedbackTrend(7)">7 天</button>
+                        <button type="button" data-feedback-days="30" aria-pressed="true" onclick="loadFeedbackTrend(30)">30 天</button>
+                        <button type="button" data-feedback-days="90" aria-pressed="false" onclick="loadFeedbackTrend(90)">90 天</button>
+                    </div>
+                    <span class="feedback-trend-scope">当前登录身份范围 · 按 UTC 日期统计</span>
+                </div>
+                <div class="monitoring-stat-grid feedback-trend-stats">
+                    <article class="monitoring-stat-card accent-cyan"><span>有效反馈</span><strong id="feedbackTotal">—</strong><small>仅计入主动评分</small></article>
+                    <article class="monitoring-stat-card accent-green"><span>正向</span><strong id="feedbackPositive">—</strong><small>👍</small></article>
+                    <article class="monitoring-stat-card accent-red"><span>负向</span><strong id="feedbackNegative">—</strong><small>👎</small></article>
+                    <article class="monitoring-stat-card accent-violet"><span>正向率</span><strong id="feedbackPositiveRate">—</strong><small>正向 ÷ 全部反馈</small></article>
+                </div>
+                <section class="monitoring-panel feedback-trend-panel">
+                    <div class="monitoring-panel-heading">
+                        <div><h2>每日反馈变化</h2><p id="feedbackTrendRange">最近 30 天</p></div>
+                        <span class="monitoring-panel-mark">DAILY</span>
+                    </div>
+                    <div class="feedback-trend-legend"><span><i class="positive"></i>正向</span><span><i class="negative"></i>负向</span></div>
+                    <div class="feedback-trend-chart">
+                        <svg id="feedbackTrendChart" viewBox="0 0 720 250" role="img" aria-label="每日正向与负向反馈趋势图"></svg>
+                        <div class="feedback-trend-empty" id="feedbackTrendEmpty" hidden>所选时间范围内还没有反馈</div>
+                    </div>
+                </section>
+                <p class="feedback-trend-note">这是用户主动提交的反馈样本，不代表全部回答质量或模型评测结果；未反馈的回答不计入分母。</p>
             </div>
         </section>
     </div>
@@ -797,6 +845,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20261020-creative-media-v1" defer></script>
+    <script src="/static/js/chat.js?v=20261020-feedback-trend-v1" defer></script>
 </body>
 </html>

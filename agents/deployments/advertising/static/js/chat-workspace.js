@@ -26,6 +26,8 @@
             document.getElementById('systemOpsButton')?.setAttribute('aria-expanded', 'false');
             document.getElementById('monitoringOverlay')?.classList.remove('active');
             document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
+            document.getElementById('feedbackTrendOverlay')?.classList.remove('active');
+            document.getElementById('feedbackTrendOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('scheduleOverlay')?.classList.remove('active');
             document.getElementById('scheduleOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('memoryOverlay')?.classList.remove('active');
