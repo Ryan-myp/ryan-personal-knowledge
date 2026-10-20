@@ -2,8 +2,9 @@
 
 这套评测针对 `ad-agent` 的真实 `AdvertisingComposition`，不是另写一套 mock
 Runtime。`skill-up` 负责 case 生命周期、rule/script/agent judge、报告和
-benchmark；`skill_up_engine.py` 负责把标准 `SessionInput` 转成一次
-`AdvertisingComposition.run()`，再返回标准 `SessionResult`。
+benchmark；`skill_up_engine.py` 把标准 `SessionInput` 中的用户轮次放入同一
+Runtime Session 顺序执行，并返回标准 `SessionResult`。请求中的 assistant/tool
+历史不会被当作可信的真实输出重放。
 
 ## 运行
 
@@ -12,6 +13,20 @@ benchmark；`skill_up_engine.py` 负责把标准 `SessionInput` 转成一次
 ```bash
 agents/evals/advertising/skill-up/run.sh
 ```
+
+模型评测会产生真实模型请求，必须显式配置：
+
+```bash
+export AD_AGENT_EVAL_API_KEY='...'
+export AD_AGENT_EVAL_MODEL='agnes-3.0-flash'
+export AD_AGENT_EVAL_BASE_URL='https://apihub.agnes-ai.cn/v1'
+agents/evals/advertising/skill-up/run.sh
+```
+
+也可使用 `OPENAI_API_KEY`、`LLM_MODEL` 和 `OPENAI_BASE_URL` 作为本地默认值。
+API Key 只从进程环境读取，不接受 case、Skill 包或 `SessionInput.kwargs`
+提供的凭证。CI 仅在 `AD_AGENT_EVAL_API_KEY` 与 `AD_AGENT_EVAL_MODEL` 都配置时
+运行模型评测；否则标记为 skipped，不会将跳过伪装成通过。
 
 也可以直接调用 skill-up，但要提供当前 checkout 的绝对路径：
 
@@ -65,9 +80,18 @@ export ANTHROPIC_API_KEY='...'
 skill-up 的 cases、judge 和报告流程；它只提供 Tool 元数据上下文，不提供
 可执行 Tool。
 
-CI 在 `.github/workflows/ad-agent-harness.yml` 中固定了 skill-up commit，
-升级时只需更新 `SKILL_UP_REF`，再执行本套 `validate` 和 `run`；适配器不
-依赖 skill-up 的 Go 内部包，因此不会被内部重构绑定。
+普通离线 readiness 不调用 LLM；它运行确定性 Runtime/Tool 契约 smoke，并在
+报告里把 `model_quality` 标为 `not_verified`。需要模型质量证据时运行：
+
+```bash
+./scripts/ad-agent-python scripts/advertising/release_readiness.py \
+  --profile local --with-model-eval
+```
+
+未设置模型凭证时，模型评测保持 `not_verified`；配置凭证后，case 断言用于检验
+当前模型的意图、工具选择、回复和安全边界。它不代表 Provider E2E 或生产稳定性。
+CI 中的模型评测为可选步骤。工作流固定 skill-up commit，升级时只需更新
+`SKILL_UP_REF`；适配器不依赖 skill-up 的 Go 内部包。
 
 真实 Provider 测试前先运行仓库根目录的
 `./scripts/ad-agent-python scripts/advertising/provider_preflight.py --platform <platform> --tool <tool> --account-id <test-account>`。

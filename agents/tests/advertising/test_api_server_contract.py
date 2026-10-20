@@ -697,6 +697,60 @@ def test_readiness_rejects_missing_required_model(fake_server):
     assert response.json()["checks"]["llm"] is False
 
 
+def test_agent_runtime_metrics_are_authenticated_and_credential_free(
+    fake_server, monkeypatch,
+):
+    class Metrics:
+        @staticmethod
+        def snapshot():
+            return {
+                "version": 1,
+                "counters": {
+                    "runs_started": 4,
+                    "runs_finished.succeeded": 3,
+                    "tool_calls_failed": 1,
+                },
+                "durations": {},
+                "in_flight": 0,
+            }
+
+    fake_server.metrics = Metrics()
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "observer-key": {
+                "user_id": "observer",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            },
+            "reader-key": {
+                "user_id": "reader",
+                "tenant_id": "tenant-a",
+                "permissions": ["knowledge.read"],
+            },
+        }),
+    )
+
+    with TestClient(api_server.app) as client:
+        denied = client.get(
+            "/monitoring/agent-runtime",
+            headers={"X-API-Key": "reader-key"},
+        )
+        accepted = client.get(
+            "/monitoring/agent-runtime",
+            headers={"X-API-Key": "observer-key"},
+        )
+
+    assert denied.status_code == 403
+    assert accepted.status_code == 200
+    payload = accepted.json()
+    assert payload["scope"] == "process_aggregate"
+    assert payload["metrics"]["counters"]["runs_started"] == 4
+    serialized = json.dumps(payload)
+    assert "run_id" not in serialized
+    assert "access_token" not in serialized
+
+
 def test_execution_mode_change_requires_planning_permission(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",
@@ -2290,7 +2344,7 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
     assert runtime is not None
     assert api_server.runtime_status["state"] == "ready"
     assert set(runtime.registry.list_all_namespaces()) == {
-        "agent-platform", "meta", "google-ads", "tiktok", "dv360",
+        "agent-platform", "advertising", "meta", "google-ads", "tiktok", "dv360",
         "creative-media",
     }
     definitions = runtime.registry.list_all()

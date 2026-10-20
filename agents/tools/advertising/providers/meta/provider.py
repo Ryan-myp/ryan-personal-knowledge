@@ -1422,8 +1422,7 @@ class MetaToolSource(BaseProviderToolSource):
             action="list", resource_type="campaign",
             intent_types=[
                 "list_campaigns", "cross_channel_overview", "cross_channel_compare",
-                "cross_channel_performance_insights", "cross_channel_optimize_budget",
-                "cross_channel_export_report",
+                "cross_channel_performance_insights", "cross_channel_export_report",
             ],
             intent_aliases=[
                 "列出 Meta 广告系列", "列出 Meta campaign 列表",
@@ -1686,6 +1685,7 @@ class MetaToolSource(BaseProviderToolSource):
         # Get Report
         tools.append((ToolDefinition(
             name="meta_get_campaign_report",
+            contract_version="2.0.0",
             skill="meta-marketing-api",
             namespace="meta",
             description="查询 Meta Campaign 报表。",
@@ -1695,12 +1695,26 @@ class MetaToolSource(BaseProviderToolSource):
                     "campaign_ids": {"type": "array", "items": {"type": "string"}},
                     "date_preset": {
                         "type": "string",
-                        "intent_field": "date_range",
+                        "intent_field": "date_preset",
                         "intent_map": {
                             "LAST_7_DAYS": "last_7d",
                             "LAST_14_DAYS": "last_14d",
                             "LAST_30_DAYS": "last_30d",
                         },
+                    },
+                    "date_range": {
+                        "type": "object",
+                        "required": ["since", "until"],
+                        "properties": {
+                            "since": {"type": "string", "format": "date"},
+                            "until": {"type": "string", "format": "date"},
+                        },
+                    },
+                    "time_increment": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 90,
+                        "description": "Insights 周期拆分粒度；7 表示按周返回",
                     },
                     "limit": {
                         "type": "integer",

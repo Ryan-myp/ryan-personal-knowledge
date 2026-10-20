@@ -1,7 +1,230 @@
 {
-  "digest": "cda9f257c07ac036077fda356367b00ce3c468cee846bf51d18fa4a7bded2bd6",
+  "digest": "553319921701dd0ff4c29c018b6289a780bbd6adc794f480e667045aeecd73d0",
   "format_version": 1,
   "platforms": {
+    "advertising": {
+      "digest": "7f5d8c5ba263d9cfbd469ad0274848c58d2b41323ce3504b3656913f6e58de85",
+      "tool_count": 1,
+      "tools": [
+        {
+          "action": "analyze",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "b76e1332f33961e2fe888a2f3203f1f12fde21f396d2d1b7b23c66cb2139d9b9",
+          "contract_version": "1",
+          "description": "基于多个渠道已查询的成熟、同口径周报计算只读预算建议；不读取或修改平台资源，不能把历史平均效率解释为边际回报。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "attribution_model": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "attribution_window_days": {
+                "maximum": 90,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "currency": {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              "data_as_of": {
+                "format": "date",
+                "type": "string"
+              },
+              "objective": {
+                "enum": [
+                  "revenue",
+                  "conversions"
+                ],
+                "type": "string"
+              },
+              "outcome_definition": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "platforms": {
+                "items": {
+                  "additional_properties": false,
+                  "properties": {
+                    "attribution_model": {
+                      "type": "string"
+                    },
+                    "attribution_window_days": {
+                      "maximum": 90,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "current_weekly_budget": {
+                      "maximum": 1000000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "data_status": {
+                      "type": "string"
+                    },
+                    "maximum_weekly_budget": {
+                      "maximum": 1000000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "minimum_weekly_budget": {
+                      "maximum": 1000000000000,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "observations": {
+                      "items": {
+                        "additional_properties": false,
+                        "properties": {
+                          "conversions": {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "revenue": {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "spend": {
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "week_start": {
+                            "format": "date",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "week_start",
+                          "spend",
+                          "conversions",
+                          "revenue"
+                        ],
+                        "type": "object"
+                      },
+                      "minItems": 8,
+                      "type": "array"
+                    },
+                    "outcome_definition": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "source_tool": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "platform",
+                    "source_tool",
+                    "data_status",
+                    "currency",
+                    "current_weekly_budget",
+                    "minimum_weekly_budget",
+                    "maximum_weekly_budget",
+                    "timezone",
+                    "attribution_model",
+                    "attribution_window_days",
+                    "outcome_definition",
+                    "observations"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 2,
+                "type": "array"
+              },
+              "timezone": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "total_weekly_budget": {
+                "exclusiveMinimum": 0,
+                "maximum": 1000000000000,
+                "type": "number"
+              },
+              "window_end": {
+                "format": "date",
+                "type": "string"
+              },
+              "window_start": {
+                "format": "date",
+                "type": "string"
+              }
+            },
+            "required": [
+              "total_weekly_budget",
+              "objective",
+              "window_start",
+              "window_end",
+              "data_as_of",
+              "currency",
+              "timezone",
+              "attribution_model",
+              "outcome_definition",
+              "attribution_window_days",
+              "platforms"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [
+            "跨渠道预算优化建议",
+            "按历史表现重新分配渠道预算",
+            "比较渠道历史效率并规划周预算"
+          ],
+          "intent_types": [
+            "cross_channel_optimize_budget"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 100000,
+          "name": "advertising_cross_channel_budget_analysis",
+          "namespace": "advertising",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "budget_allocation",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "cross-channel",
+          "skill_refs": [],
+          "timeout_seconds": 20,
+          "traits": [
+            "read",
+            "analysis",
+            "cross_channel",
+            "budget"
+          ]
+        }
+      ]
+    },
     "agent-platform": {
       "digest": "926383b340fd8e648445111654a75745a1b0c547cc9462e5fb1e7ac490708c6a",
       "tool_count": 4,
@@ -361,7 +584,7 @@
       ]
     },
     "dv360": {
-      "digest": "e87e10892dc088896c7f299ea833ca966c74ae7d39972e4bdb4558e4395ae372",
+      "digest": "4e2dc9a03840071ee9dd83ef829c80b13f12310d3c22356569c27c48a330147c",
       "tool_count": 33,
       "tools": [
         {
@@ -2022,7 +2245,6 @@
             "cross_channel_overview",
             "cross_channel_compare",
             "cross_channel_performance_insights",
-            "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
           "live_permission": null,
@@ -2972,7 +3194,7 @@
       ]
     },
     "google-ads": {
-      "digest": "cd0fadcb9dda67f2f3927c2b1e9d32a0a34017a16d8c9a97011598a7579fceb0",
+      "digest": "31db1cf70e2ea34ef17cffbfd15e6972a62eb941962687a7fd781836eccd8c1a",
       "tool_count": 107,
       "tools": [
         {
@@ -14245,8 +14467,8 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8150e78cb438a59ebb3099927ad878fc149fa40ab572fd5cd667878ebaa07065",
-          "contract_version": "1.5.0",
+          "contract_hash": "f45f22ba3913bff02a561996f79cf32fd5f09518f5a7a71596c9d15e3a6f91f4",
+          "contract_version": "2.0.0",
           "description": "查询 Google Ads Campaign 报表。支持可选 Campaign ID 过滤，默认查询最近30天数据。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -14270,11 +14492,21 @@
                 "description": "日期范围，如 LAST_30_DAYS, YESTERDAY, THIS_MONTH",
                 "type": "string"
               },
+              "end_date": {
+                "description": "可选：历史报表结束日期；与 start_date 同时提供",
+                "format": "date",
+                "type": "string"
+              },
               "limit": {
                 "description": "Maximum total report rows",
                 "maximum": 10000,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "start_date": {
+                "description": "可选：历史报表开始日期；与 end_date 同时提供",
+                "format": "date",
+                "type": "string"
               }
             },
             "required": [],
@@ -16018,7 +16250,6 @@
             "cross_channel_overview",
             "cross_channel_compare",
             "cross_channel_performance_insights",
-            "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
           "live_permission": null,
@@ -19459,7 +19690,7 @@
       ]
     },
     "meta": {
-      "digest": "8322d312dfaad0f4bfbe15d0188eb8b0645420c78be4c134af7abafcc70c5e02",
+      "digest": "0e2cd9dc4fe2f65cc6d6b8eb695b93c350dd0a06d0246bc7ce19b92899c63754",
       "tool_count": 82,
       "tools": [
         {
@@ -26228,8 +26459,8 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7199285520a95ad12036dce354405ec8ed3301f3c11655b8d1c38d74b967119a",
-          "contract_version": "1.5.1",
+          "contract_hash": "8b9370e737928ef2c82c4584300bea8cc728ebf02f1102655546c178d6883899",
+          "contract_version": "2.0.0",
           "description": "查询 Meta Campaign 报表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26262,7 +26493,7 @@
                 "type": "array"
               },
               "date_preset": {
-                "intent_field": "date_range",
+                "intent_field": "date_preset",
                 "intent_map": {
                   "LAST_14_DAYS": "last_14d",
                   "LAST_30_DAYS": "last_30d",
@@ -26270,9 +26501,32 @@
                 },
                 "type": "string"
               },
+              "date_range": {
+                "properties": {
+                  "since": {
+                    "format": "date",
+                    "type": "string"
+                  },
+                  "until": {
+                    "format": "date",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "since",
+                  "until"
+                ],
+                "type": "object"
+              },
               "limit": {
                 "description": "Insights 分页查询的最大总行数",
                 "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "time_increment": {
+                "description": "Insights 周期拆分粒度；7 表示按周返回",
+                "maximum": 90,
                 "minimum": 1,
                 "type": "integer"
               }
@@ -27619,7 +27873,6 @@
             "cross_channel_overview",
             "cross_channel_compare",
             "cross_channel_performance_insights",
-            "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
           "live_permission": null,
@@ -31307,7 +31560,7 @@
       ]
     },
     "tiktok": {
-      "digest": "a36a88e91e2b2490a0f25ef0f960e044d536e545f62e7ef5ae9d99eb6ec065db",
+      "digest": "b8cc97326b9c38b507b722562cb743a85f643cfcba7975e57168370bc55e5c12",
       "tool_count": 89,
       "tools": [
         {
@@ -41237,7 +41490,7 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "4a0e16921f0bcebcdaee8adca261e77f802e1b2edf50e42c3dc3e22f66a0266c",
+          "contract_hash": "9511e61cf0affb37fb1432804015f7957c0da81ba52d72c6ac6c14391cb4683c",
           "contract_version": "1.3.0",
           "description": "查询 TikTok Ads Campaign 报表。",
           "effect_class": "read",
@@ -41257,12 +41510,51 @@
                 "type": "array"
               },
               "date_range": {
-                "type": "string"
+                "additionalProperties": false,
+                "properties": {
+                  "end_date": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "start_date",
+                  "end_date"
+                ],
+                "type": [
+                  "string",
+                  "object"
+                ]
+              },
+              "dimensions": {
+                "items": {
+                  "enum": [
+                    "campaign_id",
+                    "stat_time_day"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 2,
+                "minItems": 1,
+                "type": "array"
               },
               "limit": {
                 "maximum": 100,
                 "minimum": 1,
                 "type": "integer"
+              },
+              "metrics": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
               }
             },
             "required": [
@@ -42864,7 +43156,6 @@
             "cross_channel_overview",
             "cross_channel_compare",
             "cross_channel_performance_insights",
-            "cross_channel_optimize_budget",
             "cross_channel_export_report"
           ],
           "live_permission": null,
@@ -54241,5 +54532,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 315
+  "tool_count": 316
 }

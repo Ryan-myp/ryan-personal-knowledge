@@ -23,6 +23,8 @@ Do not force these columns to match. First align definitions, scope, time, curre
 | Whether a channel/tactic caused additional outcomes | Randomized holdout or defensible quasi-experiment | Contamination, power, spillover and external changes |
 | Long-term customer value | Mature cohort outcomes joined to business value | Requires follow-up time and does not alone prove media causality |
 
+Before calling MMM suitable, also verify channel-level summable KPI and media inputs, complete time/geo coverage, controls, lag history, and enough independent signal for the model's complexity. See `mmm-data-readiness.md` for Meridian-oriented preparation checks.
+
 ## Incrementality Readout
 
 Report the treatment/control definition, assignment unit, exposure and contamination checks, period, primary outcome, uncertainty, sample adequacy, external events, and analysis method. Distinguish measured lift from platform-attributed conversions. When the design cannot support a causal claim, label it observational or inconclusive and state the next evidence needed.

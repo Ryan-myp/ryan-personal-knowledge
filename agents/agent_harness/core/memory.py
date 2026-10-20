@@ -194,7 +194,11 @@ class MemoryManager:
 
     @property
     def auto_capture_enabled(self) -> bool:
-        """Whether runtime events may be promoted to episodic memory."""
+        """Whether heuristic preferences and runtime events may be captured.
+
+        Explicit user requests to remember information remain available when
+        automatic capture is disabled.
+        """
         return self._auto_capture_enabled
 
     def set_auto_capture_enabled(self, enabled: bool) -> None:

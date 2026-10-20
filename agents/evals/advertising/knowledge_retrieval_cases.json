@@ -32,6 +32,7 @@
   {"query": "Google Ads 搜索词报告 disclosed clicks total clicks 查询覆盖率，未展示搜索词不代表真实搜索需求分布", "expected": ["google-ads-measurement-and-diagnostics"]},
   {"query": "A/B 实验 MDE statistical power p-value repeated looks multiple comparisons practical significance", "expected": ["advertising-experimentation-and-learning"]},
   {"query": "MTA MMM platform attribution is not incremental lift causal holdout", "expected": ["cross-platform-measurement-attribution"]},
+  {"query": "Meridian MMM 数据需要多少年周数据，geo national 模型要准备哪些可加总 KPI、渠道花费、控制变量和完整周面板", "expected": ["cross-platform-measurement-attribution"]},
   {"query": "广告平台和 CRM 转化对不上", "expected": ["cross-platform-measurement-attribution", "dv360-floodlight-conversions-and-attribution"]},
   {"query": "电商商品广告利润和退款", "expected": ["ecommerce-growth-playbook", "four-platform-ad-agent-handbook"]},
   {"query": "App 游戏广告 LTV 留存", "expected": ["app-game-growth-playbook", "industry-advertising-playbooks"]},

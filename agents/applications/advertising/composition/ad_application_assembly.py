@@ -41,6 +41,9 @@ from agents.scenarios.advertising import (
 )
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.tools.advertising.shared.domain.security import ACCOUNT_SCOPE_FIELDS
+from agents.tools.advertising.shared.budget_analysis import (
+    cross_channel_budget_analysis_tool_source,
+)
 from agents.applications.advertising.persistence.models import (
     ScheduledTaskRecord,
     ScheduledTaskRunRecord,
@@ -332,6 +335,10 @@ class AdApplicationAssembly:
             (
                 readonly_recipe_tool_source(required_permission="ads.read"),
                 "Built-in declarative read-only JSON transform Tool",
+            ),
+            (
+                cross_channel_budget_analysis_tool_source(),
+                "Built-in read-only cross-channel budget analysis Tool",
             ),
         ):
             runtime.registry.register_source(source)

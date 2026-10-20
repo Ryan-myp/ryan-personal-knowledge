@@ -2094,8 +2094,7 @@ class GoogleToolSource(BaseProviderToolSource):
             action="list", resource_type="campaign",
             intent_types=[
                 "list_campaigns", "cross_channel_overview", "cross_channel_compare",
-                "cross_channel_performance_insights", "cross_channel_optimize_budget",
-                "cross_channel_export_report",
+                "cross_channel_performance_insights", "cross_channel_export_report",
             ],
             intent_aliases=[
                 "列出 Google 广告系列", "查询 Google Ads 广告系列",
@@ -2381,6 +2380,7 @@ class GoogleToolSource(BaseProviderToolSource):
         # Get Campaign Report
         tools.append((ToolDefinition(
             name="google_get_campaign_report",
+            contract_version="2.0.0",
             skill="google-ads-api-expert",
             namespace="google-ads",
             description="查询 Google Ads Campaign 报表。支持可选 Campaign ID 过滤，默认查询最近30天数据。",
@@ -2390,6 +2390,16 @@ class GoogleToolSource(BaseProviderToolSource):
                     "customer_id": {"type": "string", "description": "Google Ads 账户 ID（从上下文自动获取）"},
                     "campaign_ids": {"type": "array", "items": {"type": "string"}, "description": "可选 Campaign ID 过滤条件；不填时查询整个账户"},
                     "date_range": {"type": "string", "description": "日期范围，如 LAST_30_DAYS, YESTERDAY, THIS_MONTH"},
+                    "start_date": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "可选：历史报表开始日期；与 end_date 同时提供",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "可选：历史报表结束日期；与 start_date 同时提供",
+                    },
                     "limit": {
                         "type": "integer", "minimum": 1, "maximum": 10000,
                         "description": "Maximum total report rows",

@@ -1299,8 +1299,7 @@ class TikTokToolSource(BaseProviderToolSource):
             action="list", resource_type="campaign",
             intent_types=[
                 "list_campaigns", "cross_channel_overview", "cross_channel_compare",
-                "cross_channel_performance_insights", "cross_channel_optimize_budget",
-                "cross_channel_export_report",
+                "cross_channel_performance_insights", "cross_channel_export_report",
             ],
             intent_aliases=[
                 "列出 TikTok 广告系列", "列出 TikTok campaign 列表",
@@ -1682,7 +1681,36 @@ class TikTokToolSource(BaseProviderToolSource):
                 properties={
                     "account_id": {"type": "string"},
                     "campaign_ids": {"type": "array", "items": {"type": "string"}},
-                    "date_range": {"type": "string"},
+                    "date_range": {
+                        "type": ["string", "object"],
+                        "required": ["start_date", "end_date"],
+                        "properties": {
+                            "start_date": {
+                                "type": "string",
+                                "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                            },
+                            "end_date": {
+                                "type": "string",
+                                "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
+                    "metrics": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                        "minItems": 1,
+                        "maxItems": 20,
+                    },
+                    "dimensions": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["campaign_id", "stat_time_day"],
+                        },
+                        "minItems": 1,
+                        "maxItems": 2,
+                    },
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100},
                 },
             ),

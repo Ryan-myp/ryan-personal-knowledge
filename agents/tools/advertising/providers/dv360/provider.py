@@ -309,8 +309,7 @@ class DV360ToolSource(BaseProviderToolSource):
             ),
             action="list", resource_type="campaign", intent_types=[
                 "list_campaigns", "cross_channel_overview", "cross_channel_compare",
-                "cross_channel_performance_insights", "cross_channel_optimize_budget",
-                "cross_channel_export_report",
+                "cross_channel_performance_insights", "cross_channel_export_report",
             ],
             intent_aliases=["列出 DV360 广告系列", "查询 DV360 campaign 列表"],
             result_items_key="campaigns",

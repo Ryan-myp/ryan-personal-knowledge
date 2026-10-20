@@ -30,6 +30,7 @@ from .quality_scorecard import (
 EVIDENCE_STAGES = (
     "code_contract",
     "dry_run",
+    "model_quality",
     "security",
     "provider_scope",
     "provider_query_e2e",
@@ -176,6 +177,7 @@ def build_readiness_report(
     tool_source_report: Mapping[str, Any],
     contract_gate_errors: list[str] | tuple[str, ...] = (),
     dry_run_report: Mapping[str, Any] | None = None,
+    model_quality_report: Mapping[str, Any] | None = None,
     security_report: Mapping[str, Any] | None = None,
     provider_evidence: Mapping[str, Any] | None = None,
     policy: ReadinessPolicy,
@@ -193,6 +195,17 @@ def build_readiness_report(
     contract_errors = [str(item) for item in contract_gate_errors]
     dry_run = dict(dry_run_report or {})
     dry_run_failures = int(dry_run.get("failed", 0) or 0)
+    model_quality = dict(model_quality_report or {})
+    model_quality_attempted = model_quality.get("executed") is True
+    model_quality_scenarios = int(model_quality.get("scenario_count", 0) or 0)
+    model_quality_failures = int(model_quality.get("failed", 0) or 0)
+    model_quality_ok = (
+        model_quality_attempted
+        and model_quality.get("passed") is True
+        and model_quality_scenarios > 0
+        and model_quality_failures == 0
+        and model_quality.get("evidence") == "configured_model_skill_up"
+    )
     security = dict(security_report or {})
     security_scenario_count = int(security.get("scenario_count", 0) or 0)
     security_scope = str(security.get("scope") or "").strip()
@@ -287,6 +300,7 @@ def build_readiness_report(
     scorecard = build_quality_scorecard(
         code_contract_ok=code_contract_ok,
         dry_run_ok=dry_run_ok,
+        model_quality_ok=model_quality_ok,
         provider_scope_ratio=provider_scope_ratio,
         provider_query_e2e_ratio=provider_query_e2e_ratio,
         generic_platform_ok=bool(dry_run.get("generic_platform_evidence", False)),
@@ -365,10 +379,29 @@ def build_readiness_report(
         },
         "dry_run": {
             "status": "passed" if dry_run_ok else "failed",
-            "evidence": "local provider harness and Skill-up Runtime cases",
+            "evidence": "offline Provider contract harness and scripted Runtime smoke",
             "executed": bool(dry_run.get("executed", False)),
             "failed": dry_run_failures,
             "errors": list(dry_run.get("errors") or []),
+        },
+        "model_quality": {
+            "status": (
+                "passed" if model_quality_ok
+                else "failed" if model_quality_attempted
+                else "not_verified"
+            ),
+            "evidence": str(
+                model_quality.get("evidence")
+                or "configured-model Skill-up evaluation"
+            ),
+            "executed": model_quality_attempted,
+            "scenario_count": model_quality_scenarios,
+            "passed_scenarios": int(
+                model_quality.get("passed_scenarios", 0) or 0
+            ),
+            "failed_scenarios": model_quality_failures,
+            "skipped": bool(model_quality.get("skipped", False)),
+            "errors": list(model_quality.get("errors") or []),
         },
         "provider_scope": {
             "status": "passed" if provider_scope_ok else "failed",

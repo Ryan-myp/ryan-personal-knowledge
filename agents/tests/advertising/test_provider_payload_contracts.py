@@ -151,6 +151,24 @@ def test_google_campaign_report_uses_gaql_in_for_multiple_campaign_ids():
     assert "WHERE (" not in query
 
 
+def test_google_campaign_report_accepts_explicit_historical_dates():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client._search = lambda query, **_kwargs: (
+        calls.append(query) or {"results": []}
+    )
+
+    client.get_campaign_report(
+        ["101"],
+        date_from="2025-01-06",
+        date_to="2025-03-30",
+        limit=3,
+    )
+
+    query = " ".join(calls[0].split())
+    assert "segments.date BETWEEN '2025-01-06' AND '2025-03-30'" in query
+
+
 def test_google_campaign_report_without_ids_queries_bounded_account_scope():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
@@ -1446,6 +1464,36 @@ def test_tiktok_campaign_report_forwards_total_result_limit():
     }]
 
 
+def test_tiktok_campaign_report_forwards_daily_dimension_and_metrics():
+    client = TikTokAPIClient({"access_token": "test"})
+    calls = []
+    client.request_raw = lambda method, url, params=None, **_kwargs: (
+        calls.append((method, url, dict(params or {})))
+        or {
+            "status_code": 200,
+            "data": {
+                "code": 0,
+                "data": {"list": [{"campaign_id": "101"}]},
+            },
+        }
+    )
+
+    client.get_campaign_report(
+        "123",
+        ["101"],
+        time_range={"start_date": "2026-08-03", "end_date": "2026-08-09"},
+        metrics=["spend", "conversion"],
+        dimensions=["campaign_id", "stat_time_day"],
+        limit=100,
+    )
+
+    params = calls[0][2]
+    assert json.loads(params["dimensions"]) == ["campaign_id", "stat_time_day"]
+    assert json.loads(params["metrics"]) == ["spend", "conversion"]
+    assert params["start_date"] == "2026-08-03"
+    assert params["end_date"] == "2026-08-09"
+
+
 def test_tiktok_adgroup_report_uses_plural_provider_filter_fields():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []
@@ -1544,6 +1592,7 @@ def test_meta_insights_reports_use_level_scoped_filters_and_pagination(
             time_range={"since": "2026-09-17", "until": "2026-09-24"},
             fields=["impressions"],
             limit=3,
+            time_increment=7,
         )
     else:
         rows = getattr(client, method_name)(
@@ -1570,7 +1619,20 @@ def test_meta_insights_reports_use_level_scoped_filters_and_pagination(
         "until": "2026-09-24",
     }
     assert params["limit"] == 3
+    if method_name == "get_campaign_report":
+        assert params["time_increment"] == 7
     assert calls[1][2]["after"] == "cursor-2"
+
+
+def test_meta_insights_rejects_invalid_time_increment():
+    client = MetaAPIClient({"access_token": "test"})
+
+    with pytest.raises(ValueError, match="time_increment"):
+        client.get_campaign_report(
+            "act_123",
+            [],
+            time_increment=0,
+        )
 
 
 def test_meta_insights_account_report_omits_resource_filter_when_ids_not_given():

@@ -44,6 +44,7 @@ cases:
     - evals/cases/redline-protection.yaml
     - evals/cases/tiktok-app-missing-lookup.yaml
     - evals/cases/dynamic-resource-id-boundary.yaml
+    - evals/cases/meridian-data-readiness.yaml
   defaults:
     timeout_seconds: 60
     max_turns: 2

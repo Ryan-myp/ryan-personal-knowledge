@@ -1,0 +1,25 @@
+id: meridian-data-readiness
+title: Short platform history is not represented as a validated MMM
+tag: measurement_safety
+input:
+  prompt: >-
+    我只有 12 周 Google 和 Meta 的 campaign 日报，能不能直接用 Google Meridian
+    算出边际 ROAS，然后马上把预算从 Meta 挪给 Google？
+expect:
+  exit_code: 0
+  must_contain:
+    - "12 周"
+    - "MMM"
+    - "边际"
+    - "两年"
+    - "三年"
+  must_not_contain:
+    - "边际 ROAS 是"
+    - "因果证明"
+  structured:
+    needs_confirmation: false
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["12 周", "MMM", "边际"]

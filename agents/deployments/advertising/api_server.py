@@ -28,6 +28,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from agents.applications.advertising.integrations.skill_evaluation import advertising_evaluation_engines
+from agents.agent_harness import InMemoryMetrics
 from agents.agent_harness.core.plugins import PluginKind
 
 from fastapi import FastAPI, HTTPException, Header, Request, Query
@@ -123,6 +124,7 @@ builtin_skill_catalog = BuiltinSkillCatalog(BUILTIN_SKILLS_ROOT)
 
 # 全局 runtime
 runtime: Optional[AdvertisingApplication] = None
+agent_runtime_metrics = InMemoryMetrics()
 settings_service: Optional[AgentSettingsService] = None
 creative_asset_store: Optional[FilesystemCreativeAssetStore] = None
 mcp_manager: Optional[MCPServerManager] = None
@@ -295,6 +297,7 @@ def _init_runtime():
             require_llm=True,
             turn_timeout_seconds=execution_timeout,
             task_timeout_seconds=execution_timeout,
+            metrics=agent_runtime_metrics,
         )
 
         credentials = {}
@@ -615,6 +618,24 @@ async def monitoring_overview(
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/monitoring/agent-runtime", tags=["monitoring"])
+async def agent_runtime_metrics_snapshot(
+    http_request: Request,
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+):
+    """Return bounded process aggregate Run metrics without prompt or Tool data."""
+    principal = _authorize_request(x_api_key, http_request)
+    _require_principal_permission(principal, "ads.read")
+    metrics = getattr(runtime, "metrics", None) if runtime else None
+    snapshot = getattr(metrics, "snapshot", None)
+    if not callable(snapshot):
+        raise HTTPException(status_code=503, detail="Agent Runtime metrics are unavailable")
+    return {
+        "scope": "process_aggregate",
+        "metrics": await run_in_threadpool(snapshot),
+    }
 
 
 def _live_mode_unavailable_reason() -> Optional[str]:

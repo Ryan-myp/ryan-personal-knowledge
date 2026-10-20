@@ -1,7 +1,7 @@
 ---
 name: measurement-attribution
 description: "解释广告平台、分析系统与业务结果之间的转化差异，并选择合适的归因或增量测量方法 (advertising attribution and incrementality)"
-version: "1.0.0"
+version: "1.0.1"
 namespace: advertising
 triggers:
   - [attribution, 归因模型, 广告归因, 平台转化对不上, conversions disagree, conversion discrepancy, 渠道贡献]
@@ -21,7 +21,7 @@ triggers:
 5. **按决策成本选择方法。** 先评估可用数据、历史长度、渠道数、可随机/留出条件、决策金额和实施成本，再选方向性报表、路径分析、汇总模型或增量评估。不得只因模型复杂就认为更准确。
 6. **给出有边界的结论。** 标出观察事实、解释假设、未知来源、置信度和适用期限；优先建议能区分主要解释的最小后续核查或实验。
 
-按需加载 `references/attribution-and-incrementality.md`，用于差异对账表、方法选择和 readout 结构。
+按需加载 `references/attribution-and-incrementality.md`，用于差异对账表、方法选择和 readout 结构；涉及 MMM 可行性时加载 `references/mmm-data-readiness.md`。
 
 ## 结论边界
 
@@ -30,6 +30,7 @@ triggers:
 - MTA 路径会受身份拼接和触点可见性影响；MMM 依赖足够的汇总历史、支出变化和模型规格；增量实验仍需检查功效、随机化、污染和外部变化。
 - 自报来源、平台数字、分析系统、CRM 和财务结果各有系统性偏差；冲突本身不是某一方必然出错的证据。
 - 没有对应数据源、权限或实验结果时，只能给方法建议和待验证问题，不得声称已对账、建模或完成增量测量。
+- Meridian 的公开历史长度是一般经验而非硬性保证：Geo-level 通常参考至少 2 年周数据，National-level 至少 3 年；还需评估数据到参数比例、媒体变化、完整面板、控制变量与后验不确定性。少于该跨度应明确标为数据不足/方向性准备工作，不以平台 ROAS 冒充 MMM 结果。
 
 ## 执行边界
 

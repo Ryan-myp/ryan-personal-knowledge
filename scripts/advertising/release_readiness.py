@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -21,6 +22,24 @@ from typing import Any, Iterable
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+def _safe_exception_text(error: Exception) -> str:
+    """Redact known secret values before an exception reaches a readiness report."""
+    from agents.agent_harness.redaction import redact_for_persistence
+
+    text = str(redact_for_persistence(str(error)))
+    secret_markers = (
+        "API_KEY", "TOKEN", "SECRET", "PRIVATE_KEY", "PASSWORD",
+        "CREDENTIAL", "DEVELOPER_TOKEN", "MCC", "PARTNER_ID",
+    )
+    for name, value in os.environ.items():
+        if value and len(value) >= 8 and any(
+            marker in name.upper() for marker in secret_markers
+        ):
+            text = text.replace(value, "<redacted>")
+    return f"{type(error).__name__}: {text[:600]}"
+
 
 from agents.tools.advertising.shared.domain.release_readiness import (  # noqa: E402
     ReadinessPolicy,
@@ -67,12 +86,43 @@ def _load_provider_evidence(
     )
 
 
-def _run_skill_up_cases() -> dict[str, Any]:
-    """Run repository cases through the Runtime adapter without CLI/network."""
+def _run_skill_up_cases(*, enabled: bool = False) -> dict[str, Any]:
+    """Run intent and response cases only when a reviewer opts into model calls."""
+    if not enabled:
+        return {
+            "executed": False,
+            "skipped": True,
+            "scenario_count": 0,
+            "passed": False,
+            "passed_scenarios": 0,
+            "failed": 0,
+            "errors": [],
+            "evidence": "configured_model_skill_up",
+            "reason": "model evaluation requires --with-model-eval",
+        }
     try:
         import yaml
         from agents.evals.advertising.skill_up_engine import run as run_case
+        from agents.evals.advertising.skill_up_engine import (
+            configured_model_adapter,
+        )
 
+        model_adapter = configured_model_adapter()
+        if model_adapter is None:
+            return {
+                "executed": False,
+                "skipped": True,
+                "scenario_count": 0,
+                "passed": False,
+                "passed_scenarios": 0,
+                "failed": 0,
+                "errors": [],
+                "evidence": "configured_model_skill_up",
+                "reason": (
+                    "set AD_AGENT_EVAL_API_KEY and AD_AGENT_EVAL_MODEL "
+                    "to run model-quality cases"
+                ),
+            }
         cases_root = ROOT / "agents" / "evals" / "advertising" / "skill-up" / "evals" / "cases"
         rows: list[dict[str, Any]] = []
         with tempfile.TemporaryDirectory(prefix="ad-agent-readiness-") as workspace:
@@ -86,7 +136,7 @@ def _run_skill_up_cases() -> dict[str, Any]:
                     "case_id": str(case.get("id") or case_path.stem),
                     "workspace": workspace,
                     "messages": [{"role": "user", "content": prompt}],
-                })
+                }, model_adapter=model_adapter)
                 output = str(result.get("final_message") or "")
                 expected = case.get("expect") or {}
                 missing = [str(item) for item in (expected.get("must_contain") or []) if str(item) not in output]
@@ -107,20 +157,24 @@ def _run_skill_up_cases() -> dict[str, Any]:
         return {
             "executed": True,
             "scenario_count": len(rows),
-            "passed": len(rows) - len(failures),
+            "passed": not failures and bool(rows),
+            "passed_scenarios": len(rows) - len(failures),
             "failed": len(failures),
             "errors": [f"{row['case']}: case assertion failed" for row in failures],
             "cases": rows,
-            "evidence": "skill_up_runtime_adapter_local_only",
+            "evidence": "configured_model_skill_up",
         }
     except Exception as exc:
         return {
-            "executed": False,
+            "executed": True,
             "scenario_count": 0,
-            "passed": 0,
+            "passed": False,
+            "passed_scenarios": 0,
             "failed": 1,
-            "errors": [f"Skill-up suite failed to start: {type(exc).__name__}: {exc}"],
-            "evidence": "skill_up_runtime_adapter_local_only",
+            "errors": [
+                f"Skill-up model evaluation failed to start: {type(exc).__name__}"
+            ],
+            "evidence": "configured_model_skill_up",
         }
 
 
@@ -145,35 +199,116 @@ def _application_service_module_lines() -> int | None:
     dimension measures the business-facing service modules that are expected
     to remain independently understandable.
     """
-    runtime_root = ROOT / "agents" / "tools" / "advertising" / "application"
+    runtime_root = ROOT / "agents" / "applications" / "advertising"
+    if not runtime_root.is_dir():
+        return None
+    service_names = {
+        "ad_scheduling_preflight.py",
+        "ad_creation_state_services.py",
+        "ad_creation_template_services.py",
+        "ad_creation_blueprint_services.py",
+        "ad_creation_ui_services.py",
+        "ad_creation_contract_services.py",
+        "ad_creation_response_services.py",
+        "ad_tool_source_registration.py",
+        "ad_skill_lifecycle.py",
+        "ad_skill_plugins.py",
+        "ad_skill_discovery.py",
+        "ad_provider_runtime_services.py",
+        "ad_workflow_provider_reconciliation.py",
+        "ad_task_operational_services.py",
+        "ad_run_service.py",
+        "scheduling_service.py",
+        "template_tool_service.py",
+    }
     paths = [
-        path for path in runtime_root.glob("*.py")
+        path for path in runtime_root.rglob("*.py")
         if (
-            path.name.startswith("ad_")
-            and (
-                path.name.endswith("_services.py")
-                or path.name in {
-                    "ad_scheduling_preflight.py",
-                    "ad_creation_state_services.py",
-                    "ad_creation_template_services.py",
-                    "ad_creation_blueprint_services.py",
-                    "ad_creation_ui_services.py",
-                    "ad_creation_contract_services.py",
-                    "ad_creation_response_services.py",
-                    "ad_tool_source_registration.py",
-                    "ad_skill_lifecycle.py",
-                    "ad_skill_plugins.py",
-                    "ad_skill_discovery.py",
-                    "ad_provider_runtime_services.py",
-                    "ad_workflow_provider_reconciliation.py",
-                    "ad_task_operational_services.py",
-                }
+            (
+                path.name.startswith("ad_")
+                and (
+                    path.name.endswith("_services.py")
+                    or path.name in service_names
+                )
             )
+            or path.name in service_names
         )
     ]
     if not paths:
         return None
     return max(len(path.read_text(encoding="utf-8").splitlines()) for path in paths)
+
+
+def _run_advertising_runtime_contract_smoke() -> dict[str, Any]:
+    """Exercise one real advertising Run with a scripted model and offline Tool."""
+    try:
+        from agents.agent_harness.messages import ModelTurn, ToolCall
+        from agents.evals.advertising.skill_up_engine import run as run_case
+
+        class RuntimeContractModel:
+            def __init__(self) -> None:
+                self.turn = 0
+
+            def complete(self, _messages, tools, _request):
+                self.turn += 1
+                if self.turn == 1:
+                    available = {
+                        str(getattr(tool, "name", "")) for tool in (tools or ())
+                    }
+                    if "tiktok_list_apps" not in available:
+                        return ModelTurn(content="expected read Tool is unavailable")
+                    return ModelTurn(tool_calls=(ToolCall(
+                        "readiness-tiktok-apps",
+                        "tiktok_list_apps",
+                        {"account_id": "7397068114548195329"},
+                    ),))
+                return ModelTurn(content="Offline TikTok app lookup completed.")
+
+        model = RuntimeContractModel()
+        with tempfile.TemporaryDirectory(
+            prefix="ad-agent-runtime-smoke-"
+        ) as workspace:
+            result = run_case({
+                "case_id": "readiness-advertising-runtime",
+                "workspace": workspace,
+                "messages": [{
+                    "role": "user",
+                    "content": "查询 TikTok 可用应用列表",
+                }],
+            }, model_adapter=model)
+        evidence = (result.get("metadata") or {}).get("runtime_result") or {}
+        results = evidence.get("results") or []
+        passed = (
+            result.get("exit_code") == 0
+            and evidence.get("tool_plan") == {"tiktok": ["tiktok_list_apps"]}
+            and len(results) == 1
+            and results[0].get("success") is True
+            and (results[0].get("data") or {}).get("data_status") == "offline_mock"
+            and model.turn == 2
+        )
+        return {
+            "executed": True,
+            "passed": passed,
+            "scenario_count": 1,
+            "evidence": "scripted_advertising_runtime_contract",
+            "scope": (
+                "real advertising Runtime and registered offline Tool; "
+                "model intent quality and Provider connectivity are not tested"
+            ),
+            "provider_calls": 0,
+            "model_turns": model.turn,
+            "errors": [] if passed else ["offline advertising Runtime smoke failed"],
+        }
+    except Exception as exc:
+        return {
+            "executed": False,
+            "passed": False,
+            "scenario_count": 0,
+            "evidence": "scripted_advertising_runtime_contract",
+            "scope": "offline Runtime contract only",
+            "provider_calls": 0,
+            "errors": [f"Runtime smoke failed: {type(exc).__name__}"],
+        }
 
 
 def _run_generic_platform_smoke() -> dict[str, Any]:
@@ -401,7 +536,7 @@ def _run_reliability_evidence() -> dict[str, Any]:
             "executed": False,
             "passed": False,
             "production_deployment_attested": False,
-            "error": f"{type(exc).__name__}: {exc}",
+            "error": _safe_exception_text(exc),
         }
 
 
@@ -409,6 +544,8 @@ def build_report(
     profile: str,
     policy_path: Path,
     provider_evidence_paths: list[Path] | None = None,
+    *,
+    run_model_eval: bool = False,
 ) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
     resolved_provider_evidence_paths = (
@@ -422,15 +559,25 @@ def build_report(
     provider_report = run_harness(
         ROOT / "agents" / "tools" / "advertising" / "contracts" / "provider_contract_scenarios.json"
     )
-    skill_report = _run_skill_up_cases()
+    skill_report = _run_skill_up_cases(enabled=run_model_eval)
+    runtime_smoke = _run_advertising_runtime_contract_smoke()
     generic_platform_report = _run_generic_platform_smoke()
     security_report = _run_security_contracts()
     reliability_report = _run_reliability_evidence()
     dry_run_report = {
-        "executed": bool(provider_report.get("executed") and skill_report.get("executed")),
-        "failed": int(provider_report.get("failed", 0) or 0) + int(skill_report.get("failed", 0) or 0),
-        "errors": list(provider_report.get("errors") or []) + list(skill_report.get("errors") or []),
+        "executed": bool(
+            provider_report.get("executed") and runtime_smoke.get("executed")
+        ),
+        "failed": (
+            int(provider_report.get("failed", 0) or 0)
+            + int(not runtime_smoke.get("passed"))
+        ),
+        "errors": (
+            list(provider_report.get("errors") or [])
+            + list(runtime_smoke.get("errors") or [])
+        ),
         "provider_harness": provider_report,
+        "advertising_runtime_smoke": runtime_smoke,
         "skill_up": skill_report,
         "generic_platform_evidence": bool(generic_platform_report.get("passed")),
         "generic_platform": generic_platform_report,
@@ -447,6 +594,7 @@ def build_report(
         tool_source_report=tool_source_report,
         contract_gate_errors=contract_errors,
         dry_run_report=dry_run_report,
+        model_quality_report=skill_report,
         security_report=security_report,
         provider_evidence=provider_evidence,
         policy=policy,
@@ -458,6 +606,7 @@ def build_report(
         "tool_source_audit": tool_source_report,
         "contract_snapshot_errors": contract_errors,
         "dry_run": dry_run_report,
+        "model_quality": skill_report,
         "security": security_report,
         "reliability": reliability_report,
         "provider_evidence_sources": provider_evidence_sources,
@@ -476,6 +625,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--output", type=Path)
     parser.add_argument(
+        "--with-model-eval",
+        action="store_true",
+        help=(
+            "Opt into model-backed Skill-up requests using "
+            "AD_AGENT_EVAL_API_KEY/AD_AGENT_EVAL_MODEL."
+        ),
+    )
+    parser.add_argument(
         "--provider-evidence",
         action="append",
         type=Path,
@@ -490,6 +647,7 @@ def main(argv: list[str] | None = None) -> int:
             args.profile,
             args.policy,
             provider_evidence_paths=args.provider_evidence,
+            run_model_eval=args.with_model_eval,
         )
     except Exception as exc:
         report = {
@@ -498,7 +656,7 @@ def main(argv: list[str] | None = None) -> int:
             "passed": False,
             "blocking_stages": ["code_contract"],
             "stage_results": {},
-            "errors": [f"readiness gate failed to run: {type(exc).__name__}: {exc}"],
+            "errors": [f"readiness gate failed to run: {_safe_exception_text(exc)}"],
         }
     encoded = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     if args.output:

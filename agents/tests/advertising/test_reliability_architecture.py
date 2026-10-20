@@ -413,13 +413,15 @@ def test_runtime_readiness_includes_backend_and_started_worker_health():
     )
     try:
         report = runtime.get_readiness()
-        assert report["status"] == "not_ready"
-        assert report["tool_count"] == 4
-        assert runtime.registry.list_all_namespaces() == ["agent-platform"]
+        assert report["status"] == "ready"
+        assert report["tool_count"] == 5
+        assert runtime.registry.list_all_namespaces() == [
+            "agent-platform", "advertising",
+        ]
         assert report["checks"] == {
             "runtime": True,
             "llm": True,
-            "tool_registry": False,
+            "tool_registry": True,
             "persistence": True,
             "workers": True,
         }

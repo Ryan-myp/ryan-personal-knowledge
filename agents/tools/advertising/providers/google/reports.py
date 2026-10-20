@@ -23,14 +23,20 @@ class GoogleGetReportHandler(ToolHandler):
             try:
                 client = for_customer(self.client, customer_id)
                 campaign_ids = input_data.get("campaign_ids", [])
+                start_date = input_data.get("start_date")
+                end_date = input_data.get("end_date")
                 date_range = input_data.get("date_range", "LAST_30_DAYS")
+                if bool(start_date) != bool(end_date):
+                    return ToolResult.error(
+                        "Both start_date and end_date are required for an explicit range"
+                    )
                 report_options = {}
                 if "limit" in input_data:
                     report_options["limit"] = input_data["limit"]
                 report = client.get_campaign_report(
                     campaign_ids=campaign_ids,
-                    date_from=date_range,
-                    date_to="TODAY",
+                    date_from=start_date or date_range,
+                    date_to=end_date or "TODAY",
                     **report_options,
                 )
                 # 返回结构化的报表数据

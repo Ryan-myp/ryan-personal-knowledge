@@ -85,6 +85,9 @@ jobs:
       AD_AGENT_ENABLE_LIVE: "0"
       AD_AGENT_ALLOW_UNAUTHENTICATED: "0"
       SKILL_UP_REF: "a5dfe7f3cfb1357263099424066de72720c1a7c3"
+      AD_AGENT_EVAL_API_KEY: ${{ secrets.AD_AGENT_EVAL_API_KEY }}
+      AD_AGENT_EVAL_MODEL: ${{ vars.AD_AGENT_EVAL_MODEL }}
+      AD_AGENT_EVAL_BASE_URL: ${{ vars.AD_AGENT_EVAL_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -102,19 +105,25 @@ jobs:
       - name: Verify Python version
         run: ./scripts/ad-agent-python --version
       - name: Build pinned skill-up CLI
+        if: ${{ env.AD_AGENT_EVAL_API_KEY != '' && env.AD_AGENT_EVAL_MODEL != '' }}
         run: |
           git clone --filter=blob:none --no-checkout https://github.com/alibaba/skill-up.git /tmp/skill-up
           git -C /tmp/skill-up fetch --depth=1 origin "$SKILL_UP_REF"
           git -C /tmp/skill-up checkout "$SKILL_UP_REF"
           go build -o /tmp/skill-up-bin ./cmd/skill-up
       - name: Validate skill-up evaluation config
+        if: ${{ env.AD_AGENT_EVAL_API_KEY != '' && env.AD_AGENT_EVAL_MODEL != '' }}
         env:
           AD_AGENT_REPO_ROOT: ${{ github.workspace }}
         run: /tmp/skill-up-bin validate agents/evals/advertising/skill-up/evals/eval.yaml
       - name: Run skill-up Runtime evaluation
+        if: ${{ env.AD_AGENT_EVAL_API_KEY != '' && env.AD_AGENT_EVAL_MODEL != '' }}
         env:
           AD_AGENT_REPO_ROOT: ${{ github.workspace }}
         run: |
           SKILL_UP_BIN=/tmp/skill-up-bin \
             agents/evals/advertising/skill-up/run.sh \
             --output-dir /tmp/ad-agent-skill-up-report --no-delete
+      - name: Report model evaluation as not run
+        if: ${{ env.AD_AGENT_EVAL_API_KEY == '' || env.AD_AGENT_EVAL_MODEL == '' }}
+        run: echo "::notice::Model-quality Skill-up evaluation skipped: configure AD_AGENT_EVAL_API_KEY and AD_AGENT_EVAL_MODEL. Offline contract tests remain active."

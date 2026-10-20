@@ -210,6 +210,7 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     runtime._refresh_tool_catalog = fail_once
     assert runtime.unload_skill("meta") is False
     assert {tool.name for tool in runtime.registry.list_all()} == {
+        "advertising_cross_channel_budget_analysis",
         "agent_knowledge_search",
         "agent_readonly_recipe",
         "atomic_unload_read",
@@ -221,7 +222,11 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     assert runtime.unload_skill("meta") is True
     assert {
         tool.name for tool in runtime.registry.list_all()
-    } == {"agent_knowledge_search", "agent_readonly_recipe"}
+    } == {
+        "advertising_cross_channel_budget_analysis",
+        "agent_knowledge_search",
+        "agent_readonly_recipe",
+    }
 
 
 def test_skill_lifecycle_serializes_register_and_unload():
@@ -286,7 +291,11 @@ def test_skill_lifecycle_serializes_register_and_unload():
     assert unregister_result == [True]
     assert {
         tool.name for tool in runtime.registry.list_all()
-    } == {"agent_knowledge_search", "agent_readonly_recipe"}
+    } == {
+        "advertising_cross_channel_budget_analysis",
+        "agent_knowledge_search",
+        "agent_readonly_recipe",
+    }
 
 
 def test_provider_tools_own_cross_channel_campaign_actions():
@@ -1326,6 +1335,67 @@ def test_workflow_recovery_requires_verified_observations():
             [{"sequence": 1, "status": "failed", "verified": True}],
             user_id="u1",
         )
+
+
+def test_partial_live_workflow_resume_plan_exposes_manual_compensation_only():
+    store = AdAgentStore(":memory:")
+    store.create_session("partial-session", "u1", "meta-test-account")
+    store.create_workflow(
+        "partial-workflow",
+        "partial-session",
+        "cross_channel_update_budget",
+        "live",
+        status="partially_failed",
+        metadata={"compensation_policy": "manual_review_required"},
+    )
+    store.add_workflow_item(
+        "partial-workflow:1",
+        "partial-workflow",
+        1,
+        "meta",
+        "meta_create_campaign",
+        "succeeded",
+        {"account_id": "meta-test-account", "name": "test-campaign"},
+        output_data={"campaign_id": "created-campaign", "status": "PAUSED"},
+        compensation_required=True,
+        resource_type="campaign",
+        account_id="meta-test-account",
+        provider_resource_id="created-campaign",
+    )
+    store.add_workflow_item(
+        "partial-workflow:2",
+        "partial-workflow",
+        2,
+        "google-ads",
+        "google_update_campaign",
+        "failed",
+        {"customer_id": "google-test-account", "campaign_id": "failed-campaign"},
+        error="provider rejected the update",
+        resource_type="campaign",
+        account_id="google-test-account",
+    )
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        persistence_store=store,
+    )
+    runtime.register_tool_source(create_meta_tool_source())
+    runtime.register_tool_source(create_google_tool_source())
+
+    plan = runtime.get_workflow_resume_plan(
+        "partial-workflow",
+        user_id="u1",
+    )
+
+    compensation = plan["compensation_plan"]
+    assert compensation["status"] == "manual_review_required"
+    assert compensation["automatic_execution"] is False
+    assert compensation["requires_provider_readback"] is True
+    assert compensation["items"][0]["sequence"] == 1
+    assert compensation["items"][0]["provider_resource_id"] == "created-campaign"
+    assert compensation["items"][0]["recommended_next_step"]
+    assert plan["items"][0]["sequence"] == 2
+    assert plan["retry_guardrails"]["automatic_execution"] is False
+    assert plan["retry_guardrails"]["never_replay_succeeded_items"] is True
 
 
 def test_workflow_access_isolated_by_tenant_even_when_user_id_matches():

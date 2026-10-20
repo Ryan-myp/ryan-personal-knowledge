@@ -1242,6 +1242,56 @@ def test_runtime_episode_capture_can_be_disabled_without_affecting_explicit_memo
     assert explicit.kind == "semantic"
 
 
+def test_turn_context_auto_capture_switch_keeps_explicit_memory_requests():
+    from types import SimpleNamespace
+
+    store = AdAgentStore(":memory:")
+    manager = MemoryManager(store, auto_capture_enabled=False)
+
+    class FakeRuntime:
+        _memory_manager = manager
+        registry = SimpleNamespace(list_all=lambda: [])
+
+        @staticmethod
+        def _build_skill_context(*_args):
+            return {}
+
+        @staticmethod
+        def _build_prior_tool_results_context(_session):
+            return ""
+
+    class FakeTrace:
+        @staticmethod
+        def stage_status(*_args, **_kwargs):
+            return None
+
+    def prepare(user_input, session_id):
+        session = SimpleNamespace(ctx=SimpleNamespace(metadata={}))
+        context = AdTurnContextService().prepare(
+            runtime=FakeRuntime(),
+            session=session,
+            session_id=session_id,
+            user_id="user-a",
+            tenant_id="tenant-a",
+            safe_user_input=user_input,
+            trace=FakeTrace(),
+        )
+        return context
+
+    automatic = prepare("我的偏好是优先使用 TikTok", "session-auto")
+    assert automatic.memory_updates == []
+    assert store.search_memories(
+        "TikTok", tenant_id="tenant-a", user_id="user-a",
+    ) == []
+
+    explicit = prepare("请记住我的偏好：优先使用 Google Ads", "session-explicit")
+    assert len(explicit.memory_updates) == 1
+    assert explicit.memory_updates[0]["source"] == "user_explicit"
+    assert len(store.search_memories(
+        "Google Ads", tenant_id="tenant-a", user_id="user-a",
+    )) == 1
+
+
 def test_memory_purge_removes_expired_and_old_tombstones_but_keeps_active_records():
     store = AdAgentStore(":memory:")
     manager = MemoryManager(store)

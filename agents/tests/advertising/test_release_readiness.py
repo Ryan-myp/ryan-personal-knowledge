@@ -37,6 +37,7 @@ def _policy() -> ReadinessPolicy:
                 "provider_query_e2e",
                 "provider_e2e",
                 "live_verified",
+                "model_quality",
                 "quality_95",
             ],
         },
@@ -135,6 +136,7 @@ def test_release_profile_blocks_without_operation_specific_evidence():
         "provider_query_e2e",
         "provider_e2e",
         "live_verified",
+        "model_quality",
         "quality_95",
     ]
     scorecard = report["stage_results"]["quality_95"]["scorecard"]
@@ -144,6 +146,7 @@ def test_release_profile_blocks_without_operation_specific_evidence():
         "provider_query_e2e",
         "provider_e2e",
         "live_verified",
+        "model_quality",
         "production",
         "maintainability",
     }.issubset(scorecard["blocking_dimensions"])
@@ -237,6 +240,142 @@ def test_quality_scorecard_requires_explicit_evidence_and_95_threshold():
     assert "generic_platform" in scorecard["blocking_dimensions"]
     assert "production" in scorecard["blocking_dimensions"]
     assert "maintainability" in scorecard["blocking_dimensions"]
+
+
+def test_readiness_measures_application_services_after_directory_migration(
+    tmp_path, monkeypatch,
+):
+    from scripts.advertising import release_readiness
+
+    app_services = (
+        tmp_path / "agents" / "applications" / "advertising"
+        / "creation" / "ad_creation_services.py"
+    )
+    app_services.parent.mkdir(parents=True)
+    app_services.write_text("\n".join("line" for _ in range(37)), encoding="utf-8")
+
+    # A stale directory must not influence the score after package migration.
+    stale_services = (
+        tmp_path / "agents" / "tools" / "advertising"
+        / "application" / "ad_old_services.py"
+    )
+    stale_services.parent.mkdir(parents=True)
+    stale_services.write_text("\n".join("line" for _ in range(900)), encoding="utf-8")
+
+    monkeypatch.setattr(release_readiness, "ROOT", tmp_path)
+
+    assert release_readiness._application_service_module_lines() == 37
+
+
+def test_advertising_application_service_module_stays_within_maintainability_limit():
+    from scripts.advertising.release_readiness import (
+        _application_service_module_lines,
+    )
+
+    line_count = _application_service_module_lines()
+
+    assert line_count is not None
+    assert line_count <= 400
+
+
+def test_model_quality_is_a_separate_evidence_stage_and_release_gate():
+    from agents.tools.advertising.shared.domain.release_readiness import (
+        EVIDENCE_STAGES,
+    )
+
+    assert "model_quality" in EVIDENCE_STAGES
+
+    report = build_readiness_report(
+        tool_source_report={
+            "issues": [],
+            "readiness_scope": _readiness_scope(),
+            "official_inventory": {},
+        },
+        dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
+        policy=_policy(),
+        profile="release",
+        model_quality_report={
+            "executed": False,
+            "skipped": True,
+            "scenario_count": 0,
+            "evidence": "configured_model_skill_up",
+        },
+    )
+
+    assert report["stage_results"]["model_quality"]["status"] == "not_verified"
+    scorecard = report["stage_results"]["quality_95"]["scorecard"]
+    dimension = next(
+        item for item in scorecard["dimensions"]
+        if item["name"] == "model_quality"
+    )
+    assert dimension["passed"] is False
+
+
+def test_model_quality_requires_executed_real_model_evidence():
+    from agents.tools.advertising.shared.domain.release_readiness import (
+        build_readiness_report,
+    )
+
+    report = build_readiness_report(
+        tool_source_report={
+            "issues": [],
+            "readiness_scope": _readiness_scope(),
+            "official_inventory": {},
+        },
+        dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
+        policy=_policy(),
+        profile="local",
+        model_quality_report={
+            "executed": True,
+            "passed": True,
+            "scenario_count": 6,
+            "failed": 0,
+            "passed_scenarios": 6,
+            "evidence": "configured_model_skill_up",
+        },
+    )
+
+    assert report["stage_results"]["model_quality"]["status"] == "passed"
+    dimension = next(
+        item
+        for item in report["stage_results"]["quality_95"]["scorecard"]["dimensions"]
+        if item["name"] == "model_quality"
+    )
+    assert dimension["score"] == 100
+
+
+def test_application_runtime_smoke_uses_scripted_model_and_offline_provider():
+    from scripts.advertising.release_readiness import (
+        _run_advertising_runtime_contract_smoke,
+    )
+
+    report = _run_advertising_runtime_contract_smoke()
+
+    assert report["executed"] is True
+    assert report["passed"] is True
+    assert report["evidence"] == "scripted_advertising_runtime_contract"
+    assert report["provider_calls"] == 0
+
+
+def test_model_quality_cases_are_opt_in_without_marking_offline_gate_failed(
+    monkeypatch,
+):
+    from scripts.advertising import release_readiness
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("default readiness must not call a model")
+
+    monkeypatch.setattr(
+        release_readiness, "evaluate_structured_expectations", fail_if_called
+    )
+
+    report = release_readiness._run_skill_up_cases()
+
+    assert report["executed"] is False
+    assert report["skipped"] is True
+    assert report["evidence"] == "configured_model_skill_up"
 
 
 def test_provider_evidence_ratios_use_operation_totals():
@@ -765,7 +904,21 @@ def test_release_readiness_uses_default_controlled_provider_evidence(monkeypatch
     monkeypatch.setattr(
         release_readiness,
         "_run_skill_up_cases",
-        lambda: {"executed": True, "failed": 0, "passed": 1},
+        lambda **_kwargs: {
+            "executed": False,
+            "skipped": True,
+            "scenario_count": 0,
+            "failed": 0,
+            "passed": False,
+            "evidence": "configured_model_skill_up",
+        },
+    )
+    monkeypatch.setattr(
+        release_readiness,
+        "_run_advertising_runtime_contract_smoke",
+        lambda: {
+            "executed": True, "passed": True, "failed": 0, "errors": [],
+        },
     )
     monkeypatch.setattr(
         release_readiness,
@@ -829,7 +982,21 @@ def test_readiness_does_not_infer_security_success_from_code_contract(monkeypatc
     monkeypatch.setattr(
         release_readiness,
         "_run_skill_up_cases",
-        lambda: {"executed": True, "failed": 0},
+        lambda **_kwargs: {
+            "executed": False,
+            "skipped": True,
+            "scenario_count": 0,
+            "failed": 0,
+            "passed": False,
+            "evidence": "configured_model_skill_up",
+        },
+    )
+    monkeypatch.setattr(
+        release_readiness,
+        "_run_advertising_runtime_contract_smoke",
+        lambda: {
+            "executed": True, "passed": True, "failed": 0, "errors": [],
+        },
     )
     monkeypatch.setattr(
         release_readiness, "_run_generic_platform_smoke", lambda: {"passed": True}

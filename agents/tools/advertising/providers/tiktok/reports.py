@@ -28,6 +28,10 @@ class TikTokGetReportHandler(ToolHandler):
                     report_options = {}
                     if "limit" in input_data:
                         report_options["limit"] = input_data["limit"]
+                    if "metrics" in input_data:
+                        report_options["metrics"] = input_data["metrics"]
+                    if "dimensions" in input_data:
+                        report_options["dimensions"] = input_data["dimensions"]
                     report = self.client.get_campaign_report(
                         advertiser_id=account_id,
                         campaign_ids=campaign_ids,

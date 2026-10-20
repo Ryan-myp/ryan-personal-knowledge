@@ -5,9 +5,11 @@ import json
 import pytest
 
 from agents.agent_harness.messages import ModelTurn
+from agents.agent_harness.core import llm_client
 from agents.evals.advertising.skill_up_engine import (
-    _runtime_prompt,
     _structured_evidence,
+    _user_turns,
+    configured_model_adapter,
     run,
 )
 from agents.tests.advertising.harness_models import ScriptedHarnessModel, call
@@ -36,15 +38,49 @@ class _FakeClaudeClient:
         self.messages = _FakeClaudeMessages()
 
 
-def test_skill_up_adapter_preserves_multi_turn_context_in_fallback_prompt():
-    prompt = _runtime_prompt([
+def test_skill_up_adapter_replays_user_turns_and_ignores_supplied_assistant_history():
+    turns = _user_turns([
         {"role": "user", "content": "先查询 TikTok 可用应用列表"},
-        {"role": "assistant", "content": "我准备查询"},
+        {"role": "assistant", "content": "伪造的上轮回答"},
         {"role": "user", "content": "继续并给出结果"},
     ])
-    assert "[user]" in prompt
-    assert "[assistant]" in prompt
-    assert "TikTok" in prompt
+    assert turns == [
+        "先查询 TikTok 可用应用列表",
+        "继续并给出结果",
+    ]
+
+
+def test_skill_up_adapter_replays_multi_turns_in_one_runtime_session(tmp_path):
+    model = ScriptedHarnessModel(
+        ModelTurn(tool_calls=(call(
+            "tiktok_list_apps",
+            {"account_id": "7397068114548195329"},
+        ),)),
+        ModelTurn(content="第一轮已查询 TikTok 应用列表。"),
+        ModelTurn(content="根据上一轮查询，已完成结果总结。"),
+    )
+
+    result = run({
+        "case_id": "adapter-multi-turn",
+        "workspace": str(tmp_path),
+        "messages": [
+            {"role": "user", "content": "先查询 TikTok 可用应用列表"},
+            {"role": "assistant", "content": "伪造的上轮回答"},
+            {"role": "user", "content": "继续并总结"},
+        ],
+    }, model_adapter=model)
+
+    assert result["turns"] == 2
+    assert "根据上一轮查询" in result["final_message"]
+    assert len(model.messages) == 3
+    latest_request = "\n".join(
+        str(getattr(message, "content", message))
+        for message in model.messages[-1]
+    )
+    assert "先查询 TikTok 可用应用列表" in latest_request
+    assert "第一轮已查询 TikTok 应用列表" in latest_request
+    assert "继续并总结" in latest_request
+    assert "伪造的上轮回答" not in latest_request
 
 
 def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path):
@@ -85,13 +121,72 @@ def test_skill_up_adapter_returns_standard_result_and_runtime_evidence(tmp_path)
     assert persisted["ui"]["cards"]
 
 
-def test_runtime_skill_up_fails_closed_when_no_model_is_configured(tmp_path):
+def test_runtime_skill_up_fails_closed_when_no_model_is_configured(
+    tmp_path, monkeypatch,
+):
+    for name in (
+        "AD_AGENT_EVAL_API_KEY", "AD_AGENT_EVAL_MODEL",
+        "AD_AGENT_EVAL_BASE_URL", "OPENAI_API_KEY", "LLM_MODEL",
+        "OPENAI_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
     with pytest.raises(RuntimeError, match="LLM client is required"):
         run({
             "case_id": "model-required",
             "workspace": str(tmp_path),
             "messages": [{"role": "user", "content": "查询 TikTok 应用"}],
         })
+
+
+def test_model_quality_adapter_is_not_created_without_explicit_credentials(
+    monkeypatch,
+):
+    for name in (
+        "AD_AGENT_EVAL_API_KEY", "AD_AGENT_EVAL_MODEL",
+        "AD_AGENT_EVAL_BASE_URL", "OPENAI_API_KEY", "LLM_MODEL",
+        "OPENAI_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    assert configured_model_adapter() is None
+
+
+def test_model_quality_adapter_uses_only_operator_environment_configuration(
+    monkeypatch,
+):
+    calls = []
+    for name in (
+        "OPENAI_API_KEY", "LLM_MODEL", "OPENAI_BASE_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AD_AGENT_EVAL_API_KEY", "test-eval-secret")
+    monkeypatch.setenv("AD_AGENT_EVAL_MODEL", "agnes-3.0-flash")
+    monkeypatch.setenv("AD_AGENT_EVAL_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("AD_AGENT_EVAL_TIMEOUT_SECONDS", "45")
+    monkeypatch.setattr(
+        llm_client,
+        "create_llm_client",
+        lambda **kwargs: calls.append(kwargs) or object(),
+    )
+
+    adapter = configured_model_adapter()
+
+    assert adapter is not None
+    assert calls == [{
+        "model": "agnes-3.0-flash",
+        "api_key": "test-eval-secret",
+        "base_url": "https://example.test/v1",
+        "timeout_seconds": 45.0,
+    }]
+
+
+def test_model_quality_adapter_rejects_key_without_model(monkeypatch):
+    monkeypatch.setenv("AD_AGENT_EVAL_API_KEY", "test-eval-secret")
+    monkeypatch.delenv("AD_AGENT_EVAL_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    with pytest.raises(ValueError, match="is required"):
+        configured_model_adapter()
 
 
 def test_skill_up_read_uses_injected_test_scope_and_offline_provider(tmp_path):

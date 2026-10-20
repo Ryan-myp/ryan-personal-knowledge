@@ -48,7 +48,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     experimentation = catalog.get_version("experimentation-design", "1.0.0")
     assert experimentation["location"] == "practices/experimentation-design"
     assert "references/test-design.md" in experimentation["files"]
-    attribution = catalog.get_version("measurement-attribution", "1.0.0")
+    attribution = catalog.get_version("measurement-attribution", "1.0.1")
     assert attribution["location"] == "practices/measurement-attribution"
     assert "references/attribution-and-incrementality.md" in attribution["files"]
     instrumentation = catalog.get_version("measurement-instrumentation", "1.0.0")
@@ -221,7 +221,6 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
             assert not {
                 "breakdowns",
                 "action_breakdowns",
-                "time_increment",
                 "attribution_setting",
             } & set(properties), tool_name
     finally:

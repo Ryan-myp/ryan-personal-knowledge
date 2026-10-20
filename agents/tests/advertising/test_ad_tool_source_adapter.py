@@ -71,11 +71,13 @@ def test_registered_provider_source_is_part_of_platform_dependencies():
     assert {source.source_id for source in sources} == {
         "agent-platform:knowledge-search",
         "agent-platform:readonly-recipe",
+        "advertising:shared-budget-analysis",
         "provider-module:example",
     }
     assert {
         tool.name for tool in runtime._platform_application.harness.tools.list_tools()
     } == {
+        "advertising_cross_channel_budget_analysis",
         "agent_knowledge_search",
         "agent_readonly_recipe",
         "example_lookup",

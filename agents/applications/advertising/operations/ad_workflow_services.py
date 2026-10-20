@@ -104,6 +104,12 @@ class AdWorkflowServices(ProviderWorkflowReconciliationMixin):
             definition.name: definition
             for definition in self.runtime.registry.list_all()
         }
+        successful_compensation_items = [
+            item
+            for item in workflow.get("items", [])
+            if item.get("status") == "succeeded"
+            and item.get("compensation_required") is True
+        ]
 
         def item_definition_value(
             item: Mapping[str, Any], field: str,
@@ -115,6 +121,21 @@ class AdWorkflowServices(ProviderWorkflowReconciliationMixin):
             value = getattr(definition, field, None) if definition else None
             return str(value) if value not in (None, "") else None
 
+        compensation_items = [
+            {
+                "sequence": item.get("sequence"),
+                "platform": self.runtime._canonical_platform(
+                    str(item.get("platform") or "")
+                ),
+                "account_id": item_account_id(item),
+                "tool_name": item.get("tool_name"),
+                "resource_type": item_definition_value(item, "resource_type"),
+                "provider_resource_id": item.get("provider_resource_id"),
+                "status": item.get("status"),
+                "recommended_next_step": self._compensation_next_step(item),
+            }
+            for item in successful_compensation_items
+        ]
         return {
             "workflow_id": workflow_id,
             "status": workflow.get("status"),
@@ -123,6 +144,23 @@ class AdWorkflowServices(ProviderWorkflowReconciliationMixin):
                 workflow.get("execution_mode") == ExecutionMode.LIVE.value
             ),
             "replay_policy": "explicit_operator_confirmation",
+            "retry_guardrails": {
+                "automatic_execution": False,
+                "never_replay_succeeded_items": True,
+                "provider_readback_before_retry": True,
+                "requires_fresh_confirmation": (
+                    workflow.get("execution_mode") == ExecutionMode.LIVE.value
+                ),
+            },
+            "compensation_plan": {
+                "status": (
+                    "manual_review_required"
+                    if compensation_items else "not_required"
+                ),
+                "automatic_execution": False,
+                "requires_provider_readback": bool(compensation_items),
+                "items": compensation_items,
+            },
             "items": [
                 {
                     "sequence": item.get("sequence"),
@@ -147,6 +185,24 @@ class AdWorkflowServices(ProviderWorkflowReconciliationMixin):
                 for item in pending
             ],
         }
+
+    @staticmethod
+    def _compensation_next_step(item: Mapping[str, Any]) -> str:
+        tool_name = str(item.get("tool_name") or "").casefold()
+        if "create" in tool_name:
+            return (
+                "先通过只读查询回读已创建资源及当前状态，再由操作员决定保留、"
+                "暂停或另行发起经确认的变更；不要自动删除。"
+            )
+        if "update" in tool_name:
+            return (
+                "先通过只读查询核对资源当前值与目标值；如需反向更新，"
+                "另行生成并确认一笔新操作。"
+            )
+        return (
+            "先通过只读查询核实外部资源状态，再由操作员决定后续处理；"
+            "不要自动回滚或重放。"
+        )
 
     def _is_stale_workflow(self, workflow: Mapping[str, Any]) -> bool:
         try:

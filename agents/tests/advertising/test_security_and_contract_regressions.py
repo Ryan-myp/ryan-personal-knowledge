@@ -927,7 +927,8 @@ def test_legacy_cross_channel_batch_tool_is_not_registered():
     runtime.register_tool_source(create_meta_tool_source())
     names = {definition.name for definition in runtime.registry.list_all()}
     assert "meta_update_campaign" in names
-    assert not any("cross_channel" in name or "batch_pause" in name for name in names)
+    assert "advertising_cross_channel_budget_analysis" in names
+    assert not any("batch_pause" in name or name.startswith("cross_channel_batch_") for name in names)
 
 
 def test_create_tools_are_not_marked_safe_to_replay():

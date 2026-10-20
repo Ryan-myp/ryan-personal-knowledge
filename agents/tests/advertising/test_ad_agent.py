@@ -2609,6 +2609,7 @@ class TestIterationContracts:
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
         assert {tool.name for tool in rt.registry.list_all()} == {
+            "advertising_cross_channel_budget_analysis",
             "agent_knowledge_search",
             "agent_readonly_recipe",
             "custom_meta_insight",
@@ -2626,6 +2627,7 @@ class TestIterationContracts:
         assert not hasattr(rt, "intent_parser")
         assert rt.unload_skill("meta") is True
         assert {tool.name for tool in rt.registry.list_all()} == {
+            "advertising_cross_channel_budget_analysis",
             "agent_knowledge_search",
             "agent_readonly_recipe",
         }
@@ -2668,6 +2670,7 @@ class TestIterationContracts:
             str(skill_root), allow_executable_plugins=True,
         ) == 1
         assert {tool.name for tool in rt.registry.list_all()} == {
+            "advertising_cross_channel_budget_analysis",
             "agent_knowledge_search",
             "agent_readonly_recipe",
             "custom_insight",
@@ -3252,10 +3255,6 @@ class TestCrossChannelAnalysis:
         # A single known currency can still be totaled, while the overall
         # comparison remains partial because Google omitted spend.
         assert aggregate["totals"]["spend"] == 100
-
-        plan = CrossChannelAnalyzer.budget_plan(aggregate, 1000, minimum_budget=100)
-        assert plan["status"] == "partial"
-        assert sum(row["recommended_budget"] for row in plan["recommendations"]) == 1000
 
     def test_export_csv_contains_normalized_rows_without_credentials(self):
         aggregate = CrossChannelAggregator().aggregate([{

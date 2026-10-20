@@ -19,16 +19,18 @@ class MetaGetReportHandler(ToolHandler):
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
         campaign_id = input_data.get("campaign_id")
         campaign_ids = input_data.get("campaign_ids") or ([campaign_id] if campaign_id else [])
-        date_preset = input_data.get("date_preset") or input_data.get("date_range")
+        time_range = input_data.get("date_range") or input_data.get("date_preset")
         if self.client and ctx.account_id:
             try:
                 report_options = {}
                 if "limit" in input_data:
                     report_options["limit"] = input_data["limit"]
+                if "time_increment" in input_data:
+                    report_options["time_increment"] = input_data["time_increment"]
                 report = self.client.get_campaign_report(
                     ctx.account_id,
                     campaign_ids,
-                    time_range=date_preset,
+                    time_range=time_range,
                     **report_options,
                 )
                 return ToolResult.ok({"report": report, "data_status": "live"})

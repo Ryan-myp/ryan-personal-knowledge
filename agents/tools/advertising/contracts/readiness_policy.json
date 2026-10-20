@@ -18,6 +18,7 @@
     "release": [
       "code_contract",
       "dry_run",
+      "model_quality",
       "security",
       "provider_scope",
       "provider_query_e2e",
@@ -28,7 +29,8 @@
   },
   "evidence_policy": {
     "code_contract": "Registry schema, Tool Source audit and versioned Tool snapshot",
-    "dry_run": "Local provider contract harness and Skill-up Runtime cases",
+    "dry_run": "Offline Provider contract harness and scripted Runtime contract smoke",
+    "model_quality": "Configured-model Skill-up cases; deterministic fixtures do not qualify",
     "security": "Dedicated local MCP trust, tenant-isolation and dry-run contract scenarios; not a full security audit",
     "provider_scope": "All declared query APIs and scoped campaign-hierarchy create/update operations, excluding DV360",
     "provider_query_e2e": "Exact Tool/action evidence that declared query operations were exercised against controlled provider test accounts",

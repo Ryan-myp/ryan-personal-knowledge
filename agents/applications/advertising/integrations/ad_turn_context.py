@@ -138,7 +138,15 @@ class AdTurnContextService:
         memory_manager = runtime._memory_manager
         if memory_manager:
             try:
-                for candidate in memory_manager.extract_candidates(safe_user_input):
+                candidates = memory_manager.extract_candidates(safe_user_input)
+                if not bool(getattr(memory_manager, "auto_capture_enabled", True)):
+                    candidates = [
+                        candidate for candidate in candidates
+                        if str(candidate.get("source") or "").startswith(
+                            "user_explicit"
+                        )
+                    ]
+                for candidate in candidates:
                     record = memory_manager.remember(
                         candidate["content"],
                         tenant_id=tenant_id,

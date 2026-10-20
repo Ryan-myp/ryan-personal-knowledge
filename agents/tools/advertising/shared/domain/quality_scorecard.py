@@ -70,6 +70,7 @@ def build_quality_scorecard(
     max_runtime_module_lines: int | None,
     security_evidence: str = "dedicated local security contract evidence",
     maintainability_target_lines: int = 400,
+    model_quality_ok: bool = False,
 ) -> dict[str, Any]:
     """Build the hard 95-point release scorecard.
 
@@ -123,8 +124,17 @@ def build_quality_scorecard(
         _binary_dimension(
             "dry_run",
             dry_run_ok,
-            evidence="local Provider contract harness and Skill-up cases",
-            blocker="dry-run or Skill-up evidence failed",
+            evidence="offline Provider contract harness and scripted Runtime contract smoke",
+            blocker="offline Runtime or Provider contract evidence failed",
+        ),
+        _binary_dimension(
+            "model_quality",
+            model_quality_ok,
+            evidence=(
+                "configured-model Skill-up cases; scripted Runtime fixtures "
+                "are not model-quality evidence"
+            ),
+            blocker="configured-model Skill-up evaluation is missing or failed",
         ),
         QualityDimension(
             name="provider_scope",

@@ -2411,6 +2411,8 @@ class TikTokAPIClient(BasePlatformClient):
         advertiser_id: str,
         campaign_ids: list[str],
         time_range: Any = None,
+        metrics: Optional[list[str]] = None,
+        dimensions: Optional[list[str]] = None,
         limit: int = 100,
     ) -> list:
         """Query campaign rows through TikTok's synchronous Integrated Report."""
@@ -2418,7 +2420,8 @@ class TikTokAPIClient(BasePlatformClient):
         payload = self._integrated_report(
             advertiser_id=advertiser_id,
             data_level="AUCTION_CAMPAIGN",
-            dimensions=["campaign_id"],
+            dimensions=dimensions or ["campaign_id"],
+            metrics=metrics,
             time_range=time_range,
             filtering=self._report_id_filter("campaign_ids", campaign_ids),
             limit=limit,

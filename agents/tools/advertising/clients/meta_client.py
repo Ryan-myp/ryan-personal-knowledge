@@ -2566,6 +2566,7 @@ class MetaAPIClient(BasePlatformClient):
         fields: list = None,
         level: str = "campaign",
         limit: int = 1000,
+        time_increment: Optional[int] = None,
     ) -> list[dict[str, Any]]:
         """
         Query bounded Insights rows at Campaign, Ad Set or Ad level.
@@ -2621,6 +2622,18 @@ class MetaAPIClient(BasePlatformClient):
             'fields': ','.join(selected_fields),
             'limit': limit,
         }
+        if time_increment is not None:
+            if isinstance(time_increment, bool):
+                raise ValueError("time_increment must be between 1 and 90")
+            try:
+                time_increment = int(time_increment)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "time_increment must be between 1 and 90"
+                ) from exc
+            if not 1 <= time_increment <= 90:
+                raise ValueError("time_increment must be between 1 and 90")
+            params["time_increment"] = time_increment
         if normalized_ids:
             params["filtering"] = json.dumps([
                 {
