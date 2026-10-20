@@ -7,7 +7,10 @@ import binascii
 import ipaddress
 import json
 import re
+import time
 from collections.abc import Mapping
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
@@ -40,6 +43,9 @@ _IMAGE_RATIOS = frozenset({
 _VIDEO_RATIOS = frozenset({"16:9", "9:16", "1:1"})
 _VIDEO_SIZES = frozenset({"720P", "1080P"})
 _VIDEO_RESULT_HOSTS = frozenset({"platform-outputs.agnes-ai.space"})
+_VIDEO_QUEUE_RETRY_DELAYS = (10.0, 20.0, 40.0)
+_VIDEO_RATE_LIMIT_RETRY_DELAY_SECONDS = 60.0
+_VIDEO_QUEUE_RETRY_BUDGET_SECONDS = 120.0
 _VIDEO_STATUSES = {
     "queued": "processing",
     "pending": "processing",
@@ -59,9 +65,15 @@ _VIDEO_STATUSES = {
 class MediaProviderError(RuntimeError):
     """Safe provider failure code without response bodies or credentials."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
+        self.retry_after_seconds = retry_after_seconds
 
 
 class AgnesMediaClient:
@@ -178,20 +190,79 @@ class AgnesMediaClient:
         if aspect_ratio not in _VIDEO_RATIOS:
             raise ValueError("unsupported video aspect ratio")
         self._validate_video_parameters(duration_seconds, resolution)
-        payload = self._request_json(
-            "POST",
-            f"{self.base_url}/videos",
-            json={
-                "model": self.model,
-                "prompt": prompt,
-                "mode": "text",
-                "seconds": str(duration_seconds),
-                "size": resolution,
-                "aspect_ratio": aspect_ratio,
-                "n": 1,
-            },
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "mode": "text",
+            "seconds": str(duration_seconds),
+            "size": resolution,
+            "aspect_ratio": aspect_ratio,
+            "n": 1,
+        }
+        return self._submit_video_with_retries(payload)
+
+    def _submit_video_with_retries(
+        self,
+        payload: Mapping[str, Any],
+    ) -> dict[str, str]:
+        started_at = time.monotonic()
+        request_deadline = started_at + self.timeout_seconds
+        retry_deadline = started_at + min(
+            self.timeout_seconds,
+            _VIDEO_QUEUE_RETRY_BUDGET_SECONDS,
         )
-        return self._parse_video_submission(payload)
+        retry_number = 0
+        rate_limit_retried = False
+        while True:
+            remaining = request_deadline - time.monotonic()
+            if remaining <= 0:
+                raise MediaProviderError("media_provider_timeout")
+            try:
+                response = self._request_json(
+                    "POST",
+                    f"{self.base_url}/videos",
+                    request_timeout_seconds=remaining,
+                    json=payload,
+                )
+            except MediaProviderError as error:
+                delay = self._video_retry_delay(
+                    error,
+                    retry_number=retry_number,
+                    rate_limit_retried=rate_limit_retried,
+                )
+                now = time.monotonic()
+                retry_budget = min(
+                    request_deadline - now,
+                    retry_deadline - now,
+                )
+                if delay >= retry_budget:
+                    raise
+                time.sleep(delay)
+                if error.code == "media_provider_rate_limited":
+                    rate_limit_retried = True
+                else:
+                    retry_number += 1
+                continue
+            return self._parse_video_submission(response)
+
+    @staticmethod
+    def _video_retry_delay(
+        error: MediaProviderError,
+        *,
+        retry_number: int,
+        rate_limit_retried: bool,
+    ) -> float:
+        if error.code == "media_provider_video_queue_full":
+            if retry_number >= len(_VIDEO_QUEUE_RETRY_DELAYS):
+                raise error
+            backoff = _VIDEO_QUEUE_RETRY_DELAYS[retry_number]
+        elif error.code == "media_provider_rate_limited":
+            if rate_limit_retried:
+                raise error
+            backoff = _VIDEO_RATE_LIMIT_RETRY_DELAY_SECONDS
+        else:
+            raise error
+        return max(backoff, error.retry_after_seconds or 0.0)
 
     def _parse_video_submission(self, payload: Mapping[str, Any]) -> dict[str, str]:
         row = self._data_object(payload)
@@ -351,7 +422,14 @@ class AgnesMediaClient:
         ):
             raise ValueError("Agnes Video 2.5 Flash supports 720P output")
 
-    def _request_json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+    def _request_json(
+        self,
+        method: str,
+        url: str,
+        *,
+        request_timeout_seconds: float | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Accept": "application/json",
@@ -361,25 +439,13 @@ class AgnesMediaClient:
                 method,
                 url,
                 headers=headers,
-                timeout=self.timeout_seconds,
+                timeout=request_timeout_seconds or self.timeout_seconds,
                 allow_redirects=False,
                 stream=True,
                 **kwargs,
             )
             response.raise_for_status()
-            declared_size = str(
-                getattr(response, "headers", {}).get("content-length") or ""
-            ).strip()
-            if declared_size.isdigit() and int(declared_size) > self.max_response_bytes:
-                raise MediaProviderError("media_provider_response_too_large")
-            content = bytearray()
-            for chunk in response.iter_content(chunk_size=64 * 1024):
-                if not chunk:
-                    continue
-                content.extend(chunk)
-                if len(content) > self.max_response_bytes:
-                    raise MediaProviderError("media_provider_response_too_large")
-            payload = json.loads(content)
+            payload = self._read_json_response(response)
         except MediaProviderError:
             raise
         except requests.Timeout as error:
@@ -387,16 +453,7 @@ class AgnesMediaClient:
         except requests.ConnectionError as error:
             raise MediaProviderError("media_provider_connection_failed") from error
         except requests.HTTPError as error:
-            response = getattr(error, "response", None)
-            status_code = getattr(response, "status_code", None)
-            provider_code = self._provider_error_code(response)
-            if status_code == 503 and provider_code == "video_queue_full":
-                code = "media_provider_video_queue_full"
-            else:
-                code = self._http_error_code(status_code)
-            raise MediaProviderError(
-                code
-            ) from error
+            raise self._http_failure(error) from error
         except (requests.RequestException, TypeError, ValueError) as error:
             raise MediaProviderError("media_provider_request_failed") from error
         finally:
@@ -406,6 +463,51 @@ class AgnesMediaClient:
                     close()
         if not isinstance(payload, dict):
             raise MediaProviderError("media_provider_response_invalid")
+        return payload
+
+    def _http_failure(self, error: requests.HTTPError) -> MediaProviderError:
+        response = getattr(error, "response", None)
+        status_code = getattr(response, "status_code", None)
+        if status_code == 503 and self._provider_error_code(response) == "video_queue_full":
+            return MediaProviderError(
+                "media_provider_video_queue_full",
+                retry_after_seconds=self._retry_after_seconds(
+                    getattr(response, "headers", {}),
+                ),
+            )
+        if status_code == 429:
+            return MediaProviderError(
+                "media_provider_rate_limited",
+                retry_after_seconds=self._retry_after_seconds(
+                    getattr(response, "headers", {}),
+                ),
+            )
+        return MediaProviderError(self._http_error_code(status_code))
+
+    def _read_json_response(self, response: Any) -> Any:
+        declared_size = str(
+            getattr(response, "headers", {}).get("content-length") or ""
+        ).strip()
+        if declared_size.isdigit() and int(declared_size) > self.max_response_bytes:
+            raise MediaProviderError("media_provider_response_too_large")
+        content = bytearray()
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            content.extend(chunk)
+            if len(content) > self.max_response_bytes:
+                raise MediaProviderError("media_provider_response_too_large")
+        payload = json.loads(content)
+        if (
+            isinstance(payload, Mapping)
+            and self._payload_error_code(payload) == "video_queue_full"
+        ):
+            raise MediaProviderError(
+                "media_provider_video_queue_full",
+                retry_after_seconds=self._retry_after_seconds(
+                    getattr(response, "headers", {}),
+                ),
+            )
         return payload
 
     @staticmethod
@@ -449,6 +551,10 @@ class AgnesMediaClient:
             payload = json.loads(body)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return ""
+        return AgnesMediaClient._payload_error_code(payload)
+
+    @staticmethod
+    def _payload_error_code(payload: Any) -> str:
         if not isinstance(payload, Mapping):
             return ""
         error = payload.get("error")
@@ -457,6 +563,35 @@ class AgnesMediaClient:
         else:
             raw_code = payload.get("code")
         return str(raw_code or "").strip().lower()
+
+    @staticmethod
+    def _retry_after_seconds(headers: Any) -> float | None:
+        if not isinstance(headers, Mapping):
+            return None
+        raw_value = next(
+            (
+                value for key, value in headers.items()
+                if str(key).casefold() == "retry-after"
+            ),
+            None,
+        )
+        if raw_value is None:
+            return None
+        value = str(raw_value).strip()
+        if value.isascii() and value.isdigit():
+            if len(value) > 15:
+                return float("inf")
+            return float(value)
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max(
+            0.0,
+            (retry_at - datetime.now(timezone.utc)).total_seconds(),
+        )
 
     @staticmethod
     def _data_object(payload: Mapping[str, Any]) -> dict[str, Any]:

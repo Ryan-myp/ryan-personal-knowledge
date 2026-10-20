@@ -6,6 +6,7 @@ import json
 import pytest
 import requests
 
+from agents.tools.creative_media import agnes_client
 from agents.tools.creative_media.agnes_client import (
     AgnesMediaClient,
     MediaProviderError,
@@ -348,7 +349,12 @@ def test_generation_rejects_paid_or_unapproved_models_before_network(
         (503, "media_provider_unavailable"),
     ],
 )
-def test_provider_http_errors_are_safely_classified(status_code, expected_code):
+def test_provider_http_errors_are_safely_classified(
+    status_code,
+    expected_code,
+    monkeypatch,
+):
+    monkeypatch.setattr(agnes_client.time, "sleep", lambda _seconds: None)
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
@@ -389,23 +395,155 @@ def test_provider_timeouts_have_a_distinct_safe_error_code():
     assert "must-not-leak" not in str(raised.value)
 
 
-def test_video_queue_full_response_gets_a_specific_safe_error_code():
+def test_video_queue_full_response_retries_and_recovers(monkeypatch):
+    calls = []
+    waits = []
+    full = FakeResponse(
+        {"error": {"code": "video_queue_full"}},
+        status_code=503,
+    )
+    full.headers["Retry-After"] = "17"
+
+    def request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if len(calls) == 1:
+            return full
+        return FakeResponse({"video_id": "video-123", "status": "processing"})
+
+    monkeypatch.setattr(agnes_client.time, "sleep", waits.append)
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
             "base_url": "https://apihub.agnes-ai.com/v1",
             "api_key": "must-not-leak",
         },
-        request=lambda *_args, **_kwargs: FakeResponse(
+        request=request,
+    )
+
+    submitted = client.submit_video("A short product video")
+
+    assert submitted == {
+        "video_id": "video-123",
+        "status": "processing",
+        "model": "agnes-video-2.5-flash",
+    }
+    assert len(calls) == 2
+    assert waits == [17.0]
+    assert calls[1][0:2] == calls[0][0:2]
+
+
+def test_video_queue_full_http_200_envelope_is_retried(monkeypatch):
+    calls = []
+    waits = []
+
+    def request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if len(calls) == 1:
+            return FakeResponse({"code": "video_queue_full"})
+        return FakeResponse({"video_id": "video-456", "status": "processing"})
+
+    monkeypatch.setattr(agnes_client.time, "sleep", waits.append)
+    client = AgnesMediaClient(
+        {
+            "model": "agnes-video-2.5-flash",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+            "api_key": "test-key",
+        },
+        request=request,
+    )
+
+    submitted = client.submit_video("A short product video")
+
+    assert submitted["video_id"] == "video-456"
+    assert len(calls) == 2
+    assert waits == [10.0]
+
+
+def test_video_rate_limit_retries_after_retry_after(monkeypatch):
+    calls = []
+    waits = []
+    limited = FakeResponse({"error": {"code": "rate_limit"}}, status_code=429)
+    limited.headers["Retry-After"] = "65"
+
+    def request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if len(calls) == 1:
+            return limited
+        return FakeResponse({"video_id": "video-789", "status": "processing"})
+
+    monkeypatch.setattr(agnes_client.time, "sleep", waits.append)
+    client = AgnesMediaClient(
+        {
+            "model": "agnes-video-2.5-flash",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+            "api_key": "test-key",
+        },
+        request=request,
+    )
+
+    submitted = client.submit_video("A short product video")
+
+    assert submitted["video_id"] == "video-789"
+    assert len(calls) == 2
+    assert waits == [65.0]
+
+
+def test_video_rate_limit_without_retry_after_waits_once_then_stops(monkeypatch):
+    calls = []
+    waits = []
+
+    def request(*_args, **_kwargs):
+        calls.append(None)
+        return FakeResponse(
+            {"error": {"code": "rate_limit"}},
+            status_code=429,
+        )
+
+    monkeypatch.setattr(agnes_client.time, "sleep", waits.append)
+    client = AgnesMediaClient(
+        {
+            "model": "agnes-video-2.5-flash",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+            "api_key": "test-key",
+        },
+        request=request,
+    )
+
+    with pytest.raises(MediaProviderError) as raised:
+        client.submit_video("A short product video")
+
+    assert raised.value.code == "media_provider_rate_limited"
+    assert len(calls) == 2
+    assert waits == [60.0]
+
+
+def test_video_queue_full_retries_are_bounded_and_return_safe_error(monkeypatch):
+    calls = []
+    waits = []
+
+    def request(*_args, **_kwargs):
+        calls.append(None)
+        return FakeResponse(
             {"error": {"code": "video_queue_full"}},
             status_code=503,
-        ),
+        )
+
+    monkeypatch.setattr(agnes_client.time, "sleep", waits.append)
+    client = AgnesMediaClient(
+        {
+            "model": "agnes-video-2.5-flash",
+            "base_url": "https://apihub.agnes-ai.com/v1",
+            "api_key": "must-not-leak",
+        },
+        request=request,
     )
 
     with pytest.raises(MediaProviderError) as raised:
         client.submit_video("A short product video")
 
     assert raised.value.code == "media_provider_video_queue_full"
+    assert len(calls) == 4
+    assert waits == [10.0, 20.0, 40.0]
     assert "must-not-leak" not in str(raised.value)
 
 

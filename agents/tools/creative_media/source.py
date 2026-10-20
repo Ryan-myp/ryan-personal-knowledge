@@ -959,7 +959,8 @@ def _generation_error_message(error_code: str) -> str:
         "media_provider_video_queue_full": (
             "Agnes 视频生成队列已满（video_queue_full / HTTP 503），"
             "这是上游容量限制，不是本地 Key 或接口配置错误。"
-            "请稍后再试；系统不会自动重提，以免重复创建任务。"
+            "系统已对明确未受理的队列满响应按退避策略自动重试；"
+            "本次仍未获得上游任务编号，请稍后重新发起。"
         ),
         "media_provider_response_invalid": "媒体模型返回了无法识别的结果。",
         "media_provider_response_too_large": "媒体模型响应超过大小限制，未保存素材。",
