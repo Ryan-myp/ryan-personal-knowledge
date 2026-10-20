@@ -17,6 +17,204 @@ from agents.agent_platform.infrastructure.durable import TaskExecutor
 from agents.applications.advertising.persistence.mysql_store import _mysql_schema, _translate_sql
 
 
+def test_mysql_connection_executemany_translates_and_respects_transactions(
+    monkeypatch,
+):
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    from agents.applications.advertising.persistence.mysql_store import (
+        _MySQLConnection,
+    )
+
+    class Cursor:
+        rowcount = 2
+        description = None
+
+        def __init__(self):
+            self.executions = []
+
+        def executemany(self, statement, rows):
+            self.executions.append((statement, list(rows)))
+
+        def close(self):
+            pass
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+            self.commits = 0
+            self.rollbacks = 0
+            self.pings = 0
+
+        def ping(self, reconnect=True):
+            self.pings += 1
+
+        def cursor(self, _cursor_type):
+            return self.cursor_instance
+
+        def commit(self):
+            self.commits += 1
+
+        def rollback(self):
+            self.rollbacks += 1
+
+        def begin(self):
+            pass
+
+        def close(self):
+            pass
+
+    mysql = ModuleType("pymysql")
+    mysql.cursors = SimpleNamespace(Cursor=object)
+    mysql.err = SimpleNamespace(OperationalError=())
+    monkeypatch.setitem(sys.modules, "pymysql", mysql)
+
+    raw_connection = Connection()
+    pool = _MySQLPool(lambda: raw_connection, pool_size=1, max_overflow=0)
+    connection = _MySQLConnection(pool)
+    rows = [("turn-a", "message-a"), ("turn-b", "message-b")]
+
+    result = connection.executemany(
+        "INSERT INTO conversation_messages(turn_id, message_id) VALUES (?, ?)",
+        rows,
+    )
+
+    assert result.rowcount == 2
+    assert raw_connection.cursor_instance.executions == [
+        (
+            "INSERT INTO conversation_messages(turn_id, message_id) "
+            "VALUES (%s, %s)",
+            rows,
+        ),
+    ]
+    assert raw_connection.commits == 1
+    assert pool.metrics()["idle"] == 1
+
+    connection.begin()
+    connection.executemany(
+        "INSERT INTO conversation_messages(turn_id, message_id) VALUES (?, ?)",
+        rows,
+    )
+    assert raw_connection.commits == 1
+    assert pool.metrics()["in_use"] == 1
+    connection.commit()
+    assert raw_connection.commits == 2
+    assert pool.metrics()["idle"] == 1
+    pool.close()
+
+
+def test_mysql_connection_executemany_rolls_back_and_releases_on_error(
+    monkeypatch,
+):
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    from agents.applications.advertising.persistence.mysql_store import (
+        _MySQLConnection,
+    )
+
+    class OperationalError(Exception):
+        pass
+
+    class Cursor:
+        description = None
+
+        def executemany(self, _statement, _rows):
+            raise OperationalError("batch failed")
+
+        def close(self):
+            pass
+
+    class Connection:
+        def __init__(self):
+            self.commits = 0
+            self.rollbacks = 0
+
+        def ping(self, reconnect=True):
+            pass
+
+        def cursor(self, _cursor_type):
+            return Cursor()
+
+        def commit(self):
+            self.commits += 1
+
+        def rollback(self):
+            self.rollbacks += 1
+
+        def close(self):
+            pass
+
+    mysql = ModuleType("pymysql")
+    mysql.cursors = SimpleNamespace(Cursor=object)
+    mysql.err = SimpleNamespace(OperationalError=OperationalError)
+    monkeypatch.setitem(sys.modules, "pymysql", mysql)
+
+    raw_connection = Connection()
+    pool = _MySQLPool(lambda: raw_connection, pool_size=1, max_overflow=0)
+    connection = _MySQLConnection(pool)
+
+    with pytest.raises(OperationalError, match="batch failed"):
+        connection.executemany(
+            "INSERT INTO conversation_messages(turn_id) VALUES (?)",
+            [("turn-a",)],
+        )
+
+    assert raw_connection.commits == 0
+    assert raw_connection.rollbacks == 1
+    assert pool.metrics()["idle"] == 0
+    assert pool.metrics()["created"] == 0
+    pool.close()
+
+
+@pytest.mark.parametrize("operation", ("execute", "executemany"))
+def test_mysql_connection_discards_pool_entry_when_rollback_fails(
+    monkeypatch, operation,
+):
+    import sys
+    from types import ModuleType, SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from agents.applications.advertising.persistence.mysql_store import (
+        _MySQLConnection,
+    )
+
+    mysql = ModuleType("pymysql")
+    mysql.cursors = SimpleNamespace(Cursor=object)
+    mysql.err = SimpleNamespace(OperationalError=())
+    monkeypatch.setitem(sys.modules, "pymysql", mysql)
+
+    cursor = MagicMock()
+    cursor.description = None
+    cursor.execute.side_effect = ValueError("statement failed")
+    cursor.executemany.side_effect = ValueError("statement failed")
+    raw_connection = MagicMock()
+    raw_connection.cursor.return_value = cursor
+    raw_connection.rollback.side_effect = OSError("rollback failed")
+    pool = _MySQLPool(lambda: raw_connection, pool_size=1, max_overflow=0)
+    connection = _MySQLConnection(pool)
+
+    with pytest.raises(ValueError, match="statement failed") as error:
+        if operation == "execute":
+            connection.execute(
+                "INSERT INTO conversation_messages(turn_id) VALUES (?)",
+                ("turn-a",),
+            )
+        else:
+            connection.executemany(
+                "INSERT INTO conversation_messages(turn_id) VALUES (?)",
+                [("turn-a",)],
+            )
+
+    assert any(
+        "OSError" in note for note in getattr(error.value, "__notes__", ())
+    )
+    assert pool.metrics()["created"] == 0
+    assert pool.metrics()["idle"] == 0
+    pool.close()
+
+
 def test_worker_liveness_is_durable_and_visible_to_monitoring():
     store = AdAgentStore(":memory:")
     store.register_worker("worker-a", "task_executor", metadata={"pid": 1})

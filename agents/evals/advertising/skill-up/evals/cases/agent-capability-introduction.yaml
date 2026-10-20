@@ -1,0 +1,24 @@
+id: agent-capability-introduction
+title: Capability introduction stays grounded in the configured Agent
+tag: conversation_quality
+input:
+  prompt: "你好，你有什么能力？请介绍你能帮我做什么。"
+expect:
+  exit_code: 0
+  must_contain:
+    - "广告"
+    - "知识"
+  must_not_contain:
+    - "Agnes"
+    - "OpenAI"
+    - "GPT"
+    - "Claude"
+  structured:
+    results_empty: true
+    needs_confirmation: false
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["广告", "知识"]
+        not: ["Agnes", "OpenAI", "GPT", "Claude"]

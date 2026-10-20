@@ -61,21 +61,41 @@ class _MySQLCursor:
         try:
             self._cursor.execute(statement, params or ())
         except Exception as exc:
-            # A few existing domain methods intentionally normalize SQLite
-            # uniqueness failures to PersistenceConflictError. Preserve that
-            # backend-neutral behavior for MySQL callers too.
-            try:
-                import pymysql
-                is_integrity_error = isinstance(exc, pymysql.err.IntegrityError)
-            except ImportError:  # pragma: no cover
-                is_integrity_error = False
-            if is_integrity_error:
-                raise sqlite3.IntegrityError(str(exc)) from exc
-            raise
+            self._raise_normalized_error(exc)
         self._columns = [str(item[0]) for item in (self._cursor.description or ())]
         if self._columns:
             self._rows = list(self._cursor.fetchall())
         return self
+
+    def executemany(
+        self, statement: str, rows: Any,
+    ) -> "_MySQLCursor":
+        try:
+            self._cursor.executemany(statement, rows)
+        except Exception as exc:
+            self._raise_normalized_error(exc)
+        self._columns = [
+            str(item[0]) for item in (self._cursor.description or ())
+        ]
+        if self._columns:
+            self._rows = list(self._cursor.fetchall())
+        return self
+
+    @staticmethod
+    def _raise_normalized_error(error: Exception) -> None:
+        # Existing domain methods normalize SQLite uniqueness failures to
+        # PersistenceConflictError; keep that backend-neutral behavior.
+        try:
+            import pymysql
+            integrity_error = getattr(
+                getattr(pymysql, "err", None), "IntegrityError", (),
+            )
+            is_integrity_error = isinstance(error, integrity_error)
+        except ImportError:  # pragma: no cover
+            is_integrity_error = False
+        if is_integrity_error:
+            raise sqlite3.IntegrityError(str(error)) from error
+        raise error.with_traceback(error.__traceback__)
 
     def fetchone(self) -> Optional[_MySQLRow]:
         row = self._rows[self._offset] if self._offset < len(self._rows) else None
@@ -196,38 +216,126 @@ class _MySQLConnection:
         return getattr(self._local, "connection", None)
 
     def execute(self, statement: str, params: Any = None) -> _MySQLCursor:
+        return self._run_statement("execute", statement, params=params)
+
+    def executemany(self, statement: str, rows: Any) -> _MySQLCursor:
+        return self._run_statement("executemany", statement, rows=rows)
+
+    def _run_statement(
+        self,
+        method: str,
+        statement: str,
+        *,
+        params: Any = None,
+        rows: Any = None,
+    ) -> _MySQLCursor:
         import pymysql
+
         active = self._transaction_connection()
         connection = active or self._pool.acquire()
         borrowed = active is None
         discarded = False
         cursor = None
+        operation_error: Optional[BaseException] = None
         try:
             cursor = connection.cursor(pymysql.cursors.Cursor)
-            result = _MySQLCursor(cursor).execute(_translate_sql(statement), params)
+            mysql_cursor = _MySQLCursor(cursor)
+            if method == "execute":
+                result = mysql_cursor.execute(_translate_sql(statement), params)
+            else:
+                result = mysql_cursor.executemany(_translate_sql(statement), rows)
             if borrowed:
                 try:
                     connection.commit()
-                except Exception:
-                    self._pool.discard(connection)
+                except Exception as exc:
+                    self._discard_after_error(connection, exc)
                     discarded = True
                     raise
             return result
         except Exception as exc:
+            operation_error = exc
             if borrowed:
-                try:
-                    connection.rollback()
-                except Exception:
-                    pass
-                if not discarded and isinstance(exc, getattr(pymysql.err, "OperationalError", ())):
-                    self._pool.discard(connection)
-                    discarded = True
+                discarded = self._recover_borrowed_connection(
+                    connection, exc, pymysql, discarded,
+                )
             raise
         finally:
-            if cursor is not None:
-                cursor.close()
+            discarded = self._close_cursor(
+                cursor, connection, borrowed, discarded, operation_error,
+            )
             if borrowed and not discarded:
                 self._pool.release(connection)
+
+    def _recover_borrowed_connection(
+        self,
+        connection: Any,
+        operation_error: Exception,
+        pymysql: Any,
+        discarded: bool,
+    ) -> bool:
+        if discarded:
+            return True
+        try:
+            connection.rollback()
+        except Exception as rollback_error:
+            self._add_cleanup_note(
+                operation_error,
+                "MySQL rollback failed "
+                f"({type(rollback_error).__name__}); connection discarded",
+            )
+            self._discard_after_error(connection, operation_error)
+            return True
+        if isinstance(
+            operation_error, getattr(pymysql.err, "OperationalError", ()),
+        ):
+            self._discard_after_error(connection, operation_error)
+            return True
+        return False
+
+    def _close_cursor(
+        self,
+        cursor: Any,
+        connection: Any,
+        borrowed: bool,
+        discarded: bool,
+        operation_error: Optional[BaseException],
+    ) -> bool:
+        if cursor is None:
+            return discarded
+        try:
+            cursor.close()
+        except Exception as close_error:
+            primary_error = operation_error or close_error
+            if operation_error is not None:
+                self._add_cleanup_note(
+                    operation_error,
+                    "MySQL cursor close failed "
+                    f"({type(close_error).__name__})",
+                )
+            if borrowed and not discarded:
+                self._discard_after_error(connection, primary_error)
+                discarded = True
+            if operation_error is None:
+                raise
+        return discarded
+
+    def _discard_after_error(
+        self, connection: Any, operation_error: BaseException,
+    ) -> None:
+        try:
+            self._pool.discard(connection)
+        except Exception as discard_error:
+            self._add_cleanup_note(
+                operation_error,
+                "MySQL connection discard failed "
+                f"({type(discard_error).__name__})",
+            )
+
+    @staticmethod
+    def _add_cleanup_note(error: BaseException, note: str) -> None:
+        add_note = getattr(error, "add_note", None)
+        if callable(add_note):
+            add_note(note)
 
     def executescript(self, script: str) -> None:
         # The checked-in schema contains no semicolons inside string literals.

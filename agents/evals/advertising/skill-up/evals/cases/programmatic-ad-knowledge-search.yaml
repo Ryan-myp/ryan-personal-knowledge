@@ -1,0 +1,26 @@
+id: programmatic-ad-knowledge-search
+title: Programmatic advertising explanations use the knowledge Tool
+tag: knowledge_retrieval
+input:
+  prompt: >-
+    请从知识库检索并解释 DSP、SSP 和 ADX 在程序化广告中的关系，
+    分别负责什么；不要查询任何广告账户或投放数据。
+expect:
+  exit_code: 0
+  must_contain:
+    - "DSP"
+    - "SSP"
+    - "ADX"
+  must_not_contain:
+    - "没有知识库"
+    - "查询广告账户"
+  structured:
+    intent_type: knowledge_search
+    needs_confirmation: false
+    tool_names: [agent_knowledge_search]
+    result_data_status: [local]
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["DSP", "SSP", "ADX"]

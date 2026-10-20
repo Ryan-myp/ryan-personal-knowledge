@@ -35,6 +35,18 @@ jobs:
   contract-and-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
     env:
       # Harness tests must never turn into provider writes because of a
       # repository/environment configuration change.
@@ -69,6 +81,15 @@ jobs:
         run: ./scripts/ad-agent-python scripts/advertising/audit_creation_contracts.py --strict-guided
       - name: Run evidence-based local readiness gate
         run: ./scripts/ad-agent-python scripts/advertising/release_readiness.py --profile local
+      - name: Verify multi-instance Worker recovery on MySQL
+        env:
+          AD_AGENT_RELIABILITY_ADMIN_URL: mysql://root@127.0.0.1:3306/mysql
+        run: make ad-agent-reliability-evidence-mysql
+      - name: Run bounded generic Agent concurrency smoke
+        run: >-
+          ./scripts/ad-agent-python -m
+          agents.agent_platform.benchmarks.runtime_load
+          --iterations 100 --concurrency 8
       - name: Run contract and golden tests
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
@@ -126,4 +147,5 @@ jobs:
             --output-dir /tmp/ad-agent-skill-up-report --no-delete
       - name: Report model evaluation as not run
         if: ${{ env.AD_AGENT_EVAL_API_KEY == '' || env.AD_AGENT_EVAL_MODEL == '' }}
-        run: echo "::notice::Model-quality Skill-up evaluation skipped: configure AD_AGENT_EVAL_API_KEY and AD_AGENT_EVAL_MODEL. Offline contract tests remain active."
+        run: |
+          echo "::notice::Model-quality Skill-up evaluation skipped: configure AD_AGENT_EVAL_API_KEY and AD_AGENT_EVAL_MODEL. Offline contract tests remain active."

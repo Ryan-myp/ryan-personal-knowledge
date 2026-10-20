@@ -1,8 +1,10 @@
 """Contract tests for the skill-up Custom Engine adapter."""
 
 import json
+from pathlib import Path
 
 import pytest
+import yaml
 
 from agents.agent_harness.messages import ModelTurn
 from agents.agent_harness.core import llm_client
@@ -17,6 +19,37 @@ from agents.agent_platform.evals.claude_sdk_engine import (
     _anthropic_messages,
     run as run_claude_sdk,
 )
+
+
+def test_skill_up_suite_covers_capabilities_and_knowledge_retrieval():
+    repo_root = Path(__file__).resolve().parents[3]
+    suite_root = (
+        repo_root / "agents" / "evals" / "advertising" / "skill-up"
+    )
+    config = yaml.safe_load(
+        (suite_root / "evals" / "eval.yaml").read_text(encoding="utf-8")
+    )
+    cases = {
+        str(case["id"]): case
+        for relative_path in config["cases"]["files"]
+        for case in [yaml.safe_load(
+            (suite_root / relative_path).read_text(encoding="utf-8")
+        )]
+    }
+
+    capability_case = cases["agent-capability-introduction"]
+    assert capability_case["expect"]["structured"]["results_empty"] is True
+    assert {"Agnes", "OpenAI", "GPT", "Claude"} <= set(
+        capability_case["expect"]["must_not_contain"]
+    )
+
+    knowledge_case = cases["programmatic-ad-knowledge-search"]
+    assert knowledge_case["expect"]["structured"]["tool_names"] == [
+        "agent_knowledge_search",
+    ]
+    assert knowledge_case["expect"]["structured"]["result_data_status"] == [
+        "local",
+    ]
 
 
 class _FakeClaudeResponse:

@@ -45,6 +45,8 @@ cases:
     - evals/cases/tiktok-app-missing-lookup.yaml
     - evals/cases/dynamic-resource-id-boundary.yaml
     - evals/cases/meridian-data-readiness.yaml
+    - evals/cases/agent-capability-introduction.yaml
+    - evals/cases/programmatic-ad-knowledge-search.yaml
   defaults:
     timeout_seconds: 60
     max_turns: 2
