@@ -1,11 +1,51 @@
 const CHAT_MEDIA_IMAGE_LIMIT = 15 * 1024 * 1024;
 const CHAT_MEDIA_VIDEO_LIMIT = 50 * 1024 * 1024;
+const CHAT_MEDIA_DOCUMENT_LIMIT = 20 * 1024 * 1024;
 const CHAT_MEDIA_TYPES = new Set([
     'image/jpeg', 'image/png', 'image/gif', 'image/webp',
     'video/mp4', 'video/quicktime', 'video/webm',
 ]);
+const CHAT_DOCUMENT_EXTENSIONS = new Map([
+    ['.csv', 'text/csv'],
+    ['.md', 'text/markdown'],
+    ['.markdown', 'text/markdown'],
+    ['.pdf', 'application/pdf'],
+    ['.txt', 'text/plain'],
+    [
+        '.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ],
+]);
 let chatMediaUploading = false;
 let chatMediaObserver = null;
+
+function chatUploadMediaType(file) {
+    const filename = String(file?.name || '').toLowerCase();
+    const extension = filename.includes('.')
+        ? `.${filename.split('.').pop()}`
+        : '';
+    if (CHAT_DOCUMENT_EXTENSIONS.has(extension)) {
+        return CHAT_DOCUMENT_EXTENSIONS.get(extension);
+    }
+    return CHAT_MEDIA_TYPES.has(file?.type) ? file.type : '';
+}
+
+function chatDocumentTypeLabel(mediaType) {
+    return ({
+        'application/pdf': 'PDF 文档',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel 工作簿',
+        'text/csv': 'CSV 表格',
+        'text/markdown': 'Markdown 文档',
+        'text/plain': '文本文件',
+    })[mediaType] || '文档附件';
+}
+
+function chatFileSizeLabel(size) {
+    const bytes = Number(size);
+    if (!Number.isFinite(bytes) || bytes <= 0) return '';
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function ensureChatMediaSession() {
     if (!sessionId) {
@@ -23,10 +63,36 @@ function chatMediaElement(metadata, src, { gallery = false } = {}) {
     const wrapper = document.createElement('figure');
     wrapper.className = gallery ? 'chat-media-item' : 'chat-attachment-item';
 
-    const media = metadata.media_type?.startsWith('video/')
+    const mediaType = String(metadata.media_type || '');
+    const isVideo = mediaType.startsWith('video/');
+    const isImage = mediaType.startsWith('image/');
+    if (!isVideo && !isImage) {
+        const preview = document.createElement('div');
+        preview.className = 'chat-document-preview';
+        preview.setAttribute('aria-label', chatDocumentTypeLabel(mediaType));
+        const typeLabel = document.createElement('span');
+        typeLabel.className = 'chat-document-type';
+        typeLabel.textContent = chatDocumentTypeLabel(mediaType);
+        preview.appendChild(typeLabel);
+        const filename = document.createElement('span');
+        filename.className = 'chat-document-filename';
+        filename.textContent = String(metadata.name || metadata.filename || '文档附件');
+        preview.appendChild(filename);
+        const fileSize = chatFileSizeLabel(metadata.size);
+        if (fileSize) {
+            const sizeLabel = document.createElement('span');
+            sizeLabel.className = 'chat-document-size';
+            sizeLabel.textContent = fileSize;
+            preview.appendChild(sizeLabel);
+        }
+        wrapper.appendChild(preview);
+        return wrapper;
+    }
+
+    const media = isVideo
         ? document.createElement('video')
         : document.createElement('img');
-    if (media instanceof HTMLVideoElement) {
+    if (isVideo) {
         media.controls = true;
         media.playsInline = true;
         media.preload = 'metadata';
@@ -206,11 +272,17 @@ function renderPendingChatMedia() {
         const wrapper = document.createElement('div');
         wrapper.className = 'chat-media-pending-item';
         const previewUrl = chatMediaObjectUrls.get(attachment.id);
-        if (previewUrl) {
+        if (
+            previewUrl
+            || attachment.media_type?.startsWith('text/')
+            || attachment.media_type === 'application/pdf'
+            || attachment.media_type
+                === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ) {
             wrapper.appendChild(chatMediaElement({
                 ...attachment,
                 media_type: attachment.media_type,
-            }, previewUrl));
+            }, previewUrl || ''));
         }
         const remove = document.createElement('button');
         remove.type = 'button';
@@ -246,24 +318,29 @@ function renderPendingChatMedia() {
 async function uploadChatMediaFiles(files) {
     if (chatMediaUploading || !files.length) return;
     if (pendingChatAttachments.length + files.length > 5) {
-        addMessage('每条消息最多添加 5 个图片或视频。', 'agent', null, true);
+        addMessage('每条消息最多添加 5 个附件。', 'agent', null, true);
         return;
     }
     const accepted = [];
     for (const file of files) {
-        if (!CHAT_MEDIA_TYPES.has(file.type)) {
+        const mediaType = chatUploadMediaType(file);
+        if (!mediaType) {
             addMessage(`暂不支持 ${file.name}（${file.type || '未知格式'}）。`, 'agent', null, true);
             continue;
         }
-        const sizeLimit = file.type.startsWith('image/')
+        const sizeLimit = mediaType.startsWith('image/')
             ? CHAT_MEDIA_IMAGE_LIMIT
-            : CHAT_MEDIA_VIDEO_LIMIT;
+            : mediaType.startsWith('video/')
+                ? CHAT_MEDIA_VIDEO_LIMIT
+                : CHAT_MEDIA_DOCUMENT_LIMIT;
         if (!file.size || file.size > sizeLimit) {
-            const limitLabel = file.type.startsWith('image/') ? '15 MiB' : '50 MiB';
+            const limitLabel = mediaType.startsWith('image/')
+                ? '15 MiB'
+                : mediaType.startsWith('video/') ? '50 MiB' : '20 MiB';
             addMessage(`${file.name} 超过 ${limitLabel} 限制。`, 'agent', null, true);
             continue;
         }
-        accepted.push(file);
+        accepted.push({ file, mediaType });
     }
     if (!accepted.length) return;
 
@@ -272,14 +349,14 @@ async function uploadChatMediaFiles(files) {
     if (button) button.disabled = true;
     try {
         const activeSessionId = ensureChatMediaSession();
-        for (const file of accepted) {
+        for (const { file, mediaType } of accepted) {
             const query = new URLSearchParams({
                 session_id: activeSessionId,
                 filename: file.name,
             });
             const response = await serviceFetch(`/chat/media?${query}`, {
                 method: 'POST',
-                headers: { 'Content-Type': file.type },
+                headers: { 'Content-Type': mediaType },
                 body: file,
             });
             const text = await response.text();
@@ -288,8 +365,10 @@ async function uploadChatMediaFiles(files) {
             if (!response.ok) {
                 throw new Error(metadata.detail || `附件上传失败（${response.status}）`);
             }
-            const previewUrl = URL.createObjectURL(file);
-            chatMediaObjectUrls.set(metadata.id, previewUrl);
+            if (mediaType.startsWith('image/') || mediaType.startsWith('video/')) {
+                const previewUrl = URL.createObjectURL(file);
+                chatMediaObjectUrls.set(metadata.id, previewUrl);
+            }
             pendingChatAttachments.push(metadata);
         }
         renderPendingChatMedia();
@@ -327,6 +406,15 @@ function renderMessageAttachments(container, attachments, activeSessionId) {
     attachments.slice(0, 5).forEach(attachment => {
         if (!attachment || !attachment.id) return;
         const existingUrl = chatMediaObjectUrls.get(String(attachment.id));
+        if (
+            attachment.media_type?.startsWith('text/')
+            || attachment.media_type === 'application/pdf'
+            || attachment.media_type
+                === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ) {
+            gallery.appendChild(chatMediaElement(attachment, ''));
+            return;
+        }
         if (existingUrl) {
             gallery.appendChild(chatMediaElement(attachment, existingUrl));
             return;

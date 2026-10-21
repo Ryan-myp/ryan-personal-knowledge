@@ -1,4 +1,4 @@
-"""Identity-scoped local storage for chat image and video attachments."""
+"""Identity-scoped local storage for chat media and document attachments."""
 
 from __future__ import annotations
 
@@ -18,6 +18,14 @@ from pathlib import Path
 from typing import Any
 
 from agents.agent_harness.messages import InputMedia, MediaFrame
+from agents.deployments.advertising.api.chat_documents import (
+    CHAT_DOCUMENT_TYPES,
+    IMAGE_EXTENSIONS,
+    MAX_DOCUMENT_BYTES,
+    VIDEO_EXTENSIONS,
+    detect_chat_attachment_type,
+    extract_chat_document_text,
+)
 
 
 _MIB = 1024 * 1024
@@ -47,14 +55,28 @@ class StoredChatMedia:
     content: bytes
 
     def to_input_media(self) -> InputMedia:
-        frames = _extract_video_frames(self.content, self.metadata["media_type"]) \
-            if self.metadata["media_type"].startswith("video/") else ()
+        media_type = self.metadata["media_type"]
+        frames = (
+            _extract_video_frames(self.content, media_type)
+            if media_type.startswith("video/")
+            else ()
+        )
+        extracted_text = (
+            extract_chat_document_text(
+                self.content,
+                filename=self.metadata["filename"],
+                media_type=media_type,
+            )
+            if self.metadata.get("attachment_kind") == "document"
+            else ""
+        )
         return InputMedia(
             attachment_id=self.metadata["id"],
             filename=self.metadata["filename"],
-            media_type=self.metadata["media_type"],
+            media_type=media_type,
             content=self.content,
             frames=frames,
+            extracted_text=extracted_text,
         )
 
 
@@ -67,16 +89,19 @@ class ChatMediaStore:
         *,
         max_image_bytes: int = 15 * _MIB,
         max_video_bytes: int = 50 * _MIB,
+        max_document_bytes: int = MAX_DOCUMENT_BYTES,
         max_session_bytes: int = _DEFAULT_MAX_SESSION_BYTES,
     ) -> None:
         self.root = Path(root).expanduser().resolve()
         self.max_image_bytes = int(max_image_bytes)
         self.max_video_bytes = int(max_video_bytes)
+        self.max_document_bytes = int(max_document_bytes)
         self.max_session_bytes = int(max_session_bytes)
         self._write_lock = threading.RLock()
         if (
             self.max_image_bytes <= 0
             or self.max_video_bytes <= 0
+            or self.max_document_bytes <= 0
             or self.max_session_bytes <= 0
         ):
             raise ValueError("chat media size limits must be positive")
@@ -119,23 +144,30 @@ class ChatMediaStore:
         tenant_id: str,
         user_id: str,
     ) -> dict[str, Any]:
-        """Validate content signatures and atomically store one upload."""
+        """Validate content and atomically store one scoped attachment."""
         if not isinstance(content, bytes) or not content:
             raise ValueError("attachment content must be non-empty")
-        media_type = str(content_type or "").split(";", 1)[0].strip().lower()
-        signature = _MIME_SIGNATURES.get(media_type)
-        if signature is None or not signature(content):
-            raise ValueError("attachment content does not match a supported media type")
-        max_bytes = (
-            self.max_image_bytes
-            if media_type.startswith("image/")
-            else self.max_video_bytes
+        if len(content) > self.max_upload_bytes:
+            raise ValueError(
+                f"attachment exceeds the {self.max_upload_bytes // _MIB} MiB size limit"
+            )
+        clean_name = self._safe_filename(filename)
+        media_type = detect_chat_attachment_type(
+            content,
+            filename=clean_name,
+            content_type=content_type,
+            media_signatures=_MIME_SIGNATURES,
         )
+        if media_type.startswith("image/"):
+            max_bytes = self.max_image_bytes
+        elif media_type.startswith("video/"):
+            max_bytes = self.max_video_bytes
+        else:
+            max_bytes = self.max_document_bytes
         if len(content) > max_bytes:
             raise ValueError(
                 f"attachment exceeds the {max_bytes // _MIB} MiB size limit"
             )
-        clean_name = self._safe_filename(filename)
         folder = self._scope_path(
             self.root, tenant_id, user_id, session_id,
         )
@@ -147,6 +179,15 @@ class ChatMediaStore:
                 "id": attachment_id,
                 "filename": clean_name,
                 "media_type": media_type,
+                "attachment_kind": (
+                    "document"
+                    if media_type.startswith("text/")
+                    or media_type in {
+                        "application/pdf",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    }
+                    else "media"
+                ),
                 "size": len(content),
                 "sha256": hashlib.sha256(content).hexdigest(),
             }
@@ -189,7 +230,9 @@ class ChatMediaStore:
             raise FileNotFoundError("chat attachment not found")
         public = {
             key: metadata[key]
-            for key in ("id", "filename", "media_type", "size")
+            for key in (
+                "id", "filename", "media_type", "attachment_kind", "size"
+            )
             if key in metadata
         }
         return StoredChatMedia(public, content)
@@ -218,7 +261,7 @@ class ChatMediaStore:
         total_size = sum(int(item["size"]) for item in metadata_rows)
         if total_size > _MAX_TURN_BYTES:
             raise ValueError("combined chat attachments exceed the 80 MiB limit")
-        return tuple(
+        attachments = tuple(
             self.load(
                 str(metadata["id"]),
                 session_id=session_id,
@@ -227,6 +270,39 @@ class ChatMediaStore:
             ).to_input_media()
             for metadata in metadata_rows
         )
+        document_chars = sum(len(item.extracted_text) for item in attachments)
+        if document_chars > 60_000:
+            raise ValueError(
+                "本轮文档提取内容超过 60000 字符，请拆分文件后分批分析"
+            )
+        return attachments
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return max(
+            self.max_image_bytes,
+            self.max_video_bytes,
+            self.max_document_bytes,
+        )
+
+    def max_upload_bytes_for(
+        self,
+        filename: str,
+        content_type: str,
+    ) -> int:
+        extension = Path(filename).suffix.lower()
+        media_type = str(content_type or "").split(";", 1)[0].strip().lower()
+        if extension in IMAGE_EXTENSIONS:
+            return self.max_image_bytes
+        if extension in VIDEO_EXTENSIONS:
+            return self.max_video_bytes
+        if extension in CHAT_DOCUMENT_TYPES:
+            return self.max_document_bytes
+        if media_type.startswith("image/"):
+            return self.max_image_bytes
+        if media_type.startswith("video/"):
+            return self.max_video_bytes
+        return self.max_document_bytes
 
     def delete_session(
         self, session_id: str, *, tenant_id: str, user_id: str,
@@ -297,7 +373,7 @@ class ChatMediaStore:
             or not isinstance(metadata.get("size"), int)
             or isinstance(metadata.get("size"), bool)
             or metadata["size"] <= 0
-            or metadata["size"] > max(self.max_image_bytes, self.max_video_bytes)
+            or metadata["size"] > self.max_upload_bytes
         ):
             raise FileNotFoundError("chat attachment not found")
         return metadata

@@ -10,6 +10,7 @@ from agents.applications.advertising.composition.ad_application import Advertisi
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema
 from agents.agent_harness.messages import ModelTurn
+from agents.agent_harness.skills.contract import SkillLoader
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.agent_platform.management.skill_management import (
     BuiltinSkillCatalog,
@@ -32,7 +33,8 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "measurement-attribution", "measurement-instrumentation",
         "ad-copywriting", "paid-landing-page-review",
         "knowledge-explainer", "web-research", "data-visualization", "app-growth",
-        "ad-growth-operations",
+        "ad-growth-operations", "growth-strategy", "seo-growth",
+        "generative-search-visibility",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -66,7 +68,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.4")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
-    web_research = catalog.get_version("web-research", "1.0.3")
+    web_research = catalog.get_version("web-research", "1.0.4")
     assert web_research["location"] == "web-research"
     visualization = catalog.get_version("data-visualization", "1.0.0")
     assert visualization["location"] == "practices/data-visualization"
@@ -77,6 +79,59 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     growth_operations = catalog.get_version("ad-growth-operations", "1.0.0")
     assert growth_operations["location"] == "practices/ad-growth-operations"
     assert "references/loop-contract.md" in growth_operations["files"]
+    growth_strategy = catalog.get_version("growth-strategy", "1.0.0")
+    assert growth_strategy["location"] == "practices/growth-strategy"
+    assert "references/channel-portfolio.md" in growth_strategy["files"]
+    seo_growth = catalog.get_version("seo-growth", "1.0.0")
+    assert seo_growth["location"] == "practices/seo-growth"
+    assert "references/organic-search-audit.md" in seo_growth["files"]
+    geo_visibility = catalog.get_version("generative-search-visibility", "1.0.0")
+    assert geo_visibility["location"] == "practices/generative-search-visibility"
+    assert "references/visibility-measurement.md" in geo_visibility["files"]
+
+
+def test_standard_skill_metadata_supports_application_routing(tmp_path):
+    skill_dir = tmp_path / "growth-strategy"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: growth-strategy\n"
+        "description: Plan sustainable growth channels.\n"
+        "metadata:\n"
+        "  version: 1.2.0\n"
+        "  namespace: advertising\n"
+        "  triggers:\n"
+        "    - [growth strategy, growth channels]\n"
+        "---\n"
+        "# Growth strategy\n"
+        "Compare evidence-backed growth paths.\n",
+        encoding="utf-8",
+    )
+
+    skill = SkillLoader().load_skill_dir(skill_dir)
+
+    assert skill is not None
+    assert skill.name == "growth-strategy"
+    assert skill.version == "1.2.0"
+    assert skill.namespace == "advertising"
+    assert skill.triggers[0].keywords == ["growth strategy", "growth channels"]
+
+
+def test_standard_skill_metadata_rejects_non_mapping_values(tmp_path):
+    skill_dir = tmp_path / "invalid-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: invalid-skill\n"
+        "description: Invalid metadata test.\n"
+        "metadata: invalid\n"
+        "---\n"
+        "# Invalid Skill\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="frontmatter.metadata must be an object"):
+        SkillLoader().load_skill_dir(skill_dir)
 
 
 def _files(name="business-growth"):
@@ -293,6 +348,52 @@ def test_app_growth_and_recurring_loop_skills_are_context_only():
         runtime.close(wait=True)
 
 
+def test_growth_seo_and_geo_skills_route_as_advisory_context():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        cases = (
+            (
+                "growth-strategy",
+                "我们想拓展获客增长渠道，除了广告还能做哪些增长途径？",
+                "references/channel-portfolio.md",
+                "先定位漏斗瓶颈",
+            ),
+            (
+                "seo-growth",
+                "帮我做网站 SEO 技术审查，检查 robots.txt、sitemap、canonical 和收录",
+                "references/organic-search-audit.md",
+                "不是自然搜索难度",
+            ),
+            (
+                "generative-search-visibility",
+                "帮我评估 GEO 和 ChatGPT 搜索中的品牌引用可见度",
+                "references/visibility-measurement.md",
+                "不承诺排名或被引用",
+            ),
+        )
+
+        for name, request, reference, boundary in cases:
+            skill = runtime.skill_loader.get(name)
+            assert skill is not None, name
+            assert skill.get_tools() == [], name
+
+            context = runtime.tool_selector._triggered_skill_context(request)
+
+            assert f"[skill guidance: {name}]" in context
+            assert reference in context
+            assert boundary in context
+            assert "不会新增 Tool、权限或账户范围" in context
+
+        keyword_context = runtime.tool_selector._triggered_skill_context(
+            "帮我做 SEO 关键词研究和自然搜索主题聚类"
+        )
+        assert "[skill guidance: keyword-research]" in keyword_context
+        assert "[skill guidance: seo-growth]" in keyword_context
+        assert "先区分自然搜索与付费搜索" in keyword_context
+    finally:
+        runtime.close(wait=True)
+
+
 def test_builtin_knowledge_explainer_guides_explanations_without_routing_queries():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     try:
@@ -351,7 +452,7 @@ def test_builtin_web_research_skill_loads_from_tool_binding_without_keyword_trig
     try:
         skill = runtime.skill_loader.get("web-research")
         assert skill is not None
-        assert skill.version == "1.0.3"
+        assert skill.version == "1.0.4"
 
         context = runtime.tool_selector._triggered_skill_context(
             "查找一个陌生的公开项目",

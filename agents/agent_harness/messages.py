@@ -13,7 +13,17 @@ MessageRole = Literal["system", "user", "assistant", "tool"]
 _SUPPORTED_MEDIA_TYPES = frozenset({
     "image/jpeg", "image/png", "image/gif", "image/webp",
     "video/mp4", "video/quicktime", "video/webm",
+    "text/csv", "text/markdown", "text/plain", "application/pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 })
+_DOCUMENT_MEDIA_TYPES = frozenset({
+    "text/csv",
+    "text/markdown",
+    "text/plain",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+})
+_MAX_EXTRACTED_DOCUMENT_CHARS = 24_000
 
 
 @dataclass(frozen=True)
@@ -44,13 +54,14 @@ class MediaFrame:
 
 @dataclass(frozen=True)
 class InputMedia:
-    """Ephemeral user media passed to a model adapter for one Run."""
+    """Ephemeral user attachment passed to a model adapter for one Run."""
 
     attachment_id: str
     filename: str
     media_type: str
     content: bytes
     frames: Sequence[MediaFrame] = field(default_factory=tuple)
+    extracted_text: str = ""
 
     def __post_init__(self) -> None:
         if not str(self.attachment_id or "").strip():
@@ -61,6 +72,21 @@ class InputMedia:
             raise ValueError(f"unsupported input media type: {self.media_type}")
         if not isinstance(self.content, bytes) or not self.content:
             raise ValueError("input media content must be non-empty bytes")
+        extracted_text = self.extracted_text
+        if not isinstance(extracted_text, str):
+            raise TypeError("input media extracted_text must be a string")
+        if len(extracted_text) > _MAX_EXTRACTED_DOCUMENT_CHARS:
+            raise ValueError("input media extracted text exceeds 24000 characters")
+        if (
+            self.media_type in _DOCUMENT_MEDIA_TYPES
+            and not extracted_text.strip()
+        ):
+            raise ValueError("document input media must contain extracted text")
+        if (
+            self.media_type not in _DOCUMENT_MEDIA_TYPES
+            and extracted_text
+        ):
+            raise ValueError("only document input media may contain extracted text")
         frames = tuple(self.frames or ())
         if len(frames) > 8:
             raise ValueError("input media frame limit is 8")

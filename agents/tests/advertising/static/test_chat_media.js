@@ -94,6 +94,45 @@ test('internal creative asset paths are exact same-origin routes', () => {
     }
 });
 
+test('chat uploader recognizes supported document formats without trusting MIME alone', () => {
+    assert.equal(
+        context.chatUploadMediaType({
+            name: 'campaigns.xlsx',
+            type: 'application/vnd.ms-excel',
+        }),
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    assert.equal(
+        context.chatUploadMediaType({ name: 'report.csv', type: '' }),
+        'text/csv',
+    );
+    assert.equal(
+        context.chatUploadMediaType({ name: 'brief.md', type: 'text/plain' }),
+        'text/markdown',
+    );
+    assert.equal(
+        context.chatUploadMediaType({ name: 'report.xls', type: 'application/vnd.ms-excel' }),
+        '',
+    );
+    assert.equal(context.chatDocumentTypeLabel('application/pdf'), 'PDF 文档');
+});
+
+test('document attachments render safe compact cards rather than image elements', () => {
+    const card = context.chatMediaElement({
+        filename: '<script>report.csv',
+        media_type: 'text/csv',
+        size: 1500,
+    }, '');
+
+    assert.equal(card.children[0].tagName, 'DIV');
+    assert.equal(card.children[0].className, 'chat-document-preview');
+    assert.equal(
+        card.children[0].children[1].textContent,
+        '<script>report.csv',
+    );
+    assert.equal(card.children[0].children[2].textContent, '1 KB');
+});
+
 test('internal creative media loads through authenticated fetch and displays inline', async () => {
     const requests = [];
     context.serviceFetch = async url => {

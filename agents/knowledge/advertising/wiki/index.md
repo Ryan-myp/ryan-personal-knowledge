@@ -91,6 +91,9 @@ knowledge_base/
 | “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “Google 搜索词/转化报表或 Meta Insights 数据可信吗，指标如何解读？” | `agents/skills/advertising/practices/account-diagnostics/` + 对应平台 measurement/reporting 文档 |
 | “Google 关键词规划建议、搜索量和竞争指数怎么查和解读？” | `agents/skills/advertising/practices/keyword-research/` + `platforms/google/keyword-planning-and-search-intent` |
+| “除了广告投放，还有哪些增长路径适合当前业务？” | `agents/skills/advertising/practices/growth-strategy/` + `business/unit-economics-and-channel-mix` |
+| “网站 SEO/自然搜索表现应该如何诊断和优先修复？” | `agents/skills/advertising/practices/seo-growth/` + PageSpeed Insights 单页 Tool + `agents/skills/advertising/web-research/` |
+| “GEO、ChatGPT Search 或 Google AI 搜索是否提及/引用了品牌？” | `agents/skills/advertising/practices/generative-search-visibility/` + `agents/skills/advertising/web-research/` |
 | “Google Ads 素材级报表怎么查，PMax 资产表现标签代表什么？” | `platforms/google/asset-performance-reporting` + 当前 Google report Tool contract |
 | “广告平台、分析系统和 CRM 的转化为什么对不上，是否代表增量？” | `measurement-and-attribution` + `measurement-data-contracts-and-incrementality` + `agents/skills/advertising/practices/measurement-attribution/` |
 | “需要埋哪些转化事件、如何定义和验收追踪？” | `measurement-data-contracts-and-incrementality` + `agents/skills/advertising/practices/measurement-instrumentation/` + 对应渠道事件文档 |

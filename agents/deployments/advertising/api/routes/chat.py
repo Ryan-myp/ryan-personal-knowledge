@@ -113,7 +113,7 @@ def _validated_user_input(user_input: str, media_ids: list[str]) -> str:
     if not content.strip() and not media_ids:
         raise HTTPException(
             status_code=422,
-            detail="请输入消息，或先添加图片/视频附件",
+            detail="请输入消息，或先添加图片、视频或文档附件",
         )
     return content
 
@@ -171,7 +171,10 @@ def create_chat_router(context: ApiContext) -> APIRouter:
             raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
         content = await read_request_body_limited(
             http_request,
-            max_bytes=int(store.max_video_bytes),
+            max_bytes=int(store.max_upload_bytes_for(
+                filename,
+                http_request.headers.get("content-type", ""),
+            )),
         )
         try:
             metadata = await run_in_threadpool(
@@ -190,6 +193,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 if "size limit" in message
                 or "storage limit" in message
                 or "at most 50 attachments" in message
+                or "超过 20 MiB 限制" in message
                 else 415
             )
             raise HTTPException(status_code=status_code, detail=message) from error

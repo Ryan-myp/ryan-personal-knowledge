@@ -48,10 +48,10 @@ SKILL.md 的 frontmatter 只建议声明 Skill 身份和版本等元数据；专
 安全边界使用自然语言 Markdown 编写。渠道 Tool、参数 schema 和 handler 不写入
 SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 
-`practices/` 用于广告类型和渠道之外的可复用工作方法，例如创意策略与诊断。它们
-补充而不复制渠道 Skill、知识 Wiki 或 Tool contract；references 按请求相关性限量
-加载。没有对应注册 Tool 时，Skill 只能给出分析、草案或待查询项，不能暗示已取数、
-抓取外部素材、修改广告或执行自动化。
+`practices/` 用于渠道之外可复用的增长与工作方法，例如创意策略、诊断、SEO、GEO 和
+增长组合。它们补充而不复制渠道 Skill、知识 Wiki 或 Tool contract；references 按请求
+相关性限量加载。没有对应注册 Tool 时，Skill 只能给出分析、草案或待查询项，不能暗示
+已取数、抓取外部素材、修改广告/网站或执行自动化。
 
 ## 已吸收的营销方法
 
@@ -68,6 +68,7 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
 | Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |
 | Anthropic `data-visualization`、`validate-data`；Hermes `grounded-citations` | `practices/data-visualization` 与 `web-research` 的数据粒度检查、来源映射、缺失值边界和图表自检 | 上游脚本、来源账本、连接器和可执行流程；搜索摘要不能替代网页正文或结构化数据 |
+| Google Search Central SEO Starter Guide、AI features 文档；OpenAI crawler 文档 | `practices/seo-growth` 的自然搜索诊断、`generative-search-visibility` 的 AI 搜索测量、`growth-strategy` 的渠道组合决策；`public-site-quality` Tool 提供单页 PageSpeed/Lighthouse 读取 | 排名/引用保证、未经官方确认的 GEO 配方、整站自动爬取、GSC 私有数据读取或网站改写权限 |
 
 这些是本机读取到的来源包版本，用于追踪本次蒸馏输入，不代表远端最新版本或 Runtime
 插件版本。来源包中与已发布广告 Wiki 重合的基础内容不重复导入。上游 Skill 只作为
@@ -93,6 +94,14 @@ Source 自动发现。其 `SKILL.md`、references 和 provenance 可进入受限
 其重点是让每项结论和图表观测对应本轮可见来源；不引入网页正文抓取、天气 API、来源账本、
 外部脚本或新执行权限。上游许可证分别为 Apache-2.0 与 MIT；方法来源详见该 Skill 的
 `ATTRIBUTION.md`。
+
+2026-10-21 增补非付费增长方向：增长策略先定位漏斗瓶颈，再比较自然搜索、GEO、内容、
+付费、ASO、CRO、推荐/合作、产品驱动和生命周期路径；SEO 与 GEO 是独立 advisory Skills，
+不会与广告关键词规划或付费落地页审查混为一谈。新增 Google PageSpeed Insights 单页只读
+Tool：可尝试无 key 低频调用，也支持通过 `GOOGLE_PAGESPEED_API_KEY` 配置受限 API key；
+匿名配额可能被限流，不能承诺免 key 稳定可用。Search Console 数据需 OAuth 及属性权限，
+IndexNow 则是站点所有者主动提交 URL 的写操作而非效果/收录保证，二者当前未接入。详见新
+Skills 的官方来源与边界。
 
 ## 跨渠道 Campaign 管理
 

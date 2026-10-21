@@ -6,10 +6,12 @@ from .public_data import public_data_tool_source
 from .public_reference_apis import (
     public_environment_tool_source,
     public_research_tool_source,
+    public_site_quality_tool_source,
 )
 from .readonly_recipe import readonly_recipe_tool_source
 from .scheduling import scheduling_tool_source
 from .web_search import web_search_tool_source
+from .web_fetch import web_fetch_tool_source
 
 __all__ = [
     "PolicyDecision",
@@ -19,7 +21,9 @@ __all__ = [
     "public_data_tool_source",
     "public_environment_tool_source",
     "public_research_tool_source",
+    "public_site_quality_tool_source",
     "readonly_recipe_tool_source",
     "scheduling_tool_source",
     "web_search_tool_source",
+    "web_fetch_tool_source",
 ]

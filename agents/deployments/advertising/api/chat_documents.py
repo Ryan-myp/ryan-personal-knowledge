@@ -1,0 +1,326 @@
+"""Safe, bounded text extraction for user-provided chat documents."""
+
+from __future__ import annotations
+
+import csv
+import io
+import re
+import zipfile
+from pathlib import Path
+from typing import Any
+
+
+MIB = 1024 * 1024
+MAX_DOCUMENT_BYTES = 20 * MIB
+MAX_DOCUMENT_TEXT_CHARS = 24_000
+MAX_PDF_PAGES = 60
+MAX_XLSX_SHEETS = 20
+MAX_SHEET_ROWS = 1_000
+MAX_SHEET_COLUMNS = 80
+MAX_XLSX_ARCHIVE_ENTRIES = 5_000
+MAX_XLSX_UNCOMPRESSED_BYTES = 64 * MIB
+MAX_XLSX_COMPRESSION_RATIO = 500
+
+CHAT_DOCUMENT_TYPES = {
+    ".csv": "text/csv",
+    ".md": "text/markdown",
+    ".markdown": "text/markdown",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".xlsx": (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+}
+_TEXT_TYPES = frozenset({"text/csv", "text/markdown", "text/plain"})
+_XLSX_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+_MIME_COMPATIBILITY = {
+    "text/csv": frozenset({
+        "text/csv",
+        "application/csv",
+        "text/plain",
+        "application/octet-stream",
+    }),
+    "text/markdown": frozenset({
+        "text/markdown",
+        "text/x-markdown",
+        "text/plain",
+        "application/octet-stream",
+    }),
+    "text/plain": frozenset({
+        "text/plain",
+        "application/octet-stream",
+    }),
+    "application/pdf": frozenset({
+        "application/pdf",
+        "application/octet-stream",
+    }),
+    _XLSX_TYPE: frozenset({
+        _XLSX_TYPE,
+        "application/vnd.ms-excel",
+        "application/octet-stream",
+    }),
+}
+_MIME_BY_EXTENSION = {
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".png": "image/png",
+    ".webm": "video/webm",
+    ".webp": "image/webp",
+}
+IMAGE_EXTENSIONS = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
+VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm"})
+
+
+def detect_chat_attachment_type(
+    content: bytes,
+    *,
+    filename: str,
+    content_type: str,
+    media_signatures: dict[str, Any],
+) -> str:
+    """Resolve a supported MIME type from a safe extension and file signature."""
+    extension = Path(filename).suffix.lower()
+    requested_type = str(content_type or "").split(";", 1)[0].strip().lower()
+    expected_media_type = _MIME_BY_EXTENSION.get(extension)
+    expected_document_type = CHAT_DOCUMENT_TYPES.get(extension)
+    if extension == ".xls":
+        raise ValueError("暂不支持旧版 .xls，请另存为 .xlsx 后上传")
+    if expected_media_type is None and expected_document_type is None:
+        expected_media_type = (
+            requested_type if requested_type in media_signatures else None
+        )
+    if expected_media_type:
+        if requested_type and requested_type not in {
+            expected_media_type,
+            "application/octet-stream",
+        }:
+            raise ValueError("attachment filename and media type do not match")
+        if not media_signatures[expected_media_type](content):
+            raise ValueError("attachment content does not match its file type")
+        return expected_media_type
+
+    if expected_document_type is None:
+        raise ValueError(
+            "支持的附件格式：图片、视频、CSV、XLSX、PDF、Markdown 和 TXT"
+        )
+    if requested_type and requested_type not in _MIME_COMPATIBILITY[
+        expected_document_type
+    ]:
+        raise ValueError("attachment filename and media type do not match")
+    if expected_document_type == "application/pdf":
+        if not content.startswith(b"%PDF-"):
+            raise ValueError("attachment content does not match its file type")
+    elif expected_document_type == _XLSX_TYPE:
+        _validate_xlsx_archive(content)
+    else:
+        _decode_text(content)
+    return expected_document_type
+
+
+def extract_chat_document_text(
+    content: bytes,
+    *,
+    filename: str,
+    media_type: str,
+) -> str:
+    """Extract a bounded text representation without executing file content."""
+    if len(content) > MAX_DOCUMENT_BYTES:
+        raise ValueError("文档附件超过 20 MiB 限制")
+    if media_type in _TEXT_TYPES:
+        text = _decode_text(content)
+        if media_type == "text/csv":
+            return _extract_csv(text)
+        return _truncate(text.strip(), MAX_DOCUMENT_TEXT_CHARS)
+    if media_type == _XLSX_TYPE:
+        return _extract_xlsx(content)
+    if media_type == "application/pdf":
+        return _extract_pdf(content)
+    raise ValueError(f"不支持解析文档类型：{media_type}")
+
+
+def _decode_text(content: bytes) -> str:
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise ValueError("文本文件需使用 UTF-8 编码") from error
+    if "\x00" in text:
+        raise ValueError("文本文件包含不支持的二进制内容")
+    return "".join(
+        character
+        for character in text
+        if character in "\t\n\r" or ord(character) >= 32
+    )
+
+
+def _extract_csv(text: str) -> str:
+    output: list[str] = []
+    try:
+        rows = csv.reader(io.StringIO(text, newline=""))
+        for row_index, row in enumerate(rows):
+            if row_index >= MAX_SHEET_ROWS:
+                output.append("[内容已截断：最多读取 1000 行]")
+                break
+            cells = [
+                " ".join(str(cell).replace("|", "\\|").split())[:500]
+                for cell in row[:MAX_SHEET_COLUMNS]
+            ]
+            if row_index == 0 and len(row) > MAX_SHEET_COLUMNS:
+                cells.append("[其余列已省略]")
+            output.append(" | ".join(cells))
+    except csv.Error as error:
+        raise ValueError("CSV 格式无效，无法读取表格") from error
+    return _truncate("\n".join(output), MAX_DOCUMENT_TEXT_CHARS)
+
+
+def _validate_xlsx_archive(content: bytes) -> None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            entries = archive.infolist()
+    except (OSError, zipfile.BadZipFile) as error:
+        raise ValueError("XLSX 文件结构无效") from error
+    if len(entries) > MAX_XLSX_ARCHIVE_ENTRIES:
+        raise ValueError("XLSX 文件包含过多内部条目")
+    total_size = 0
+    for entry in entries:
+        if entry.is_dir():
+            continue
+        if entry.flag_bits & 0x1:
+            raise ValueError("加密 XLSX 文件暂不支持")
+        total_size += entry.file_size
+        if (
+            entry.file_size > 0
+            and entry.file_size / max(entry.compress_size, 1)
+            > MAX_XLSX_COMPRESSION_RATIO
+        ):
+            raise ValueError("XLSX 压缩比例异常，已拒绝解析")
+    if total_size > MAX_XLSX_UNCOMPRESSED_BYTES:
+        raise ValueError("XLSX 解压后超过 64 MiB 安全上限")
+    required = {"[Content_Types].xml", "xl/workbook.xml"}
+    if not required.issubset({entry.filename for entry in entries}):
+        raise ValueError("XLSX 文件缺少工作簿结构")
+
+
+def _extract_xlsx(content: bytes) -> str:
+    from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
+
+    _validate_xlsx_archive(content)
+    workbook = None
+    output: list[str] = []
+    truncated = False
+    try:
+        workbook = load_workbook(
+            io.BytesIO(content),
+            read_only=True,
+            data_only=True,
+            keep_links=False,
+        )
+        if len(workbook.worksheets) > MAX_XLSX_SHEETS:
+            raise ValueError("XLSX 最多支持 20 个工作表")
+        remaining = MAX_DOCUMENT_TEXT_CHARS
+        for worksheet in workbook.worksheets:
+            if remaining <= 0:
+                truncated = True
+                break
+            output.append(f"工作表：{worksheet.title}")
+            max_row = min(worksheet.max_row or 0, MAX_SHEET_ROWS)
+            max_column = min(worksheet.max_column or 0, MAX_SHEET_COLUMNS)
+            if (worksheet.max_row or 0) > MAX_SHEET_ROWS:
+                truncated = True
+            if (worksheet.max_column or 0) > MAX_SHEET_COLUMNS:
+                truncated = True
+            for row in worksheet.iter_rows(
+                max_row=max_row,
+                max_col=max_column,
+                values_only=True,
+            ):
+                cells = [
+                    _xlsx_cell(value)
+                    for value in row
+                ]
+                line = " | ".join(cells).rstrip()
+                if not line:
+                    continue
+                output.append(line)
+                remaining -= len(line) + 1
+                if remaining <= 0:
+                    truncated = True
+                    break
+        if truncated:
+            output.append("[内容已截断：受行数、列数或文本长度限制]")
+    except (InvalidFileException, KeyError, OSError, zipfile.BadZipFile) as error:
+        raise ValueError("无法读取 XLSX 工作簿，请检查文件是否损坏") from error
+    finally:
+        if workbook is not None:
+            workbook.close()
+    extracted = "\n".join(output).strip()
+    if not extracted:
+        raise ValueError("XLSX 中没有可读取的单元格内容")
+    return _truncate(extracted, MAX_DOCUMENT_TEXT_CHARS)
+
+
+def _xlsx_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    cleaned = re.sub(r"[\x00-\x1f\x7f]", " ", str(value))
+    return " ".join(cleaned.replace("|", "\\|").split())[:500]
+
+
+def _extract_pdf(content: bytes) -> str:
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+
+    try:
+        reader = PdfReader(io.BytesIO(content), strict=False)
+        if reader.is_encrypted:
+            raise ValueError("加密 PDF 暂不支持，请先解除密码保护")
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise ValueError("PDF 最多支持 60 页")
+        output: list[str] = []
+        remaining = MAX_DOCUMENT_TEXT_CHARS
+        for index, page in enumerate(reader.pages):
+            if remaining <= 0:
+                output.append("[内容已截断：达到文本长度上限]")
+                break
+            text = page.extract_text() or ""
+            normalized = "\n".join(
+                " ".join(line.split())
+                for line in text.splitlines()
+                if line.strip()
+            )
+            if normalized:
+                section = f"[第 {index + 1} 页]\n{normalized}"
+                output.append(section[:remaining])
+                remaining -= len(section) + 1
+    except ValueError:
+        raise
+    except (PdfReadError, EOFError, KeyError, OSError, TypeError) as error:
+        raise ValueError("无法读取 PDF，请检查文件是否损坏") from error
+    extracted = "\n".join(output).strip()
+    if not extracted:
+        raise ValueError("PDF 中没有可提取文本，扫描版 PDF 暂不支持 OCR")
+    return _truncate(extracted, MAX_DOCUMENT_TEXT_CHARS)
+
+
+def _truncate(value: str, limit: int) -> str:
+    normalized = value[:limit].strip()
+    if len(value) > limit:
+        suffix = "\n[内容已截断]"
+        normalized = normalized[: max(0, limit - len(suffix))] + suffix
+    return normalized
+
+
+__all__ = [
+    "CHAT_DOCUMENT_TYPES",
+    "IMAGE_EXTENSIONS",
+    "MAX_DOCUMENT_BYTES",
+    "MAX_DOCUMENT_TEXT_CHARS",
+    "VIDEO_EXTENSIONS",
+    "detect_chat_attachment_type",
+    "extract_chat_document_text",
+]

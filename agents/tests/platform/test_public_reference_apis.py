@@ -13,6 +13,7 @@ from agents.applications.advertising.integrations.mcp.runtime_mcp import (
 from agents.agent_platform.tools.public_reference_apis import (
     public_environment_tool_source,
     public_research_tool_source,
+    public_site_quality_tool_source,
 )
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
@@ -65,6 +66,7 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
     for source_factory in (
         public_environment_tool_source,
         public_research_tool_source,
+        public_site_quality_tool_source,
     ):
         source, bindings = _source_bindings(source_factory)
         definitions.update({
@@ -83,6 +85,7 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
         "public_trends_hackernews_search",
         "public_app_research_app_store_search",
         "public_app_research_app_store_lookup",
+        "public_site_quality_pagespeed",
     }
     expected_namespaces = {
         "public_weather_lookup": "public-weather",
@@ -95,6 +98,7 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
         "public_trends_hackernews_search": "public-trends",
         "public_app_research_app_store_search": "public-app-research",
         "public_app_research_app_store_lookup": "public-app-research",
+        "public_site_quality_pagespeed": "public-site-quality",
     }
     for name, definition in definitions.items():
         assert definition.namespace == expected_namespaces[name]
@@ -105,7 +109,7 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
         assert definition.scope_required is False
         assert definition.input_schema.additional_properties is False
         assert definition.max_output_bytes <= 32_000
-        assert definition.timeout_seconds <= 30
+        assert definition.timeout_seconds <= 60
         assert "external_public_data" in definition.traits
 
 
@@ -116,6 +120,10 @@ def test_public_reference_tools_appear_in_runtime_mcp_category_listing():
         request_get=lambda *_args, **_kwargs: None,
     ))
     runtime.register_tool_source(public_research_tool_source(
+        required_permission="ads.read",
+        request_get=lambda *_args, **_kwargs: None,
+    ))
+    runtime.register_tool_source(public_site_quality_tool_source(
         required_permission="ads.read",
         request_get=lambda *_args, **_kwargs: None,
     ))
@@ -139,6 +147,7 @@ def test_public_reference_tools_appear_in_runtime_mcp_category_listing():
             "namespace-public_trends",
             "namespace-public_weather",
             "namespace-public_app_research",
+            "namespace-public_site_quality",
         } <= set(servers)
         assert {
             item["tool_id"]
@@ -155,6 +164,10 @@ def test_public_reference_tools_appear_in_runtime_mcp_category_listing():
             "public_app_research_app_store_search",
             "public_app_research_app_store_lookup",
         }
+        assert {
+            item["tool_id"]
+            for item in servers["namespace-public_site_quality"]["tools"]
+        } == {"public_site_quality_pagespeed"}
     finally:
         runtime.close(wait=True)
 

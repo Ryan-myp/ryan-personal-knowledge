@@ -466,6 +466,59 @@ def test_chat_media_upload_is_identity_scoped_and_reaches_the_model_runtime(tmp_
     assert missing.status_code == 404
 
 
+def test_chat_document_upload_is_identity_scoped_and_reaches_the_model_runtime(tmp_path):
+    principal = RequestPrincipal(
+        user_id="document-user",
+        tenant_id="document-tenant",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        def __init__(self):
+            self.calls = []
+
+        def run(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"success": True, "reply": "已读取 CSV", "results": []}
+
+    runtime = Runtime()
+    context = ApiContext(
+        runtime_getter=lambda: runtime,
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: ChatMediaStore(tmp_path),
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/chat/media?session_id=document-session&filename=report.csv",
+            content=b"campaign,spend\nSpring,125.5\n",
+            headers={"Content-Type": "text/csv"},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        attachment = uploaded.json()
+        response = client.post(
+            "/chat",
+            json={
+                "user_input": "分析这份报表",
+                "session_id": "document-session",
+                "media_ids": [attachment["id"]],
+            },
+        )
+
+    assert response.status_code == 200, response.text
+    document = runtime.calls[0]["input_media"][0]
+    assert document.filename == "report.csv"
+    assert document.media_type == "text/csv"
+    assert "Spring | 125.5" in document.extracted_text
+
+
 def test_chat_stream_preserves_media_gallery_in_reply_ui(tmp_path):
     principal = RequestPrincipal(
         user_id="media-user",
@@ -1119,6 +1172,9 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         'id="chatMediaInput"', "handleChatMediaSelection", "handleChatPaste",
         "media_ids", "media_gallery", "renderMessageAttachments",
         "/chat/media/", "video/mp4", "video/webm",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "CHAT_DOCUMENT_EXTENSIONS", "chatDocumentTypeLabel",
     ):
         assert marker in html
     # Credential field names are exposed only by the settings manager; values
@@ -2457,6 +2513,19 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         str(tmp_path / "creative-assets"),
     )
     monkeypatch.setenv("OPENAI_API_KEY", "test-llm-key")
+    monkeypatch.setenv("GOOGLE_PAGESPEED_API_KEY", "test-pagespeed-key")
+    pagespeed_configuration = []
+    actual_pagespeed_source = api_server.public_site_quality_tool_source
+
+    def capture_pagespeed_configuration(**kwargs):
+        pagespeed_configuration.append(kwargs.get("api_key"))
+        return actual_pagespeed_source(**kwargs)
+
+    monkeypatch.setattr(
+        api_server,
+        "public_site_quality_tool_source",
+        capture_pagespeed_configuration,
+    )
     monkeypatch.setattr(api_server, "runtime", None)
     monkeypatch.setattr(
         api_server,
@@ -2472,7 +2541,7 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         "agent-platform", "advertising", "meta", "google-ads", "tiktok", "dv360",
         "creative-media", "public-calendar", "public-economics", "public-finance",
         "public-environment", "public-knowledge", "public-research", "public-trends",
-        "public-weather", "public-app-research",
+        "public-weather", "public-app-research", "public-site-quality",
     }
     definitions = runtime.registry.list_all()
     assert len(definitions) >= 128
@@ -2494,9 +2563,12 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         "public_trends_hackernews_search",
         "public_app_research_app_store_search",
         "public_app_research_app_store_lookup",
+        "public_site_quality_pagespeed",
+        "agent_web_fetch",
     } <= {definition.name for definition in definitions}
     assert "creative.generate" in runtime._granted_permissions
     assert "creative-production" in runtime._composition.skill_loader.list_all()
+    assert pagespeed_configuration == ["test-pagespeed-key"]
     assert api_server.creative_asset_store.root == (
         tmp_path / "creative-assets"
     ).resolve()

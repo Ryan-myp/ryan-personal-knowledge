@@ -90,7 +90,9 @@ from agents.agent_platform.tools import (
     public_environment_tool_source,
     public_data_tool_source,
     public_research_tool_source,
+    public_site_quality_tool_source,
     web_search_tool_source,
+    web_fetch_tool_source,
 )
 from agents.tools.creative_media.source import creative_media_tool_source
 from agents.applications.advertising.creation.templates import (
@@ -405,6 +407,18 @@ def _init_runtime():
             (PluginKind.TOOL_SOURCE.value,),
             description="Built-in bounded read-only web search Tool",
         )
+        web_fetch_source = web_fetch_tool_source(
+            required_permission="ads.read",
+        )
+        runtime.register_tool_source(web_fetch_source)
+        runtime._register_builtin_plugin(
+            web_fetch_source.source_id,
+            web_fetch_source,
+            (PluginKind.TOOL_SOURCE.value,),
+            description=(
+                "Built-in bounded public webpage fetch and article extraction Tool"
+            ),
+        )
         public_data_source = public_data_tool_source(
             required_permission="ads.read",
         )
@@ -435,6 +449,16 @@ def _init_runtime():
                 (
                     "Built-in bounded read-only encyclopedia, book, scholarly "
                     "research, App Store market research, and trend search Tools"
+                ),
+            ),
+            (
+                public_site_quality_tool_source(
+                    required_permission="ads.read",
+                    api_key=os.environ.get("GOOGLE_PAGESPEED_API_KEY", ""),
+                ),
+                (
+                    "Built-in bounded read-only public webpage quality "
+                    "and Lighthouse SEO audit Tool"
                 ),
             ),
         )

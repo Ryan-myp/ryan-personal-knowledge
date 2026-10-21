@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import io
+import zipfile
 from types import SimpleNamespace
 
 import pytest
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from agents.applications.advertising.run.ad_run_media import (
     media_gallery_from_results,
@@ -24,6 +28,50 @@ PNG_BYTES = (
     b"\x00\x00\x00\rIHDR"
     b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
 )
+
+PDF_BYTES = b"%PDF-1.4\nthis fixture is intentionally not a valid PDF\n"
+
+
+def _xlsx_bytes():
+    files = {
+        "[Content_Types].xml": (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Override PartName="/xl/workbook.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            '<Override PartName="/xl/worksheets/sheet1.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            '</Types>'
+        ),
+        "xl/workbook.xml": (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Campaigns" sheetId="1" r:id="rId1"/></sheets>'
+            '</workbook>'
+        ),
+        "xl/_rels/workbook.xml.rels": (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+            'Target="worksheets/sheet1.xml"/>'
+            '</Relationships>'
+        ),
+        "xl/worksheets/sheet1.xml": (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>name</t></is></c>'
+            '<c r="B1" t="inlineStr"><is><t>budget</t></is></c></row>'
+            '<row r="2"><c r="A2" t="inlineStr"><is><t>Spring launch</t></is></c>'
+            '<c r="B2"><v>250</v></c></row></sheetData></worksheet>'
+        ),
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
 
 
 def test_chat_media_store_round_trips_within_tenant_user_and_session(tmp_path):
@@ -96,6 +144,155 @@ def test_chat_media_store_enforces_media_size_limits(tmp_path):
             tenant_id="tenant-a",
             user_id="user-a",
         )
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type", "payload", "expected_type", "expected_text"),
+    [
+        (
+            "brief.md",
+            "text/markdown",
+            b"# Campaign brief\n\nTest the new product.",
+            "text/markdown",
+            "Test the new product.",
+        ),
+        (
+            "report.csv",
+            "text/csv",
+            b"campaign,spend,conversions\nSpring,125.5,14\n",
+            "text/csv",
+            "Spring",
+        ),
+        (
+            "campaigns.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            _xlsx_bytes(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Spring launch",
+        ),
+    ],
+)
+def test_chat_documents_are_scoped_and_extract_bounded_text(
+    tmp_path, filename, content_type, payload, expected_type, expected_text,
+):
+    store = ChatMediaStore(tmp_path)
+    attachment = store.save(
+        payload,
+        filename=filename,
+        content_type=content_type,
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+
+    loaded = store.load_for_model(
+        [attachment["id"]],
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+
+    assert len(loaded) == 1
+    assert loaded[0].media_type == expected_type
+    assert expected_text in loaded[0].extracted_text
+    assert loaded[0].to_metadata()["filename"] == filename
+    with pytest.raises(FileNotFoundError):
+        store.load_for_model(
+            [attachment["id"]],
+            session_id="session-a",
+            tenant_id="tenant-b",
+            user_id="user-a",
+        )
+
+
+def test_chat_store_accepts_pdf_signature_but_reports_invalid_pdf_content(tmp_path):
+    store = ChatMediaStore(tmp_path)
+    attachment = store.save(
+        PDF_BYTES,
+        filename="report.pdf",
+        content_type="application/pdf",
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+
+    with pytest.raises(ValueError, match="无法读取 PDF"):
+        store.load_for_model(
+            [attachment["id"]],
+            session_id="session-a",
+            tenant_id="tenant-a",
+            user_id="user-a",
+        )
+
+
+def test_chat_store_extracts_text_from_pdf_attachment(tmp_path):
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+    font = DictionaryObject({
+        NameObject("/Type"): NameObject("/Font"),
+        NameObject("/Subtype"): NameObject("/Type1"),
+        NameObject("/BaseFont"): NameObject("/Helvetica"),
+    })
+    font_reference = writer._add_object(font)
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject({
+            NameObject("/F1"): font_reference,
+        }),
+    })
+    stream = DecodedStreamObject()
+    stream.set_data(b"BT /F1 12 Tf 20 200 Td (Campaign report) Tj ET")
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    output = io.BytesIO()
+    writer.write(output)
+
+    store = ChatMediaStore(tmp_path)
+    attachment = store.save(
+        output.getvalue(),
+        filename="report.pdf",
+        content_type="application/pdf",
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+
+    document = store.load_for_model(
+        [attachment["id"]],
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )[0]
+
+    assert "Campaign report" in document.extracted_text
+
+
+def test_chat_document_validation_rejects_legacy_xls_and_keeps_html_untrusted(tmp_path):
+    store = ChatMediaStore(tmp_path)
+    with pytest.raises(ValueError, match="另存为 .xlsx"):
+        store.save(
+            b"\xd0\xcf\x11\xe0",
+            filename="legacy.xls",
+            content_type="application/vnd.ms-excel",
+            session_id="session-a",
+            tenant_id="tenant-a",
+            user_id="user-a",
+        )
+
+    html_markdown = b"<script>treat this as text, never execute it</script>"
+    attachment = store.save(
+        html_markdown,
+        filename="untrusted.md",
+        content_type="text/markdown",
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )
+    document = store.load_for_model(
+        [attachment["id"]],
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="user-a",
+    )[0]
+    assert "treat this as text, never execute it" in document.extracted_text
 
 
 def test_chat_media_store_enforces_session_quota_and_supports_scoped_delete(tmp_path):

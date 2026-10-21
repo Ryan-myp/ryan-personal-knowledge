@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20261020-chat-queue-pause-v2">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20261021-web-fetch-documents-v1">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -531,8 +531,8 @@
                     class="chat-media-trigger"
                     id="chatMediaButton"
                     type="button"
-                    aria-label="添加图片或视频"
-                    title="添加图片或视频"
+                    aria-label="添加图片、视频或文档"
+                    title="添加图片、视频或文档"
                     onclick="document.getElementById('chatMediaInput').click()"
                 >
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -543,7 +543,7 @@
                     id="chatMediaInput"
                     class="chat-media-file-input"
                     type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime"
+                    accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime,.csv,.xlsx,.pdf,.md,.markdown,.txt,text/csv,application/pdf,text/markdown,text/plain"
                     multiple
                     onchange="handleChatMediaSelection(event)"
                 >
@@ -859,6 +859,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20261020-chat-queue-pause-v2" defer></script>
+    <script src="/static/js/chat.js?v=20261021-web-fetch-documents-v1" defer></script>
 </body>
 </html>

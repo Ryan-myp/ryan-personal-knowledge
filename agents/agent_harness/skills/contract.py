@@ -353,6 +353,10 @@ class SkillContract:
             nested = fm_yaml.get("skill")
             if nested is not None and not isinstance(nested, dict):
                 raise ValueError("Skill frontmatter.skill must be an object")
+            standard_metadata = fm_yaml.get("metadata", {})
+            if standard_metadata is not None and not isinstance(standard_metadata, dict):
+                raise ValueError("Skill frontmatter.metadata must be an object")
+            standard_metadata = standard_metadata or {}
             metadata = nested if isinstance(nested, dict) else fm_yaml
 
             # ``businesses/*/SKILL.md`` is a policy/context package consumed by
@@ -370,11 +374,16 @@ class SkillContract:
             if not isinstance(description, str):
                 raise ValueError("Skill frontmatter.description must be a string")
             namespace = metadata.get(
-                "namespace", os.path.basename(os.path.dirname(path))
+                "namespace",
+                standard_metadata.get(
+                    "namespace", os.path.basename(os.path.dirname(path))
+                ),
             )
             if not isinstance(namespace, str) or not namespace.strip():
                 raise ValueError("Skill frontmatter.namespace must be a non-empty string")
-            version = metadata.get("version", "1.0.0")
+            version = metadata.get(
+                "version", standard_metadata.get("version", "1.0.0")
+            )
             if not isinstance(version, (str, int, float)) or isinstance(version, bool):
                 raise ValueError("Skill frontmatter.version must be scalar")
 
@@ -383,13 +392,19 @@ class SkillContract:
             self.description = description
             self.namespace = namespace.strip().lower()
 
-            # Metadata belongs either at the root or under ``skill``. Root
-            # values remain accepted for existing Skills; nested values win.
-            aliases = metadata.get("aliases", fm_yaml.get("aliases", []))
+            # Runtime-specific metadata can use the standard Agent Skills
+            # ``metadata`` field; existing root and nested forms remain valid.
+            aliases = metadata.get(
+                "aliases",
+                fm_yaml.get("aliases", standard_metadata.get("aliases", [])),
+            )
             self.namespace_aliases = [
                 alias.lower() for alias in self._string_list(aliases, "aliases")
             ]
-            triggers = metadata.get("triggers", fm_yaml.get("triggers", []))
+            triggers = metadata.get(
+                "triggers",
+                fm_yaml.get("triggers", standard_metadata.get("triggers", [])),
+            )
             self.triggers = self._parse_triggers(triggers)
 
         # SKILL.md is intentionally natural-language guidance plus identity

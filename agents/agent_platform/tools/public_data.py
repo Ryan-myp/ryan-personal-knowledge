@@ -46,6 +46,7 @@ _ALLOWED_HOSTS = frozenset({
     "wttr.in",
     "www.gov.uk",
     "www.7timer.info",
+    "www.googleapis.com",
     "zh.wikipedia.org",
 })
 _HOST_MIN_INTERVAL_SECONDS = {
@@ -53,6 +54,7 @@ _HOST_MIN_INTERVAL_SECONDS = {
     "export.arxiv.org": 3.1,
     "openlibrary.org": 1.0,
     "itunes.apple.com": 3.1,
+    "www.googleapis.com": 1.0,
 }
 _CURRENCIES = re.compile(r"^[A-Z]{3}$")
 _COUNTRY_CODES = re.compile(r"^[A-Z]{3}$")
@@ -94,8 +96,14 @@ class _PublicDataHttpClient:
         url: str,
         *,
         params: Mapping[str, Any] | None = None,
+        timeout: tuple[float, float] = REQUEST_TIMEOUT,
     ) -> Any:
-        body = self._get_body(url, params=params, accept="application/json")
+        body = self._get_body(
+            url,
+            params=params,
+            accept="application/json",
+            timeout=timeout,
+        )
         try:
             return json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -123,6 +131,7 @@ class _PublicDataHttpClient:
         *,
         params: Mapping[str, Any] | None,
         accept: str,
+        timeout: tuple[float, float] = REQUEST_TIMEOUT,
     ) -> bytes:
         parsed = urlsplit(url)
         if (
@@ -147,7 +156,7 @@ class _PublicDataHttpClient:
                         "Accept": accept,
                         "User-Agent": self._user_agent,
                     },
-                    timeout=REQUEST_TIMEOUT,
+                    timeout=timeout,
                     allow_redirects=False,
                     stream=True,
                 )

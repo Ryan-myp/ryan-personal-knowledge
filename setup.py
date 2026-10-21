@@ -80,6 +80,8 @@ setup(
         "fastmcp>=3.4.0,<4.0.0",
         "ddgs>=9.16.0,<10.0.0",
         "openai>=1.0.0,<2.0.0",
+        "openpyxl>=3.1.5",
+        "pypdf>=5.0.0",
     ],
     extras_require={
         "claude": [
