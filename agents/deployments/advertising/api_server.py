@@ -86,7 +86,12 @@ from agents.deployments.advertising.settings import (
     AgentSettingsService,
     EncryptedSettingsVault,
 )
-from agents.agent_platform.tools import web_search_tool_source
+from agents.agent_platform.tools import (
+    public_environment_tool_source,
+    public_data_tool_source,
+    public_research_tool_source,
+    web_search_tool_source,
+)
 from agents.tools.creative_media.source import creative_media_tool_source
 from agents.applications.advertising.creation.templates import (
     creation_template_manager_for_runtime,
@@ -400,6 +405,47 @@ def _init_runtime():
             (PluginKind.TOOL_SOURCE.value,),
             description="Built-in bounded read-only web search Tool",
         )
+        public_data_source = public_data_tool_source(
+            required_permission="ads.read",
+        )
+        runtime.register_tool_source(public_data_source)
+        runtime._register_builtin_plugin(
+            public_data_source.source_id,
+            public_data_source,
+            (PluginKind.TOOL_SOURCE.value,),
+            description=(
+                "Built-in read-only public data Tools grouped by finance, "
+                "economics, and calendar"
+            ),
+        )
+        public_reference_sources = (
+            (
+                public_environment_tool_source(
+                    required_permission="ads.read",
+                ),
+                "Built-in bounded read-only weather and earthquake API Tools",
+            ),
+            (
+                public_research_tool_source(
+                    required_permission="ads.read",
+                    contact_email=os.environ.get(
+                        "AD_AGENT_PUBLIC_DATA_CONTACT_EMAIL",
+                    ),
+                ),
+                (
+                    "Built-in bounded read-only encyclopedia, book, scholarly "
+                    "research, and trend search Tools"
+                ),
+            ),
+        )
+        for public_source, description in public_reference_sources:
+            runtime.register_tool_source(public_source)
+            runtime._register_builtin_plugin(
+                public_source.source_id,
+                public_source,
+                (PluginKind.TOOL_SOURCE.value,),
+                description=description,
+            )
         
         # 自动加载 Skills
         skills_root = BUILTIN_SKILLS_ROOT

@@ -2470,7 +2470,9 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
     assert api_server.runtime_status["state"] == "ready"
     assert set(runtime.registry.list_all_namespaces()) == {
         "agent-platform", "advertising", "meta", "google-ads", "tiktok", "dv360",
-        "creative-media",
+        "creative-media", "public-calendar", "public-economics", "public-finance",
+        "public-environment", "public-knowledge", "public-research", "public-trends",
+        "public-weather",
     }
     definitions = runtime.registry.list_all()
     assert len(definitions) >= 128
@@ -2479,6 +2481,17 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         "creative_submit_video",
         "creative_check_video",
         "creative_list_assets",
+        "public_calendar_bank_holidays",
+        "public_economics_country_indicator",
+        "public_finance_exchange_rate",
+        "public_weather_lookup",
+        "public_environment_earthquakes",
+        "public_environment_7timer_forecast",
+        "public_knowledge_wikipedia_search",
+        "public_knowledge_open_library_search",
+        "public_research_crossref_search",
+        "public_research_arxiv_search",
+        "public_trends_hackernews_search",
     } <= {definition.name for definition in definitions}
     assert "creative.generate" in runtime._granted_permissions
     assert "creative-production" in runtime._composition.skill_loader.list_all()

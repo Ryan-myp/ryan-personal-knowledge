@@ -43,6 +43,21 @@ provides useful context and the web can verify current platform behavior.
 
 ## Structured And Time-Sensitive Data
 
+- When a registered structured public-data Tool matches the request, prefer it
+  for values such as exchange rates, annual country indicators, or UK bank
+  holidays. Report its source, retrieval time, units, geography, and coverage
+  limits. Use the exact `source_url` returned by that Tool when citing its
+  observation; do not infer values outside the returned period or region.
+- For matching public-data questions, use the dedicated weather, 7Timer,
+  USGS earthquake, Wikipedia, Crossref, arXiv, Open Library, or Hacker News
+  Tool rather than web snippets. Use the named-place weather Tool for city
+  queries and 7Timer only when latitude/longitude are available. State what
+  each source actually measures: weather is a forecast, arXiv items may be
+  preprints, citation metadata may be incomplete, and Hacker News activity is
+  not representative consumer demand.
+- Public-data Tools return structured observations, not full web pages. For
+  definitions, explanations, current policies, or evidence beyond the API's
+  scope, use web search as a separate source and distinguish the two.
 - A result snippet is not a structured dataset. Do not extract a complete
   time series, table, ranked list, forecast, or precise metric from partial
   snippets.
