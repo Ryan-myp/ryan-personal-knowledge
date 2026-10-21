@@ -44,6 +44,7 @@ AD_AGENT_REPO_ROOT="$PWD" skill-up run \
 
 - Agent 能力介绍只基于当前能力目录，不泄露底层模型身份，也不触发无关 Tool
 - 程序化广告知识问答必须调用知识检索 Tool，并基于本地知识结果作答
+- 自然语言创建周期任务必须路由到共享 Platform schedule Tool，不能顺手查询广告账户
 - TikTok Campaign 的 Tool 路由、枚举/参数契约和 dry-run 结果
 - TikTok 动态参考参数 lookup 的离线证据标记
 - Meta/Google 跨渠道路由与统一结果

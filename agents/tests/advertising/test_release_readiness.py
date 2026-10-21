@@ -312,7 +312,7 @@ def test_model_quality_is_a_separate_evidence_stage_and_release_gate():
     assert dimension["passed"] is False
 
 
-def test_model_quality_requires_executed_real_model_evidence():
+def test_partial_model_quality_suite_does_not_pass_release_evidence():
     from agents.tools.advertising.shared.domain.release_readiness import (
         build_readiness_report,
     )
@@ -331,8 +331,42 @@ def test_model_quality_requires_executed_real_model_evidence():
             "executed": True,
             "passed": True,
             "scenario_count": 6,
-            "failed": 0,
+            "required_scenario_count": 10,
             "passed_scenarios": 6,
+            "failed": 0,
+            "suite_complete": False,
+            "evidence": "configured_model_skill_up",
+        },
+    )
+
+    assert report["stage_results"]["model_quality"]["status"] == "failed"
+    dimension = next(
+        item
+        for item in report["stage_results"]["quality_95"]["scorecard"]["dimensions"]
+        if item["name"] == "model_quality"
+    )
+    assert dimension["score"] == 0
+
+
+def test_complete_model_quality_suite_can_pass_release_evidence():
+    report = build_readiness_report(
+        tool_source_report={
+            "issues": [],
+            "readiness_scope": _readiness_scope(),
+            "official_inventory": {},
+        },
+        dry_run_report={"executed": True, "failed": 0},
+        security_report=_security_report(),
+        policy=_policy(),
+        profile="local",
+        model_quality_report={
+            "executed": True,
+            "passed": True,
+            "scenario_count": 10,
+            "required_scenario_count": 10,
+            "passed_scenarios": 10,
+            "failed": 0,
+            "suite_complete": True,
             "evidence": "configured_model_skill_up",
         },
     )
@@ -375,7 +409,72 @@ def test_model_quality_cases_are_opt_in_without_marking_offline_gate_failed(
 
     assert report["executed"] is False
     assert report["skipped"] is True
+    assert report["required_scenario_count"] == 10
     assert report["evidence"] == "configured_model_skill_up"
+
+
+def test_skill_up_case_loader_requires_manifest_to_cover_the_case_directory(
+    monkeypatch, tmp_path,
+):
+    import yaml
+    from scripts.advertising import release_readiness
+
+    suite_root = tmp_path / "skill-up"
+    cases_root = suite_root / "evals" / "cases"
+    cases_root.mkdir(parents=True)
+    (suite_root / "evals" / "eval.yaml").write_text(
+        "cases:\n  files:\n    - evals/cases/declared.yaml\n",
+        encoding="utf-8",
+    )
+    (cases_root / "declared.yaml").write_text(
+        "id: declared\ninput:\n  prompt: test\n",
+        encoding="utf-8",
+    )
+    (cases_root / "unlisted.yaml").write_text(
+        "id: unlisted\ninput:\n  prompt: test\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(release_readiness, "SKILL_UP_ROOT", suite_root)
+
+    with pytest.raises(ValueError, match="manifest mismatch"):
+        release_readiness._load_skill_up_cases(yaml)
+
+
+def test_skill_up_case_loader_rejects_duplicate_case_ids(monkeypatch, tmp_path):
+    import yaml
+    from scripts.advertising import release_readiness
+
+    suite_root = tmp_path / "skill-up"
+    cases_root = suite_root / "evals" / "cases"
+    cases_root.mkdir(parents=True)
+    (suite_root / "evals" / "eval.yaml").write_text(
+        "cases:\n  files:\n"
+        "    - evals/cases/first.yaml\n"
+        "    - evals/cases/second.yaml\n",
+        encoding="utf-8",
+    )
+    for name in ("first", "second"):
+        (cases_root / f"{name}.yaml").write_text(
+            "id: duplicate\ninput:\n  prompt: test\n",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(release_readiness, "SKILL_UP_ROOT", suite_root)
+
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        release_readiness._load_skill_up_cases(yaml)
+
+
+def test_checked_in_skill_up_suite_includes_conversational_schedule_creation():
+    import yaml
+    from scripts.advertising import release_readiness
+
+    cases = release_readiness._load_skill_up_cases(yaml)
+    schedule_case = next(
+        case for case in cases if case["id"] == "schedule-create-conversation"
+    )
+
+    assert len(cases) == 10
+    assert "不要现在查询广告账户" in schedule_case["prompt"]
 
 
 def test_provider_evidence_ratios_use_operation_totals():

@@ -198,11 +198,20 @@ def build_readiness_report(
     model_quality = dict(model_quality_report or {})
     model_quality_attempted = model_quality.get("executed") is True
     model_quality_scenarios = int(model_quality.get("scenario_count", 0) or 0)
+    model_quality_required_scenarios = int(
+        model_quality.get("required_scenario_count", 0) or 0
+    )
+    model_quality_passed_scenarios = int(
+        model_quality.get("passed_scenarios", 0) or 0
+    )
     model_quality_failures = int(model_quality.get("failed", 0) or 0)
     model_quality_ok = (
         model_quality_attempted
         and model_quality.get("passed") is True
-        and model_quality_scenarios > 0
+        and model_quality.get("suite_complete") is True
+        and model_quality_required_scenarios > 0
+        and model_quality_scenarios == model_quality_required_scenarios
+        and model_quality_passed_scenarios == model_quality_scenarios
         and model_quality_failures == 0
         and model_quality.get("evidence") == "configured_model_skill_up"
     )
@@ -396,9 +405,11 @@ def build_readiness_report(
             ),
             "executed": model_quality_attempted,
             "scenario_count": model_quality_scenarios,
+            "required_scenario_count": model_quality_required_scenarios,
             "passed_scenarios": int(
                 model_quality.get("passed_scenarios", 0) or 0
             ),
+            "suite_complete": bool(model_quality.get("suite_complete", False)),
             "failed_scenarios": model_quality_failures,
             "skipped": bool(model_quality.get("skipped", False)),
             "errors": list(model_quality.get("errors") or []),

@@ -271,7 +271,7 @@ class MarkdownWikiKnowledgeProvider:
         "dynamic": "concept",
     }
     _STOPWORDS = {
-        "and", "are", "for", "from", "how", "into", "that", "the", "this",
+        "and", "are", "do", "for", "from", "how", "into", "that", "the", "this",
         "what", "when", "where", "with", "广告", "一个", "什么", "怎么", "如何",
         "哪些", "是否", "以及", "可以", "需要", "请问",
     }

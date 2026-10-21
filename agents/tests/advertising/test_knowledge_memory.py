@@ -141,6 +141,12 @@ def test_builtin_platform_overviews_do_not_rank_reference_only_sections():
         ), query
 
 
+def test_builtin_wiki_does_not_match_english_stopwords_inside_unrelated_content():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+
+    assert provider.query("How do I bake a cake?", limit=3) == []
+
+
 def test_wiki_recognizes_described_wikilink_navigation_sections():
     is_navigation = MarkdownWikiKnowledgeProvider._is_link_only_navigation_section
 

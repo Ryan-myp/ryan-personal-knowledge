@@ -20,6 +20,7 @@ from typing import Any, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SKILL_UP_ROOT = ROOT / "agents" / "evals" / "advertising" / "skill-up"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -67,6 +68,51 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _load_skill_up_cases(yaml_module: Any) -> list[dict[str, Any]]:
+    """Load exactly the repository-declared Skill-up suite, with no orphans."""
+    manifest_path = SKILL_UP_ROOT / "evals" / "eval.yaml"
+    manifest = yaml_module.safe_load(manifest_path.read_text(encoding="utf-8"))
+    declared_files = (manifest.get("cases") or {}).get("files")
+    if not isinstance(declared_files, list) or not declared_files:
+        raise ValueError("Skill-up eval.yaml must declare a non-empty cases.files list")
+
+    cases_root = (SKILL_UP_ROOT / "evals" / "cases").resolve()
+    declared_paths = []
+    for relative_path in declared_files:
+        if not isinstance(relative_path, str) or not relative_path.strip():
+            raise ValueError("Skill-up case paths must be non-empty strings")
+        resolved = (SKILL_UP_ROOT / relative_path).resolve()
+        if resolved.parent != cases_root or resolved.suffix != ".yaml":
+            raise ValueError("Skill-up case paths must target evals/cases/*.yaml")
+        declared_paths.append(resolved)
+    if len(set(declared_paths)) != len(declared_paths):
+        raise ValueError("Skill-up eval.yaml contains duplicate case paths")
+
+    actual_paths = set(cases_root.glob("*.yaml"))
+    if set(declared_paths) != actual_paths:
+        missing = sorted(path.name for path in actual_paths - set(declared_paths))
+        absent = sorted(path.name for path in set(declared_paths) - actual_paths)
+        raise ValueError(
+            f"Skill-up suite manifest mismatch (unlisted={missing}, missing={absent})"
+        )
+
+    cases = []
+    seen_ids = set()
+    for path in declared_paths:
+        case = yaml_module.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(case, dict):
+            raise ValueError(f"Skill-up case must be an object: {path.name}")
+        case_id = str(case.get("id") or "").strip()
+        prompt = ((case.get("input") or {}).get("prompt") or "").strip()
+        if not case_id or not prompt:
+            raise ValueError(f"Skill-up case requires id and prompt: {path.name}")
+        if case_id in seen_ids:
+            raise ValueError(f"Skill-up case IDs must be unique: {case_id}")
+        seen_ids.add(case_id)
+        cases.append({"path": path, "case": case, "id": case_id, "prompt": prompt})
+    return cases
+
+
 def _default_provider_evidence_paths() -> list[Path]:
     contracts = ROOT / "agents" / "tools" / "advertising" / "contracts"
     return [
@@ -86,22 +132,107 @@ def _load_provider_evidence(
     )
 
 
+def _model_eval_skipped(required_scenario_count: int, reason: str) -> dict[str, Any]:
+    return {
+        "executed": False,
+        "skipped": True,
+        "scenario_count": 0,
+        "required_scenario_count": required_scenario_count,
+        "suite_complete": False,
+        "passed": False,
+        "passed_scenarios": 0,
+        "failed": 0,
+        "errors": [],
+        "evidence": "configured_model_skill_up",
+        "reason": reason,
+    }
+
+
+def _evaluate_skill_up_case(
+    item: dict[str, Any],
+    run_case: Any,
+    model_adapter: Any,
+    workspace: str,
+) -> dict[str, Any]:
+    result = run_case({
+        "case_id": item["id"],
+        "workspace": workspace,
+        "messages": [{"role": "user", "content": item["prompt"]}],
+    }, model_adapter=model_adapter)
+    output = str(result.get("final_message") or "")
+    expected = item["case"].get("expect") or {}
+    missing = [
+        str(value)
+        for value in (expected.get("must_contain") or [])
+        if str(value) not in output
+    ]
+    forbidden = [
+        str(value)
+        for value in (expected.get("must_not_contain") or [])
+        if str(value) in output
+    ]
+    structured_failures = evaluate_structured_expectations(result, expected)
+    passed = (
+        result.get("exit_code") == expected.get("exit_code", 0)
+        and not missing
+        and not forbidden
+        and not structured_failures
+    )
+    return {
+        "case": item["id"],
+        "passed": passed,
+        "missing": missing,
+        "forbidden": forbidden,
+        "structured_failures": structured_failures,
+    }
+
+
+def _execute_skill_up_suite(
+    suite: list[dict[str, Any]],
+    run_case: Any,
+    model_adapter: Any,
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="ad-agent-readiness-") as workspace:
+        rows = [
+            _evaluate_skill_up_case(item, run_case, model_adapter, workspace)
+            for item in suite
+        ]
+    failures = [row for row in rows if not row["passed"]]
+    suite_ids = {item["id"] for item in suite}
+    suite_complete = len(rows) == len(suite) and {
+        row["case"] for row in rows
+    } == suite_ids
+    errors = [f"{row['case']}: case assertion failed" for row in failures]
+    if not suite_complete:
+        errors.append("Skill-up suite run did not cover every declared case")
+    return {
+        "executed": True,
+        "scenario_count": len(rows),
+        "required_scenario_count": len(suite),
+        "suite_complete": suite_complete,
+        "passed": not failures and suite_complete and bool(rows),
+        "passed_scenarios": len(rows) - len(failures),
+        "failed": len(failures),
+        "errors": errors,
+        "cases": rows,
+        "evidence": "configured_model_skill_up",
+    }
+
+
 def _run_skill_up_cases(*, enabled: bool = False) -> dict[str, Any]:
     """Run intent and response cases only when a reviewer opts into model calls."""
-    if not enabled:
-        return {
-            "executed": False,
-            "skipped": True,
-            "scenario_count": 0,
-            "passed": False,
-            "passed_scenarios": 0,
-            "failed": 0,
-            "errors": [],
-            "evidence": "configured_model_skill_up",
-            "reason": "model evaluation requires --with-model-eval",
-        }
+    required_scenario_count = 0
     try:
         import yaml
+
+        suite = _load_skill_up_cases(yaml)
+        required_scenario_count = len(suite)
+        if not enabled:
+            return _model_eval_skipped(
+                required_scenario_count,
+                "model evaluation requires --with-model-eval",
+            )
+
         from agents.evals.advertising.skill_up_engine import run as run_case
         from agents.evals.advertising.skill_up_engine import (
             configured_model_adapter,
@@ -109,65 +240,18 @@ def _run_skill_up_cases(*, enabled: bool = False) -> dict[str, Any]:
 
         model_adapter = configured_model_adapter()
         if model_adapter is None:
-            return {
-                "executed": False,
-                "skipped": True,
-                "scenario_count": 0,
-                "passed": False,
-                "passed_scenarios": 0,
-                "failed": 0,
-                "errors": [],
-                "evidence": "configured_model_skill_up",
-                "reason": (
-                    "set AD_AGENT_EVAL_API_KEY and AD_AGENT_EVAL_MODEL "
-                    "to run model-quality cases"
-                ),
-            }
-        cases_root = ROOT / "agents" / "evals" / "advertising" / "skill-up" / "evals" / "cases"
-        rows: list[dict[str, Any]] = []
-        with tempfile.TemporaryDirectory(prefix="ad-agent-readiness-") as workspace:
-            for case_path in sorted(cases_root.glob("*.yaml")):
-                case = yaml.safe_load(case_path.read_text(encoding="utf-8")) or {}
-                prompt = ((case.get("input") or {}).get("prompt") or "").strip()
-                if not prompt:
-                    rows.append({"case": case_path.name, "passed": False, "error": "missing prompt"})
-                    continue
-                result = run_case({
-                    "case_id": str(case.get("id") or case_path.stem),
-                    "workspace": workspace,
-                    "messages": [{"role": "user", "content": prompt}],
-                }, model_adapter=model_adapter)
-                output = str(result.get("final_message") or "")
-                expected = case.get("expect") or {}
-                missing = [str(item) for item in (expected.get("must_contain") or []) if str(item) not in output]
-                forbidden = [str(item) for item in (expected.get("must_not_contain") or []) if str(item) in output]
-                structured_failures = evaluate_structured_expectations(result, expected)
-                passed = (
-                    result.get("exit_code") == expected.get("exit_code", 0)
-                    and not missing and not forbidden and not structured_failures
-                )
-                rows.append({
-                    "case": str(case.get("id") or case_path.stem),
-                    "passed": passed,
-                    "missing": missing,
-                    "forbidden": forbidden,
-                    "structured_failures": structured_failures,
-                })
-        failures = [row for row in rows if not row["passed"]]
-        return {
-            "executed": True,
-            "scenario_count": len(rows),
-            "passed": not failures and bool(rows),
-            "passed_scenarios": len(rows) - len(failures),
-            "failed": len(failures),
-            "errors": [f"{row['case']}: case assertion failed" for row in failures],
-            "cases": rows,
-            "evidence": "configured_model_skill_up",
-        }
+            return _model_eval_skipped(
+                len(suite),
+                "set AD_AGENT_EVAL_API_KEY and AD_AGENT_EVAL_MODEL "
+                "to run model-quality cases",
+            )
+        return _execute_skill_up_suite(suite, run_case, model_adapter)
     except Exception as exc:
         return {
             "executed": True,
             "scenario_count": 0,
+            "required_scenario_count": required_scenario_count,
+            "suite_complete": False,
             "passed": False,
             "passed_scenarios": 0,
             "failed": 1,

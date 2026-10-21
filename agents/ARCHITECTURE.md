@@ -250,6 +250,33 @@ verification at 0, no production multi-instance evidence, and maintainability at
 These remain explicit runtime/API evidence and decomposition work, not directory
 compatibility work.
 
+### Offline Quality Reassessment (2026-10-21)
+
+The current Wiki contains 83 published documents and 541 indexed chunks. Its
+63-case retrieval suite has 60 positive expectations and seven safety/boundary
+checks, with four cases intentionally measuring both relevance and forbidden
+result constraints. The lexical path scores hit@3 1.000, MRR 0.958, and expected
+top-1 accuracy 21/21; the added out-of-domain query exposed and fixed an English
+stopword false match.
+
+The semantic/hybrid numbers in this script use `HashEmbeddingProvider`, a
+deterministic test double. They can compare ranking plumbing but are not evidence
+of production embedding relevance or calibrated out-of-domain rejection; those
+metrics are labeled accordingly and do not gate semantic quality. No real model
+evaluation was run in this reassessment. The Skill-up model suite now validates
+that its declared case manifest covers every case exactly once and that all
+declared cases execute before model-quality evidence can pass; its 10 scenarios
+include conversational schedule creation through the shared Platform Tool with
+offline, in-memory execution.
+
+The repository qguard run excludes generated build and egg-info copies and
+scanned 400 Python files, but still reports 2,608 findings and fails the
+70-point gate. Its SQL-injection rule does not trace data flow and flags both
+controlled SQL identifier/fragments and potentially unsafe dynamic SQL. This
+remains an open security audit, not a pass and not a blanket false-positive
+classification. API/provider client findings are outside the current non-API
+work and were not changed.
+
 ### Run-Orchestration Reduction (2026-10-09)
 
 The advertising scenario now supplies the configured generic model directly to

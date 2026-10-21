@@ -6,18 +6,24 @@
 ## 六层结构
 
 ```text
-应用场景层        scenarios/
+应用场景层        agents/scenarios/
       ↓
-Agent 层          一个 AgentDefinition / 单 Agent 注册
+Agent 层          agents/agent_platform/agents/  单 AgentDefinition / 注册
       ↓
-中台核心层        agents.agent_harness + core/ + tools/
+中台核心层        agents/agent_harness/ + agents/agent_platform/core/
       ↓
-数据层            data/ 以及各产品注入的 Knowledge/Memory/Run Store Port
+数据层            agents/agent_platform/data/ + 应用注入的 Knowledge/Memory/Run Store
       ↓
-集成层            integrations/ 以及 Tool Source / SDK-HTTP / MCP Adapter
+集成层            agents/agent_platform/integrations/ + Tool Source / SDK-HTTP / MCP
       ↓
-基础设施层        infrastructure/ 以及部署、队列、网络、计算和存储实现
+基础设施层        agents/agent_platform/infrastructure/ + 部署、队列、网络、计算和存储
 ```
+
+应用层的业务组合不另建 Runtime：例如
+`agents/applications/advertising/composition/` 将注册好的 Agent、场景、广告
+Tools、Skills、Knowledge 与持久化实现装配到一起；`agents/scenarios/advertising.py`
+只描述场景选择；`agents/deployments/advertising/` 负责 HTTP hosting。三者分别是
+应用组合、场景声明和部署入口，不应误认为三个不同的 Agent 或 Runtime。
 
 `governance/`、可观测性和 Agent 市场是横切能力，不创建第二个 Runtime。
 平台只注册一个通用 Agent；广告只是一个应用场景，通过场景选择广告 Skills、Tools、

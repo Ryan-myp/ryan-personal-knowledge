@@ -39,6 +39,17 @@ def test_repository_uses_the_documented_package_roots():
     assert (AGENTS_ROOT / "scenarios" / "advertising.py").is_file()
 
 
+def test_agent_platform_six_layer_map_names_the_real_application_layer():
+    readme = (AGENTS_ROOT / "agent_platform" / "README.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "应用层" in readme
+    assert "agents/applications/advertising/" in readme
+    assert "agents/scenarios/advertising.py" in readme
+    assert "agents/deployments/advertising/" in readme
+
+
 def test_advertising_deployment_does_not_own_a_second_core_or_runtime():
     package = AGENTS_ROOT / "ad_agent"
     assert not (package / "core").exists()

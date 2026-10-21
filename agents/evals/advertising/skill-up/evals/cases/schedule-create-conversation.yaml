@@ -1,0 +1,24 @@
+id: schedule-create-conversation
+title: Conversational schedule creation uses the shared platform Tool
+tag: conversation_quality
+input:
+  prompt: >-
+    请创建一个定时任务，每天上午 9 点汇总 Google Ads campaign 花费趋势。
+    只创建这个定时任务，不要现在查询广告账户。
+expect:
+  exit_code: 0
+  must_contain:
+    - "定时任务"
+  must_not_contain:
+    - "查询广告账户"
+    - "Google client not configured"
+  structured:
+    needs_input: false
+    needs_confirmation: false
+    tool_names: [agent_schedule_create]
+    results_count: 1
+judge:
+  type: rule_based
+  success:
+    - output_contains:
+        all: ["定时任务"]

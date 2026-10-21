@@ -3,10 +3,10 @@
   {"query": "Google Ads Performance Max PMax PERFORMANCE_MAX AssetGroup AssetGroupListingGroupFilter 与普通 Search Ad Group 的层级差异", "expected": ["google-campaign-hierarchy", "google-pmax-feed-assets-and-value-bidding"], "expected_top": "google-campaign-hierarchy"},
   {"query": "Google Ads API field error 或 partial failure 后应该重试吗，如何依据 field path 和 resource name 恢复", "expected": ["google-constraints", "google-api-errors-quota-and-versioning", "ad-error-patterns"], "expected_top": "google-constraints"},
   {"query": "Google Ads 广告 disapproved 后怎么查 Policy details，是修复素材还是 appeal 复核", "expected": ["google-constraints", "cross-platform-ad-review-and-recovery"]},
-  {"query": "讲下 Google Ads 相关知识", "expected": ["google-ads-entity"], "expected_top": "google-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
-  {"query": "介绍一下 Meta Ads 的基础知识", "expected": ["meta-ads-entity"], "expected_top": "meta-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
-  {"query": "介绍一下 TikTok Ads 的基础知识", "expected": ["tiktok-ads-entity"], "expected_top": "tiktok-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
-  {"query": "讲下 DV360 程序化广告的基础知识", "expected": ["dv360-entity"], "expected_top": "dv360-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"]},
+  {"query": "讲下 Google Ads 相关知识", "expected": ["google-ads-entity"], "expected_top": "google-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"], "forbidden_platforms": ["meta", "tiktok", "dv360"]},
+  {"query": "介绍一下 Meta Ads 的基础知识", "expected": ["meta-ads-entity"], "expected_top": "meta-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"], "forbidden_platforms": ["google-ads", "tiktok", "dv360"]},
+  {"query": "介绍一下 TikTok Ads 的基础知识", "expected": ["tiktok-ads-entity"], "expected_top": "tiktok-ads-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"], "forbidden_platforms": ["google-ads", "meta", "dv360"]},
+  {"query": "讲下 DV360 程序化广告的基础知识", "expected": ["dv360-entity"], "expected_top": "dv360-entity", "forbidden_sections": ["参考", "官方参考", "references", "official references", "知识入口"], "forbidden_platforms": ["google-ads", "meta", "tiktok"]},
   {"query": "Google PMax 商品源 资产组 价值出价", "expected": ["google-pmax-feed-assets-and-value-bidding", "google-shopping-pmax-operations"]},
   {"query": "Google 增强型转化 离线回传", "expected": ["google-conversion-tracking-and-enhanced-conversions", "google-ads-measurement-and-diagnostics"]},
   {"query": "Google GAQL 分段分页报表", "expected": ["google-gaql-segmentation-and-reporting-diagnostics", "google-api-operations-and-reporting"]},
@@ -60,5 +60,6 @@
   {"query": "ads.txt app-ads.txt sellers.json SupplyChain object schain 如何检查广告供应链和转售路径透明度", "expected": ["programmatic-supply-path-transparency-and-quality"], "expected_top": "programmatic-supply-path-transparency-and-quality"},
   {"query": "程序化广告 bid rate win rate fill rate eCPM viewability IVT 转化效果异常如何分层诊断", "expected": ["programmatic-measurement-and-diagnostics"], "expected_top": "programmatic-measurement-and-diagnostics"},
   {"query": "原始来源 raw ingest 文档", "expected": [], "forbidden_wiki_types": ["raw"]},
-  {"query": "待审核 draft 页面", "expected": [], "forbidden_statuses": ["draft", "deprecated"]}
+  {"query": "待审核 draft 页面", "expected": [], "forbidden_statuses": ["draft", "deprecated"]},
+  {"query": "How do I bake a cake?", "expected": [], "expect_empty": true}
 ]
