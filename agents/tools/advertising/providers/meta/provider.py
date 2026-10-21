@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 from agents.agent_harness.core.interfaces import ToolDefinition, ToolSchema, RiskLevel, ToolEffect, ReplayPolicy, ToolHandler
 from agents.agent_harness.core.security import sha256_json
+from agents.tools.advertising.shared.domain.reporting import build_report_context
 from ..provider_base import (
     BaseProviderToolSource,
     CampaignUpdateHandler,
@@ -1047,6 +1048,14 @@ class MetaToolSource(BaseProviderToolSource):
                     "time_range": data.get("date_range"), "fields": data.get("fields"),
                     **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="meta",
+                    resource_level="ad_set",
+                    input_data=data,
+                    rows=rows,
+                    default_period="last_7d",
+                    default_limit=1000,
+                ),
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_get_ad_report",
@@ -1069,6 +1078,14 @@ class MetaToolSource(BaseProviderToolSource):
                     "time_range": data.get("date_range"), "fields": data.get("fields"),
                     **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="meta",
+                    resource_level="ad",
+                    input_data=data,
+                    rows=rows,
+                    default_period="last_7d",
+                    default_limit=1000,
+                ),
             ),
             method_tool(
                 namespace="meta", skill="meta-marketing-api", name="meta_create_lead_ad",

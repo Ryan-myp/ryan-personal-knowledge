@@ -1,16 +1,16 @@
 ---
 name: measurement-instrumentation
-description: "为广告优化定义转化事件、UTM 和数据质量契约，并审查追踪方案 (ad conversion measurement and tracking-plan design)"
-version: "1.0.0"
+description: "设计广告转化事件并执行追踪 QA、丢失/重复事件诊断和测量数据验收"
+version: "1.1.0"
 namespace: advertising
 triggers:
-  - [conversion tracking plan, event tracking plan, tracking plan, 转化追踪方案, 事件埋点, 转化事件, measurement design]
-  - [UTM naming, GA4 events, GTM, event deduplication, event quality, 追踪丢失, 事件重复, PII in analytics]
+  - [conversion tracking plan, event tracking plan, tracking plan, conversion tracking QA, event QA, 事件验收, 转化追踪方案, 事件埋点, 转化事件, measurement design]
+  - [UTM naming, GA4 events, GTM, event deduplication, event quality, missing conversions, duplicate events, 追踪丢失, 漏数, 事件重复, PII in analytics]
 ---
 
 # 广告测量与事件契约
 
-本 Skill 将营销和广告决策转成可审核的事件/转化测量方案，聚焦“需要观察什么、数据如何定义、如何验证质量”。它补充 Wiki 的《广告测量数据契约、对账与增量评估》及渠道事件规范，不代替数据工程、隐私审查或具体分析平台配置。
+本 Skill 将营销和广告决策转成可审核的事件/转化测量方案，并帮助按证据定位追踪链路故障。它补充 Wiki 的《广告测量数据契约、对账与增量评估》《广告转化信号质量、CRM 回传与排障》及渠道事件规范，不代替数据工程、隐私审查或具体分析平台配置。
 
 ## 设计流程
 
@@ -20,8 +20,10 @@ triggers:
 4. **统一标识和命名。** 定义跨渠道 UTM 字段、允许值、大小写/分隔符、命名责任人与版本规则；将稳定业务语义与平台专属参数分开。
 5. **规划验证。** 检查触发条件、必填属性、重复与丢失、测试/生产区分、跨域/跨设备边界、延迟、退款/取消及回传状态。验证过程应记录测试条件和证据来源。
 6. **检查隐私与治理。** 只收集决策所需字段，明确同意/合法依据、保留期限、访问范围和删除要求；防止原始身份信息进入日志、Prompt、Wiki 和普通分析输出。
+7. **按阶段验收。** 将“业务事件发生、客户端/服务端发送、平台接收、去重/匹配、归因、报表成熟、CRM/订单确认”分别标记为通过、失败或未知。每个阶段都要有独立证据，不从上游成功推断下游成功。
+8. **先定位再修复。** 按事件缺失、平台拒绝、重复、匹配弱、报表延迟、金额/币种错位分类；提出最小可复现测试、责任系统、修复项、回读证据和回滚条件。未获授权或没有工具时只给审查方案，不改外部配置。
 
-按需加载 `references/event-measurement-contract.md`，用于事件字典、UTM 规则和 QA 交付模板。
+按需加载 `references/event-measurement-contract.md`，用于事件字典与 UTM 契约；加载 `references/conversion-qa-runbook.md`，用于逐阶段 QA、失败分类和验收记录。
 
 ## 适用边界
 
@@ -29,7 +31,9 @@ triggers:
 - 事件是否对某个平台可用于优化，以该平台当前官方规范、实际账户设置和已核实 Tool/数据结果为准；通用事件命名不会自动完成平台映射。
 - 浏览器/服务端事件都可能重复或丢失；提供去重设计时须说明唯一键的生成方、作用范围和保留周期，不能仅凭“已发送”声称转化已记录。
 - 具体 GA4、GTM、Pixel、CAPI、SDK 或 CRM 配置属于外部系统实施。没有对应集成 Tool 与授权时，本 Skill 只能提供审查清单或草案，不配置或执行外部 tracking。
+- 浏览器或服务端测试工具的“发送成功”不等于生产事件已接收、去重、匹配和进入报表；测试流量必须与生产数据区分。
+- 故障诊断以脱敏后的计数、字段存在性、状态和受控标识为证据；不得要求用户把 access token、原始邮箱/电话、设备标识或整份用户级 payload 粘贴到对话。
 
 ## 输出要求
 
-按事件给出业务定义、触发、唯一键、必需属性、来源/责任人、时区与延迟、平台映射状态、去重规则、QA 证据和隐私检查；明确标出待确认项。不得把方案草案表述成已经部署或验证。
+按事件给出业务定义、触发、唯一键、必需属性、来源/责任人、时区与延迟、平台映射状态、去重规则和隐私检查。QA 结论要按链路阶段列出状态、脱敏证据、发现、责任边界、下一项验证与恢复条件，并明确标出待确认项。不得把方案草案表述成已经部署或验证。

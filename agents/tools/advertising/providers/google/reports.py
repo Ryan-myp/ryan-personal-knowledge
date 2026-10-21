@@ -8,6 +8,7 @@ from agents.agent_harness.core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
+from agents.tools.advertising.shared.domain.reporting import build_report_context
 from ._utils import for_customer
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,9 @@ class GoogleGetReportHandler(ToolHandler):
                 return ToolResult.ok({
                     "report": report,
                     "summary": self._summarize_report(report),
+                    "report_context": self._build_report_context(
+                        input_data, report, date_range, end_date
+                    ),
                     "data_status": "live",
                 })
             except Exception as e:
@@ -60,6 +64,25 @@ class GoogleGetReportHandler(ToolHandler):
                 "data_status": "offline_no_client",
                 "simulated": True,
             })
+
+    @staticmethod
+    def _build_report_context(
+        input_data: dict,
+        report: list,
+        date_range: str,
+        end_date: Optional[str],
+    ) -> dict:
+        return build_report_context(
+            provider="google-ads",
+            resource_level="campaign",
+            input_data=input_data,
+            rows=report,
+            default_period={
+                "start": date_range,
+                "end": end_date or "TODAY",
+            },
+            default_limit=1000,
+        )
     
     def _summarize_report(self, report: list) -> dict:
         """汇总报表数据"""

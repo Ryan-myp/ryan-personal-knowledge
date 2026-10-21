@@ -21,6 +21,7 @@ from .provider_base import ProviderMethodHandler
 
 
 ArgumentBuilder = Callable[[Any, dict[str, Any]], tuple[tuple[Any, ...], dict[str, Any]]]
+ResultContextBuilder = Callable[[Any, dict[str, Any], Any], dict[str, Any]]
 
 
 def account_from(ctx: Any, data: dict[str, Any], *fields: str) -> str:
@@ -77,6 +78,7 @@ def method_tool(
     max_output_bytes: int = 1_000_000,
     required_permissions: Optional[Iterable[str]] = None,
     readback_tool: Optional[str] = None,
+    result_context_builder: Optional[ResultContextBuilder] = None,
 ) -> tuple[ToolDefinition, ProviderMethodHandler]:
     """Build one provider-owned Tool and its fixed method handler."""
     effect = ToolEffect.WRITE if write else ToolEffect.READ
@@ -129,6 +131,7 @@ def method_tool(
         result_key,
         argument_builder,
         write=write,
+        result_context_builder=result_context_builder,
     )
     return definition, handler
 

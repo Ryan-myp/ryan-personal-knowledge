@@ -62,8 +62,8 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | `ads` 2.4.6；上游 `operating-check` 参考（2026-10-18） | `practices/account-diagnostics` 的通用审计、Google Search Terms/转化、Meta Insights 解读和日/周 HOLD/FIX/TEST/INVESTIGATE 运营检查 | 未注册报表能力对应的审计项、外部抓取流程和固定表现阈值 |
 | `ab-testing` 2.0.1 | `practices/experimentation-design`、Wiki 的实验方法；触发后按需加载实验设计 reference | 上游固定样本量表、统计计算器或自动平台实验执行 |
 | `attribution` 1.1.4 | `practices/measurement-attribution`、Wiki 的归因/增量方法；触发后按需加载对账 reference | 未接入数据源时声称运行 GA4、CRM、MTA 或 MMM |
-| `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约；触发后按需加载事件契约 reference | GA4/GTM/Pixel/CAPI 配置代码、外部集成和未注册的实施 Tool |
-| `aso` 2.0.2 | `practices/app-growth`：商店页与广告主张匹配、页面审查和安装后 cohort 诊断 | 商店爬取、App Store Connect/Google Play Console 修改、固定评分和过时规格 |
+| `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约和转化信号排障；触发后按需加载事件契约与 conversion QA runbook | GA4/GTM/Pixel/CAPI 配置代码、外部集成和未注册的实施 Tool |
+| `aso` 2.0.2 | `practices/app-growth`：商店页与广告主张匹配、经官方只读 Tool 查询公开 iOS 商店元数据、页面审查和安装后 cohort 诊断 | 商店抓取、App Store Connect/Google Play Console 私有数据或修改、把公开评分当作广告/下载/留存表现 |
 | `marketing-loops` 1.4.0 | `practices/ad-growth-operations`：检查频率与动作条件分离、循环契约、跨运行去重需求、失败停止和人工审批 | 将通用定时任务包装成第二套 Runtime、自动调预算/暂停/轮换或跨运行状态能力 |
 | Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
 | Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |

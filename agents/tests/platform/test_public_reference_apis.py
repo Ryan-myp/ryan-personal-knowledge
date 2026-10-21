@@ -81,6 +81,8 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
         "public_research_crossref_search",
         "public_research_arxiv_search",
         "public_trends_hackernews_search",
+        "public_app_research_app_store_search",
+        "public_app_research_app_store_lookup",
     }
     expected_namespaces = {
         "public_weather_lookup": "public-weather",
@@ -91,6 +93,8 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
         "public_research_crossref_search": "public-research",
         "public_research_arxiv_search": "public-research",
         "public_trends_hackernews_search": "public-trends",
+        "public_app_research_app_store_search": "public-app-research",
+        "public_app_research_app_store_lookup": "public-app-research",
     }
     for name, definition in definitions.items():
         assert definition.namespace == expected_namespaces[name]
@@ -134,6 +138,7 @@ def test_public_reference_tools_appear_in_runtime_mcp_category_listing():
             "namespace-public_research",
             "namespace-public_trends",
             "namespace-public_weather",
+            "namespace-public_app_research",
         } <= set(servers)
         assert {
             item["tool_id"]
@@ -143,6 +148,13 @@ def test_public_reference_tools_appear_in_runtime_mcp_category_listing():
             "public_research_arxiv_search",
         }
         assert servers["namespace-public_research"]["source"] == "runtime_registry"
+        assert {
+            item["tool_id"]
+            for item in servers["namespace-public_app_research"]["tools"]
+        } == {
+            "public_app_research_app_store_search",
+            "public_app_research_app_store_lookup",
+        }
     finally:
         runtime.close(wait=True)
 
@@ -483,3 +495,151 @@ def test_hackernews_search_filters_to_stories_and_projects_safe_fields():
     assert result.data["results"][0]["discussion_url"].endswith("/item?id=123")
     assert "private" not in repr(result.data)
     assert calls[0][1]["params"]["tags"] == "story"
+
+
+def test_app_store_search_is_bounded_read_only_and_returns_curated_metadata():
+    response = FakeResponse({
+        "resultCount": 1,
+        "results": [{
+            "trackId": 12345,
+            "trackName": "Sample Finance",
+            "artistName": "Example Studio",
+            "sellerName": "Example LLC",
+            "bundleId": "com.example.sample",
+            "description": "<p>Learn &amp; grow with this app.</p>",
+            "primaryGenreName": "Finance",
+            "price": 0,
+            "currency": "USD",
+            "averageUserRating": 4.2,
+            "userRatingCount": 92,
+            "version": "2.4",
+            "currentVersionReleaseDate": "2026-10-20T10:00:00Z",
+            "releaseNotes": "<p>Fix &amp; improve.</p>",
+            "trackViewUrl": "https://apps.apple.com/us/app/sample/id12345",
+            "artworkUrl100": "https://example.com/artwork.jpg",
+            "access_token": "must-not-leak",
+        }],
+    })
+    calls = []
+    source, bindings = _source_bindings(
+        public_research_tool_source,
+        lambda url, **kwargs: calls.append((url, kwargs)) or response,
+    )
+    binding = bindings["public_app_research_app_store_search"]
+    definition = binding.definition
+    result = _execute(binding, {
+        "query": "budget planner",
+        "country": "ca",
+        "limit": 3,
+    })
+
+    assert source.source_id == "agent-platform:public-research"
+    assert result.success is True
+    assert result.data["source"] == "Apple App Store Search API"
+    assert result.data["data_status"] == "live_external"
+    assert result.data["country"] == "CA"
+    assert result.data["count"] == 1
+    assert result.data["results"][0] == {
+        "app_id": 12345,
+        "name": "Sample Finance",
+        "developer": "Example Studio",
+        "seller": "Example LLC",
+        "bundle_id": "com.example.sample",
+        "description": "Learn & grow with this app.",
+        "genre": "Finance",
+        "price": 0,
+        "currency": "USD",
+        "average_rating": 4.2,
+        "rating_count": 92,
+        "version": "2.4",
+        "version_updated_at": "2026-10-20T10:00:00Z",
+        "release_notes": "Fix & improve.",
+        "store_url": "https://apps.apple.com/us/app/sample/id12345",
+    }
+    assert "artwork" not in repr(result.data).lower()
+    assert "must-not-leak" not in repr(result.data)
+    assert calls[0][0] == "https://itunes.apple.com/search"
+    assert calls[0][1]["params"] == {
+        "term": "budget planner",
+        "entity": "software",
+        "country": "ca",
+        "limit": 3,
+    }
+    assert calls[0][1]["allow_redirects"] is False
+    assert definition.namespace == "public-app-research"
+    assert definition.effect_class is ToolEffect.READ
+    assert definition.replay_policy is ReplayPolicy.SAFE
+    assert definition.required_permissions == ["ads.read"]
+    assert definition.input_schema.additional_properties is False
+
+
+def test_app_store_search_rejects_invalid_country_and_malformed_results():
+    calls = []
+    response = FakeResponse({"resultCount": 0, "results": []})
+    _, bindings = _source_bindings(
+        public_research_tool_source,
+        lambda url, **kwargs: calls.append((url, kwargs)) or response,
+    )
+    binding = bindings["public_app_research_app_store_search"]
+
+    invalid_country = _execute(binding, {
+        "query": "finance",
+        "country": "USA",
+    })
+    assert invalid_country.success is False
+    assert calls == []
+
+    invalid_limit = _execute(binding, {
+        "query": "finance",
+        "limit": 6,
+    })
+    assert invalid_limit.success is False
+    assert calls == []
+
+    binding.executor._client._request_get = (
+        lambda *_args, **_kwargs: FakeResponse({"results": "invalid"})
+    )
+    malformed_response = _execute(binding, {"query": "finance"})
+    assert malformed_response.success is False
+    assert "不支持的数据结构" in malformed_response.error
+
+
+def test_app_store_lookup_requires_one_identifier_and_queries_by_bundle_id():
+    response = FakeResponse({
+        "resultCount": 1,
+        "results": [{
+            "trackId": 12345,
+            "trackName": "Sample Finance",
+            "bundleId": "com.example.sample",
+            "trackViewUrl": "https://apps.apple.com/us/app/sample/id12345",
+        }],
+    })
+    calls = []
+    _, bindings = _source_bindings(
+        public_research_tool_source,
+        lambda url, **kwargs: calls.append((url, kwargs)) or response,
+    )
+    binding = bindings["public_app_research_app_store_lookup"]
+
+    missing_identifier = _execute(binding, {"country": "us"})
+    assert missing_identifier.success is False
+    assert calls == []
+
+    both_identifiers = _execute(binding, {
+        "app_id": "12345",
+        "bundle_id": "com.example.sample",
+    })
+    assert both_identifiers.success is False
+    assert calls == []
+
+    result = _execute(binding, {
+        "bundle_id": "com.example.sample",
+        "country": "GB",
+    })
+    assert result.success is True
+    assert result.data["results"][0]["app_id"] == 12345
+    assert calls[0][0] == "https://itunes.apple.com/lookup"
+    assert calls[0][1]["params"] == {
+        "bundleId": "com.example.sample",
+        "country": "gb",
+    }

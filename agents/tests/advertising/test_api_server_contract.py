@@ -2472,7 +2472,7 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         "agent-platform", "advertising", "meta", "google-ads", "tiktok", "dv360",
         "creative-media", "public-calendar", "public-economics", "public-finance",
         "public-environment", "public-knowledge", "public-research", "public-trends",
-        "public-weather",
+        "public-weather", "public-app-research",
     }
     definitions = runtime.registry.list_all()
     assert len(definitions) >= 128
@@ -2492,6 +2492,8 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         "public_research_crossref_search",
         "public_research_arxiv_search",
         "public_trends_hackernews_search",
+        "public_app_research_app_store_search",
+        "public_app_research_app_store_lookup",
     } <= {definition.name for definition in definitions}
     assert "creative.generate" in runtime._granted_permissions
     assert "creative-production" in runtime._composition.skill_loader.list_all()

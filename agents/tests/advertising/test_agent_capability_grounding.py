@@ -362,7 +362,7 @@ def test_registered_provider_capabilities_fit_default_catalog_budget():
             TurnRequest(user_input="你好，你有什么能力？")
         )
 
-        assert len(runtime.registry.list_all()) == 306
+        assert len(runtime.registry.list_all()) == 310
         assert len(catalog) <= 9_000
         assert "[catalog truncated;" not in catalog
         assert all(

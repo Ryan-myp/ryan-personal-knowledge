@@ -55,6 +55,7 @@ from .parameters import (
 )
 from agents.tools.advertising.clients.google_ads_client import GoogleAdsAPIClient
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
+from agents.tools.advertising.shared.domain.reporting import build_report_context
 from ..update_contracts import google_updates
 
 logger = logging.getLogger(__name__)
@@ -377,6 +378,10 @@ class GoogleToolSource(BaseProviderToolSource):
         "graduate_experiment": ["google_graduate_experiment"],
         "promote_experiment": ["google_promote_experiment"],
         "get_campaign_report": ["google_get_campaign_report"], "get_adgroup_report": ["google_get_adgroup_report"],
+        "get_ad_report": ["google_get_ad_report"],
+        "get_ad_asset_report": ["google_get_ad_asset_report"],
+        "get_asset_group_asset_report": ["google_get_asset_group_asset_report"],
+        "generate_keyword_ideas": ["google_generate_keyword_ideas"],
         "list_customer_conversion_goals": ["google_list_customer_conversion_goals"],
         "update_customer_conversion_goal": ["google_update_customer_conversion_goal"],
         "list_campaign_conversion_goals": ["google_list_campaign_conversion_goals"],
@@ -1656,6 +1661,225 @@ class GoogleToolSource(BaseProviderToolSource):
                     "adgroup_ids": data.get("adgroup_ids"), "date_from": data.get("date_from", "LAST_30_DAYS"),
                     "date_to": data.get("date_to", "TODAY"),
                     **({"limit": data["limit"]} if "limit" in data else {}),
+                }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="google-ads",
+                    resource_level="ad_group",
+                    input_data=data,
+                    rows=rows,
+                    default_period={"start": "LAST_30_DAYS", "end": "TODAY"},
+                    default_limit=1000,
+                ),
+            ),
+            method_tool(
+                namespace="google-ads", skill="google-ads-api-expert",
+                name="google_get_ad_report",
+                description="查询 Google Ads Ad 级逐日表现；必须指定 Campaign，可选限定 Ad Group、Ad 和日期范围。",
+                method_name="get_ad_report", result_key="report",
+                properties={
+                    "campaign_id": {
+                        "type": "string", "pattern": "^[0-9]+$",
+                        "description": "必填 Campaign ID，用于限制报表范围",
+                    },
+                    "ad_group_ids": {
+                        "type": "array", "maxItems": 100,
+                        "items": {"type": "string", "pattern": "^[0-9]+$"},
+                    },
+                    "ad_ids": {
+                        "type": "array", "maxItems": 100,
+                        "items": {"type": "string", "pattern": "^[0-9]+$"},
+                    },
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                    },
+                },
+                required=["campaign_id"], action="report", resource_type="ad",
+                intent_types=["get_ad_report"],
+                traits=["read", "report", "ad"],
+                integration_api_version="v24",
+                related_resource_type="campaign",
+                related_resource_id_fields=["campaign_id"],
+                result_items_key="report",
+                max_output_bytes=1_000_000,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
+                    "ad_group_ids": data.get("ad_group_ids"),
+                    "ad_ids": data.get("ad_ids"),
+                    "date_from": data.get("date_from", "LAST_30_DAYS"),
+                    "date_to": data.get("date_to", "TODAY"),
+                    "limit": data.get("limit", 1000),
+                }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="google-ads",
+                    resource_level="ad",
+                    input_data=data,
+                    rows=rows,
+                    default_period={"start": "LAST_30_DAYS", "end": "TODAY"},
+                    default_limit=1000,
+                ),
+            ),
+            method_tool(
+                namespace="google-ads", skill="google-ads-api-expert",
+                name="google_get_ad_asset_report",
+                description=(
+                    "查询 Google Ads 广告关联素材的逐日表现和素材类型；"
+                    "Campaign 必填，可选限定 Ad Group、Ad 与日期范围。"
+                    "仅适用于 API 支持的广告素材报告资源。"
+                ),
+                method_name="get_ad_asset_report", result_key="report",
+                properties={
+                    "campaign_id": {
+                        "type": "string", "pattern": "^[0-9]+$",
+                        "description": "必填 Campaign ID，用于限制报表范围",
+                    },
+                    "ad_group_ids": {
+                        "type": "array", "maxItems": 100,
+                        "items": {"type": "string", "pattern": "^[0-9]+$"},
+                    },
+                    "ad_ids": {
+                        "type": "array", "maxItems": 100,
+                        "items": {"type": "string", "pattern": "^[0-9]+$"},
+                    },
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                    },
+                },
+                required=["campaign_id"], action="report", resource_type="asset",
+                intent_types=["get_ad_asset_report"],
+                intent_aliases=["Google 广告素材报表", "Google 素材表现", "广告素材效果"],
+                traits=["read", "report", "asset", "creative"],
+                integration_api_version="v24",
+                related_resource_type="campaign",
+                related_resource_id_fields=["campaign_id"],
+                result_items_key="report",
+                max_output_bytes=1_000_000,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
+                    "ad_group_ids": data.get("ad_group_ids"),
+                    "ad_ids": data.get("ad_ids"),
+                    "date_from": data.get("date_from", "LAST_30_DAYS"),
+                    "date_to": data.get("date_to", "TODAY"),
+                    "limit": data.get("limit", 1000),
+                }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="google-ads",
+                    resource_level="asset",
+                    input_data=data,
+                    rows=rows,
+                    default_period={"start": "LAST_30_DAYS", "end": "TODAY"},
+                    default_limit=1000,
+                ),
+            ),
+            method_tool(
+                namespace="google-ads", skill="google-ads-api-expert",
+                name="google_get_asset_group_asset_report",
+                description=(
+                    "查询 Google Performance Max Asset Group 素材的逐日转化表现；"
+                    "Campaign 必填，可选限定 Asset Group、素材字段类型与日期范围。"
+                ),
+                method_name="get_asset_group_asset_report", result_key="report",
+                properties={
+                    "campaign_id": {
+                        "type": "string", "pattern": "^[0-9]+$",
+                        "description": "必填 Performance Max Campaign ID",
+                    },
+                    "asset_group_ids": {
+                        "type": "array", "maxItems": 100,
+                        "items": {"type": "string", "pattern": "^[0-9]+$"},
+                    },
+                    "field_types": {
+                        "type": "array", "maxItems": 100,
+                        "items": {
+                            "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                        },
+                        "description": "可选 Asset Group 素材字段类型，例如 HEADLINE、MARKETING_IMAGE",
+                    },
+                    "date_from": {"type": "string"},
+                    "date_to": {"type": "string"},
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 10000,
+                    },
+                },
+                required=["campaign_id"], action="report", resource_type="asset_group_asset",
+                intent_types=["get_asset_group_asset_report"],
+                intent_aliases=["PMax 素材报表", "Performance Max 素材表现", "资产组素材效果"],
+                traits=["read", "report", "asset", "asset_group_asset", "pmax", "creative"],
+                integration_api_version="v24",
+                related_resource_type="campaign",
+                related_resource_id_fields=["campaign_id"],
+                result_items_key="report",
+                max_output_bytes=1_000_000,
+                argument_builder=lambda _ctx, data: ((data["campaign_id"],), {
+                    "asset_group_ids": data.get("asset_group_ids"),
+                    "field_types": data.get("field_types"),
+                    "date_from": data.get("date_from", "LAST_30_DAYS"),
+                    "date_to": data.get("date_to", "TODAY"),
+                    "limit": data.get("limit", 1000),
+                }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="google-ads",
+                    resource_level="asset_group_asset",
+                    input_data=data,
+                    rows=rows,
+                    default_period={"start": "LAST_30_DAYS", "end": "TODAY"},
+                    default_limit=1000,
+                ),
+            ),
+            method_tool(
+                namespace="google-ads", skill="google-ads-api-expert",
+                name="google_generate_keyword_ideas",
+                description="使用当前 Google Ads 账户查询 Keyword Planner 关键词建议与历史搜索量；只读，不创建关键词或 Campaign。",
+                method_name="generate_keyword_ideas", result_key="keyword_ideas",
+                properties={
+                    "keywords": {
+                        "type": "array", "minItems": 1, "maxItems": 20,
+                        "items": {"type": "string", "minLength": 1, "maxLength": 200},
+                        "description": "1-20 个关键词种子",
+                    },
+                    "geo_target_constants": {
+                        "type": "array", "maxItems": 10,
+                        "items": {
+                            "type": "string",
+                            "pattern": "^geoTargetConstants/[0-9]+$",
+                        },
+                        "description": "可选地理资源名，例如 geoTargetConstants/2840",
+                    },
+                    "language": {
+                        "type": "string",
+                        "pattern": "^languageConstants/[0-9]+$",
+                        "description": "可选语言资源名",
+                    },
+                    "url": {
+                        "type": "string", "maxLength": 2048,
+                        "pattern": r"https?://\S+",
+                        "description": "可选落地页，用于组合关键词与网址种子",
+                    },
+                    "network": {
+                        "type": "string",
+                        "enum": ["GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"],
+                    },
+                    "limit": {
+                        "type": "integer", "minimum": 1, "maximum": 1000,
+                    },
+                    "page_token": {
+                        "type": "string", "maxLength": 4096,
+                    },
+                },
+                required=["keywords"], action="search", resource_type="keyword_idea",
+                intent_types=["generate_keyword_ideas"],
+                intent_aliases=["Google 关键词规划", "Google 关键词建议", "关键词搜索量"],
+                traits=["read", "keyword_research", "keyword_planner"],
+                integration_api_version="v24",
+                max_output_bytes=1_000_000,
+                argument_builder=lambda _ctx, data: ((data["keywords"],), {
+                    "geo_target_constants": data.get("geo_target_constants"),
+                    "language": data.get("language"),
+                    "url": data.get("url"),
+                    "network": data.get("network", "GOOGLE_SEARCH"),
+                    "limit": data.get("limit", 100),
+                    "page_token": data.get("page_token"),
                 }),
             ),
         ]

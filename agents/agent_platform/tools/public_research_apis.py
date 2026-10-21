@@ -8,7 +8,7 @@ from typing import Any, Callable, Mapping
 from urllib.parse import quote, urlencode
 
 from agents.agent_harness import StaticToolSource, ToolBinding
-from agents.agent_harness.core.interfaces import ToolDefinition, ToolResult
+from agents.agent_harness.core.interfaces import ToolDefinition, ToolResult, ToolSchema
 from agents.agent_platform.tools.public_data import (
     _PublicDataError,
     _PublicDataExecutor,
@@ -35,6 +35,10 @@ _ATOM_NS = "{http://www.w3.org/2005/Atom}"
 _ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 _DOI = re.compile(r"^10\.\d{4,9}/\S+$", re.IGNORECASE)
 _OPEN_LIBRARY_WORK = re.compile(r"^/works/OL\d+W$")
+_APP_STORE_COUNTRY = re.compile(r"^[a-z]{2}$", re.IGNORECASE)
+_APP_STORE_ID = re.compile(r"^[1-9][0-9]{0,19}$")
+_APP_BUNDLE_ID = re.compile(r"^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+_APP_STORE_MAX_RESULTS = 5
 
 
 class _WikipediaExecutor(_PublicDataExecutor):
@@ -480,6 +484,253 @@ def _open_library_definition(permission: str) -> ToolDefinition:
     return tool_definition(spec, permission)
 
 
+class _AppStoreSearchExecutor(_PublicDataExecutor):
+    def execute(self, _context: Any, arguments: dict[str, Any]) -> ToolResult:
+        try:
+            query = validate_query(arguments.get("query"))
+            country = str(arguments.get("country") or "US").strip().lower()
+            if not _APP_STORE_COUNTRY.fullmatch(country):
+                raise _PublicDataError(
+                    "country 必须是 ISO 3166-1 alpha-2 两位国家代码"
+                )
+            limit = arguments.get("limit", 5)
+            if (
+                isinstance(limit, bool)
+                or not isinstance(limit, int)
+                or limit < 1
+                or limit > _APP_STORE_MAX_RESULTS
+            ):
+                raise _PublicDataError(
+                    f"结果数量需在 1 至 {_APP_STORE_MAX_RESULTS} 之间"
+                )
+            params = {
+                "term": query,
+                "entity": "software",
+                "country": country,
+                "limit": limit,
+            }
+            payload = self._fetch(params)
+            raw_results = (
+                payload.get("results")
+                if isinstance(payload, Mapping) else None
+            )
+            if not isinstance(raw_results, list):
+                raise _PublicDataError(
+                    "Apple App Store Search API 返回了不支持的数据结构"
+                )
+            results = [
+                app
+                for item in raw_results[:limit]
+                if isinstance(item, Mapping)
+                if (app := _project_app_store_result(item)) is not None
+            ]
+            source_url = f"{self._endpoint}?{urlencode(params)}"
+            return ToolResult.ok(result_metadata(
+                source="Apple App Store Search API",
+                source_url=source_url,
+                data={
+                    "query": query,
+                    "country": country.upper(),
+                    "count": len(results),
+                    "result_count_total": number(
+                        payload.get("resultCount"), integer=True
+                    ),
+                    "results": results,
+                },
+            ))
+        except (TypeError, ValueError, OverflowError) as error:
+            return self._error(error)
+
+
+class _AppStoreLookupExecutor(_PublicDataExecutor):
+    def execute(self, _context: Any, arguments: dict[str, Any]) -> ToolResult:
+        try:
+            app_id = arguments.get("app_id")
+            bundle_id = arguments.get("bundle_id")
+            has_app_id = app_id not in (None, "")
+            has_bundle_id = bundle_id not in (None, "")
+            if has_app_id == has_bundle_id:
+                raise _PublicDataError(
+                    "app_id 与 bundle_id 必须且只能提供一个"
+                )
+            params: dict[str, Any]
+            if has_app_id:
+                if (
+                    not isinstance(app_id, str)
+                    or not _APP_STORE_ID.fullmatch(app_id.strip())
+                ):
+                    raise _PublicDataError("app_id 必须是纯数字 App Store ID")
+                params = {"id": app_id.strip()}
+                lookup_value = app_id.strip()
+                lookup_type = "app_id"
+            else:
+                if (
+                    not isinstance(bundle_id, str)
+                    or len(bundle_id.strip()) > 200
+                    or not _APP_BUNDLE_ID.fullmatch(bundle_id.strip())
+                ):
+                    raise _PublicDataError("bundle_id 格式无效")
+                params = {"bundleId": bundle_id.strip()}
+                lookup_value = bundle_id.strip()
+                lookup_type = "bundle_id"
+            country = str(arguments.get("country") or "US").strip().lower()
+            if not _APP_STORE_COUNTRY.fullmatch(country):
+                raise _PublicDataError(
+                    "country 必须是 ISO 3166-1 alpha-2 两位国家代码"
+                )
+            params["country"] = country
+            payload = self._fetch(params)
+            raw_results = (
+                payload.get("results")
+                if isinstance(payload, Mapping) else None
+            )
+            if not isinstance(raw_results, list):
+                raise _PublicDataError(
+                    "Apple App Store Search API 返回了不支持的数据结构"
+                )
+            results = [
+                app
+                for item in raw_results[:1]
+                if isinstance(item, Mapping)
+                if (app := _project_app_store_result(item)) is not None
+            ]
+            return ToolResult.ok(result_metadata(
+                source="Apple App Store Search API",
+                source_url=f"{self._endpoint}?{urlencode(params)}",
+                data={
+                    "lookup_type": lookup_type,
+                    "lookup_value": lookup_value,
+                    "country": country.upper(),
+                    "count": len(results),
+                    "results": results,
+                },
+            ))
+        except (TypeError, ValueError, OverflowError) as error:
+            return self._error(error)
+
+
+def _project_app_store_result(
+    item: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    raw_app_id = item.get("trackId")
+    if isinstance(raw_app_id, bool):
+        return None
+    if isinstance(raw_app_id, int):
+        app_id = raw_app_id
+    elif isinstance(raw_app_id, str) and _APP_STORE_ID.fullmatch(raw_app_id):
+        app_id = int(raw_app_id)
+    else:
+        return None
+    name = clean_text(item.get("trackName"), 300)
+    if app_id <= 0 or not name:
+        return None
+    return {
+        "app_id": app_id,
+        "name": name,
+        "developer": clean_text(item.get("artistName"), 200),
+        "seller": clean_text(item.get("sellerName"), 200),
+        "bundle_id": clean_text(item.get("bundleId"), 200),
+        "description": clean_text(item.get("description"), 1800),
+        "genre": clean_text(item.get("primaryGenreName"), 100),
+        "price": number(item.get("price")),
+        "currency": clean_text(item.get("currency"), 3).upper(),
+        "average_rating": number(item.get("averageUserRating")),
+        "rating_count": number(item.get("userRatingCount"), integer=True),
+        "version": clean_text(item.get("version"), 80),
+        "version_updated_at": clean_text(
+            item.get("currentVersionReleaseDate"), 40
+        ),
+        "release_notes": clean_text(item.get("releaseNotes"), 1000),
+        "store_url": safe_https_url(item.get("trackViewUrl")),
+    }
+
+
+def _app_store_definition(permission: str) -> ToolDefinition:
+    spec = _PublicDataToolSpec(
+        name="public_app_research_app_store_search",
+        skill="app-growth",
+        namespace="public_app_research",
+        description=(
+            "Search Apple's public App Store catalog by term and country. "
+            "Returns bounded app listing metadata for iOS store positioning "
+            "and ASO research. It does not return ad-library data, campaign "
+            "performance, Android listings, or private app analytics."
+        ),
+        action="search",
+        resource_type="app_store_listing",
+        intent_type="app_store_market_research",
+        intent_aliases=(
+            "搜索 App Store 应用",
+            "查 iOS 竞品应用",
+            "查询应用商店竞品",
+            "App Store competitor research",
+            "iOS app listing research",
+        ),
+        schema=_schema({
+            "query": string_schema("App name, category, or search phrase"),
+            "country": {
+                "type": "string",
+                "pattern": "^[A-Za-z]{2}$",
+                "description": "ISO 3166-1 alpha-2 country code; defaults to US",
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": _APP_STORE_MAX_RESULTS,
+                "default": _APP_STORE_MAX_RESULTS,
+            },
+        }, ["query"]),
+        result_items_key="results",
+    )
+    return tool_definition(spec, permission)
+
+
+def _app_store_lookup_definition(permission: str) -> ToolDefinition:
+    spec = _PublicDataToolSpec(
+        name="public_app_research_app_store_lookup",
+        skill="app-growth",
+        namespace="public_app_research",
+        description=(
+            "Look up one public Apple App Store listing by its exact numeric "
+            "App Store ID or Bundle ID and country. Returns curated listing "
+            "metadata only, not ad performance or private analytics."
+        ),
+        action="get",
+        resource_type="app_store_listing",
+        intent_type="app_store_listing_lookup",
+        intent_aliases=(
+            "按 Bundle ID 查 App Store 应用",
+            "按 App Store ID 查应用",
+            "查询指定 iOS 应用商店信息",
+            "look up an App Store listing",
+        ),
+        schema=ToolSchema(
+            properties={
+                "app_id": {
+                    "type": "string",
+                    "pattern": "^[1-9][0-9]{0,19}$",
+                    "description": "Numeric Apple App Store ID",
+                },
+                "bundle_id": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "pattern": "^[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+$",
+                    "description": "Reverse-domain app Bundle ID",
+                },
+                "country": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z]{2}$",
+                    "description": "ISO 3166-1 alpha-2 country code; defaults to US",
+                },
+            },
+            requires_exactly_one_of=[["app_id", "bundle_id"]],
+            additional_properties=False,
+        ),
+        result_items_key="results",
+    )
+    return tool_definition(spec, permission)
+
+
 class _HackerNewsExecutor(_PublicDataExecutor):
     def execute(self, _context: Any, arguments: dict[str, Any]) -> ToolResult:
         try:
@@ -598,6 +849,22 @@ def _research_bindings(
                 client,
                 api_name="Open Library",
                 endpoint="https://openlibrary.org/search.json",
+            ),
+        ),
+        ToolBinding(
+            _app_store_definition(permission),
+            _AppStoreSearchExecutor(
+                client,
+                api_name="Apple App Store",
+                endpoint="https://itunes.apple.com/search",
+            ),
+        ),
+        ToolBinding(
+            _app_store_lookup_definition(permission),
+            _AppStoreLookupExecutor(
+                client,
+                api_name="Apple App Store",
+                endpoint="https://itunes.apple.com/lookup",
             ),
         ),
         ToolBinding(

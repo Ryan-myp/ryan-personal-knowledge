@@ -9,16 +9,16 @@ subcategory: conversion-signal-quality-operations
 platform: all
 source: 跨平台转化测量和数据质量方法论
 source_ref: "internal://ad-agent/playbook/conversion-signal-quality-operations"
-version: "1.0.0"
+version: "1.1.0"
 confidence: 0.9
-updated_at: "2026-10-19"
+updated_at: "2026-10-21"
 tags: [conversion, event-quality, CRM, offline-conversion, deduplication, privacy, attribution, diagnostics]
 status: published
 wiki_type: concept
 source_kind: internal
 authority: operator
 evidence_level: provisional
-last_verified_at: "2026-10-19"
+last_verified_at: "2026-10-21"
 ---
 
 # 广告转化信号质量、CRM 回传与排障
@@ -80,11 +80,24 @@ last_verified_at: "2026-10-19"
 
 ## 上线验收与恢复
 
-**上线前**：验证事件定义、生产/测试隔离、时区/币种、去重 ID、同意处理、目标事件映射和数据访问权限。用少量受控记录走完整链路，确认每个状态都能观察。
+采用阶段化验收，分别记录 `pass`、`fail` 或 `unknown`，不要用单个“事件正常”概括整条链路：
+
+| 阶段 | 验收证据 | 典型失败 |
+|---|---|---|
+| 业务触发 | 可重复测试步骤、预期事件数、业务对象状态 | 刷新/回退重复触发，触发条件缺失 |
+| 客户端/服务端捕获 | 测试流量标记、必需字段存在、同意状态 | Tag/SDK 未触发、字段类型错误、请求被拦 |
+| 传输与平台接收 | 脱敏后的回执状态、错误分类、批次/测试 ID | schema、权限或网络拒绝 |
+| 去重与匹配 | 稳定事件键行为、平台聚合去重/匹配状态 | client/server event key 不一致或误复用 |
+| 归因 | 事件映射、交互关联、窗口与账户设置 | click/link 标识丢失或窗口不匹配 |
+| 报表与业务对账 | 查询契约、时区、刷新时间、成熟度、CRM/订单计数 | 回补延迟、退款口径、测试数据混入 |
+
+**上线前**：验证事件定义、生产/测试隔离、时区/币种、去重 ID、同意处理、目标事件映射和数据访问权限。用少量受控记录走完整链路，确认每个状态都能观察。测试事件的发送成功不能推断生产事件已归因或进入优化。
 
 **上线后**：对比业务源与平台接收的聚合数量，监控重复率、拒绝率、迟到分布、空值、异常价值和 CRM 质量；按平台的报告窗口等待成熟。
 
-**发生异常**：冻结基于坏信号的自动优化；保留失败批次和错误分类；修复源数据或映射；用去重键重放受影响范围；readback 结果；确认没有重复计数后恢复策略。未知是否写入成功时，不盲目重复上传。
+**发生异常**：找到证据链的第一个失败阶段，冻结依赖坏信号的自动优化；记录脱敏错误分类；先检查权限/字段，再检查幂等与部分成功状态；仅修复受影响范围，回读下游状态，并确认没有重复计数后恢复策略。未知是否写入成功时，不盲目重复上传。
+
+排查材料只保留聚合计数、字段校验状态、受控资源/批次 ID 和错误类别。不要要求用户在对话中粘贴 access token、明文邮箱/电话、设备标识或未脱敏的用户级事件 payload。
 
 ## 决策输出边界
 

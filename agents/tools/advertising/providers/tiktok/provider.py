@@ -35,6 +35,7 @@ from .reference import (
 )
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
+from agents.tools.advertising.shared.domain.reporting import build_report_context
 from .parameters import (
     tiktok_campaign_schema,
     tiktok_adgroup_schema,
@@ -1144,6 +1145,14 @@ class TikTokToolSource(BaseProviderToolSource):
                     "adgroup_ids": data.get("adgroup_ids"), "time_range": data.get("date_range"),
                     **({"limit": data["limit"]} if "limit" in data else {}),
                 }),
+                result_context_builder=lambda _ctx, data, rows: build_report_context(
+                    provider="tiktok",
+                    resource_level="ad_group",
+                    input_data=data,
+                    rows=rows,
+                    default_period="LAST_7_DAYS",
+                    default_limit=100,
+                ),
             ),
             method_tool(
                 namespace="tiktok", skill="tiktok-ads-api-expert", name="tiktok_get_report",

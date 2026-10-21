@@ -1,5 +1,5 @@
 {
-  "digest": "efec2b4ee802873517e063c85a8201b69ccb4a836c988583acbda9c8a7254f89",
+  "digest": "45be088d6a14d2f760aa1e0c06b52393ebb341cfa275b5a0b9f3206af3375a36",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -3197,8 +3197,8 @@
       ]
     },
     "google-ads": {
-      "digest": "31db1cf70e2ea34ef17cffbfd15e6972a62eb941962687a7fd781836eccd8c1a",
-      "tool_count": 107,
+      "digest": "11e8507dbe090bf607eda74ce29180990dcd9f9b2b1bbd7eb208be750fe3c0af",
+      "tool_count": 111,
       "tools": [
         {
           "action": "get",
@@ -13513,6 +13513,115 @@
           ]
         },
         {
+          "action": "search",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "097075f70f73710213821a9ebcaf62bdfbbb6ab0db7a490ffd9dc13f60b3fc22",
+          "contract_version": "1.5.0",
+          "description": "使用当前 Google Ads 账户查询 Keyword Planner 关键词建议与历史搜索量；只读，不创建关键词或 Campaign。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "geo_target_constants": {
+                "description": "可选地理资源名，例如 geoTargetConstants/2840",
+                "items": {
+                  "pattern": "^geoTargetConstants/[0-9]+$",
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array"
+              },
+              "keywords": {
+                "description": "1-20 个关键词种子",
+                "items": {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "minItems": 1,
+                "type": "array"
+              },
+              "language": {
+                "description": "可选语言资源名",
+                "pattern": "^languageConstants/[0-9]+$",
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "network": {
+                "enum": [
+                  "GOOGLE_SEARCH",
+                  "GOOGLE_SEARCH_AND_PARTNERS"
+                ],
+                "type": "string"
+              },
+              "page_token": {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              "url": {
+                "description": "可选落地页，用于组合关键词与网址种子",
+                "maxLength": 2048,
+                "pattern": "https?://\\S+",
+                "type": "string"
+              }
+            },
+            "required": [
+              "keywords"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [
+            "Google 关键词规划",
+            "Google 关键词建议",
+            "关键词搜索量"
+          ],
+          "intent_types": [
+            "generate_keyword_ideas"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_generate_keyword_ideas",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "keyword_idea",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "keyword_research",
+            "keyword_planner"
+          ]
+        },
+        {
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
@@ -13616,6 +13725,116 @@
           ]
         },
         {
+          "action": "report",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "d6ef3f7a46407ed26708f2d91b0b50c0e8e313de93aea3b32296d5cf554b9a9f",
+          "contract_version": "1.5.0",
+          "description": "查询 Google Ads 广告关联素材的逐日表现和素材类型；Campaign 必填，可选限定 Ad Group、Ad 与日期范围。仅适用于 API 支持的广告素材报告资源。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_ids": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "ad_ids": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "campaign_id": {
+                "description": "必填 Campaign ID，用于限制报表范围",
+                "lookup_query_field": "campaign_id",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "google_list_campaigns",
+                "pattern": "^[0-9]+$",
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "date_from": {
+                "type": "string"
+              },
+              "date_to": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "campaign_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [
+            "Google 广告素材报表",
+            "Google 素材表现",
+            "广告素材效果"
+          ],
+          "intent_types": [
+            "get_ad_asset_report"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_ad_asset_report",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [
+            "campaign_id"
+          ],
+          "related_resource_type": "campaign",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset",
+          "result_id_fields": [],
+          "result_items_key": "report",
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "report",
+            "asset",
+            "creative"
+          ]
+        },
+        {
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
@@ -13709,6 +13928,111 @@
           "traits": [
             "read",
             "ad_group"
+          ]
+        },
+        {
+          "action": "report",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "d6ef3f7a46407ed26708f2d91b0b50c0e8e313de93aea3b32296d5cf554b9a9f",
+          "contract_version": "1.5.0",
+          "description": "查询 Google Ads Ad 级逐日表现；必须指定 Campaign，可选限定 Ad Group、Ad 和日期范围。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "ad_group_ids": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "ad_ids": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "campaign_id": {
+                "description": "必填 Campaign ID，用于限制报表范围",
+                "lookup_query_field": "campaign_id",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "google_list_campaigns",
+                "pattern": "^[0-9]+$",
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "date_from": {
+                "type": "string"
+              },
+              "date_to": {
+                "type": "string"
+              },
+              "limit": {
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "campaign_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [],
+          "intent_types": [
+            "get_ad_report"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_ad_report",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [
+            "campaign_id"
+          ],
+          "related_resource_type": "campaign",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "ad",
+          "result_id_fields": [],
+          "result_items_key": "report",
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "report",
+            "ad"
           ]
         },
         {
@@ -13983,6 +14307,119 @@
           "traits": [
             "read",
             "pmax"
+          ]
+        },
+        {
+          "action": "report",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "5b5f2c045e38ff61f1f2de279d2645e7bf3c317ef728a9e3e122f5f607465bf8",
+          "contract_version": "1.5.0",
+          "description": "查询 Google Performance Max Asset Group 素材的逐日转化表现；Campaign 必填，可选限定 Asset Group、素材字段类型与日期范围。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "asset_group_ids": {
+                "items": {
+                  "pattern": "^[0-9]+$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "campaign_id": {
+                "description": "必填 Performance Max Campaign ID",
+                "lookup_query_field": "campaign_id",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "google_list_campaigns",
+                "pattern": "^[0-9]+$",
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "date_from": {
+                "type": "string"
+              },
+              "date_to": {
+                "type": "string"
+              },
+              "field_types": {
+                "description": "可选 Asset Group 素材字段类型，例如 HEADLINE、MARKETING_IMAGE",
+                "items": {
+                  "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              "limit": {
+                "maximum": 10000,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "campaign_id"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [
+            "PMax 素材报表",
+            "Performance Max 素材表现",
+            "资产组素材效果"
+          ],
+          "intent_types": [
+            "get_asset_group_asset_report"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_get_asset_group_asset_report",
+          "namespace": "google-ads",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [
+            "campaign_id"
+          ],
+          "related_resource_type": "campaign",
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "asset_group_asset",
+          "result_id_fields": [],
+          "result_items_key": "report",
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "read",
+            "report",
+            "asset",
+            "asset_group_asset",
+            "pmax",
+            "creative"
           ]
         },
         {
@@ -51259,6 +51696,57 @@
         "status": "implemented"
       },
       {
+        "action": "report",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_ad_report",
+        "provider": "google-ads",
+        "resource": "ad",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_ad_asset_report",
+        "parent_resource": "ad",
+        "provider": "google-ads",
+        "resource": "asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "report",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "get_asset_group_asset_report",
+        "parent_resource": "asset_group",
+        "provider": "google-ads",
+        "resource": "asset_group_asset",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
+        "action": "search",
+        "api_version": "v24",
+        "evidence_level": "code_contract",
+        "execution_status": "dry_run_only",
+        "inventory_scope": "official_resource_operations_baseline",
+        "method": "generate_keyword_ideas",
+        "provider": "google-ads",
+        "provider_operation": "KeywordPlanIdeaService.generateKeywordIdeas",
+        "resource": "keyword_idea",
+        "source_url": "https://developers.google.com/google-ads/api/reference/rpc/v24/overview",
+        "status": "implemented"
+      },
+      {
         "action": "list",
         "api_version": "v24",
         "evidence_level": "code_contract",
@@ -54535,5 +55023,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 316
+  "tool_count": 320
 }

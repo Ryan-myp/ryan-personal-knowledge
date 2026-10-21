@@ -434,7 +434,7 @@ def _init_runtime():
                 ),
                 (
                     "Built-in bounded read-only encyclopedia, book, scholarly "
-                    "research, and trend search Tools"
+                    "research, App Store market research, and trend search Tools"
                 ),
             ),
         )

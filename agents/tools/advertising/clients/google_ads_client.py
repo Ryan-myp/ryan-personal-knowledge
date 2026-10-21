@@ -19,6 +19,7 @@ import threading
 import csv
 import base64
 import hashlib
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime
@@ -5846,6 +5847,376 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """
         
         return self._search_all(query, page_size=limit)
+
+    def get_ad_report(
+        self,
+        campaign_id: str,
+        ad_group_ids: list[str] | None = None,
+        ad_ids: list[str] | None = None,
+        date_from: str = "LAST_30_DAYS",
+        date_to: str = "TODAY",
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Query bounded, daily Ad-level performance under one Campaign."""
+        limit = self._validated_bounded_integer(
+            limit, field_name="report limit", maximum=10_000
+        )
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        where_clauses = [f"campaign.id = {campaign_id}"]
+        for values, field_name, gaql_field in (
+            (ad_group_ids, "ad_group_id", "ad_group.id"),
+            (ad_ids, "ad_id", "ad_group_ad.ad.id"),
+        ):
+            clause = self._report_id_filter(values, field_name, gaql_field)
+            if clause:
+                where_clauses.append(clause)
+        where_clauses.append(self._date_clause(date_from, date_to))
+        query = "\n".join((
+            "SELECT campaign.id, campaign.name, campaign.status,",
+            "       ad_group.id, ad_group.name, ad_group.status,",
+            "       ad_group_ad.ad.id, ad_group_ad.ad.name,",
+            "       ad_group_ad.ad.type, ad_group_ad.status, segments.date,",
+            "       metrics.impressions, metrics.clicks, metrics.cost_micros,",
+            "       metrics.ctr, metrics.average_cpc, metrics.conversions,",
+            "       metrics.cost_per_conversion, metrics.conversions_value",
+            "FROM ad_group_ad",
+            f"WHERE {' AND '.join(where_clauses)}",
+        ))
+        return self._search_all(query, page_size=limit)
+
+    def get_ad_asset_report(
+        self,
+        campaign_id: str,
+        ad_group_ids: list[str] | None = None,
+        ad_ids: list[str] | None = None,
+        date_from: str = "LAST_30_DAYS",
+        date_to: str = "TODAY",
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Query bounded daily asset performance linked to Ads."""
+        limit = self._validated_bounded_integer(
+            limit, field_name="report limit", maximum=10_000
+        )
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        where_clauses = [f"campaign.id = {campaign_id}"]
+        for values, field_name, gaql_field in (
+            (ad_group_ids, "ad_group_id", "ad_group.id"),
+            (ad_ids, "ad_id", "ad_group_ad.ad.id"),
+        ):
+            clause = self._report_id_filter(values, field_name, gaql_field)
+            if clause:
+                where_clauses.append(clause)
+        where_clauses.append(self._date_clause(date_from, date_to))
+        query = "\n".join((
+            "SELECT campaign.id, campaign.name,",
+            "       ad_group.id, ad_group.name,",
+            "       ad_group_ad.ad.id, ad_group_ad.ad.type,",
+            "       ad_group_ad_asset_view.asset,",
+            "       ad_group_ad_asset_view.field_type,",
+            "       ad_group_ad_asset_view.performance_label,",
+            "       asset.id, asset.name, asset.type,",
+            "       asset.text_asset.text, asset.image_asset.full_size.url,",
+            "       asset.youtube_video_asset.youtube_video_id, segments.date,",
+            "       metrics.impressions, metrics.clicks, metrics.cost_micros,",
+            "       metrics.ctr, metrics.average_cpc, metrics.conversions,",
+            "       metrics.conversions_value",
+            "FROM ad_group_ad_asset_view",
+            f"WHERE {' AND '.join(where_clauses)}",
+        ))
+        return self._search_all(query, page_size=limit)
+
+    def get_asset_group_asset_report(
+        self,
+        campaign_id: str,
+        asset_group_ids: list[str] | None = None,
+        field_types: list[str] | None = None,
+        date_from: str = "LAST_30_DAYS",
+        date_to: str = "TODAY",
+        limit: int = 1000,
+    ) -> list[dict[str, Any]]:
+        """Query bounded daily Performance Max Asset Group asset rows."""
+        limit = self._validated_bounded_integer(
+            limit, field_name="report limit", maximum=10_000
+        )
+        campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        where_clauses = [f"campaign.id = {campaign_id}"]
+        asset_group_filter = self._report_id_filter(
+            asset_group_ids, "asset_group_id", "asset_group.id"
+        )
+        if asset_group_filter:
+            where_clauses.append(asset_group_filter)
+        field_type_filter = self._report_enum_filter(
+            field_types, "field_types", "asset_group_asset.field_type"
+        )
+        if field_type_filter:
+            where_clauses.append(field_type_filter)
+        where_clauses.append(self._date_clause(date_from, date_to))
+        query = "\n".join((
+            "SELECT campaign.id, campaign.name,",
+            "       asset_group.id, asset_group.name,",
+            "       asset_group_asset.resource_name, asset_group_asset.asset,",
+            "       asset_group_asset.field_type, asset_group_asset.status,",
+            "       asset_group_asset.primary_status,",
+            "       asset.id, asset.name, asset.type,",
+            "       asset.text_asset.text, asset.image_asset.full_size.url,",
+            "       asset.youtube_video_asset.youtube_video_id, segments.date,",
+            "       metrics.conversions, metrics.conversions_value",
+            "FROM asset_group_asset",
+            f"WHERE {' AND '.join(where_clauses)}",
+        ))
+        return self._search_all(query, page_size=limit)
+
+    @staticmethod
+    def _validated_bounded_integer(
+        value: Any,
+        *,
+        field_name: str,
+        maximum: int,
+        minimum: int = 1,
+    ) -> int:
+        if isinstance(value, bool):
+            raise ValueError(
+                f"{field_name} must be between {minimum} and {maximum}"
+            )
+        try:
+            normalized = int(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{field_name} must be between {minimum} and {maximum}"
+            ) from exc
+        if not minimum <= normalized <= maximum:
+            raise ValueError(
+                f"{field_name} must be between {minimum} and {maximum}"
+            )
+        return normalized
+
+    def _report_id_filter(
+        self,
+        values: list[str] | tuple[str, ...] | None,
+        field_name: str,
+        gaql_field: str,
+    ) -> str:
+        if values is None:
+            return ""
+        if not isinstance(values, (list, tuple)):
+            raise ValueError(f"{field_name} filters must be an array")
+        if len(values) > 100:
+            raise ValueError(f"{field_name} filters cannot exceed 100 IDs")
+        identifiers = [
+            self._numeric_id(value, field_name) for value in values
+        ]
+        if not identifiers:
+            return ""
+        return f"{gaql_field} IN ({', '.join(identifiers)})"
+
+    @staticmethod
+    def _report_enum_filter(
+        values: list[str] | tuple[str, ...] | None,
+        field_name: str,
+        gaql_field: str,
+    ) -> str:
+        if values is None:
+            return ""
+        if not isinstance(values, (list, tuple)):
+            raise ValueError(f"{field_name} must be an array")
+        if len(values) > 100:
+            raise ValueError(f"{field_name} cannot exceed 100 values")
+        normalized = [str(value or "").strip().upper() for value in values]
+        if any(not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", value) for value in normalized):
+            raise ValueError(f"{field_name} contains an invalid enum value")
+        if not normalized:
+            return ""
+        quoted = ", ".join(f"'{value}'" for value in normalized)
+        return f"{gaql_field} IN ({quoted})"
+
+    def generate_keyword_ideas(
+        self,
+        keywords: list[str],
+        *,
+        geo_target_constants: list[str] | None = None,
+        language: str | None = None,
+        url: str | None = None,
+        network: str = "GOOGLE_SEARCH",
+        limit: int = 100,
+        page_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch bounded Keyword Planner ideas using the selected Ads account."""
+        normalized_keywords = self._normalize_keyword_seeds(keywords)
+        normalized_geo_targets = self._normalize_keyword_geo_targets(
+            geo_target_constants
+        )
+        request_body, limit = self._build_keyword_ideas_request(
+            normalized_keywords,
+            normalized_geo_targets,
+            language=language,
+            url=url,
+            network=network,
+            limit=limit,
+            page_token=page_token,
+        )
+        customer_id = self._numeric_id(self.customer_id, "customer_id")
+        endpoint = (
+            f"{self.base_url}/customers/{customer_id}:generateKeywordIdeas"
+        )
+        response = self.request_raw(
+            "POST",
+            endpoint,
+            data=request_body,
+            retry_non_idempotent=True,
+            retry_auth_on_401=True,
+        )
+        return self._normalize_keyword_ideas_response(response, limit)
+
+    @staticmethod
+    def _normalize_keyword_seeds(keywords: list[str]) -> list[str]:
+        if not isinstance(keywords, (list, tuple)) or not 1 <= len(keywords) <= 20:
+            raise ValueError("keywords must contain between 1 and 20 entries")
+        normalized = []
+        for keyword in keywords:
+            if not isinstance(keyword, str):
+                raise ValueError("each keyword must be a string")
+            keyword = keyword.strip()
+            if not keyword or len(keyword) > 200:
+                raise ValueError("each keyword must contain 1 to 200 characters")
+            normalized.append(keyword)
+        return normalized
+
+    @staticmethod
+    def _normalize_keyword_geo_targets(
+        geo_target_constants: list[str] | None,
+    ) -> list[str]:
+        if geo_target_constants is None:
+            return []
+        if not isinstance(geo_target_constants, (list, tuple)):
+            raise ValueError("geo_target_constants must be an array")
+        if len(geo_target_constants) > 10:
+            raise ValueError("geo_target_constants cannot exceed 10 entries")
+        normalized = [str(value or "").strip() for value in geo_target_constants]
+        if any(
+            not re.fullmatch(r"geoTargetConstants/[0-9]+", target)
+            for target in normalized
+        ):
+            raise ValueError(
+                "geo_target_constants must use geoTargetConstants/{id}"
+            )
+        return normalized
+
+    @staticmethod
+    def _normalize_keyword_ideas_url(url: str | None) -> str | None:
+        normalized = str(url or "").strip() or None
+        if not normalized:
+            return None
+        parsed_url = urlparse(normalized)
+        if (
+            len(normalized) > 2048
+            or parsed_url.scheme.lower() not in {"http", "https"}
+            or not parsed_url.netloc
+            or parsed_url.username
+            or parsed_url.password
+        ):
+            raise ValueError("url must be a valid HTTP or HTTPS URL")
+        return normalized
+
+    @classmethod
+    def _build_keyword_ideas_request(
+        cls,
+        keywords: list[str],
+        geo_target_constants: list[str],
+        *,
+        language: str | None,
+        url: str | None,
+        network: str,
+        limit: int,
+        page_token: str | None,
+    ) -> tuple[dict[str, Any], int]:
+        language = str(language or "").strip() or None
+        if language and not re.fullmatch(r"languageConstants/[0-9]+", language):
+            raise ValueError("language must use languageConstants/{id}")
+        url = cls._normalize_keyword_ideas_url(url)
+        network = str(network or "").strip().upper()
+        if network not in {"GOOGLE_SEARCH", "GOOGLE_SEARCH_AND_PARTNERS"}:
+            raise ValueError(
+                "network must be GOOGLE_SEARCH or GOOGLE_SEARCH_AND_PARTNERS"
+            )
+        limit = cls._validated_bounded_integer(
+            limit, field_name="keyword idea limit", maximum=1000
+        )
+        page_token = str(page_token or "").strip() or None
+        if page_token and (
+            len(page_token) > 4096
+            or any(ord(character) < 32 for character in page_token)
+        ):
+            raise ValueError("page_token is invalid or exceeds the size limit")
+
+        seed = {"keywords": keywords}
+        seed_key = "keywordSeed"
+        if url:
+            seed["url"] = url
+            seed_key = "keywordAndUrlSeed"
+        body: dict[str, Any] = {
+            seed_key: seed,
+            "keywordPlanNetwork": network,
+            "pageSize": limit,
+        }
+        if geo_target_constants:
+            body["geoTargetConstants"] = geo_target_constants
+        if language:
+            body["language"] = language
+        if page_token:
+            body["pageToken"] = page_token
+        return body, limit
+
+    @classmethod
+    def _normalize_keyword_ideas_response(
+        cls, response: dict[str, Any], limit: int
+    ) -> dict[str, Any]:
+        payload = cls._response_payload(response)
+        raw_ideas = payload.get("results", [])
+        ideas = [
+            cls._normalize_keyword_idea(item)
+            for item in raw_ideas[:limit]
+            if isinstance(item, dict)
+        ] if isinstance(raw_ideas, list) else []
+        return {
+            "ideas": ideas,
+            "next_page_token": payload.get("nextPageToken"),
+            "result_count": len(ideas),
+            "data_status": "live",
+        }
+
+    @staticmethod
+    def _normalize_keyword_idea(idea: dict[str, Any]) -> dict[str, Any]:
+        metrics = idea.get("keywordIdeaMetrics") or idea.get(
+            "keyword_idea_metrics"
+        ) or {}
+
+        def integer_value(*keys: str) -> int | None:
+            for key in keys:
+                value = metrics.get(key)
+                if value in (None, ""):
+                    continue
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+            return None
+
+        return {
+            "text": idea.get("text", ""),
+            "average_monthly_searches": integer_value(
+                "avgMonthlySearches", "avg_monthly_searches"
+            ),
+            "competition": metrics.get("competition"),
+            "competition_index": integer_value(
+                "competitionIndex", "competition_index"
+            ),
+            "low_top_of_page_bid_micros": integer_value(
+                "lowTopOfPageBidMicros", "low_top_of_page_bid_micros"
+            ),
+            "high_top_of_page_bid_micros": integer_value(
+                "highTopOfPageBidMicros", "high_top_of_page_bid_micros"
+            ),
+        }
     
     # ==================== 辅助方法 ====================
 

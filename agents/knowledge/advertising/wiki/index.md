@@ -1,7 +1,7 @@
 # LLM Wiki 索引
 
-> **版本**: v2.9.0
-> **更新时间**: 2026-10-19
+> **版本**: v2.10.0
+> **更新时间**: 2026-10-21
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
@@ -21,7 +21,7 @@ queries：经过筛选、可复用的问答归档
 ```text
 knowledge_base/
 ├── platforms/
-│   ├── google/      # Campaign、Search/PMax、转化、GAQL、优化、配额
+│   ├── google/      # Campaign、Search/PMax、转化、GAQL、素材报表、优化、配额
 │   ├── meta/        # Campaign/Ad Set/Ad、ODAX、Catalog、CAPI、Insights
 │   ├── tiktok/      # Campaign/Ad Group/Ad、Spark、Smart+、事件、报表
 │   └── dv360/       # Partner/Advertiser、IO/Line Item、Deal、Floodlight、报告
@@ -90,6 +90,8 @@ knowledge_base/
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
 | “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “Google 搜索词/转化报表或 Meta Insights 数据可信吗，指标如何解读？” | `agents/skills/advertising/practices/account-diagnostics/` + 对应平台 measurement/reporting 文档 |
+| “Google 关键词规划建议、搜索量和竞争指数怎么查和解读？” | `agents/skills/advertising/practices/keyword-research/` + `platforms/google/keyword-planning-and-search-intent` |
+| “Google Ads 素材级报表怎么查，PMax 资产表现标签代表什么？” | `platforms/google/asset-performance-reporting` + 当前 Google report Tool contract |
 | “广告平台、分析系统和 CRM 的转化为什么对不上，是否代表增量？” | `measurement-and-attribution` + `measurement-data-contracts-and-incrementality` + `agents/skills/advertising/practices/measurement-attribution/` |
 | “需要埋哪些转化事件、如何定义和验收追踪？” | `measurement-data-contracts-and-incrementality` + `agents/skills/advertising/practices/measurement-instrumentation/` + 对应渠道事件文档 |
 | “四个平台整体怎么设计和排查？” | `four-platform-ad-agent-handbook` + 对应平台 Canonical Runbook |
@@ -106,11 +108,11 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-10-19，Runtime 实际加载 **81 个发布 Markdown 文档**：
+截至 2026-10-21，Runtime 实际加载 **83 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
-| Google | 14 | 1 个实体页 + 13 篇平台规则、Search/PMax、Campaign/Search Runbook、转化、GAQL、报表与优化 |
+| Google | 16 | 1 个实体页 + 15 篇平台规则、Search/PMax、Campaign/Search Runbook、转化、关键词规划、GAQL、素材级报表与优化 |
 | Meta | 13 | 1 个实体页 + 11 篇平台规则 + 1 篇目标选择 Query，覆盖 ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
 | TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
 | DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |

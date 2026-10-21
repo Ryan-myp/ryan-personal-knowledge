@@ -1,5 +1,20 @@
 # LLM Wiki 更新日志
 
+## 2026-10-21
+
+- 新增 Google Ad 关联素材与 PMax Asset Group 素材逐日报表 Tool，使用各自适配的 GAQL 资源、
+  Campaign 范围、日期/ID/字段类型校验和结果上限；按资源字段兼容表分别请求指标，
+  PMax AssetGroupAsset 只返回转化数/价值，不混用报表资源或把表现标签解释为因果结论。
+- 新增 Google 素材级报表知识页和检索回归，说明素材表现报告的适用范围、数据成熟度和创意实验边界。
+- `measurement-instrumentation` 升级至 1.1.0，新增阶段化 conversion tracking QA、失败首阶段定位、
+  脱敏证据及回读/恢复要求；保持纯 advisory，不增加外部执行权限。
+- 扩展转化信号质量知识和相关检索评测；Runtime 发布知识文档更新为 83 篇。
+- 核对 Google API 版本状态：Provider 仍使用 v24；官方已发布 v26，版本迁移列为独立兼容性工作，
+  不在此次仅加报表 Tool 的变更中静默切换 API 版本。
+- 新增 Google Ads Ad 级逐日报表和 Keyword Planner 关键词建议只读 Tool；两者沿用 Google Ads v24、运行时可信 account scope、统一 Tool schema 与超时/输出上限。
+- 新增关键词研究 advisory Skill 和 Keyword Planner Wiki，明确历史数据、竞争指数、micros、市场定向与账户实际表现的区别；新增知识检索回归用例。
+- Keyword Planner 查询只支持关键词种子及可选 URL 组合，不包含预测、写入、Merchant Center、GA4 或 MMP 能力；未配置凭证和真实调用权限时不宣称已验证。
+
 ## 2026-10-19
 
 - 新增程序化广告知识分类 `programmatic_advertising`：一个生态实体导航页与五篇 RTB/OpenRTB、DSP 决策与出价、SSP/ADX/Header Bidding、供应链质量/隐私、测量诊断专题；由个人知识库资料去重提炼，并按 IAB Tech Lab 的 Programmatic Auction Definitions / OpenRTB 与 Prebid 文档复核边界。

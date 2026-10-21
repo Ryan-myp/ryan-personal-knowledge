@@ -8,6 +8,7 @@ from agents.agent_harness.core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from agents.tools.advertising.clients.tiktok_client import TikTokAPIClient
+from agents.tools.advertising.shared.domain.reporting import build_report_context
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,13 @@ class TikTokGetReportHandler(ToolHandler):
                         filtering=input_data.get("filtering"),
                         limit=input_data.get("limit", 100),
                     )
-                return ToolResult.ok({"report": report, "data_status": "live"})
+                return ToolResult.ok({
+                    "report": report,
+                    "report_context": self._build_report_context(
+                        input_data, report
+                    ),
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get TikTok report: {e}")
         else:
@@ -76,3 +83,22 @@ class TikTokGetReportHandler(ToolHandler):
                 "data_status": "offline_no_client",
                 "simulated": True,
             })
+
+    @staticmethod
+    def _build_report_context(input_data: dict, report: list) -> dict:
+        data_level = str(
+            input_data.get("data_level", "AUCTION_CAMPAIGN")
+        ).upper()
+        resource_level = {
+            "AUCTION_CAMPAIGN": "campaign",
+            "AUCTION_ADGROUP": "ad_group",
+            "AUCTION_AD": "ad",
+        }.get(data_level, "unknown")
+        return build_report_context(
+            provider="tiktok",
+            resource_level=resource_level,
+            input_data=input_data,
+            rows=report,
+            default_period="LAST_7_DAYS",
+            default_limit=100,
+        )

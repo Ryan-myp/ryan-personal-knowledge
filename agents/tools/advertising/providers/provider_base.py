@@ -642,6 +642,9 @@ class ProviderMethodHandler(ToolHandler):
         *,
         write: bool = False,
         offline_value: Any = None,
+        result_context_builder: Optional[
+            Callable[[ToolContext, dict[str, Any], Any], dict[str, Any]]
+        ] = None,
     ):
         self.client = api_client
         self.method_name = str(method_name)
@@ -649,6 +652,7 @@ class ProviderMethodHandler(ToolHandler):
         self.argument_builder = argument_builder
         self.write = bool(write)
         self.offline_value = offline_value
+        self.result_context_builder = result_context_builder
         # Provider Tool Sources may resolve an account-scoped client view
         # without making Runtime know provider-specific client semantics.
         self.client_resolver: Optional[
@@ -701,14 +705,29 @@ class ProviderMethodHandler(ToolHandler):
                     == "live"
                 )
             value = method(*args, **kwargs)
-            data = {
-                self.result_key: value,
-                "data_status": "live",
-            }
-            if getattr(ctx, "account_id", None):
-                data["account_id"] = ctx.account_id
-            return ToolResult.ok(data)
+            return ToolResult.ok(
+                self._build_live_result(ctx, input_data, value)
+            )
         except Exception as exc:
             return ToolResult.error(
                 f"Failed to call provider method {self.method_name}: {exc}"
             )
+
+    def _build_live_result(
+        self,
+        ctx: ToolContext,
+        input_data: dict[str, Any],
+        value: Any,
+    ) -> dict[str, Any]:
+        data = {self.result_key: value, "data_status": "live"}
+        account_id = getattr(ctx, "account_id", None)
+        if account_id:
+            data["account_id"] = account_id
+        if self.result_context_builder is not None:
+            report_context = self.result_context_builder(
+                ctx, dict(input_data), value
+            )
+            if not isinstance(report_context, dict):
+                raise TypeError("Provider report context must be an object")
+            data["report_context"] = report_context
+        return data

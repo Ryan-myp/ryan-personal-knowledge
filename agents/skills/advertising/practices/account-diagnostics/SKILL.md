@@ -1,7 +1,7 @@
 ---
 name: account-diagnostics
 description: "基于当前账户报表和可追溯证据进行广告账户审计、效果诊断与数据解读 (evidence-led ad account audit and performance diagnosis)"
-version: "1.2.0"
+version: "1.3.0"
 namespace: advertising
 triggers:
   - [账户诊断, 账户审计, 广告账户体检, 广告账户审计, 广告账户做审计, 账户表现诊断, account audit, account diagnosis, performance diagnosis, performance audit]
@@ -17,13 +17,14 @@ triggers:
 ## 诊断顺序
 
 1. **确认数据来源。** 只把当前 Run 中已完成的只读 Tool 结果作为本次账户事实。确认账户范围来自可信 principal、报告属于预期渠道和层级，并查看结果是否明确标记为实时、模拟、缓存或部分完成。`simulated: true`、`data_status: offline_no_client`、固定测试夹具或无来源的手工汇总都不能作为真实账户证据。来源状态缺失时标为 Unknown。
-2. **固定报告口径。** 写明渠道/账户范围、资源层级、日期区间及其时区、币种、归因设置、指标定义、过滤条件、分段维度、分页/异步状态和拉取时间。任一关键项不可确认时，限制比较结论。
-3. **先判断报告完整性，再判断投放表现。** 区分真实零值、空结果、错误、未完成、部分页面、隐私省略、模拟结果和未知来源。报表调用成功不等于结果完整或适合决策。
+2. **固定报告口径。** 先读取结果中的 `report_context`；写明渠道、账户范围、资源层级、请求日期区间和来源、账户时区、账户币种、归因设置、指标定义、过滤条件、分段维度、分页/异步状态和拉取时间。未知的字段不能用模型知识或相邻账户信息补齐；需要时再调用当前 Registry 中针对所选账户的只读详情 Tool。
+3. **先判断报告完整性，再判断投放表现。** 检查 `report_context.completeness`：`empty` 表示本次 API 返回零行，不等同于指标值为零；`possibly_truncated` 表示结果触及行数上限，需要缩小范围或分页复查；`within_limit` 仅表示未触及该 Tool 的行数上限，不证明平台所有数据源都完整。另行区分错误、未完成、隐私省略、模拟结果和未知来源。报表调用成功不等于结果完整或适合决策。
 4. **拆解异常并核对分母。** 先看交付和资格，再看点击/到站/转化/业务价值。每个比率都写清分子、分母、时间窗口与来源；分母缺失或为零时写“不可计算”，不得补成 0。
 5. **提出最小、可证伪的后续检查。** 观察事实、推断、未知项分开陈述。每项建议写出支持它的证据、还缺的来源、影响层级和回看条件；数据不足时先补证据，不直接建议暂停、加预算或修改策略。
 
 按需加载 references：
 
+- `references/report-context-contract.md`：统一报表元数据、空结果/截断判读及跨渠道可比边界。
 - `references/google-report-interpretation.md`：Google Ads 搜索词、转化和日期口径。
 - `references/meta-insights-interpretation.md`：Meta Insights 分层指标、actions/action_values、归因与当前 Tool 查询边界。
 - `references/operating-check.md`：日/周账户检查顺序、HOLD/FIX/TEST/INVESTIGATE 决策和简短 readout。
@@ -48,4 +49,4 @@ triggers:
 
 ## 输出要求
 
-简洁给出：数据来源和口径、报告是否完整、已核验发现、主要推断、Unknown/N/A 项、下一步只读检查及其目的。账户运营检查还要给出 HOLD/FIX/TEST/INVESTIGATE 及理由，并分别列出事实、假设、缺失数据。若证据不支持性能结论，明确说“当前不能判断”，不要用通用建议填补证据空白。
+简洁给出：数据来源和口径、报告完整性、已核验发现、主要推断、Unknown/N/A 项、下一步只读检查及其目的。跨渠道比较先验证日期、账户时区、币种、指标/事件定义和归因窗口；任一重要口径未知或不一致时，只并列展示可用数据，不给出误导性的合并排名、总花费或总转化。账户运营检查还要给出 HOLD/FIX/TEST/INVESTIGATE 及理由，并分别列出事实、假设、缺失数据。若证据不支持性能结论，明确说“当前不能判断”，不要用通用建议填补证据空白。

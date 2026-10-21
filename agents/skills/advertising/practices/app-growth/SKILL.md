@@ -1,7 +1,7 @@
 ---
 name: app-growth
 description: "评估 App 付费获客、商店页转化与安装后激活、留存和价值之间的增长链路 (app paid acquisition and post-install growth)"
-version: "1.0.0"
+version: "1.1.0"
 namespace: advertising
 triggers:
   - [App 增长, app growth, 应用推广, 应用安装广告, app campaign, app promotion]
@@ -33,13 +33,17 @@ triggers:
 
 商店页审查需要时加载 `references/store-listing-review.md`。跨漏斗的事件、归因和回收期口径
 优先引用 Wiki 与现有 measurement Skills，不在本 Skill 重复维护平台动态规格或固定 benchmark。
+需要做 iOS 商店市场初筛时，可调用 `public_app_research_app_store_search`；已有 App
+Store ID 或 Bundle ID 时可调用 `public_app_research_app_store_lookup`。使用前加载
+`references/store-market-research.md`，并将商店元数据与广告表现数据分开。
 
 ## 结论边界
 
 - 不以最低 CPI 单独宣布用户质量或商业结果更好；同时检查下游事件、cohort 成熟度和价值。
 - 不从广告平台归因数直接推导增量或财务收入；对齐后台/CRM/商店数据定义和去重后再比较。
-- 没有商店页面、MMP、GA4、CRM 或订单读取 Tool 时，只分析用户提供的材料；不得声称已访问、
-  对账或验证这些系统。
+- 没有对应读取 Tool 时，只分析用户提供的材料；不得声称已访问、对账或验证 MMP、GA4、
+  CRM、订单、Google Play 或 App Store Connect。公开 App Store Search 结果只代表商店目录
+  元数据，不代表广告投放、转化、下载或留存表现。
 - 不假设商店 A/B、产品页优化或广告实验 Tool 已连接；先确认当前注册能力。
 - 不输出未经核实的商店字符限制、审核政策、评分阈值或“提升 X%”保证。
 

@@ -41,20 +41,22 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     creative = catalog.get_version("creative-strategy", "1.0.0")
     assert creative["location"] == "practices/creative-strategy"
     assert "references/creative-roadmap.md" in creative["files"]
-    diagnostics = catalog.get_version("account-diagnostics", "1.2.0")
+    diagnostics = catalog.get_version("account-diagnostics", "1.3.0")
     assert diagnostics["location"] == "practices/account-diagnostics"
     assert "references/google-report-interpretation.md" in diagnostics["files"]
     assert "references/meta-insights-interpretation.md" in diagnostics["files"]
     assert "references/operating-check.md" in diagnostics["files"]
+    assert "references/report-context-contract.md" in diagnostics["files"]
     experimentation = catalog.get_version("experimentation-design", "1.0.0")
     assert experimentation["location"] == "practices/experimentation-design"
     assert "references/test-design.md" in experimentation["files"]
     attribution = catalog.get_version("measurement-attribution", "1.0.1")
     assert attribution["location"] == "practices/measurement-attribution"
     assert "references/attribution-and-incrementality.md" in attribution["files"]
-    instrumentation = catalog.get_version("measurement-instrumentation", "1.0.0")
+    instrumentation = catalog.get_version("measurement-instrumentation", "1.1.0")
     assert instrumentation["location"] == "practices/measurement-instrumentation"
     assert "references/event-measurement-contract.md" in instrumentation["files"]
+    assert "references/conversion-qa-runbook.md" in instrumentation["files"]
     copywriting = catalog.get_version("ad-copywriting", "1.0.0")
     assert copywriting["location"] == "practices/ad-copywriting"
     assert "references/ad-copy-brief.md" in copywriting["files"]
@@ -68,9 +70,10 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     assert web_research["location"] == "web-research"
     visualization = catalog.get_version("data-visualization", "1.0.0")
     assert visualization["location"] == "practices/data-visualization"
-    app_growth = catalog.get_version("app-growth", "1.0.0")
+    app_growth = catalog.get_version("app-growth", "1.1.0")
     assert app_growth["location"] == "practices/app-growth"
     assert "references/store-listing-review.md" in app_growth["files"]
+    assert "references/store-market-research.md" in app_growth["files"]
     growth_operations = catalog.get_version("ad-growth-operations", "1.0.0")
     assert growth_operations["location"] == "practices/ad-growth-operations"
     assert "references/loop-contract.md" in growth_operations["files"]
@@ -266,8 +269,8 @@ def test_app_growth_and_recurring_loop_skills_are_context_only():
             (
                 "app-growth",
                 "审查这个 App Store 页面和 App Promotion 广告承诺是否匹配，并分析安装后留存",
-                "references/store-listing-review.md",
-                "没有商店页面、MMP、GA4、CRM 或订单读取 Tool 时",
+                "references/store-market-research.md",
+                "App Store 搜索结果不覆盖 Google Play",
             ),
             (
                 "ad-growth-operations",
@@ -398,8 +401,8 @@ def test_builtin_measurement_skills_are_advisory_and_select_relevant_references(
             ),
             (
                 "measurement-instrumentation",
-                "制定广告 conversion event tracking plan，校验 GA4、UTM、deduplication 和 PII",
-                "references/event-measurement-contract.md",
+                "检查 conversion tracking QA，排查事件丢失、重复上报、GA4/平台回传差异和 PII",
+                "references/conversion-qa-runbook.md",
                 "不配置或执行外部 tracking",
             ),
         )

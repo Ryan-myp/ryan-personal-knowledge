@@ -8,6 +8,7 @@ from agents.agent_harness.core.interfaces import (
     ToolContext, RiskLevel, ToolEffect, ReplayPolicy
 )
 from agents.tools.advertising.clients.meta_client import MetaAPIClient
+from agents.tools.advertising.shared.domain.reporting import build_report_context
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,18 @@ class MetaGetReportHandler(ToolHandler):
                     time_range=time_range,
                     **report_options,
                 )
-                return ToolResult.ok({"report": report, "data_status": "live"})
+                return ToolResult.ok({
+                    "report": report,
+                    "report_context": build_report_context(
+                        provider="meta",
+                        resource_level="campaign",
+                        input_data=input_data,
+                        rows=report,
+                        default_period="last_7d",
+                        default_limit=1000,
+                    ),
+                    "data_status": "live",
+                })
             except Exception as e:
                 return ToolResult.error(f"Failed to get Meta report: {e}")
         else:

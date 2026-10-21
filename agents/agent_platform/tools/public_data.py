@@ -41,6 +41,7 @@ _ALLOWED_HOSTS = frozenset({
     "fr.wikipedia.org",
     "hn.algolia.com",
     "ja.wikipedia.org",
+    "itunes.apple.com",
     "openlibrary.org",
     "wttr.in",
     "www.gov.uk",
@@ -51,6 +52,7 @@ _HOST_MIN_INTERVAL_SECONDS = {
     "api.crossref.org": 1.0,
     "export.arxiv.org": 3.1,
     "openlibrary.org": 1.0,
+    "itunes.apple.com": 3.1,
 }
 _CURRENCIES = re.compile(r"^[A-Z]{3}$")
 _COUNTRY_CODES = re.compile(r"^[A-Z]{3}$")
