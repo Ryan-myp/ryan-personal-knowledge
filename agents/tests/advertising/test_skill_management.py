@@ -31,7 +31,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "creative-strategy", "account-diagnostics", "experimentation-design",
         "measurement-attribution", "measurement-instrumentation",
         "ad-copywriting", "paid-landing-page-review",
-        "knowledge-explainer", "web-research", "app-growth",
+        "knowledge-explainer", "web-research", "data-visualization", "app-growth",
         "ad-growth-operations",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
@@ -64,8 +64,10 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.4")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
-    web_research = catalog.get_version("web-research", "1.0.2")
+    web_research = catalog.get_version("web-research", "1.0.3")
     assert web_research["location"] == "web-research"
+    visualization = catalog.get_version("data-visualization", "1.0.0")
+    assert visualization["location"] == "practices/data-visualization"
     app_growth = catalog.get_version("app-growth", "1.0.0")
     assert app_growth["location"] == "practices/app-growth"
     assert "references/store-listing-review.md" in app_growth["files"]
@@ -346,7 +348,7 @@ def test_builtin_web_research_skill_loads_from_tool_binding_without_keyword_trig
     try:
         skill = runtime.skill_loader.get("web-research")
         assert skill is not None
-        assert skill.version == "1.0.2"
+        assert skill.version == "1.0.3"
 
         context = runtime.tool_selector._triggered_skill_context(
             "查找一个陌生的公开项目",
@@ -354,7 +356,26 @@ def test_builtin_web_research_skill_loads_from_tool_binding_without_keyword_trig
         )
 
         assert "[skill guidance: web-research]" in context
-        assert "Use web search" in context
+        assert "Treat a search result as a lead, not as the full page" in context
+        assert "A result snippet is not a structured dataset" in context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_data_visualization_skill_is_loaded_for_chart_requests():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        skill = runtime.skill_loader.get("data-visualization")
+        assert skill is not None
+        assert skill.version == "1.0.0"
+
+        context = runtime.tool_selector._triggered_skill_context(
+            "帮我画深圳未来10天温度折线图",
+        )
+
+        assert "[skill guidance: data-visualization]" in context
+        assert "每个数据点必须有来源明确的横轴和值" in context
+        assert "不能把搜索摘要拼成趋势数据" in context
     finally:
         runtime.close(wait=True)
 

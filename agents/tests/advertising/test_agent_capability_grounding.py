@@ -88,6 +88,24 @@ def test_information_retrieval_is_not_mistaken_for_account_operation():
     assert "不能因上轮账户上下文而自动选择账户" in prompt
 
 
+def test_quantitative_charts_require_aligned_source_observations():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    try:
+        prompt = runtime.platform_application.agent.system_prompt
+    finally:
+        runtime.close(wait=True)
+
+    assert "every plotted point must map to an" in prompt
+    assert "Search snippets, ranges/endpoints, isolated extrema" in prompt
+    assert "Do not render a placeholder or fabricated trend chart" in " ".join(
+        prompt.split()
+    )
+
+
 def test_capability_catalog_is_not_a_prompt_for_unsolicited_self_evaluation():
     prompt = AdvertisingContextProvider._render_prompt(
         skill_context={},

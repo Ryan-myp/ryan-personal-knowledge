@@ -67,6 +67,7 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | `marketing-loops` 1.4.0 | `practices/ad-growth-operations`：检查频率与动作条件分离、循环契约、跨运行去重需求、失败停止和人工审批 | 将通用定时任务包装成第二套 Runtime、自动调预算/暂停/轮换或跨运行状态能力 |
 | Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
 | Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |
+| Anthropic `data-visualization`、`validate-data`；Hermes `grounded-citations` | `practices/data-visualization` 与 `web-research` 的数据粒度检查、来源映射、缺失值边界和图表自检 | 上游脚本、来源账本、连接器和可执行流程；搜索摘要不能替代网页正文或结构化数据 |
 
 这些是本机读取到的来源包版本，用于追踪本次蒸馏输入，不代表远端最新版本或 Runtime
 插件版本。来源包中与已发布广告 Wiki 重合的基础内容不重复导入。上游 Skill 只作为
@@ -86,6 +87,12 @@ Source 自动发现。其 `SKILL.md`、references 和 provenance 可进入受限
 发布、订阅和销售流程不适合作为广告 Agent 的新 Tool 权限。新增 ASO/App 漏斗分析与安全
 广告运营循环两个 advisory Skills。循环可以使用当前通用 Scheduler 登记只读复盘，但跨运行
 业务去重、GA4/CRM/MMP/商店数据、创意生成与自动预算/暂停仍需独立 Tool/Data 能力及授权。
+
+2026-10-21 根据 Anthropic `knowledge-work-plugins` 的数据校验/可视化方法和 Hermes
+`grounded-citations` 的来源映射方法，新增有证据的数据可视化 Skill，并强化联网检索 Skill。
+其重点是让每项结论和图表观测对应本轮可见来源；不引入网页正文抓取、天气 API、来源账本、
+外部脚本或新执行权限。上游许可证分别为 Apache-2.0 与 MIT；方法来源详见该 Skill 的
+`ATTRIBUTION.md`。
 
 ## 跨渠道 Campaign 管理
 
