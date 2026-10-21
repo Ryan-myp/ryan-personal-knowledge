@@ -10,6 +10,8 @@ from agents.agent_harness.core.llm_client import LLMClient, LLMStructuredOutputE
 from agents.agent_harness.messages import AgentMessage, ModelTurn, ToolCall
 from agents.agent_harness.runtime_kernel import TurnRequest
 from agents.agent_harness.tool_execution import ToolExecutionCoordinator
+from agents.agent_platform.tools.knowledge import knowledge_search_tool_source
+from agents.agent_platform.tools.web_search import web_search_tool_source
 
 
 def _tool(name: str = "lookup_record") -> ToolDefinition:
@@ -389,6 +391,142 @@ def test_llm_client_retries_unknown_tool_once_without_executing_it():
     assert result.usage["llm_requests"] == 2
 
 
+def test_llm_client_constrains_discovery_recovery_to_registered_web_search():
+    rejected = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(name="browser_search", arguments="{}"),
+        )],
+    )
+    accepted = SimpleNamespace(
+        content="Google 当前股价趋势需要结合最新市场数据判断。",
+        tool_calls=[SimpleNamespace(
+            id="search-call",
+            function=SimpleNamespace(
+                name="agent_web_search",
+                arguments='{"query":"Google stock trend","limit":5}',
+            ),
+        )],
+    )
+    completions = _QueuedCompletions(*(
+        SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=message,
+                finish_reason="tool_calls",
+            )],
+            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+        )
+        for message in (rejected, accepted)
+    ))
+    tools = [
+        binding.definition
+        for source in (
+            knowledge_search_tool_source(
+                provider=object(),
+                required_permission="ads.read",
+            ),
+            web_search_tool_source(
+                configuration_provider=lambda: {},
+                required_permission="ads.read",
+            ),
+        )
+        for binding in source.list_bindings()
+    ]
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("看下Google的股票趋势")],
+        tools,
+        TurnRequest(
+            user_input="看下Google的股票趋势",
+            initial_tool_choice="required",
+        ),
+    )
+
+    assert result.tool_calls == (
+        ToolCall(
+            id="search-call",
+            name="agent_web_search",
+            arguments={"query": "Google stock trend", "limit": 5},
+        ),
+    )
+    assert len(completions.requests) == 2
+    retry = completions.requests[1]
+    assert retry["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "agent_web_search"},
+    }
+    assert [
+        item["function"]["name"] for item in retry["tools"]
+    ] == ["agent_web_search"]
+
+
+def test_llm_client_falls_back_to_transparent_text_if_forced_search_is_rejected():
+    rejected = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(name="browser_search", arguments="{}"),
+        )],
+    )
+    accepted = SimpleNamespace(
+        content="我没有执行网页搜索，因此无法核实 Google 的实时股票趋势。",
+        tool_calls=[],
+    )
+    completions = _QueuedCompletions(*(
+        SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=message,
+                finish_reason="tool_calls" if message.tool_calls else "stop",
+            )],
+            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+        )
+        for message in (rejected, rejected, accepted)
+    ))
+    tools = [
+        binding.definition
+        for source in (
+            knowledge_search_tool_source(
+                provider=object(),
+                required_permission="ads.read",
+            ),
+            web_search_tool_source(
+                configuration_provider=lambda: {},
+                required_permission="ads.read",
+            ),
+        )
+        for binding in source.list_bindings()
+    ]
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("看下Google的股票趋势")],
+        tools,
+        TurnRequest(
+            user_input="看下Google的股票趋势",
+            initial_tool_choice="required",
+        ),
+    )
+
+    assert result.content == accepted.content
+    assert result.tool_calls == ()
+    assert len(completions.requests) == 3
+    assert completions.requests[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "agent_web_search"},
+    }
+    assert "tools" not in completions.requests[2]
+    assert "browser_search" not in json.dumps(completions.requests[1]["messages"])
+    assert "no lookup was performed" in json.dumps(completions.requests[2]["messages"])
+
+
 def test_llm_client_recovers_from_unoffered_tool_call_when_catalog_is_empty():
     rejected = SimpleNamespace(
         content="",
@@ -435,6 +573,86 @@ def test_llm_client_recovers_from_unoffered_tool_call_when_catalog_is_empty():
         for item in retry_messages
     )
     assert "must-not-be-forwarded" not in json.dumps(retry_messages)
+
+
+def test_llm_client_retries_as_text_after_repeated_unknown_tool_with_empty_catalog():
+    rejected = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(
+                name="tiktok_list_targeting_options",
+                arguments='{"account_id":"must-not-be-forwarded"}',
+            ),
+        )],
+    )
+    accepted = SimpleNamespace(
+        content="Pixel 在网页端采集事件；Events API 从服务端回传事件。",
+        tool_calls=[],
+    )
+    completions = _QueuedCompletions(*(
+        SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=message,
+                finish_reason="tool_calls" if message.tool_calls else "stop",
+            )],
+            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+        )
+        for message in (rejected, rejected, accepted)
+    ))
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("TikTok Pixel 和 Events API 有啥区别呢？")],
+        [],
+        TurnRequest(user_input="TikTok Pixel 和 Events API 有啥区别呢？"),
+    )
+
+    assert result.content == accepted.content
+    assert result.tool_calls == ()
+    assert len(completions.requests) == 3
+    assert all("tools" not in request for request in completions.requests)
+    assert "must-not-be-forwarded" not in json.dumps(completions.requests)
+    final_prompt = json.dumps(completions.requests[-1]["messages"])
+    assert "must answer with user-facing text" in final_prompt
+
+
+def test_llm_client_returns_safe_text_if_text_only_tool_recovery_is_exhausted():
+    rejected = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(
+                name="unavailable_tool",
+                arguments='{"private_value":"must-not-be-forwarded"}',
+            ),
+        )],
+    )
+    completions = _QueuedCompletions(*(
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=rejected, finish_reason="tool_calls")],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+        for _ in range(3)
+    ))
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("解释一下 Pixel 和 Events API 的区别")],
+        [],
+        TurnRequest(user_input="解释一下 Pixel 和 Events API 的区别"),
+    )
+
+    assert result.tool_calls == ()
+    assert "没有执行任何操作" in result.content
+    assert len(completions.requests) == 3
+    assert "must-not-be-forwarded" not in json.dumps(completions.requests)
 
 
 def test_llm_client_stops_after_one_failed_unknown_tool_repair(caplog):

@@ -31,7 +31,8 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "creative-strategy", "account-diagnostics", "experimentation-design",
         "measurement-attribution", "measurement-instrumentation",
         "ad-copywriting", "paid-landing-page-review",
-        "knowledge-explainer", "app-growth", "ad-growth-operations",
+        "knowledge-explainer", "web-research", "app-growth",
+        "ad-growth-operations",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -63,6 +64,8 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.4")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
+    web_research = catalog.get_version("web-research", "1.0.2")
+    assert web_research["location"] == "web-research"
     app_growth = catalog.get_version("app-growth", "1.0.0")
     assert app_growth["location"] == "practices/app-growth"
     assert "references/store-listing-review.md" in app_growth["files"]
@@ -334,6 +337,24 @@ def test_builtin_knowledge_explainer_guides_explanations_without_routing_queries
             "查询 TikTok campaign 列表"
         )
         assert "[skill guidance: knowledge-explainer]" not in query_context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_builtin_web_research_skill_loads_from_tool_binding_without_keyword_trigger():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        skill = runtime.skill_loader.get("web-research")
+        assert skill is not None
+        assert skill.version == "1.0.2"
+
+        context = runtime.tool_selector._triggered_skill_context(
+            "查找一个陌生的公开项目",
+            skill_refs={"web-research"},
+        )
+
+        assert "[skill guidance: web-research]" in context
+        assert "Use web search" in context
     finally:
         runtime.close(wait=True)
 

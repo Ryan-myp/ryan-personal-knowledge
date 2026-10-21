@@ -157,7 +157,10 @@ class DynamicToolSelector:
         )
         if knowledge:
             selection.expert_knowledge = self._format_knowledge(knowledge)
-        triggered_context = self._triggered_skill_context(user_input)
+        triggered_context = self._triggered_skill_context(
+            user_input,
+            skill_refs=self._associated_skill_refs(selection.selected_tools),
+        )
         if triggered_context:
             selection.expert_knowledge = "\n\n".join(
                 part for part in (selection.expert_knowledge, triggered_context) if part
@@ -191,25 +194,41 @@ class DynamicToolSelector:
         return refs
 
     def _triggered_skill_context(
-        self, user_input: str, max_chars: int = 3600
+        self,
+        user_input: str,
+        max_chars: int = 3600,
+        skill_refs: Optional[set[str]] = None,
     ) -> str:
-        """Load advisory context from Skills whose declared triggers match."""
+        """Load advisory context by Tool binding or Skill-declared triggers."""
         text = str(user_input or "").casefold()
+        requested_refs = {
+            str(item).strip() for item in (skill_refs or set()) if str(item).strip()
+        }
         sections: list[str] = []
         for skill in sorted(
             self.skill_loader.list_all().values(),
             key=lambda item: str(getattr(item, "name", "")),
         ):
-            matched = False
-            for trigger in getattr(skill, "triggers", []) or []:
-                keywords = [str(item).casefold() for item in getattr(trigger, "keywords", []) or []]
-                patterns = [str(item) for item in getattr(trigger, "patterns", []) or []]
-                if any(keyword and keyword in text for keyword in keywords):
-                    matched = True
-                if any(pattern and _safe_search(pattern, text) for pattern in patterns):
-                    matched = True
-                if matched:
-                    break
+            identity = {
+                str(getattr(skill, "name", "") or "").strip(),
+                str(getattr(skill, "version", "") or "").strip(),
+            }
+            matched = bool(requested_refs & identity)
+            if not matched:
+                for trigger in getattr(skill, "triggers", []) or []:
+                    keywords = [
+                        str(item).casefold()
+                        for item in getattr(trigger, "keywords", []) or []
+                    ]
+                    patterns = [
+                        str(item) for item in getattr(trigger, "patterns", []) or []
+                    ]
+                    if any(keyword and keyword in text for keyword in keywords):
+                        matched = True
+                    if any(pattern and _safe_search(pattern, text) for pattern in patterns):
+                        matched = True
+                    if matched:
+                        break
             if not matched:
                 continue
             markdown = str(getattr(skill, "raw_markdown", "") or "").strip()

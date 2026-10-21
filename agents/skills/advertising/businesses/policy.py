@@ -93,6 +93,12 @@ class BusinessSkillPolicy:
             and (not allowed or normalize_platform(namespace) in allowed)
         ]
 
+    def known_namespaces(self) -> tuple[str, ...]:
+        """Expose policy-declared channels without registering provider Tools."""
+        return tuple(dict.fromkeys(
+            (*self.allowed_platforms, *self.denied_platforms)
+        ))
+
     def validate_intent(self, intent: Any) -> list[str]:
         allowed, denied = self._platform_sets()
         errors: list[str] = []

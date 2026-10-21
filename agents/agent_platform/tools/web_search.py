@@ -468,12 +468,19 @@ def _web_search_definition(permission: str) -> ToolDefinition:
         risk_level=RiskLevel.LOW,
         effect_class=ToolEffect.READ,
         replay_policy=ReplayPolicy.SAFE,
-        traits=["web_search", "read_only", "bounded_output", "cited_results"],
+        traits=[
+            "web_search",
+            "semantic_discovery",
+            "read_only",
+            "bounded_output",
+            "cited_results",
+        ],
         timeout_seconds=20,
         max_output_bytes=32_000,
         required_permissions=[permission],
         scope_required=False,
         result_items_key="results",
+        skill_refs=["web-research"],
         contract_version="1.0.0",
     )
 

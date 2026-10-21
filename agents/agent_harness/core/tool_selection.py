@@ -22,9 +22,11 @@ _TOKEN_STOPWORDS = frozenset({
     "on", "or", "please", "show", "the", "to", "we", "with", "you",
 })
 _READ_CUES = (
-    "get", "list", "read", "search", "query", "fetch", "retrieve", "show",
+    "check", "find", "get", "list", "look at", "read", "search", "query",
+    "fetch", "retrieve", "show",
     "which", "what", "available",
-    "查一下", "查询", "列出", "列表", "清单", "查看", "获取", "检索", "搜索",
+    "查一下", "查找", "找一下", "查询", "列出", "列表", "清单", "查看",
+    "看下", "看看", "看一下", "帮我看", "瞧一下", "获取", "检索", "搜索",
     "有哪些", "有啥", "哪几个", "哪些",
 )
 _LIST_READ_CUES = ("list", "列出", "列表", "清单")
@@ -33,9 +35,9 @@ _READ_ACTION_CUES = tuple(
     cue for cue in _READ_CUES if cue not in {"which", "what", "available"}
 )
 _WRITE_CUES = (
-    "create", "generate", "update", "delete", "pause", "enable", "disable", "launch",
+    "create", "execute", "generate", "run", "update", "delete", "pause", "enable", "disable", "launch",
     "submit", "save", "publish", "edit", "change", "modify", "set",
-    "创建", "新建", "生成", "更新", "修改", "删除", "暂停", "启用", "停用",
+    "创建", "新建", "生成", "执行", "运行", "更新", "修改", "删除", "暂停", "启用", "停用",
     "上线", "提交", "保存", "发布", "设置", "调整",
 )
 _WRITE_NEGATIONS = (
@@ -47,8 +49,8 @@ _KNOWLEDGE_EXPLANATION_CUES = (
     "相关知识", "基础知识", "基础概念", "知识介绍", "讲下", "讲讲", "讲一讲",
     "介绍一下", "介绍下", "给我介绍", "告诉我", "科普一下",
     "详解", "详细讲解", "详细解释", "讲解一下", "讲解下", "解释一下", "解释下",
-    "怎么理解", "是什么意思", "是什么概念", "原理是什么", "有什么区别",
-    "有何区别", "对比一下", "what is", "what are", "tell me about",
+    "怎么理解", "是什么", "是什么意思", "是什么概念", "原理是什么", "有什么区别",
+    "有啥区别", "有何区别", "区别是什么", "对比一下", "what is", "what are", "tell me about",
     "overview", "basics", "fundamentals", "explain", "difference between",
 )
 _INTENT_REVERSALS = ("but", "instead", "however", "但", "而是", "不过")
@@ -61,6 +63,10 @@ _CONTEXT_REFERENCE_CUES = (
     "为什么", "为啥", "什么原因", "原因呢", "怎么回事", "why",
     "有模板吗", "有模板", "模板呢", "any template", "any templates",
 )
+_CONTEXT_FILLER_CUES = (
+    "我要", "我想", "帮我", "请帮我", "请问", "麻烦", "一下",
+    "please", "could you", "would you",
+)
 _KNOWLEDGE_FOLLOWUP_CUES = (
     "为什么", "为啥", "什么原因", "原因呢", "怎么回事", "why",
 )
@@ -71,7 +77,7 @@ _PROCESS_CLAUSE_SEPARATORS = re.compile(
     r"(?:[，,。；;]|并且|然后|同时|并|以及|\b(?:and|then|also|but)\b)"
 )
 _READ_ACTIONS = frozenset({
-    "get", "list", "read", "search", "query", "fetch", "retrieve",
+    "find", "get", "list", "read", "search", "query", "fetch", "retrieve",
 })
 
 
@@ -200,19 +206,37 @@ def _has_unnegated_write_cue(user_input: str) -> bool:
 
 
 def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
-    """Use prior turns only for operational requests or short references."""
+    """Reuse prior scope only for references to a known registered resource."""
     text = str(user_input or "").strip()
     if not text:
         return False
-    verb_text = _request_verbs(text, tools)
-    if _is_read_only_request(verb_text) or _has_unnegated_write_cue(verb_text):
+    if (
+        _is_read_only_request(_request_verbs(text, tools))
+        and any(
+            _is_read_tool(tool) and _matches_publisher_target(text, tool)
+            for tool in tools or ()
+        )
+    ):
         return True
-    if len(text) > 48:
-        return False
-    return any(
+    if len(text) > 64 or not any(
         _contains_cue(text.casefold(), cue)
         for cue in _CONTEXT_REFERENCE_CUES
-    )
+    ):
+        return False
+    residual = text.casefold()
+    for cue in sorted(
+        (
+            *_CONTEXT_REFERENCE_CUES,
+            *_CONTEXT_FILLER_CUES,
+            *_READ_CUES,
+            *_WRITE_CUES,
+        ),
+        key=len,
+        reverse=True,
+    ):
+        residual = residual.replace(cue.casefold(), " ")
+    residual = re.sub(r"\b\d+\b", " ", residual)
+    return not _terms(residual)
 
 
 def _is_process_explanation_request(
@@ -252,7 +276,11 @@ def _is_knowledge_explanation_request(
         return False
 
     action_text = _request_verbs(text, tools)
-    if _has_explicit_read_action(action_text):
+    is_comparison = any(
+        _contains_cue(text, cue)
+        for cue in ("有什么区别", "有啥区别", "有何区别", "区别是什么", "对比一下")
+    )
+    if _has_explicit_read_action(action_text) and not is_comparison:
         return False
     strong_write_cues = tuple(
         cue for cue in _WRITE_CUES if cue not in _AMBIGUOUS_OPERATION_CUES
@@ -290,6 +318,25 @@ def _is_web_search_tool(tool: Any) -> bool:
     }
 
 
+def _is_semantic_discovery_tool(tool: Any) -> bool:
+    traits = _tool_field(tool, "traits", ()) or ()
+    if isinstance(traits, str):
+        traits = (traits,)
+    return (
+        _is_read_tool(tool)
+        and "semantic_discovery" in {
+            str(item).strip().casefold() for item in traits
+        }
+    )
+
+
+def _semantic_discovery_tools(tools: Sequence[Any]) -> list[Any]:
+    return [
+        tool for tool in tools or ()
+        if _is_semantic_discovery_tool(tool)
+    ]
+
+
 def _matches_tool_alias(text: str, tool: Any) -> bool:
     normalized = str(text or "").casefold()
     aliases = _tool_field(tool, "intent_aliases", ()) or ()
@@ -300,6 +347,71 @@ def _matches_tool_alias(text: str, tool: Any) -> bool:
         and alias_text.casefold() in normalized
         for alias in aliases
     )
+
+
+def _matches_publisher_target(text: str, tool: Any) -> bool:
+    """Match only a Tool-published resource or alias, never its namespace alone."""
+    query_terms = _terms(text)
+    resource_terms = _terms(_tool_field(tool, "resource_type", ""))
+    if resource_terms and resource_terms <= query_terms:
+        return True
+
+    namespace_terms = _terms(_tool_field(tool, "namespace", ""))
+    action_terms = _terms(" ".join((*_READ_CUES, *_WRITE_CUES)))
+    query_core = query_terms - namespace_terms - action_terms
+    aliases = _tool_field(tool, "intent_aliases", ()) or ()
+    if isinstance(aliases, str):
+        aliases = (aliases,)
+    for alias in aliases:
+        alias_text = str(alias or "").strip().casefold()
+        if not alias_text:
+            continue
+        if alias_text in str(text or "").casefold():
+            return True
+        if not re.search(r"[\u3400-\u9fff]", alias_text):
+            continue
+        alias_terms = _terms(alias_text) - namespace_terms - action_terms
+        if alias_terms and len(query_core & alias_terms) >= max(
+            1, (len(alias_terms) + 1) // 2,
+        ):
+            return True
+        alias_core = alias_text
+        query_text = str(text or "").casefold()
+        for cue in sorted(
+            (*_READ_CUES, *_WRITE_CUES),
+            key=len,
+            reverse=True,
+        ):
+            alias_core = alias_core.replace(cue.casefold(), " ")
+            query_text = query_text.replace(cue.casefold(), " ")
+        for namespace in (
+            str(_tool_field(tool, "namespace", "") or "").casefold(),
+            str(_tool_field(tool, "namespace", "") or "")
+            .replace("-", " ").casefold(),
+        ):
+            if namespace:
+                alias_core = alias_core.replace(namespace, " ")
+                query_text = query_text.replace(namespace, " ")
+        alias_core = re.sub(r"[\W_]+", "", alias_core)
+        query_core_text = re.sub(r"[\W_]+", "", query_text)
+        if len(alias_core) >= 2 and alias_core in query_core_text:
+            return True
+
+    operational_request = (
+        _is_read_only_request(_request_verbs(text, (tool,)))
+        or _has_unnegated_write_cue(_request_verbs(text, (tool,)))
+    )
+    if operational_request:
+        intent_types = _tool_field(tool, "intent_types", ()) or ()
+        if isinstance(intent_types, str):
+            intent_types = (intent_types,)
+        for intent in intent_types:
+            intent_core = _terms(intent) - namespace_terms - action_terms
+            if intent_core and len(query_core & intent_core) >= max(
+                1, (len(intent_core) + 1) // 2,
+            ):
+                return True
+    return False
 
 
 def _matches_short_cjk_alias(text: str, tool: Any) -> bool:
@@ -564,7 +676,7 @@ class ToolSelector:
         if _is_process_explanation_request(user_input, available_tools):
             return []
         if _is_knowledge_explanation_request(user_input, available_tools):
-            return []
+            return _semantic_discovery_tools(available_tools)[:limit]
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
         if (
@@ -581,19 +693,68 @@ class ToolSelector:
         if not _needs_conversation_context(user_input, available_tools):
             prior_inputs = []
         prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
-        active_namespaces = self.detect_namespaces(
+        read_only_request = _is_read_only_request(verb_text)
+        detected_namespaces = self.detect_namespaces(
             user_input, available_tools,
         )
+        allowed_namespaces = set(
+            apply_policies(self.policies, detected_namespaces)
+        )
+        denied_namespaces = set(detected_namespaces) - allowed_namespaces
+        known_resource_target = any(
+            _matches_publisher_target(user_input, tool)
+            for tool in available_tools or ()
+        )
+        blocked_policy_operation = bool(denied_namespaces) and (
+            _has_unnegated_write_cue(verb_text)
+            or (
+                read_only_request
+                and (known_resource_target or _is_explicit_list_request(verb_text))
+            )
+        )
+        if (
+            blocked_policy_operation
+            and not self.explicitly_requests_discovery(
+                user_input, available_tools,
+            )
+        ):
+            return []
+        # A namespace names a provider, not an account operation. Route into
+        # it only when the current request also matches a published resource.
+        active_namespaces = [
+            namespace for namespace in detected_namespaces
+            if any(
+                normalize_namespace(_tool_field(tool, "namespace", ""))
+                == normalize_namespace(namespace)
+                and _matches_publisher_target(user_input, tool)
+                for tool in available_tools or ()
+            )
+        ]
         if not active_namespaces:
             registered_namespaces = set(
                 self.registered_namespaces(available_tools)
             )
-            active_namespaces = list(dict.fromkeys(
+            contextual = list(dict.fromkeys(
                 normalized
                 for namespace in (contextual_namespaces or ())
                 if (normalized := normalize_namespace(namespace))
                 and normalized in registered_namespaces
             ))
+            matching_context = [
+                namespace for namespace in contextual
+                if any(
+                    normalize_namespace(_tool_field(tool, "namespace", ""))
+                    == namespace
+                    and _is_read_tool(tool)
+                    and _matches_publisher_target(user_input, tool)
+                    for tool in available_tools or ()
+                )
+            ]
+            active_namespaces = matching_context or (
+                contextual if _needs_conversation_context(
+                    user_input, available_tools
+                ) else []
+            )
         if active_namespaces:
             prior_inputs = []
         else:
@@ -623,6 +784,10 @@ class ToolSelector:
             tool for tool in explicitly_aliased_reads
             if _is_knowledge_tool(tool)
         ]
+        explicitly_aliased_web_search = [
+            tool for tool in explicitly_aliased_reads
+            if _is_web_search_tool(tool)
+        ]
         explicitly_aliased_transform = [
             tool for tool in explicitly_aliased_reads
             if str(_tool_field(tool, "resource_type", "")).casefold()
@@ -639,15 +804,10 @@ class ToolSelector:
         ]
         if explicitly_named:
             candidates = explicitly_named
+        elif explicitly_aliased_web_search:
+            candidates = explicitly_aliased_web_search
         elif explicitly_aliased_knowledge:
             candidates = explicitly_aliased_knowledge
-        elif (
-            len(explicitly_aliased_writes) == 1
-            and _has_unnegated_write_cue(verb_text)
-        ):
-            candidates = explicitly_aliased_writes
-        elif explicitly_aliased_transform:
-            candidates = explicitly_aliased_transform
         elif contextual_knowledge and _is_knowledge_followup(text):
             candidates = contextual_knowledge
         elif active_namespaces:
@@ -660,9 +820,34 @@ class ToolSelector:
                     _tool_field(tool, "namespace", "")
                 ) in namespace_set
             ]
+        elif (
+            len(explicitly_aliased_writes) == 1
+            and _has_unnegated_write_cue(verb_text)
+        ):
+            candidates = explicitly_aliased_writes
+        elif explicitly_aliased_transform:
+            candidates = explicitly_aliased_transform
         else:
             candidates = list(available_tools or ())
-        read_only_request = _is_read_only_request(verb_text)
+        targeted_candidates = [
+            tool for tool in candidates
+            if _matches_publisher_target(user_input, tool)
+        ]
+        if read_only_request and targeted_candidates:
+            candidates = targeted_candidates
+        if (
+            not _has_unnegated_write_cue(verb_text)
+            and not explicitly_named
+        ):
+            discovery_tools = _semantic_discovery_tools(available_tools)
+            if (
+                not targeted_candidates
+                and not active_namespaces
+                and discovery_tools
+            ):
+                return discovery_tools[:min(
+                    limit, self.max_read_tools_per_turn
+                )]
         if (
             not explicitly_named
             and not explicitly_aliased_knowledge
@@ -800,6 +985,15 @@ class ToolSelector:
             )):
                 return False
             return True
+        if (
+            read_request
+            and not historical_summary
+            and any(
+                _is_semantic_discovery_tool(tool)
+                for tool in (selected_tools or ())
+            )
+        ):
+            return True
         if historical_summary or not (write_request or read_request):
             return False
         terms = _terms(user_input)
@@ -829,6 +1023,29 @@ class ToolSelector:
             if normalize_namespace(_tool_field(tool, "namespace", ""))
         })
 
+    @staticmethod
+    def has_declared_resource_target(
+        user_input: str,
+        tools: Sequence[Any],
+    ) -> bool:
+        """Report whether the request matches a Tool-published resource."""
+        return any(
+            _matches_publisher_target(user_input, tool)
+            for tool in tools or ()
+        )
+
+    @staticmethod
+    def explicitly_requests_discovery(
+        user_input: str,
+        tools: Sequence[Any],
+    ) -> bool:
+        """Recognize discovery requests only through registered Tool aliases."""
+        return any(
+            _is_semantic_discovery_tool(tool)
+            and _matches_tool_alias(user_input, tool)
+            for tool in tools or ()
+        )
+
     def detect_namespaces(
         self,
         user_input: str,
@@ -836,7 +1053,21 @@ class ToolSelector:
     ) -> list[str]:
         text = str(user_input or "").casefold()
         mentions: list[tuple[int, str]] = []
-        for namespace in self.registered_namespaces(available_tools):
+        declared_namespaces: list[str] = self.registered_namespaces(
+            available_tools
+        )
+        for policy in self.policies:
+            known_namespaces = getattr(policy, "known_namespaces", None)
+            if callable(known_namespaces):
+                declared_namespaces.extend(
+                    str(item).strip()
+                    for item in (known_namespaces() or ())
+                    if str(item).strip()
+                )
+        for namespace in dict.fromkeys(declared_namespaces):
+            namespace = normalize_namespace(namespace)
+            if not namespace:
+                continue
             aliases = {
                 namespace,
                 namespace.replace("-", " "),

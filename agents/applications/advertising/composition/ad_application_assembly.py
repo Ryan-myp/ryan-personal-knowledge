@@ -516,7 +516,8 @@ class AdApplicationAssembly:
             "ports": ports,
             "tool_catalog": AdvertisingToolCatalog(runtime),
             "tool_selector": AdApplicationAssembly._tool_selector(
-                runtime, ToolSelector(),
+                runtime,
+                ToolSelector(policies=getattr(runtime, "policies", ())),
             ),
             "skill_catalog": InMemorySkillCatalog(),
             "tool_policy": services.tool_policy,
@@ -606,12 +607,33 @@ class AdApplicationAssembly:
                 )
                 if account_namespace:
                     conversation_context = (*conversation_context, account_namespace)
-                selected = selector.select_relevant(
-                    request.user_input,
-                    tools,
-                    limit=MAX_RELEVANT_TOOLS_PER_TURN,
-                    conversation_context=conversation_context,
-                    contextual_namespaces=contextual_namespaces,
+                registry = getattr(runtime, "registry", None)
+                list_registered = getattr(registry, "list_all", None)
+                registered_tools = (
+                    list_registered() if callable(list_registered) else tools
+                )
+                blocked_resource_target = (
+                    selector.is_read_only_request(
+                        request.user_input, tools,
+                    )
+                    and selector.has_declared_resource_target(
+                        request.user_input, registered_tools,
+                    )
+                    and not selector.has_declared_resource_target(
+                        request.user_input, tools,
+                    )
+                    and not selector.explicitly_requests_discovery(
+                        request.user_input, tools,
+                    )
+                )
+                selected = [] if blocked_resource_target else (
+                    selector.select_relevant(
+                        request.user_input,
+                        tools,
+                        limit=MAX_RELEVANT_TOOLS_PER_TURN,
+                        conversation_context=conversation_context,
+                        contextual_namespaces=contextual_namespaces,
+                    )
                 )
                 if selected and selector.requires_tool_call(
                     request.user_input,

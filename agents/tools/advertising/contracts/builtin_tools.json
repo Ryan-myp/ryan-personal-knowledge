@@ -1,5 +1,5 @@
 {
-  "digest": "553319921701dd0ff4c29c018b6289a780bbd6adc794f480e667045aeecd73d0",
+  "digest": "efec2b4ee802873517e063c85a8201b69ccb4a836c988583acbda9c8a7254f89",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -226,7 +226,7 @@
       ]
     },
     "agent-platform": {
-      "digest": "926383b340fd8e648445111654a75745a1b0c547cc9462e5fb1e7ac490708c6a",
+      "digest": "b6a7e53bf451980dd70f0072c0df382e32ac342feee0f5e76214a6ebde8038a0",
       "tool_count": 4,
       "tools": [
         {
@@ -323,10 +323,13 @@
           "scope_required": false,
           "scope_type": null,
           "skill": "agent-knowledge",
-          "skill_refs": [],
+          "skill_refs": [
+            "knowledge-explainer"
+          ],
           "timeout_seconds": 15,
           "traits": [
             "knowledge",
+            "semantic_discovery",
             "read_only",
             "bounded_output"
           ]

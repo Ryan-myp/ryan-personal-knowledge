@@ -10,6 +10,7 @@ import re
 import threading
 import math
 import base64
+from dataclasses import dataclass, field
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Optional, Dict, Any
@@ -152,6 +153,34 @@ class LLMStructuredOutputError(ValueError):
         )
 
 
+@dataclass
+class _CompletionState:
+    provider_messages: list[dict[str, Any]]
+    active_tools: tuple[Any, ...]
+    provider_tools: list[dict[str, Any]]
+    kwargs: dict[str, Any]
+    attempt_messages: list[dict[str, Any]]
+    usage_totals: dict[str, int] = field(default_factory=lambda: {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "llm_requests": 0,
+    })
+    attempt: int = 0
+    text_only_recovery_used: bool = False
+    gateway_invalid_user_id: bool = False
+
+
+@dataclass
+class _ParsedCompletion:
+    choice: Any
+    calls: tuple[ToolCall, ...]
+    content: str
+    protocol_action: str
+
+
 class LLMClient:
     """
     LLM 客户端，封装 OpenAI API 调用。
@@ -229,33 +258,95 @@ class LLMClient:
 
     def complete(self, messages, tools, request) -> ModelTurn:
         """Implement the Harness ModelAdapter contract with native Tool calls."""
+        state = self._prepare_completion_state(messages, tools, request)
+        collector = _ACTIVE_USAGE_COLLECTOR.get()
+        while True:
+            try:
+                response = self._request_completion(state, collector)
+                self._record_response_usage(response, state, collector)
+                parsed = self._parse_completion(response, state)
+            except LLMStructuredOutputError as error:
+                if self._recover_catalog_error(error, state, request):
+                    continue
+                if (
+                    state.text_only_recovery_used
+                    and not state.active_tools
+                    and error.safe_reason_code == "tool_not_in_active_catalog"
+                ):
+                    logger.warning(
+                        "LLM text-only recovery still returned an unavailable "
+                        "Tool call; returning a safe no-action response"
+                    )
+                    return self._safe_no_action_turn(state)
+                logger.error(
+                    "LLM Tool-call response rejected: reason=%s",
+                    self._structured_error_reason(error),
+                )
+                raise
+
+            if self._schedule_response_retry(parsed, state, request):
+                continue
+            return ModelTurn(
+                content=parsed.content,
+                tool_calls=parsed.calls,
+                stop_reason=(
+                    "tool_call" if parsed.calls
+                    else str(
+                        getattr(parsed.choice, "finish_reason", None) or "stop"
+                    )
+                ),
+                usage=state.usage_totals,
+            )
+
+    def _prepare_completion_state(
+        self,
+        messages: Any,
+        tools: Any,
+        request: Any,
+    ) -> _CompletionState:
         try:
             provider_messages = self._provider_messages(messages)
             provider_messages = self._attach_input_media(
                 provider_messages,
                 getattr(request, "input_media", ()),
             )
-            provider_tools = self._provider_tools(tools)
+            active_tools = tuple(tools or ())
+            provider_tools = self._provider_tools(active_tools)
         except LLMStructuredOutputError as error:
             logger.error(
                 "LLM Tool-call request rejected: reason=%s",
                 self._structured_error_reason(error),
             )
             raise
+
         kwargs: dict[str, Any] = {
             "model": self.model,
             "messages": provider_messages,
             "temperature": 0.1,
         }
+        initial_tool_choice = getattr(request, "initial_tool_choice", None)
         if provider_tools:
             kwargs["tools"] = provider_tools
-            kwargs["tool_choice"] = (
-                getattr(request, "initial_tool_choice", None) or "auto"
-            )
-        elif getattr(request, "initial_tool_choice", None) == "required":
+            kwargs["tool_choice"] = initial_tool_choice or "auto"
+        elif initial_tool_choice == "required":
             raise LLMStructuredOutputError(
                 "A Tool call was required, but no Tools are available"
             )
+
+        self._apply_request_limits(kwargs, request)
+        return _CompletionState(
+            provider_messages=provider_messages,
+            active_tools=active_tools,
+            provider_tools=provider_tools,
+            kwargs=kwargs,
+            attempt_messages=provider_messages,
+        )
+
+    def _apply_request_limits(
+        self,
+        kwargs: dict[str, Any],
+        request: Any,
+    ) -> None:
         context = getattr(request, "context", None)
         if isinstance(context, dict):
             remaining = context.get("model_timeout_seconds")
@@ -269,182 +360,259 @@ class LLMClient:
                 if max_tokens > 0:
                     kwargs["max_tokens"] = max_tokens
 
-        collector = _ACTIVE_USAGE_COLLECTOR.get()
-        usage_totals = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "cache_read_input_tokens": 0,
-            "cache_write_input_tokens": 0,
-            "llm_requests": 0,
+    def _request_completion(self, state: _CompletionState, collector: Any) -> Any:
+        state.kwargs["messages"] = state.attempt_messages
+        if collector is not None:
+            collector.add({"llm_requests": 1})
+        try:
+            return self._get_client().chat.completions.create(**state.kwargs)
+        except Exception as error:
+            self._log_completion_error(error, state)
+            raise
+
+    def _log_completion_error(
+        self,
+        error: Exception,
+        state: _CompletionState,
+    ) -> None:
+        error_details = self._safe_error_details(error)
+        shape = self._request_shape(
+            state.attempt_messages,
+            state.provider_tools,
+        )
+        logger.error(
+            "LLM Tool-call generation failed: error_class=%s "
+            "status_code=%s api_error_type=%s api_error_code=%s "
+            "api_error_param=%s api_error_category=%s "
+            "message_count=%s tool_count=%s request_chars=%s "
+            "max_message_chars=%s system_chars=%s user_chars=%s "
+            "assistant_chars=%s tool_result_chars=%s tool_schema_chars=%s",
+            type(error).__name__,
+            error_details["status_code"],
+            error_details["api_error_type"],
+            error_details["api_error_code"],
+            error_details["api_error_param"],
+            error_details["api_error_category"],
+            shape["message_count"],
+            shape["tool_count"],
+            shape["request_chars"],
+            shape["max_message_chars"],
+            shape["system_chars"],
+            shape["user_chars"],
+            shape["assistant_chars"],
+            shape["tool_result_chars"],
+            shape["tool_schema_chars"],
+        )
+
+    def _record_response_usage(
+        self,
+        response: Any,
+        state: _CompletionState,
+        collector: Any,
+    ) -> None:
+        usage = self._normalize_usage(getattr(response, "usage", None))
+        for key in (
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cache_read_input_tokens",
+            "cache_write_input_tokens",
+        ):
+            state.usage_totals[key] += usage[key]
+        state.usage_totals["llm_requests"] += 1
+        if collector is not None:
+            usage["llm_requests"] = 0
+            collector.add(usage)
+
+    def _parse_completion(
+        self,
+        response: Any,
+        state: _CompletionState,
+    ) -> _ParsedCompletion:
+        choice = next(iter(getattr(response, "choices", ()) or ()), None)
+        if choice is None:
+            raise LLMStructuredOutputError(
+                "LLM response did not contain a choice"
+            )
+        message = getattr(choice, "message", None)
+        if message is None:
+            raise LLMStructuredOutputError(
+                "LLM response did not contain a message"
+            )
+        allowed_names = {
+            self._tool_value(tool, "name") for tool in state.active_tools
         }
-        attempt_messages = provider_messages
-        attempt = 0
-        gateway_invalid_user_id = False
-        while True:
-            kwargs["messages"] = attempt_messages
-            if collector is not None:
-                collector.add({"llm_requests": 1})
-            try:
-                response = self._get_client().chat.completions.create(**kwargs)
-            except Exception as error:
-                error_details = self._safe_error_details(error)
-                request_shape = self._request_shape(attempt_messages, provider_tools)
-                logger.error(
-                    "LLM Tool-call generation failed: error_class=%s "
-                    "status_code=%s api_error_type=%s api_error_code=%s "
-                    "api_error_param=%s api_error_category=%s "
-                    "message_count=%s tool_count=%s request_chars=%s "
-                    "max_message_chars=%s system_chars=%s user_chars=%s "
-                    "assistant_chars=%s tool_result_chars=%s tool_schema_chars=%s",
-                    type(error).__name__,
-                    error_details["status_code"],
-                    error_details["api_error_type"],
-                    error_details["api_error_code"],
-                    error_details["api_error_param"],
-                    error_details["api_error_category"],
-                    request_shape["message_count"],
-                    request_shape["tool_count"],
-                    request_shape["request_chars"],
-                    request_shape["max_message_chars"],
-                    request_shape["system_chars"],
-                    request_shape["user_chars"],
-                    request_shape["assistant_chars"],
-                    request_shape["tool_result_chars"],
-                    request_shape["tool_schema_chars"],
-                )
-                raise
-
-            response_usage = self._normalize_usage(
-                getattr(response, "usage", None)
+        raw_calls = tuple(getattr(message, "tool_calls", None) or ())
+        if len(raw_calls) > self.max_tool_calls_per_response:
+            raise LLMStructuredOutputError(
+                "LLM returned too many Tool calls in one response"
             )
-            for key in (
-                "input_tokens",
-                "output_tokens",
-                "total_tokens",
-                "cache_read_input_tokens",
-                "cache_write_input_tokens",
-            ):
-                usage_totals[key] += response_usage[key]
-            usage_totals["llm_requests"] += 1
-            if collector is not None:
-                collected_usage = dict(response_usage)
-                collected_usage["llm_requests"] = 0
-                collector.add(collected_usage)
+        calls = tuple(
+            self._tool_call(item, allowed_names) for item in raw_calls
+        )
+        call_ids = [item.id for item in calls]
+        if len(call_ids) != len(set(call_ids)):
+            raise LLMStructuredOutputError("LLM returned duplicate Tool call ids")
+        content = str(self._tool_value(message, "content", "") or "")
+        protocol_action = self._text_tool_protocol_action(
+            content,
+            has_calls=bool(calls),
+            attempt=state.attempt,
+            gateway_error_seen=state.gateway_invalid_user_id,
+        )
+        return _ParsedCompletion(
+            choice=choice,
+            calls=calls,
+            content=content,
+            protocol_action=protocol_action,
+        )
 
-            try:
-                choice = next(iter(getattr(response, "choices", ()) or ()), None)
-                if choice is None:
-                    raise LLMStructuredOutputError(
-                        "LLM response did not contain a choice"
-                    )
-                message = getattr(choice, "message", None)
-                if message is None:
-                    raise LLMStructuredOutputError(
-                        "LLM response did not contain a message"
-                    )
-                allowed_names = {
-                    self._tool_value(tool, "name") for tool in tools or ()
-                }
-                raw_calls = tuple(getattr(message, "tool_calls", None) or ())
-                if len(raw_calls) > self.max_tool_calls_per_response:
-                    raise LLMStructuredOutputError(
-                        "LLM returned too many Tool calls in one response"
-                    )
-                calls = tuple(
-                    self._tool_call(item, allowed_names) for item in raw_calls
-                )
-                call_ids = [item.id for item in calls]
-                if len(call_ids) != len(set(call_ids)):
-                    raise LLMStructuredOutputError(
-                        "LLM returned duplicate Tool call ids"
-                    )
-                content = str(
-                    self._tool_value(message, "content", "") or ""
-                )
-                protocol_action = self._text_tool_protocol_action(
-                    content,
-                    has_calls=bool(calls),
-                    attempt=attempt,
-                    gateway_error_seen=gateway_invalid_user_id,
-                )
-                if protocol_action in {"retry", "retry_gateway"}:
-                    gateway_invalid_user_id |= protocol_action == "retry_gateway"
-                    requested_tool_choice = getattr(
-                        request, "initial_tool_choice", None,
-                    )
-                    if requested_tool_choice in (None, "auto"):
-                        targeted_choice = self._text_protocol_tool_choice(
-                            content,
-                            allowed_names,
-                        )
-                        if targeted_choice is not None:
-                            kwargs["tool_choice"] = targeted_choice
-                    logger.warning(
-                        "LLM returned an unexecuted Tool protocol; "
-                        "retrying once through the structured Tool interface "
-                        "(gateway_identity_error=%s)",
-                        gateway_invalid_user_id,
-                    )
-                    attempt_messages = self._tool_protocol_repair_messages(
-                        provider_messages
-                    )
-                    attempt += 1
-                    continue
-                if protocol_action == "gateway_error":
-                    raise LLMStructuredOutputError(
-                        "LLM Tool gateway rejected the user identity"
-                    )
-                if protocol_action == "protocol_error":
-                    raise LLMStructuredOutputError(
-                        "LLM returned Tool-call protocol as plain text"
-                    )
-                if protocol_action == "suppress":
-                    content = ""
-                else:
-                    content = self._strip_private_think(content)
-                if not calls and not content.strip() and attempt == 0:
-                    logger.warning(
-                        "LLM returned an empty final response; retrying once "
-                        "with a user-facing response reminder"
-                    )
-                    attempt_messages = self._empty_response_repair_messages(
-                        provider_messages
-                    )
-                    attempt += 1
-                    continue
-            except LLMStructuredOutputError as error:
-                can_repair = (
-                    attempt == 0
-                    and getattr(request, "initial_tool_choice", None)
-                    in (None, "auto")
-                    and error.safe_reason_code == "tool_not_in_active_catalog"
-                )
-                if can_repair:
-                    logger.warning(
-                        "LLM requested a Tool outside the active catalog; "
-                        "retrying once with a constrained reminder"
-                    )
-                    attempt_messages = self._tool_catalog_repair_messages(
-                        provider_messages
-                    )
-                    attempt += 1
-                    continue
-                logger.error(
-                    "LLM Tool-call response rejected: reason=%s",
-                    self._structured_error_reason(error),
-                )
-                raise
-
-            return ModelTurn(
-                content=content,
-                tool_calls=calls,
-                stop_reason=(
-                    "tool_call" if calls
-                    else str(getattr(choice, "finish_reason", None) or "stop")
-                ),
-                usage=usage_totals,
+    def _schedule_response_retry(
+        self,
+        parsed: _ParsedCompletion,
+        state: _CompletionState,
+        request: Any,
+    ) -> bool:
+        if parsed.protocol_action in {"retry", "retry_gateway"}:
+            state.gateway_invalid_user_id |= (
+                parsed.protocol_action == "retry_gateway"
             )
+            self._set_text_protocol_retry(parsed, state, request)
+            return True
+        if parsed.protocol_action == "gateway_error":
+            raise LLMStructuredOutputError(
+                "LLM Tool gateway rejected the user identity"
+            )
+        if parsed.protocol_action == "protocol_error":
+            raise LLMStructuredOutputError(
+                "LLM returned Tool-call protocol as plain text"
+            )
+        parsed.content = (
+            "" if parsed.protocol_action == "suppress"
+            else self._strip_private_think(parsed.content)
+        )
+        if not parsed.calls and not parsed.content.strip() and state.attempt == 0:
+            logger.warning(
+                "LLM returned an empty final response; retrying once "
+                "with a user-facing response reminder"
+            )
+            state.attempt_messages = self._empty_response_repair_messages(
+                state.provider_messages
+            )
+            state.attempt += 1
+            return True
+        return False
+
+    def _set_text_protocol_retry(
+        self,
+        parsed: _ParsedCompletion,
+        state: _CompletionState,
+        request: Any,
+    ) -> None:
+        if getattr(request, "initial_tool_choice", None) in (None, "auto"):
+            allowed_names = {
+                self._tool_value(tool, "name") for tool in state.active_tools
+            }
+            targeted_choice = self._text_protocol_tool_choice(
+                parsed.content,
+                allowed_names,
+            )
+            if targeted_choice is not None:
+                state.kwargs["tool_choice"] = targeted_choice
+        logger.warning(
+            "LLM returned an unexecuted Tool protocol; retrying once through "
+            "the structured Tool interface (gateway_identity_error=%s)",
+            state.gateway_invalid_user_id,
+        )
+        state.attempt_messages = self._tool_protocol_repair_messages(
+            state.provider_messages
+        )
+        state.attempt += 1
+
+    def _recover_catalog_error(
+        self,
+        error: LLMStructuredOutputError,
+        state: _CompletionState,
+        request: Any,
+    ) -> bool:
+        if error.safe_reason_code != "tool_not_in_active_catalog":
+            return False
+        initial_choice = getattr(request, "initial_tool_choice", None)
+        if state.attempt == 0 and initial_choice in (None, "auto", "required"):
+            self._repair_initial_catalog_error(state)
+            return True
+        if (
+            state.attempt > 0
+            and len(state.active_tools) == 1
+            and self._is_registered_web_search_tool(state.active_tools[0])
+        ):
+            self._start_text_only_recovery(state)
+            return True
+        if (
+            state.attempt == 1
+            and not state.active_tools
+            and initial_choice in (None, "auto")
+        ):
+            self._start_text_only_recovery(state)
+            return True
+        return False
+
+    def _repair_initial_catalog_error(self, state: _CompletionState) -> None:
+        recovery_tool = self._registered_web_search_recovery_tool(
+            state.active_tools
+        )
+        if recovery_tool is None:
+            state.attempt_messages = self._tool_catalog_repair_messages(
+                state.provider_messages
+            )
+            logger.warning(
+                "LLM requested a Tool outside the active catalog; "
+                "retrying once with a constrained reminder"
+            )
+        else:
+            name = str(self._tool_value(recovery_tool, "name", "") or "")
+            state.active_tools = (recovery_tool,)
+            state.provider_tools = self._provider_tools(state.active_tools)
+            state.kwargs["tools"] = state.provider_tools
+            state.kwargs["tool_choice"] = {
+                "type": "function",
+                "function": {"name": name},
+            }
+            state.attempt_messages = self._registered_tool_repair_messages(
+                state.provider_messages,
+                name,
+            )
+            logger.warning(
+                "LLM requested an unavailable Tool; retrying with "
+                "the registered semantic web-search Tool"
+            )
+        state.attempt += 1
+
+    def _start_text_only_recovery(self, state: _CompletionState) -> None:
+        state.active_tools = ()
+        state.provider_tools = ()
+        state.kwargs.pop("tools", None)
+        state.kwargs.pop("tool_choice", None)
+        state.attempt_messages = self._tool_catalog_text_only_repair_messages(
+            state.attempt_messages
+        )
+        state.attempt += 1
+        state.text_only_recovery_used = True
+        logger.warning(
+            "LLM could not use the registered Tool; retrying without Tools"
+        )
+
+    @staticmethod
+    def _safe_no_action_turn(state: _CompletionState) -> ModelTurn:
+        return ModelTurn(
+            content=(
+                "这次没能生成可靠的文字回复，也没有执行任何操作。"
+                "请换一种问法重试。"
+            ),
+            tool_calls=(),
+            stop_reason="stop",
+            usage=state.usage_totals,
+        )
 
     @staticmethod
     def _is_text_tool_protocol(content: str) -> bool:
@@ -570,6 +738,69 @@ class LLMClient:
                 "If this is an informational question and no supplied Tool is "
                 "needed, answer directly from the conversation and provided "
                 "context; do not invent Tool names or claim that an operation ran."
+            ),
+        }
+        last_user_index = next(
+            (
+                index for index in range(len(repaired) - 1, -1, -1)
+                if repaired[index].get("role") == "user"
+            ),
+            None,
+        )
+        if last_user_index is None:
+            repaired.append(correction)
+        else:
+            repaired.insert(last_user_index, correction)
+        return repaired
+
+    @staticmethod
+    def _registered_tool_repair_messages(
+        messages: list[dict[str, Any]],
+        tool_name: str,
+    ) -> list[dict[str, Any]]:
+        """Retry with one registered read Tool after an invalid model call."""
+        repaired = [dict(item) for item in messages]
+        correction = {
+            "role": "system",
+            "content": (
+                "The previous Tool request was not in the active catalog, so "
+                "nothing was executed. Only one Tool is available for this "
+                "retry. Call the exact registered Tool by structured function "
+                f"name {tool_name!r}, using its declared input schema. Do not "
+                "invent aliases, call any other Tool, or claim a result before "
+                "receiving its Tool output."
+            ),
+        }
+        last_user_index = next(
+            (
+                index for index in range(len(repaired) - 1, -1, -1)
+                if repaired[index].get("role") == "user"
+            ),
+            None,
+        )
+        if last_user_index is None:
+            repaired.append(correction)
+        else:
+            repaired.insert(last_user_index, correction)
+        return repaired
+
+    @staticmethod
+    def _tool_catalog_text_only_repair_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Retry conversationally after an unavailable call in a no-Tool turn."""
+        repaired = [dict(item) for item in messages]
+        correction = {
+            "role": "system",
+            "content": (
+                "The previous response repeated an unavailable Tool call. No "
+                "Tools are available for this turn. You must answer with "
+                "user-facing text and must not request or claim any Tool "
+                "execution. For a conceptual question, explain directly from "
+                "trusted context. If the user asks for an external operation, "
+                "state that it was not performed. If the request needs current "
+                "external information, clearly say no lookup was performed and "
+                "no current result was verified."
             ),
         }
         last_user_index = next(
@@ -857,6 +1088,53 @@ class LLMClient:
         if isinstance(tool, dict):
             return tool.get(key, default)
         return getattr(tool, key, default)
+
+    @classmethod
+    def _is_registered_semantic_discovery_tool(cls, tool: Any) -> bool:
+        traits = cls._tool_value(tool, "traits", ()) or ()
+        if isinstance(traits, str):
+            traits = (traits,)
+        normalized_traits = {
+            str(item).strip().casefold() for item in traits
+        }
+        effect = cls._tool_value(
+            tool,
+            "effect_class",
+            cls._tool_value(tool, "effect", "read"),
+        )
+        effect = getattr(effect, "value", effect)
+        return (
+            str(effect or "read").strip().casefold() in {"read", "none"}
+            and "semantic_discovery" in normalized_traits
+        )
+
+    @classmethod
+    def _is_registered_web_search_tool(cls, tool: Any) -> bool:
+        traits = cls._tool_value(tool, "traits", ()) or ()
+        if isinstance(traits, str):
+            traits = (traits,)
+        normalized_traits = {
+            str(item).strip().casefold() for item in traits
+        }
+        return (
+            cls._is_registered_semantic_discovery_tool(tool)
+            and "web_search" in normalized_traits
+        )
+
+    @classmethod
+    def _registered_web_search_recovery_tool(cls, tools: Any) -> Any:
+        """Pick a registered web-search Tool only from a discovery-only catalog."""
+        catalog = tuple(tools or ())
+        if not catalog or not all(
+            cls._is_registered_semantic_discovery_tool(tool)
+            for tool in catalog
+        ):
+            return None
+        candidates = [
+            tool for tool in catalog
+            if cls._is_registered_web_search_tool(tool)
+        ]
+        return candidates[0] if len(candidates) == 1 else None
 
     @classmethod
     def _provider_tools(cls, tools: Any) -> list[dict[str, Any]]:

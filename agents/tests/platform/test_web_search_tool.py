@@ -12,10 +12,12 @@ from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.applications.advertising.composition.ad_application import (
     AdvertisingComposition,
 )
+from agents.agent_platform.tools.knowledge import knowledge_search_tool_source
 from agents.agent_platform.tools.web_search import (
     MAX_RESPONSE_BYTES,
     web_search_tool_source,
 )
+from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
 class FakeResponse:
@@ -488,6 +490,153 @@ def test_current_weather_query_selects_and_requires_web_search():
     assert selector.requires_tool_call("深圳今天天气", selected)
     assert not selector.requires_tool_call("能查天气不", selected)
     assert not selector.requires_tool_call("深圳今天天气支持吗", selected)
+
+
+def test_open_source_lookup_prefers_web_search_over_google_ads_namespace():
+    source = web_search_tool_source(
+        configuration_provider=_brave_configuration,
+        required_permission="ads.read",
+    )
+    google_tools = [
+        binding.definition
+        for binding in create_tool_source("google-ads").list_bindings()
+        if binding.definition.is_read_tool
+    ]
+    web_tool = source.list_bindings()[0].definition
+    selector = ToolSelector()
+    query = "还能搜索什么呢，Google 开源的 HERNES？"
+
+    selected = selector.select_relevant(
+        query,
+        [*google_tools, web_tool],
+        conversation_context=("现在能查天气了不",),
+        contextual_namespaces=("google-ads",),
+    )
+
+    assert [tool.name for tool in selected] == ["agent_web_search"]
+    assert selector.requires_tool_call(query, selected)
+
+
+def test_unmatched_query_does_not_inherit_account_namespace_and_offers_search_tools():
+    google_tools = [
+        binding.definition
+        for binding in create_tool_source("google-ads").list_bindings()
+        if binding.definition.is_read_tool
+    ]
+    web_tool = web_search_tool_source(
+        configuration_provider=_brave_configuration,
+        required_permission="ads.read",
+    ).list_bindings()[0].definition
+    knowledge_tool = knowledge_search_tool_source(
+        provider=object(),
+        required_permission="ads.read",
+    ).list_bindings()[0].definition
+    selector = ToolSelector()
+
+    cases = (
+        ("我要查询 HERNES", True),
+        ("查一下 Google 开源的 HERNES", True),
+        ("Google HERNES 是什么？", False),
+        ("Find information about HERNES", True),
+    )
+    for query, requires_tool_call in cases:
+        selected = selector.select_relevant(
+            query,
+            [*google_tools, web_tool, knowledge_tool],
+            conversation_context=("查询我 Google Ads 账户中的 campaign",),
+            contextual_namespaces=("google-ads",),
+        )
+
+        assert {tool.name for tool in selected} == {
+            "agent_web_search",
+            "agent_knowledge_search",
+        }
+        assert not any(tool.namespace == "google-ads" for tool in selected)
+        assert selector.requires_tool_call(query, selected) is requires_tool_call
+
+
+def test_explicit_google_campaign_list_does_not_add_unrequested_discovery_tools():
+    source = web_search_tool_source(
+        configuration_provider=_brave_configuration,
+        required_permission="ads.read",
+    )
+    google_tools = [
+        binding.definition
+        for binding in create_tool_source("google-ads").list_bindings()
+        if binding.definition.is_read_tool
+    ]
+    web_tool = source.list_bindings()[0].definition
+    knowledge_tool = knowledge_search_tool_source(
+        provider=object(),
+        required_permission="ads.read",
+    ).list_bindings()[0].definition
+
+    selected = ToolSelector().select_relevant(
+        "查询 Google Ads campaign 列表",
+        [*google_tools, web_tool, knowledge_tool],
+    )
+
+    assert "google_list_campaigns" in [tool.name for tool in selected]
+    assert "agent_web_search" not in [tool.name for tool in selected]
+    assert "agent_knowledge_search" not in [tool.name for tool in selected]
+
+
+def test_matching_resource_inherits_account_namespace_without_ambient_discovery():
+    google_tools = [
+        binding.definition
+        for binding in create_tool_source("google-ads").list_bindings()
+        if binding.definition.is_read_tool
+    ]
+    discovery_tools = [
+        web_search_tool_source(
+            configuration_provider=_brave_configuration,
+            required_permission="ads.read",
+        ).list_bindings()[0].definition,
+        knowledge_search_tool_source(
+            provider=object(),
+            required_permission="ads.read",
+        ).list_bindings()[0].definition,
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "查询 campaign 列表",
+        [*google_tools, *discovery_tools],
+        contextual_namespaces=("google-ads",),
+    )
+    selected_names = {tool.name for tool in selected}
+
+    assert "google_list_campaigns" in selected_names
+    assert "google_list_customer_clients" not in selected_names
+    assert "agent_web_search" not in selected_names
+    assert "agent_knowledge_search" not in selected_names
+
+
+def test_partial_publisher_alias_matches_localized_resource_without_platform_rules():
+    provider_tool = {
+        "name": "alpha_list_campaigns",
+        "namespace": "alpha",
+        "action": "list",
+        "resource_type": "campaign",
+        "effect_class": "read",
+        "intent_types": ["list_campaigns"],
+        "intent_aliases": ["广告系列列表"],
+    }
+    discovery_tool = {
+        "name": "generic_web_search",
+        "namespace": "platform",
+        "action": "search",
+        "resource_type": "web_search",
+        "effect_class": "read",
+        "traits": ["semantic_discovery", "web_search"],
+        "intent_aliases": ["search online", "联网搜索"],
+    }
+
+    selected = ToolSelector().select_relevant(
+        "列出 Alpha 广告系列",
+        [provider_tool, discovery_tool],
+    )
+
+    assert [tool["name"] for tool in selected] == ["alpha_list_campaigns"]
 
 
 def test_web_search_can_be_registered_into_the_existing_application_runtime():

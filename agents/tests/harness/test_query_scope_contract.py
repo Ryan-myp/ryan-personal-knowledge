@@ -1,5 +1,8 @@
 from agents.agent_harness.core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
 from agents.agent_harness.core.tool_selection import ToolSelector
+from agents.agent_harness.core.policy import PolicyContext
+from agents.agent_platform.tools.knowledge import knowledge_search_tool_source
+from agents.agent_platform.tools.web_search import web_search_tool_source
 from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
@@ -112,6 +115,275 @@ def test_explicit_data_query_requires_a_fresh_tool_but_capability_questions_do_n
     assert selector.requires_tool_call("查询 Meta campaign 123 的详情", tools)
     assert not selector.requires_tool_call("Meta 支持哪些 campaign 查询能力？", tools)
     assert not selector.requires_tool_call("汇总刚才查询的 campaign 结果", tools)
+
+
+def test_colloquial_concept_comparison_does_not_route_provider_tools():
+    tools = [
+        binding.definition
+        for binding in create_tool_source("tiktok").list_bindings()
+    ]
+    tools.extend(_semantic_discovery_definitions())
+    selector = ToolSelector()
+    question = "TikTok Pixel 和 Events API 有啥区别呢？"
+    selected = selector.select_relevant(question, tools)
+
+    selected_names = {tool.name for tool in selected}
+    assert {"agent_knowledge_search", "agent_web_search"} <= selected_names
+    assert "tiktok_list_accounts" not in selected_names
+    assert not any(
+        tool.namespace == "tiktok"
+        for tool in selected
+    )
+    assert selector.requires_tool_call(question, selected)
+
+
+def test_generic_lookup_word_does_not_override_an_explicit_concept_comparison():
+    tools = [
+        binding.definition
+        for binding in create_tool_source("tiktok").list_bindings()
+    ]
+    tools.extend(_semantic_discovery_definitions())
+    selector = ToolSelector()
+    question = "查一下 TikTok Pixel 和 Events API 有啥区别？"
+
+    selected = selector.select_relevant(question, tools)
+
+    selected_names = {tool.name for tool in selected}
+    assert {"agent_knowledge_search", "agent_web_search"} <= selected_names
+    assert "tiktok_list_accounts" not in selected_names
+    assert selector.requires_tool_call(question, selected)
+
+
+def test_colloquial_account_question_still_routes_a_matching_read_tool():
+    tool = {
+        "name": "tiktok_list_campaigns",
+        "namespace": "tiktok",
+        "action": "list",
+        "resource_type": "campaign",
+        "description": "List campaigns for a TikTok account",
+        "effect_class": "read",
+        "intent_types": ["list_campaigns"],
+        "input_schema": {"properties": {}},
+    }
+    selector = ToolSelector()
+    question = "TikTok 账户有啥 campaign？"
+    selected = selector.select_relevant(question, [tool])
+
+    assert [item["name"] for item in selected] == ["tiktok_list_campaigns"]
+    assert selector.requires_tool_call(question, selected)
+
+
+def test_colloquial_account_list_selects_only_the_requested_resource():
+    tools = [
+        binding.definition
+        for binding in create_tool_source("tiktok").list_bindings()
+    ]
+    tools.extend(_semantic_discovery_definitions())
+    selector = ToolSelector()
+    question = "TikTok 账户有啥 campaign？"
+
+    selected = selector.select_relevant(question, tools)
+
+    selected_names = {tool.name for tool in selected}
+    assert "tiktok_list_campaigns" in selected_names
+    assert "agent_knowledge_search" not in selected_names
+    assert "agent_web_search" not in selected_names
+    assert selector.requires_tool_call(question, selected)
+
+
+def test_localized_account_alias_matches_without_platform_specific_rules():
+    account_tool = {
+        "name": "alpha_list_accounts",
+        "namespace": "alpha",
+        "action": "list",
+        "resource_type": "account",
+        "effect_class": "read",
+        "intent_types": ["list_accounts"],
+        "intent_aliases": ["账户列表", "account list"],
+    }
+    campaign_tool = {
+        "name": "alpha_list_campaigns",
+        "namespace": "alpha",
+        "action": "list",
+        "resource_type": "campaign",
+        "effect_class": "read",
+        "intent_types": ["list_campaigns"],
+    }
+
+    selected = ToolSelector().select_relevant(
+        "帮我列出 Alpha 账户",
+        [account_tool, campaign_tool],
+    )
+
+    assert [tool["name"] for tool in selected] == ["alpha_list_accounts"]
+
+
+def test_generic_operation_request_does_not_fall_back_to_discovery():
+    schedule_tool = {
+        "name": "agent_schedule_run_now",
+        "namespace": "platform",
+        "action": "run",
+        "resource_type": "schedule",
+        "effect_class": "write",
+        "intent_types": ["run_schedule"],
+        "intent_aliases": ["执行定时任务", "run scheduled task"],
+    }
+    discovery_tool = {
+        "name": "agent_web_search",
+        "namespace": "platform",
+        "action": "search",
+        "resource_type": "web_search",
+        "effect_class": "read",
+        "traits": ["semantic_discovery", "web_search"],
+        "intent_aliases": ["search online"],
+    }
+
+    selected = ToolSelector().select_relevant(
+        "直接执行一下这个任务",
+        [schedule_tool, discovery_tool],
+    )
+
+    assert [tool["name"] for tool in selected] == ["agent_schedule_run_now"]
+
+
+def test_policy_declared_namespaces_prevent_disallowed_operations_from_becoming_searches():
+    discovery_tool = {
+        "name": "agent_web_search",
+        "namespace": "platform",
+        "action": "search",
+        "resource_type": "web_search",
+        "effect_class": "read",
+        "traits": ["semantic_discovery", "web_search"],
+        "intent_aliases": ["search online", "联网搜索"],
+    }
+    selector = ToolSelector(policies=[
+        PolicyContext(
+            name="channel-scope",
+            allowed_namespaces=("google-ads",),
+            denied_namespaces=("tiktok",),
+        ),
+    ])
+
+    assert selector.select_relevant(
+        "列出 TikTok campaign",
+        [discovery_tool],
+    ) == []
+    assert [tool["name"] for tool in selector.select_relevant(
+        "查询 Google 开源的 HERNES",
+        [discovery_tool],
+    )] == ["agent_web_search"]
+
+
+def test_greetings_expose_only_non_forced_semantic_discovery_tools():
+    tools = _semantic_discovery_definitions()
+    selector = ToolSelector()
+
+    for greeting in ("你好", "你有什么能力？"):
+        selected = selector.select_relevant(greeting, tools)
+
+        assert selected
+        assert all("semantic_discovery" in tool.traits for tool in selected)
+        assert not selector.requires_tool_call(greeting, selected)
+
+
+def test_unknown_read_target_still_routes_to_semantic_discovery():
+    tools = _semantic_discovery_definitions()
+    selector = ToolSelector()
+
+    selected = selector.select_relevant("帮我查询 HERNES 的资料", tools)
+
+    assert {tool.name for tool in selected} == {
+        "agent_knowledge_search",
+        "agent_web_search",
+    }
+
+
+def test_unknown_read_target_does_not_select_provider_account_tools():
+    tools = [
+        binding.definition
+        for binding in create_tool_source("google-ads").list_bindings()
+    ]
+    tools.extend(_semantic_discovery_definitions())
+    selector = ToolSelector()
+
+    selected = selector.select_relevant(
+        "帮我查一下 QuantaBridge 的用法",
+        tools,
+        limit=32,
+    )
+
+    selected_names = {tool.name for tool in selected}
+    assert selected_names == {
+        "agent_knowledge_search",
+        "agent_web_search",
+    }
+    assert "google_list_customer_clients" not in selected_names
+
+
+def test_colloquial_look_request_requires_the_selected_discovery_tool():
+    tools = _semantic_discovery_definitions()
+    selector = ToolSelector()
+
+    for request in (
+        "看下Google的股票趋势",
+        "帮我看看 QuantaBridge 的近期趋势",
+        "看一下 QuantaBridge 的近期趋势",
+    ):
+        selected = selector.select_relevant(request, tools)
+
+        assert selected
+        assert selector.is_read_only_request(request, selected)
+        assert selector.requires_tool_call(request, selected)
+
+
+def test_explicit_namespaces_and_intent_metadata_beat_generic_recipe_aliases():
+    tools = [
+        {
+            "name": f"{namespace}_read_record",
+            "namespace": namespace,
+            "action": "list",
+            "resource_type": "resource",
+            "effect_class": "read",
+            "intent_types": ["list_records"],
+            "description": f"Read records from {namespace}",
+        }
+        for namespace in ("alpha", "beta")
+    ]
+    tools.append({
+        "name": "agent_readonly_recipe",
+        "namespace": "platform",
+        "action": "transform",
+        "resource_type": "json_records",
+        "effect_class": "read",
+        "intent_aliases": ["filter these records", "aggregate these results"],
+    })
+
+    selected = ToolSelector().select_relevant(
+        "Read records from alpha and beta",
+        tools,
+    )
+
+    assert {tool["name"] for tool in selected} == {
+        "alpha_read_record",
+        "beta_read_record",
+    }
+
+
+def _semantic_discovery_definitions():
+    return [
+        binding.definition
+        for source in (
+            web_search_tool_source(
+                configuration_provider=lambda: {},
+                required_permission="ads.read",
+            ),
+            knowledge_search_tool_source(
+                provider=object(),
+                required_permission="ads.read",
+            ),
+        )
+        for binding in source.list_bindings()
+    ]
 
 
 def test_resource_nouns_do_not_turn_reads_into_write_requests():

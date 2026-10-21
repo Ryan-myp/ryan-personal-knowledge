@@ -80,6 +80,14 @@ def test_agent_self_assessment_is_opt_in_and_tracks_the_requested_subject():
     assert "业务操作失败时仍要解释本次失败的具体原因" in prompt
 
 
+def test_information_retrieval_is_not_mistaken_for_account_operation():
+    prompt = advertising_agent_definition().system_prompt
+
+    assert "公开信息检索与账户资源查询必须区分" in prompt
+    assert "提到的平台、公司、产品或项目名称本身不代表要查询广告账户" in prompt
+    assert "不能因上轮账户上下文而自动选择账户" in prompt
+
+
 def test_capability_catalog_is_not_a_prompt_for_unsolicited_self_evaluation():
     prompt = AdvertisingContextProvider._render_prompt(
         skill_context={},
@@ -414,7 +422,9 @@ def test_plain_greeting_receives_registered_capabilities_and_intro_policy():
     assert "普通问候" in system_text
     assert "2-3 项" in system_text
     assert "不得自称底层模型" in system_text
-    assert tools == []
+    assert tools
+    assert all("semantic_discovery" in tool.traits for tool in tools)
+    assert not any(tool.namespace in {"google-ads", "meta", "tiktok"} for tool in tools)
 
 
 def test_ad_selector_exposes_specific_tools_beyond_the_old_sixteen_tool_prefix():

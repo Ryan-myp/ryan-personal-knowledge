@@ -1,22 +1,24 @@
 ---
 skill:
   name: web-research
-  version: "1.0.0"
+  version: "1.0.2"
   description: "联网检索当前信息并用可核验来源回答"
   platform: cross-channel
   author: "Ryan"
   expertise_level: "standard"
-  last_updated: "2026-10-19"
+  last_updated: "2026-10-21"
 ---
 
 # Web Research
 
 Use web search when the user explicitly asks to search online, or when an answer
 depends on current, changing, or niche facts that may be absent from the local
-knowledge base. Prefer the local knowledge base for questions about the
-workspace's own implementation and internal documents. For current questions
-about advertising platforms, use both sources when local material provides
-useful context and the web can verify current platform behavior.
+knowledge base. Treat public entities and account-owned resources as different
+targets: a company, platform or product name alone does not imply a request to
+read an advertising account. Prefer the local knowledge base for questions
+about the workspace's own implementation and internal documents. For current
+questions about advertising platforms, use both sources when local material
+provides useful context and the web can verify current platform behavior.
 
 ## Research Steps
 

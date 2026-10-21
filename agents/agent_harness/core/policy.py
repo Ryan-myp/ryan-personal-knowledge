@@ -41,6 +41,12 @@ class PolicyContext:
             if self.is_namespace_allowed(namespace)
         ]
 
+    def known_namespaces(self) -> tuple[str, ...]:
+        """Expose policy-declared names so routing can honor denials."""
+        return tuple(dict.fromkeys(
+            (*self.allowed_namespaces, *self.denied_namespaces)
+        ))
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,

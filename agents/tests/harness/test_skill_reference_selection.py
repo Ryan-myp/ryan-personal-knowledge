@@ -76,6 +76,27 @@ def test_triggered_skill_context_uses_relevant_reference_instead_of_first_file()
     assert "references/billing.md" not in context
 
 
+def test_tool_associated_skill_loads_without_keyword_trigger():
+    skill = SimpleNamespace(
+        name="web-research",
+        description="Research public and time-sensitive information.",
+        triggers=[],
+        raw_markdown="Prefer public sources for external entities and niche facts.",
+        reference_documents={},
+    )
+    selector = DynamicToolSelector(
+        SimpleNamespace(list_all=lambda: {"web-research": skill})
+    )
+
+    context = selector._triggered_skill_context(
+        "我要查询 an unfamiliar public project",
+        skill_refs={"web-research"},
+    )
+
+    assert "[skill guidance: web-research]" in context
+    assert "external entities and niche facts" in context
+
+
 def test_skill_reference_selection_does_not_let_skill_body_dilute_request_relevance():
     skill = SimpleNamespace(
         name="creative-strategy",
