@@ -383,6 +383,64 @@ def test_legacy_sqlite_schema_migrates_tenant_columns_before_indexes(tmp_path):
         store.close()
 
 
+def test_existing_feedback_schema_migrates_columns_before_new_indexes(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "legacy-feedback.db"
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL
+            );
+            CREATE TABLE sessions (
+                session_id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL, created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE conversation_feedback (
+                feedback_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+                user_id TEXT NOT NULL, rating TEXT NOT NULL,
+                submitted_at TEXT NOT NULL, UNIQUE (session_id, turn_id)
+            );
+            INSERT INTO sessions VALUES (
+                'session-1', 'user-1', 'tenant-1', '2026-01-01', '2026-01-01'
+            );
+            INSERT INTO conversation_feedback VALUES (
+                'feedback-1', 'session-1', 'turn-1', 'tenant-1', 'user-1',
+                'positive', '2026-01-01'
+            );
+            """
+        )
+        conn.executemany(
+            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            [(version, "legacy") for version in range(1, 24)],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = AdAgentStore(str(path))
+    try:
+        row = store._get_conn().execute(
+            "SELECT review_status, assertions FROM conversation_feedback "
+            "WHERE feedback_id = ?",
+            ("feedback-1",),
+        ).fetchone()
+        assert tuple(row) == ("pending", "{}")
+        assert store._get_conn().execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index' "
+            "AND name = 'idx_conversation_feedback_review'",
+        ).fetchone() is not None
+        assert store._get_conn().execute(
+            "SELECT max(version) FROM schema_migrations",
+        ).fetchone()[0] == store.SCHEMA_VERSION
+    finally:
+        store.close()
+
+
 def test_execution_event_repair_is_idempotent():
     store = AdAgentStore(":memory:")
     store.create_execution_run(ExecutionRunRecord(

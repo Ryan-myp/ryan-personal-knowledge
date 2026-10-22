@@ -102,10 +102,23 @@ class AdAgentStore:
         return self._conn
     
     def _init_db(self):
-        """Initialize the latest schema and apply versioned migrations."""
+        """Create tables, migrate legacy columns, then install current indexes."""
         with self._lock:
             conn = self._get_conn()
-            conn.executescript(self.SCHEMA)
+            indexes = []
+            statement = ""
+            for line in self.SCHEMA.splitlines(keepends=True):
+                statement += line
+                if not sqlite3.complete_statement(statement):
+                    continue
+                sql = statement.strip()
+                statement = ""
+                if sql.upper().startswith(("CREATE INDEX", "CREATE UNIQUE INDEX")):
+                    indexes.append(sql)
+                elif sql:
+                    conn.execute(sql)
+            if statement.strip():
+                raise ValueError("incomplete SQLite schema statement")
             applied = {
                 int(row[0])
                 for row in conn.execute("SELECT version FROM schema_migrations")
@@ -118,6 +131,8 @@ class AdAgentStore:
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (version, datetime.now(timezone.utc).isoformat()),
                 )
+            for index in indexes:
+                conn.execute(index)
             conn.commit()
 
 
