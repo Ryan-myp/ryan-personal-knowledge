@@ -37,6 +37,7 @@ from .conversation_feedback_store import (
     save_conversation_feedback as persist_conversation_feedback,
 )
 from .semantic_index_store import (
+    get_knowledge_semantic_index_metadata as query_semantic_index_metadata,
     is_knowledge_semantic_index_current as check_semantic_index_current,
     rebuild_knowledge_semantic_index as persist_semantic_index,
     search_knowledge_semantic_index as query_semantic_index,
@@ -101,7 +102,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 25
+    SCHEMA_VERSION = 26
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -175,6 +176,7 @@ class AdAgentStore:
         reviewer_id TEXT,
         reviewed_at TEXT,
         expected_behavior TEXT,
+        assertions TEXT NOT NULL DEFAULT '{}',
         UNIQUE (session_id, turn_id),
         FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
@@ -1152,6 +1154,10 @@ class AdAgentStore:
                        LIMIT 1
                    )
                    WHERE reason IS NULL OR reason = ''"""
+            )
+        elif version == 26:
+            cls._add_column_if_missing(
+                conn, "conversation_feedback", "assertions", "TEXT NOT NULL DEFAULT '{}'",
             )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
@@ -4299,6 +4305,7 @@ class AdAgentStore:
         review_status: str,
         expected_behavior: str,
         reviewed_at: str,
+        assertions: Optional[dict[str, Any]] = None,
     ) -> bool:
         with self._lock:
             return update_feedback_review(
@@ -4309,6 +4316,7 @@ class AdAgentStore:
                 review_status=str(review_status),
                 expected_behavior=str(expected_behavior or ""),
                 reviewed_at=str(reviewed_at),
+                assertions=assertions,
             )
 
     def rebuild_knowledge_semantic_index(
@@ -4351,6 +4359,10 @@ class AdAgentStore:
                 scope=scope,
                 fingerprint=fingerprint,
             )
+
+    def get_knowledge_semantic_index_metadata(self, *, scope: str) -> dict[str, Any]:
+        with self._lock:
+            return query_semantic_index_metadata(self._get_conn(), scope=scope)
 
     def delete_conversation_messages(self, session_id: str) -> None:
         """Delete one session transcript after the adapter checked its scope."""

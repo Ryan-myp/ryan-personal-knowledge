@@ -74,6 +74,9 @@ class KnowledgeStorePort(Protocol):
     def is_knowledge_semantic_index_current(
         self, *, scope: str, fingerprint: str,
     ) -> bool: ...
+    def get_knowledge_semantic_index_metadata(
+        self, *, scope: str,
+    ) -> dict[str, Any]: ...
 
 
 class PersistenceBackend(KnowledgeStorePort, Protocol):
@@ -143,6 +146,7 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def review_conversation_feedback(
         self, feedback_id: str, *, tenant_id: str, reviewer_id: str,
         review_status: str, expected_behavior: str, reviewed_at: str,
+        assertions: Optional[dict[str, Any]] = None,
     ) -> bool: ...
 
     # -- Campaign creation templates ------------------------------------

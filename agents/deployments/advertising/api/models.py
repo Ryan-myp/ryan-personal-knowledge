@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+from agents.agent_platform.evals.regression import RegressionAssertions
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
@@ -48,6 +49,7 @@ class ConversationFeedbackRequest(BaseModel):
 class ConversationFeedbackReviewRequest(BaseModel):
     review_status: Literal["candidate", "dismissed"]
     expected_behavior: str = Field(default="", max_length=2000)
+    assertions: RegressionAssertions = Field(default_factory=RegressionAssertions)
 
 
 class TaskSubmitRequest(BaseModel):

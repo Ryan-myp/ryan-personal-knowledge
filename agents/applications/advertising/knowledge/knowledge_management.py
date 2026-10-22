@@ -430,20 +430,8 @@ class ManagedKnowledgeProvider:
         builtin = self.base.semantic_index_status()
         _managed, chunks = self._published_tenant_chunks(tenant_key)
         scope = f"tenant:{tenant_key}"
-        fingerprint = self.base._fingerprint(chunks)
         configured = builtin["configured"]
-        current = configured and self.base._semantic_index_is_current(
-            scope, fingerprint,
-        )
-        tenant = {
-            "scope": scope,
-            "configured": configured,
-            "current": bool(current),
-            "available": bool(current and self.base._semantic_error is None),
-            "chunk_count": len(chunks),
-            "fingerprint": fingerprint,
-            "error_type": self.base._semantic_error,
-        }
+        tenant = self.base.semantic.status(chunks, scope=scope)
         return {
             "tenant_id": tenant_key,
             "configured": configured,
@@ -469,18 +457,11 @@ class ManagedKnowledgeProvider:
         if builtin["configured"]:
             _managed, chunks = self._published_tenant_chunks(tenant_key)
             tenant_status["chunk_count"] = len(chunks)
-            tenant_status["available"] = self.base._rebuild_semantic_index(
+            self.base.semantic.rebuild(
                 chunks,
                 scope=scope,
             )
-            tenant_status["error_type"] = self.base._semantic_error
-            tenant_status["fingerprint"] = self.base._fingerprint(chunks)
-            tenant_status["current"] = bool(
-                tenant_status["available"]
-                and self.base._semantic_index_is_current(
-                    scope, tenant_status["fingerprint"],
-                )
-            )
+            tenant_status = self.base.semantic.status(chunks, scope=scope)
         self.clear_tenant_cache(tenant_key)
         return {
             "configured": builtin["configured"],
@@ -695,7 +676,6 @@ class ManagedKnowledgeProvider:
             self._query_cache_misses += 1
         all_documents = [*self.base.documents, *managed]
         managed_scope = f"tenant:{tenant_key}"
-        tenant_fingerprint = self.base._fingerprint(managed_chunks)
         all_chunks = [
             *self.base.chunks,
             *managed_chunks,
@@ -706,14 +686,9 @@ class ManagedKnowledgeProvider:
         )
         semantic_hits: dict[str, float] = {}
         for scope in (self.base.semantic_scope, managed_scope):
-            hits = self.base._semantic_search_hits(
-                query,
+            hits = self.base.semantic.search(
+                query, self.base.chunks if scope == self.base.semantic_scope else managed_chunks,
                 scope=scope,
-                fingerprint=(
-                    self.base._semantic_fingerprint
-                    if scope == self.base.semantic_scope
-                    else tenant_fingerprint
-                ),
             )
             if hits:
                 semantic_hits.update(hits)

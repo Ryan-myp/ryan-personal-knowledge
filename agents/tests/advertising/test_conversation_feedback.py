@@ -58,6 +58,63 @@ def test_feedback_is_scoped_to_owned_session_and_assistant_turn():
     assert feedback["submitted_at"]
 
 
+def test_reviewed_feedback_round_trips_closed_regression_assertions():
+    store = AdAgentStore(":memory:")
+    try:
+        manager = SessionManager(store)
+        manager.create_session("session-a", "user-a", metadata={"tenant_id": "tenant-a"})
+        manager.record_conversation_message("session-a", "turn-a", "assistant", "answer")
+        manager.save_conversation_feedback(
+            "session-a", "turn-a", user_id="user-a", tenant_id="tenant-a",
+            feedback={"rating": "negative", "reason": "duplicate calls",
+                      "submitted_at": "2026-10-22T00:00:00+00:00"},
+        )
+        assertions = {"max_tool_calls": 1, "required_tools": ["search_knowledge"]}
+        assert store.review_conversation_feedback(
+            "feedback-missing", tenant_id="tenant-a", reviewer_id="reviewer",
+            review_status="candidate", expected_behavior="One knowledge search",
+            reviewed_at="2026-10-22T00:00:00+00:00", assertions=assertions,
+        ) is False
+        feedback_id = store.list_conversation_feedback_review_queue(
+            tenant_id="tenant-a",
+        )[0]["feedback_id"]
+        assert store.review_conversation_feedback(
+            feedback_id, tenant_id="tenant-a", reviewer_id="reviewer",
+            review_status="candidate", expected_behavior="One knowledge search",
+            reviewed_at="2026-10-22T00:00:00+00:00", assertions=assertions,
+        )
+        saved = store.list_conversation_feedback_review_queue(
+            tenant_id="tenant-a", status="candidate",
+        )[0]
+        assert saved["assertions"]["max_tool_calls"] == 1
+        with pytest.raises(ValueError):
+            store.review_conversation_feedback(
+                feedback_id, tenant_id="tenant-a", reviewer_id="reviewer",
+                review_status="candidate", expected_behavior="invalid",
+                reviewed_at="2026-10-22T00:00:00+00:00", assertions={"command": "run"},
+            )
+    finally:
+        store.close()
+
+
+def test_feedback_insert_explicitly_supplies_mysql_longtext_assertions():
+    from unittest.mock import MagicMock
+    from agents.applications.advertising.persistence.conversation_feedback_store import (
+        _upsert_feedback_aggregate,
+    )
+
+    connection = MagicMock()
+    _upsert_feedback_aggregate(
+        connection, session_id="session", turn_id="turn", user_id="user",
+        tenant_id="tenant", rating="negative", reason=None,
+        submitted_at="2026-10-22T00:00:00+00:00",
+    )
+    statement = connection.execute.call_args.args[0]
+    columns, values = statement.split("VALUES", 1)
+    assert "assertions" in columns
+    assert "'{}'" in values
+
+
 def test_feedback_write_is_rejected_when_session_is_outside_principal_scope():
     session_manager = _SessionManager(session=None)
     service = AdConversationServices(SimpleNamespace(
@@ -465,7 +522,7 @@ def test_feedback_migration_backfills_legacy_reason_without_replaying_old_schema
     )
     connection.execute(
         "DELETE FROM schema_migrations WHERE version = ?",
-        (store.SCHEMA_VERSION,),
+        (25,),
     )
     connection.commit()
     store.close()

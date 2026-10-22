@@ -92,3 +92,15 @@ def test_synthetic_semantic_embedding_does_not_claim_out_of_domain_validation():
     assert metrics["empty_query_assessment"] == "not_assessed"
     assert metrics["empty_query_failures"] == 0
     assert metrics["negative_failures"] == 0
+
+
+def test_retrieval_reports_recall_ndcg_and_latency_separately():
+    metrics = evaluate_cases(
+        _Provider([_result("wrong"), _result("wanted")]),
+        [{"query": "budget", "expected": ["wanted", "missing"]}],
+    )
+    assert metrics["hit_at_3"] == 1.0
+    assert metrics["recall_at_3"] == 0.5
+    assert metrics["ndcg_at_3"] == 0.387
+    assert metrics["latency_samples"] == 1
+    assert metrics["latency_p95_ms"] >= 0

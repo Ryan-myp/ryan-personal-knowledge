@@ -6,6 +6,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from agents.agent_platform.evals.regression import RegressionAssertions
 
 
 def save_conversation_feedback(
@@ -111,8 +112,8 @@ def _upsert_feedback_aggregate(
     connection.execute(
         """INSERT INTO conversation_feedback
            (feedback_id, session_id, turn_id, tenant_id, user_id, rating,
-            reason, submitted_at, review_status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            reason, submitted_at, review_status, assertions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', '{}')
            ON CONFLICT(session_id, turn_id) DO UPDATE SET
                tenant_id = excluded.tenant_id,
                user_id = excluded.user_id,
@@ -122,7 +123,8 @@ def _upsert_feedback_aggregate(
                review_status = 'pending',
                reviewer_id = NULL,
                reviewed_at = NULL,
-               expected_behavior = NULL""",
+               expected_behavior = NULL,
+               assertions = '{}'""",
         (
             str(uuid.uuid4()), str(session_id), str(turn_id),
             str(tenant_id), str(user_id), rating, reason, submitted_at,
@@ -208,7 +210,7 @@ def list_conversation_feedback_review_queue(
                   feedback.user_id, feedback.rating, feedback.reason,
                   feedback.submitted_at, feedback.review_status,
                   feedback.reviewer_id, feedback.reviewed_at,
-                  feedback.expected_behavior,
+                  feedback.expected_behavior, feedback.assertions,
                   (SELECT message.content
                    FROM conversation_messages AS message
                    WHERE message.session_id = feedback.session_id
@@ -246,6 +248,9 @@ def list_conversation_feedback_review_queue(
             "reviewer_id": row["reviewer_id"],
             "reviewed_at": row["reviewed_at"],
             "expected_behavior": str(row["expected_behavior"] or "")[:2000],
+            "assertions": RegressionAssertions.model_validate_json(
+                row["assertions"] or "{}",
+            ).model_dump(exclude_defaults=True),
             "user_input": str(row["user_input"] or "")[:4000],
             "assistant_reply": str(row["assistant_reply"] or "")[:4000],
         }
@@ -262,6 +267,7 @@ def review_conversation_feedback(
     review_status: str,
     expected_behavior: str,
     reviewed_at: str,
+    assertions: dict[str, Any] | None = None,
 ) -> bool:
     if review_status not in {"candidate", "dismissed"}:
         raise ValueError("review status must be candidate or dismissed")
@@ -272,16 +278,18 @@ def review_conversation_feedback(
         raise ValueError("expected behavior exceeds 2000 characters")
     if not str(reviewer_id or "").strip() or not str(reviewed_at or "").strip():
         raise ValueError("reviewer and reviewed_at are required")
+    validated_assertions = RegressionAssertions.model_validate(assertions or {})
     cursor = connection.execute(
         """UPDATE conversation_feedback
            SET review_status = ?, reviewer_id = ?, reviewed_at = ?,
-               expected_behavior = ?
+               expected_behavior = ?, assertions = ?
            WHERE feedback_id = ? AND tenant_id = ? AND rating = 'negative'""",
         (
             review_status,
             str(reviewer_id),
             str(reviewed_at),
             expected or None,
+            validated_assertions.model_dump_json(exclude_defaults=True),
             str(feedback_id),
             str(tenant_id),
         ),

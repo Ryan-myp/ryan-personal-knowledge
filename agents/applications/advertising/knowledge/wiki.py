@@ -9,14 +9,12 @@ the one runtime retrieval boundary; callers should depend on
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 import re
 import threading
 import time
 import unicodedata
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -26,8 +24,9 @@ from typing import Any, Iterable, Mapping, Optional, Protocol
 
 from agents.agent_harness.core.namespace import normalize_namespace as normalize_platform
 from agents.agent_harness.core.context import ContextQuery
-from agents.agent_platform.data.semantic import validate_vector
 from agents.applications.advertising.knowledge.provenance import infer_source_kind
+from .semantic_retrieval import WikiSemanticRetrieval
+from .ranking import RankingOptions, WikiRanking
 
 
 WIKI_SCHEMA_VERSION = "1"
@@ -193,7 +192,10 @@ def _parse_scalar(value: str) -> Any:
             if isinstance(parsed, list):
                 return [str(item).strip() for item in parsed]
         except (TypeError, ValueError):
-            return [item.strip().strip('"').strip("'") for item in value[1:-1].split(",") if item.strip()]
+            return [
+                item.strip().strip('"').strip("'")
+                for item in value[1:-1].split(",") if item.strip()
+            ]
     if value.lower() in {"true", "false"}:
         return value.lower() == "true"
     return value
@@ -308,18 +310,24 @@ class MarkdownWikiKnowledgeProvider:
             raise ValueError("semantic_timeout_seconds must be positive")
         self._query_cache_ttl_seconds = float(query_cache_ttl_seconds)
         self._query_cache_max_entries = int(query_cache_max_entries)
-        self.embedding_provider = embedding_provider
-        self.semantic_index = semantic_index
         self.semantic_scope = str(semantic_scope or "builtin").strip() or "builtin"
-        self.semantic_top_k = min(int(semantic_top_k), 1000)
-        self.semantic_batch_size = min(int(semantic_batch_size), 256)
-        self.semantic_timeout_seconds = float(semantic_timeout_seconds)
+        self.semantic = WikiSemanticRetrieval(
+            embedding_provider, semantic_index,
+            sanitize=lambda text: self._SENSITIVE_TERMS.sub("<redacted>", text),
+        )
+        self.semantic.top_k = min(int(semantic_top_k), 100)
+        self.semantic.batch_size = min(int(semantic_batch_size), 64)
+        self.semantic.timeout_seconds = float(semantic_timeout_seconds)
         self.auto_rebuild_semantic = bool(auto_rebuild_semantic)
-        self._semantic_available = False
-        self._semantic_dimension: int | None = None
-        self._semantic_error: str | None = None
-        self._semantic_scope_fingerprints: dict[str, str] = {}
         self._tenant_cache_max_entries = 256
+        self._initialize_query_cache()
+        self._fts_scope = "builtin"
+        self._fts_available = False
+        self._documents: list[KnowledgeDocument] = []
+        self._chunks: list[KnowledgeDocument] = []
+        self._load()
+
+    def _initialize_query_cache(self) -> None:
         self._query_cache: OrderedDict[
             tuple[Any, ...], tuple[float, tuple[KnowledgeDocument, ...]]
         ] = OrderedDict()
@@ -328,12 +336,6 @@ class MarkdownWikiKnowledgeProvider:
         self._query_cache_misses = 0
         self._query_cache_evictions = 0
         self._knowledge_revision = 0
-        self._fts_scope = "builtin"
-        self._fts_available = False
-        self._documents: list[KnowledgeDocument] = []
-        self._chunks: list[KnowledgeDocument] = []
-        self._semantic_fingerprint = ""
-        self._load()
 
     @property
     def documents(self) -> tuple[KnowledgeDocument, ...]:
@@ -368,105 +370,83 @@ class MarkdownWikiKnowledgeProvider:
         if not self.base_path.is_dir():
             return
         for path in sorted(self.base_path.rglob("*.md")):
-            if not path.is_file():
+            document = self._read_document(path)
+            if document is None:
                 continue
-            try:
-                content = path.read_text(encoding="utf-8")
-                stat = path.stat()
-            except OSError:
-                continue
-            relative = path.relative_to(self.base_path)
-            if relative.name in self._CONTROL_BASENAMES:
-                continue
-            metadata, body = parse_frontmatter(content)
-            parts = relative.parts
-            wiki_type = self._derive_wiki_type(parts, metadata)
-            if wiki_type == "system" or (wiki_type == "raw" and not self.include_raw):
-                continue
-            platform = str(metadata.get("platform") or "")
-            if not platform and len(parts) > 2 and parts[0] == "platforms":
-                platform = parts[1]
-            platform = self._normalize_platform(platform or "all")
-            layer = str(metadata.get("layer") or self._derive_layer(parts))
-            knowledge_type = str(
-                metadata.get("knowledge_type")
-                or metadata.get("type")
-                or self._derive_type(path.name)
-            ).strip().lower()
-            category = str(
-                metadata.get("category")
-                or self._derive_category(parts, path.name, layer, knowledge_type)
-            ).strip().lower()
-            subcategory = str(
-                metadata.get("subcategory") or self._derive_subcategory(path.name, knowledge_type)
-            ).strip().lower()
-            title = str(metadata.get("title") or self._title_from_body(body) or path.stem)
-            source_ref_value = metadata.get("source_ref")
-            source_ref = str(
-                source_ref_value if source_ref_value is not None else relative.as_posix()
-            )
-            source = str(metadata.get("source") or metadata.get("来源") or source_ref)
-            version = str(metadata.get("version") or "local")
-            updated_at = str(metadata.get("updated_at") or metadata.get("updated") or stat.st_mtime)
-            status = str(metadata.get("status") or "published").lower()
-            confidence = self._confidence(metadata.get("confidence"), 1.0)
-            source_kind = self._source_kind(
-                metadata.get("source_kind"), source_ref, source
-            )
-            authority = self._authority(
-                metadata.get("authority"), source_kind
-            )
-            evidence_level = self._evidence_level(
-                metadata.get("evidence_level"), source_kind
-            )
-            last_verified_at = str(
-                metadata.get("last_verified_at") or updated_at
-            ).strip()
-            document_id = str(metadata.get("id") or f"{platform}:{relative.as_posix()}")
-            document = KnowledgeDocument(
-                document_id=document_id,
-                platform=platform,
-                topic=path.stem,
-                excerpt=body,
-                source=source,
-                version=version,
-                confidence=confidence,
-                updated_at=updated_at,
-                title=title,
-                layer=layer,
-                knowledge_type=knowledge_type,
-                category=category,
-                subcategory=subcategory,
-                source_ref=source_ref,
-                tags=tuple(_as_list(metadata.get("tags"))),
-                status=status,
-                wiki_type=wiki_type,
-                schema_version=str(metadata.get("schema_version") or WIKI_SCHEMA_VERSION),
-                source_kind=source_kind,
-                authority=authority,
-                evidence_level=evidence_level,
-                last_verified_at=last_verified_at,
-            )
             self._documents.append(document)
             self._chunks.extend(self._chunk_document(document, scope=self._fts_scope))
         self._fts_available = self._rebuild_search_index(
             self._chunks, scope=self._fts_scope
         )
-        self._semantic_fingerprint = self._fingerprint(self._chunks)
         if self.auto_rebuild_semantic:
-            self._semantic_available = self._rebuild_semantic_index(
+            self.semantic.rebuild(
                 self._chunks, scope=self.semantic_scope,
             )
-        else:
-            self._semantic_available = self._semantic_index_is_current(
-                self.semantic_scope, self._semantic_fingerprint,
-            )
+
+    def _read_document(self, path: Path) -> KnowledgeDocument | None:
+        relative = path.relative_to(self.base_path)
+        if not path.is_file() or relative.name in self._CONTROL_BASENAMES:
+            return None
+        try:
+            content = path.read_text(encoding="utf-8")
+            modified = path.stat().st_mtime
+        except OSError:
+            return None
+        metadata, body = parse_frontmatter(content)
+        wiki_type = self._derive_wiki_type(relative.parts, metadata)
+        if wiki_type == "system" or (wiki_type == "raw" and not self.include_raw):
+            return None
+        return self._document_from_metadata(relative, metadata, body, modified)
+
+    def _document_from_metadata(
+        self, relative: Path, metadata: dict, body: str, modified: float,
+    ) -> KnowledgeDocument:
+        parts = relative.parts
+        platform = metadata.get("platform")
+        if not platform and len(parts) > 2 and parts[0] == "platforms":
+            platform = parts[1]
+        platform = self._normalize_platform(str(platform or "all"))
+        layer = str(metadata.get("layer") or self._derive_layer(parts))
+        kind = str(metadata.get("knowledge_type") or metadata.get("type")
+                   or self._derive_type(relative.name)).strip().lower()
+        source_ref = metadata.get("source_ref")
+        source_ref = str(source_ref if source_ref is not None else relative.as_posix())
+        source = str(metadata.get("source") or metadata.get("来源") or source_ref)
+        updated = str(metadata.get("updated_at") or metadata.get("updated") or modified)
+        return KnowledgeDocument(
+            document_id=str(metadata.get("id") or f"{platform}:{relative.as_posix()}"),
+            platform=platform, topic=relative.stem, excerpt=body, source=source,
+            version=str(metadata.get("version") or "local"),
+            confidence=self._confidence(metadata.get("confidence"), 1.0),
+            updated_at=updated,
+            title=str(metadata.get("title") or self._title_from_body(body) or relative.stem),
+            layer=layer, knowledge_type=kind,
+            category=str(metadata.get("category") or self._derive_category(
+                parts, relative.name, layer, kind,
+            )).strip().lower(),
+            subcategory=str(metadata.get("subcategory")
+                            or self._derive_subcategory(relative.name, kind)).strip().lower(),
+            source_ref=source_ref, tags=tuple(_as_list(metadata.get("tags"))),
+            status=str(metadata.get("status") or "published").lower(),
+            wiki_type=self._derive_wiki_type(parts, metadata),
+            schema_version=str(metadata.get("schema_version") or WIKI_SCHEMA_VERSION),
+            **self._provenance_metadata(metadata, source_ref, source, updated),
+        )
+
+    def _provenance_metadata(
+        self, metadata: dict, source_ref: str, source: str, updated: str,
+    ) -> dict[str, str]:
+        kind = self._source_kind(metadata.get("source_kind"), source_ref, source)
+        return {
+            "source_kind": kind,
+            "authority": self._authority(metadata.get("authority"), kind),
+            "evidence_level": self._evidence_level(metadata.get("evidence_level"), kind),
+            "last_verified_at": str(metadata.get("last_verified_at") or updated).strip(),
+        }
 
     @property
     def semantic_available(self) -> bool:
-        return self._semantic_index_is_current(
-            self.semantic_scope, self._semantic_fingerprint,
-        )
+        return self.semantic_index_status()["available"]
 
     def configure_semantic_retrieval(
         self,
@@ -476,104 +456,29 @@ class MarkdownWikiKnowledgeProvider:
         auto_rebuild: bool = False,
     ) -> None:
         """Attach trusted semantic adapters without issuing startup requests."""
-        self.embedding_provider = embedding_provider
-        self.semantic_index = semantic_index
+        self.semantic.configure(embedding_provider, semantic_index)
         self.auto_rebuild_semantic = bool(auto_rebuild)
-        self._semantic_fingerprint = self._fingerprint(self._chunks)
-        self._semantic_error = None
-        self._semantic_scope_fingerprints.clear()
-        self._semantic_available = (
-            self._rebuild_semantic_index(
-                self._chunks, scope=self.semantic_scope,
-            )
-            if self.auto_rebuild_semantic
-            else self._semantic_index_is_current(
-                self.semantic_scope, self._semantic_fingerprint,
-            )
-        )
+        if self.auto_rebuild_semantic:
+            self.semantic.rebuild(self._chunks, scope=self.semantic_scope)
         self.clear_query_cache()
 
     def rebuild_semantic_search_index(self) -> dict[str, Any]:
         """Explicitly build the built-in Wiki vector index."""
-        self._semantic_fingerprint = self._fingerprint(self._chunks)
-        available = self._rebuild_semantic_index(
-            self._chunks,
-            scope=self.semantic_scope,
-        )
-        self._semantic_available = available
+        self.semantic.rebuild(self._chunks, scope=self.semantic_scope)
         self.clear_query_cache()
-        return {
-            "scope": self.semantic_scope,
-            "chunk_count": len(self._chunks),
-            "configured": self._semantic_configured(),
-            "available": available,
-            "fingerprint": self._semantic_fingerprint,
-            "error_type": self._semantic_error,
-        }
+        return self.semantic_index_status()
 
     def semantic_index_status(self) -> dict[str, Any]:
         """Report index freshness without contacting the embedding provider."""
-        configured = self._semantic_configured()
-        current = (
-            self._semantic_index_is_current(
-                self.semantic_scope, self._semantic_fingerprint,
-            )
-            if configured else False
-        )
-        return {
-            "scope": self.semantic_scope,
-            "configured": configured,
-            "current": current,
-            "available": current and self._semantic_error is None,
-            "chunk_count": len(self._chunks),
-            "fingerprint": self._semantic_fingerprint,
-            "error_type": self._semantic_error,
-        }
-
-    def _fingerprint(self, chunks: Iterable[KnowledgeDocument]) -> str:
-        provider_fingerprint = getattr(self.embedding_provider, "fingerprint", "")
-        if callable(provider_fingerprint):
-            provider_fingerprint = provider_fingerprint()
-        digest = hashlib.sha256(str(provider_fingerprint or "").encode("utf-8"))
-        for chunk in chunks:
-            digest.update(chunk.chunk_id.encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(self._semantic_text(chunk).encode("utf-8"))
-            digest.update(b"\0")
-        return digest.hexdigest()
-
-    def _semantic_configured(self) -> bool:
-        if self.embedding_provider is None or self.semantic_index is None:
-            return False
-        configured = getattr(self.embedding_provider, "configured", True)
-        try:
-            return bool(configured() if callable(configured) else configured)
-        except (RuntimeError, TypeError, ValueError):
-            return False
-
-    def _semantic_index_is_current(self, scope: str, fingerprint: str) -> bool:
-        method = getattr(self.semantic_index, "is_current", None)
-        if not callable(method):
-            return bool(
-                fingerprint
-                and self._semantic_scope_fingerprints.get(str(scope)) == fingerprint
-            )
-        try:
-            return bool(method(scope=scope, fingerprint=fingerprint))
-        except (OSError, RuntimeError, TypeError, ValueError):
-            return False
+        return self.semantic.status(self._chunks, scope=self.semantic_scope)
 
     def semantic_metrics(self) -> dict[str, Any]:
         """Expose semantic readiness without returning vectors or content."""
         return {
-            "configured": self._semantic_configured(),
-            "available": self.semantic_available and self._semantic_error is None,
-            "scope": self.semantic_scope,
-            "dimension": self._semantic_dimension,
-            "top_k": self.semantic_top_k,
-            "batch_size": self.semantic_batch_size,
-            "timeout_seconds": self.semantic_timeout_seconds,
-            "error_type": self._semantic_error,
+            **self.semantic_index_status(),
+            "top_k": self.semantic.top_k,
+            "batch_size": self.semantic.batch_size,
+            "timeout_seconds": self.semantic.timeout_seconds,
         }
 
     @staticmethod
@@ -682,7 +587,10 @@ class MarkdownWikiKnowledgeProvider:
             if knowledge_type in {"constraint", "parameter", "workflow"}:
                 return "campaign_operations"
             if knowledge_type in {"bidding_strategy", "targeting_strategy"}:
-                return "budget_bidding" if knowledge_type == "bidding_strategy" else "audience_targeting"
+                return (
+                    "budget_bidding" if knowledge_type == "bidding_strategy"
+                    else "audience_targeting"
+                )
             if knowledge_type == "creative_guide":
                 return "creative"
             if knowledge_type == "error_pattern":
@@ -935,148 +843,6 @@ class MarkdownWikiKnowledgeProvider:
         except (OSError, RuntimeError, TypeError, ValueError):
             return False
 
-    @classmethod
-    def _semantic_text(cls, chunk: KnowledgeDocument) -> str:
-        """Build a bounded, redacted embedding input from source metadata."""
-        clean = lambda value: cls._SENSITIVE_TERMS.sub("<redacted>", str(value or ""))
-        parts = (
-            clean(chunk.title),
-            clean(" ".join(chunk.heading_path)),
-            clean(" ".join(chunk.tags)),
-            clean(chunk.category),
-            clean(chunk.subcategory),
-            clean(chunk.excerpt),
-        )
-        return " ".join(part for part in parts if part).strip()[:8_000]
-
-    def _embed(self, texts: list[str]) -> list[tuple[float, ...]]:
-        embed = getattr(self.embedding_provider, "embed", None)
-        if not callable(embed):
-            raise TypeError("embedding_provider must expose embed()")
-        executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="knowledge-embedding",
-        )
-        future: Future[Any] = executor.submit(embed, texts)
-        try:
-            raw = future.result(timeout=self.semantic_timeout_seconds)
-        except FutureTimeoutError as error:
-            future.cancel()
-            raise TimeoutError("knowledge embedding timed out") from error
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
-        if isinstance(raw, (str, bytes)) or not isinstance(raw, Iterable):
-            raise ValueError("embedding provider returned an invalid batch")
-        vectors = list(raw)
-        if len(vectors) != len(texts):
-            raise ValueError("embedding provider returned an incomplete batch")
-        normalized: list[tuple[float, ...]] = []
-        for vector in vectors:
-            normalized_vector = validate_vector(
-                vector,
-                expected_dimension=self._semantic_dimension,
-            )
-            if self._semantic_dimension is None:
-                self._semantic_dimension = len(normalized_vector)
-            normalized.append(normalized_vector)
-        return normalized
-
-    def _rebuild_semantic_index(
-        self,
-        chunks: Iterable[KnowledgeDocument],
-        *,
-        scope: str,
-    ) -> bool:
-        if not self._semantic_configured():
-            self._semantic_error = "embedding_not_configured"
-            return False
-        rebuild = getattr(self.semantic_index, "rebuild", None)
-        if not callable(rebuild):
-            self._semantic_error = "index_missing_rebuild"
-            return False
-        self._semantic_error = None
-        self._semantic_dimension = None
-        chunk_list = list(chunks)
-        records: list[dict[str, Any]] = []
-        try:
-            for offset in range(0, len(chunk_list), self.semantic_batch_size):
-                batch = chunk_list[offset:offset + self.semantic_batch_size]
-                vectors = self._embed([self._semantic_text(chunk) for chunk in batch])
-                records.extend(
-                    {
-                        "chunk_id": chunk.chunk_id,
-                        "document_id": chunk.document_id,
-                        "vector": vector,
-                    }
-                    for chunk, vector in zip(batch, vectors)
-                )
-            fingerprint = self._fingerprint(chunk_list)
-            if callable(getattr(self.semantic_index, "is_current", None)):
-                rebuild(
-                    records,
-                    scope=str(scope or "builtin"),
-                    fingerprint=fingerprint,
-                )
-            else:
-                rebuild(records, scope=str(scope or "builtin"))
-            self._semantic_scope_fingerprints[str(scope or "builtin")] = fingerprint
-            return True
-        except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as error:
-            self._semantic_error = type(error).__name__
-            self._semantic_dimension = None
-            self._semantic_scope_fingerprints.pop(str(scope or "builtin"), None)
-            return False
-
-    def _semantic_search_hits(
-        self,
-        query: str,
-        *,
-        scope: str | None = None,
-        fingerprint: str | None = None,
-    ) -> Optional[dict[str, float]]:
-        if (
-            self._semantic_error is not None
-            or not self._semantic_configured()
-        ):
-            return None
-        scope_key = str(scope or self.semantic_scope)
-        expected_fingerprint = str(
-            fingerprint
-            or (
-                self._semantic_fingerprint
-                if scope_key == self.semantic_scope else ""
-            )
-        )
-        if not expected_fingerprint or not self._semantic_index_is_current(
-            scope_key, expected_fingerprint,
-        ):
-            return None
-        search = getattr(self.semantic_index, "search", None)
-        if not callable(search):
-            return None
-        try:
-            vectors = self._embed([
-                self._SENSITIVE_TERMS.sub("<redacted>", str(query or ""))[:8_000]
-            ])
-            rows = search(
-                vectors[0],
-                scope=scope_key,
-                limit=self.semantic_top_k,
-            )
-        except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as error:
-            self._semantic_error = type(error).__name__
-            self._semantic_available = False
-            return None
-        result: dict[str, float] = {}
-        for row in rows or ():
-            if not isinstance(row, Mapping) or not row.get("chunk_id"):
-                continue
-            try:
-                score = float(row.get("score", 0.0))
-            except (TypeError, ValueError):
-                continue
-            if math.isfinite(score):
-                result[str(row["chunk_id"])] = max(-1.0, min(1.0, score))
-        return result
 
     def _search_index_hits(
         self, query: str, terms: Iterable[str], *, scopes: list[str],
@@ -1198,7 +964,9 @@ class MarkdownWikiKnowledgeProvider:
         fts_hits = self._search_index_hits(
             query, terms, scopes=[self._fts_scope]
         )
-        semantic_hits = self._semantic_search_hits(query)
+        semantic_hits = self.semantic.search(
+            query, self._chunks, scope=self.semantic_scope,
+        )
         result = self._query_chunks(
             self._chunks,
             self._documents,
@@ -1275,7 +1043,10 @@ class MarkdownWikiKnowledgeProvider:
         for document in self._documents:
             if document.status != "published":
                 continue
-            if allowed_platforms and self._normalize_platform(document.platform) not in allowed_platforms:
+            if (
+                allowed_platforms
+                and self._normalize_platform(document.platform) not in allowed_platforms
+            ):
                 continue
             if allowed_types and document.knowledge_type not in allowed_types:
                 continue
@@ -1286,185 +1057,21 @@ class MarkdownWikiKnowledgeProvider:
                 break
         return documents
 
+
     @classmethod
     def _query_chunks(
-        cls,
-        chunks: Iterable[KnowledgeDocument],
-        documents: Iterable[KnowledgeDocument],
-        query: str,
-        *,
-        platforms: Optional[Iterable[str]] = None,
-        intent_type: Optional[str] = None,
-        knowledge_types: Optional[Iterable[str]] = None,
-        limit: int = 4,
-        max_excerpt_chars: int = 1200,
+        cls, chunks: Iterable[KnowledgeDocument], documents: Iterable[KnowledgeDocument],
+        query: str, *, platforms: Optional[Iterable[str]] = None,
+        intent_type: Optional[str] = None, knowledge_types: Optional[Iterable[str]] = None,
+        limit: int = 4, max_excerpt_chars: int = 1200,
         fts_hits: Optional[Mapping[str, float]] = None,
         semantic_hits: Optional[Mapping[str, float]] = None,
     ) -> list[KnowledgeDocument]:
-        if limit <= 0 or max_excerpt_chars <= 0:
-            return []
-        document_list = list(documents)
-        chunk_list = list(chunks)
-        allowed = cls._effective_platforms(query, document_list, platforms)
-        allowed_types = {str(item).strip().lower() for item in (knowledge_types or []) if item}
-        terms = cls._terms(query, intent_type)
-        phrase = cls._normalise_text(query)
-        filtered: list[KnowledgeDocument] = []
-        for chunk in chunk_list:
-            if chunk.status != "published":
-                continue
-            doc_platform = cls._normalize_platform(chunk.platform)
-            universal_error_reference = (
-                doc_platform == "all" and allowed_types == {"error_pattern"}
-            )
-            if allowed and doc_platform not in allowed and not universal_error_reference:
-                continue
-            if allowed_types and chunk.knowledge_type not in allowed_types:
-                continue
-            if (
-                fts_hits is not None
-                and semantic_hits is None
-                and chunk.chunk_id not in fts_hits
-            ):
-                continue
-            if (
-                semantic_hits is not None
-                and fts_hits is None
-                and chunk.chunk_id not in semantic_hits
-            ):
-                continue
-            if (
-                semantic_hits is not None
-                and fts_hits is not None
-                and chunk.chunk_id not in fts_hits
-                and chunk.chunk_id not in semantic_hits
-            ):
-                continue
-            filtered.append(chunk)
-        if not filtered:
-            return []
-
-        corpus_terms = [set(cls._tokenize(chunk.excerpt)) for chunk in filtered]
-        document_frequency: dict[str, int] = {}
-        for tokens in corpus_terms:
-            for term in tokens:
-                document_frequency[term] = document_frequency.get(term, 0) + 1
-        average_length = sum(len(tokens) for tokens in corpus_terms) / max(len(corpus_terms), 1)
-        total_chunks = len(filtered)
-        ranked: list[tuple[float, KnowledgeDocument]] = []
-        for index, document in enumerate(filtered):
-            title = cls._normalise_text(document.title)
-            topic = cls._normalise_text(document.topic)
-            headings = cls._normalise_text(" ".join(document.heading_path))
-            tags = cls._normalise_text(" ".join(document.tags))
-            category = cls._normalise_text(document.category)
-            subcategory = cls._normalise_text(document.subcategory)
-            body = cls._normalise_text(document.excerpt)
-            searchable = " ".join((title, topic, headings, tags, category, subcategory, body))
-            score = 0.0
-            if fts_hits is not None:
-                score += min(12.0, fts_hits.get(document.chunk_id, 0.0))
-            if semantic_hits is not None:
-                semantic_score = semantic_hits.get(document.chunk_id)
-                if semantic_score is not None:
-                    score += max(0.0, (semantic_score + 1.0) / 2.0) * 8.0
-            if phrase and phrase in searchable:
-                score += 6.0
-            if phrase and phrase in title:
-                score += 8.0
-            elif phrase and phrase in headings:
-                score += 5.0
-            token_counts = dict(cls._term_frequency(body))
-            body_length = max(len(corpus_terms[index]), 1)
-            matched_terms: list[str] = []
-            for term in terms:
-                count = token_counts.get(term, 0)
-                metadata_match = (
-                    term in title or term in headings or term in tags
-                    or term in category or term in subcategory or term in topic
-                )
-                if count or metadata_match:
-                    matched_terms.append(term)
-                if not count:
-                    if term in title:
-                        score += 5.0
-                    elif term in headings:
-                        score += 3.5
-                    elif term in tags:
-                        score += 2.5
-                    elif term in category or term in subcategory:
-                        score += 2.5
-                    elif term in topic:
-                        score += 2.0
-                    continue
-                frequency = document_frequency.get(term, 0)
-                idf = math.log(1.0 + (total_chunks - frequency + 0.5) / (frequency + 0.5))
-                saturation = (count * 2.2) / (
-                    count + 1.2 * (0.65 + 0.35 * body_length / max(average_length, 1.0))
-                )
-                score += idf * saturation
-                if term in title:
-                    score += 5.0
-                if term in headings:
-                    score += 3.5
-                if term in tags:
-                    score += 2.5
-                if term in category or term in subcategory:
-                    score += 2.5
-                if term in topic:
-                    score += 2.0
-            match_coverage = (
-                len(set(matched_terms)) / len(terms) if terms else 1.0
-            )
-            if terms:
-                score += 4.0 * match_coverage
-            doc_platform = cls._normalize_platform(document.platform)
-            if allowed and doc_platform in allowed:
-                score += 1.5
-            if not terms and not phrase:
-                score = 0.1
-            if score <= 0:
-                continue
-            ranked.append((
-                score
-                * max(document.confidence, 0.01)
-                * cls._retrieval_quality(document),
-                document,
-            ))
-        ranked.sort(key=lambda item: (-item[0], item[1].document_id))
-        results = []
-        seen_documents: set[str] = set()
-        for score, document in ranked:
-            if document.document_id in seen_documents:
-                continue
-            seen_documents.add(document.document_id)
-            results.append(
-                KnowledgeDocument(
-                    **{
-                        **document.__dict__,
-                        "excerpt": cls._SENSITIVE_TERMS.sub(
-                            "<redacted>", cls._relevant_excerpt(
-                                document.excerpt, query, max_excerpt_chars
-                            )
-                        ),
-                        "score": round(score, 6),
-                        "retrieval_method": (
-                            "hybrid"
-                            if fts_hits is not None and semantic_hits is not None
-                            else "sqlite_fts5_bm25"
-                            if fts_hits is not None
-                            else "semantic_vector"
-                            if semantic_hits is not None
-                            else document.retrieval_method
-                        ),
-                        "matched_terms": tuple(dict.fromkeys(matched_terms)),
-                        "match_coverage": round(match_coverage, 4),
-                    }
-                )
-            )
-            if len(results) >= limit:
-                break
-        return results
+        return WikiRanking(cls, query, RankingOptions(
+            platforms=platforms, intent_type=intent_type, knowledge_types=knowledge_types,
+            limit=limit, max_excerpt_chars=max_excerpt_chars,
+            fts_hits=fts_hits, semantic_hits=semantic_hits,
+        )).rank(chunks, documents)
 
     @classmethod
     def _relevant_excerpt(cls, text: str, query: str, max_chars: int) -> str:
@@ -1506,7 +1113,8 @@ class MarkdownWikiKnowledgeProvider:
             )
             freshness = max(0.85, 1.0 - min(age_days, 3650.0) / 3650.0 * 0.15)
         except (TypeError, ValueError, OverflowError):
-            pass
+            # Undated documents receive neutral freshness, not fabricated age.
+            freshness = 1.0
         return max(0.75, min(1.35, evidence * authority * freshness))
 
     def validate(self) -> list[dict[str, Any]]:
@@ -1531,7 +1139,9 @@ class MarkdownWikiKnowledgeProvider:
             if document.status not in WIKI_STATUSES:
                 issues.append({"document_id": document.document_id, "error": "invalid status"})
             if not 0.0 <= document.confidence <= 1.0:
-                issues.append({"document_id": document.document_id, "error": "confidence out of range"})
+                issues.append({
+                    "document_id": document.document_id, "error": "confidence out of range",
+                })
         return issues
 
 

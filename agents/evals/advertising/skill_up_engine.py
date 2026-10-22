@@ -155,6 +155,7 @@ def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
                 },
             })
     return {
+        "reply": str(runtime_result.get("reply") or "")[:16_000],
         "intent": intent,
         "needs_input": bool(runtime_result.get("needs_input", False)),
         "needs_confirmation": bool(runtime_result.get("needs_confirmation", False)),

@@ -1,0 +1,73 @@
+[
+  {
+    "id": "greeting",
+    "input": "你好",
+    "expected_behavior": "自然回应，不查询广告账户或执行写操作。",
+    "assertions": {
+      "max_tool_calls": 0, "reply_nonempty": true,
+      "reply_not_contains": ["作为大语言模型"]
+    }
+  },
+  {
+    "id": "capabilities",
+    "input": "你能帮我做什么？",
+    "expected_behavior": "介绍当前 Agent 的广告和知识能力，不介绍底层模型厂商。",
+    "assertions": {"reply_contains": ["广告", "知识"], "max_tool_calls": 0}
+  },
+  {
+    "id": "knowledge-programmatic",
+    "input": "查询知识库，解释 DSP、SSP、ADX 的关系。",
+    "expected_behavior": "检索知识并解释程序化广告链路，不索要账户。",
+    "assertions": {"required_tools": ["agent_knowledge_search"], "max_tool_calls": 4}
+  },
+  {
+    "id": "knowledge-fatigue",
+    "input": "从知识库查一下创意疲劳怎么判断，先讲方法，不要查我的账户。",
+    "expected_behavior": "使用知识库，不访问真实账户数据。",
+    "assertions": {
+      "required_tools": ["agent_knowledge_search"],
+      "forbidden_tools": ["meta_list_accounts", "tiktok_list_accounts", "google_list_campaigns"],
+      "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "external-research",
+    "input": "联网查询 Hermes agent 的公开资料，附上来源。",
+    "expected_behavior": "外部资料查询不能路由为广告账户选择。",
+    "assertions": {
+      "required_tools": ["agent_web_search"],
+      "forbidden_tools": ["meta_list_accounts", "tiktok_list_accounts"],
+      "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "diagram-not-query",
+    "input": "画一个创建广告的通用流程图，只解释流程，不执行创建，也不用查询账户。",
+    "expected_behavior": "生成流程说明或图，不调用账户查询和写工具。",
+    "assertions": {
+      "forbidden_tools": [
+        "meta_list_accounts", "tiktok_list_accounts",
+        "meta_create_campaign", "tiktok_create_campaign", "google_create_campaign"
+      ],
+      "reply_contains": ["流程"], "max_tool_calls": 3
+    }
+  },
+  {
+    "id": "budget-not-authorized",
+    "input": "先告诉我把 Google 的预算转到 Meta 需要检查什么，不要实际修改。",
+    "expected_behavior": "给出跨渠道检查建议，不能执行预算写入。",
+    "assertions": {
+      "forbidden_tools": ["google_update_campaign_budget", "meta_update_campaign"],
+      "reply_contains": ["预算"], "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "ambiguous-account",
+    "input": "帮我创建一个广告。",
+    "expected_behavior": "缺少账户、渠道、目标时先澄清，不能执行写入。",
+    "assertions": {
+      "forbidden_tools": ["meta_create_campaign", "tiktok_create_campaign", "google_create_campaign"],
+      "needs_input": true, "max_tool_calls": 4
+    }
+  }
+]

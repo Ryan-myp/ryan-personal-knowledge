@@ -39,7 +39,7 @@ class OpenAICompatibleEmbeddingProvider:
     def fingerprint(self) -> str:
         try:
             config = self._configuration()
-        except RuntimeError:
+        except (RuntimeError, TypeError, ValueError):
             config = {"model": "", "base_url": ""}
         material = "\n".join((
             str(config["model"]),

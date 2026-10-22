@@ -3,6 +3,7 @@
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from datetime import datetime, timezone
 
 import pytest
@@ -10,11 +11,96 @@ import pytest
 from agents.applications.advertising.persistence.models import (
     ExecutionRunRecord, OutboxEvent, ScheduledTaskRecord, TaskRecord,
 )
-from agents.applications.advertising.persistence.mysql_store import _MySQLPool
+from agents.applications.advertising.persistence.mysql_pool import _MySQLPool
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.agent_platform.infrastructure.durable import TaskExecutor
-from agents.applications.advertising.persistence.mysql_store import _mysql_schema, _translate_sql
+from agents.applications.advertising.persistence.mysql_sql import _mysql_schema, _translate_sql
+
+
+def test_mysql_pool_shutdown_wakes_waiter_without_opening_another_connection():
+    from unittest.mock import MagicMock
+
+    raw = MagicMock()
+    pool = _MySQLPool(lambda: raw, pool_size=1, max_overflow=0)
+    pool.acquire()
+    waiting = Event()
+    original = pool._condition.wait
+
+    def wait(*args, **kwargs):
+        waiting.set()
+        return original(*args, **kwargs)
+
+    pool._condition.wait = wait
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(pool.acquire)
+        assert waiting.wait(1)
+        pool.close()
+        with pytest.raises(RuntimeError, match="closed"):
+            future.result(timeout=1)
+    assert pool.metrics()["created"] == 0
+
+
+def test_mysql_pool_records_close_failure_without_logging_secret_text(caplog):
+    from unittest.mock import MagicMock
+
+    raw = MagicMock()
+    raw.close.side_effect = OSError("private database URL")
+    pool = _MySQLPool(lambda: raw, pool_size=1, max_overflow=0)
+    pool.release(pool.acquire())
+    pool.close()
+    assert pool.metrics()["close_failures"] == 1
+    assert "OSError" in caplog.text
+    assert "private database URL" not in caplog.text
+
+
+def test_mysql_interrupted_statement_rolls_back_and_discards_connection(monkeypatch):
+    import sys
+    from types import ModuleType, SimpleNamespace
+    from unittest.mock import MagicMock
+    from agents.applications.advertising.persistence.mysql_connection import _MySQLConnection
+
+    mysql = ModuleType("pymysql")
+    mysql.cursors = SimpleNamespace(Cursor=object)
+    mysql.err = SimpleNamespace(OperationalError=())
+    monkeypatch.setitem(sys.modules, "pymysql", mysql)
+    raw = MagicMock()
+    raw.cursor.return_value.execute.side_effect = KeyboardInterrupt()
+    pool = _MySQLPool(lambda: raw, pool_size=1, max_overflow=0)
+    connection = _MySQLConnection(pool)
+    with pytest.raises(KeyboardInterrupt):
+        connection.execute("SELECT 1")
+    raw.rollback.assert_called_once()
+    assert pool.metrics()["created"] == 0
+    pool.close()
+
+
+def test_mysql_transaction_preserves_primary_error_if_rollback_also_fails():
+    from unittest.mock import MagicMock
+    from agents.applications.advertising.persistence.mysql_connection import _MySQLConnection
+
+    raw = MagicMock()
+    raw.rollback.side_effect = OSError("private cleanup details")
+    pool = _MySQLPool(lambda: raw, pool_size=1, max_overflow=0)
+    connection = _MySQLConnection(pool)
+    with pytest.raises(KeyboardInterrupt) as error:
+        with connection.transaction():
+            raise KeyboardInterrupt()
+    assert any("OSError" in note for note in error.value.__notes__)
+    assert "private cleanup details" not in str(error.value.__notes__)
+    assert pool.metrics()["created"] == 0
+    pool.close()
+
+
+def test_mysql_migrations_are_complete_and_unknown_versions_fail_closed():
+    from agents.applications.advertising.persistence.mysql_migrations import (
+        MIGRATIONS, NOOP_VERSIONS, apply_mysql_migration,
+    )
+
+    assert set(MIGRATIONS) | NOOP_VERSIONS == set(range(1, AdAgentStore.SCHEMA_VERSION + 1))
+    for version in (0, -1, True, AdAgentStore.SCHEMA_VERSION + 1):
+        with pytest.raises(ValueError):
+            apply_mysql_migration(None, version)
 
 
 def test_mysql_connection_executemany_translates_and_respects_transactions(
@@ -23,7 +109,7 @@ def test_mysql_connection_executemany_translates_and_respects_transactions(
     import sys
     from types import ModuleType, SimpleNamespace
 
-    from agents.applications.advertising.persistence.mysql_store import (
+    from agents.applications.advertising.persistence.mysql_connection import (
         _MySQLConnection,
     )
 
@@ -110,7 +196,7 @@ def test_mysql_connection_executemany_rolls_back_and_releases_on_error(
     import sys
     from types import ModuleType, SimpleNamespace
 
-    from agents.applications.advertising.persistence.mysql_store import (
+    from agents.applications.advertising.persistence.mysql_connection import (
         _MySQLConnection,
     )
 
@@ -176,7 +262,7 @@ def test_mysql_connection_discards_pool_entry_when_rollback_fails(
     from types import ModuleType, SimpleNamespace
     from unittest.mock import MagicMock
 
-    from agents.applications.advertising.persistence.mysql_store import (
+    from agents.applications.advertising.persistence.mysql_connection import (
         _MySQLConnection,
     )
 

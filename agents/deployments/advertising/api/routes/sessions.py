@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
+from agents.agent_platform.evals.regression import RegressionAssertions
 from agents.deployments.advertising.api.models import (
     ConversationFeedbackRequest,
     ConversationFeedbackReviewRequest,
@@ -256,6 +258,7 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
                 reviewer_id=principal.user_id,
                 review_status=body.review_status,
                 expected_behavior=body.expected_behavior,
+                assertions=body.assertions.model_dump(exclude_defaults=True),
             )
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
@@ -296,13 +299,17 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
             expected = str(item.get("expected_behavior") or "").strip()
             if not expected:
                 continue
+            assertions = RegressionAssertions.model_validate(item.get("assertions") or {})
             cases.append(context.redact({
+                "id": hashlib.sha256(str(item.get("feedback_id") or "").encode()).hexdigest()[:24],
                 "input": str(item.get("user_input") or "")[:4000],
                 "previous_output": str(item.get("assistant_reply") or "")[:4000],
                 "expected_behavior": expected[:2000],
+                "assertions": assertions.model_dump(exclude_defaults=True),
+                "runnable": assertions.executable,
             }))
         payload = {
-            "schema_version": "ad-agent-regression-cases/v1",
+            "schema_version": "ad-agent-regression-cases/v2",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "truncated": len(candidates) >= 100,
             "cases": cases,

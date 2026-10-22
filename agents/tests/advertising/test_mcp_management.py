@@ -13,7 +13,7 @@ from agents.applications.advertising.integrations.mcp.mcp_management import (
     MCPServerManager,
     MCPToolHandler,
 )
-from agents.applications.advertising.persistence.mysql_store import _mysql_schema
+from agents.applications.advertising.persistence.mysql_sql import _mysql_schema
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 

@@ -81,8 +81,11 @@ def rebuild_knowledge_semantic_index(
         connection.execute(statement, metadata)
         connection.commit()
         return True
-    except Exception:
-        connection.rollback()
+    except BaseException as error:
+        try:
+            connection.rollback()
+        except BaseException as cleanup_error:
+            error.add_note(f"semantic index rollback failed ({type(cleanup_error).__name__})")
         raise
 
 
@@ -101,11 +104,12 @@ def search_knowledge_semantic_index(
         """SELECT chunk_id, document_id, vector
            FROM knowledge_semantic_vectors
            WHERE scope = ? AND dimension = ?
+           ORDER BY chunk_id
            LIMIT ?""",
         (
             normalized_scope,
             len(query),
-            MAX_SEMANTIC_RECORDS,
+            min(int(limit), MAX_SEMANTIC_RECORDS),
         ),
     ).fetchall()
     return [
@@ -116,6 +120,17 @@ def search_knowledge_semantic_index(
         }
         for row in rows
     ]
+
+
+def get_knowledge_semantic_index_metadata(
+    connection: Any, *, scope: str,
+) -> dict[str, Any]:
+    row = connection.execute(
+        """SELECT fingerprint, dimension, record_count, updated_at
+           FROM knowledge_semantic_index_meta WHERE scope = ?""",
+        (str(scope or "").strip(),),
+    ).fetchone()
+    return dict(row) if row else {}
 
 
 def is_knowledge_semantic_index_current(
@@ -167,6 +182,7 @@ def _decode_vector(value: Any) -> list[float]:
 
 __all__ = [
     "is_knowledge_semantic_index_current",
+    "get_knowledge_semantic_index_metadata",
     "rebuild_knowledge_semantic_index",
     "search_knowledge_semantic_index",
 ]

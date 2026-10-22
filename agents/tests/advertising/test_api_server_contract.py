@@ -1827,6 +1827,7 @@ def test_feedback_review_requires_permission_and_exports_only_curated_cases(
                 "user_input": "分析 access_token=private-value 的报表",
                 "assistant_reply": "请核对 access_token=private-value",
                 "reason": "缺少数据区间",
+                "assertions": {"max_tool_calls": 1},
                 "expected_behavior": (
                     "先说明统计日期，且不得回显 access_token=private-value"
                     if status == "candidate" else ""
@@ -1881,6 +1882,7 @@ def test_feedback_review_requires_permission_and_exports_only_curated_cases(
             "reviewer_id": "reviewer-a",
             "review_status": "candidate",
             "expected_behavior": "先说明统计区间，再解释指标。",
+            "assertions": {},
         },
     )]
     assert exported.status_code == 200
@@ -1889,6 +1891,8 @@ def test_feedback_review_requires_permission_and_exports_only_curated_cases(
     assert len(export_payload["cases"]) == 1
     assert export_payload["cases"][0]["input"].startswith("分析")
     assert export_payload["cases"][0]["expected_behavior"].startswith("先说明")
+    assert export_payload["cases"][0]["runnable"] is True
+    assert export_payload["cases"][0]["assertions"] == {"max_tool_calls": 1}
     assert "feedback_id" not in exported.text
     assert "reviewer-a" not in exported.text
     assert "private-value" not in exported.text

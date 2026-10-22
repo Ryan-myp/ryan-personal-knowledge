@@ -4,6 +4,7 @@ import pytest
 
 from agents.agent_platform.data.embeddings import OpenAICompatibleEmbeddingProvider
 from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.agent_platform.data.persistent_semantic_index import PersistentSemanticIndex
 
 
 class _Response:
@@ -149,3 +150,106 @@ def test_persistent_semantic_vectors_are_scoped_and_replaced_atomically():
         ] == ["doc-c:0"]
     finally:
         store.close()
+
+
+def test_persistent_index_reuses_vectors_and_refreshes_after_an_external_rebuild():
+    store = AdAgentStore(":memory:")
+    index = PersistentSemanticIndex(store)
+    loads = []
+    original = store.search_knowledge_semantic_index
+
+    def load(*args, **kwargs):
+        loads.append(kwargs["scope"])
+        return original(*args, **kwargs)
+
+    store.search_knowledge_semantic_index = load
+    try:
+        records = [{"chunk_id": "old", "document_id": "old", "vector": [1.0, 0.0]}]
+        store.rebuild_knowledge_semantic_index(records, scope="tenant:a", fingerprint="v1")
+        assert index.search([1.0, 0.0], scope="tenant:a", limit=1)[0]["chunk_id"] == "old"
+        index.search([0.0, 1.0], scope="tenant:a", limit=1)
+        assert loads == ["tenant:a"]
+        store.rebuild_knowledge_semantic_index(
+            [{"chunk_id": "new", "document_id": "new", "vector": [0.0, 1.0]}],
+            scope="tenant:a", fingerprint="v2",
+        )
+        assert index.search([0.0, 1.0], scope="tenant:a", limit=1)[0]["chunk_id"] == "new"
+        assert loads == ["tenant:a", "tenant:a"]
+        assert index.search([1.0, 0.0], scope="tenant:b", limit=1) == []
+    finally:
+        store.close()
+
+
+def test_persistent_index_rejects_oversized_snapshots_before_loading_vectors():
+    store = AdAgentStore(":memory:")
+    index = PersistentSemanticIndex(store, max_cached_values=2)
+    try:
+        store.rebuild_knowledge_semantic_index(
+            [{"chunk_id": "big", "document_id": "big", "vector": [1.0, 0.0, 0.0]}],
+            scope="builtin", fingerprint="v1",
+        )
+        with pytest.raises(RuntimeError, match="budget"):
+            index.search([1.0, 0.0, 0.0], scope="builtin", limit=1)
+    finally:
+        store.close()
+
+
+def test_wrong_dimension_query_does_not_poison_the_cached_snapshot():
+    store = AdAgentStore(":memory:")
+    index = PersistentSemanticIndex(store)
+    try:
+        index.rebuild(
+            [{"chunk_id": "doc", "document_id": "doc", "vector": [1.0, 0.0]}],
+            scope="builtin", fingerprint="v1",
+        )
+        assert index.is_current(scope="builtin", fingerprint="v1")
+        assert index.search([1.0], scope="builtin", limit=1) == []
+        assert index.search([1.0, 0.0], scope="builtin", limit=1)[0]["chunk_id"] == "doc"
+        assert index.search([1.0, 0.0], scope="builtin", limit=0) == []
+    finally:
+        store.close()
+
+
+def test_persistent_snapshot_cache_enforces_its_global_value_budget():
+    store = AdAgentStore(":memory:")
+    index = PersistentSemanticIndex(store, max_cached_values=2)
+    try:
+        for scope in ("a", "b", "c"):
+            index.rebuild(
+                [{"chunk_id": scope, "document_id": scope, "vector": [1.0, 0.0]}],
+                scope=scope, fingerprint=scope,
+            )
+            assert index.search([1.0, 0.0], scope=scope, limit=1)[0]["chunk_id"] == scope
+        assert index.metrics()["cached_scopes"] == 1
+        assert index.metrics()["cached_values"] == 2
+    finally:
+        store.close()
+
+
+def test_snapshot_version_change_during_load_is_not_cached(monkeypatch):
+    store = AdAgentStore(":memory:")
+    index = PersistentSemanticIndex(store)
+    record = {"chunk_id": "old", "document_id": "old", "vector": [1.0, 0.0]}
+    index.rebuild([record], scope="builtin", fingerprint="v1")
+    original = store.search_knowledge_semantic_index
+
+    def change_version(*args, **kwargs):
+        rows = original(*args, **kwargs)
+        store.rebuild_knowledge_semantic_index([record], scope="builtin", fingerprint="v2")
+        return rows
+
+    monkeypatch.setattr(store, "search_knowledge_semantic_index", change_version)
+    try:
+        with pytest.raises(RuntimeError, match="changed"):
+            index.search([1.0, 0.0], scope="builtin", limit=1)
+        assert index.metrics()["cached_scopes"] == 0
+    finally:
+        store.close()
+
+
+def test_invalid_embedding_configuration_does_not_break_fingerprint_status():
+    provider = OpenAICompatibleEmbeddingProvider(lambda: {
+        "model": "embedding", "base_url": "http://remote.example/v1", "api_key": "placeholder",
+    })
+    assert provider.configured is False
+    assert len(provider.fingerprint) == 64

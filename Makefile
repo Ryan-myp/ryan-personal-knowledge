@@ -57,6 +57,7 @@ ad-agent-validate:
 ad-agent-knowledge-check:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/validate_knowledge_quality.py
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/audit_knowledge_base.py
+	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/benchmark_semantic_retrieval.py
 
 ad-agent-reliability-evidence:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/production_reliability_evidence.py
@@ -64,5 +65,5 @@ ad-agent-reliability-evidence:
 ad-agent-reliability-evidence-mysql:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/production_reliability_evidence.py --backend mysql
 
-ad-agent-check: ad-agent-python-version ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-test
+ad-agent-check: ad-agent-python-version ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-test ad-agent-knowledge-check
 	@git diff --check

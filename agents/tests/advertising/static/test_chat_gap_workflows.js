@@ -129,9 +129,25 @@ test('feedback regression candidates require human-written expected behavior', a
     assert.deepEqual(JSON.parse(calls[0][1].body), {
         review_status: 'candidate',
         expected_behavior: '先核对统计日期，再解释指标。',
+        assertions: {},
     });
     assert.equal(
         calls[1][0],
         '/feedback/review?status=pending&limit=100',
     );
+});
+
+test('feedback assertions reject invalid JSON and preserve closed data for the API', () => {
+    const { context } = workflowEnvironment(async () => ({}));
+    assert.throws(() => context.parseFeedbackAssertions('[]'), /对象/);
+    assert.throws(() => context.parseFeedbackAssertions('{bad}'), /JSON/);
+    assert.equal(context.parseFeedbackAssertions('{"max_tool_calls":1}').max_tool_calls, 1);
+});
+
+test('dismissed feedback does not advertise an unsupported pending transition', () => {
+    const { context, elements } = workflowEnvironment(async () => ({}));
+    context.renderFeedbackReviewQueue([{ feedback_id: 'one', review_status: 'dismissed' }]);
+    const actions = elements.get('feedbackReviewList').children[0].children.at(-1);
+    assert.equal(actions.children[1].textContent, '已忽略');
+    assert.equal(actions.children[1].disabled, true);
 });

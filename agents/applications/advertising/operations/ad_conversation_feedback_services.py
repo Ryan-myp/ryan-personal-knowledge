@@ -92,6 +92,7 @@ class AdConversationFeedbackServices:
         reviewer_id: str,
         review_status: str,
         expected_behavior: str,
+        assertions: dict[str, Any] | None = None,
     ) -> bool:
         if review_status not in {"candidate", "dismissed"}:
             raise ValueError("review status must be candidate or dismissed")
@@ -115,4 +116,5 @@ class AdConversationFeedbackServices:
             review_status=review_status,
             expected_behavior=safe_expected,
             reviewed_at=datetime.now(timezone.utc).isoformat(),
+            assertions=self.runtime._redact_for_persistence(assertions or {}),
         ))

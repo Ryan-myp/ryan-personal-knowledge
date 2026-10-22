@@ -168,21 +168,43 @@ function renderFeedbackReviewQueue(items) {
         expectedLabel.appendChild(expected);
         card.appendChild(expectedLabel);
 
+        const advanced = document.createElement('details');
+        const summary = document.createElement('summary');
+        summary.textContent = '自动回归条件';
+        const assertionsLabel = document.createElement('label');
+        assertionsLabel.className = 'feedback-review-expected';
+        assertionsLabel.textContent = '验收断言 (JSON)';
+        const assertionsInput = document.createElement('textarea');
+        assertionsInput.rows = 4;
+        assertionsInput.maxLength = 8000;
+        assertionsInput.setAttribute('aria-describedby', 'feedbackReviewStatusText');
+        assertionsInput.value = JSON.stringify(item.assertions || {}, null, 2);
+        assertionsLabel.appendChild(assertionsInput);
+        advanced.append(summary, assertionsLabel);
+        card.appendChild(advanced);
+
         const actions = document.createElement('div');
         actions.className = 'feedback-review-item-actions';
         const accept = document.createElement('button');
         accept.type = 'button';
         accept.className = 'btn btn-primary';
         accept.textContent = item.review_status === 'candidate' ? '更新回归样例' : '收录为回归样例';
-        accept.addEventListener('click', () => reviewFeedbackItem(
-            item.feedback_id,
-            'candidate',
-            expected.value,
-        ));
+        accept.addEventListener('click', () => {
+            try {
+                const assertions = parseFeedbackAssertions(assertionsInput.value);
+                assertionsInput.setAttribute('aria-invalid', 'false');
+                reviewFeedbackItem(item.feedback_id, 'candidate', expected.value, assertions);
+            } catch (error) {
+                assertionsInput.setAttribute('aria-invalid', 'true');
+                assertionsInput.focus();
+                feedbackReviewSetStatus(error.message, true);
+            }
+        });
         const dismiss = document.createElement('button');
         dismiss.type = 'button';
         dismiss.className = 'btn btn-secondary';
-        dismiss.textContent = item.review_status === 'dismissed' ? '重新审核' : '忽略';
+        dismiss.textContent = item.review_status === 'dismissed' ? '已忽略' : '忽略';
+        dismiss.disabled = item.review_status === 'dismissed';
         dismiss.addEventListener('click', () => reviewFeedbackItem(
             item.feedback_id,
             'dismissed',
@@ -216,7 +238,21 @@ async function loadFeedbackReviewQueue() {
     }
 }
 
-async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior) {
+function parseFeedbackAssertions(text) {
+    if (String(text || '').length > 8000) throw new Error('回归断言不能超过 8000 个字符。');
+    let value;
+    try {
+        value = JSON.parse(String(text || '').trim() || '{}');
+    } catch {
+        throw new Error('回归断言必须是有效的 JSON 对象。');
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('回归断言必须是 JSON 对象。');
+    }
+    return value;
+}
+
+async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior, assertions = {}) {
     const safeExpected = String(expectedBehavior || '').trim();
     if (reviewStatus === 'candidate' && !safeExpected) {
         feedbackReviewSetStatus('请填写期望行为后再收录。', true);
@@ -230,6 +266,7 @@ async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior) {
             body: JSON.stringify({
                 review_status: reviewStatus,
                 expected_behavior: safeExpected,
+                assertions,
             }),
         });
         feedbackReviewSetStatus(

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,6 +43,9 @@ class _RetrievalMetrics:
     top1_hits: int = 0
     leakage: int = 0
     link_only_section_leakage: int = 0
+    recalls: list[float] = field(default_factory=list)
+    ndcgs: list[float] = field(default_factory=list)
+    latencies_ms: list[float] = field(default_factory=list)
 
 
 def _constraint_metrics(
@@ -132,6 +137,13 @@ def _metric_report(
             if metrics.positive_cases
             else 0.0
         ),
+        "recall_at_3": round(sum(metrics.recalls) / len(metrics.recalls), 3)
+        if metrics.recalls else 0.0,
+        "ndcg_at_3": round(sum(metrics.ndcgs) / len(metrics.ndcgs), 3)
+        if metrics.ndcgs else 0.0,
+        "latency_samples": len(metrics.latencies_ms),
+        "latency_p50_ms": _percentile(metrics.latencies_ms, 0.50),
+        "latency_p95_ms": _percentile(metrics.latencies_ms, 0.95),
         "leakage": metrics.leakage,
         "negative_failures": metrics.negative_failures,
         "empty_query_assessment": (
@@ -146,6 +158,12 @@ def _metric_report(
         ),
         "link_only_section_leakage": metrics.link_only_section_leakage,
     }
+
+
+def _percentile(samples: list[float], fraction: float) -> float:
+    if not samples:
+        return 0.0
+    return round(sorted(samples)[max(0, math.ceil(len(samples) * fraction) - 1)], 3)
 
 
 def _accumulate_case_metrics(
@@ -190,6 +208,13 @@ def _accumulate_case_metrics(
             0,
         )
         metrics.reciprocal_ranks.append(1.0 / rank if rank else 0.0)
+        relevant = [result.document_id in expected for result in results[:3]]
+        metrics.recalls.append(
+            len({result.document_id for result in results[:3]} & expected) / len(expected)
+        )
+        dcg = sum(int(hit) / math.log2(index + 2) for index, hit in enumerate(relevant))
+        ideal = sum(1 / math.log2(index + 2) for index in range(min(3, len(expected))))
+        metrics.ndcgs.append(dcg / ideal if ideal else 0.0)
         metrics.leakage += _platform_leakage(case["query"], results)
 
 
@@ -202,7 +227,9 @@ def evaluate_cases(
     """Score retrieval relevance and safety constraints independently."""
     metrics = _RetrievalMetrics()
     for case in cases:
+        started = time.perf_counter()
         results = current_provider.query(case["query"], limit=3)
+        metrics.latencies_ms.append((time.perf_counter() - started) * 1000)
         _accumulate_case_metrics(
             metrics, case, results,
             evaluate_empty_queries=evaluate_empty_queries,
@@ -290,11 +317,24 @@ def main() -> int:
     parser.add_argument(
         "--cases", default="agents/evals/advertising/knowledge_retrieval_cases.json"
     )
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--max-p95-ms", type=float, default=2000.0)
     args = parser.parse_args()
     provider = MarkdownWikiKnowledgeProvider(args.knowledge_root)
     errors = _canonical_document_errors(provider)
     cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))
     metrics = _evaluate_modes(args.knowledge_root, cases)
+    if not math.isfinite(args.max_p95_ms) or args.max_p95_ms <= 0:
+        raise ValueError("latency budget must be positive and finite")
+    if metrics["lexical"]["latency_p95_ms"] > args.max_p95_ms:
+        errors.append("lexical retrieval exceeded p95 latency budget")
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps({
+            "mode": "offline_retrieval", "provider_e2e": False,
+            "semantic_embedding": "synthetic_contract_only",
+            "metrics": metrics, "errors": errors,
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if errors:
         for error in errors:
             print(f"ERROR: {error}")

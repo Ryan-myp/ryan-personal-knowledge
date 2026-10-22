@@ -401,8 +401,8 @@ def _init_runtime():
                 "base",
                 runtime.knowledge_provider,
             )
-            if hasattr(base_knowledge, "semantic_timeout_seconds"):
-                base_knowledge.semantic_timeout_seconds = 20.0
+            if hasattr(base_knowledge, "semantic"):
+                base_knowledge.semantic.timeout_seconds = 20.0
         creative_store_root = Path(os.environ.get(
             "AD_AGENT_CREATIVE_ASSET_PATH",
             project_root / "agents" / "ad_agent" / "creative_assets",
