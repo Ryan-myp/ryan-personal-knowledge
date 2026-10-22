@@ -25,6 +25,7 @@ from agents.tools.creative_media.models import (
 _WEB_SEARCH_PROVIDERS = frozenset({"duckduckgo", "brave"})
 _MODEL_PURPOSES = frozenset({
     "chat",
+    "knowledge_embedding",
     "image_generation",
     "video_generation",
 })
@@ -251,7 +252,7 @@ class AgentSettingsService:
         if profile is None:
             return copy.deepcopy(self.model_defaults) if purpose == "chat" else {}
         base_url = str(profile.get("base_url") or "")
-        if purpose != "chat":
+        if purpose in FREE_AGNES_MEDIA_MODELS:
             try:
                 base_url = validate_free_media_configuration(
                     purpose,
@@ -565,7 +566,7 @@ class AgentSettingsService:
             raise ValueError("model profile does not exist")
         if existing is not None and self._profile_purpose(existing) != purpose:
             raise ValueError("model profile purpose cannot be changed")
-        if purpose != "chat":
+        if purpose in FREE_AGNES_MEDIA_MODELS:
             base_url = validate_free_media_configuration(
                 purpose,
                 model,
@@ -629,7 +630,7 @@ class AgentSettingsService:
                 if profile is None:
                     raise ValueError("model profile does not exist")
                 purpose = self._profile_purpose(profile)
-                if purpose != "chat":
+                if purpose in FREE_AGNES_MEDIA_MODELS:
                     validate_free_media_configuration(
                         purpose,
                         profile.get("model"),

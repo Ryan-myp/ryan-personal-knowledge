@@ -9,6 +9,7 @@ the one runtime retrieval boundary; callers should depend on
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -290,6 +291,7 @@ class MarkdownWikiKnowledgeProvider:
         semantic_top_k: int = 64,
         semantic_batch_size: int = 64,
         semantic_timeout_seconds: float = 2.0,
+        auto_rebuild_semantic: bool = True,
     ):
         self.base_path = Path(base_path).resolve()
         self.search_index = search_index
@@ -312,9 +314,11 @@ class MarkdownWikiKnowledgeProvider:
         self.semantic_top_k = min(int(semantic_top_k), 1000)
         self.semantic_batch_size = min(int(semantic_batch_size), 256)
         self.semantic_timeout_seconds = float(semantic_timeout_seconds)
+        self.auto_rebuild_semantic = bool(auto_rebuild_semantic)
         self._semantic_available = False
         self._semantic_dimension: int | None = None
         self._semantic_error: str | None = None
+        self._semantic_scope_fingerprints: dict[str, str] = {}
         self._tenant_cache_max_entries = 256
         self._query_cache: OrderedDict[
             tuple[Any, ...], tuple[float, tuple[KnowledgeDocument, ...]]
@@ -328,6 +332,7 @@ class MarkdownWikiKnowledgeProvider:
         self._fts_available = False
         self._documents: list[KnowledgeDocument] = []
         self._chunks: list[KnowledgeDocument] = []
+        self._semantic_fingerprint = ""
         self._load()
 
     @property
@@ -447,21 +452,122 @@ class MarkdownWikiKnowledgeProvider:
         self._fts_available = self._rebuild_search_index(
             self._chunks, scope=self._fts_scope
         )
-        self._semantic_available = self._rebuild_semantic_index(
-            self._chunks, scope=self.semantic_scope,
-        )
+        self._semantic_fingerprint = self._fingerprint(self._chunks)
+        if self.auto_rebuild_semantic:
+            self._semantic_available = self._rebuild_semantic_index(
+                self._chunks, scope=self.semantic_scope,
+            )
+        else:
+            self._semantic_available = self._semantic_index_is_current(
+                self.semantic_scope, self._semantic_fingerprint,
+            )
 
     @property
     def semantic_available(self) -> bool:
-        return self._semantic_available
+        return self._semantic_index_is_current(
+            self.semantic_scope, self._semantic_fingerprint,
+        )
+
+    def configure_semantic_retrieval(
+        self,
+        embedding_provider: Any,
+        semantic_index: Any,
+        *,
+        auto_rebuild: bool = False,
+    ) -> None:
+        """Attach trusted semantic adapters without issuing startup requests."""
+        self.embedding_provider = embedding_provider
+        self.semantic_index = semantic_index
+        self.auto_rebuild_semantic = bool(auto_rebuild)
+        self._semantic_fingerprint = self._fingerprint(self._chunks)
+        self._semantic_error = None
+        self._semantic_scope_fingerprints.clear()
+        self._semantic_available = (
+            self._rebuild_semantic_index(
+                self._chunks, scope=self.semantic_scope,
+            )
+            if self.auto_rebuild_semantic
+            else self._semantic_index_is_current(
+                self.semantic_scope, self._semantic_fingerprint,
+            )
+        )
+        self.clear_query_cache()
+
+    def rebuild_semantic_search_index(self) -> dict[str, Any]:
+        """Explicitly build the built-in Wiki vector index."""
+        self._semantic_fingerprint = self._fingerprint(self._chunks)
+        available = self._rebuild_semantic_index(
+            self._chunks,
+            scope=self.semantic_scope,
+        )
+        self._semantic_available = available
+        self.clear_query_cache()
+        return {
+            "scope": self.semantic_scope,
+            "chunk_count": len(self._chunks),
+            "configured": self._semantic_configured(),
+            "available": available,
+            "fingerprint": self._semantic_fingerprint,
+            "error_type": self._semantic_error,
+        }
+
+    def semantic_index_status(self) -> dict[str, Any]:
+        """Report index freshness without contacting the embedding provider."""
+        configured = self._semantic_configured()
+        current = (
+            self._semantic_index_is_current(
+                self.semantic_scope, self._semantic_fingerprint,
+            )
+            if configured else False
+        )
+        return {
+            "scope": self.semantic_scope,
+            "configured": configured,
+            "current": current,
+            "available": current and self._semantic_error is None,
+            "chunk_count": len(self._chunks),
+            "fingerprint": self._semantic_fingerprint,
+            "error_type": self._semantic_error,
+        }
+
+    def _fingerprint(self, chunks: Iterable[KnowledgeDocument]) -> str:
+        provider_fingerprint = getattr(self.embedding_provider, "fingerprint", "")
+        if callable(provider_fingerprint):
+            provider_fingerprint = provider_fingerprint()
+        digest = hashlib.sha256(str(provider_fingerprint or "").encode("utf-8"))
+        for chunk in chunks:
+            digest.update(chunk.chunk_id.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(self._semantic_text(chunk).encode("utf-8"))
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    def _semantic_configured(self) -> bool:
+        if self.embedding_provider is None or self.semantic_index is None:
+            return False
+        configured = getattr(self.embedding_provider, "configured", True)
+        try:
+            return bool(configured() if callable(configured) else configured)
+        except (RuntimeError, TypeError, ValueError):
+            return False
+
+    def _semantic_index_is_current(self, scope: str, fingerprint: str) -> bool:
+        method = getattr(self.semantic_index, "is_current", None)
+        if not callable(method):
+            return bool(
+                fingerprint
+                and self._semantic_scope_fingerprints.get(str(scope)) == fingerprint
+            )
+        try:
+            return bool(method(scope=scope, fingerprint=fingerprint))
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return False
 
     def semantic_metrics(self) -> dict[str, Any]:
         """Expose semantic readiness without returning vectors or content."""
         return {
-            "configured": bool(
-                self.embedding_provider is not None and self.semantic_index is not None
-            ),
-            "available": self._semantic_available,
+            "configured": self._semantic_configured(),
+            "available": self.semantic_available and self._semantic_error is None,
             "scope": self.semantic_scope,
             "dimension": self._semantic_dimension,
             "top_k": self.semantic_top_k,
@@ -880,7 +986,8 @@ class MarkdownWikiKnowledgeProvider:
         *,
         scope: str,
     ) -> bool:
-        if self.embedding_provider is None or self.semantic_index is None:
+        if not self._semantic_configured():
+            self._semantic_error = "embedding_not_configured"
             return False
         rebuild = getattr(self.semantic_index, "rebuild", None)
         if not callable(rebuild):
@@ -902,11 +1009,21 @@ class MarkdownWikiKnowledgeProvider:
                     }
                     for chunk, vector in zip(batch, vectors)
                 )
-            rebuild(records, scope=str(scope or "builtin"))
+            fingerprint = self._fingerprint(chunk_list)
+            if callable(getattr(self.semantic_index, "is_current", None)):
+                rebuild(
+                    records,
+                    scope=str(scope or "builtin"),
+                    fingerprint=fingerprint,
+                )
+            else:
+                rebuild(records, scope=str(scope or "builtin"))
+            self._semantic_scope_fingerprints[str(scope or "builtin")] = fingerprint
             return True
         except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as error:
             self._semantic_error = type(error).__name__
             self._semantic_dimension = None
+            self._semantic_scope_fingerprints.pop(str(scope or "builtin"), None)
             return False
 
     def _semantic_search_hits(
@@ -914,11 +1031,23 @@ class MarkdownWikiKnowledgeProvider:
         query: str,
         *,
         scope: str | None = None,
+        fingerprint: str | None = None,
     ) -> Optional[dict[str, float]]:
         if (
-            not self._semantic_available
-            or self.embedding_provider is None
-            or self.semantic_index is None
+            self._semantic_error is not None
+            or not self._semantic_configured()
+        ):
+            return None
+        scope_key = str(scope or self.semantic_scope)
+        expected_fingerprint = str(
+            fingerprint
+            or (
+                self._semantic_fingerprint
+                if scope_key == self.semantic_scope else ""
+            )
+        )
+        if not expected_fingerprint or not self._semantic_index_is_current(
+            scope_key, expected_fingerprint,
         ):
             return None
         search = getattr(self.semantic_index, "search", None)
@@ -930,7 +1059,7 @@ class MarkdownWikiKnowledgeProvider:
             ])
             rows = search(
                 vectors[0],
-                scope=str(scope or self.semantic_scope),
+                scope=scope_key,
                 limit=self.semantic_top_k,
             )
         except (OSError, RuntimeError, TypeError, ValueError, TimeoutError) as error:

@@ -91,13 +91,13 @@ vm.runInContext(`
                 model: 'agnes-image-2.5-flash',
                 name: 'Agnes Image 2.5 Flash',
                 availability: 'free',
-                base_url: 'https://apihub.agnes-ai.com/v1'
+                base_url: 'https://apihub.agnes-ai.cn/v1'
             },
             video_generation: {
                 model: 'agnes-video-2.5-flash',
                 name: 'Agnes Video 2.5 Flash',
                 availability: 'free_limited_time',
-                base_url: 'https://apihub.agnes-ai.com/v1'
+                base_url: 'https://apihub.agnes-ai.cn/v1'
             }
         },
         models: {
@@ -192,7 +192,7 @@ test('choosing image generation locks the free model and official endpoint', () 
     assert.equal(elements.get('agentModelId').readOnly, true);
     assert.equal(
         elements.get('agentModelBaseUrl').value,
-        'https://apihub.agnes-ai.com/v1',
+        'https://apihub.agnes-ai.cn/v1',
     );
     assert.equal(elements.get('agentModelBaseUrl').readOnly, true);
     assert.match(elements.get('agentSettingsStatus').textContent, /API Key/);

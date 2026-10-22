@@ -49,6 +49,66 @@
             status.classList.toggle('error', isError);
         }
 
+        function setKnowledgeSemanticStatus(message, isError = false) {
+            const status = document.getElementById('knowledgeSemanticStatus');
+            if (!status) return;
+            status.textContent = message || '';
+            status.classList.toggle('error', Boolean(isError));
+        }
+
+        async function loadKnowledgeSemanticIndexStatus() {
+            const rebuild = document.getElementById('knowledgeSemanticRebuildButton');
+            if (rebuild) rebuild.disabled = true;
+            setKnowledgeSemanticStatus('正在读取索引状态…');
+            try {
+                const result = await apiFetch('/knowledge/semantic-index/status');
+                const builtin = result.builtin || {};
+                const tenant = result.tenant || {};
+                const configured = Boolean(result.configured);
+                const description = configured
+                    ? `内置 ${builtin.current ? '最新' : '待重建'} · 当前租户 ${tenant.current ? '最新' : '待重建'}`
+                    : '请先在模型管理中配置知识库 Embedding 模型';
+                setKnowledgeSemanticStatus(description);
+                if (rebuild) rebuild.disabled = !configured;
+            } catch (error) {
+                const message = error?.status === 401 || error?.status === 403
+                    ? '当前身份没有知识库索引状态权限。'
+                    : error?.message || '索引状态读取失败。';
+                setKnowledgeSemanticStatus(message, true);
+            }
+        }
+
+        async function rebuildKnowledgeSemanticIndex() {
+            const button = document.getElementById('knowledgeSemanticRebuildButton');
+            if (button) button.disabled = true;
+            setKnowledgeSemanticStatus('正在重建内置与当前租户索引…');
+            try {
+                const result = await apiFetch('/knowledge/semantic-index/rebuild', {
+                    method: 'POST',
+                });
+                if (!result.configured) {
+                    setKnowledgeSemanticStatus('Embedding 模型未配置；普通查询继续使用词法检索。', true);
+                    return;
+                }
+                const builtin = result.builtin || {};
+                const tenant = result.tenant || {};
+                const completed = Boolean(builtin.available && tenant.available);
+                setKnowledgeSemanticStatus(
+                    completed
+                        ? `索引已完成 · 内置 ${builtin.chunk_count || 0} 段 · 当前租户 ${tenant.chunk_count || 0} 段`
+                        : '索引未能完整重建；知识查询已回退到词法检索，请检查模型配置后重试。',
+                    !completed,
+                );
+                if (button) button.disabled = false;
+            } catch (error) {
+                const message = error?.status === 401 || error?.status === 403
+                    ? '当前身份没有重建权限，需要 knowledge.write。'
+                    : error?.message || '知识语义索引重建失败。';
+                setKnowledgeSemanticStatus(message, true);
+                if (button) button.disabled = false;
+            }
+        }
+
         function toggleKnowledgeComposer() {
             const composer = document.getElementById('knowledgeComposer');
             const results = document.getElementById('knowledgeResults');

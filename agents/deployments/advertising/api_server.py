@@ -375,6 +375,34 @@ def _init_runtime():
         runtime.assert_llm_ready()
         active_settings_service.configure(runtime=runtime)
         settings_service = active_settings_service
+        from agents.agent_platform.data.embeddings import (
+            OpenAICompatibleEmbeddingProvider,
+        )
+        from agents.agent_platform.data.persistent_semantic_index import (
+            PersistentSemanticIndex,
+        )
+        semantic_configurer = getattr(
+            runtime.knowledge_provider,
+            "configure_semantic_retrieval",
+            None,
+        )
+        if callable(semantic_configurer):
+            semantic_configurer(
+                OpenAICompatibleEmbeddingProvider(
+                    lambda: active_settings_service.model_configuration_for(
+                        "knowledge_embedding"
+                    ),
+                    timeout_seconds=20.0,
+                ),
+                PersistentSemanticIndex(store),
+            )
+            base_knowledge = getattr(
+                runtime.knowledge_provider,
+                "base",
+                runtime.knowledge_provider,
+            )
+            if hasattr(base_knowledge, "semantic_timeout_seconds"):
+                base_knowledge.semantic_timeout_seconds = 20.0
         creative_store_root = Path(os.environ.get(
             "AD_AGENT_CREATIVE_ASSET_PATH",
             project_root / "agents" / "ad_agent" / "creative_assets",

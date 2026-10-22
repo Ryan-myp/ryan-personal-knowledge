@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Path, Query, Request
+from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.models import (
     ConversationFeedbackRequest,
+    ConversationFeedbackReviewRequest,
     SessionDeleteRequest,
     SessionRenameRequest,
 )
@@ -200,6 +203,118 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
                 status_code=503,
                 detail="反馈趋势存储暂不可用",
             ) from error
+
+    @router.get("/feedback/review", tags=["feedback"])
+    async def list_conversation_feedback_review_queue(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+        status: str = Query("pending", max_length=16),
+        limit: int = Query(50, ge=1, le=100),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "feedback.review")
+        if status not in {"pending", "candidate", "dismissed"}:
+            raise HTTPException(status_code=422, detail="反馈审核状态不合法")
+        runtime = context.runtime()
+        getter = getattr(runtime, "list_conversation_feedback_review_queue", None)
+        if not callable(getter):
+            raise HTTPException(status_code=503, detail="反馈审核服务未初始化")
+        try:
+            items = await run_in_threadpool(
+                getter,
+                tenant_id=principal.tenant_id,
+                status=status,
+                limit=limit,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail="反馈审核存储暂不可用") from error
+        return {
+            "status": status,
+            "items": context.redact(items),
+        }
+
+    @router.put("/feedback/review/{feedback_id}", tags=["feedback"])
+    async def review_conversation_feedback(
+        feedback_id: Annotated[str, Path(min_length=1, max_length=128)],
+        body: ConversationFeedbackReviewRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "feedback.review")
+        runtime = context.runtime()
+        review = getattr(runtime, "review_conversation_feedback", None)
+        if not callable(review):
+            raise HTTPException(status_code=503, detail="反馈审核服务未初始化")
+        try:
+            saved = await run_in_threadpool(
+                review,
+                feedback_id=feedback_id,
+                tenant_id=principal.tenant_id,
+                reviewer_id=principal.user_id,
+                review_status=body.review_status,
+                expected_behavior=body.expected_behavior,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail="反馈审核存储暂不可用") from error
+        if not saved:
+            raise HTTPException(status_code=404, detail="反馈不存在或不属于当前租户")
+        return {
+            "reviewed": True,
+            "feedback_id": feedback_id,
+            "review_status": body.review_status,
+        }
+
+    @router.get("/feedback/regression-cases/export", tags=["feedback"])
+    async def export_feedback_regression_cases(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "feedback.review")
+        runtime = context.runtime()
+        getter = getattr(runtime, "list_conversation_feedback_review_queue", None)
+        if not callable(getter):
+            raise HTTPException(status_code=503, detail="反馈审核服务未初始化")
+        try:
+            candidates = await run_in_threadpool(
+                getter,
+                tenant_id=principal.tenant_id,
+                status="candidate",
+                limit=100,
+            )
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail="反馈审核存储暂不可用") from error
+        cases = []
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            expected = str(item.get("expected_behavior") or "").strip()
+            if not expected:
+                continue
+            cases.append(context.redact({
+                "input": str(item.get("user_input") or "")[:4000],
+                "previous_output": str(item.get("assistant_reply") or "")[:4000],
+                "expected_behavior": expected[:2000],
+            }))
+        payload = {
+            "schema_version": "ad-agent-regression-cases/v1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "truncated": len(candidates) >= 100,
+            "cases": cases,
+        }
+        return JSONResponse(
+            content=payload,
+            headers={
+                "Content-Disposition": (
+                    'attachment; filename="ad-agent-regression-cases.json"'
+                ),
+            },
+        )
 
     @router.get("/sessions/{session_id}/runs/latest", tags=["runs"])
     async def get_latest_session_run(

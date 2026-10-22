@@ -45,6 +45,11 @@ class ConversationFeedbackRequest(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=1000)
 
 
+class ConversationFeedbackReviewRequest(BaseModel):
+    review_status: Literal["candidate", "dismissed"]
+    expected_behavior: str = Field(default="", max_length=2000)
+
+
 class TaskSubmitRequest(BaseModel):
     kind: str = Field(default="agent.turn", min_length=1, max_length=64)
     payload: dict = Field(default_factory=dict)
@@ -64,6 +69,15 @@ class ScheduleCreateRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, max_length=200)
     account_id: Optional[str] = Field(default=None, max_length=200)
     platform_params: Optional[dict] = None
+
+
+class ScheduleUpdateRequest(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    prompt: Optional[str] = Field(default=None, min_length=1, max_length=12_000)
+    cron_expression: Optional[str] = Field(
+        default=None, min_length=9, max_length=120,
+    )
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=80)
 
 
 class MemoryWriteRequest(BaseModel):
@@ -208,6 +222,15 @@ class BlueprintResolveRequest(BaseModel):
     version: Optional[str] = Field(None, max_length=80)
 
 
+class CreationImportPreviewRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=200)
+    attachment_id: str = Field(min_length=1, max_length=128)
+    blueprint_id: str = Field(min_length=1, max_length=200)
+    version: Optional[str] = Field(default=None, max_length=80)
+    sheet_name: Optional[str] = Field(default=None, max_length=120)
+    column_mapping: dict[str, str] = Field(default_factory=dict, max_length=80)
+
+
 class SkillVersionRequest(BaseModel):
     version: str = Field(min_length=5, max_length=80)
     files: dict[str, object]
@@ -240,6 +263,8 @@ __all__ = [
     "ChatRequest",
     "ChatStreamRequest",
     "ConversationFeedbackRequest",
+    "ConversationFeedbackReviewRequest",
+    "CreationImportPreviewRequest",
     "CreationTemplateDuplicateRequest",
     "CreationTemplateRequest",
     "CreationTemplateUpdateRequest",
@@ -254,6 +279,7 @@ __all__ = [
     "PluginPackageRequest",
     "RawKnowledgeUploadRequest",
     "ScheduleCreateRequest",
+    "ScheduleUpdateRequest",
     "SessionDeleteRequest",
     "SessionRenameRequest",
     "SkillVersionRequest",

@@ -11,8 +11,12 @@ from starlette.concurrency import run_in_threadpool
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.models import (
     ScheduleCreateRequest,
+    ScheduleUpdateRequest,
     TaskRecoveryRequest,
     TaskSubmitRequest,
+)
+from agents.applications.advertising.operations.scheduling_service import (
+    ScheduleBusyError,
 )
 
 
@@ -300,6 +304,40 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
             limit=50,
         )
         return {"schedule": schedule, "runs": runs}
+
+    @router.patch("/schedules/{schedule_id}", tags=["schedules"])
+    async def update_schedule(
+        schedule_id: str,
+        body: ScheduleUpdateRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.plan")
+        runtime = context.runtime()
+        updater = getattr(runtime, "update_schedule", None) if runtime else None
+        if not callable(updater):
+            raise HTTPException(status_code=503, detail="定时任务服务未初始化")
+        updates = body.model_dump(exclude_unset=True, exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=422, detail="至少提供一个要修改的字段")
+        try:
+            schedule = await run_in_threadpool(
+                updater,
+                schedule_id,
+                **updates,
+                user_id=principal.user_id,
+                tenant_id=principal.tenant_id,
+            )
+        except ScheduleBusyError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except (ValueError, TypeError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        if not schedule:
+            raise HTTPException(status_code=404, detail="schedule not found")
+        return {"schedule": schedule}
 
     @router.get("/schedules/{schedule_id}/runs", tags=["schedules"])
     async def list_schedule_runs(

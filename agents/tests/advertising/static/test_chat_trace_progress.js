@@ -241,3 +241,85 @@ test('running a schedule refreshes its visible queued run state', async () => {
     assert.match(elements.get('scheduleList').innerHTML, /排队中/);
     assert.match(elements.get('scheduleList').innerHTML, /disabled aria-busy="true"/);
 });
+
+test('schedule editor loads an existing schedule and saves it through scoped PATCH', async () => {
+    const calls = [];
+    const elements = new Map();
+    const context = {
+        document: {
+            getElementById(id) {
+                if (!elements.has(id)) {
+                    elements.set(id, {
+                        value: '',
+                        textContent: '',
+                        innerHTML: '',
+                        disabled: false,
+                        classList: {
+                            add() {},
+                            remove() {},
+                            contains: () => false,
+                        },
+                        setAttribute() {},
+                        focus() {},
+                    });
+                }
+                return elements.get(id);
+            },
+        },
+        window: {
+            setTimeout,
+            clearTimeout,
+            confirm: () => true,
+            alert(message) { throw new Error(message); },
+        },
+        escapeHtml: value => String(value ?? ''),
+        monitoringNumber: value => String(value ?? 0),
+        scheduleStatusLabel: value => String(value || ''),
+        apiFetch: async (endpoint, options = {}) => {
+            calls.push([endpoint, options]);
+            if (endpoint === '/schedules/schedule-1') {
+                return { schedule: { schedule_id: 'schedule-1' } };
+            }
+            if (endpoint === '/schedules?limit=100') {
+                return { schedules: [] };
+            }
+            if (endpoint === '/monitoring/overview') return { schedules: {} };
+            if (endpoint === '/schedule-runs?limit=100') return { runs: [] };
+            throw new Error(`unexpected request: ${endpoint}`);
+        },
+    };
+    const source = path.resolve(
+        __dirname, '../../../deployments/advertising/static/js/chat-workspace.js',
+    );
+    vm.runInNewContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
+
+    context.renderSchedules({
+        schedules: [{
+            schedule_id: 'schedule-1',
+            name: 'Daily report',
+            prompt: 'Summarize campaigns',
+            cron_expression: '0 9 * * *',
+            timezone: 'Asia/Shanghai',
+            status: 'active',
+        }],
+        runs: [],
+        metrics: {},
+    });
+    context.editSchedule('schedule-1');
+    assert.equal(elements.get('scheduleEditName').value, 'Daily report');
+    assert.equal(elements.get('scheduleEditOverlay').classList.contains('active'), false);
+    elements.get('scheduleEditName').value = 'Weekly report';
+    elements.get('scheduleEditPrompt').value = 'Summarize campaign results';
+
+    await context.saveScheduleEdit({ preventDefault() {} });
+
+    assert.equal(calls[0][0], '/schedules/schedule-1');
+    assert.equal(calls[0][1].method, 'PATCH');
+    assert.deepEqual(JSON.parse(calls[0][1].body), {
+        name: 'Weekly report',
+        prompt: 'Summarize campaign results',
+        cron_expression: '0 9 * * *',
+        timezone: 'Asia/Shanghai',
+    });
+    assert.equal(elements.get('scheduleEditStatus').textContent, '');
+});

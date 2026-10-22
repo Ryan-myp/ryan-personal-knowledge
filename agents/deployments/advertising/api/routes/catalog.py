@@ -13,9 +13,16 @@ from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.models import (
     BlueprintEvaluationRequest,
     BlueprintResolveRequest,
+    CreationImportPreviewRequest,
     CreationTemplateDuplicateRequest,
     CreationTemplateRequest,
     CreationTemplateUpdateRequest,
+)
+from agents.deployments.advertising.api.chat_documents import (
+    read_chat_document_table,
+)
+from agents.applications.advertising.creation.import_preview import (
+    preview_creation_rows,
 )
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
@@ -28,6 +35,34 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
         if runtime is None:
             raise HTTPException(status_code=503, detail="服务未初始化")
         return runtime
+
+    async def load_import_table(
+        body: CreationImportPreviewRequest,
+        principal: RequestPrincipal,
+    ) -> dict:
+        media_store = context.chat_media_store()
+        if media_store is None:
+            raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
+        try:
+            media = await run_in_threadpool(
+                media_store.load,
+                body.attachment_id,
+                session_id=body.session_id,
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+            )
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=404, detail="附件不存在或无权访问") from error
+        try:
+            return await run_in_threadpool(
+                read_chat_document_table,
+                media.content,
+                filename=str(media.metadata.get("filename") or ""),
+                media_type=str(media.metadata.get("media_type") or ""),
+                sheet_name=body.sheet_name,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     def creation_template_manager(
         principal: Optional[RequestPrincipal] = None,
@@ -351,6 +386,76 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
                 detail="未找到匹配当前选择的广告创建蓝图",
             )
         return {"blueprint": blueprint}
+
+    @router.post("/creation-import/inspect", tags=["creation-import"])
+    async def inspect_creation_import(
+        body: CreationImportPreviewRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.plan")
+        table = await load_import_table(body, principal)
+        runtime = runtime_or_503()
+        blueprint = runtime.creation_blueprints.get(
+            body.blueprint_id,
+            body.version,
+        )
+        if blueprint is None:
+            raise HTTPException(
+                status_code=404,
+                detail="广告创建 Blueprint 不存在或版本不可用",
+            )
+        fields = [
+            {
+                "path": str(field.get("path") or ""),
+                "label": str(field.get("label") or field.get("path") or ""),
+                "tool_ref": str(field.get("tool_ref") or ""),
+            }
+            for field in getattr(blueprint, "fields", ())
+            if isinstance(field, dict)
+        ]
+        return {
+            "preview_only": True,
+            "blueprint_id": body.blueprint_id,
+            "version": str(getattr(blueprint, "version", body.version or "")),
+            "headers": table["headers"],
+            "row_count": len(table["rows"]),
+            "truncated": bool(table["truncated"]),
+            "sheet_name": table["sheet_name"],
+            "fields": fields,
+        }
+
+    @router.post("/creation-import/preview", tags=["creation-import"])
+    async def preview_creation_import(
+        body: CreationImportPreviewRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.plan")
+        table = await load_import_table(body, principal)
+        runtime = runtime_or_503()
+        try:
+            result = await run_in_threadpool(
+                preview_creation_rows,
+                runtime,
+                blueprint_id=body.blueprint_id,
+                version=body.version,
+                headers=table["headers"],
+                rows=table["rows"],
+                column_mapping=body.column_mapping,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        result.update({
+            "headers": table["headers"],
+            "truncated": bool(table["truncated"]),
+            "sheet_name": table["sheet_name"],
+        })
+        return context.redact(result)
 
     @router.post(
         "/creation-blueprints/{blueprint_id}/evaluate",

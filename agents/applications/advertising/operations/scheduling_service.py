@@ -13,6 +13,10 @@ from typing import Any, Callable, Mapping, Optional
 from agents.agent_platform.infrastructure.durable import CronExpression, next_run_at, validate_timezone
 
 
+class ScheduleBusyError(RuntimeError):
+    """Raised when the scheduler has already claimed a schedule for dispatch."""
+
+
 class SchedulingService:
     """Durable, generic schedule management behind a narrow service port."""
 
@@ -106,6 +110,80 @@ class SchedulingService:
             schedule_id, tenant_id=tenant_id, user_id=user_id
         )
         return record.to_dict() if record else None
+
+    def update(
+        self,
+        schedule_id: str,
+        *,
+        user_id: str,
+        tenant_id: str,
+        name: Optional[str] = None,
+        prompt: Optional[str] = None,
+        cron_expression: Optional[str] = None,
+        timezone: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        """Update user-editable schedule fields without changing its scope/history."""
+        if self.store is None:
+            raise RuntimeError("scheduled task persistence is not configured")
+        current = self.store.get_scheduled_task(
+            schedule_id, tenant_id=tenant_id, user_id=user_id,
+        )
+        if current is None:
+            return None
+        if getattr(current, "lease_owner", None):
+            raise ScheduleBusyError("schedule is currently being claimed")
+
+        next_name = self._validated_name(
+            current.name if name is None else name,
+        )
+        next_prompt = self._validated_prompt(
+            current.prompt if prompt is None else prompt,
+        )
+        next_expression = self._validated_cron(
+            current.cron_expression
+            if cron_expression is None else cron_expression,
+        )
+        next_timezone = validate_timezone(
+            current.timezone if timezone is None else timezone,
+        )
+        payload = dict(current.payload or {})
+        if prompt is not None:
+            payload["user_input"] = next_prompt
+        protected = self.validate_input(payload)
+        if protected:
+            raise ValueError(
+                "定时任务包含禁止持久化的凭证/账户配置字段："
+                + ", ".join(protected)
+            )
+        safe_payload = self.redact(payload)
+        if not isinstance(safe_payload, dict):
+            raise ValueError("scheduled task payload must be an object")
+
+        recurrence_changed = (
+            next_expression != current.cron_expression
+            or next_timezone != current.timezone
+        )
+        updates: dict[str, Any] = {
+            "name": next_name,
+            "prompt": next_prompt,
+            "cron_expression": next_expression,
+            "schedule_timezone": next_timezone,
+            "payload": safe_payload,
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "only_unleased": True,
+        }
+        if recurrence_changed:
+            updates["next_run_at"] = next_run_at(
+                next_expression, next_timezone,
+            )
+        if not self.store.update_scheduled_task(schedule_id, **updates):
+            if self.store.get_scheduled_task(
+                schedule_id, tenant_id=tenant_id, user_id=user_id,
+            ) is None:
+                return None
+            raise ScheduleBusyError("schedule is currently being claimed")
+        return self.get(schedule_id, user_id=user_id, tenant_id=tenant_id)
 
     def pause(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
         if self.get(schedule_id, user_id=user_id, tenant_id=tenant_id) is None:
@@ -241,6 +319,30 @@ class SchedulingService:
         if self.default_principal is not None:
             return self.default_principal(str(user_id), str(tenant_id))
         return None
+
+    def _validated_prompt(self, value: Any) -> str:
+        prompt = str(value or "").strip()
+        if not prompt:
+            raise ValueError("scheduled task prompt is required")
+        if len(prompt) > self.max_prompt_chars:
+            raise ValueError("scheduled task prompt exceeds input limit")
+        safe_prompt = self.redact(prompt)
+        if safe_prompt != prompt:
+            raise ValueError("定时任务指令不能包含凭证或认证材料")
+        return safe_prompt
+
+    @staticmethod
+    def _validated_name(value: Any) -> str:
+        name = str(value or "").strip()
+        if not name or len(name) > 120:
+            raise ValueError("scheduled task name is empty or exceeds 120 characters")
+        return name
+
+    @staticmethod
+    def _validated_cron(value: Any) -> str:
+        expression = " ".join(str(value or "").strip().split())
+        CronExpression(expression)
+        return expression
 
 
 __all__ = ["SchedulingService"]

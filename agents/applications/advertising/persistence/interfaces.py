@@ -64,6 +64,16 @@ class KnowledgeStorePort(Protocol):
     def search_knowledge_search_index(
         self, query: str, *, scopes: list[str], limit: int = 100,
     ) -> list[dict[str, Any]]: ...
+    def rebuild_knowledge_semantic_index(
+        self, records: list[dict[str, Any]], *, scope: str,
+        fingerprint: str,
+    ) -> bool: ...
+    def search_knowledge_semantic_index(
+        self, vector: list[float], *, scope: str, limit: int = 100,
+    ) -> list[dict[str, Any]]: ...
+    def is_knowledge_semantic_index_current(
+        self, *, scope: str, fingerprint: str,
+    ) -> bool: ...
 
 
 class PersistenceBackend(KnowledgeStorePort, Protocol):
@@ -127,6 +137,13 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def get_conversation_feedback_trend(
         self, *, days: int, user_id: str, tenant_id: str,
     ) -> dict[str, Any]: ...
+    def list_conversation_feedback_review_queue(
+        self, *, tenant_id: str, status: str = "pending", limit: int = 50,
+    ) -> list[dict[str, Any]]: ...
+    def review_conversation_feedback(
+        self, feedback_id: str, *, tenant_id: str, reviewer_id: str,
+        review_status: str, expected_behavior: str, reviewed_at: str,
+    ) -> bool: ...
 
     # -- Campaign creation templates ------------------------------------
     def create_creation_template(self, record: Any) -> Any: ...
@@ -397,7 +414,10 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
         self, schedule_id: str, *, status: Optional[str] = None,
         next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,
         last_run_status: Optional[str] = None, last_task_id: Optional[str] = None,
-        metadata: Optional[dict] = None, tenant_id: Optional[str] = None,
+        metadata: Optional[dict] = None, name: Optional[str] = None,
+        prompt: Optional[str] = None, cron_expression: Optional[str] = None,
+        schedule_timezone: Optional[str] = None, payload: Optional[dict] = None,
+        only_unleased: bool = False, tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> bool: ...
     def pause_scheduled_task(

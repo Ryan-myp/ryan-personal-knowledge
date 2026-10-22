@@ -37,6 +37,7 @@ granted_permissions:
   - skills.evaluate
   - knowledge.read
   - knowledge.write
+  - feedback.review
   # MCP control-plane access is separate from external Tool write access.
   # mcp.write remains intentionally absent; enabling a remote write Tool does
   # not grant it execution permission.

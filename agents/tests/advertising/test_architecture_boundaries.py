@@ -46,7 +46,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_creation_blueprint_services.py", "ad_creation_catalog_services.py",
             "ad_creation_contract_services.py", "ad_creation_services.py",
             "ad_creation_template_services.py", "ad_creation_ui_services.py",
-            "templates.py", "template_tool_service.py",
+            "import_preview.py", "templates.py", "template_tool_service.py",
         },
         "execution": {
             "account_context.py", "account_policy.py", "ad_tool_interaction.py",
@@ -63,6 +63,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
         },
         "operations": {
             "ad_conversation_feedback_services.py", "ad_conversation_services.py",
+            "ad_conversation_knowledge_services.py",
             "ad_persistence_services.py",
             "ad_session_services.py", "ad_task_operational_services.py",
             "ad_task_services.py", "ad_workflow_provider_reconciliation.py",

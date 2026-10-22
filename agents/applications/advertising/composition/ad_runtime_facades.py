@@ -41,6 +41,11 @@ class AdTaskRuntimeFacade:
             schedule_id, user_id=user_id, tenant_id=tenant_id
         )
 
+    def update_schedule(
+        self, schedule_id: str, **kwargs: Any,
+    ) -> Optional[dict[str, Any]]:
+        return self.task_services.update_schedule(schedule_id, **kwargs)
+
     def pause_schedule(
         self, schedule_id: str, *, user_id: str, tenant_id: str
     ) -> Optional[dict[str, Any]]:
@@ -141,11 +146,39 @@ class AdConversationRuntimeFacade:
             *args, **kwargs
         )
 
+    def list_conversation_feedback_review_queue(
+        self, *args: Any, **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        return self.conversation_services.list_conversation_feedback_review_queue(
+            *args, **kwargs
+        )
+
+    def review_conversation_feedback(
+        self, *args: Any, **kwargs: Any,
+    ) -> bool:
+        return self.conversation_services.review_conversation_feedback(
+            *args, **kwargs
+        )
+
     def search_knowledge(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         return self.conversation_services.search_knowledge(*args, **kwargs)
 
     def catalog_knowledge(self, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
         return self.conversation_services.catalog_knowledge(*args, **kwargs)
+
+    def get_knowledge_semantic_index_status(
+        self, *args: Any, **kwargs: Any,
+    ) -> dict[str, Any]:
+        return self.conversation_services.get_knowledge_semantic_index_status(
+            *args, **kwargs
+        )
+
+    def rebuild_knowledge_semantic_index(
+        self, *args: Any, **kwargs: Any,
+    ) -> dict[str, Any]:
+        return self.conversation_services.rebuild_knowledge_semantic_index(
+            *args, **kwargs
+        )
 
     def summarize_knowledge(self, *args: Any, **kwargs: Any) -> str:
         return self.conversation_services.summarize_knowledge(*args, **kwargs)

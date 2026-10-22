@@ -710,6 +710,108 @@ def test_managed_wiki_semantic_index_is_scoped_to_the_trusted_tenant(tmp_path):
     assert provider.query("spend efficiency", tenant_id="tenant-b") == []
 
 
+def test_managed_tenant_query_never_rebuilds_semantic_index_implicitly(tmp_path):
+    store = AdAgentStore(":memory:")
+    manager = ManagedKnowledgeManager(store)
+    created = manager.create_document(
+        "tenant-a",
+        {
+            "title": "Budget pacing guide",
+            "content": "# Budget pacing guide\n\n"
+            "Control expenditure efficiency across the campaign lifecycle.",
+            "platform": "all",
+        },
+        "user-a",
+    )
+    manager.publish("tenant-a", created["document_id"])
+
+    class Embeddings:
+        def __init__(self):
+            self.calls = []
+
+        def embed(self, texts):
+            self.calls.append(list(texts))
+            return [[1.0, 0.0] for _ in texts]
+
+    class Index:
+        def __init__(self):
+            self.records = {}
+            self.fingerprints = {}
+
+        def rebuild(self, records, *, scope, fingerprint=""):
+            self.records[scope] = list(records)
+            self.fingerprints[scope] = fingerprint
+
+        def is_current(self, *, scope, fingerprint):
+            return self.fingerprints.get(scope) == fingerprint
+
+        def search(self, _vector, *, scope, limit):
+            return [
+                {"chunk_id": item["chunk_id"], "score": 1.0}
+                for item in self.records.get(scope, [])[:limit]
+            ]
+
+    embeddings = Embeddings()
+    index = Index()
+    provider = ManagedKnowledgeProvider(
+        MarkdownWikiKnowledgeProvider(
+            tmp_path,
+            embedding_provider=embeddings,
+            semantic_index=index,
+            auto_rebuild_semantic=False,
+        ),
+        store,
+    )
+
+    stale_results = provider.query(
+        "spending efficiency", tenant_id="tenant-a", limit=1,
+    )
+
+    assert stale_results
+    assert stale_results[0].retrieval_method != "hybrid"
+    assert embeddings.calls == []
+
+    rebuilt = provider.rebuild_semantic_search_index(tenant_id="tenant-a")
+    assert rebuilt["tenant"]["available"] is True
+    assert embeddings.calls
+
+    current_results = provider.query(
+        "spending efficiency", tenant_id="tenant-a", limit=1,
+    )
+    assert current_results[0].retrieval_method == "hybrid"
+    assert provider.semantic_index_status(tenant_id="tenant-a")["tenant"]["current"] is True
+
+    published = manager.create_document(
+        "tenant-a",
+        {
+            "title": "Incrementality measurement",
+            "content": (
+                "# Incrementality measurement\n\n"
+                "Use geographic holdouts to estimate causal lift."
+            ),
+            "platform": "all",
+        },
+        "user-a",
+    )
+    manager.publish("tenant-a", published["document_id"])
+
+    stale_status = provider.semantic_index_status(tenant_id="tenant-a")
+    calls_before_stale_query = len(embeddings.calls)
+    provider.query(
+        "geographic holdouts causal lift",
+        tenant_id="tenant-a",
+        limit=1,
+    )
+
+    assert stale_status["tenant"]["current"] is False
+    # The built-in scope remains searchable; the stale tenant scope must not
+    # issue its own embedding request until an explicit rebuild occurs.
+    assert len(embeddings.calls) == calls_before_stale_query + 1
+
+    provider.rebuild_semantic_search_index(tenant_id="tenant-a")
+    assert provider.semantic_index_status(tenant_id="tenant-a")["tenant"]["current"] is True
+
+
 def test_knowledge_hybrid_retrieval_keeps_provenance_and_uses_semantic_index(tmp_path):
     (tmp_path / "budget.md").write_text(
         "---\n"

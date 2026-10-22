@@ -844,6 +844,16 @@
         function selectBlueprint(blueprintId, selectorValue = null, template = null) {
             const item = blueprintState.items.find(value => value.id === blueprintId);
             if (!item) return;
+            if (
+                blueprintState.selected?.id
+                && (
+                    blueprintState.selected.id !== blueprintId
+                    || blueprintState.selected.version !== item.version
+                )
+                && typeof clearCreationImport === 'function'
+            ) {
+                clearCreationImport();
+            }
             if (!template) {
                 template = blueprintState.templates.find(candidate => candidate.status === 'active'
                     && candidate.is_default
@@ -1056,6 +1066,10 @@
                 });
                 const panel = document.getElementById('blueprintTemplatePanel');
                 if (panel) panel.hidden = true;
+                const importButton = document.getElementById('blueprintImportButton');
+                if (importButton) importButton.hidden = true;
+                const importPanel = document.getElementById('blueprintImportPanel');
+                if (importPanel) importPanel.hidden = true;
                 ['blueprintFields', 'blueprintFieldNav', 'blueprintSummary', 'blueprintContractOverview'].forEach(id => {
                     const container = document.getElementById(id);
                     if (container) container.innerHTML = '<div class="blueprint-empty">暂无模板内容。模板从广告创建向导中保存。</div>';
@@ -1066,6 +1080,8 @@
             }
             const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
             const managementMode = blueprintState.mode === 'templates';
+            const importButton = document.getElementById('blueprintImportButton');
+            if (importButton) importButton.hidden = managementMode;
             if (title) title.textContent = managementMode && template ? template.name : blueprint.title || blueprint.id;
             if (meta) meta.textContent = template && managementMode
                 ? `${creationProviderLabel(blueprint.provider)} · ${blueprint.ad_format} · ${template.account_id ? `账号 ${template.account_id} · ` : ''}${template.source === 'builtin' ? '内置只读' : (template.scope_label || '个人通用')} · ${template.source === 'builtin' ? creationTemplateVerificationLabel(template.verification_status) : (template.status === 'active' ? '已启用' : '已停用')} · ${template.source === 'builtin' ? '应用后仍需补充资源' : `使用 ${template.usage_count || 0} 次`} · 蓝图 v${blueprint.version}`

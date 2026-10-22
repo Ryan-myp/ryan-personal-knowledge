@@ -255,6 +255,107 @@ def test_feedback_trend_is_daily_and_scoped_without_exposing_reasons():
         store.close()
 
 
+def test_negative_feedback_review_queue_is_tenant_scoped_and_human_curated():
+    store = AdAgentStore(":memory:")
+    try:
+        manager = SessionManager(store)
+        for session_id, user_id, tenant_id in (
+            ("session-a", "user-a", "tenant-a"),
+            ("session-b", "user-b", "tenant-b"),
+        ):
+            manager.create_session(
+                session_id,
+                user_id,
+                metadata={"tenant_id": tenant_id},
+            )
+            manager.record_conversation_message(
+                session_id, "turn-a", "user", "请解释报表中的转化成本",
+            )
+            manager.record_conversation_message(
+                session_id, "turn-a", "assistant", "转化成本是 0。",
+            )
+            assert manager.save_conversation_feedback(
+                session_id,
+                "turn-a",
+                user_id=user_id,
+                tenant_id=tenant_id,
+                feedback={
+                    "rating": "negative",
+                    "reason": "没有说明数据时间范围",
+                    "submitted_at": "2026-10-21T00:00:00+00:00",
+                },
+            )
+
+        queue = store.list_conversation_feedback_review_queue(
+            tenant_id="tenant-a",
+            status="pending",
+            limit=10,
+        )
+
+        assert len(queue) == 1
+        assert queue[0]["user_input"] == "请解释报表中的转化成本"
+        assert queue[0]["assistant_reply"] == "转化成本是 0。"
+        assert queue[0]["reason"] == "没有说明数据时间范围"
+        assert queue[0]["review_status"] == "pending"
+        assert store.review_conversation_feedback(
+            queue[0]["feedback_id"],
+            tenant_id="tenant-a",
+            reviewer_id="reviewer-a",
+            review_status="candidate",
+            expected_behavior="说明统计区间，并先确认转化数和花费来源。",
+            reviewed_at="2026-10-21T01:00:00+00:00",
+        )
+        reviewed = store.list_conversation_feedback_review_queue(
+            tenant_id="tenant-a",
+            status="candidate",
+            limit=10,
+        )
+        assert len(reviewed) == 1
+        assert reviewed[0]["reviewer_id"] == "reviewer-a"
+        assert "说明统计区间" in reviewed[0]["expected_behavior"]
+        assert store.list_conversation_feedback_review_queue(
+            tenant_id="tenant-b",
+            status="candidate",
+            limit=10,
+        ) == []
+    finally:
+        store.close()
+
+
+def test_feedback_review_requires_expected_behavior_for_candidate():
+    store = AdAgentStore(":memory:")
+    try:
+        manager = SessionManager(store)
+        manager.create_session("session-a", "user-a", metadata={"tenant_id": "tenant-a"})
+        manager.record_conversation_message("session-a", "turn-a", "assistant", "回复")
+        assert manager.save_conversation_feedback(
+            "session-a",
+            "turn-a",
+            user_id="user-a",
+            tenant_id="tenant-a",
+            feedback={
+                "rating": "negative",
+                "submitted_at": "2026-10-21T00:00:00+00:00",
+            },
+        )
+
+        queue = store.list_conversation_feedback_review_queue(
+            tenant_id="tenant-a", status="pending", limit=10,
+        )
+
+        with pytest.raises(ValueError, match="expected behavior"):
+            store.review_conversation_feedback(
+                queue[0]["feedback_id"],
+                tenant_id="tenant-a",
+                reviewer_id="reviewer-a",
+                review_status="candidate",
+                expected_behavior="",
+                reviewed_at="2026-10-21T01:00:00+00:00",
+            )
+    finally:
+        store.close()
+
+
 def test_feedback_resubmission_replaces_existing_rating_and_empty_rate_is_null():
     store = AdAgentStore(":memory:")
     try:
@@ -330,6 +431,53 @@ def test_feedback_migration_backfills_existing_transcript_ratings(tmp_path):
         assert trend["positive"] == 1
         assert trend["negative"] == 0
         assert "reason" not in str(trend)
+    finally:
+        upgraded.close()
+
+
+def test_feedback_migration_backfills_legacy_reason_without_replaying_old_schema(
+    tmp_path,
+):
+    database = tmp_path / "feedback-reason-migration.db"
+    store = AdAgentStore(str(database))
+    manager = SessionManager(store)
+    manager.create_session(
+        "session-a", "user-a", metadata={"tenant_id": "tenant-a"},
+    )
+    manager.record_conversation_message(
+        "session-a", "turn-a", "assistant", "回答",
+    )
+    assert manager.save_conversation_feedback(
+        "session-a",
+        "turn-a",
+        user_id="user-a",
+        tenant_id="tenant-a",
+        feedback={
+            "rating": "negative",
+            "reason": "旧反馈原因",
+            "submitted_at": "2026-10-20T00:00:00+00:00",
+        },
+    )
+    connection = store._get_conn()
+    connection.execute(
+        "UPDATE conversation_feedback SET reason = NULL WHERE session_id = ?",
+        ("session-a",),
+    )
+    connection.execute(
+        "DELETE FROM schema_migrations WHERE version = ?",
+        (store.SCHEMA_VERSION,),
+    )
+    connection.commit()
+    store.close()
+
+    upgraded = AdAgentStore(str(database))
+    try:
+        queue = upgraded.list_conversation_feedback_review_queue(
+            tenant_id="tenant-a",
+            status="pending",
+            limit=10,
+        )
+        assert queue[0]["reason"] == "旧反馈原因"
     finally:
         upgraded.close()
 

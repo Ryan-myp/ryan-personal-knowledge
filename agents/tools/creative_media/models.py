@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 
-AGNES_MEDIA_BASE_URL = "https://apihub.agnes-ai.com/v1"
+AGNES_MEDIA_BASE_URL = "https://apihub.agnes-ai.cn/v1"
 FREE_AGNES_MEDIA_MODELS: dict[str, dict[str, str]] = {
     "image_generation": {
         "model": "agnes-image-2.5-flash",
@@ -51,7 +51,7 @@ def validate_free_media_configuration(
         raise ValueError("media model base URL is invalid") from error
     if (
         parsed.scheme.lower() != "https"
-        or parsed.hostname != "apihub.agnes-ai.com"
+        or parsed.hostname != "apihub.agnes-ai.cn"
         or parsed.username
         or parsed.password
         or parsed.query

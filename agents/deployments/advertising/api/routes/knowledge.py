@@ -71,6 +71,52 @@ def create_knowledge_router(context: ApiContext) -> APIRouter:
             "results": documents,
         }
 
+    @router.get("/knowledge/semantic-index/status", tags=["knowledge"])
+    async def get_knowledge_semantic_index_status(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "knowledge.read")
+        runtime = context.runtime()
+        getter = getattr(runtime, "get_knowledge_semantic_index_status", None)
+        if not callable(getter):
+            raise HTTPException(
+                status_code=503,
+                detail="知识语义索引状态服务未初始化",
+            )
+        try:
+            result = await run_in_threadpool(
+                getter,
+                tenant_id=principal.tenant_id,
+            )
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        return context.redact(result)
+
+    @router.post("/knowledge/semantic-index/rebuild", tags=["knowledge"])
+    async def rebuild_knowledge_semantic_index(
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "knowledge.write")
+        runtime = context.runtime()
+        rebuild = getattr(runtime, "rebuild_knowledge_semantic_index", None)
+        if not callable(rebuild):
+            raise HTTPException(
+                status_code=503,
+                detail="知识语义索引重建服务未初始化",
+            )
+        try:
+            result = await run_in_threadpool(
+                rebuild,
+                tenant_id=principal.tenant_id,
+            )
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        return context.redact(result)
+
     @router.get("/knowledge/catalog", tags=["knowledge"])
     async def catalog_knowledge(
         http_request: Request,

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
+import math
 import re
 import zipfile
 from pathlib import Path
@@ -17,6 +19,7 @@ MAX_PDF_PAGES = 60
 MAX_XLSX_SHEETS = 20
 MAX_SHEET_ROWS = 1_000
 MAX_SHEET_COLUMNS = 80
+MAX_IMPORT_PREVIEW_ROWS = 100
 MAX_XLSX_ARCHIVE_ENTRIES = 5_000
 MAX_XLSX_UNCOMPRESSED_BYTES = 64 * MIB
 MAX_XLSX_COMPRESSION_RATIO = 500
@@ -141,6 +144,139 @@ def extract_chat_document_text(
     if media_type == "application/pdf":
         return _extract_pdf(content)
     raise ValueError(f"不支持解析文档类型：{media_type}")
+
+
+def read_chat_document_table(
+    content: bytes,
+    *,
+    filename: str,
+    media_type: str,
+    sheet_name: str | None = None,
+) -> dict[str, Any]:
+    """Read a bounded CSV/XLSX table for a non-executing import preview."""
+    if len(content) > MAX_DOCUMENT_BYTES:
+        raise ValueError("文档附件超过 20 MiB 限制")
+    extension = Path(filename).suffix.lower()
+    if extension == ".csv" and media_type == "text/csv":
+        return _read_csv_table(content)
+    if extension == ".xlsx" and media_type == _XLSX_TYPE:
+        return _read_xlsx_table(content, sheet_name=sheet_name)
+    raise ValueError("广告配置导入仅支持 CSV 和 XLSX 文件")
+
+
+def _read_csv_table(content: bytes) -> dict[str, Any]:
+    text = _decode_text(content)
+    try:
+        reader = csv.reader(io.StringIO(text, newline=""))
+        header = next(reader, None)
+        headers = _validate_table_headers(header or [])
+        rows: list[list[str]] = []
+        truncated = False
+        for row in reader:
+            if not any(str(cell).strip() for cell in row):
+                continue
+            if len(row) > MAX_SHEET_COLUMNS:
+                raise ValueError("CSV 列数超过 80 列限制")
+            if len(rows) >= MAX_IMPORT_PREVIEW_ROWS:
+                truncated = True
+                break
+            rows.append([str(cell).strip() for cell in row])
+    except csv.Error as error:
+        raise ValueError("CSV 格式无效，无法读取表格") from error
+    return {
+        "headers": headers,
+        "rows": rows,
+        "sheet_name": "",
+        "truncated": truncated,
+    }
+
+
+def _read_xlsx_table(
+    content: bytes,
+    *,
+    sheet_name: str | None,
+) -> dict[str, Any]:
+    from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
+
+    _validate_xlsx_archive(content)
+    workbook = None
+    try:
+        workbook = load_workbook(
+            io.BytesIO(content),
+            read_only=True,
+            data_only=True,
+            keep_links=False,
+        )
+        if len(workbook.worksheets) > MAX_XLSX_SHEETS:
+            raise ValueError("XLSX 最多支持 20 个工作表")
+        if sheet_name:
+            worksheet = workbook[sheet_name] if sheet_name in workbook.sheetnames else None
+            if worksheet is None:
+                raise ValueError("指定的 XLSX 工作表不存在")
+        elif workbook.worksheets:
+            worksheet = workbook.worksheets[0]
+        else:
+            raise ValueError("XLSX 中没有可读取的工作表")
+
+        if (worksheet.max_column or 0) > MAX_SHEET_COLUMNS:
+            raise ValueError("XLSX 列数超过 80 列限制")
+        max_row = min(worksheet.max_row or 0, MAX_IMPORT_PREVIEW_ROWS + 1)
+        iterator = worksheet.iter_rows(
+            max_row=max_row,
+            max_col=min(worksheet.max_column or MAX_SHEET_COLUMNS, MAX_SHEET_COLUMNS),
+            values_only=True,
+        )
+        headers = _validate_table_headers(next(iterator, ()) or ())
+        rows: list[list[str]] = []
+        for row in iterator:
+            if not any(value is not None and str(value).strip() for value in row):
+                continue
+            if len(rows) >= MAX_IMPORT_PREVIEW_ROWS:
+                break
+            rows.append([_table_cell(value) for value in row])
+        truncated = (worksheet.max_row or 0) > MAX_IMPORT_PREVIEW_ROWS + 1
+        return {
+            "headers": headers,
+            "rows": rows,
+            "sheet_name": str(worksheet.title),
+            "truncated": truncated,
+        }
+    except ValueError:
+        raise
+    except (InvalidFileException, KeyError, OSError, zipfile.BadZipFile) as error:
+        raise ValueError("无法读取 XLSX 工作簿，请检查文件是否损坏") from error
+    finally:
+        if workbook is not None:
+            workbook.close()
+
+
+def _validate_table_headers(values: Any) -> list[str]:
+    if not isinstance(values, (list, tuple)) or not values:
+        raise ValueError("表格 header 不能为空")
+    if len(values) > MAX_SHEET_COLUMNS:
+        raise ValueError("表格列数超过 80 列限制")
+    headers = [str(value or "").strip() for value in values]
+    normalized = [header.casefold() for header in headers]
+    if any(not header for header in headers) or len(set(normalized)) != len(headers):
+        raise ValueError("表格 header 必须非空且不能重复")
+    if any(len(header) > 200 for header in headers):
+        raise ValueError("表格 header 单元格不能超过 200 个字符")
+    return headers
+
+
+def _table_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (dt.datetime, dt.date, dt.time)):
+        return value.isoformat()
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("XLSX 表格包含非有限数值")
+        return str(value)
+    return str(value).strip()
 
 
 def _decode_text(content: bytes) -> str:
@@ -318,9 +454,11 @@ def _truncate(value: str, limit: int) -> str:
 __all__ = [
     "CHAT_DOCUMENT_TYPES",
     "IMAGE_EXTENSIONS",
+    "MAX_IMPORT_PREVIEW_ROWS",
     "MAX_DOCUMENT_BYTES",
     "MAX_DOCUMENT_TEXT_CHARS",
     "VIDEO_EXTENSIONS",
     "detect_chat_attachment_type",
     "extract_chat_document_text",
+    "read_chat_document_table",
 ]

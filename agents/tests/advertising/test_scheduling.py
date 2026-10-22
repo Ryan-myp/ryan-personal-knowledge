@@ -4,6 +4,8 @@ import os
 import tempfile
 from datetime import datetime, timezone
 
+import pytest
+
 from agents.agent_harness import ModelTurn, ToolCall
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 from agents.applications.advertising.persistence.models import ScheduledTaskRecord
@@ -109,6 +111,114 @@ def test_schedule_control_plane_is_independent_of_agent_chat_turns():
         assert runtime.delete_schedule(
             schedule["schedule_id"], user_id="operator-1", tenant_id="tenant-1"
         ) is True
+    finally:
+        runtime.close(wait=True)
+        store.close()
+
+
+def test_schedule_update_changes_instruction_and_recurrence_without_resetting_history():
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        persistence_store=store,
+        require_llm=False,
+        start_background_workers=False,
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        tenant_id="tenant-1",
+        permissions=frozenset({"ads.plan", "ads.read"}),
+    )
+    try:
+        schedule = runtime.create_schedule(
+            name="Daily report",
+            prompt="Summarize campaign performance",
+            cron_expression="0 9 * * *",
+            timezone="Asia/Shanghai",
+            principal=principal,
+        )
+        store.update_scheduled_task(
+            schedule["schedule_id"],
+            last_run_at="2026-10-20T01:00:00+00:00",
+            last_run_status="succeeded",
+            last_task_id="task-previous",
+            tenant_id="tenant-1",
+            user_id="operator-1",
+        )
+
+        updated = runtime.update_schedule(
+            schedule["schedule_id"],
+            name="Weekly report",
+            prompt="Summarize Google campaign performance",
+            cron_expression="0 10 * * 1",
+            timezone="America/Los_Angeles",
+            user_id="operator-1",
+            tenant_id="tenant-1",
+        )
+
+        assert updated["name"] == "Weekly report"
+        assert updated["prompt"] == "Summarize Google campaign performance"
+        assert updated["cron_expression"] == "0 10 * * 1"
+        assert updated["timezone"] == "America/Los_Angeles"
+        assert updated["payload"]["user_input"] == (
+            "Summarize Google campaign performance"
+        )
+        assert updated["payload"]["execution_mode"] == "dry_run"
+        assert updated["last_run_status"] == "succeeded"
+        assert updated["last_task_id"] == "task-previous"
+        assert updated["next_run_at"] != schedule["next_run_at"]
+        assert runtime.get_schedule(
+            schedule["schedule_id"], user_id="other-user", tenant_id="tenant-1"
+        ) is None
+    finally:
+        runtime.close(wait=True)
+        store.close()
+
+
+def test_schedule_update_rejects_leased_schedule_and_keeps_existing_state():
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        persistence_store=store,
+        require_llm=False,
+        start_background_workers=False,
+    )
+    principal = RequestPrincipal(
+        user_id="operator-1",
+        tenant_id="tenant-1",
+        permissions=frozenset({"ads.plan", "ads.read"}),
+    )
+    try:
+        schedule = runtime.create_schedule(
+            name="Daily report",
+            prompt="Summarize campaign performance",
+            cron_expression="0 9 * * *",
+            principal=principal,
+        )
+        store.update_scheduled_task(
+            schedule["schedule_id"],
+            tenant_id="tenant-1",
+            user_id="operator-1",
+            metadata={"scheduler_lease_test": True},
+        )
+        with store._lock:
+            connection = store._get_conn()
+            connection.execute(
+                "UPDATE scheduled_tasks SET lease_owner = ? WHERE schedule_id = ?",
+                ("worker-1", schedule["schedule_id"]),
+            )
+            connection.commit()
+
+        with pytest.raises(RuntimeError, match="currently being claimed"):
+            runtime.update_schedule(
+                schedule["schedule_id"],
+                name="Changed",
+                user_id="operator-1",
+                tenant_id="tenant-1",
+            )
+
+        current = runtime.get_schedule(
+            schedule["schedule_id"], user_id="operator-1", tenant_id="tenant-1"
+        )
+        assert current["name"] == "Daily report"
     finally:
         runtime.close(wait=True)
         store.close()

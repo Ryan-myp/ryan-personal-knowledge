@@ -139,6 +139,7 @@
                 const model = document.createElement('span');
                 const purposeLabels = {
                     chat: '对话与文案',
+                    knowledge_embedding: '知识库语义检索',
                     image_generation: '图片生成',
                     video_generation: '视频生成',
                 };

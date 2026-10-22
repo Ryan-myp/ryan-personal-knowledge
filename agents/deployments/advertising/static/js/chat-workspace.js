@@ -1,6 +1,7 @@
         let scheduleRefreshTimer = null;
         let scheduleRefreshSequence = 0;
         let scheduleActionsPending = new Set();
+        let schedulesById = new Map();
 
         function stopScheduleRefresh() {
             scheduleRefreshSequence += 1;
@@ -30,6 +31,7 @@
             document.getElementById('feedbackTrendOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('scheduleOverlay')?.classList.remove('active');
             document.getElementById('scheduleOverlay')?.setAttribute('aria-hidden', 'true');
+            closeScheduleEditor();
             document.getElementById('memoryOverlay')?.classList.remove('active');
             document.getElementById('memoryOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('mcpOverlay')?.classList.remove('active');
@@ -283,6 +285,9 @@
             const runStatuses = metrics.runs_by_status || {};
             const runs = Array.isArray(data.runs) ? data.runs : [];
             const latestRuns = new Map();
+            schedulesById = new Map(
+                schedules.map(item => [String(item.schedule_id || ''), item]),
+            );
             for (const run of runs) {
                 if (run?.schedule_id && !latestRuns.has(run.schedule_id)) {
                     latestRuns.set(run.schedule_id, run);
@@ -307,7 +312,7 @@
                 <article class="schedule-row ${item.status === 'paused' ? 'paused' : ''}">
                     <div class="schedule-row-main"><div class="schedule-row-title"><strong>${escapeHtml(item.name || '未命名任务')}</strong><span class="schedule-status ${escapeHtml(item.status || '')}">${scheduleStatusLabel(item.status)}</span></div><p>${escapeHtml(item.prompt || '')}</p><small>${escapeHtml(item.cron_expression || '')} · ${escapeHtml(item.timezone || '')} · 下次 ${escapeHtml(item.next_run_at || '—')}</small>${runStatus}</div>
                     <div class="schedule-row-stats"><span>成功 <strong>${monitoringNumber(item.success_count || 0)}</strong></span><span>失败 <strong>${monitoringNumber(item.failure_count || 0)}</strong></span><span>总计 <strong>${monitoringNumber(item.run_count || 0)}</strong></span></div>
-                    <div class="schedule-row-actions"><button type="button" onclick="scheduleAction('${escapeHtml(item.schedule_id)}','${item.status === 'paused' ? 'resume' : 'pause'}',this)">${item.status === 'paused' ? '恢复' : '暂停'}</button><button type="button" ${runPending || actionPending ? 'disabled aria-busy="true"' : ''} onclick="scheduleAction('${escapeHtml(item.schedule_id)}','run-now',this)">${actionPending ? '提交中…' : runPending ? scheduleStatusLabel(run.status) : '立即执行'}</button><button class="danger" type="button" onclick="scheduleAction('${escapeHtml(item.schedule_id)}','delete',this)">删除</button></div>
+                    <div class="schedule-row-actions"><button type="button" onclick="editSchedule('${escapeHtml(item.schedule_id)}')">编辑</button><button type="button" onclick="scheduleAction('${escapeHtml(item.schedule_id)}','${item.status === 'paused' ? 'resume' : 'pause'}',this)">${item.status === 'paused' ? '恢复' : '暂停'}</button><button type="button" ${runPending || actionPending ? 'disabled aria-busy="true"' : ''} onclick="scheduleAction('${escapeHtml(item.schedule_id)}','run-now',this)">${actionPending ? '提交中…' : runPending ? scheduleStatusLabel(run.status) : '立即执行'}</button><button class="danger" type="button" onclick="scheduleAction('${escapeHtml(item.schedule_id)}','delete',this)">删除</button></div>
                 </article>`;
             }).join('') : '<div class="monitoring-empty">还没有定时任务。可以直接在 Chat 中说“每天 09:00 分析 account 下的 campaign performance”。</div>';
             document.getElementById('scheduleRunRows').innerHTML = runs.length ? runs.map(run => `<tr><td>${escapeHtml(run.scheduled_for || '—')}</td><td>${escapeHtml(run.schedule_id || '—')}</td><td><span class="schedule-status ${escapeHtml(run.status || '')}">${scheduleStatusLabel(run.status)}</span></td><td>${escapeHtml(run.task_id || '—')}</td><td>${escapeHtml(run.error || '—')}</td></tr>`).join('') : '<tr><td colspan="5" class="monitoring-empty">暂无触发记录</td></tr>';
@@ -372,6 +377,58 @@
                         button.removeAttribute('aria-busy');
                     }
                 }
+            }
+        }
+
+        function editSchedule(scheduleId) {
+            const schedule = schedulesById.get(String(scheduleId || ''));
+            if (!schedule) return;
+            document.getElementById('scheduleEditId').value = schedule.schedule_id || '';
+            document.getElementById('scheduleEditName').value = schedule.name || '';
+            document.getElementById('scheduleEditPrompt').value = schedule.prompt || '';
+            document.getElementById('scheduleEditCron').value = schedule.cron_expression || '';
+            document.getElementById('scheduleEditTimezone').value = schedule.timezone || 'Asia/Shanghai';
+            document.getElementById('scheduleEditStatus').textContent = '';
+            const overlay = document.getElementById('scheduleEditOverlay');
+            overlay?.classList.add('active');
+            overlay?.setAttribute('aria-hidden', 'false');
+            document.getElementById('scheduleEditName')?.focus();
+        }
+
+        function closeScheduleEditor() {
+            const overlay = document.getElementById('scheduleEditOverlay');
+            overlay?.classList.remove('active');
+            overlay?.setAttribute('aria-hidden', 'true');
+            const status = document.getElementById('scheduleEditStatus');
+            if (status) status.textContent = '';
+        }
+
+        async function saveScheduleEdit(event) {
+            event?.preventDefault?.();
+            const scheduleId = String(
+                document.getElementById('scheduleEditId')?.value || '',
+            ).trim();
+            const submit = document.getElementById('scheduleEditSubmit');
+            const status = document.getElementById('scheduleEditStatus');
+            if (!scheduleId || !submit || !status || submit.disabled) return;
+            submit.disabled = true;
+            status.textContent = '正在保存…';
+            try {
+                await apiFetch(`/schedules/${encodeURIComponent(scheduleId)}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        name: document.getElementById('scheduleEditName').value,
+                        prompt: document.getElementById('scheduleEditPrompt').value,
+                        cron_expression: document.getElementById('scheduleEditCron').value,
+                        timezone: document.getElementById('scheduleEditTimezone').value,
+                    }),
+                });
+                closeScheduleEditor();
+                await loadSchedules();
+            } catch (error) {
+                status.textContent = error.message || '保存失败，请稍后重试。';
+            } finally {
+                submit.disabled = false;
             }
         }
 
@@ -613,6 +670,7 @@
                 document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'true');
                 loadKnowledgeCatalog();
                 loadManagedKnowledgeDocuments();
+                loadKnowledgeSemanticIndexStatus();
             }
         }
 

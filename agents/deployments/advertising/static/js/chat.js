@@ -15,6 +15,7 @@
         'chat-settings.js',
         'chat-blueprint-core.js',
         'chat-blueprint-editor.js',
+        'chat-creation-import.js',
         'chat-skills.js',
         'chat-mcp.js',
         'chat-creation.js',
@@ -23,7 +24,7 @@
     const load = index => {
         if (index >= sources.length) return;
         const script = document.createElement('script');
-        script.src = `/static/js/${sources[index]}?v=20261021-web-fetch-documents-v1`;
+        script.src = `/static/js/${sources[index]}?v=20261021-agent-gap-closure-v1`;
         script.onload = () => load(index + 1);
         script.onerror = () => console.error(`Failed to load ${sources[index]}`);
         document.head.appendChild(script);

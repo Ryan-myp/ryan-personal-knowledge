@@ -192,6 +192,11 @@ class AdTaskServices(AdTaskOperationalServicesMixin):
             schedule_id, user_id=user_id, tenant_id=tenant_id
         )
 
+    def update_schedule(self, schedule_id: str, **kwargs: Any) -> Optional[dict[str, Any]]:
+        return self.runtime.scheduling_service.update(
+            schedule_id, **kwargs,
+        )
+
     def pause_schedule(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
         return self.runtime.scheduling_service.pause(
             schedule_id, user_id=user_id, tenant_id=tenant_id

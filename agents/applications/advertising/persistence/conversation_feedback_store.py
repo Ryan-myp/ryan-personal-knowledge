@@ -64,6 +64,7 @@ def save_conversation_feedback(
             user_id=user_id,
             tenant_id=tenant_id,
             rating=rating,
+            reason=safe_feedback["reason"],
             submitted_at=submitted_at,
         )
         connection.commit()
@@ -104,20 +105,27 @@ def _upsert_feedback_aggregate(
     user_id: str,
     tenant_id: str,
     rating: str,
+    reason: str | None,
     submitted_at: str,
 ) -> None:
     connection.execute(
         """INSERT INTO conversation_feedback
-           (feedback_id, session_id, turn_id, tenant_id, user_id, rating, submitted_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+           (feedback_id, session_id, turn_id, tenant_id, user_id, rating,
+            reason, submitted_at, review_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
            ON CONFLICT(session_id, turn_id) DO UPDATE SET
                tenant_id = excluded.tenant_id,
                user_id = excluded.user_id,
                rating = excluded.rating,
-               submitted_at = excluded.submitted_at""",
+               reason = excluded.reason,
+               submitted_at = excluded.submitted_at,
+               review_status = 'pending',
+               reviewer_id = NULL,
+               reviewed_at = NULL,
+               expected_behavior = NULL""",
         (
             str(uuid.uuid4()), str(session_id), str(turn_id),
-            str(tenant_id), str(user_id), rating, submitted_at,
+            str(tenant_id), str(user_id), rating, reason, submitted_at,
         ),
     )
 
@@ -185,4 +193,106 @@ def get_conversation_feedback_trend(
     }
 
 
-__all__ = ["get_conversation_feedback_trend", "save_conversation_feedback"]
+def list_conversation_feedback_review_queue(
+    connection: Any,
+    *,
+    tenant_id: str,
+    status: str = "pending",
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    if status not in {"pending", "candidate", "dismissed"}:
+        raise ValueError("unsupported feedback review status")
+    bounded_limit = max(1, min(int(limit), 100))
+    rows = connection.execute(
+        """SELECT feedback.feedback_id, feedback.session_id, feedback.turn_id,
+                  feedback.user_id, feedback.rating, feedback.reason,
+                  feedback.submitted_at, feedback.review_status,
+                  feedback.reviewer_id, feedback.reviewed_at,
+                  feedback.expected_behavior,
+                  (SELECT message.content
+                   FROM conversation_messages AS message
+                   WHERE message.session_id = feedback.session_id
+                     AND message.turn_id = feedback.turn_id
+                     AND message.role = 'user'
+                   ORDER BY message.created_at DESC, message.message_id DESC
+                   LIMIT 1) AS user_input,
+                  (SELECT message.content
+                   FROM conversation_messages AS message
+                   WHERE message.session_id = feedback.session_id
+                     AND message.turn_id = feedback.turn_id
+                     AND message.role = 'assistant'
+                   ORDER BY message.created_at DESC, message.message_id DESC
+                   LIMIT 1) AS assistant_reply
+           FROM conversation_feedback AS feedback
+           JOIN sessions AS session
+             ON session.session_id = feedback.session_id
+            AND session.tenant_id = feedback.tenant_id
+           WHERE feedback.tenant_id = ? AND feedback.rating = 'negative'
+             AND feedback.review_status = ?
+           ORDER BY feedback.submitted_at DESC, feedback.feedback_id
+           LIMIT ?""",
+        (str(tenant_id), status, bounded_limit),
+    ).fetchall()
+    return [
+        {
+            "feedback_id": str(row["feedback_id"]),
+            "session_id": str(row["session_id"]),
+            "turn_id": str(row["turn_id"]),
+            "user_id": str(row["user_id"]),
+            "rating": str(row["rating"]),
+            "reason": str(row["reason"] or "")[:1000],
+            "submitted_at": str(row["submitted_at"]),
+            "review_status": str(row["review_status"]),
+            "reviewer_id": row["reviewer_id"],
+            "reviewed_at": row["reviewed_at"],
+            "expected_behavior": str(row["expected_behavior"] or "")[:2000],
+            "user_input": str(row["user_input"] or "")[:4000],
+            "assistant_reply": str(row["assistant_reply"] or "")[:4000],
+        }
+        for row in rows
+    ]
+
+
+def review_conversation_feedback(
+    connection: Any,
+    *,
+    feedback_id: str,
+    tenant_id: str,
+    reviewer_id: str,
+    review_status: str,
+    expected_behavior: str,
+    reviewed_at: str,
+) -> bool:
+    if review_status not in {"candidate", "dismissed"}:
+        raise ValueError("review status must be candidate or dismissed")
+    expected = str(expected_behavior or "").strip()
+    if review_status == "candidate" and not expected:
+        raise ValueError("expected behavior is required for a regression candidate")
+    if len(expected) > 2000:
+        raise ValueError("expected behavior exceeds 2000 characters")
+    if not str(reviewer_id or "").strip() or not str(reviewed_at or "").strip():
+        raise ValueError("reviewer and reviewed_at are required")
+    cursor = connection.execute(
+        """UPDATE conversation_feedback
+           SET review_status = ?, reviewer_id = ?, reviewed_at = ?,
+               expected_behavior = ?
+           WHERE feedback_id = ? AND tenant_id = ? AND rating = 'negative'""",
+        (
+            review_status,
+            str(reviewer_id),
+            str(reviewed_at),
+            expected or None,
+            str(feedback_id),
+            str(tenant_id),
+        ),
+    )
+    connection.commit()
+    return int(cursor.rowcount or 0) == 1
+
+
+__all__ = [
+    "get_conversation_feedback_trend",
+    "list_conversation_feedback_review_queue",
+    "review_conversation_feedback",
+    "save_conversation_feedback",
+]

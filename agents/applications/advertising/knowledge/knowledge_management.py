@@ -393,6 +393,104 @@ class ManagedKnowledgeProvider:
             for key in stale_keys:
                 self._query_cache.pop(key, None)
 
+    def configure_semantic_retrieval(
+        self,
+        embedding_provider: Any,
+        semantic_index: Any,
+    ) -> None:
+        self.base.configure_semantic_retrieval(
+            embedding_provider,
+            semantic_index,
+            auto_rebuild=False,
+        )
+        self.clear_query_cache()
+        with self._tenant_cache_lock:
+            self._tenant_cache.clear()
+
+    def _published_tenant_chunks(
+        self, tenant_id: str,
+    ) -> tuple[list[KnowledgeDocument], list[KnowledgeDocument]]:
+        tenant_key = str(tenant_id or "default")
+        records = self.store.list_knowledge_documents(
+            tenant_key, status="published", limit=500,
+        )
+        managed = [self._managed_document(record) for record in records]
+        chunks = [
+            chunk
+            for document in managed
+            for chunk in MarkdownWikiKnowledgeProvider._chunk_document(
+                document, scope=f"tenant:{tenant_key}"
+            )
+        ]
+        return managed, chunks
+
+    def semantic_index_status(self, *, tenant_id: str) -> dict[str, Any]:
+        """Return built-in and tenant index freshness without embedding calls."""
+        tenant_key = str(tenant_id or "default")
+        builtin = self.base.semantic_index_status()
+        _managed, chunks = self._published_tenant_chunks(tenant_key)
+        scope = f"tenant:{tenant_key}"
+        fingerprint = self.base._fingerprint(chunks)
+        configured = builtin["configured"]
+        current = configured and self.base._semantic_index_is_current(
+            scope, fingerprint,
+        )
+        tenant = {
+            "scope": scope,
+            "configured": configured,
+            "current": bool(current),
+            "available": bool(current and self.base._semantic_error is None),
+            "chunk_count": len(chunks),
+            "fingerprint": fingerprint,
+            "error_type": self.base._semantic_error,
+        }
+        return {
+            "tenant_id": tenant_key,
+            "configured": configured,
+            "available": bool(builtin["available"] and tenant["available"]),
+            "builtin": builtin,
+            "tenant": tenant,
+        }
+
+    def rebuild_semantic_search_index(
+        self,
+        *,
+        tenant_id: str,
+    ) -> dict[str, Any]:
+        """Rebuild built-in and current-tenant indexes without publishing data."""
+        builtin = self.base.rebuild_semantic_search_index()
+        tenant_key = str(tenant_id or "default")
+        scope = f"tenant:{tenant_key}"
+        tenant_status: dict[str, Any] = {
+            "scope": scope,
+            "chunk_count": 0,
+            "available": False,
+        }
+        if builtin["configured"]:
+            _managed, chunks = self._published_tenant_chunks(tenant_key)
+            tenant_status["chunk_count"] = len(chunks)
+            tenant_status["available"] = self.base._rebuild_semantic_index(
+                chunks,
+                scope=scope,
+            )
+            tenant_status["error_type"] = self.base._semantic_error
+            tenant_status["fingerprint"] = self.base._fingerprint(chunks)
+            tenant_status["current"] = bool(
+                tenant_status["available"]
+                and self.base._semantic_index_is_current(
+                    scope, tenant_status["fingerprint"],
+                )
+            )
+        self.clear_tenant_cache(tenant_key)
+        return {
+            "configured": builtin["configured"],
+            "builtin": builtin,
+            "tenant": tenant_status,
+            "available": bool(
+                builtin["available"] and tenant_status["available"]
+            ),
+        }
+
     @property
     def documents(self):
         return self.base.documents
@@ -525,31 +623,6 @@ class ManagedKnowledgeProvider:
             )
             if fts_available:
                 self.base._fts_available = True
-            if (
-                self.base.embedding_provider is not None
-                and self.base.semantic_index is not None
-                and self.base.semantic_available
-            ):
-                try:
-                    vectors = self.base._embed([
-                        self.base._semantic_text(chunk)
-                        for chunk in managed_chunks
-                    ])
-                    self.base.semantic_index.rebuild(
-                        [
-                            {
-                                "chunk_id": chunk.chunk_id,
-                                "document_id": chunk.document_id,
-                                "vector": vector,
-                            }
-                            for chunk, vector in zip(managed_chunks, vectors)
-                        ],
-                        scope=f"tenant:{tenant_key}",
-                    )
-                except (OSError, RuntimeError, TypeError, ValueError, TimeoutError):
-                    # Managed Wiki retrieval remains correct through lexical
-                    # search when the optional semantic port is unavailable.
-                    pass
             self._tenant_cache[tenant_key] = (signature, managed, managed_chunks)
             self._tenant_cache.move_to_end(tenant_key)
             while len(self._tenant_cache) > self._tenant_cache_max_entries:
@@ -622,6 +695,7 @@ class ManagedKnowledgeProvider:
             self._query_cache_misses += 1
         all_documents = [*self.base.documents, *managed]
         managed_scope = f"tenant:{tenant_key}"
+        tenant_fingerprint = self.base._fingerprint(managed_chunks)
         all_chunks = [
             *self.base.chunks,
             *managed_chunks,
@@ -632,7 +706,15 @@ class ManagedKnowledgeProvider:
         )
         semantic_hits: dict[str, float] = {}
         for scope in (self.base.semantic_scope, managed_scope):
-            hits = self.base._semantic_search_hits(query, scope=scope)
+            hits = self.base._semantic_search_hits(
+                query,
+                scope=scope,
+                fingerprint=(
+                    self.base._semantic_fingerprint
+                    if scope == self.base.semantic_scope
+                    else tenant_fingerprint
+                ),
+            )
             if hits:
                 semantic_hits.update(hits)
         result = MarkdownWikiKnowledgeProvider._query_chunks(

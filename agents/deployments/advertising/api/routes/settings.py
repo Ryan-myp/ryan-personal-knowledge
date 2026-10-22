@@ -17,7 +17,12 @@ class ModelProfileRequest(BaseModel):
     model: str = Field(min_length=1, max_length=160)
     base_url: str = Field(default="", max_length=2048)
     api_key: str = Field(default="", max_length=8192)
-    purpose: Literal["chat", "image_generation", "video_generation"] = "chat"
+    purpose: Literal[
+        "chat",
+        "knowledge_embedding",
+        "image_generation",
+        "video_generation",
+    ] = "chat"
 
 
 class ProviderCredentialsRequest(BaseModel):

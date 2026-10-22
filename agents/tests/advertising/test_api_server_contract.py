@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 import agents.deployments.advertising.api_server as api_server
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.routes.chat import create_chat_router
+from agents.deployments.advertising.api.routes.catalog import create_catalog_router
 from agents.deployments.advertising.api.chat_media import ChatMediaStore
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
@@ -35,7 +36,8 @@ def _chat_page_javascript() -> str:
         "chat-media.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
         "chat-settings.js",
-        "chat-blueprint-editor.js", "chat-skills.js", "chat-creation.js",
+        "chat-blueprint-editor.js", "chat-creation-import.js",
+        "chat-skills.js", "chat-creation.js",
         "chat-messages.js",
     ]
     return "\n".join(
@@ -620,6 +622,162 @@ def test_chat_media_route_rejects_cross_user_and_cross_tenant_reads(tmp_path):
         )
 
     assert response.status_code == 404
+
+
+def test_creation_import_preview_is_scoped_authorized_and_never_executes_tools(tmp_path):
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    media_store = ChatMediaStore(tmp_path / "media")
+    attachment = media_store.save(
+        b"Campaign\nSpring\n",
+        filename="campaigns.csv",
+        content_type="text/csv",
+        session_id="session-a",
+        tenant_id="tenant-a",
+        user_id="owner-a",
+    )
+    principals = {
+        "owner-key": RequestPrincipal(
+            user_id="owner-a",
+            tenant_id="tenant-a",
+            permissions=frozenset({"ads.plan"}),
+        ),
+        "reader-key": RequestPrincipal(
+            user_id="reader-a",
+            tenant_id="tenant-a",
+            permissions=frozenset({"ads.read"}),
+        ),
+        "other-user-key": RequestPrincipal(
+            user_id="other-user",
+            tenant_id="tenant-a",
+            permissions=frozenset({"ads.plan"}),
+        ),
+        "other-tenant-key": RequestPrincipal(
+            user_id="owner-a",
+            tenant_id="tenant-b",
+            permissions=frozenset({"ads.plan"}),
+        ),
+    }
+    blueprint = SimpleNamespace(
+        blueprint_id="demo.search",
+        version="1.0.0",
+        fields=({
+            "path": "campaign.name",
+            "label": "Campaign 名称",
+            "tool_ref": "create_campaign.name",
+        },),
+    )
+    evaluation_calls = []
+
+    class Runtime:
+        creation_blueprints = SimpleNamespace(
+            get=lambda blueprint_id, version=None: (
+                blueprint
+                if blueprint_id == "demo.search" and version in {None, "1.0.0"}
+                else None
+            ),
+        )
+
+        @staticmethod
+        def _get_registered_tool(_name):
+            return (
+                SimpleNamespace(input_schema={
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                    },
+                }),
+                lambda **_kwargs: pytest.fail("preview must not execute a Tool"),
+            )
+
+        @staticmethod
+        def evaluate_creation_blueprint(blueprint_id, values, **_kwargs):
+            evaluation_calls.append((blueprint_id, values))
+            return {
+                "ready": bool(values.get("campaign", {}).get("name")),
+                "missing_fields": [],
+                "invalid_fields": [],
+            }
+
+        @staticmethod
+        def run(**_kwargs):
+            pytest.fail("preview must not start an Agent run")
+
+    def authorize(api_key, _request):
+        principal = principals.get(api_key)
+        if principal is None:
+            raise HTTPException(status_code=401, detail="unauthorized")
+        return principal
+
+    def require_permission(principal, permission):
+        if permission not in principal.permissions:
+            raise HTTPException(status_code=403, detail="forbidden")
+
+    context = ApiContext(
+        runtime_getter=Runtime,
+        authorize_request=authorize,
+        require_permission=require_permission,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: media_store,
+    )
+    app = FastAPI()
+    app.include_router(create_catalog_router(context))
+    request_payload = {
+        "session_id": "session-a",
+        "attachment_id": attachment["id"],
+        "blueprint_id": "demo.search",
+        "version": "1.0.0",
+        "column_mapping": {"campaign.name": "Campaign"},
+    }
+
+    with TestClient(app) as client:
+        inspect = client.post(
+            "/creation-import/inspect",
+            headers={"X-API-Key": "owner-key"},
+            json={key: value for key, value in request_payload.items()
+                  if key != "column_mapping"},
+        )
+        preview = client.post(
+            "/creation-import/preview",
+            headers={"X-API-Key": "owner-key"},
+            json=request_payload,
+        )
+        denied = client.post(
+            "/creation-import/preview",
+            headers={"X-API-Key": "reader-key"},
+            json=request_payload,
+        )
+        cross_user = client.post(
+            "/creation-import/inspect",
+            headers={"X-API-Key": "other-user-key"},
+            json=request_payload,
+        )
+        cross_tenant = client.post(
+            "/creation-import/inspect",
+            headers={"X-API-Key": "other-tenant-key"},
+            json=request_payload,
+        )
+
+    assert inspect.status_code == 200, inspect.text
+    assert inspect.json()["preview_only"] is True
+    assert inspect.json()["headers"] == ["Campaign"]
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["preview_only"] is True
+    assert preview.json()["rows"][0]["values"] == {
+        "campaign": {"name": "Spring"},
+    }
+    assert denied.status_code == 403
+    assert cross_user.status_code == 404
+    assert cross_tenant.status_code == 404
+    assert evaluation_calls == [(
+        "demo.search",
+        {"campaign": {"name": "Spring"}},
+    )]
 
 
 def test_operational_routes_are_owned_by_dedicated_route_modules():
@@ -1638,6 +1796,170 @@ def test_feedback_trend_uses_authenticated_scope_and_supported_windows(
     }]
 
 
+def test_feedback_review_requires_permission_and_exports_only_curated_cases(
+    monkeypatch, fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "review-key": {
+                "user_id": "reviewer-a",
+                "tenant_id": "tenant-a",
+                "permissions": ["feedback.review"],
+            },
+            "read-key": {
+                "user_id": "reader-a",
+                "tenant_id": "tenant-a",
+                "permissions": ["ads.read"],
+            },
+        }),
+    )
+    queue_calls = []
+    review_calls = []
+
+    def list_feedback(*, tenant_id, status, limit):
+        queue_calls.append((tenant_id, status, limit))
+        return [
+            {
+                "feedback_id": "feedback-a",
+                "tenant_id": tenant_id,
+                "review_status": status,
+                "user_input": "分析 access_token=private-value 的报表",
+                "assistant_reply": "请核对 access_token=private-value",
+                "reason": "缺少数据区间",
+                "expected_behavior": (
+                    "先说明统计日期，且不得回显 access_token=private-value"
+                    if status == "candidate" else ""
+                ),
+            },
+            {
+                "feedback_id": "feedback-incomplete",
+                "review_status": "candidate",
+                "user_input": "不应导出",
+                "assistant_reply": "未完成审核",
+                "reason": "",
+                "expected_behavior": "",
+            },
+        ]
+
+    def review_feedback(feedback_id, **kwargs):
+        review_calls.append((feedback_id, kwargs))
+        return True
+
+    fake_server.list_conversation_feedback_review_queue = list_feedback
+    fake_server.review_conversation_feedback = review_feedback
+    with TestClient(api_server.app) as client:
+        denied = client.get(
+            "/feedback/review?status=pending",
+            headers={"X-API-Key": "read-key"},
+        )
+        queue = client.get(
+            "/feedback/review?status=pending&limit=20",
+            headers={"X-API-Key": "review-key"},
+        )
+        reviewed = client.put(
+            "/feedback/review/feedback-a",
+            headers={"X-API-Key": "review-key"},
+            json={
+                "review_status": "candidate",
+                "expected_behavior": "先说明统计区间，再解释指标。",
+            },
+        )
+        exported = client.get(
+            "/feedback/regression-cases/export",
+            headers={"X-API-Key": "review-key"},
+        )
+
+    assert denied.status_code == 403
+    assert queue.status_code == 200
+    assert "private-value" not in queue.text
+    assert reviewed.status_code == 200
+    assert review_calls == [(
+        "feedback-a",
+        {
+            "tenant_id": "tenant-a",
+            "reviewer_id": "reviewer-a",
+            "review_status": "candidate",
+            "expected_behavior": "先说明统计区间，再解释指标。",
+        },
+    )]
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/json")
+    export_payload = exported.json()
+    assert len(export_payload["cases"]) == 1
+    assert export_payload["cases"][0]["input"].startswith("分析")
+    assert export_payload["cases"][0]["expected_behavior"].startswith("先说明")
+    assert "feedback_id" not in exported.text
+    assert "reviewer-a" not in exported.text
+    assert "private-value" not in exported.text
+    assert queue_calls == [
+        ("tenant-a", "pending", 20),
+        ("tenant-a", "candidate", 100),
+    ]
+
+
+def test_knowledge_semantic_index_endpoints_use_explicit_tenant_permissions(
+    monkeypatch, fake_server,
+):
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "read-key": {
+                "user_id": "reader-a",
+                "tenant_id": "tenant-a",
+                "permissions": ["knowledge.read"],
+            },
+            "write-key": {
+                "user_id": "operator-a",
+                "tenant_id": "tenant-a",
+                "permissions": ["knowledge.write"],
+            },
+            "other-tenant-key": {
+                "user_id": "operator-b",
+                "tenant_id": "tenant-b",
+                "permissions": ["knowledge.write"],
+            },
+        }),
+    )
+    status_calls = []
+    rebuild_calls = []
+    fake_server.get_knowledge_semantic_index_status = lambda *, tenant_id: (
+        status_calls.append(tenant_id)
+        or {"tenant_id": tenant_id, "configured": True, "current": True}
+    )
+    fake_server.rebuild_knowledge_semantic_index = lambda *, tenant_id: (
+        rebuild_calls.append(tenant_id)
+        or {"tenant_id": tenant_id, "available": True}
+    )
+
+    with TestClient(api_server.app) as client:
+        status = client.get(
+            "/knowledge/semantic-index/status",
+            headers={"X-API-Key": "read-key"},
+        )
+        denied_read = client.get(
+            "/knowledge/semantic-index/status",
+            headers={"X-API-Key": "write-key"},
+        )
+        rebuilt = client.post(
+            "/knowledge/semantic-index/rebuild",
+            headers={"X-API-Key": "write-key"},
+        )
+        other_tenant_rebuild = client.post(
+            "/knowledge/semantic-index/rebuild",
+            headers={"X-API-Key": "other-tenant-key"},
+        )
+
+    assert status.status_code == 200
+    assert status.json()["tenant_id"] == "tenant-a"
+    assert denied_read.status_code == 403
+    assert rebuilt.status_code == 200
+    assert rebuilt.json()["tenant_id"] == "tenant-a"
+    assert other_tenant_rebuild.status_code == 200
+    assert status_calls == ["tenant-a"]
+    assert rebuild_calls == ["tenant-a", "tenant-b"]
+
+
 def test_session_delete_endpoints_use_authenticated_user_and_tenant_scope(monkeypatch, fake_server):
     monkeypatch.setenv(
         "AD_AGENT_API_KEY_PRINCIPALS",
@@ -2459,12 +2781,66 @@ def test_schedule_run_list_is_available_as_one_scoped_collection(fake_server, mo
     assert run_response.json()["run"]["schedule_id"] == "schedule-1"
 
 
-def test_chat_progress_and_schedule_ui_node_contracts():
-    javascript_test = (
-        Path(__file__).parent / "static" / "test_chat_trace_progress.js"
+def test_schedule_patch_uses_authenticated_scope_and_returns_updated_record(
+    fake_server, monkeypatch,
+):
+    calls = []
+    monkeypatch.setenv(
+        "AD_AGENT_API_KEY_PRINCIPALS",
+        json.dumps({
+            "test-key": {
+                "user_id": "operator-1",
+                "tenant_id": "tenant-1",
+                "permissions": ["ads.read", "ads.plan"],
+            }
+        }),
     )
+    fake_server.update_schedule = lambda schedule_id, **kwargs: (
+        calls.append((schedule_id, kwargs))
+        or {
+            "schedule_id": schedule_id,
+            "tenant_id": kwargs["tenant_id"],
+            "user_id": kwargs["user_id"],
+            "name": kwargs["name"],
+            "prompt": kwargs["prompt"],
+            "cron_expression": kwargs["cron_expression"],
+            "timezone": kwargs["timezone"],
+        }
+    )
+    with TestClient(api_server.app) as client:
+        response = client.patch(
+            "/schedules/schedule-1",
+            headers={"X-API-Key": "test-key"},
+            json={
+                "name": "Weekly report",
+                "prompt": "Summarize paid campaign results",
+                "cron_expression": "0 10 * * 1",
+                "timezone": "America/Los_Angeles",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["schedule"]["name"] == "Weekly report"
+    assert calls == [(
+        "schedule-1",
+        {
+            "name": "Weekly report",
+            "prompt": "Summarize paid campaign results",
+            "cron_expression": "0 10 * * 1",
+            "timezone": "America/Los_Angeles",
+            "user_id": "operator-1",
+            "tenant_id": "tenant-1",
+        },
+    )]
+
+
+def test_chat_progress_and_schedule_ui_node_contracts():
+    javascript_tests = [
+        Path(__file__).parent / "static" / "test_chat_trace_progress.js",
+        Path(__file__).parent / "static" / "test_chat_gap_workflows.js",
+    ]
     subprocess.run(
-        ["node", "--test", str(javascript_test)],
+        ["node", "--test", *(str(test) for test in javascript_tests)],
         check=True,
         timeout=30,
     )

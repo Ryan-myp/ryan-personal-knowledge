@@ -401,6 +401,7 @@ def _mysql_schema(sql: str) -> str:
     large_columns = {
         "metadata", "content", "tags", "template_values", "input_data", "output_data", "files",
         "manifest", "evaluation_report", "report", "payload", "result", "error",
+        "vector", "expected_behavior",
         # External MCP schemas and validation reports are bounded by the
         # control-plane contract, not by the 191-char index-safe fallback.
         "input_schema", "annotations", "validation_report", "description", "last_error",
@@ -1106,6 +1107,58 @@ class MySQLStore(AdAgentStore):
                                   cm.metadata, '$.user_feedback.submitted_at'
                               ))
                               ELSE NULL END IS NOT NULL"""
+            )
+        elif version == 24:
+            for column, definition in {
+                "reason": "LONGTEXT",
+                "review_status": "VARCHAR(32) NOT NULL DEFAULT 'pending'",
+                "reviewer_id": "VARCHAR(191)",
+                "reviewed_at": "VARCHAR(64)",
+                "expected_behavior": "LONGTEXT",
+            }.items():
+                self._add_mysql_column_if_missing(
+                    conn, "conversation_feedback", column, definition,
+                )
+            conn.executescript(_mysql_schema(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conversation_feedback_review
+                    ON conversation_feedback(tenant_id, rating, review_status, submitted_at);
+                CREATE TABLE IF NOT EXISTS knowledge_semantic_index_meta (
+                    scope TEXT PRIMARY KEY,
+                    fingerprint TEXT NOT NULL,
+                    dimension INTEGER NOT NULL DEFAULT 0,
+                    record_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS knowledge_semantic_vectors (
+                    scope TEXT NOT NULL,
+                    chunk_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    vector TEXT NOT NULL,
+                    dimension INTEGER NOT NULL,
+                    PRIMARY KEY (scope, chunk_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_semantic_vectors_scope
+                    ON knowledge_semantic_vectors(scope, dimension);
+                """
+            ))
+        elif version == 25:
+            conn.execute(
+                """UPDATE conversation_feedback AS feedback
+                   SET reason = (
+                       SELECT CASE WHEN JSON_VALID(cm.metadata)
+                                   THEN JSON_UNQUOTE(JSON_EXTRACT(
+                                       cm.metadata, '$.user_feedback.reason'
+                                   ))
+                                   ELSE NULL END
+                       FROM conversation_messages AS cm
+                       WHERE cm.session_id = feedback.session_id
+                         AND cm.turn_id = feedback.turn_id
+                         AND cm.role = 'assistant'
+                       ORDER BY cm.created_at DESC, cm.message_id DESC
+                       LIMIT 1
+                   )
+                   WHERE feedback.reason IS NULL OR feedback.reason = ''"""
             )
 
     def claim_task(

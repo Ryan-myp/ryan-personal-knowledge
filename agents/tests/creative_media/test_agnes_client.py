@@ -55,7 +55,7 @@ def test_image_generation_uses_agnes_image_25_contract():
     client = AgnesMediaClient(
         {
             "model": "agnes-image-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=request,
@@ -70,7 +70,7 @@ def test_image_generation_uses_agnes_image_25_contract():
     assert result == [{"content": image, "media_type": "image/png"}]
     method, url, kwargs = calls[0]
     assert method == "POST"
-    assert url == "https://apihub.agnes-ai.com/v1/images/generations"
+    assert url == "https://apihub.agnes-ai.cn/v1/images/generations"
     assert kwargs["json"] == {
         "model": "agnes-image-2.5-flash",
         "prompt": "Premium product hero",
@@ -105,7 +105,7 @@ def test_video_generation_uses_agnes_video_25_contract_and_polls_by_video_id():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=request,
@@ -123,7 +123,7 @@ def test_video_generation_uses_agnes_video_25_contract_and_polls_by_video_id():
     assert submitted["status"] == "processing"
     assert completed["status"] == "completed"
     assert completed["content"].startswith(b"\x00\x00\x00\x18ftyp")
-    assert calls[1][1] == "https://apihub.agnes-ai.com/agnesapi"
+    assert calls[1][1] == "https://apihub.agnes-ai.cn/agnesapi"
     assert calls[1][2]["params"] == {
         "video_id": "video-123",
         "model_name": "agnes-video-2.5-flash",
@@ -144,7 +144,7 @@ def test_video_result_rejects_non_global_or_non_https_urls():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: FakeResponse({
@@ -168,7 +168,7 @@ def test_video_result_accepts_the_configured_agnes_output_cdn():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: FakeResponse({
@@ -195,7 +195,7 @@ def test_video_result_rejects_unlisted_public_hosts():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: FakeResponse({
@@ -221,7 +221,7 @@ def test_image_generation_rejects_malformed_base64_and_non_image_mime():
     client = AgnesMediaClient(
         {
             "model": "image-model",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: FakeResponse({
@@ -235,7 +235,7 @@ def test_image_generation_rejects_malformed_base64_and_non_image_mime():
     client = AgnesMediaClient(
         {
             "model": "image-model",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: FakeResponse({
@@ -254,7 +254,7 @@ def test_video_generation_rejects_oversized_downloads():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: FakeResponse({
@@ -277,7 +277,7 @@ def test_generation_rejects_unsupported_models_and_invalid_video_parameters():
     client = AgnesMediaClient(
         {
             "model": "unrecognized-image-model",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: pytest.fail(
@@ -290,7 +290,7 @@ def test_generation_rejects_unsupported_models_and_invalid_video_parameters():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: pytest.fail(
@@ -322,7 +322,7 @@ def test_generation_rejects_paid_or_unapproved_models_before_network(
     client = AgnesMediaClient(
         {
             "model": model,
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: pytest.fail(
@@ -358,7 +358,7 @@ def test_provider_http_errors_are_safely_classified(
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "must-not-leak",
         },
         request=lambda *_args, **_kwargs: FakeResponse(
@@ -382,7 +382,7 @@ def test_provider_timeouts_have_a_distinct_safe_error_code():
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "must-not-leak",
         },
         request=timeout,
@@ -414,7 +414,7 @@ def test_video_queue_full_response_retries_and_recovers(monkeypatch):
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "must-not-leak",
         },
         request=request,
@@ -446,7 +446,7 @@ def test_video_queue_full_http_200_envelope_is_retried(monkeypatch):
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=request,
@@ -475,7 +475,7 @@ def test_video_rate_limit_retries_after_retry_after(monkeypatch):
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=request,
@@ -503,7 +503,7 @@ def test_video_rate_limit_without_retry_after_waits_once_then_stops(monkeypatch)
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=request,
@@ -532,7 +532,7 @@ def test_video_queue_full_retries_are_bounded_and_return_safe_error(monkeypatch)
     client = AgnesMediaClient(
         {
             "model": "agnes-video-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "must-not-leak",
         },
         request=request,
@@ -562,7 +562,7 @@ def test_oversized_provider_json_is_rejected_before_parsing():
     client = AgnesMediaClient(
         {
             "model": "agnes-image-2.5-flash",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
             "api_key": "test-key",
         },
         request=lambda *_args, **_kwargs: OversizedResponse(),

@@ -219,14 +219,14 @@ def test_media_model_profiles_do_not_replace_the_chat_model(tmp_path):
     image_profile = service.save_model_profile(
         name="Image",
         model="agnes-image-2.5-flash",
-        base_url="https://apihub.agnes-ai.com/v1",
+        base_url="https://apihub.agnes-ai.cn/v1",
         api_key="image-key",
         purpose="image_generation",
     )
     video_profile = service.save_model_profile(
         name="Video",
         model="agnes-video-2.5-flash",
-        base_url="https://apihub.agnes-ai.com/v1",
+        base_url="https://apihub.agnes-ai.cn/v1",
         api_key="video-key",
         purpose="video_generation",
     )
@@ -237,7 +237,7 @@ def test_media_model_profiles_do_not_replace_the_chat_model(tmp_path):
     assert service.model_configuration_for("image_generation") == {
         "name": "Image",
         "model": "agnes-image-2.5-flash",
-        "base_url": "https://apihub.agnes-ai.com/v1",
+        "base_url": "https://apihub.agnes-ai.cn/v1",
         "api_key": "image-key",
     }
     assert service.model_configuration_for("video_generation")["model"] == (
@@ -248,6 +248,7 @@ def test_media_model_profiles_do_not_replace_the_chat_model(tmp_path):
         "chat": chat_profile,
         "image_generation": image_profile,
         "video_generation": video_profile,
+        "knowledge_embedding": None,
     }
     assert "image-key" not in repr(models)
     assert "video-key" not in repr(models)
@@ -258,7 +259,7 @@ def test_model_profiles_cannot_change_purpose_or_delete_while_active(tmp_path):
     profile_id = service.save_model_profile(
         name="Image",
         model="agnes-image-2.5-flash",
-        base_url="https://apihub.agnes-ai.com/v1",
+        base_url="https://apihub.agnes-ai.cn/v1",
         api_key="image-key",
         purpose="image_generation",
     )
@@ -268,7 +269,7 @@ def test_model_profiles_cannot_change_purpose_or_delete_while_active(tmp_path):
             profile_id=profile_id,
             name="Image",
             model="agnes-image-2.5-flash",
-            base_url="https://apihub.agnes-ai.com/v1",
+            base_url="https://apihub.agnes-ai.cn/v1",
             api_key="",
             purpose="video_generation",
         )
@@ -296,7 +297,7 @@ def test_media_model_profiles_reject_paid_or_unapproved_models(
         service.save_model_profile(
             name="Unsupported media model",
             model=model,
-            base_url="https://apihub.agnes-ai.com/v1",
+            base_url="https://apihub.agnes-ai.cn/v1",
             api_key="media-key",
             purpose=purpose,
         )
@@ -321,20 +322,20 @@ def test_media_model_profile_defaults_to_official_endpoint_and_catalog_is_public
 
     snapshot = service.snapshot()
     assert service.model_configuration_for("image_generation")["base_url"] == (
-        "https://apihub.agnes-ai.com/v1"
+        "https://apihub.agnes-ai.cn/v1"
     )
     assert snapshot["media_model_catalog"] == {
         "image_generation": {
             "model": "agnes-image-2.5-flash",
             "name": "Agnes Image 2.5 Flash",
             "availability": "free",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
         },
         "video_generation": {
             "model": "agnes-video-2.5-flash",
             "name": "Agnes Video 2.5 Flash",
             "availability": "free_limited_time",
-            "base_url": "https://apihub.agnes-ai.com/v1",
+            "base_url": "https://apihub.agnes-ai.cn/v1",
         },
     }
 
@@ -399,6 +400,7 @@ def test_legacy_model_profiles_remain_chat_profiles(tmp_path):
         "chat": profile_id,
         "image_generation": None,
         "video_generation": None,
+        "knowledge_embedding": None,
     }
     assert runtime.llm is previous_client
     assert len(clients) == 1
@@ -644,6 +646,34 @@ def test_settings_api_requires_permission_and_never_echoes_secret(tmp_path):
     ).get("/settings")
 
     assert denied_response.status_code == 403
+
+
+def test_knowledge_embedding_profile_is_separate_and_never_replaces_chat_model(
+    tmp_path,
+):
+    service, runtime, vault, clients = make_service(tmp_path)
+
+    profile_id = service.save_model_profile(
+        name="Knowledge embeddings",
+        model="embed-v1",
+        base_url="https://models.example/v1",
+        api_key="private-embedding-key",
+        purpose="knowledge_embedding",
+    )
+    configuration = service.model_configuration_for("knowledge_embedding")
+    snapshot = service.snapshot()
+
+    assert configuration == {
+        "name": "Knowledge embeddings",
+        "model": "embed-v1",
+        "base_url": "https://models.example/v1",
+        "api_key": "private-embedding-key",
+    }
+    assert runtime.llm is None
+    assert clients == []
+    assert snapshot["models"]["active_profiles"]["knowledge_embedding"] == profile_id
+    assert "private-embedding-key" not in repr(snapshot)
+    assert b"private-embedding-key" not in vault.path.read_bytes()
 
 
 def test_web_search_settings_api_is_authorized_secure_and_never_echoes_key(

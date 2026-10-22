@@ -182,6 +182,26 @@ class SessionManager:
             user_id=str(user_id),
             tenant_id=str(tenant_id),
         )
+
+    def list_conversation_feedback_review_queue(
+        self, *, tenant_id: str, status: str = "pending", limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        getter = getattr(
+            self.store, "list_conversation_feedback_review_queue", None,
+        )
+        if not callable(getter):
+            raise TypeError("persistence backend lacks feedback review support")
+        return getter(
+            tenant_id=str(tenant_id),
+            status=str(status),
+            limit=int(limit),
+        )
+
+    def review_conversation_feedback(self, feedback_id: str, **kwargs: Any) -> bool:
+        reviewer = getattr(self.store, "review_conversation_feedback", None)
+        if not callable(reviewer):
+            raise TypeError("persistence backend lacks feedback review support")
+        return bool(reviewer(str(feedback_id), **kwargs))
     
     def restore_session(self, session_id: str) -> dict:
         """

@@ -1808,12 +1808,26 @@
         .schedule-run-status .schedule-status { margin-right: 5px; }
         .schedule-run-error { display: block; margin-top: 3px; color: #ffaaa7; overflow-wrap: anywhere; }
         .schedule-row-actions button:disabled { cursor: wait; opacity: .62; }
+        .schedule-edit-overlay { z-index: 120; }
+        .schedule-edit-console { width: min(620px, calc(100vw - 32px)); max-height: min(760px, calc(100dvh - 32px)); }
+        .schedule-edit-form { display: grid; gap: 14px; padding: 20px; }
+        .schedule-edit-form label { display: grid; gap: 6px; color: #98b4bd; font-size: 11px; }
+        .schedule-edit-form input,
+        .schedule-edit-form textarea { width: 100%; box-sizing: border-box; border: 1px solid #294858; border-radius: 7px; padding: 10px 11px; color: #e1f0ef; background: #0c202d; font: inherit; font-size: 12px; }
+        .schedule-edit-form textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+        .schedule-edit-form input:focus,
+        .schedule-edit-form textarea:focus { outline: 2px solid #47cbb6; outline-offset: 1px; }
+        .schedule-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+        .schedule-edit-status { min-height: 16px; color: #ffaaa7; font-size: 11px; }
         .loading-status { margin-top: 8px; color: #b6d7dc; font-size: 11px; line-height: 1.5; }
         @media (max-width: 820px) { .schedule-row { grid-template-columns: 1fr; gap: 11px; } .schedule-row-stats { justify-content: space-between; } .schedule-row-actions { justify-content: flex-end; } }
         body.light-theme .schedule-row { border-color: #c6dddd; background: linear-gradient(120deg, #f4fbfb, #fff); }
         body.light-theme .schedule-row-title strong { color: #244650; }
         body.light-theme .schedule-row-main p { color: #5a7880; }
         body.light-theme .schedule-row-main small { color: #78939a; }
+        body.light-theme .schedule-edit-form label { color: #55757d; }
+        body.light-theme .schedule-edit-form input,
+        body.light-theme .schedule-edit-form textarea { color: #244650; background: #fff; border-color: #c6dddd; }
         .system-ops-wrap { position: relative; }
         .system-ops-trigger { min-width: 92px; }
         .system-ops-icon { color: #58e6d0; font-size: 14px; line-height: 1; }

@@ -44,6 +44,7 @@ granted_permissions:
   - skills.evaluate
   - knowledge.read
   - knowledge.write
+  - feedback.review
   - mcp.read
   - mcp.manage
   - settings.manage

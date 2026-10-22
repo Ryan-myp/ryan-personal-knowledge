@@ -66,3 +66,53 @@ class AdConversationFeedbackServices:
             user_id=str(user_id),
             tenant_id=str(tenant_id),
         )
+
+    def list_conversation_feedback_review_queue(
+        self, *, tenant_id: str, status: str, limit: int,
+    ) -> list[dict[str, Any]]:
+        if status not in {"pending", "candidate", "dismissed"}:
+            raise ValueError("unsupported feedback review status")
+        manager = self.runtime._session_manager
+        if manager is None:
+            raise RuntimeError("conversation storage is unavailable")
+        getter = getattr(manager, "list_conversation_feedback_review_queue", None)
+        if not callable(getter):
+            raise RuntimeError("conversation feedback review is unavailable")
+        return getter(
+            tenant_id=str(tenant_id),
+            status=status,
+            limit=max(1, min(int(limit), 100)),
+        )
+
+    def review_conversation_feedback(
+        self,
+        *,
+        feedback_id: str,
+        tenant_id: str,
+        reviewer_id: str,
+        review_status: str,
+        expected_behavior: str,
+    ) -> bool:
+        if review_status not in {"candidate", "dismissed"}:
+            raise ValueError("review status must be candidate or dismissed")
+        safe_expected = self.runtime._redact_for_persistence(
+            str(expected_behavior or "")
+        ).strip()
+        if review_status == "candidate" and not safe_expected:
+            raise ValueError("expected behavior is required for a regression candidate")
+        if len(safe_expected) > 2000:
+            raise ValueError("expected behavior exceeds 2000 characters")
+        manager = self.runtime._session_manager
+        if manager is None:
+            raise RuntimeError("conversation storage is unavailable")
+        reviewer = getattr(manager, "review_conversation_feedback", None)
+        if not callable(reviewer):
+            raise RuntimeError("conversation feedback review is unavailable")
+        return bool(reviewer(
+            str(feedback_id),
+            tenant_id=str(tenant_id),
+            reviewer_id=str(reviewer_id),
+            review_status=review_status,
+            expected_behavior=safe_expected,
+            reviewed_at=datetime.now(timezone.utc).isoformat(),
+        ))

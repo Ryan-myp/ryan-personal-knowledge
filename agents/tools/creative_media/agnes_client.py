@@ -42,7 +42,10 @@ _IMAGE_RATIOS = frozenset({
 })
 _VIDEO_RATIOS = frozenset({"16:9", "9:16", "1:1"})
 _VIDEO_SIZES = frozenset({"720P", "1080P"})
-_VIDEO_RESULT_HOSTS = frozenset({"platform-outputs.agnes-ai.space"})
+_VIDEO_RESULT_HOSTS = frozenset({
+    "apihub.agnes-ai.com",
+    "platform-outputs.agnes-ai.space",
+})
 _VIDEO_QUEUE_RETRY_DELAYS = (10.0, 20.0, 40.0)
 _VIDEO_RATE_LIMIT_RETRY_DELAY_SECONDS = 60.0
 _VIDEO_QUEUE_RETRY_BUDGET_SECONDS = 120.0

@@ -32,7 +32,14 @@ from .conversation_pagination import (
 )
 from .conversation_feedback_store import (
     get_conversation_feedback_trend as query_conversation_feedback_trend,
+    list_conversation_feedback_review_queue as query_feedback_review_queue,
+    review_conversation_feedback as update_feedback_review,
     save_conversation_feedback as persist_conversation_feedback,
+)
+from .semantic_index_store import (
+    is_knowledge_semantic_index_current as check_semantic_index_current,
+    rebuild_knowledge_semantic_index as persist_semantic_index,
+    search_knowledge_semantic_index as query_semantic_index,
 )
 from .errors import PersistenceConflictError
 from agents.agent_harness.core.memory import MEMORY_SOURCE_PRIORITIES, MemoryRecord
@@ -94,7 +101,7 @@ class AdAgentStore:
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 23
+    SCHEMA_VERSION = 25
 
     SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -162,12 +169,37 @@ class AdAgentStore:
         tenant_id TEXT NOT NULL,
         user_id TEXT NOT NULL,
         rating TEXT NOT NULL,
+        reason TEXT,
         submitted_at TEXT NOT NULL,
+        review_status TEXT NOT NULL DEFAULT 'pending',
+        reviewer_id TEXT,
+        reviewed_at TEXT,
+        expected_behavior TEXT,
         UNIQUE (session_id, turn_id),
         FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_conversation_feedback_scope_time
         ON conversation_feedback(tenant_id, user_id, submitted_at);
+    CREATE INDEX IF NOT EXISTS idx_conversation_feedback_review
+        ON conversation_feedback(tenant_id, rating, review_status, submitted_at);
+
+    CREATE TABLE IF NOT EXISTS knowledge_semantic_index_meta (
+        scope TEXT PRIMARY KEY,
+        fingerprint TEXT NOT NULL,
+        dimension INTEGER NOT NULL DEFAULT 0,
+        record_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS knowledge_semantic_vectors (
+        scope TEXT NOT NULL,
+        chunk_id TEXT NOT NULL,
+        document_id TEXT NOT NULL,
+        vector TEXT NOT NULL,
+        dimension INTEGER NOT NULL,
+        PRIMARY KEY (scope, chunk_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_semantic_vectors_scope
+        ON knowledge_semantic_vectors(scope, dimension);
 
     CREATE TABLE IF NOT EXISTS knowledge_documents (
         document_id TEXT PRIMARY KEY,
@@ -1066,6 +1098,60 @@ class AdAgentStore:
                      AND CASE WHEN json_valid(cm.metadata)
                               THEN json_extract(cm.metadata, '$.user_feedback.submitted_at')
                               ELSE NULL END IS NOT NULL"""
+            )
+        elif version == 24:
+            for column, definition in {
+                "reason": "TEXT",
+                "review_status": "TEXT NOT NULL DEFAULT 'pending'",
+                "reviewer_id": "TEXT",
+                "reviewed_at": "TEXT",
+                "expected_behavior": "TEXT",
+            }.items():
+                cls._add_column_if_missing(
+                    conn, "conversation_feedback", column, definition,
+                )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_conversation_feedback_review "
+                "ON conversation_feedback(tenant_id, rating, review_status, submitted_at)"
+            )
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS knowledge_semantic_index_meta (
+                    scope TEXT PRIMARY KEY,
+                    fingerprint TEXT NOT NULL,
+                    dimension INTEGER NOT NULL DEFAULT 0,
+                    record_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS knowledge_semantic_vectors (
+                    scope TEXT NOT NULL,
+                    chunk_id TEXT NOT NULL,
+                    document_id TEXT NOT NULL,
+                    vector TEXT NOT NULL,
+                    dimension INTEGER NOT NULL,
+                    PRIMARY KEY (scope, chunk_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_semantic_vectors_scope
+                    ON knowledge_semantic_vectors(scope, dimension);
+                """
+            )
+        elif version == 25:
+            conn.execute(
+                """UPDATE conversation_feedback
+                   SET reason = (
+                       SELECT CASE WHEN json_valid(cm.metadata)
+                                   THEN json_extract(
+                                       cm.metadata, '$.user_feedback.reason'
+                                   )
+                                   ELSE NULL END
+                       FROM conversation_messages AS cm
+                       WHERE cm.session_id = conversation_feedback.session_id
+                         AND cm.turn_id = conversation_feedback.turn_id
+                         AND cm.role = 'assistant'
+                       ORDER BY cm.created_at DESC, cm.message_id DESC
+                       LIMIT 1
+                   )
+                   WHERE reason IS NULL OR reason = ''"""
             )
         else:
             raise ValueError(f"Unsupported schema migration: {version}")
@@ -2078,20 +2164,27 @@ class AdAgentStore:
         self, schedule_id: str, *, status: Optional[str] = None,
         next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,
         last_run_status: Optional[str] = None, last_task_id: Optional[str] = None,
-        metadata: Optional[dict] = None, tenant_id: Optional[str] = None,
+        metadata: Optional[dict] = None, name: Optional[str] = None,
+        prompt: Optional[str] = None, cron_expression: Optional[str] = None,
+        schedule_timezone: Optional[str] = None, payload: Optional[dict] = None,
+        only_unleased: bool = False, tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
     ) -> bool:
         assignments = ["updated_at = ?"]
         values: list[Any] = [datetime.now(timezone.utc).isoformat()]
         for column, value in (
-            ("status", status), ("next_run_at", next_run_at),
-            ("last_run_at", last_run_at), ("last_run_status", last_run_status),
-            ("last_task_id", last_task_id),
+            ("status", status), ("name", name), ("prompt", prompt),
+            ("cron_expression", cron_expression), ("timezone", schedule_timezone),
+            ("next_run_at", next_run_at), ("last_run_at", last_run_at),
+            ("last_run_status", last_run_status), ("last_task_id", last_task_id),
         ):
             if value is not None:
                 assignments.append(f"{column} = ?"); values.append(value)
         if metadata is not None:
             assignments.append("metadata = ?"); values.append(json.dumps(metadata or {}, ensure_ascii=False))
+        if payload is not None:
+            assignments.append("payload = ?")
+            values.append(json.dumps(payload, ensure_ascii=False))
         values.append(str(schedule_id))
         where = "schedule_id = ?"
         if tenant_id is not None:
@@ -2100,6 +2193,8 @@ class AdAgentStore:
         if user_id is not None:
             where += " AND user_id = ?"
             values.append(str(user_id))
+        if only_unleased:
+            where += " AND lease_owner IS NULL"
         with self._lock:
             cursor = self._get_conn().execute(
                 "UPDATE scheduled_tasks SET " + ", ".join(assignments)
@@ -4182,6 +4277,79 @@ class AdAgentStore:
                 days=int(days),
                 user_id=str(user_id),
                 tenant_id=str(tenant_id),
+            )
+
+    def list_conversation_feedback_review_queue(
+        self, *, tenant_id: str, status: str = "pending", limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            return query_feedback_review_queue(
+                self._get_conn(),
+                tenant_id=str(tenant_id),
+                status=str(status),
+                limit=int(limit),
+            )
+
+    def review_conversation_feedback(
+        self,
+        feedback_id: str,
+        *,
+        tenant_id: str,
+        reviewer_id: str,
+        review_status: str,
+        expected_behavior: str,
+        reviewed_at: str,
+    ) -> bool:
+        with self._lock:
+            return update_feedback_review(
+                self._get_conn(),
+                feedback_id=str(feedback_id),
+                tenant_id=str(tenant_id),
+                reviewer_id=str(reviewer_id),
+                review_status=str(review_status),
+                expected_behavior=str(expected_behavior or ""),
+                reviewed_at=str(reviewed_at),
+            )
+
+    def rebuild_knowledge_semantic_index(
+        self,
+        records: list[dict[str, Any]],
+        *,
+        scope: str,
+        fingerprint: str,
+    ) -> bool:
+        with self._lock:
+            return persist_semantic_index(
+                self._get_conn(),
+                mysql=getattr(self, "backend_name", "sqlite") == "mysql",
+                records=records,
+                scope=scope,
+                fingerprint=fingerprint,
+            )
+
+    def search_knowledge_semantic_index(
+        self,
+        vector: list[float],
+        *,
+        scope: str,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._lock:
+            return query_semantic_index(
+                self._get_conn(),
+                query_vector=vector,
+                scope=scope,
+                limit=limit,
+            )
+
+    def is_knowledge_semantic_index_current(
+        self, *, scope: str, fingerprint: str,
+    ) -> bool:
+        with self._lock:
+            return check_semantic_index_current(
+                self._get_conn(),
+                scope=scope,
+                fingerprint=fingerprint,
             )
 
     def delete_conversation_messages(self, session_id: str) -> None:

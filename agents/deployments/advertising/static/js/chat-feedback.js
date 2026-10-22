@@ -1,5 +1,6 @@
 let feedbackTrendDays = 30;
 let feedbackTrendRequestToken = 0;
+let feedbackReviewRequestToken = 0;
 
 function feedbackTrendSetStatus(state, message) {
     const banner = document.getElementById('feedbackTrendStatus');
@@ -110,6 +111,162 @@ async function loadFeedbackTrend(days = feedbackTrendDays) {
     }
 }
 
+function feedbackReviewSetStatus(message, isError = false) {
+    const status = document.getElementById('feedbackReviewStatusText');
+    if (!status) return;
+    status.textContent = message || '';
+    status.classList.toggle('error', Boolean(isError));
+}
+
+function renderFeedbackReviewQueue(items) {
+    const list = document.getElementById('feedbackReviewList');
+    if (!list) return;
+    list.replaceChildren();
+    const records = Array.isArray(items) ? items : [];
+    if (!records.length) {
+        const empty = document.createElement('div');
+        empty.className = 'feedback-review-empty';
+        empty.textContent = '此审核状态下没有反馈记录。';
+        list.appendChild(empty);
+        return;
+    }
+
+    records.forEach(item => {
+        const card = document.createElement('article');
+        card.className = 'feedback-review-item';
+        const header = document.createElement('div');
+        header.className = 'feedback-review-item-header';
+        const title = document.createElement('strong');
+        title.textContent = item.reason || '用户提交了负向反馈';
+        const timestamp = document.createElement('time');
+        timestamp.textContent = item.submitted_at || '';
+        header.append(title, timestamp);
+        card.appendChild(header);
+
+        for (const [label, value] of [
+            ['用户问题', item.user_input],
+            ['当时回答', item.assistant_reply],
+        ]) {
+            const block = document.createElement('div');
+            block.className = 'feedback-review-copy';
+            const caption = document.createElement('span');
+            caption.textContent = label;
+            const content = document.createElement('p');
+            content.textContent = value || '（无内容）';
+            block.append(caption, content);
+            card.appendChild(block);
+        }
+
+        const expectedLabel = document.createElement('label');
+        expectedLabel.className = 'feedback-review-expected';
+        expectedLabel.textContent = '期望行为';
+        const expected = document.createElement('textarea');
+        expected.maxLength = 2000;
+        expected.rows = 3;
+        expected.value = item.expected_behavior || '';
+        expected.placeholder = '人工写明正确回答应该满足的条件';
+        expectedLabel.appendChild(expected);
+        card.appendChild(expectedLabel);
+
+        const actions = document.createElement('div');
+        actions.className = 'feedback-review-item-actions';
+        const accept = document.createElement('button');
+        accept.type = 'button';
+        accept.className = 'btn btn-primary';
+        accept.textContent = item.review_status === 'candidate' ? '更新回归样例' : '收录为回归样例';
+        accept.addEventListener('click', () => reviewFeedbackItem(
+            item.feedback_id,
+            'candidate',
+            expected.value,
+        ));
+        const dismiss = document.createElement('button');
+        dismiss.type = 'button';
+        dismiss.className = 'btn btn-secondary';
+        dismiss.textContent = item.review_status === 'dismissed' ? '重新审核' : '忽略';
+        dismiss.addEventListener('click', () => reviewFeedbackItem(
+            item.feedback_id,
+            'dismissed',
+            '',
+        ));
+        actions.append(accept, dismiss);
+        card.appendChild(actions);
+        list.appendChild(card);
+    });
+}
+
+async function loadFeedbackReviewQueue() {
+    const status = document.getElementById('feedbackReviewStatus')?.value || 'pending';
+    const requestToken = ++feedbackReviewRequestToken;
+    feedbackReviewSetStatus('正在读取审核队列…');
+    try {
+        const result = await apiFetch(
+            `/feedback/review?status=${encodeURIComponent(status)}&limit=100`,
+        );
+        if (requestToken !== feedbackReviewRequestToken) return;
+        const items = Array.isArray(result.items) ? result.items : [];
+        renderFeedbackReviewQueue(items);
+        feedbackReviewSetStatus(`当前状态：${items.length} 条`);
+    } catch (error) {
+        if (requestToken !== feedbackReviewRequestToken) return;
+        document.getElementById('feedbackReviewList')?.replaceChildren();
+        const message = error?.status === 401 || error?.status === 403
+            ? '当前身份没有反馈审核权限；需要显式授予 feedback.review。'
+            : error?.message || '反馈审核队列读取失败。';
+        feedbackReviewSetStatus(message, true);
+    }
+}
+
+async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior) {
+    const safeExpected = String(expectedBehavior || '').trim();
+    if (reviewStatus === 'candidate' && !safeExpected) {
+        feedbackReviewSetStatus('请填写期望行为后再收录。', true);
+        return;
+    }
+    feedbackReviewSetStatus('正在保存审核结果…');
+    try {
+        await apiFetch(`/feedback/review/${encodeURIComponent(feedbackId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                review_status: reviewStatus,
+                expected_behavior: safeExpected,
+            }),
+        });
+        feedbackReviewSetStatus(
+            reviewStatus === 'candidate'
+                ? '已人工确认并保存为回归候选。'
+                : '已将该反馈标记为忽略。',
+        );
+        await loadFeedbackReviewQueue();
+    } catch (error) {
+        feedbackReviewSetStatus(error?.message || '反馈审核保存失败。', true);
+    }
+}
+
+async function exportFeedbackRegressionCases() {
+    feedbackReviewSetStatus('正在导出已审核的回归样例…');
+    try {
+        const payload = await apiFetch('/feedback/regression-cases/export');
+        const blob = new Blob(
+            [JSON.stringify(payload, null, 2)],
+            { type: 'application/json;charset=utf-8' },
+        );
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'ad-agent-regression-cases.json';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        feedbackReviewSetStatus(
+            `${(payload.cases || []).length} 条人工审核样例已导出${payload.truncated ? '；达到 100 条导出上限' : ''}。`,
+        );
+    } catch (error) {
+        feedbackReviewSetStatus(error?.message || '回归样例导出失败。', true);
+    }
+}
+
 function openFeedbackTrend() {
     closeWorkspacePopovers();
     const overlay = document.getElementById('feedbackTrendOverlay');
@@ -117,6 +274,7 @@ function openFeedbackTrend() {
     overlay.classList.add('active');
     overlay.setAttribute('aria-hidden', 'false');
     loadFeedbackTrend(30);
+    loadFeedbackReviewQueue();
 }
 
 function closeFeedbackTrend() {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
     <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20261021-web-fetch-documents-v1">
+    <link rel="stylesheet" href="/static/css/chat.css?v=20261021-agent-gap-closure-v1">
 </head>
 <body>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
@@ -85,6 +85,16 @@
             </header>
             <div class="knowledge-console-body">
                 <div class="knowledge-search-panel">
+                    <div class="knowledge-index-toolbar">
+                        <div>
+                            <strong>语义索引</strong>
+                            <span id="knowledgeSemanticStatus" role="status" aria-live="polite">尚未检查索引状态</span>
+                        </div>
+                        <div>
+                            <button type="button" onclick="loadKnowledgeSemanticIndexStatus()">刷新状态</button>
+                            <button type="button" id="knowledgeSemanticRebuildButton" onclick="rebuildKnowledgeSemanticIndex()" disabled>重建索引</button>
+                        </div>
+                    </div>
                     <div class="knowledge-search-grid">
                         <label class="workspace-form">关键词
                             <input id="knowledgeQuery" type="search" maxlength="2000" placeholder="例如：TikTok 报表、Google OAuth" onkeydown="if (event.key === 'Enter') searchKnowledge()">
@@ -247,7 +257,7 @@
                         <form class="service-settings-form" id="agentModelForm" onsubmit="saveAgentModelProfile(event)">
                             <input id="agentModelProfileId" type="hidden">
                             <label>配置名称<input id="agentModelName" type="text" maxlength="80" required placeholder="例如：主模型"></label>
-                            <label>模型用途<select id="agentModelPurpose" onchange="updateAgentModelChoices()"><option value="chat">对话与文案</option><option value="image_generation">图片生成</option><option value="video_generation">视频生成</option></select></label>
+                            <label>模型用途<select id="agentModelPurpose" onchange="updateAgentModelChoices()"><option value="chat">对话与文案</option><option value="knowledge_embedding">知识库语义检索</option><option value="image_generation">图片生成</option><option value="video_generation">视频生成</option></select></label>
                             <label>模型 ID<input id="agentModelId" type="text" maxlength="160" required placeholder="例如：agnes-3.0-flash"></label>
                             <small class="service-settings-model-hint" id="agentModelHint"></small>
                             <label>兼容接口 Base URL<input id="agentModelBaseUrl" type="url" maxlength="2048" placeholder="留空使用 SDK 默认地址"></label>
@@ -299,6 +309,29 @@
                 <section class="monitoring-panel"><div class="monitoring-panel-heading"><div><h2>调度任务列表</h2><p>可暂停、恢复、立即执行或查看每次触发记录。</p></div><span class="monitoring-panel-mark">CRON</span></div><div class="schedule-list" id="scheduleList"><div class="monitoring-empty">等待数据…</div></div></section>
                 <section class="monitoring-panel"><div class="monitoring-panel-heading"><div><h2>最近触发</h2><p>任务到期后创建的普通 Agent Task 及其最终结果。</p></div><span class="monitoring-panel-mark">RUNS</span></div><div class="monitoring-tool-table-wrap"><table class="monitoring-tool-table"><thead><tr><th>时间</th><th>任务</th><th>状态</th><th>Task</th><th>错误</th></tr></thead><tbody id="scheduleRunRows"><tr><td colspan="5" class="monitoring-empty">等待数据…</td></tr></tbody></table></div></section>
             </div>
+        </section>
+    </div>
+    <div class="monitoring-overlay schedule-edit-overlay" id="scheduleEditOverlay" aria-hidden="true">
+        <section class="monitoring-console schedule-edit-console" role="dialog" aria-modal="true" aria-labelledby="scheduleEditTitle">
+            <header class="monitoring-console-header">
+                <div>
+                    <div class="monitoring-console-kicker">EDIT SCHEDULE</div>
+                    <div class="monitoring-console-title" id="scheduleEditTitle">编辑定时任务</div>
+                </div>
+                <button class="icon-btn" type="button" onclick="closeScheduleEditor()" aria-label="关闭编辑">×</button>
+            </header>
+            <form class="schedule-edit-form" id="scheduleEditForm" onsubmit="saveScheduleEdit(event)">
+                <input id="scheduleEditId" type="hidden">
+                <label>任务名称<input id="scheduleEditName" type="text" maxlength="120" required></label>
+                <label>执行指令<textarea id="scheduleEditPrompt" rows="5" maxlength="12000" required></textarea></label>
+                <label>Cron 表达式<input id="scheduleEditCron" type="text" maxlength="120" required></label>
+                <label>时区<input id="scheduleEditTimezone" type="text" maxlength="80" required></label>
+                <div class="schedule-edit-actions">
+                    <button class="btn btn-secondary" type="button" onclick="closeScheduleEditor()">取消</button>
+                    <button class="btn btn-primary" type="submit" id="scheduleEditSubmit">保存修改</button>
+                </div>
+                <div class="schedule-edit-status" id="scheduleEditStatus" role="status" aria-live="polite"></div>
+            </form>
         </section>
     </div>
     <div class="monitoring-overlay" id="monitoringOverlay" aria-hidden="true">
@@ -411,6 +444,22 @@
                         <svg id="feedbackTrendChart" viewBox="0 0 720 250" role="img" aria-label="每日正向与负向反馈趋势图"></svg>
                         <div class="feedback-trend-empty" id="feedbackTrendEmpty" hidden>所选时间范围内还没有反馈</div>
                     </div>
+                </section>
+                <section class="monitoring-panel feedback-review-panel" aria-labelledby="feedbackReviewTitle">
+                    <div class="monitoring-panel-heading feedback-review-heading">
+                        <div><h2 id="feedbackReviewTitle">负反馈审核</h2><p>人工确认后才会进入回归样例导出，不会自动训练或发布。</p></div>
+                        <div class="feedback-review-actions">
+                            <select id="feedbackReviewStatus" aria-label="反馈审核状态" onchange="loadFeedbackReviewQueue()">
+                                <option value="pending">待审核</option>
+                                <option value="candidate">已收录</option>
+                                <option value="dismissed">已忽略</option>
+                            </select>
+                            <button class="btn btn-secondary" type="button" onclick="loadFeedbackReviewQueue()">刷新列表</button>
+                            <button class="btn btn-secondary" type="button" onclick="exportFeedbackRegressionCases()">导出回归 JSON</button>
+                        </div>
+                    </div>
+                    <div class="feedback-review-status" id="feedbackReviewStatusText" role="status" aria-live="polite">打开页面后加载当前租户的待审核反馈。</div>
+                    <div class="feedback-review-list" id="feedbackReviewList"></div>
                 </section>
                 <p class="feedback-trend-note">这是用户主动提交的反馈样本，不代表全部回答质量或模型评测结果；未反馈的回答不计入分母。</p>
             </div>
@@ -804,6 +853,8 @@
                         <div class="blueprint-editor-actions">
                             <span class="blueprint-dry-run-badge">DRY-RUN</span>
                             <button class="btn btn-secondary blueprint-template-save-trigger" id="blueprintTemplateSaveButton" type="button" onclick="toggleCreationTemplatePanel(true, true)">保存为模板</button>
+                            <button class="btn btn-secondary blueprint-import-trigger" id="blueprintImportButton" type="button" onclick="openCreationImportPicker()" hidden>导入 CSV / XLSX</button>
+                            <input id="blueprintImportFileInput" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
                             <button class="btn btn-secondary blueprint-template-action" id="blueprintTemplateUpdateButton" type="button" onclick="updateSelectedCreationTemplate()" hidden>更新模板</button>
                             <button class="btn btn-secondary blueprint-template-action" id="blueprintTemplateDuplicateButton" type="button" onclick="duplicateSelectedCreationTemplate()" hidden>复制</button>
                             <button class="btn btn-secondary blueprint-template-action" id="blueprintTemplateStatusButton" type="button" onclick="toggleSelectedCreationTemplateStatus()" hidden>停用</button>
@@ -826,6 +877,18 @@
                                 </div>
                             </div>
                             <div class="blueprint-notice" id="blueprintNotice" role="status"></div>
+                            <section class="blueprint-import-panel" id="blueprintImportPanel" hidden aria-label="表格导入预览">
+                                <div class="blueprint-import-heading">
+                                    <div><strong>表格导入预览</strong><small id="blueprintImportStatus">仅校验并填充草稿，不会创建广告。</small></div>
+                                    <button type="button" class="icon-btn" onclick="clearCreationImport()" aria-label="关闭表格导入">×</button>
+                                </div>
+                                <div class="blueprint-import-mapping" id="blueprintImportMapping"></div>
+                                <div class="blueprint-import-actions">
+                                    <span id="blueprintImportSummary" role="status" aria-live="polite"></span>
+                                    <button class="btn btn-primary" id="blueprintImportPreviewButton" type="button" onclick="previewCreationImport()" disabled>校验表格行</button>
+                                </div>
+                                <div class="blueprint-import-rows" id="blueprintImportRows"></div>
+                            </section>
                             <div class="blueprint-template-panel" id="blueprintTemplatePanel" hidden>
                                 <div class="blueprint-template-panel-heading">
                                     <div><strong id="blueprintTemplatePanelTitle">保存当前参数为模板</strong><span>只保存当前蓝图允许的参数值，账号与地区可作为适用范围。</span></div>
@@ -859,6 +922,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20261021-web-fetch-documents-v1" defer></script>
+    <script src="/static/js/chat.js?v=20261021-agent-gap-closure-v1" defer></script>
 </body>
 </html>
