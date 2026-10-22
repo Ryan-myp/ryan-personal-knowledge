@@ -182,8 +182,8 @@ class ToolExecutionCoordinator:
         max_tool_result_chars: int = 32_000,
         max_interaction_chars: int = 256_000,
     ) -> None:
-        if tool_execution not in {"sequential", "parallel"}:
-            raise ValueError("tool_execution must be sequential or parallel")
+        if tool_execution not in {"sequential", "parallel", "parallel_reads"}:
+            raise ValueError("unsupported tool execution strategy")
         if max_parallel_tools <= 0:
             raise ValueError("max_parallel_tools must be positive")
         if max_inflight_tool_invocations <= 0:
@@ -224,6 +224,8 @@ class ToolExecutionCoordinator:
 
     @classmethod
     def _tool_replay_safe(cls, definition: Any) -> bool:
+        if "interaction" in (cls._tool_value(definition, "traits", ()) or ()):
+            return False
         effect = cls._tool_value(
             definition,
             "effect_class",
@@ -1588,6 +1590,74 @@ class ToolExecutionCoordinator:
             argument_bindings=resolved.argument_bindings,
         ), None
 
+    def _parallel_read(self, call: ToolCall) -> bool:
+        try:
+            definition = self.tool_catalog.get_binding(call.name).definition
+        except (KeyError, TypeError, AttributeError):
+            return False
+        effect = self._tool_value(definition, "effect_class", None)
+        effect = getattr(effect, "value", effect)
+        replay = self._tool_value(definition, "replay_policy", None)
+        replay = getattr(replay, "value", replay)
+        return (
+            str(effect or "").lower() == "read"
+            and str(replay or "").lower() in {"safe", "idempotent"}
+            and self._tool_replay_safe(definition)
+        )
+
+    def _execution_batches(self, calls: Sequence[ToolCall]) -> list[list[ToolCall]]:
+        if self.tool_execution != "parallel_reads":
+            return [list(calls)]
+        batches: list[list[ToolCall]] = []
+        reads: list[ToolCall] = []
+        for call in calls:
+            if self._parallel_read(call):
+                reads.append(call)
+                continue
+            if reads:
+                batches.append(reads)
+                reads = []
+            batches.append([call])
+        if reads:
+            batches.append(reads)
+        return batches
+
+    def _execute_ready_calls(
+        self, calls: Sequence[ToolCall], invoke: Callable[[ToolCall], dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        results = []
+        groups = self._execution_batches(calls)
+        for index, group in enumerate(groups):
+            if self.tool_execution == "sequential" or len(group) <= 1:
+                batch = [invoke(call) for call in group]
+            else:
+                pool = ThreadPoolExecutor(
+                    max_workers=min(self.max_parallel_tools, len(group)),
+                    thread_name_prefix="agent-tool",
+                )
+                try:
+                    futures = [pool.submit(copy_context().run, invoke, call) for call in group]
+                    batch = [future.result() for future in futures]
+                finally:
+                    pool.shutdown(wait=False, cancel_futures=True)
+            results.extend(batch)
+            if self.tool_execution == "parallel_reads" and any(
+                row.get(key) for row in batch
+                for key in ("needs_input", "needs_confirmation", "terminate", "recovery_required")
+            ):
+                needs_input = any(
+                    row.get("needs_input") or row.get("needs_confirmation") for row in batch
+                )
+                results.extend({
+                    "tool_call_id": call.id, "name": call.name,
+                    "content": "Tool not executed after an interaction or terminal barrier.",
+                    "is_error": True, "needs_input": needs_input,
+                    "terminate": not needs_input,
+                    "runtime_signals": {"tool_execution_deferred": True},
+                } for pending in groups[index + 1:] for call in pending)
+                break
+        return results
+
     def execute_tools(
         self,
         request: TurnRequest,
@@ -1775,42 +1845,12 @@ class ToolExecutionCoordinator:
                     tool_name=call.name,
                     arguments=dict(call.arguments),
                 )
-            if self.tool_execution == "sequential" or len(resolved_calls) <= 1:
-                batch = [
-                    self.execute_one(
-                        request,
-                        assistant,
-                        call,
-                        state,
-                        batch_read_cache,
-                        write_cache,
-                    )
-                    for call in resolved_calls
-                ]
-            elif resolved_calls:
-                pool = ThreadPoolExecutor(
-                    max_workers=min(self.max_parallel_tools, len(resolved_calls)),
-                    thread_name_prefix="agent-tool",
-                )
-                futures = [
-                    pool.submit(
-                        copy_context().run,
-                        self.execute_one,
-                        request,
-                        assistant,
-                        call,
-                        state,
-                        batch_read_cache,
-                        write_cache,
-                    )
-                    for call in resolved_calls
-                ]
-                try:
-                    batch = [future.result() for future in futures]
-                finally:
-                    pool.shutdown(wait=False, cancel_futures=True)
-            else:
-                batch = []
+            batch = self._execute_ready_calls(
+                resolved_calls,
+                lambda call: self.execute_one(
+                    request, assistant, call, state, batch_read_cache, write_cache,
+                ),
+            )
             batch_by_id = {
                 str(call.id): result
                 for call, result in zip(resolved_calls, batch)

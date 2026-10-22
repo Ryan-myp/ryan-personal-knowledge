@@ -1,6 +1,6 @@
 """Process-bounded execution for blocking embedding integrations."""
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeout
 import math
 from threading import BoundedSemaphore, Lock
 from typing import Any, Callable, Sequence
@@ -27,18 +27,31 @@ class EmbeddingRunner:
             raise ValueError("embedding timeout must be positive and finite")
         if not self._slots.acquire(blocking=False):
             raise TimeoutError("embedding worker capacity exhausted")
+        admitted: Future[bool] = Future()
         with self._lock:
             if self._closed:
                 self._slots.release()
                 raise RuntimeError("embedding runner is closed")
             self._in_flight += 1
-            future = self._executor.submit(self._invoke, method, texts)
+            try:
+                future = self._executor.submit(self._invoke, method, texts, admitted)
+            except BaseException:
+                # submit() may enqueue work before failing to start a thread.
+                admitted.set_result(False)
+                self._in_flight -= 1
+                self._slots.release()
+                raise
+            admitted.set_result(True)
         try:
             return future.result(timeout=timeout)
         except FutureTimeout as error:
             raise TimeoutError("knowledge embedding timed out") from error
 
-    def _invoke(self, method: Callable, texts: Sequence[str]) -> Any:
+    def _invoke(
+        self, method: Callable, texts: Sequence[str], admitted: Future[bool],
+    ) -> Any:
+        if not admitted.result():
+            return None
         try:
             return method(texts)
         finally:

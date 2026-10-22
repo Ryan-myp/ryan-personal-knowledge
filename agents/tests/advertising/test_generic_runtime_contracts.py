@@ -523,7 +523,7 @@ def test_one_harness_run_executes_tools_from_multiple_namespaces():
             "alpha": ["alpha_read_record"],
             "beta": ["beta_read_record"],
         }
-        assert executed == ["alpha", "beta"]
+        assert sorted(executed) == ["alpha", "beta"]
     finally:
         runtime.close(wait=True)
 

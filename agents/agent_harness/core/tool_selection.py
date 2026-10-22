@@ -986,12 +986,8 @@ class ToolSelector:
                 return False
             return True
         if (
-            read_request
-            and not historical_summary
-            and any(
-                _is_semantic_discovery_tool(tool)
-                for tool in (selected_tools or ())
-            )
+            read_request and not historical_summary
+            and any(_is_web_search_tool(tool) for tool in (selected_tools or ()))
         ):
             return True
         if historical_summary or not (write_request or read_request):

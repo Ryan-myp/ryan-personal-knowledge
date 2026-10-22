@@ -698,7 +698,7 @@ def test_runtime_readiness_includes_backend_and_started_worker_health():
     try:
         report = runtime.get_readiness()
         assert report["status"] == "ready"
-        assert report["tool_count"] == 5
+        assert report["tool_count"] == len(runtime.registry.list_all())
         assert runtime.registry.list_all_namespaces() == [
             "agent-platform", "advertising",
         ]

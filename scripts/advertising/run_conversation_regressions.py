@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 import tempfile
@@ -66,10 +67,16 @@ def run_suite(
         status: sum(result["status"] == status for result in results)
         for status in ("passed", "failed", "ungraded", "error")
     }
+    durations = sorted(
+        result["duration_ms"] for result in results if result["status"] != "ungraded"
+    )
     return {
         "schema_version": "agent-regression-report/v1", "mode": mode,
         "provider_e2e": False, "total": len(results), **totals, "cases": results,
         "gate_passed": totals["passed"] == len(results) and bool(results),
+        "latency_samples": len(durations),
+        "latency_p50_ms": durations[math.ceil(len(durations) * 0.5) - 1] if durations else None,
+        "latency_p95_ms": durations[math.ceil(len(durations) * 0.95) - 1] if durations else None,
     }
 
 

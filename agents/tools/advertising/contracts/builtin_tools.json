@@ -1,5 +1,5 @@
 {
-  "digest": "45be088d6a14d2f760aa1e0c06b52393ebb341cfa275b5a0b9f3206af3375a36",
+  "digest": "d051afc0fda553083231d691f0e40be65701b3038fa39d46470f961e7d77ec68",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -226,8 +226,8 @@
       ]
     },
     "agent-platform": {
-      "digest": "b6a7e53bf451980dd70f0072c0df382e32ac342feee0f5e76214a6ebde8038a0",
-      "tool_count": 4,
+      "digest": "87ee020b7cc041c86fd07c434811337049d1a3fb0bac12e0265aa400a4270315",
+      "tool_count": 5,
       "tools": [
         {
           "action": "search",
@@ -414,6 +414,78 @@
             "read_only",
             "declarative",
             "bounded_input",
+            "bounded_output"
+          ]
+        },
+        {
+          "action": "request",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "abdc0c76d04f4ac8932d2b94f5d343bb64fe8d648a8c8963763586b30af914e9",
+          "contract_version": "1.0.0",
+          "description": "Ask the user for missing information and pause the Run. Use when the target namespace, account, objective, or another required choice is ambiguous. Do not choose the first authorized account or namespace as a default. The question and choices must come from the actual request and registered context. This Tool performs no external operation.",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "choices": {
+                "items": {
+                  "maxLength": 160,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 12,
+                "type": "array"
+              },
+              "question": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "question"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "request_input"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 8000,
+          "name": "agent_request_input",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "safe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "clarification",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "clarification",
+          "skill_refs": [],
+          "timeout_seconds": 5,
+          "traits": [
+            "clarification",
+            "interaction",
             "bounded_output"
           ]
         },
@@ -55023,5 +55095,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 320
+  "tool_count": 321
 }

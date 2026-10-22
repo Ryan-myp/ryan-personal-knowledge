@@ -142,8 +142,8 @@ class Agent:
             raise ValueError("max_turns must be positive")
         if max_tool_calls_per_run <= 0:
             raise ValueError("max_tool_calls_per_run must be positive")
-        if tool_execution not in {"sequential", "parallel"}:
-            raise ValueError("tool_execution must be sequential or parallel")
+        if tool_execution not in {"sequential", "parallel", "parallel_reads"}:
+            raise ValueError("unsupported tool execution strategy")
         if max_parallel_tools <= 0:
             raise ValueError("max_parallel_tools must be positive")
         if max_inflight_tool_invocations <= 0:

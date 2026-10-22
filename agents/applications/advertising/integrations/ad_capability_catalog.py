@@ -15,9 +15,8 @@ class AdvertisingCapabilityCatalog:
         application = getattr(self.owner, "platform_application", None)
         skills = self._registered_skills(application, request)
         tools = self._registered_tools(application, request)
-        lines = self._skill_lines(skills)
         tool_lines, has_live_adapter = self._tool_lines(tools)
-        lines.extend(tool_lines)
+        lines = tool_lines + self._skill_lines(skills)
         lines.extend(self._execution_lines(request, has_live_adapter))
         return self._redact_and_bound("\n".join(lines), max_chars)
 
@@ -151,16 +150,16 @@ class AdvertisingCapabilityCatalog:
             "Action markers: R/W=read/write; L=live adapter declared only; "
             "D=dry-run only; ?=live support undeclared.",
         ]
+        lines.extend(
+            f"- agent-platform Tool: {name}"
+            for name in sorted(platform_tools)
+        )
         for (namespace, resource), action_states in sorted(groups.items()):
             actions = ", ".join(
                 f"{action}({state})"
                 for action, state in sorted(action_states)
             )
             lines.append(f"- {namespace}: {resource} -> {actions}")
-        lines.extend(
-            f"- agent-platform Tool: {name}"
-            for name in sorted(platform_tools)
-        )
         lines.extend(f"- {name}" for name in sorted(fallback_tools))
         if not groups and not fallback_tools:
             lines.append("- none registered")

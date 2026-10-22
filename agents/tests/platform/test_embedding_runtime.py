@@ -50,6 +50,49 @@ def test_closed_runner_rejects_new_work_and_returns_its_slot():
     assert runner.metrics()["in_flight"] == 0
 
 
+def test_submit_failure_returns_capacity_and_next_request_can_run(monkeypatch):
+    runner = EmbeddingRunner(max_workers=1)
+    original = runner._executor.submit
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("controlled submission failure")
+
+    try:
+        monkeypatch.setattr(runner._executor, "submit", fail)
+        with pytest.raises(RuntimeError):
+            runner.embed(lambda _: [[1.0]], ["query"], timeout=1)
+        assert runner.metrics()["in_flight"] == 0
+        monkeypatch.setattr(runner._executor, "submit", original)
+        assert runner.embed(lambda _: [[1.0]], ["next"], timeout=1) == [[1.0]]
+    finally:
+        runner.close()
+
+
+def test_enqueued_job_must_not_execute_if_submit_raises(monkeypatch):
+    runner = EmbeddingRunner(max_workers=1)
+    queued = []
+    called = []
+    original = runner._executor.submit
+
+    def enqueue_then_fail(method, *args, **kwargs):
+        queued.append((method, args, kwargs))
+        raise RuntimeError("thread creation failed after enqueue")
+
+    try:
+        monkeypatch.setattr(runner._executor, "submit", enqueue_then_fail)
+        with pytest.raises(RuntimeError):
+            runner.embed(lambda _: called.append("provider"), ["query"], timeout=1)
+        assert runner.metrics()["in_flight"] == 0
+        method, args, kwargs = queued[0]
+        method(*args, **kwargs)
+        assert called == []
+        assert runner.metrics()["in_flight"] == 0
+        monkeypatch.setattr(runner._executor, "submit", original)
+        assert runner.embed(lambda _: [[2.0]], ["next"], timeout=1) == [[2.0]]
+    finally:
+        runner.close()
+
+
 @pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
 def test_embedding_timeout_must_be_positive_and_finite(timeout):
     runner = EmbeddingRunner(max_workers=1)

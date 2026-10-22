@@ -1,0 +1,48 @@
+{
+  "schema_version": "agent-quality-evidence/v1",
+  "recorded_date": "2026-10-22",
+  "source_revision": "ffaf706 plus working-tree followup",
+  "model": "agnes-3.0-flash",
+  "model_requests_were_real": true,
+  "advertising_provider_calls": 0,
+  "web_search_evidence": "explicit_offline_fixture",
+  "production_capacity_attested": false,
+  "smoke": {
+    "cases": 8,
+    "successive_observations": [
+      {"passed": 6, "failed": 2},
+      {"passed": 7, "failed": 1},
+      {"passed": 8, "failed": 0}
+    ],
+    "latest_latency_p50_ms": 14943.993,
+    "latest_latency_p95_ms": 78714.726,
+    "raw_report": "outputs/agent-quality-20261022/model-recheck/model-regression.json"
+  },
+  "holdout": {
+    "cases": 4,
+    "initial_unseen_passed": 2,
+    "initial_unseen_failed": 2,
+    "passed": 3,
+    "failed": 1,
+    "ungraded": 0,
+    "failures": [
+      {"id": "holdout-programmatic-research", "assertions": ["required_tool:agent_knowledge_search"]}
+    ],
+    "latency_p50_ms": 21512.669,
+    "latency_p95_ms": 44733.042,
+    "recheck_is_now_regression_not_blind_holdout": true,
+    "raw_report": "outputs/agent-quality-20261022/holdout-recheck/model-regression.json"
+  },
+  "offline_generic_run": {
+    "iterations": 100,
+    "concurrency": 8,
+    "failed": 0,
+    "model_delay_seconds": 0.001,
+    "latency_p95_ms": 17.891
+  },
+  "local_process_recovery": {"passed": 5, "failed": 0},
+  "automated_tests": {"passed": 2540, "warnings": 1},
+  "tool_contract_snapshot": {"tools": 321, "valid": true},
+  "focused_statement_coverage_percent": 94,
+  "repository_qguard": {"status": "failed", "score": 0, "findings": 4960}
+}

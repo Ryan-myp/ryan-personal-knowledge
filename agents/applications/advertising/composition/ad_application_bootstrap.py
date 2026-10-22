@@ -327,6 +327,12 @@ class AdApplicationBootstrap:
         if turn_timeout <= 0:
             raise ValueError("turn_timeout_seconds must be positive")
         runtime.max_tool_calls = max_tool_calls
+        runtime.max_parallel_tools = int(options.get("max_parallel_tools", 2))
+        runtime.max_inflight_tool_invocations = int(
+            options.get("max_inflight_tool_invocations", 8)
+        )
+        if not 1 <= runtime.max_parallel_tools <= runtime.max_inflight_tool_invocations <= 64:
+            raise ValueError("tool concurrency requires 1 <= parallel <= inflight <= 64")
         runtime.turn_timeout_seconds = turn_timeout
         runtime.max_user_input_chars = int(
             options.get("max_user_input_chars", 12_000)

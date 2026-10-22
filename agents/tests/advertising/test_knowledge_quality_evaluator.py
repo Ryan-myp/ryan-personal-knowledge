@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from scripts.advertising.validate_knowledge_quality import evaluate_cases
+from scripts.advertising.validate_knowledge_quality import evaluate_cases, _metrics_pass
 
 
 class _Provider:
@@ -104,3 +104,13 @@ def test_retrieval_reports_recall_ndcg_and_latency_separately():
     assert metrics["ndcg_at_3"] == 0.387
     assert metrics["latency_samples"] == 1
     assert metrics["latency_p95_ms"] >= 0
+
+
+def test_retrieval_gate_checks_ranking_not_just_one_hit():
+    report = evaluate_cases(
+        _Provider([_result("wrong"), _result("wanted")]),
+        [{"query": "budget", "expected": ["wanted"]}],
+    )
+    assert report["hit_at_3"] == 1
+    assert report["mrr"] == 0.5
+    assert _metrics_pass({mode: dict(report) for mode in ("lexical", "semantic", "hybrid")}) is False

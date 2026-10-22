@@ -551,7 +551,11 @@ def test_cross_channel_create_calls_enter_the_same_harness_interaction_path():
     assert result["workflow_id"] is None
     assert result["needs_input"] is True
     assert result["tool_results"]
-    assert all("interaction" in item for item in result["tool_results"])
+    assert all(
+        "interaction" in item
+        or item.get("runtime_signals", {}).get("tool_execution_deferred") is True
+        for item in result["tool_results"]
+    )
     assert result["tool_plan"] == {}
 
 
@@ -1241,6 +1245,7 @@ def test_cross_channel_create_never_auto_selects_single_whitelisted_accounts():
     assert result["tool_results"]
     assert all(
         "请求缺少受控账户范围" in str(item.get("content") or "")
+        or item.get("runtime_signals", {}).get("tool_execution_deferred") is True
         for item in result["tool_results"]
     )
     assert result["results"] == []

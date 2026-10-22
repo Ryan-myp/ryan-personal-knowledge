@@ -34,6 +34,7 @@ class AdvertisingRunProjection:
                     for signal in (
                         "duplicate_read_coalesced",
                         "duplicate_write_coalesced",
+                        "tool_execution_deferred",
                     )
                 )
             ):

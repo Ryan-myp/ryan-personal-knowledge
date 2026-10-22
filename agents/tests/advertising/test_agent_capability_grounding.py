@@ -362,7 +362,7 @@ def test_registered_provider_capabilities_fit_default_catalog_budget():
             TurnRequest(user_input="你好，你有什么能力？")
         )
 
-        assert len(runtime.registry.list_all()) == 310
+        assert len(runtime.registry.list_all()) == 311
         assert len(catalog) <= 9_000
         assert "[catalog truncated;" not in catalog
         assert all(
@@ -441,7 +441,10 @@ def test_plain_greeting_receives_registered_capabilities_and_intro_policy():
     assert "2-3 项" in system_text
     assert "不得自称底层模型" in system_text
     assert tools
-    assert all("semantic_discovery" in tool.traits for tool in tools)
+    assert all(
+        "semantic_discovery" in tool.traits or "clarification" in tool.traits
+        for tool in tools
+    )
     assert not any(tool.namespace in {"google-ads", "meta", "tiktok"} for tool in tools)
 
 

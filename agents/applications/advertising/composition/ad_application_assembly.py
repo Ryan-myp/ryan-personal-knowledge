@@ -33,6 +33,7 @@ from agents.agent_platform.tools import (
     readonly_recipe_tool_source,
     scheduling_tool_source,
 )
+from agents.agent_platform.tools.clarification import clarification_tool_source
 from agents.agent_harness.core.plugins import PluginKind
 from agents.agent_harness.core.memory import MemoryManager
 from agents.scenarios.advertising import (
@@ -326,6 +327,10 @@ class AdApplicationAssembly:
         services.bind_scheduling(scheduling_service)
         for source, description in (
             (
+                clarification_tool_source(required_permission="ads.read"),
+                "Side-effect-free structured clarification Tool",
+            ),
+            (
                 knowledge_search_tool_source(
                     runtime.knowledge_provider,
                     required_permission="ads.read",
@@ -535,7 +540,9 @@ class AdApplicationAssembly:
             "metrics": getattr(runtime, "metrics", None),
             "max_turns": max(4, int(runtime.max_tool_calls) + 2),
             "max_tool_calls_per_run": int(runtime.max_tool_calls),
-            "tool_execution": "sequential",
+            "tool_execution": "parallel_reads",
+            "max_parallel_tools": runtime.max_parallel_tools,
+            "max_inflight_tool_invocations": runtime.max_inflight_tool_invocations,
             "model_timeout_seconds": getattr(
                 runtime, "turn_timeout_seconds", DEFAULT_EXECUTION_TIMEOUT_SECONDS,
             ),
@@ -593,6 +600,7 @@ class AdApplicationAssembly:
                 runtime, request_context, tools,
                 include_lookups=str(request.execution_mode or "dry_run") == "live",
             )
+            allow_clarification = selected is None
             if selected is None:
                 conversation_context = tuple(
                     request_context.get("_agent_tool_selection_context", ()) or ()
@@ -647,7 +655,25 @@ class AdApplicationAssembly:
                     for item in selected
                     if getattr(item, "namespace", None)
                 ))
-            return selected
+            if (
+                not allow_clarification or not selected
+                or selector.is_read_only_request(request.user_input, selected)
+                or all(
+                    "semantic_discovery" in (getattr(tool, "traits", ()) or ())
+                    for tool in selected
+                )
+            ):
+                return selected
+            clarifications = [
+                tool for tool in tools
+                if "clarification" in (getattr(tool, "traits", ()) or ())
+            ]
+            return list({
+                tool.name: tool for tool in (
+                    *clarifications,
+                    *selected[:max(0, MAX_RELEVANT_TOOLS_PER_TURN - len(clarifications))],
+                )
+            }.values())
         return select_tools
 
     @staticmethod

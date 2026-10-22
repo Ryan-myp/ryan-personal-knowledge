@@ -64,3 +64,18 @@ def test_empty_reply_cannot_pass_a_conversation_nonempty_assertion():
     expectation = RegressionAssertions(reply_nonempty=True, max_tool_calls=0)
     assert evaluate_regression({"reply": " \n"}, expectation)["status"] == "failed"
     assert evaluate_regression({"reply": "hello"}, expectation)["status"] == "passed"
+
+
+@pytest.mark.parametrize("field", ["needs_input", "needs_confirmation"])
+@pytest.mark.parametrize("value", ["false", "true", 0, 1, None, [], {}])
+def test_response_boolean_fields_reject_type_coercion(field, value):
+    expectation = RegressionAssertions.model_validate({field: True})
+    with pytest.raises(ValueError):
+        evaluate_regression({field: value}, expectation)
+
+
+@pytest.mark.parametrize("field", ["needs_input", "needs_confirmation"])
+def test_missing_boolean_evidence_cannot_prove_false(field):
+    expectation = RegressionAssertions.model_validate({field: False})
+    assert evaluate_regression({"reply": "answer"}, expectation)["status"] == "failed"
+    assert evaluate_regression({field: False}, expectation)["status"] == "passed"

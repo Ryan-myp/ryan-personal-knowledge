@@ -37,6 +37,9 @@ def evaluate_regression(
         return {"status": "ungraded", "failures": [], "checks": 0}
     if not isinstance(response, Mapping):
         raise ValueError("regression response must be an object")
+    for field in ("needs_input", "needs_confirmation"):
+        if field in response and type(response[field]) is not bool:
+            raise ValueError(f"regression {field} evidence must be boolean")
     rows = response.get("results", [])
     if not isinstance(rows, list) or len(rows) > 64:
         raise ValueError("regression response calls must be a bounded list")
@@ -75,7 +78,7 @@ def evaluate_regression(
     for name in ("needs_input", "needs_confirmation"):
         expected = getattr(assertions, name)
         if expected is not None:
-            check(bool(response.get(name)) == expected, name)
+            check(name in response and response[name] is expected, name)
     failures = [label for passed, label in zip(checks, labels) if not passed]
     return {
         "status": "failed" if failures else "passed",

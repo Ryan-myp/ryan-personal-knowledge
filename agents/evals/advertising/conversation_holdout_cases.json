@@ -1,0 +1,41 @@
+[
+  {
+    "id": "holdout-capabilities",
+    "input": "我刚开始用这个工作台，它可以帮我处理哪些任务？",
+    "expected_behavior": "按当前注册能力介绍投放、内容与知识服务，不介绍底层模型厂商。",
+    "assertions": {"reply_contains": ["广告", "知识"], "max_tool_calls": 0}
+  },
+  {
+    "id": "holdout-ambiguous-launch",
+    "input": "I want to launch some ads. Help me get started.",
+    "expected_behavior": "询问渠道和目标，不自行选择某个授权账户或渠道。",
+    "assertions": {
+      "needs_input": true,
+      "forbidden_tools": ["meta_create_campaign", "google_create_campaign", "tiktok_create_campaign"],
+      "max_tool_calls": 3
+    }
+  },
+  {
+    "id": "holdout-advisory-only",
+    "input": "只解释如何制作一个投放方案，不要去读任何账户。",
+    "expected_behavior": "给出方法说明，不查询账户，也不执行写入。",
+    "assertions": {
+      "reply_nonempty": true,
+      "forbidden_tools": [
+        "meta_list_accounts", "tiktok_list_accounts", "google_list_campaigns",
+        "meta_create_campaign", "google_create_campaign", "tiktok_create_campaign"
+      ],
+      "max_tool_calls": 3
+    }
+  },
+  {
+    "id": "holdout-programmatic-research",
+    "input": "请帮我查资料：SSP 和 DSP 有什么不同，不需要账户数据。",
+    "expected_behavior": "检索知识并解释术语，不要求账户。",
+    "assertions": {
+      "required_tools": ["agent_knowledge_search"],
+      "forbidden_tools": ["meta_list_accounts", "tiktok_list_accounts"],
+      "max_tool_calls": 4
+    }
+  }
+]

@@ -2609,10 +2609,11 @@ class TestIterationContracts:
         skill = CustomSkill()
         rt.register_skill(skill, "meta")
         assert {tool.name for tool in rt.registry.list_all()} == {
-            "advertising_cross_channel_budget_analysis",
-            "agent_knowledge_search",
-            "agent_readonly_recipe",
-            "custom_meta_insight",
+            'advertising_cross_channel_budget_analysis',
+            'agent_knowledge_search',
+            'agent_readonly_recipe',
+            'custom_meta_insight',
+            'agent_request_input',
         }
         assert rt.tool_executor.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
             "source": "custom"
@@ -2627,9 +2628,10 @@ class TestIterationContracts:
         assert not hasattr(rt, "intent_parser")
         assert rt.unload_skill("meta") is True
         assert {tool.name for tool in rt.registry.list_all()} == {
-            "advertising_cross_channel_budget_analysis",
-            "agent_knowledge_search",
-            "agent_readonly_recipe",
+            'advertising_cross_channel_budget_analysis',
+            'agent_knowledge_search',
+            'agent_readonly_recipe',
+            'agent_request_input',
         }
         assert not hasattr(rt, "intent_router")
 
@@ -2670,10 +2672,11 @@ class TestIterationContracts:
             str(skill_root), allow_executable_plugins=True,
         ) == 1
         assert {tool.name for tool in rt.registry.list_all()} == {
-            "advertising_cross_channel_budget_analysis",
-            "agent_knowledge_search",
-            "agent_readonly_recipe",
-            "custom_insight",
+            'advertising_cross_channel_budget_analysis',
+            'agent_knowledge_search',
+            'agent_readonly_recipe',
+            'custom_insight',
+            'agent_request_input',
         }
         result = rt.tool_executor.execute(
             ToolContext("s1", "u1"), "custom_insight", {}

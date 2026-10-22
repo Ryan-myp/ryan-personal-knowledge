@@ -23,6 +23,8 @@ def test_manual_expectations_are_not_automatically_marked_as_passed():
     assert report["passed"] == 1
     assert report["gate_passed"] is False
     assert report["provider_e2e"] is False
+    assert report["latency_samples"] == 1
+    assert report["latency_p95_ms"] >= 0
 
 
 def test_runner_reports_errors_without_echoing_private_exception_message():

@@ -44,6 +44,7 @@ def test_execution_defaults_are_500_seconds_at_every_layer():
 def test_advertising_composition_passes_the_budget_to_the_generic_harness():
     runtime = SimpleNamespace(
         max_tool_calls=32, turn_timeout_seconds=500.0,
+        max_parallel_tools=2, max_inflight_tool_invocations=8,
         registry=None, metrics=None, _redact_for_persistence=lambda value: value,
     )
     services = SimpleNamespace(tool_policy=None, run_store=None, security=None)

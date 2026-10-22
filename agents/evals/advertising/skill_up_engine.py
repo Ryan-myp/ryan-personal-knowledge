@@ -306,6 +306,15 @@ def run(
         allow_executable_plugins=True,
         allow_provider_tool_discovery=True,
     )
+    from agents.evals.advertising.offline_sources import offline_web_search_source
+    from agents.agent_harness.core.plugins import PluginKind
+
+    offline_web = offline_web_search_source()
+    runtime.register_tool_source(offline_web)
+    runtime._register_builtin_plugin(
+        offline_web.source_id, offline_web, (PluginKind.TOOL_SOURCE.value,),
+        description="Trusted offline web-search evaluation binding",
+    )
     if skills_root != base_skills_root:
         # A managed package is context only.  Do not pass its root through
         # auto_load_skills: that discovery seam is intentionally allowed to

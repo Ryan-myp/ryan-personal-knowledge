@@ -45,7 +45,7 @@ def test_runtime_mcp_server_wraps_registry_tool_and_keeps_writes_dry_run():
     )
     gateway = RuntimeMCPServers(lambda: runtime, lambda *_args, **_kwargs: principal)
     try:
-        assert gateway.refresh(runtime) == 4
+        assert gateway.refresh(runtime) == len(runtime.registry.list_all())
         servers = gateway.list_servers(runtime)
         assert [server["server_id"] for server in servers] == [
             "namespace-advertising",

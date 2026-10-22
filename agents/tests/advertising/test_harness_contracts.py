@@ -210,10 +210,11 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     runtime._refresh_tool_catalog = fail_once
     assert runtime.unload_skill("meta") is False
     assert {tool.name for tool in runtime.registry.list_all()} == {
-        "advertising_cross_channel_budget_analysis",
-        "agent_knowledge_search",
-        "agent_readonly_recipe",
-        "atomic_unload_read",
+        'advertising_cross_channel_budget_analysis',
+        'agent_knowledge_search',
+        'agent_readonly_recipe',
+        'atomic_unload_read',
+        'agent_request_input',
     }
     assert runtime.get_loaded_skills()["atomic-unload"] is skill
     assert runtime.plugin_registry.get("skill:atomic-unload").state.value == "active"
@@ -223,9 +224,10 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
     assert {
         tool.name for tool in runtime.registry.list_all()
     } == {
-        "advertising_cross_channel_budget_analysis",
-        "agent_knowledge_search",
-        "agent_readonly_recipe",
+        'advertising_cross_channel_budget_analysis',
+        'agent_knowledge_search',
+        'agent_readonly_recipe',
+        'agent_request_input',
     }
 
 
@@ -292,9 +294,10 @@ def test_skill_lifecycle_serializes_register_and_unload():
     assert {
         tool.name for tool in runtime.registry.list_all()
     } == {
-        "advertising_cross_channel_budget_analysis",
-        "agent_knowledge_search",
-        "agent_readonly_recipe",
+        'advertising_cross_channel_budget_analysis',
+        'agent_knowledge_search',
+        'agent_readonly_recipe',
+        'agent_request_input',
     }
 
 

@@ -126,6 +126,7 @@ def _metric_report(
 ) -> dict[str, float | int | str]:
     hits = sum(value > 0 for value in metrics.reciprocal_ranks)
     return {
+        "expected_set_semantics": "acceptable_references_not_mandatory_coverage",
         "positive_cases": metrics.positive_cases,
         "negative_cases": metrics.negative_cases,
         "hit_at_3": (
@@ -296,7 +297,8 @@ def _evaluate_modes(
 def _metrics_pass(metrics: dict[str, dict[str, float | int | str]]) -> bool:
     lexical = metrics["lexical"]
     return not (
-        lexical["hit_at_3"] < 0.9
+        lexical["hit_at_3"] < 0.95
+        or lexical["mrr"] < 0.95
         or lexical["leakage"] > 1
         or lexical["negative_failures"]
         or lexical["empty_query_failures"]

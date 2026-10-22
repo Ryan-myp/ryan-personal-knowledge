@@ -84,6 +84,8 @@ class AdvertisingComposition(
         offline_mode: bool = False,
         granted_permissions: Optional[set[str]] = None,
         max_tool_calls: int = 32,
+        max_parallel_tools: int = 2,
+        max_inflight_tool_invocations: int = 8,
         turn_timeout_seconds: float = DEFAULT_EXECUTION_TIMEOUT_SECONDS,
         max_user_input_chars: int = 12_000,
         max_platform_params_bytes: int = 256_000,

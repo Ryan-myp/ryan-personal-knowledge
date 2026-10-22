@@ -12,10 +12,7 @@ import json
 import sqlite3
 import logging
 import hashlib
-import math
-import re
 import threading
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
@@ -26,9 +23,6 @@ from .models import (
     ExecutionRunRecord, TaskRecord, ToolCallRecord,
     OutboxEvent, ScheduledTaskRecord, ScheduledTaskRunRecord,
     CreationTemplateRecord,
-)
-from .conversation_pagination import (
-    list_conversation_message_page as query_conversation_message_page,
 )
 from .conversation_feedback_store import (
     get_conversation_feedback_trend as query_conversation_feedback_trend,
@@ -42,34 +36,18 @@ from .semantic_index_store import (
     rebuild_knowledge_semantic_index as persist_semantic_index,
     search_knowledge_semantic_index as query_semantic_index,
 )
+from .schema import DATABASE_SCHEMA, SCHEMA_VERSION
+from .sqlite_migrations import apply_sqlite_migration
+from .extension_store import ExtensionRepository
+from .memory_store import MemoryRepository
+from .session_store import SessionRepository
+from .knowledge_store import KnowledgeRepository
+from .workflow_store import WorkflowRepository
 from .errors import PersistenceConflictError
-from agents.agent_harness.core.memory import MEMORY_SOURCE_PRIORITIES, MemoryRecord
+from agents.agent_harness.core.memory import MemoryRecord
 
 logger = logging.getLogger(__name__)
 
-
-WORKFLOW_TRANSITIONS = {
-    "planned": {"planned", "running", "awaiting_confirmation", "blocked", "failed", "cancelled"},
-    "running": {"running", "planned", "awaiting_confirmation", "blocked", "failed", "succeeded", "partially_failed", "recovery_required", "cancelled"},
-    "awaiting_confirmation": {"awaiting_confirmation", "running", "blocked", "failed", "cancelled"},
-    "partially_failed": {"partially_failed", "recovery_required", "succeeded", "failed", "cancelled"},
-    "recovery_required": {"recovery_required", "running", "succeeded", "failed", "cancelled"},
-    "blocked": {"blocked", "running", "failed", "recovery_required", "succeeded", "cancelled"},
-    "failed": {"failed", "running", "recovery_required", "succeeded", "cancelled"},
-    "succeeded": {"succeeded"},
-    "cancelled": {"cancelled"},
-}
-
-WORKFLOW_ITEM_TRANSITIONS = {
-    "planned": {"planned", "awaiting_confirmation", "running", "succeeded", "failed", "unknown", "skipped"},
-    "running": {"running", "awaiting_confirmation", "succeeded", "failed", "unknown", "skipped"},
-    "awaiting_confirmation": {"awaiting_confirmation", "succeeded", "failed", "unknown"},
-    "failed": {"failed", "succeeded", "unknown"},
-    "unknown": {"unknown", "succeeded", "failed"},
-    "succeeded": {"succeeded"},
-    "unsupported": {"unsupported"},
-    "skipped": {"skipped"},
-}
 
 TASK_TRANSITIONS = {
     "queued": {"queued", "running", "paused", "cancelled", "failed"},
@@ -92,588 +70,26 @@ TASK_TRANSITIONS = {
 
 
 class AdAgentStore:
-    """
-    Unified persistence layer (SQLite).
-    
-    Thread-safe: each connection is independent, read/write operations are locked.
-    """
+    """Persistence facade with one connection/lock and domain repositories."""
     
     # Schema changes are tracked explicitly even while SQLite remains the
     # current single-process backend. This keeps the PersistenceBackend
     # boundary stable and gives a future MySQL/PostgreSQL adapter a concrete
     # migration contract instead of relying on scattered PRAGMA checks.
-    SCHEMA_VERSION = 26
+    SCHEMA_VERSION = SCHEMA_VERSION
 
-    SCHEMA = """
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-        version INTEGER PRIMARY KEY,
-        applied_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS sessions (
-        session_id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL DEFAULT 'default',
-        account_id TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        metadata TEXT DEFAULT '{}',
-        lease_owner TEXT,
-        lease_expires_at TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS worker_instances (
-        worker_id TEXT PRIMARY KEY,
-        worker_kind TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'running',
-        started_at TEXT NOT NULL,
-        last_heartbeat_at TEXT NOT NULL,
-        lease_expires_at TEXT,
-        metadata TEXT NOT NULL DEFAULT '{}'
-    );
-    CREATE INDEX IF NOT EXISTS idx_worker_instances_heartbeat
-        ON worker_instances(status, last_heartbeat_at);
-
-    CREATE TABLE IF NOT EXISTS execution_event_repairs (
-        repair_id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        event_type TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        attempts INTEGER NOT NULL DEFAULT 0,
-        next_attempt_at TEXT,
-        created_at TEXT NOT NULL,
-        last_error TEXT,
-        UNIQUE (run_id, seq)
-    );
-    CREATE INDEX IF NOT EXISTS idx_execution_event_repairs_due
-        ON execution_event_repairs(status, next_attempt_at, created_at);
-
-    CREATE TABLE IF NOT EXISTS conversation_messages (
-        message_id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        tool_call_id TEXT,
-        name TEXT,
-        metadata TEXT NOT NULL DEFAULT '{}',
-        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS conversation_feedback (
-        feedback_id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        rating TEXT NOT NULL,
-        reason TEXT,
-        submitted_at TEXT NOT NULL,
-        review_status TEXT NOT NULL DEFAULT 'pending',
-        reviewer_id TEXT,
-        reviewed_at TEXT,
-        expected_behavior TEXT,
-        assertions TEXT NOT NULL DEFAULT '{}',
-        UNIQUE (session_id, turn_id),
-        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_conversation_feedback_scope_time
-        ON conversation_feedback(tenant_id, user_id, submitted_at);
-    CREATE INDEX IF NOT EXISTS idx_conversation_feedback_review
-        ON conversation_feedback(tenant_id, rating, review_status, submitted_at);
-
-    CREATE TABLE IF NOT EXISTS knowledge_semantic_index_meta (
-        scope TEXT PRIMARY KEY,
-        fingerprint TEXT NOT NULL,
-        dimension INTEGER NOT NULL DEFAULT 0,
-        record_count INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS knowledge_semantic_vectors (
-        scope TEXT NOT NULL,
-        chunk_id TEXT NOT NULL,
-        document_id TEXT NOT NULL,
-        vector TEXT NOT NULL,
-        dimension INTEGER NOT NULL,
-        PRIMARY KEY (scope, chunk_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_knowledge_semantic_vectors_scope
-        ON knowledge_semantic_vectors(scope, dimension);
-
-    CREATE TABLE IF NOT EXISTS knowledge_documents (
-        document_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        platform TEXT NOT NULL DEFAULT 'all',
-        layer TEXT NOT NULL DEFAULT 'business',
-        knowledge_type TEXT NOT NULL DEFAULT 'general',
-        source TEXT NOT NULL DEFAULT 'user',
-        source_ref TEXT NOT NULL,
-        version TEXT NOT NULL,
-        confidence REAL NOT NULL DEFAULT 0.8,
-        tags TEXT NOT NULL DEFAULT '[]',
-        status TEXT NOT NULL DEFAULT 'draft',
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        published_at TEXT,
-        wiki_type TEXT NOT NULL DEFAULT 'concept',
-        derived_from TEXT NOT NULL DEFAULT '',
-        raw_sha256 TEXT NOT NULL DEFAULT '',
-        wikilinks TEXT NOT NULL DEFAULT '[]'
-    );
-
-    CREATE TABLE IF NOT EXISTS raw_knowledge_sources (
-        source_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        filename TEXT NOT NULL,
-        media_type TEXT NOT NULL,
-        content TEXT NOT NULL,
-        sha256 TEXT NOT NULL,
-        source_ref TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'received',
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        ingest_task_id TEXT,
-        ingest_error TEXT,
-        ingest_attempts INTEGER NOT NULL DEFAULT 0,
-        ingest_started_at TEXT,
-        ingest_finished_at TEXT,
-        UNIQUE (tenant_id, sha256)
-    );
-    CREATE INDEX IF NOT EXISTS idx_raw_knowledge_sources_scope
-        ON raw_knowledge_sources(tenant_id, status, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS creation_templates (
-        template_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        description TEXT NOT NULL DEFAULT '',
-        provider TEXT NOT NULL,
-        blueprint_id TEXT NOT NULL,
-        blueprint_version TEXT NOT NULL,
-        ad_format TEXT NOT NULL,
-        scope_type TEXT NOT NULL DEFAULT 'general',
-        account_id TEXT NOT NULL DEFAULT '',
-        region TEXT NOT NULL DEFAULT '',
-        tags TEXT NOT NULL DEFAULT '[]',
-        template_values TEXT NOT NULL DEFAULT '{}',
-        status TEXT NOT NULL DEFAULT 'active',
-        is_default INTEGER NOT NULL DEFAULT 0,
-        usage_count INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_used_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_creation_templates_scope
-        ON creation_templates(tenant_id, user_id, status, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_creation_templates_blueprint
-        ON creation_templates(tenant_id, user_id, blueprint_id, status);
-
-    CREATE TABLE IF NOT EXISTS memories (
-        memory_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        session_id TEXT,
-        kind TEXT NOT NULL,
-        content TEXT NOT NULL,
-        source TEXT NOT NULL,
-        tags TEXT DEFAULT '[]',
-        importance REAL NOT NULL DEFAULT 0.5,
-        confidence REAL NOT NULL DEFAULT 1.0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        expires_at TEXT,
-        status TEXT NOT NULL DEFAULT 'active',
-        memory_key TEXT,
-        superseded_by TEXT
-    );
-    
-    CREATE TABLE IF NOT EXISTS tool_calls (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        platform TEXT NOT NULL,
-        input_data TEXT NOT NULL,
-        output_data TEXT,
-        success INTEGER NOT NULL DEFAULT 1,
-        error TEXT,
-        started_at TEXT NOT NULL,
-        ended_at TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-    );
-    
-    CREATE TABLE IF NOT EXISTS campaign_state (
-        id TEXT PRIMARY KEY,
-        platform TEXT NOT NULL,
-        campaign_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'DRAFT',
-        objective TEXT,
-        budget_daily REAL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        metadata TEXT DEFAULT '{}',
-        account_id TEXT
-    );
-    
-    CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
-    CREATE INDEX IF NOT EXISTS idx_tool_calls_turn ON tool_calls(session_id, turn_id);
-    CREATE INDEX IF NOT EXISTS idx_conversation_messages_session
-        ON conversation_messages(session_id, created_at);
-    CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history
-        ON conversation_messages(session_id, turn_id, created_at, message_id);
-    CREATE INDEX IF NOT EXISTS idx_knowledge_documents_scope
-        ON knowledge_documents(tenant_id, status, updated_at DESC);
-    CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_version
-        ON knowledge_documents(tenant_id, title, version);
-    CREATE INDEX IF NOT EXISTS idx_campaigns_platform ON campaign_state(platform, campaign_id);
-    CREATE INDEX IF NOT EXISTS idx_campaigns_name ON campaign_state(name);
-    CREATE INDEX IF NOT EXISTS idx_memories_scope
-        ON memories(tenant_id, user_id, status, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_memories_session
-        ON memories(tenant_id, user_id, session_id, status);
-
-    CREATE TABLE IF NOT EXISTS workflows (
-        workflow_id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL DEFAULT 'default',
-        intent_type TEXT NOT NULL,
-        execution_mode TEXT NOT NULL,
-        status TEXT NOT NULL,
-        metadata TEXT DEFAULT '{}',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        lease_owner TEXT,
-        lease_expires_at TEXT,
-        FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS workflow_items (
-        item_id TEXT PRIMARY KEY,
-        workflow_id TEXT NOT NULL,
-        sequence INTEGER NOT NULL,
-        platform TEXT NOT NULL,
-        account_id TEXT,
-        tool_name TEXT NOT NULL,
-        status TEXT NOT NULL,
-        input_data TEXT NOT NULL,
-        output_data TEXT,
-        error TEXT,
-        compensation_required INTEGER NOT NULL DEFAULT 0,
-        resource_type TEXT,
-        parent_resource_type TEXT,
-        parent_sequence INTEGER,
-        parent_resource_id TEXT,
-        provider_resource_id TEXT,
-        logical_resource_id TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (workflow_id) REFERENCES workflows(workflow_id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_workflow_items_workflow ON workflow_items(workflow_id, sequence);
-    -- Tenant indexes for sessions/workflows are created by migration 16.
-    -- Keeping them out of the bootstrap script is important: an older
-    -- database can still be missing tenant_id until that migration runs.
-
-    CREATE TABLE IF NOT EXISTS skill_versions (
-        version_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        skill_name TEXT NOT NULL,
-        version TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'draft',
-        files TEXT NOT NULL,
-        sha256 TEXT NOT NULL,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        published_at TEXT,
-        evaluation_status TEXT NOT NULL DEFAULT 'not_run',
-        evaluation_run_id TEXT,
-        evaluation_report TEXT DEFAULT '{}',
-        UNIQUE (tenant_id, skill_name, version)
-    );
-
-    CREATE TABLE IF NOT EXISTS skill_releases (
-        tenant_id TEXT NOT NULL,
-        skill_name TEXT NOT NULL,
-        version_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY (tenant_id, skill_name),
-        FOREIGN KEY (version_id) REFERENCES skill_versions(version_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_skill_versions_name
-        ON skill_versions(tenant_id, skill_name, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS skill_evaluation_runs (
-        run_id TEXT PRIMARY KEY,
-        version_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'queued',
-        report TEXT DEFAULT '{}',
-        error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (version_id) REFERENCES skill_versions(version_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_skill_evaluation_runs_tenant
-        ON skill_evaluation_runs(tenant_id, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS plugin_packages (
-        package_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        plugin_id TEXT NOT NULL,
-        version TEXT NOT NULL,
-        manifest TEXT NOT NULL,
-        files TEXT NOT NULL,
-        package_digest TEXT NOT NULL,
-        signature_verified INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'validated',
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        activated_at TEXT,
-        last_error TEXT,
-        UNIQUE (tenant_id, plugin_id, version)
-    );
-
-    CREATE TABLE IF NOT EXISTS plugin_releases (
-        tenant_id TEXT NOT NULL,
-        plugin_id TEXT NOT NULL,
-        package_id TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY (tenant_id, plugin_id),
-        FOREIGN KEY (package_id) REFERENCES plugin_packages(package_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_plugin_packages_tenant
-        ON plugin_packages(tenant_id, plugin_id, created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS mcp_servers (
-        server_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        description TEXT NOT NULL DEFAULT '',
-        endpoint TEXT NOT NULL,
-        transport TEXT NOT NULL DEFAULT 'streamable_http',
-        auth_type TEXT NOT NULL DEFAULT 'none',
-        credential_ref TEXT,
-        auth_header TEXT NOT NULL DEFAULT 'Authorization',
-        timeout_seconds REAL NOT NULL DEFAULT 500,
-        status TEXT NOT NULL DEFAULT 'draft',
-        enabled INTEGER NOT NULL DEFAULT 0,
-        validation_status TEXT NOT NULL DEFAULT 'not_run',
-        validation_report TEXT NOT NULL DEFAULT '{}',
-        protocol_version TEXT,
-        created_by TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        last_checked_at TEXT,
-        last_error TEXT,
-        UNIQUE (tenant_id, name)
-    );
-    CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope
-        ON mcp_servers(tenant_id, status, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS mcp_tools (
-        tool_id TEXT PRIMARY KEY,
-        server_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        remote_name TEXT NOT NULL,
-        title TEXT NOT NULL DEFAULT '',
-        description TEXT NOT NULL DEFAULT '',
-        input_schema TEXT NOT NULL DEFAULT '{}',
-        annotations TEXT NOT NULL DEFAULT '{}',
-        intent_types TEXT NOT NULL DEFAULT '[]',
-        intent_aliases TEXT NOT NULL DEFAULT '[]',
-        skill_refs TEXT NOT NULL DEFAULT '[]',
-        action TEXT NOT NULL DEFAULT 'invoke',
-        resource_type TEXT NOT NULL DEFAULT 'mcp_invocation',
-        resource_id_field TEXT,
-        readback_tool TEXT,
-        idempotency_key_field TEXT,
-        required_permissions TEXT NOT NULL DEFAULT '[]',
-        traits TEXT NOT NULL DEFAULT '["external", "mcp"]',
-        status TEXT NOT NULL DEFAULT 'discovered',
-        enabled INTEGER NOT NULL DEFAULT 0,
-        validation_status TEXT NOT NULL DEFAULT 'pending',
-        last_error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (server_id, remote_name),
-        FOREIGN KEY (server_id) REFERENCES mcp_servers(server_id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_mcp_tools_server
-        ON mcp_tools(tenant_id, server_id, status, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS write_reservations (
-        idempotency_key TEXT PRIMARY KEY,
-        request_hash TEXT,
-        status TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS tasks (
-        task_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        status TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        result TEXT,
-        error TEXT,
-        idempotency_key TEXT,
-        workflow_id TEXT,
-        metadata TEXT DEFAULT '{}',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        started_at TEXT,
-        finished_at TEXT,
-        lease_owner TEXT,
-        lease_expires_at TEXT,
-        UNIQUE (tenant_id, user_id, idempotency_key)
-    );
-    CREATE INDEX IF NOT EXISTS idx_tasks_scope ON tasks(tenant_id, user_id, updated_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at ASC);
-
-    CREATE TABLE IF NOT EXISTS scheduled_tasks (
-        schedule_id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        prompt TEXT NOT NULL,
-        cron_expression TEXT NOT NULL,
-        timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-        status TEXT NOT NULL DEFAULT 'active',
-        next_run_at TEXT,
-        last_run_at TEXT,
-        last_run_status TEXT,
-        last_task_id TEXT,
-        run_count INTEGER NOT NULL DEFAULT 0,
-        success_count INTEGER NOT NULL DEFAULT 0,
-        failure_count INTEGER NOT NULL DEFAULT 0,
-        payload TEXT NOT NULL DEFAULT '{}',
-        metadata TEXT NOT NULL DEFAULT '{}',
-        lease_owner TEXT,
-        lease_expires_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
-        ON scheduled_tasks(status, next_run_at, lease_expires_at);
-    CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_scope
-        ON scheduled_tasks(tenant_id, user_id, updated_at DESC);
-
-    CREATE TABLE IF NOT EXISTS scheduled_task_runs (
-        schedule_run_id TEXT PRIMARY KEY,
-        schedule_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        scheduled_for TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'queued',
-        task_id TEXT,
-        started_at TEXT,
-        finished_at TEXT,
-        error TEXT,
-        result TEXT,
-        created_at TEXT NOT NULL,
-        UNIQUE (schedule_id, scheduled_for),
-        FOREIGN KEY (schedule_id) REFERENCES scheduled_tasks(schedule_id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_scope
-        ON scheduled_task_runs(tenant_id, user_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
-        ON scheduled_task_runs(status, created_at ASC);
-
-    CREATE TABLE IF NOT EXISTS execution_runs (
-        run_id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        turn_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        tenant_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'running',
-        execution_mode TEXT NOT NULL DEFAULT 'dry_run',
-        workflow_id TEXT,
-        task_id TEXT,
-        metadata TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        finished_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_execution_runs_session
-        ON execution_runs(tenant_id, user_id, session_id, created_at DESC);
-    CREATE INDEX IF NOT EXISTS idx_execution_runs_status
-        ON execution_runs(status, updated_at ASC);
-
-    CREATE TABLE IF NOT EXISTS execution_run_events (
-        run_id TEXT NOT NULL,
-        seq INTEGER NOT NULL,
-        event_type TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (run_id, seq),
-        FOREIGN KEY (run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_execution_run_events_created
-        ON execution_run_events(run_id, seq ASC);
-
-    CREATE TABLE IF NOT EXISTS approvals (
-        plan_fingerprint TEXT PRIMARY KEY,
-        token_hash TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        account_id TEXT NOT NULL,
-        tool_name TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        created_at TEXT NOT NULL,
-        consumed_at TEXT,
-        input_hash TEXT,
-        preview_hash TEXT,
-        request_hash TEXT,
-        contract_hash TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_approvals_session ON approvals(session_id, status);
-
-    CREATE TABLE IF NOT EXISTS outbox_events (
-        event_id TEXT PRIMARY KEY,
-        run_id TEXT NOT NULL,
-        event_type TEXT NOT NULL,
-        payload TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending',
-        retry_count INTEGER NOT NULL DEFAULT 0,
-        next_retry_at TEXT,
-        created_at TEXT NOT NULL,
-        claimed_by TEXT,
-        claimed_at TEXT,
-        last_error TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_outbox_pending
-        ON outbox_events(status, next_retry_at, created_at);
-
-    CREATE TABLE IF NOT EXISTS execution_mode_preferences (
-        tenant_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        mode TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        PRIMARY KEY (tenant_id, user_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_execution_mode_preferences_updated
-        ON execution_mode_preferences(updated_at DESC);
-    """
+    SCHEMA = DATABASE_SCHEMA
     
     def __init__(self, db_path: str = ":memory:"):
         self._db_path = db_path
         self._lock = threading.RLock()
         self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
+        self._extensions = ExtensionRepository(self._get_conn, self._lock)
+        self._memories = MemoryRepository(self._get_conn, self._lock)
+        self._sessions = SessionRepository(self._get_conn, self._lock)
+        self._knowledge = KnowledgeRepository(self._get_conn, self._lock)
+        self._workflows = WorkflowRepository(self._get_conn, self._lock)
     
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-safe database connection (single connection mode)"""
@@ -697,470 +113,14 @@ class AdAgentStore:
             for version in range(1, self.SCHEMA_VERSION + 1):
                 if version in applied:
                     continue
-                self._apply_migration(conn, version)
+                apply_sqlite_migration(conn, version)
                 conn.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (version, datetime.now(timezone.utc).isoformat()),
                 )
             conn.commit()
 
-    @staticmethod
-    def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-        """Read legacy columns through a single migration-only helper."""
-        return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
 
-    @classmethod
-    def _add_column_if_missing(
-        cls, conn: sqlite3.Connection, table: str, column: str, definition: str,
-    ) -> None:
-        if column not in cls._table_columns(conn, table):
-            # Names and definitions are class-owned constants, never user input.
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-
-    @classmethod
-    def _apply_migration(cls, conn: sqlite3.Connection, version: int) -> None:
-        """Apply one idempotent compatibility migration.
-
-        The latest ``SCHEMA`` creates these columns for new databases. The
-        guarded ALTERs exist only for databases created by earlier revisions.
-        """
-        if version == 1:
-            cls._add_column_if_missing(conn, "campaign_state", "account_id", "TEXT")
-        elif version == 2:
-            cls._add_column_if_missing(conn, "workflows", "lease_owner", "TEXT")
-            cls._add_column_if_missing(conn, "workflows", "lease_expires_at", "TEXT")
-        elif version == 3:
-            for column, definition in {
-                "account_id": "TEXT",
-                "resource_type": "TEXT",
-                "parent_resource_type": "TEXT",
-                "parent_sequence": "INTEGER",
-                "parent_resource_id": "TEXT",
-                "provider_resource_id": "TEXT",
-                "logical_resource_id": "TEXT",
-            }.items():
-                cls._add_column_if_missing(conn, "workflow_items", column, definition)
-        elif version == 4:
-            # The table is created by the latest schema above. Keeping this
-            # migration explicit makes the schema history complete for old
-            # databases and leaves room for backend-specific migrations.
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS execution_mode_preferences (
-                    tenant_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    mode TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (tenant_id, user_id)
-                )"""
-            )
-        elif version == 5:
-            for column, definition in {
-                "input_hash": "TEXT",
-                "preview_hash": "TEXT",
-                "request_hash": "TEXT",
-                "contract_hash": "TEXT",
-            }.items():
-                cls._add_column_if_missing(conn, "approvals", column, definition)
-        elif version == 6:
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS outbox_events (
-                    event_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    event_type TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    retry_count INTEGER NOT NULL DEFAULT 0,
-                    next_retry_at TEXT,
-                    created_at TEXT NOT NULL,
-                    claimed_by TEXT,
-                    claimed_at TEXT,
-                    last_error TEXT
-                )"""
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_outbox_pending "
-                "ON outbox_events(status, next_retry_at, created_at)"
-            )
-        elif version == 7:
-            cls._add_column_if_missing(
-                conn, "write_reservations", "request_hash", "TEXT"
-            )
-        elif version == 8:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS execution_runs (
-                    run_id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    turn_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    tenant_id TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'running',
-                    execution_mode TEXT NOT NULL DEFAULT 'dry_run',
-                    workflow_id TEXT,
-                    task_id TEXT,
-                    metadata TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    finished_at TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_execution_runs_session
-                    ON execution_runs(tenant_id, user_id, session_id, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_execution_runs_status
-                    ON execution_runs(status, updated_at ASC);
-                CREATE TABLE IF NOT EXISTS execution_run_events (
-                    run_id TEXT NOT NULL,
-                    seq INTEGER NOT NULL,
-                    event_type TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (run_id, seq),
-                    FOREIGN KEY (run_id) REFERENCES execution_runs(run_id) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_execution_run_events_created
-                    ON execution_run_events(run_id, seq ASC);
-                """
-            )
-        elif version == 9:
-            cls._add_column_if_missing(conn, "sessions", "lease_owner", "TEXT")
-            cls._add_column_if_missing(conn, "sessions", "lease_expires_at", "TEXT")
-        elif version == 10:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                    schedule_id TEXT PRIMARY KEY,
-                    tenant_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    prompt TEXT NOT NULL,
-                    cron_expression TEXT NOT NULL,
-                    timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-                    status TEXT NOT NULL DEFAULT 'active',
-                    next_run_at TEXT,
-                    last_run_at TEXT,
-                    last_run_status TEXT,
-                    last_task_id TEXT,
-                    run_count INTEGER NOT NULL DEFAULT 0,
-                    success_count INTEGER NOT NULL DEFAULT 0,
-                    failure_count INTEGER NOT NULL DEFAULT 0,
-                    payload TEXT NOT NULL DEFAULT '{}',
-                    metadata TEXT NOT NULL DEFAULT '{}',
-                    lease_owner TEXT,
-                    lease_expires_at TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
-                    ON scheduled_tasks(status, next_run_at, lease_expires_at);
-                CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_scope
-                    ON scheduled_tasks(tenant_id, user_id, updated_at DESC);
-                CREATE TABLE IF NOT EXISTS scheduled_task_runs (
-                    schedule_run_id TEXT PRIMARY KEY,
-                    schedule_id TEXT NOT NULL,
-                    tenant_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    scheduled_for TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'queued',
-                    task_id TEXT,
-                    started_at TEXT,
-                    finished_at TEXT,
-                    error TEXT,
-                    result TEXT,
-                    created_at TEXT NOT NULL,
-                    UNIQUE (schedule_id, scheduled_for),
-                    FOREIGN KEY (schedule_id) REFERENCES scheduled_tasks(schedule_id) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_scope
-                    ON scheduled_task_runs(tenant_id, user_id, created_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_scheduled_task_runs_status
-                    ON scheduled_task_runs(status, created_at ASC);
-                """
-            )
-        elif version == 11:
-            cls._add_column_if_missing(conn, "memories", "memory_key", "TEXT")
-            cls._add_column_if_missing(conn, "memories", "superseded_by", "TEXT")
-        elif version == 12:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS creation_templates (
-                    template_id TEXT PRIMARY KEY,
-                    tenant_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    description TEXT NOT NULL DEFAULT '',
-                    provider TEXT NOT NULL,
-                    blueprint_id TEXT NOT NULL,
-                    blueprint_version TEXT NOT NULL,
-                    ad_format TEXT NOT NULL,
-                    scope_type TEXT NOT NULL DEFAULT 'general',
-                    account_id TEXT NOT NULL DEFAULT '',
-                    region TEXT NOT NULL DEFAULT '',
-                    tags TEXT NOT NULL DEFAULT '[]',
-                    template_values TEXT NOT NULL DEFAULT '{}',
-                    status TEXT NOT NULL DEFAULT 'active',
-                    usage_count INTEGER NOT NULL DEFAULT 0,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    last_used_at TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_creation_templates_scope
-                    ON creation_templates(tenant_id, user_id, status, updated_at DESC);
-                CREATE INDEX IF NOT EXISTS idx_creation_templates_blueprint
-                    ON creation_templates(tenant_id, user_id, blueprint_id, status);
-                """
-            )
-        elif version == 13:
-            cls._add_column_if_missing(conn, "creation_templates", "is_default", "INTEGER NOT NULL DEFAULT 0")
-            conn.execute(
-                """CREATE INDEX IF NOT EXISTS idx_creation_templates_default
-                   ON creation_templates(tenant_id, user_id, blueprint_id, scope_type, is_default)"""
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memories_key "
-                "ON memories(tenant_id, user_id, memory_key, status, updated_at DESC)"
-            )
-        elif version == 14:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS worker_instances (
-                    worker_id TEXT PRIMARY KEY,
-                    worker_kind TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'running',
-                    started_at TEXT NOT NULL,
-                    last_heartbeat_at TEXT NOT NULL,
-                    lease_expires_at TEXT,
-                    metadata TEXT NOT NULL DEFAULT '{}'
-                );
-                CREATE INDEX IF NOT EXISTS idx_worker_instances_heartbeat
-                    ON worker_instances(status, last_heartbeat_at);
-                """
-            )
-        elif version == 15:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS execution_event_repairs (
-                    repair_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    seq INTEGER NOT NULL,
-                    event_type TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'pending',
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    next_attempt_at TEXT,
-                    created_at TEXT NOT NULL,
-                    last_error TEXT,
-                    UNIQUE (run_id, seq)
-                );
-                CREATE INDEX IF NOT EXISTS idx_execution_event_repairs_due
-                    ON execution_event_repairs(status, next_attempt_at, created_at);
-                """
-            )
-        elif version == 16:
-            cls._add_column_if_missing(conn, "sessions", "tenant_id", "TEXT NOT NULL DEFAULT 'default'")
-            cls._add_column_if_missing(conn, "workflows", "tenant_id", "TEXT NOT NULL DEFAULT 'default'")
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_sessions_tenant "
-                "ON sessions(tenant_id, user_id, updated_at DESC)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_workflows_tenant "
-                "ON workflows(tenant_id, status, updated_at DESC)"
-            )
-            # Prefer an already-persisted trusted tenant marker when upgrading
-            # an older database. Rows without one remain in the explicit
-            # default tenant and must be re-associated by deployment policy.
-            for table in ("sessions", "workflows"):
-                key = "session_id" if table == "sessions" else "workflow_id"
-                for row in conn.execute(
-                    f"SELECT {key}, metadata FROM {table} WHERE tenant_id = 'default'"
-                ).fetchall():
-                    try:
-                        metadata = json.loads(row["metadata"] or "{}") or {}
-                    except (TypeError, ValueError):
-                        metadata = {}
-                    tenant_id = str(metadata.get("tenant_id") or "").strip()
-                    if tenant_id and tenant_id != "default":
-                        conn.execute(
-                            f"UPDATE {table} SET tenant_id = ? WHERE {key} = ?",
-                            (tenant_id, str(row[key])),
-                        )
-        elif version == 17:
-            # MCP control-plane tables are present in the bootstrap schema;
-            # this explicit migration records when an older database gained
-            # the externally managed Server/Tool contract.
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_mcp_servers_scope "
-                "ON mcp_servers(tenant_id, status, updated_at DESC)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_mcp_tools_server "
-                "ON mcp_tools(tenant_id, server_id, status, updated_at DESC)"
-            )
-        elif version == 18:
-            for column, definition in {
-                "intent_types": "TEXT NOT NULL DEFAULT '[]'",
-                "intent_aliases": "TEXT NOT NULL DEFAULT '[]'",
-                "skill_refs": "TEXT NOT NULL DEFAULT '[]'",
-                "action": "TEXT NOT NULL DEFAULT 'invoke'",
-                "resource_type": "TEXT NOT NULL DEFAULT 'mcp_invocation'",
-                "resource_id_field": "TEXT",
-                "readback_tool": "TEXT",
-                "idempotency_key_field": "TEXT",
-                "required_permissions": "TEXT NOT NULL DEFAULT '[]'",
-                "traits": "TEXT NOT NULL DEFAULT '[\"external\", \"mcp\"]'",
-            }.items():
-                cls._add_column_if_missing(conn, "mcp_tools", column, definition)
-        elif version == 19:
-            for column, definition in {
-                "wiki_type": "TEXT NOT NULL DEFAULT 'concept'",
-                "derived_from": "TEXT NOT NULL DEFAULT ''",
-                "raw_sha256": "TEXT NOT NULL DEFAULT ''",
-                "wikilinks": "TEXT NOT NULL DEFAULT '[]'",
-            }.items():
-                cls._add_column_if_missing(conn, "knowledge_documents", column, definition)
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS raw_knowledge_sources (
-                    source_id TEXT PRIMARY KEY,
-                    tenant_id TEXT NOT NULL,
-                    filename TEXT NOT NULL,
-                    media_type TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    sha256 TEXT NOT NULL,
-                    source_ref TEXT NOT NULL,
-                    status TEXT NOT NULL DEFAULT 'received',
-                    created_by TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    ingest_task_id TEXT,
-                    ingest_error TEXT,
-                    UNIQUE (tenant_id, sha256)
-                );
-                CREATE INDEX IF NOT EXISTS idx_raw_knowledge_sources_scope
-                    ON raw_knowledge_sources(tenant_id, status, updated_at DESC);
-                """
-            )
-        elif version == 20:
-            for column, definition in {
-                "ingest_attempts": "INTEGER NOT NULL DEFAULT 0",
-                "ingest_started_at": "TEXT",
-                "ingest_finished_at": "TEXT",
-            }.items():
-                cls._add_column_if_missing(
-                    conn, "raw_knowledge_sources", column, definition
-                )
-        elif version == 21:
-            for column, definition in {
-                "tool_call_id": "TEXT",
-                "name": "TEXT",
-                "metadata": "TEXT NOT NULL DEFAULT '{}'",
-            }.items():
-                cls._add_column_if_missing(
-                    conn, "conversation_messages", column, definition,
-                )
-        elif version == 22:
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history "
-                "ON conversation_messages(session_id, turn_id, created_at, message_id)"
-            )
-        elif version == 23:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS conversation_feedback (
-                    feedback_id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    turn_id TEXT NOT NULL,
-                    tenant_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    rating TEXT NOT NULL,
-                    submitted_at TEXT NOT NULL,
-                    UNIQUE (session_id, turn_id),
-                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS idx_conversation_feedback_scope_time
-                    ON conversation_feedback(tenant_id, user_id, submitted_at);
-                """
-            )
-            conn.execute(
-                """INSERT OR IGNORE INTO conversation_feedback
-                   (feedback_id, session_id, turn_id, tenant_id, user_id, rating, submitted_at)
-                   SELECT lower(hex(randomblob(16))), cm.session_id, cm.turn_id,
-                          s.tenant_id, s.user_id,
-                          CASE WHEN json_valid(cm.metadata)
-                               THEN json_extract(cm.metadata, '$.user_feedback.rating')
-                               ELSE NULL END,
-                          CASE WHEN json_valid(cm.metadata)
-                               THEN json_extract(cm.metadata, '$.user_feedback.submitted_at')
-                               ELSE NULL END
-                   FROM conversation_messages cm
-                   JOIN sessions s ON s.session_id = cm.session_id
-                   WHERE cm.role = 'assistant'
-                     AND CASE WHEN json_valid(cm.metadata)
-                              THEN json_extract(cm.metadata, '$.user_feedback.rating')
-                              ELSE NULL END IN ('positive', 'negative')
-                     AND CASE WHEN json_valid(cm.metadata)
-                              THEN json_extract(cm.metadata, '$.user_feedback.submitted_at')
-                              ELSE NULL END IS NOT NULL"""
-            )
-        elif version == 24:
-            for column, definition in {
-                "reason": "TEXT",
-                "review_status": "TEXT NOT NULL DEFAULT 'pending'",
-                "reviewer_id": "TEXT",
-                "reviewed_at": "TEXT",
-                "expected_behavior": "TEXT",
-            }.items():
-                cls._add_column_if_missing(
-                    conn, "conversation_feedback", column, definition,
-                )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_conversation_feedback_review "
-                "ON conversation_feedback(tenant_id, rating, review_status, submitted_at)"
-            )
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS knowledge_semantic_index_meta (
-                    scope TEXT PRIMARY KEY,
-                    fingerprint TEXT NOT NULL,
-                    dimension INTEGER NOT NULL DEFAULT 0,
-                    record_count INTEGER NOT NULL DEFAULT 0,
-                    updated_at TEXT NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS knowledge_semantic_vectors (
-                    scope TEXT NOT NULL,
-                    chunk_id TEXT NOT NULL,
-                    document_id TEXT NOT NULL,
-                    vector TEXT NOT NULL,
-                    dimension INTEGER NOT NULL,
-                    PRIMARY KEY (scope, chunk_id)
-                );
-                CREATE INDEX IF NOT EXISTS idx_knowledge_semantic_vectors_scope
-                    ON knowledge_semantic_vectors(scope, dimension);
-                """
-            )
-        elif version == 25:
-            conn.execute(
-                """UPDATE conversation_feedback
-                   SET reason = (
-                       SELECT CASE WHEN json_valid(cm.metadata)
-                                   THEN json_extract(
-                                       cm.metadata, '$.user_feedback.reason'
-                                   )
-                                   ELSE NULL END
-                       FROM conversation_messages AS cm
-                       WHERE cm.session_id = conversation_feedback.session_id
-                         AND cm.turn_id = conversation_feedback.turn_id
-                         AND cm.role = 'assistant'
-                       ORDER BY cm.created_at DESC, cm.message_id DESC
-                       LIMIT 1
-                   )
-                   WHERE reason IS NULL OR reason = ''"""
-            )
-        elif version == 26:
-            cls._add_column_if_missing(
-                conn, "conversation_feedback", "assertions", "TEXT NOT NULL DEFAULT '{}'",
-            )
-        else:
-            raise ValueError(f"Unsupported schema migration: {version}")
     
     def close(self):
         """Close database connection"""
@@ -3039,126 +1999,31 @@ class AdAgentStore:
 
     # -- Managed Agent Skills -------------------------------------------
 
-    @staticmethod
-    def _skill_row(row: Any) -> Optional[dict]:
-        if not row:
-            return None
-        value = dict(row)
-        for key in ("files", "evaluation_report", "report"):
-            raw = value.get(key)
-            if isinstance(raw, str):
-                try:
-                    value[key] = json.loads(raw or "{}")
-                except (TypeError, ValueError):
-                    value[key] = {}
-        return value
 
     def create_skill_version(
         self, version_id: str, tenant_id: str, skill_name: str,
         version: str, files: dict[str, dict[str, Any]], sha256: str,
         created_by: str, status: str = "draft",
     ) -> dict:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                """INSERT INTO skill_versions
-                   (version_id, tenant_id, skill_name, version, status, files,
-                    sha256, created_by, created_at, evaluation_status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_run')""",
-                (
-                    str(version_id), str(tenant_id), str(skill_name), str(version),
-                    str(status), json.dumps(files, ensure_ascii=False, sort_keys=True),
-                    str(sha256), str(created_by), now,
-                ),
-            )
-            conn.commit()
-            row = conn.execute(
-                "SELECT * FROM skill_versions WHERE version_id = ?",
-                (str(version_id),),
-            ).fetchone()
-            return self._skill_row(row) or {}
+        return self._extensions.create_skill_version(
+            version_id, tenant_id, skill_name, version, files, sha256, created_by, status,
+        )
 
     def get_skill_version(
         self, tenant_id: str, skill_name: str, version: Optional[str] = None,
     ) -> Optional[dict]:
-        with self._lock:
-            conn = self._get_conn()
-            if version:
-                row = conn.execute(
-                    "SELECT * FROM skill_versions WHERE tenant_id = ? "
-                    "AND skill_name = ? AND version = ?",
-                    (str(tenant_id), str(skill_name), str(version)),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    """SELECT v.* FROM skill_versions v
-                       JOIN skill_releases r ON r.version_id = v.version_id
-                       WHERE r.tenant_id = ? AND r.skill_name = ?""",
-                    (str(tenant_id), str(skill_name)),
-                ).fetchone()
-            return self._skill_row(row)
+        return self._extensions.get_skill_version(tenant_id, skill_name, version)
 
     def list_skill_versions(
         self, tenant_id: str, skill_name: Optional[str] = None,
         limit: int = 50,
     ) -> list[dict]:
-        limit = max(1, min(int(limit), 200))
-        with self._lock:
-            conn = self._get_conn()
-            if skill_name:
-                rows = conn.execute(
-                    "SELECT * FROM skill_versions WHERE tenant_id = ? "
-                    "AND skill_name = ? ORDER BY created_at DESC LIMIT ?",
-                    (str(tenant_id), str(skill_name), limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM skill_versions WHERE tenant_id = ? "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (str(tenant_id), limit),
-                ).fetchall()
-            return [self._skill_row(row) for row in rows]
+        return self._extensions.list_skill_versions(tenant_id, skill_name, limit)
 
     def publish_skill_version(
         self, tenant_id: str, skill_name: str, version: str,
     ) -> Optional[dict]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            row = conn.execute(
-                "SELECT * FROM skill_versions WHERE tenant_id = ? "
-                "AND skill_name = ? AND version = ?",
-                (str(tenant_id), str(skill_name), str(version)),
-            ).fetchone()
-            # Archived versions remain immutable and can be selected as an
-            # explicit rollback target.  The release pointer is the source of
-            # truth for what is currently active; version status alone must
-            # not make rollback impossible.
-            if not row:
-                return None
-            conn.execute(
-                "UPDATE skill_versions SET status = 'archived' WHERE tenant_id = ? "
-                "AND skill_name = ? AND status = 'published'",
-                (str(tenant_id), str(skill_name)),
-            )
-            conn.execute(
-                "UPDATE skill_versions SET status = 'published', published_at = ? "
-                "WHERE version_id = ?",
-                (now, str(row["version_id"])),
-            )
-            conn.execute(
-                "INSERT INTO skill_releases (tenant_id, skill_name, version_id, updated_at) "
-                "VALUES (?, ?, ?, ?) ON CONFLICT(tenant_id, skill_name) DO UPDATE SET "
-                "version_id = excluded.version_id, updated_at = excluded.updated_at",
-                (str(tenant_id), str(skill_name), str(row["version_id"]), now),
-            )
-            conn.commit()
-            published = conn.execute(
-                "SELECT * FROM skill_versions WHERE version_id = ?",
-                (str(row["version_id"]),),
-            ).fetchone()
-            return self._skill_row(published)
+        return self._extensions.publish_skill_version(tenant_id, skill_name, version)
 
     def unpublish_skill_version(
         self, tenant_id: str, skill_name: str, version: str,
@@ -3170,78 +2035,19 @@ class AdAgentStore:
         version check make this operation safe when an older API request tries
         to unpublish a release that has already been replaced.
         """
-        with self._lock:
-            conn = self._get_conn()
-            row = conn.execute(
-                """SELECT v.* FROM skill_versions v
-                   JOIN skill_releases r ON r.version_id = v.version_id
-                   WHERE r.tenant_id = ? AND r.skill_name = ?
-                     AND v.version = ?""",
-                (str(tenant_id), str(skill_name), str(version)),
-            ).fetchone()
-            if not row:
-                return None
-            conn.execute(
-                "DELETE FROM skill_releases WHERE tenant_id = ? AND skill_name = ?",
-                (str(tenant_id), str(skill_name)),
-            )
-            conn.execute(
-                "UPDATE skill_versions SET status = 'archived' "
-                "WHERE version_id = ? AND tenant_id = ?",
-                (str(row["version_id"]), str(tenant_id)),
-            )
-            conn.commit()
-            unpublished = conn.execute(
-                "SELECT * FROM skill_versions WHERE version_id = ?",
-                (str(row["version_id"]),),
-            ).fetchone()
-            return self._skill_row(unpublished)
+        return self._extensions.unpublish_skill_version(tenant_id, skill_name, version)
 
     def set_skill_evaluation(
         self, version_id: str, tenant_id: str, status: str, run_id: Optional[str] = None,
         report: Optional[dict] = None,
     ) -> bool:
-        with self._lock:
-            conn = self._get_conn()
-            sql = (
-                "UPDATE skill_versions SET evaluation_status = ?, "
-                "evaluation_run_id = ?, evaluation_report = ? "
-                "WHERE version_id = ? AND tenant_id = ?"
-            )
-            params = [
-                str(status), str(run_id) if run_id else None,
-                json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
-                str(version_id), str(tenant_id),
-            ]
-            # A worker from an older retry must not overwrite the current
-            # evaluation attached to this immutable version.
-            if run_id:
-                sql += " AND evaluation_run_id = ?"
-                params.append(str(run_id))
-            cursor = conn.execute(sql, params)
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._extensions.set_skill_evaluation(version_id, tenant_id, status, run_id, report)
 
     def create_skill_evaluation(
         self, run_id: str, version_id: str, tenant_id: str,
         status: str = "queued",
     ) -> dict:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                """INSERT INTO skill_evaluation_runs
-                   (run_id, version_id, tenant_id, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (str(run_id), str(version_id), str(tenant_id), str(status), now, now),
-            )
-            conn.commit()
-            row = conn.execute(
-                "SELECT * FROM skill_evaluation_runs WHERE run_id = ? "
-                "AND tenant_id = ?",
-                (str(run_id), str(tenant_id)),
-            ).fetchone()
-            return self._skill_row(row) or {}
+        return self._extensions.create_skill_evaluation(run_id, version_id, tenant_id, status)
 
     def claim_skill_evaluation(
         self, run_id: str, version_id: str, tenant_id: str,
@@ -3254,68 +2060,18 @@ class AdAgentStore:
         future MySQL/PostgreSQL backend a precise transaction contract to
         preserve.
         """
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            row = conn.execute(
-                "SELECT version_id, evaluation_status FROM skill_versions "
-                "WHERE version_id = ? AND tenant_id = ?",
-                (str(version_id), str(tenant_id)),
-            ).fetchone()
-            if not row or str(row["evaluation_status"]) in {"queued", "running"}:
-                return None
-            conn.execute(
-                "INSERT INTO skill_evaluation_runs "
-                "(run_id, version_id, tenant_id, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, 'queued', ?, ?)",
-                (str(run_id), str(version_id), str(tenant_id), now, now),
-            )
-            cursor = conn.execute(
-                "UPDATE skill_versions SET evaluation_status = 'queued', "
-                "evaluation_run_id = ?, evaluation_report = '{}' "
-                "WHERE version_id = ? AND tenant_id = ? "
-                "AND evaluation_status NOT IN ('queued', 'running')",
-                (str(run_id), str(version_id), str(tenant_id)),
-            )
-            if cursor.rowcount != 1:
-                conn.rollback()
-                return None
-            conn.commit()
-            claimed = conn.execute(
-                "SELECT * FROM skill_evaluation_runs WHERE run_id = ? "
-                "AND tenant_id = ?",
-                (str(run_id), str(tenant_id)),
-            ).fetchone()
-            return self._skill_row(claimed)
+        return self._extensions.claim_skill_evaluation(run_id, version_id, tenant_id)
 
     def get_skill_evaluation(self, run_id: str, tenant_id: str) -> Optional[dict]:
-        with self._lock:
-            row = self._get_conn().execute(
-                "SELECT * FROM skill_evaluation_runs WHERE run_id = ? "
-                "AND tenant_id = ?",
-                (str(run_id), str(tenant_id)),
-            ).fetchone()
-            return self._skill_row(row)
+        return self._extensions.get_skill_evaluation(run_id, tenant_id)
 
     def update_skill_evaluation_run(
         self, run_id: str, tenant_id: str, status: str, report: Optional[dict] = None,
         error: Optional[str] = None,
     ) -> bool:
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                "UPDATE skill_evaluation_runs SET status = ?, report = ?, error = ?, "
-                "updated_at = ? WHERE run_id = ? AND tenant_id = ?",
-                (
-                    str(status),
-                    json.dumps(report or {}, ensure_ascii=False, sort_keys=True),
-                    str(error) if error else None,
-                    datetime.now().isoformat(),
-                    str(run_id), str(tenant_id),
-                ),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._extensions.update_skill_evaluation_run(
+            run_id, tenant_id, status, report, error,
+        )
 
     def recover_stale_skill_evaluations(
         self, stale_after_seconds: float = 900.0,
@@ -3329,81 +2085,10 @@ class AdAgentStore:
         multi-process backend should preserve this atomic lease-recovery
         contract, even if it implements it with row locks or a lease table.
         """
-        try:
-            age = max(0.0, float(stale_after_seconds))
-        except (TypeError, ValueError):
-            raise ValueError("stale_after_seconds must be a non-negative number")
-        cutoff = (datetime.now() - timedelta(seconds=age)).isoformat()
-        recovered = 0
-        with self._lock:
-            conn = self._get_conn()
-            rows = conn.execute(
-                "SELECT run_id, version_id FROM skill_evaluation_runs "
-                "WHERE status IN ('queued', 'running') AND updated_at <= ?",
-                (cutoff,),
-            ).fetchall()
-            for row in rows:
-                run_id = str(row["run_id"])
-                version_id = str(row["version_id"])
-                now = datetime.now().isoformat()
-                report = {
-                    "recovered": True,
-                    "reason": "evaluation worker interrupted before completion",
-                    "recovered_at": now,
-                }
-                conn.execute("SAVEPOINT recover_skill_evaluation")
-                version_cursor = conn.execute(
-                    "UPDATE skill_versions SET evaluation_status = 'error', "
-                    "evaluation_run_id = ?, evaluation_report = ? "
-                    "WHERE version_id = ? AND evaluation_run_id = ? "
-                    "AND evaluation_status IN ('queued', 'running')",
-                    (
-                        run_id,
-                        json.dumps(report, ensure_ascii=False, sort_keys=True),
-                        version_id,
-                        run_id,
-                    ),
-                )
-                if version_cursor.rowcount != 1:
-                    conn.execute("ROLLBACK TO recover_skill_evaluation")
-                    conn.execute("RELEASE recover_skill_evaluation")
-                    continue
-                run_cursor = conn.execute(
-                    "UPDATE skill_evaluation_runs SET status = 'error', "
-                    "report = ?, error = ?, updated_at = ? "
-                    "WHERE run_id = ? AND status IN ('queued', 'running')",
-                    (
-                        json.dumps(report, ensure_ascii=False, sort_keys=True),
-                        "skill-up evaluation interrupted; retry is allowed",
-                        now,
-                        run_id,
-                    ),
-                )
-                if run_cursor.rowcount == 1 and version_cursor.rowcount == 1:
-                    conn.execute("RELEASE recover_skill_evaluation")
-                    recovered += 1
-                else:
-                    conn.execute("ROLLBACK TO recover_skill_evaluation")
-                    conn.execute("RELEASE recover_skill_evaluation")
-            conn.commit()
-        return recovered
+        return self._extensions.recover_stale_skill_evaluations(stale_after_seconds)
 
     # -- Generic Plugin package control plane ---------------------------
 
-    @staticmethod
-    def _plugin_row(row: Any) -> Optional[dict]:
-        if not row:
-            return None
-        value = dict(row)
-        for key in ("manifest", "files"):
-            raw = value.get(key)
-            if isinstance(raw, str):
-                try:
-                    value[key] = json.loads(raw or "{}")
-                except (TypeError, ValueError):
-                    value[key] = {}
-        value["signature_verified"] = bool(value.get("signature_verified"))
-        return value
 
     def create_plugin_package(
         self, package_id: str, tenant_id: str, plugin_id: str, version: str,
@@ -3411,484 +2096,89 @@ class AdAgentStore:
         signature_verified: bool, created_by: str, status: str = "validated",
     ) -> dict:
         """Persist one immutable, tenant-owned Plugin package snapshot."""
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                """INSERT INTO plugin_packages
-                   (package_id, tenant_id, plugin_id, version, manifest, files,
-                    package_digest, signature_verified, status, created_by,
-                    created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    str(package_id), str(tenant_id), str(plugin_id), str(version),
-                    json.dumps(manifest, ensure_ascii=False, sort_keys=True),
-                    json.dumps(files, ensure_ascii=False, sort_keys=True),
-                    str(package_digest), int(bool(signature_verified)), str(status),
-                    str(created_by), now, now,
-                ),
-            )
-            conn.commit()
-            row = conn.execute(
-                "SELECT * FROM plugin_packages WHERE package_id = ?",
-                (str(package_id),),
-            ).fetchone()
-            return self._plugin_row(row) or {}
+        return self._extensions.create_plugin_package(
+            package_id, tenant_id, plugin_id, version, manifest, files, package_digest,
+            signature_verified, created_by, status,
+        )
 
     def get_plugin_package(
         self, tenant_id: str, plugin_id: str, version: Optional[str] = None,
     ) -> Optional[dict]:
-        with self._lock:
-            conn = self._get_conn()
-            if version:
-                row = conn.execute(
-                    "SELECT * FROM plugin_packages WHERE tenant_id = ? "
-                    "AND plugin_id = ? AND version = ?",
-                    (str(tenant_id), str(plugin_id), str(version)),
-                ).fetchone()
-            else:
-                row = conn.execute(
-                    """SELECT p.* FROM plugin_packages p
-                       JOIN plugin_releases r ON r.package_id = p.package_id
-                       WHERE r.tenant_id = ? AND r.plugin_id = ?""",
-                    (str(tenant_id), str(plugin_id)),
-                ).fetchone()
-            return self._plugin_row(row)
+        return self._extensions.get_plugin_package(tenant_id, plugin_id, version)
 
     def list_plugin_packages(
         self, tenant_id: str, plugin_id: Optional[str] = None,
         limit: int = 50,
     ) -> list[dict]:
-        limit = max(1, min(int(limit), 200))
-        with self._lock:
-            conn = self._get_conn()
-            if plugin_id:
-                rows = conn.execute(
-                    "SELECT * FROM plugin_packages WHERE tenant_id = ? "
-                    "AND plugin_id = ? ORDER BY created_at DESC LIMIT ?",
-                    (str(tenant_id), str(plugin_id), limit),
-                ).fetchall()
-            else:
-                rows = conn.execute(
-                    "SELECT * FROM plugin_packages WHERE tenant_id = ? "
-                    "ORDER BY created_at DESC LIMIT ?",
-                    (str(tenant_id), limit),
-                ).fetchall()
-            return [self._plugin_row(row) for row in rows]
+        return self._extensions.list_plugin_packages(tenant_id, plugin_id, limit)
 
     def activate_plugin_package(
         self, tenant_id: str, plugin_id: str, version: str,
     ) -> Optional[dict]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            row = conn.execute(
-                "SELECT * FROM plugin_packages WHERE tenant_id = ? "
-                "AND plugin_id = ? AND version = ?",
-                (str(tenant_id), str(plugin_id), str(version)),
-            ).fetchone()
-            if not row or str(row["status"]) == "uninstalled":
-                return None
-            conn.execute(
-                "UPDATE plugin_packages SET status = 'inactive', updated_at = ? "
-                "WHERE tenant_id = ? AND plugin_id = ? AND status = 'active'",
-                (now, str(tenant_id), str(plugin_id)),
-            )
-            conn.execute(
-                "UPDATE plugin_packages SET status = 'active', activated_at = ?, "
-                "updated_at = ?, last_error = NULL WHERE package_id = ?",
-                (now, now, str(row["package_id"])),
-            )
-            conn.execute(
-                """INSERT INTO plugin_releases
-                   (tenant_id, plugin_id, package_id, updated_at)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(tenant_id, plugin_id) DO UPDATE SET
-                   package_id = excluded.package_id, updated_at = excluded.updated_at""",
-                (str(tenant_id), str(plugin_id), str(row["package_id"]), now),
-            )
-            conn.commit()
-            active = conn.execute(
-                "SELECT * FROM plugin_packages WHERE package_id = ?",
-                (str(row["package_id"]),),
-            ).fetchone()
-            return self._plugin_row(active)
+        return self._extensions.activate_plugin_package(tenant_id, plugin_id, version)
 
     def deactivate_plugin_package(
         self, tenant_id: str, plugin_id: str, version: str,
     ) -> Optional[dict]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            row = conn.execute(
-                """SELECT p.* FROM plugin_packages p
-                   JOIN plugin_releases r ON r.package_id = p.package_id
-                   WHERE r.tenant_id = ? AND r.plugin_id = ?
-                     AND p.version = ?""",
-                (str(tenant_id), str(plugin_id), str(version)),
-            ).fetchone()
-            if not row:
-                return None
-            conn.execute(
-                "DELETE FROM plugin_releases WHERE tenant_id = ? AND plugin_id = ?",
-                (str(tenant_id), str(plugin_id)),
-            )
-            conn.execute(
-                "UPDATE plugin_packages SET status = 'inactive', updated_at = ? "
-                "WHERE package_id = ?",
-                (now, str(row["package_id"])),
-            )
-            conn.commit()
-            updated = conn.execute(
-                "SELECT * FROM plugin_packages WHERE package_id = ?",
-                (str(row["package_id"]),),
-            ).fetchone()
-            return self._plugin_row(updated)
+        return self._extensions.deactivate_plugin_package(tenant_id, plugin_id, version)
 
     def uninstall_plugin_package(
         self, tenant_id: str, plugin_id: str, version: str,
     ) -> Optional[dict]:
         """Remove a package from the active release without deleting audit data."""
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            row = conn.execute(
-                "SELECT * FROM plugin_packages WHERE tenant_id = ? "
-                "AND plugin_id = ? AND version = ?",
-                (str(tenant_id), str(plugin_id), str(version)),
-            ).fetchone()
-            if not row or str(row["status"]) == "uninstalled":
-                return None
-            conn.execute(
-                "DELETE FROM plugin_releases WHERE tenant_id = ? AND plugin_id = ? "
-                "AND package_id = ?",
-                (str(tenant_id), str(plugin_id), str(row["package_id"])),
-            )
-            conn.execute(
-                "UPDATE plugin_packages SET status = 'uninstalled', updated_at = ? "
-                "WHERE package_id = ?",
-                (now, str(row["package_id"])),
-            )
-            conn.commit()
-            removed = conn.execute(
-                "SELECT * FROM plugin_packages WHERE package_id = ?",
-                (str(row["package_id"]),),
-            ).fetchone()
-            return self._plugin_row(removed)
+        return self._extensions.uninstall_plugin_package(tenant_id, plugin_id, version)
 
     # -- External MCP control plane -----------------------------------
 
-    @staticmethod
-    def _mcp_decode(row: Any) -> Optional[dict]:
-        if not row:
-            return None
-        value = dict(row)
-        for key in (
-            "validation_report", "input_schema", "annotations", "intent_types",
-            "intent_aliases", "skill_refs", "required_permissions", "traits",
-        ):
-            if isinstance(value.get(key), str):
-                try:
-                    value[key] = json.loads(value[key] or "{}")
-                except (TypeError, ValueError):
-                    value[key] = {} if key in {"validation_report", "input_schema", "annotations"} else []
-        for key in ("enabled",):
-            value[key] = bool(value.get(key))
-        return value
 
     def create_mcp_server(self, data: dict[str, Any]) -> dict:
         """Persist a tenant-scoped external MCP Server declaration."""
-        now = datetime.now(timezone.utc).isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            try:
-                conn.execute(
-                    """INSERT INTO mcp_servers
-                       (server_id, tenant_id, name, description, endpoint, transport,
-                        auth_type, credential_ref, auth_header, timeout_seconds, status,
-                        enabled, validation_status, validation_report, created_by,
-                        created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, 'not_run', '{}', ?, ?, ?)""",
-                    (
-                        str(data["server_id"]), str(data["tenant_id"]), str(data["name"]),
-                        str(data.get("description") or ""), str(data["endpoint"]),
-                        str(data.get("transport") or "streamable_http"),
-                        str(data.get("auth_type") or "none"), data.get("credential_ref"),
-                        str(data.get("auth_header") or "Authorization"),
-                        float(data.get("timeout_seconds") or 500.0), str(data["created_by"]),
-                        now, now,
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise PersistenceConflictError(
-                    "MCP server violates a persistence uniqueness constraint"
-                ) from exc
-            conn.commit()
-            return self._mcp_decode(conn.execute(
-                "SELECT * FROM mcp_servers WHERE server_id = ?",
-                (str(data["server_id"]),),
-            ).fetchone()) or {}
+        return self._extensions.create_mcp_server(data)
 
     def get_mcp_server(self, tenant_id: str, server_id: str) -> Optional[dict]:
-        with self._lock:
-            row = self._get_conn().execute(
-                "SELECT * FROM mcp_servers WHERE tenant_id = ? AND server_id = ?",
-                (str(tenant_id), str(server_id)),
-            ).fetchone()
-            return self._mcp_decode(row)
+        return self._extensions.get_mcp_server(tenant_id, server_id)
 
     def list_mcp_servers(self, tenant_id: str, limit: int = 50) -> list[dict]:
-        limit = max(1, min(int(limit), 200))
-        with self._lock:
-            rows = self._get_conn().execute(
-                "SELECT * FROM mcp_servers WHERE tenant_id = ? "
-                "ORDER BY updated_at DESC LIMIT ?", (str(tenant_id), limit),
-            ).fetchall()
-            return [self._mcp_decode(row) for row in rows]
+        return self._extensions.list_mcp_servers(tenant_id, limit)
 
     def update_mcp_server(self, server_id: str, tenant_id: str, data: dict[str, Any]) -> Optional[dict]:
-        allowed = {
-            "name", "description", "endpoint", "transport", "auth_type", "credential_ref",
-            "auth_header", "timeout_seconds", "status", "enabled", "validation_status",
-            "validation_report", "protocol_version", "last_checked_at", "last_error",
-        }
-        updates = {key: value for key, value in data.items() if key in allowed}
-        if not updates:
-            return self.get_mcp_server(tenant_id, server_id)
-        if "validation_report" in updates:
-            updates["validation_report"] = json.dumps(
-                updates["validation_report"] or {}, ensure_ascii=False, sort_keys=True
-            )
-        if "enabled" in updates:
-            updates["enabled"] = int(bool(updates["enabled"]))
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-        assignments = ", ".join(f"{key} = ?" for key in updates)
-        values = list(updates.values()) + [str(tenant_id), str(server_id)]
-        with self._lock:
-            conn = self._get_conn()
-            try:
-                cursor = conn.execute(
-                    f"UPDATE mcp_servers SET {assignments} WHERE tenant_id = ? AND server_id = ?",
-                    values,
-                )
-            except sqlite3.IntegrityError as exc:
-                raise PersistenceConflictError(
-                    "MCP server violates a persistence uniqueness constraint"
-                ) from exc
-            conn.commit()
-            if cursor.rowcount == 0:
-                return None
-            return self._mcp_decode(conn.execute(
-                "SELECT * FROM mcp_servers WHERE tenant_id = ? AND server_id = ?",
-                (str(tenant_id), str(server_id)),
-            ).fetchone())
+        return self._extensions.update_mcp_server(server_id, tenant_id, data)
 
-    def _mcp_tool_decode(self, row: Any) -> Optional[dict]:
-        return self._mcp_decode(row)
 
     def upsert_mcp_tool(self, data: dict[str, Any]) -> dict:
-        now = datetime.now(timezone.utc).isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            existing = conn.execute(
-                "SELECT tool_id FROM mcp_tools WHERE server_id = ? AND remote_name = ?",
-                (str(data["server_id"]), str(data["remote_name"])),
-            ).fetchone()
-            encoded_schema = json.dumps(data.get("input_schema") or {}, ensure_ascii=False, sort_keys=True)
-            encoded_annotations = json.dumps(data.get("annotations") or {}, ensure_ascii=False, sort_keys=True)
-            if existing:
-                conn.execute(
-                    """UPDATE mcp_tools SET tool_id = ?, tenant_id = ?, title = ?,
-                       description = ?, input_schema = ?, annotations = ?,
-                       validation_status = ?, updated_at = ?
-                       WHERE server_id = ? AND remote_name = ?""",
-                    (
-                        str(data["tool_id"]), str(data["tenant_id"]), str(data.get("title") or ""),
-                        str(data.get("description") or ""), encoded_schema, encoded_annotations,
-                        str(data.get("validation_status") or "pending"), now,
-                        str(data["server_id"]), str(data["remote_name"]),
-                    ),
-                )
-            else:
-                conn.execute(
-                    """INSERT INTO mcp_tools
-                    (tool_id, server_id, tenant_id, remote_name, title, description,
-                        input_schema, annotations, intent_types, intent_aliases,
-                        skill_refs, action, resource_type, resource_id_field,
-                        readback_tool, idempotency_key_field, required_permissions,
-                        traits, status, enabled, validation_status,
-                        created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                               'discovered', 0, ?, ?, ?)""",
-                    (
-                        str(data["tool_id"]), str(data["server_id"]), str(data["tenant_id"]),
-                        str(data["remote_name"]), str(data.get("title") or ""),
-                        str(data.get("description") or ""), encoded_schema, encoded_annotations,
-                        json.dumps(data.get("intent_types") or [], ensure_ascii=False),
-                        json.dumps(data.get("intent_aliases") or [], ensure_ascii=False),
-                        json.dumps(data.get("skill_refs") or [], ensure_ascii=False),
-                        str(data.get("action") or "invoke"),
-                        str(data.get("resource_type") or "mcp_invocation"),
-                        data.get("resource_id_field"), data.get("readback_tool"),
-                        data.get("idempotency_key_field"),
-                        json.dumps(data.get("required_permissions") or [], ensure_ascii=False),
-                        json.dumps(data.get("traits") or ["external", "mcp"], ensure_ascii=False),
-                        str(data.get("validation_status") or "pending"), now, now,
-                    ),
-                )
-            conn.commit()
-            return self._mcp_tool_decode(conn.execute(
-                "SELECT * FROM mcp_tools WHERE server_id = ? AND remote_name = ?",
-                (str(data["server_id"]), str(data["remote_name"])),
-            ).fetchone()) or {}
+        return self._extensions.upsert_mcp_tool(data)
 
     def list_mcp_tools(self, server_id: str, tenant_id: Optional[str] = None) -> list[dict]:
-        with self._lock:
-            if tenant_id is None:
-                rows = self._get_conn().execute(
-                    "SELECT * FROM mcp_tools WHERE server_id = ? ORDER BY remote_name",
-                    (str(server_id),),
-                ).fetchall()
-            else:
-                rows = self._get_conn().execute(
-                    "SELECT * FROM mcp_tools WHERE server_id = ? AND tenant_id = ? ORDER BY remote_name",
-                    (str(server_id), str(tenant_id)),
-                ).fetchall()
-            return [self._mcp_tool_decode(row) for row in rows]
+        return self._extensions.list_mcp_tools(server_id, tenant_id)
 
     def get_mcp_tool(self, tool_id: str, tenant_id: str) -> Optional[dict]:
-        with self._lock:
-            row = self._get_conn().execute(
-                "SELECT * FROM mcp_tools WHERE tool_id = ? AND tenant_id = ?",
-                (str(tool_id), str(tenant_id)),
-            ).fetchone()
-            return self._mcp_tool_decode(row)
+        return self._extensions.get_mcp_tool(tool_id, tenant_id)
 
     def update_mcp_tool(self, tool_id: str, tenant_id: str, data: dict[str, Any]) -> Optional[dict]:
-        allowed = {
-            "status", "enabled", "validation_status", "last_error",
-            "intent_types", "intent_aliases", "skill_refs", "action",
-            "resource_type", "resource_id_field", "readback_tool",
-            "idempotency_key_field", "required_permissions", "traits",
-        }
-        updates = {key: value for key, value in data.items() if key in allowed}
-        if not updates:
-            return self.get_mcp_tool(tool_id, tenant_id)
-        if "enabled" in updates:
-            updates["enabled"] = int(bool(updates["enabled"]))
-        for key in (
-            "intent_types", "intent_aliases", "skill_refs",
-            "required_permissions", "traits",
-        ):
-            if key in updates:
-                updates[key] = json.dumps(
-                    updates[key] or [], ensure_ascii=False, sort_keys=True
-                )
-        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-        assignments = ", ".join(f"{key} = ?" for key in updates)
-        values = list(updates.values()) + [str(tenant_id), str(tool_id)]
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                f"UPDATE mcp_tools SET {assignments} WHERE tenant_id = ? AND tool_id = ?",
-                values,
-            )
-            conn.commit()
-            if cursor.rowcount == 0:
-                return None
-            return self._mcp_tool_decode(conn.execute(
-                "SELECT * FROM mcp_tools WHERE tenant_id = ? AND tool_id = ?",
-                (str(tenant_id), str(tool_id)),
-            ).fetchone())
+        return self._extensions.update_mcp_tool(tool_id, tenant_id, data)
     
     # -- Session --
     
     # -- Agent Memory -----------------------------------------------------
 
-    @staticmethod
-    def _memory_from_row(row: Any, score: float = 0.0) -> MemoryRecord:
-        data = dict(row)
-        try:
-            tags = json.loads(data.get("tags") or "[]")
-        except (TypeError, ValueError):
-            tags = []
-        if not isinstance(tags, list):
-            tags = []
-        return MemoryRecord(
-            memory_id=str(data["memory_id"]),
-            tenant_id=str(data["tenant_id"]),
-            user_id=str(data["user_id"]),
-            kind=str(data["kind"]),
-            content=str(data["content"]),
-            source=str(data["source"]),
-            session_id=data.get("session_id"),
-            tags=tuple(str(tag) for tag in tags),
-            importance=float(data.get("importance") or 0.5),
-            confidence=float(data.get("confidence") or 1.0),
-            created_at=str(data.get("created_at") or ""),
-            updated_at=str(data.get("updated_at") or ""),
-            expires_at=data.get("expires_at"),
-            status=str(data.get("status") or "active"),
-            memory_key=data.get("memory_key"),
-            superseded_by=data.get("superseded_by"),
-            score=score,
-        )
 
     def save_memory(self, record: MemoryRecord) -> None:
         """Persist one already-policy-checked memory record."""
-        if not isinstance(record, MemoryRecord):
-            raise TypeError("record must be a MemoryRecord")
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                """INSERT OR REPLACE INTO memories
-                (memory_id, tenant_id, user_id, session_id, kind, content, source,
-                 tags, importance, confidence, created_at, updated_at, expires_at,
-                 status, memory_key, superseded_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    record.memory_id, record.tenant_id, record.user_id,
-                    record.session_id, record.kind, record.content, record.source,
-                    json.dumps(list(record.tags), ensure_ascii=False), record.importance,
-                    record.confidence, record.created_at, record.updated_at,
-                    record.expires_at, record.status,
-                    record.memory_key, record.superseded_by,
-                ),
-            )
-            conn.commit()
+        return self._memories.save_memory(record)
 
     def find_active_memory(
         self, memory_key: str, *, tenant_id: str, user_id: str,
     ) -> Optional[MemoryRecord]:
         """Find the current version of one scoped logical memory."""
-        with self._lock:
-            row = self._get_conn().execute(
-                """SELECT * FROM memories
-                   WHERE tenant_id = ? AND user_id = ? AND memory_key = ?
-                     AND status = 'active'
-                   ORDER BY updated_at DESC LIMIT 1""",
-                (str(tenant_id), str(user_id), str(memory_key)),
-            ).fetchone()
-            return self._memory_from_row(row) if row else None
+        return self._memories.find_active_memory(memory_key, tenant_id=tenant_id, user_id=user_id)
 
     def supersede_memory(
         self, memory_id: str, superseded_by: str, *, tenant_id: str, user_id: str,
     ) -> bool:
         """Close an older logical version while retaining its audit history."""
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE memories
-                   SET status = 'superseded', superseded_by = ?, updated_at = ?
-                   WHERE memory_id = ? AND tenant_id = ? AND user_id = ?
-                     AND status = 'active'""",
-                (
-                    str(superseded_by), datetime.now(timezone.utc).isoformat(),
-                    str(memory_id), str(tenant_id), str(user_id),
-                ),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._memories.supersede_memory(
+            memory_id, superseded_by, tenant_id=tenant_id, user_id=user_id,
+        )
 
     def search_memories(
         self, query: str, *, tenant_id: str, user_id: str,
@@ -3896,180 +2186,35 @@ class AdAgentStore:
         limit: int = 10,
     ) -> List[MemoryRecord]:
         """Scope memory first, then perform deterministic lexical ranking."""
-        if limit <= 0:
-            return []
-        params: list[Any] = [str(tenant_id), str(user_id)]
-        query_sql = (
-            "SELECT * FROM memories WHERE tenant_id = ? AND user_id = ? "
-            "AND status = 'active'"
+        return self._memories.search_memories(
+            query, tenant_id=tenant_id, user_id=user_id, session_id=session_id, kinds=kinds,
+            limit=limit,
         )
-        if session_id:
-            query_sql += " AND (session_id = ? OR session_id IS NULL)"
-            params.append(str(session_id))
-        normalized_kinds = [str(kind).strip().lower() for kind in (kinds or []) if str(kind).strip()]
-        if normalized_kinds:
-            placeholders = ",".join("?" for _ in normalized_kinds)
-            query_sql += f" AND kind IN ({placeholders})"
-            params.extend(normalized_kinds)
-        query_sql += " ORDER BY updated_at DESC LIMIT ?"
-        # The small candidate bound keeps SQLite recall predictable. Ranking
-        # remains backend-owned and can later become a MySQL full-text query.
-        params.append(max(20, min(200, int(limit) * 10)))
-        raw_terms = re.findall(r"[\u4e00-\u9fff]{2,}|[a-z0-9_]{2,}", str(query or "").lower())
-        terms: list[str] = []
-        for term in raw_terms:
-            terms.append(term)
-            if re.fullmatch(r"[\u4e00-\u9fff]+", term) and len(term) > 2:
-                terms.extend(term[index:index + 2] for index in range(len(term) - 1))
-        phrase = str(query or "").strip().lower()
-        ranked: list[tuple[float, MemoryRecord]] = []
-        half_life_days = {
-            "working": 2.0,
-            "episodic": 14.0,
-            "semantic": 45.0,
-            "procedural": 120.0,
-        }
-        now = datetime.now(timezone.utc)
-        with self._lock:
-            rows = self._get_conn().execute(query_sql, params).fetchall()
-        for row in rows:
-            expires_at = row["expires_at"]
-            if expires_at:
-                try:
-                    expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
-                    if expiry.tzinfo is None:
-                        expiry = expiry.replace(tzinfo=timezone.utc)
-                    if expiry <= now:
-                        continue
-                except (TypeError, ValueError, OverflowError):
-                    # Invalid expiry is safer treated as expired than recalled.
-                    continue
-            record = self._memory_from_row(row)
-            searchable = f"{record.content} {' '.join(record.tags)}".lower()
-            score = 0.0
-            if phrase and phrase in searchable:
-                score += 4.0
-            score += sum(1.0 for term in terms if term in searchable)
-            if not terms and not phrase:
-                score = 0.1
-            if score <= 0:
-                continue
-            try:
-                updated_at = datetime.fromisoformat(
-                    str(record.updated_at).replace("Z", "+00:00")
-                )
-                if updated_at.tzinfo is None:
-                    updated_at = updated_at.replace(tzinfo=timezone.utc)
-                age_days = max(0.0, (now - updated_at).total_seconds() / 86400.0)
-            except (TypeError, ValueError, OverflowError):
-                age_days = 3650.0
-            half_life = half_life_days.get(record.kind, 30.0)
-            recency = math.pow(0.5, age_days / half_life)
-            source_priority = MEMORY_SOURCE_PRIORITIES.get(record.source, 50)
-            source_weight = 0.75 + 0.25 * max(
-                0.0, min(1.0, source_priority / 100.0)
-            )
-            score = (
-                score * (0.7 + 0.3 * recency) * source_weight
-                + record.importance * 0.5
-                + record.confidence * 0.5
-            )
-            ranked.append((score, record))
-        ranked.sort(key=lambda item: (-item[0], item[1].updated_at, item[1].memory_id))
-        return [
-            MemoryRecord(**{**record.__dict__, "score": round(score, 6)})
-            for score, record in ranked[: int(limit)]
-        ]
 
     def delete_memory(self, memory_id: str, *, tenant_id: str, user_id: str) -> bool:
         """Tombstone a record; a tenant/user can never delete another scope."""
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                "UPDATE memories SET status = 'deleted', updated_at = ? "
-                "WHERE memory_id = ? AND tenant_id = ? AND user_id = ? AND status != 'deleted'",
-                (
-                    datetime.now(timezone.utc).isoformat(),
-                    str(memory_id),
-                    str(tenant_id),
-                    str(user_id),
-                ),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._memories.delete_memory(memory_id, tenant_id=tenant_id, user_id=user_id)
 
     def purge_memories(self, *, before: str, expired_before: str) -> int:
         """Bounded lifecycle cleanup for expired records and old tombstones."""
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """DELETE FROM memories
-                   WHERE (status IN ('deleted', 'superseded') AND updated_at < ?)
-                      OR (status = 'active' AND expires_at IS NOT NULL
-                          AND expires_at <= ?)""",
-                (str(before), str(expired_before)),
-            )
-            conn.commit()
-            return int(cursor.rowcount or 0)
+        return self._memories.purge_memories(before=before, expired_before=expired_before)
 
     def create_session(self, session_id: str, user_id: str, account_id: str = None, 
                        metadata: dict = None) -> None:
-        with self._lock:
-            conn = self._get_conn()
-            now = datetime.now().isoformat()
-            # Session creation is intentionally insert-once. Replacing a row
-            # would clear a cross-instance lease while another turn is using
-            # the session; metadata updates have their own method.
-            session_metadata = metadata or {}
-            tenant_id = str(session_metadata.get("tenant_id") or "default")
-            sql = """INSERT OR IGNORE INTO sessions
-                     (session_id, user_id, tenant_id, account_id, created_at, updated_at, metadata)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)"""
-            conn.execute(sql, (session_id, user_id, tenant_id, account_id, now, now,
-                               json.dumps(session_metadata)))
-            conn.commit()
+        return self._sessions.create_session(session_id, user_id, account_id, metadata)
     
     def update_session(self, session_id: str, metadata: dict = None) -> None:
-        with self._lock:
-            conn = self._get_conn()
-            sql = "UPDATE sessions SET updated_at = ?, metadata = ? WHERE session_id = ?"
-            conn.execute(sql, (datetime.now().isoformat(), json.dumps(metadata or {}), session_id))
-            conn.commit()
+        return self._sessions.update_session(session_id, metadata)
     
     def get_session(
         self, session_id: str, user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> Optional[dict]:
-        with self._lock:
-            conn = self._get_conn()
-            query = "SELECT * FROM sessions WHERE session_id = ?"
-            params: list[Any] = [session_id]
-            if user_id is not None:
-                query += " AND user_id = ?"
-                params.append(str(user_id))
-            if tenant_id is not None:
-                query += " AND tenant_id = ?"
-                params.append(str(tenant_id))
-            row = conn.execute(query, params).fetchone()
-            if row:
-                return dict(row)
-            return None
+        return self._sessions.get_session(session_id, user_id, tenant_id)
 
     def delete_session(self, session_id: str) -> bool:
         """Delete a session; SQLite foreign keys remove its local history."""
-        with self._lock:
-            conn = self._get_conn()
-            # Keep durable run/event replay data within the same privacy
-            # boundary even for databases created before the FK was added.
-            conn.execute(
-                "DELETE FROM execution_runs WHERE session_id = ?",
-                (str(session_id),),
-            )
-            cursor = conn.execute(
-                "DELETE FROM sessions WHERE session_id = ?", (str(session_id),)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._sessions.delete_session(session_id)
 
     def list_sessions(
         self, user_id: str = None, limit: int = 50,
@@ -4077,123 +2222,31 @@ class AdAgentStore:
         before_updated_at: Optional[str] = None,
         before_session_id: Optional[str] = None,
     ) -> List[dict]:
-        if (before_updated_at is None) != (before_session_id is None):
-            raise ValueError("session cursor requires updated_at and session_id")
-        with self._lock:
-            conn = self._get_conn()
-            clauses: list[str] = []
-            params: list[Any] = []
-            if user_id:
-                clauses.append("user_id = ?")
-                params.append(str(user_id))
-            if tenant_id is not None:
-                clauses.append("tenant_id = ?")
-                params.append(str(tenant_id))
-            if before_updated_at is not None:
-                clauses.append(
-                    "(updated_at < ? OR (updated_at = ? AND session_id < ?))"
-                )
-                params.extend((
-                    str(before_updated_at),
-                    str(before_updated_at),
-                    str(before_session_id),
-                ))
-            where = " WHERE " + " AND ".join(clauses) if clauses else ""
-            params.append(limit)
-            rows = conn.execute(
-                "SELECT * FROM sessions" + where
-                + " ORDER BY updated_at DESC, session_id DESC LIMIT ?", params
-            ).fetchall()
-            return [dict(r) for r in rows]
+        return self._sessions.list_sessions(
+            user_id, limit, tenant_id, before_updated_at, before_session_id,
+        )
 
     def acquire_session_lease(
         self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
     ) -> bool:
         """Atomically reserve a session across Runtime instances."""
-        if not session_id or not lease_owner or float(lease_seconds) <= 0:
-            return False
-        now = datetime.now(timezone.utc)
-        now_text = now.isoformat()
-        expires_text = (now + timedelta(seconds=float(lease_seconds))).isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE sessions
-                   SET lease_owner = ?, lease_expires_at = ?, updated_at = ?
-                   WHERE session_id = ?
-                     AND (lease_owner IS NULL OR lease_owner = ?
-                          OR lease_expires_at IS NULL OR lease_expires_at <= ?)""",
-                (
-                    str(lease_owner), expires_text, now_text, str(session_id),
-                    str(lease_owner), now_text,
-                ),
-            )
-            conn.commit()
-            return cursor.rowcount == 1
+        return self._sessions.acquire_session_lease(session_id, lease_owner, lease_seconds)
 
     def heartbeat_session_lease(
         self, session_id: str, lease_owner: str, lease_seconds: float = 300.0,
     ) -> bool:
-        if not session_id or not lease_owner or float(lease_seconds) <= 0:
-            return False
-        now = datetime.now(timezone.utc)
-        with self._lock:
-            cursor = self._get_conn().execute(
-                """UPDATE sessions SET lease_expires_at = ?, updated_at = ?
-                   WHERE session_id = ? AND lease_owner = ?""",
-                (
-                    (now + timedelta(seconds=float(lease_seconds))).isoformat(),
-                    now.isoformat(), str(session_id), str(lease_owner),
-                ),
-            )
-            self._get_conn().commit()
-            return cursor.rowcount == 1
+        return self._sessions.heartbeat_session_lease(session_id, lease_owner, lease_seconds)
 
     def release_session_lease(self, session_id: str, lease_owner: str) -> bool:
-        if not session_id or not lease_owner:
-            return False
-        with self._lock:
-            cursor = self._get_conn().execute(
-                """UPDATE sessions SET lease_owner = NULL, lease_expires_at = NULL
-                   WHERE session_id = ? AND lease_owner = ?""",
-                (str(session_id), str(lease_owner)),
-            )
-            self._get_conn().commit()
-            return cursor.rowcount == 1
+        return self._sessions.release_session_lease(session_id, lease_owner)
 
     def record_conversation_message(self, record: ConversationMessageRecord) -> None:
-        data = record.to_dict()
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                """INSERT OR REPLACE INTO conversation_messages
-                   (message_id, session_id, turn_id, role, content, created_at,
-                    tool_call_id, name, metadata)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    data["message_id"], data["session_id"], data["turn_id"],
-                    data["role"], data["content"], data["created_at"],
-                    data.get("tool_call_id"), data.get("name"),
-                    json.dumps(data.get("metadata") or {}, ensure_ascii=False),
-                ),
-            )
-            conn.commit()
+        return self._sessions.record_conversation_message(record)
 
     def list_conversation_messages(
         self, session_id: str, limit: int = 200,
     ) -> List[ConversationMessageRecord]:
-        with self._lock:
-            conn = self._get_conn()
-            rows = conn.execute(
-                """SELECT * FROM conversation_messages
-                   WHERE session_id = ?
-                   ORDER BY created_at DESC, rowid DESC LIMIT ?""",
-                (session_id, limit),
-            ).fetchall()
-            return [
-                ConversationMessageRecord.from_row(dict(row))
-                for row in reversed(rows)
-            ]
+        return self._sessions.list_conversation_messages(session_id, limit)
 
     def list_conversation_message_page(
         self,
@@ -4201,13 +2254,7 @@ class AdAgentStore:
         limit: int = 10,
         before_message_id: Optional[str] = None,
     ) -> ConversationMessagePage:
-        with self._lock:
-            return query_conversation_message_page(
-                self._get_conn(),
-                session_id,
-                limit=limit,
-                before_message_id=before_message_id,
-            )
+        return self._sessions.list_conversation_message_page(session_id, limit, before_message_id)
 
     def update_conversation_message_metadata(
         self,
@@ -4217,36 +2264,9 @@ class AdAgentStore:
         metadata: Optional[dict[str, Any]] = None,
     ) -> int:
         """Merge metadata into matching transcript rows without changing content."""
-        with self._lock:
-            conn = self._get_conn()
-            rows = conn.execute(
-                """SELECT message_id, metadata
-                   FROM conversation_messages
-                   WHERE session_id = ? AND turn_id = ? AND role = ?""",
-                (str(session_id), str(turn_id), str(role)),
-            ).fetchall()
-            if not rows:
-                return 0
-            updates = []
-            for row in rows:
-                current = row["metadata"]
-                if isinstance(current, str):
-                    try:
-                        current = json.loads(current or "{}")
-                    except (TypeError, ValueError):
-                        current = {}
-                merged = dict(current) if isinstance(current, dict) else {}
-                merged.update(dict(metadata or {}))
-                updates.append((
-                    json.dumps(merged, ensure_ascii=False, default=str),
-                    str(row["message_id"]),
-                ))
-            conn.executemany(
-                "UPDATE conversation_messages SET metadata = ? WHERE message_id = ?",
-                updates,
-            )
-            conn.commit()
-            return len(updates)
+        return self._sessions.update_conversation_message_metadata(
+            session_id, turn_id, role, metadata,
+        )
 
     def save_conversation_feedback(
         self,
@@ -4375,278 +2395,66 @@ class AdAgentStore:
 
     # -- Tenant-scoped Markdown Wiki documents -------------------------
 
-    @staticmethod
-    def _knowledge_row(row: Any) -> Optional[KnowledgeDocumentRecord]:
-        return KnowledgeDocumentRecord.from_row(dict(row)) if row else None
 
     def create_knowledge_document(self, record: KnowledgeDocumentRecord) -> KnowledgeDocumentRecord:
-        data = record.to_dict()
-        with self._lock:
-            conn = self._get_conn()
-            try:
-                conn.execute(
-                    """INSERT INTO knowledge_documents
-                       (document_id, tenant_id, title, content, platform, layer,
-                        knowledge_type, source, source_ref, version, confidence,
-                        tags, status, created_by, created_at, updated_at, published_at,
-                        wiki_type, derived_from, raw_sha256, wikilinks)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        data["document_id"], data["tenant_id"], data["title"],
-                        data["content"], data["platform"], data["layer"],
-                        data["knowledge_type"], data["source"], data["source_ref"],
-                        data["version"], data["confidence"],
-                        json.dumps(data["tags"], ensure_ascii=False), data["status"],
-                        data["created_by"], data["created_at"], data["updated_at"],
-                        data["published_at"], data["wiki_type"], data["derived_from"],
-                        data["raw_sha256"], json.dumps(data["wikilinks"], ensure_ascii=False),
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise PersistenceConflictError(
-                    "knowledge document violates a persistence constraint"
-                ) from exc
-            conn.commit()
-            return self._knowledge_row(
-                conn.execute(
-                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
-                    (data["document_id"],),
-                ).fetchone()
-            ) or record
+        return self._knowledge.create_knowledge_document(record)
 
     def update_knowledge_document(
         self, document_id: str, *, tenant_id: str, data: dict[str, Any],
     ) -> Optional[KnowledgeDocumentRecord]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE knowledge_documents
-                   SET title = ?, content = ?, platform = ?, layer = ?,
-                       knowledge_type = ?, source = ?, source_ref = ?,
-                       version = ?, confidence = ?, tags = ?, updated_at = ?,
-                       wiki_type = ?, derived_from = ?, raw_sha256 = ?, wikilinks = ?
-                   WHERE document_id = ? AND tenant_id = ? AND status = 'draft'""",
-                (
-                    data["title"], data["content"], data["platform"], data["layer"],
-                    data["knowledge_type"], data["source"], data["source_ref"],
-                    data["version"], data["confidence"],
-                    json.dumps(data["tags"], ensure_ascii=False), now,
-                    data["wiki_type"], data["derived_from"], data["raw_sha256"],
-                    json.dumps(data["wikilinks"], ensure_ascii=False),
-                    str(document_id), str(tenant_id),
-                ),
-            )
-            conn.commit()
-            if not cursor.rowcount:
-                return None
-            return self._knowledge_row(
-                conn.execute(
-                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
-                    (str(document_id),),
-                ).fetchone()
-            )
+        return self._knowledge.update_knowledge_document(
+            document_id, tenant_id=tenant_id, data=data,
+        )
 
     def delete_knowledge_document(
         self, document_id: str, *, tenant_id: str,
     ) -> Optional[KnowledgeDocumentRecord]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            existing = self._knowledge_row(conn.execute(
-                "SELECT * FROM knowledge_documents WHERE document_id = ? AND tenant_id = ?",
-                (str(document_id), str(tenant_id)),
-            ).fetchone())
-            if not existing:
-                return None
-            if existing.status == "published":
-                conn.execute(
-                    """UPDATE knowledge_documents
-                       SET status = 'deprecated', updated_at = ?
-                       WHERE document_id = ? AND tenant_id = ?""",
-                    (now, str(document_id), str(tenant_id)),
-                )
-                conn.commit()
-                return self._knowledge_row(conn.execute(
-                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
-                    (str(document_id),),
-                ).fetchone())
-            conn.execute(
-                "DELETE FROM knowledge_documents WHERE document_id = ? AND tenant_id = ?",
-                (str(document_id), str(tenant_id)),
-            )
-            conn.commit()
-            return existing
+        return self._knowledge.delete_knowledge_document(document_id, tenant_id=tenant_id)
 
     def get_knowledge_document(
         self, document_id: str, *, tenant_id: Optional[str] = None,
     ) -> Optional[KnowledgeDocumentRecord]:
-        query = "SELECT * FROM knowledge_documents WHERE document_id = ?"
-        params: list[Any] = [str(document_id)]
-        if tenant_id is not None:
-            query += " AND tenant_id = ?"
-            params.append(str(tenant_id))
-        with self._lock:
-            return self._knowledge_row(self._get_conn().execute(query, params).fetchone())
+        return self._knowledge.get_knowledge_document(document_id, tenant_id=tenant_id)
 
     def list_knowledge_documents(
         self, tenant_id: str, status: Optional[str] = None, limit: int = 100,
     ) -> list[KnowledgeDocumentRecord]:
-        limit = max(1, min(int(limit), 500))
-        query = "SELECT * FROM knowledge_documents WHERE tenant_id = ?"
-        params: list[Any] = [str(tenant_id)]
-        if status:
-            query += " AND status = ?"
-            params.append(str(status))
-        query += " ORDER BY updated_at DESC LIMIT ?"
-        params.append(limit)
-        with self._lock:
-            rows = self._get_conn().execute(query, params).fetchall()
-            return [self._knowledge_row(row) for row in rows if row]
+        return self._knowledge.list_knowledge_documents(tenant_id, status, limit)
 
     def publish_knowledge_document(
         self, document_id: str, *, tenant_id: str,
     ) -> Optional[KnowledgeDocumentRecord]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE knowledge_documents SET status = 'draft', updated_at = ?
-                   WHERE tenant_id = ? AND title = (
-                       SELECT title FROM knowledge_documents WHERE document_id = ?
-                   ) AND status = 'published' AND document_id != ?""",
-                (now, str(tenant_id), str(document_id), str(document_id)),
-            )
-            cursor = conn.execute(
-                """UPDATE knowledge_documents
-                   SET status = 'published', published_at = ?, updated_at = ?
-                   WHERE document_id = ? AND tenant_id = ? AND status != 'deprecated'""",
-                (now, now, str(document_id), str(tenant_id)),
-            )
-            conn.commit()
-            if not cursor.rowcount:
-                return None
-            return self._knowledge_row(
-                conn.execute(
-                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
-                    (str(document_id),),
-                ).fetchone()
-            )
+        return self._knowledge.publish_knowledge_document(document_id, tenant_id=tenant_id)
 
     def unpublish_knowledge_document(
         self, document_id: str, *, tenant_id: str,
     ) -> Optional[KnowledgeDocumentRecord]:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE knowledge_documents
-                   SET status = 'draft', updated_at = ?
-                   WHERE document_id = ? AND tenant_id = ? AND status = 'published'""",
-                (now, str(document_id), str(tenant_id)),
-            )
-            conn.commit()
-            if not cursor.rowcount:
-                return None
-            return self._knowledge_row(
-                conn.execute(
-                    "SELECT * FROM knowledge_documents WHERE document_id = ?",
-                    (str(document_id),),
-                ).fetchone()
-            )
+        return self._knowledge.unpublish_knowledge_document(document_id, tenant_id=tenant_id)
 
     # -- Immutable raw Wiki sources -----------------------------------
 
-    @staticmethod
-    def _raw_knowledge_row(row: Any) -> Optional[RawKnowledgeSourceRecord]:
-        return RawKnowledgeSourceRecord.from_row(dict(row)) if row else None
 
     def create_raw_knowledge_source(
         self, record: RawKnowledgeSourceRecord,
     ) -> RawKnowledgeSourceRecord:
-        data = record.to_dict()
-        with self._lock:
-            conn = self._get_conn()
-            try:
-                conn.execute(
-                    """INSERT INTO raw_knowledge_sources
-                       (source_id, tenant_id, filename, media_type, content, sha256,
-                       source_ref, status, created_by, created_at, updated_at,
-                        ingest_task_id, ingest_error, ingest_attempts,
-                        ingest_started_at, ingest_finished_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        data["source_id"], data["tenant_id"], data["filename"],
-                        data["media_type"], data["content"], data["sha256"],
-                        data["source_ref"], data["status"], data["created_by"],
-                        data["created_at"], data["updated_at"],
-                        data["ingest_task_id"], data["ingest_error"],
-                        data["ingest_attempts"], data["ingest_started_at"],
-                        data["ingest_finished_at"],
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                raise PersistenceConflictError(
-                    "raw knowledge source violates a persistence constraint"
-                ) from exc
-            conn.commit()
-            return self._raw_knowledge_row(
-                conn.execute(
-                    "SELECT * FROM raw_knowledge_sources WHERE source_id = ?",
-                    (data["source_id"],),
-                ).fetchone()
-            ) or record
+        return self._knowledge.create_raw_knowledge_source(record)
 
     def get_raw_knowledge_source(
         self, source_id: str, *, tenant_id: Optional[str] = None,
     ) -> Optional[RawKnowledgeSourceRecord]:
-        query = "SELECT * FROM raw_knowledge_sources WHERE source_id = ?"
-        params: list[Any] = [str(source_id)]
-        if tenant_id is not None:
-            query += " AND tenant_id = ?"
-            params.append(str(tenant_id))
-        with self._lock:
-            return self._raw_knowledge_row(
-                self._get_conn().execute(query, params).fetchone()
-            )
+        return self._knowledge.get_raw_knowledge_source(source_id, tenant_id=tenant_id)
 
     def find_raw_knowledge_source_by_hash(
         self, tenant_id: str, sha256: str,
     ) -> Optional[RawKnowledgeSourceRecord]:
-        with self._lock:
-            return self._raw_knowledge_row(self._get_conn().execute(
-                """SELECT * FROM raw_knowledge_sources
-                   WHERE tenant_id = ? AND sha256 = ?""",
-                (str(tenant_id), str(sha256)),
-            ).fetchone())
+        return self._knowledge.find_raw_knowledge_source_by_hash(tenant_id, sha256)
 
     def update_raw_knowledge_source(
         self, source_id: str, *, tenant_id: str, data: dict[str, Any],
     ) -> Optional[RawKnowledgeSourceRecord]:
-        allowed = {
-            "status", "updated_at", "ingest_task_id", "ingest_error",
-            "ingest_started_at", "ingest_finished_at",
-        }
-        if set(data) - allowed:
-            raise ValueError("raw knowledge source content is immutable")
-        assignments = ", ".join(f"{key} = ?" for key in data)
-        if not assignments:
-            return self.get_raw_knowledge_source(source_id, tenant_id=tenant_id)
-        values = [data[key] for key in data] + [str(source_id), str(tenant_id)]
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                "UPDATE raw_knowledge_sources SET " + assignments +
-                " WHERE source_id = ? AND tenant_id = ?",
-                values,
-            )
-            conn.commit()
-            if not cursor.rowcount:
-                return None
-            return self._raw_knowledge_row(conn.execute(
-                "SELECT * FROM raw_knowledge_sources WHERE source_id = ?",
-                (str(source_id),),
-            ).fetchone())
+        return self._knowledge.update_raw_knowledge_source(
+            source_id, tenant_id=tenant_id, data=data,
+        )
 
     def claim_raw_knowledge_source(
         self,
@@ -4657,33 +2465,9 @@ class AdAgentStore:
         started_at: str,
     ) -> Optional[RawKnowledgeSourceRecord]:
         """Atomically move a retryable raw source into ``ingesting``."""
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE raw_knowledge_sources
-                   SET status = 'ingesting',
-                       updated_at = ?,
-                       ingest_task_id = ?,
-                       ingest_error = NULL,
-                       ingest_attempts = ingest_attempts + 1,
-                       ingest_started_at = ?,
-                       ingest_finished_at = NULL
-                   WHERE source_id = ? AND tenant_id = ?
-                     AND status IN ('received', 'failed')""",
-                (
-                    str(started_at), task_id, str(started_at),
-                    str(source_id), str(tenant_id),
-                ),
-            )
-            conn.commit()
-            if not cursor.rowcount:
-                return None
-            return self._raw_knowledge_row(
-                conn.execute(
-                    "SELECT * FROM raw_knowledge_sources WHERE source_id = ?",
-                    (str(source_id),),
-                ).fetchone()
-            )
+        return self._knowledge.claim_raw_knowledge_source(
+            source_id, tenant_id=tenant_id, task_id=task_id, started_at=started_at,
+        )
 
     def recover_stale_raw_knowledge_sources(
         self,
@@ -4693,156 +2477,27 @@ class AdAgentStore:
         recovered_at: Optional[str] = None,
     ) -> int:
         """Release raw sources whose ingest worker stopped heartbeating."""
-        if recovered_at:
-            current = datetime.fromisoformat(str(recovered_at))
-            if current.tzinfo is None:
-                current = current.replace(tzinfo=timezone.utc)
-        else:
-            current = datetime.now(timezone.utc)
-        cutoff = (
-            current - timedelta(seconds=max(1.0, float(stale_after_seconds)))
-        ).isoformat()
-        finished_at = current.isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE raw_knowledge_sources
-                   SET status = 'failed',
-                       updated_at = ?,
-                       ingest_finished_at = ?,
-                       ingest_error = 'worker lease expired; retry required'
-                   WHERE tenant_id = ?
-                     AND status = 'ingesting'
-                     AND ingest_started_at IS NOT NULL
-                     AND ingest_started_at < ?""",
-                (finished_at, finished_at, str(tenant_id), cutoff),
-            )
-            conn.commit()
-            return int(cursor.rowcount or 0)
+        return self._knowledge.recover_stale_raw_knowledge_sources(
+            tenant_id=tenant_id, stale_after_seconds=stale_after_seconds,
+            recovered_at=recovered_at,
+        )
 
     def list_raw_knowledge_sources(
         self, tenant_id: str, status: Optional[str] = None,
         limit: int = 100,
     ) -> list[RawKnowledgeSourceRecord]:
-        limit = max(1, min(int(limit), 500))
-        query = "SELECT * FROM raw_knowledge_sources WHERE tenant_id = ?"
-        params: list[Any] = [str(tenant_id)]
-        if status:
-            query += " AND status = ?"
-            params.append(str(status))
-        query += " ORDER BY updated_at DESC LIMIT ?"
-        params.append(limit)
-        with self._lock:
-            rows = self._get_conn().execute(query, params).fetchall()
-            return [self._raw_knowledge_row(row) for row in rows if row]
+        return self._knowledge.list_raw_knowledge_sources(tenant_id, status, limit)
 
-    def _ensure_knowledge_search_index(self, conn: Any) -> bool:
-        if not isinstance(conn, sqlite3.Connection):
-            return False
-        try:
-            existing = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'knowledge_search_fts'"
-            ).fetchone()
-            if existing:
-                columns = {
-                    str(row[1])
-                    for row in conn.execute("PRAGMA table_info(knowledge_search_fts)").fetchall()
-                }
-                if not {"category", "subcategory"}.issubset(columns):
-                    conn.execute("DROP TABLE knowledge_search_fts")
-            conn.execute(
-                """CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_search_fts
-                   USING fts5(
-                       scope UNINDEXED,
-                       chunk_id UNINDEXED,
-                       document_id UNINDEXED,
-                       title,
-                       heading_path,
-                       tags,
-                       category,
-                       subcategory,
-                       content,
-                       platform UNINDEXED,
-                       knowledge_type UNINDEXED,
-                       status UNINDEXED,
-                       confidence UNINDEXED
-                   )"""
-            )
-        except sqlite3.OperationalError:
-            return False
-        return True
 
     def rebuild_knowledge_search_index(
         self, chunks: list[dict[str, Any]], *, scope: str,
     ) -> bool:
-        normalized_scope = str(scope or "").strip()
-        if not normalized_scope:
-            return False
-        with self._lock:
-            conn = self._get_conn()
-            if not self._ensure_knowledge_search_index(conn):
-                return False
-            conn.execute(
-                "DELETE FROM knowledge_search_fts WHERE scope = ?",
-                (normalized_scope,),
-            )
-            rows = []
-            for chunk in chunks or []:
-                if not isinstance(chunk, dict):
-                    continue
-                rows.append(
-                    (
-                        normalized_scope,
-                        str(chunk.get("chunk_id") or ""),
-                        str(chunk.get("document_id") or ""),
-                        str(chunk.get("title") or ""),
-                        str(chunk.get("heading_path") or ""),
-                        str(chunk.get("tags") or ""),
-                        str(chunk.get("category") or ""),
-                        str(chunk.get("subcategory") or ""),
-                        str(chunk.get("content") or ""),
-                        str(chunk.get("platform") or "all"),
-                        str(chunk.get("knowledge_type") or "general"),
-                        str(chunk.get("status") or "published"),
-                        float(chunk.get("confidence") or 0.0),
-                    )
-                )
-            if rows:
-                conn.executemany(
-                    """INSERT INTO knowledge_search_fts
-                       (scope, chunk_id, document_id, title, heading_path,
-                        tags, category, subcategory, content, platform,
-                        knowledge_type, status, confidence)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    rows,
-                )
-            conn.commit()
-        return True
+        return self._knowledge.rebuild_knowledge_search_index(chunks, scope=scope)
 
     def search_knowledge_search_index(
         self, query: str, *, scopes: list[str], limit: int = 100,
     ) -> list[dict[str, Any]]:
-        safe_query = str(query or "").strip()
-        normalized_scopes = [str(scope).strip() for scope in scopes if str(scope).strip()]
-        if not safe_query or not normalized_scopes or limit <= 0:
-            return []
-        with self._lock:
-            conn = self._get_conn()
-            if not self._ensure_knowledge_search_index(conn):
-                return []
-            placeholders = ",".join("?" for _ in normalized_scopes)
-            rows = conn.execute(
-                f"""SELECT scope, chunk_id, document_id,
-                           bm25(knowledge_search_fts, 8.0, 5.0, 3.0, 3.0, 3.0, 1.0) AS rank
-                    FROM knowledge_search_fts
-                    WHERE knowledge_search_fts MATCH ?
-                      AND scope IN ({placeholders})
-                      AND status = 'published'
-                    ORDER BY rank ASC
-                    LIMIT ?""",
-                [safe_query, *normalized_scopes, max(1, min(int(limit), 500))],
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return self._knowledge.search_knowledge_search_index(query, scopes=scopes, limit=limit)
 
     # -- Campaign creation templates ------------------------------------
 
@@ -5053,109 +2708,29 @@ class AdAgentStore:
     # -- Campaign State --
     
     def save_campaign(self, record: CampaignRecord) -> None:
-        d = record.to_dict()
-        with self._lock:
-            conn = self._get_conn()
-            sql = """INSERT INTO campaign_state 
-                     (id, platform, campaign_id, name, status, objective, budget_daily,
-                      created_at, updated_at, metadata, account_id)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                     ON CONFLICT(id) DO UPDATE SET
-                       name = excluded.name,
-                       status = excluded.status,
-                       objective = excluded.objective,
-                       budget_daily = excluded.budget_daily,
-                       updated_at = excluded.updated_at,
-                       metadata = excluded.metadata,
-                       account_id = excluded.account_id"""
-            conn.execute(sql, (
-                d['id'], d['platform'], d['campaign_id'], d['name'], d['status'],
-                d['objective'], d['budget_daily'], d['created_at'], d['updated_at'],
-                d['metadata'], d['account_id']
-            ))
-            conn.commit()
+        return self._workflows.save_campaign(record)
     
     def get_campaign(
         self, platform: str, campaign_id: str, account_id: str = None
     ) -> Optional[CampaignRecord]:
-        with self._lock:
-            # Campaign IDs are only unique inside a provider account.  A
-            # caller that omits account scope must not receive the newest
-            # record from an arbitrary account.
-            if account_id is None or account_id == "":
-                return None
-            conn = self._get_conn()
-            row = conn.execute(
-                "SELECT * FROM campaign_state WHERE platform = ? AND campaign_id = ? "
-                "AND account_id = ?",
-                (platform, campaign_id, account_id),
-            ).fetchone()
-            return CampaignRecord.from_row(dict(row)) if row else None
+        return self._workflows.get_campaign(platform, campaign_id, account_id)
     
     def list_campaigns(
         self, platform: str = None, status: str = None, limit: int = 100,
         account_id: str = None,
     ) -> List[CampaignRecord]:
-        with self._lock:
-            conn = self._get_conn()
-            clauses = []
-            params: list[Any] = []
-            if platform:
-                clauses.append("platform = ?")
-                params.append(platform)
-            if status:
-                clauses.append("status = ?")
-                params.append(status)
-            if account_id:
-                clauses.append("account_id = ?")
-                params.append(account_id)
-            where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-            rows = conn.execute(
-                f"SELECT * FROM campaign_state{where} ORDER BY updated_at DESC LIMIT ?",
-                (*params, limit),
-            ).fetchall()
-            return [CampaignRecord.from_row(dict(r)) for r in rows]
+        return self._workflows.list_campaigns(platform, status, limit, account_id)
     
     def update_campaign_status(
         self, platform: str, campaign_id: str, status: str,
         account_id: str = None,
     ) -> bool:
-        with self._lock:
-            conn = self._get_conn()
-            if account_id is None:
-                cursor = conn.execute(
-                    "UPDATE campaign_state SET status = ?, updated_at = ? "
-                    "WHERE platform = ? AND campaign_id = ? AND account_id IS NULL",
-                    (status, datetime.now().isoformat(), platform, campaign_id),
-                )
-            else:
-                cursor = conn.execute(
-                    "UPDATE campaign_state SET status = ?, updated_at = ? "
-                    "WHERE platform = ? AND campaign_id = ? AND account_id = ?",
-                    (status, datetime.now().isoformat(), platform, campaign_id, account_id),
-                )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.update_campaign_status(platform, campaign_id, status, account_id)
     
     def delete_campaign(
         self, platform: str, campaign_id: str, account_id: str = None,
     ) -> bool:
-        with self._lock:
-            conn = self._get_conn()
-            if account_id is None:
-                cursor = conn.execute(
-                    "DELETE FROM campaign_state WHERE platform = ? AND campaign_id = ? "
-                    "AND account_id IS NULL",
-                    (platform, campaign_id),
-                )
-            else:
-                cursor = conn.execute(
-                    "DELETE FROM campaign_state WHERE platform = ? AND campaign_id = ? "
-                    "AND account_id = ?",
-                    (platform, campaign_id, account_id),
-                )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.delete_campaign(platform, campaign_id, account_id)
 
     # -- Workflow audit / compensation ---------------------------------
 
@@ -5164,211 +2739,42 @@ class AdAgentStore:
         execution_mode: str, status: str = "planned", metadata: dict = None,
         emit_outbox: bool = True,
     ) -> None:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            session_row = conn.execute(
-                "SELECT tenant_id, metadata FROM sessions WHERE session_id = ?",
-                (str(session_id),),
-            ).fetchone()
-            tenant_id = str(session_row["tenant_id"] or "default") if session_row else "default"
-            conn.execute(
-                """INSERT INTO workflows
-                   (workflow_id, session_id, tenant_id, intent_type, execution_mode, status,
-                    metadata, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (workflow_id, session_id, tenant_id, intent_type, execution_mode, status,
-                json.dumps(metadata or {}), now, now),
-            )
-            if emit_outbox:
-                conn.execute(
-                    """INSERT OR IGNORE INTO outbox_events
-                       (event_id, run_id, event_type, payload, created_at)
-                       VALUES (?, ?, 'workflow.created', ?, ?)""",
-                    (
-                        str(uuid.uuid4()), str(workflow_id),
-                        json.dumps({
-                            "workflow_id": str(workflow_id),
-                            "status": str(status),
-                            "metadata": metadata or {},
-                        }, ensure_ascii=False, sort_keys=True, default=str),
-                        now,
-                    ),
-                )
-            conn.commit()
+        return self._workflows.create_workflow(
+            workflow_id, session_id, intent_type, execution_mode, status, metadata,
+            emit_outbox,
+        )
 
     def update_workflow(
         self, workflow_id: str, status: str, metadata: dict = None,
         emit_outbox: bool = True,
     ) -> bool:
-        with self._lock:
-            conn = self._get_conn()
-            current = conn.execute(
-                "SELECT status FROM workflows WHERE workflow_id = ?",
-                (workflow_id,),
-            ).fetchone()
-            if not current:
-                return False
-            current_status = str(current[0])
-            if status not in WORKFLOW_TRANSITIONS.get(current_status, set()):
-                logger.warning(
-                    "Rejected invalid workflow transition %s -> %s for %s",
-                    current_status, status, workflow_id,
-                )
-                return False
-            # Only an actively running workflow owns an execution lease.
-            # Awaiting confirmation and recovery-required are waiting states;
-            # a recovery worker must acquire a fresh lease through the atomic
-            # claim method instead of inheriting the old Runtime lease.
-            lease_sql = ", lease_owner = NULL, lease_expires_at = NULL" if status != "running" else ""
-            merged_metadata = {}
-            if metadata is None:
-                existing = conn.execute(
-                    "SELECT metadata FROM workflows WHERE workflow_id = ?",
-                    (workflow_id,),
-                ).fetchone()
-                if existing and existing[0]:
-                    try:
-                        merged_metadata = json.loads(existing[0]) or {}
-                    except (TypeError, ValueError):
-                        merged_metadata = {}
-                cursor = conn.execute(
-                    f"UPDATE workflows SET status = ?, updated_at = ?{lease_sql} WHERE workflow_id = ?",
-                    (status, datetime.now().isoformat(), workflow_id),
-                )
-            else:
-                existing = conn.execute(
-                    "SELECT metadata FROM workflows WHERE workflow_id = ?",
-                    (workflow_id,),
-                ).fetchone()
-                merged_metadata = {}
-                if existing and existing[0]:
-                    try:
-                        merged_metadata = json.loads(existing[0]) or {}
-                    except (TypeError, ValueError):
-                        merged_metadata = {}
-                merged_metadata.update(metadata)
-                cursor = conn.execute(
-                    f"""UPDATE workflows SET status = ?, metadata = ?, updated_at = ?{lease_sql}
-                       WHERE workflow_id = ?""",
-                    (status, json.dumps(merged_metadata), datetime.now().isoformat(), workflow_id),
-                )
-            if cursor.rowcount > 0 and emit_outbox:
-                conn.execute(
-                    """INSERT INTO outbox_events
-                       (event_id, run_id, event_type, payload, created_at)
-                       VALUES (?, ?, 'workflow.updated', ?, ?)""",
-                    (
-                        str(uuid.uuid4()), str(workflow_id),
-                        json.dumps({
-                            "workflow_id": str(workflow_id),
-                            "from_status": current_status,
-                            "status": str(status),
-                            "metadata": merged_metadata,
-                        }, ensure_ascii=False, sort_keys=True, default=str),
-                        datetime.now().isoformat(),
-                    ),
-                )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.update_workflow(workflow_id, status, metadata, emit_outbox)
 
     def heartbeat_workflow(
         self, workflow_id: str, lease_owner: str, lease_seconds: float = 300.0,
     ) -> bool:
         """Refresh an active workflow lease without changing its state."""
-        if not lease_owner or float(lease_seconds) <= 0:
-            return False
-        now = datetime.now()
-        now_iso = now.isoformat()
-        expires_iso = (now + timedelta(seconds=float(lease_seconds))).isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE workflows
-                   SET updated_at = ?, lease_owner = ?, lease_expires_at = ?
-                   WHERE workflow_id = ? AND status = 'running'
-                     AND (lease_owner IS NULL OR lease_owner = ?)""",
-                (now_iso, str(lease_owner), expires_iso, workflow_id, str(lease_owner)),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.heartbeat_workflow(workflow_id, lease_owner, lease_seconds)
 
     def recover_stale_workflow(
         self, workflow_id: str, stale_after_seconds: float = 300.0,
         metadata: dict = None,
     ) -> bool:
         """Atomically move an expired running workflow into recovery."""
-        if float(stale_after_seconds) <= 0:
-            return False
-        now = datetime.now()
-        cutoff_iso = (now - timedelta(seconds=float(stale_after_seconds))).isoformat()
-        now_iso = now.isoformat()
-        merged_metadata = dict(metadata or {})
-        merged_metadata.setdefault("recovery_reason", "stale_running_workflow")
-        merged_metadata.setdefault("recovery_detected_at", now_iso)
-        with self._lock:
-            conn = self._get_conn()
-            current = conn.execute(
-                "SELECT metadata FROM workflows WHERE workflow_id = ? AND status = 'running' "
-                "AND updated_at <= ?",
-                (workflow_id, cutoff_iso),
-            ).fetchone()
-            if not current:
-                return False
-            try:
-                existing = json.loads(current[0] or "{}") or {}
-            except (TypeError, ValueError):
-                existing = {}
-            existing.update(merged_metadata)
-            cursor = conn.execute(
-                """UPDATE workflows SET status = 'recovery_required', metadata = ?,
-                   updated_at = ?, lease_owner = NULL, lease_expires_at = NULL
-                   WHERE workflow_id = ? AND status = 'running' AND updated_at <= ?""",
-                (json.dumps(existing), now_iso, workflow_id, cutoff_iso),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.recover_stale_workflow(workflow_id, stale_after_seconds, metadata)
 
     def claim_workflow_recovery(
         self, workflow_id: str, lease_owner: str,
         stale_after_seconds: float = 300.0, lease_seconds: float = 300.0,
     ) -> bool:
         """Atomically claim a stale/runnable workflow for one recovery worker."""
-        if not lease_owner or float(lease_seconds) <= 0:
-            return False
-        now = datetime.now()
-        now_iso = now.isoformat()
-        expires_iso = (now + timedelta(seconds=float(lease_seconds))).isoformat()
-        cutoff_iso = (now - timedelta(seconds=float(stale_after_seconds))).isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE workflows SET status = 'recovery_required',
-                   updated_at = ?, lease_owner = ?, lease_expires_at = ?
-                   WHERE workflow_id = ?
-                     AND ((status = 'running' AND updated_at <= ?)
-                       OR status IN ('failed', 'partially_failed', 'blocked', 'recovery_required'))
-                     AND (lease_owner IS NULL OR lease_owner = ?
-                       OR lease_expires_at IS NULL OR lease_expires_at <= ?)""",
-                (
-                    now_iso, str(lease_owner), expires_iso, workflow_id,
-                    cutoff_iso, str(lease_owner), now_iso,
-                ),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.claim_workflow_recovery(
+            workflow_id, lease_owner, stale_after_seconds, lease_seconds,
+        )
 
     def release_workflow_lease(self, workflow_id: str, lease_owner: str) -> bool:
         """Release only the lease owned by the calling recovery worker."""
-        with self._lock:
-            conn = self._get_conn()
-            cursor = conn.execute(
-                """UPDATE workflows SET lease_owner = NULL, lease_expires_at = NULL
-                   WHERE workflow_id = ? AND lease_owner = ?""",
-                (workflow_id, str(lease_owner)),
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.release_workflow_lease(workflow_id, lease_owner)
 
     def add_workflow_item(
         self, item_id: str, workflow_id: str, sequence: int, platform: str,
@@ -5383,27 +2789,12 @@ class AdAgentStore:
         account_id: Optional[str] = None,
         parent_resource_type: Optional[str] = None,
     ) -> None:
-        now = datetime.now().isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                """INSERT INTO workflow_items
-                   (item_id, workflow_id, sequence, platform, account_id, tool_name, status,
-                   input_data, output_data, error, compensation_required,
-                   resource_type, parent_resource_type, parent_sequence, parent_resource_id,
-                   provider_resource_id, logical_resource_id,
-                   created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    item_id, workflow_id, sequence, platform, account_id, tool_name, status,
-                    json.dumps(input_data or {}),
-                    json.dumps(output_data) if output_data is not None else None,
-                    error, int(compensation_required), resource_type, parent_resource_type,
-                    parent_sequence, parent_resource_id, provider_resource_id,
-                    logical_resource_id, now, now,
-                ),
-            )
-            conn.commit()
+        return self._workflows.add_workflow_item(
+            item_id, workflow_id, sequence, platform, tool_name, status, input_data,
+            output_data, error, compensation_required, resource_type, parent_sequence,
+            parent_resource_id, provider_resource_id, logical_resource_id, account_id,
+            parent_resource_type,
+        )
 
     def upsert_workflow_item(
         self, item_id: str, workflow_id: str, sequence: int, platform: str,
@@ -5425,108 +2816,21 @@ class AdAgentStore:
         and could overwrite a newer state, so the update path validates the
         state transition and only changes the mutable checkpoint fields.
         """
-        with self._lock:
-            conn = self._get_conn()
-            current = conn.execute(
-                "SELECT status FROM workflow_items WHERE workflow_id = ? AND sequence = ?",
-                (workflow_id, int(sequence)),
-            ).fetchone()
-            if not current:
-                now = datetime.now().isoformat()
-                conn.execute(
-                    """INSERT INTO workflow_items
-                       (item_id, workflow_id, sequence, platform, account_id, tool_name, status,
-                       input_data, output_data, error, compensation_required,
-                       resource_type, parent_resource_type, parent_sequence, parent_resource_id,
-                       provider_resource_id, logical_resource_id,
-                       created_at, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        item_id, workflow_id, int(sequence), platform, account_id,
-                        tool_name, status, json.dumps(input_data or {}),
-                        json.dumps(output_data) if output_data is not None else None,
-                        error, int(compensation_required), resource_type, parent_resource_type,
-                        parent_sequence, parent_resource_id, provider_resource_id,
-                        logical_resource_id, now, now,
-                    ),
-                )
-            else:
-                current_status = str(current[0])
-                if status not in WORKFLOW_ITEM_TRANSITIONS.get(current_status, set()):
-                    raise ValueError(
-                        f"cannot advance workflow item {sequence} from "
-                        f"{current_status} to {status}"
-                    )
-                assignments = [
-                    "status = ?", "input_data = ?", "output_data = ?",
-                    "error = ?", "compensation_required = ?",
-                    "account_id = ?", "resource_type = ?",
-                    "parent_resource_type = ?", "parent_sequence = ?",
-                    "parent_resource_id = ?", "provider_resource_id = ?",
-                    "logical_resource_id = ?", "updated_at = ?",
-                ]
-                conn.execute(
-                    f"UPDATE workflow_items SET {', '.join(assignments)} "
-                    "WHERE workflow_id = ? AND sequence = ?",
-                    (
-                        status, json.dumps(input_data or {}),
-                        json.dumps(output_data) if output_data is not None else None,
-                        error, int(compensation_required), account_id, resource_type,
-                        parent_resource_type,
-                        parent_sequence, parent_resource_id, provider_resource_id,
-                        logical_resource_id, datetime.now().isoformat(),
-                        workflow_id, int(sequence),
-                    ),
-                )
-            conn.commit()
+        return self._workflows.upsert_workflow_item(
+            item_id, workflow_id, sequence, platform, tool_name, status, input_data,
+            output_data, error, compensation_required, resource_type, parent_sequence,
+            parent_resource_id, provider_resource_id, logical_resource_id, account_id,
+            parent_resource_type,
+        )
 
     def get_workflow(
         self, workflow_id: str, user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
     ) -> Optional[dict]:
-        with self._lock:
-            conn = self._get_conn()
-            query = (
-                "SELECT w.* FROM workflows w JOIN sessions s "
-                "ON s.session_id = w.session_id WHERE w.workflow_id = ?"
-            )
-            params: list[Any] = [workflow_id]
-            if user_id is not None:
-                query += " AND s.user_id = ?"
-                params.append(str(user_id))
-            if tenant_id is not None:
-                query += " AND w.tenant_id = ?"
-                params.append(str(tenant_id))
-            row = conn.execute(query, params).fetchone()
-            if not row:
-                return None
-            result = dict(row)
-            try:
-                result["metadata"] = json.loads(result.get("metadata") or "{}")
-            except (TypeError, ValueError):
-                result["metadata"] = {}
-            result["items"] = self.list_workflow_items(workflow_id)
-            return result
+        return self._workflows.get_workflow(workflow_id, user_id, tenant_id)
 
     def list_workflow_items(self, workflow_id: str) -> list[dict]:
-        with self._lock:
-            conn = self._get_conn()
-            rows = conn.execute(
-                "SELECT * FROM workflow_items WHERE workflow_id = ? ORDER BY sequence ASC",
-                (workflow_id,),
-            ).fetchall()
-            items = []
-            for row in rows:
-                item = dict(row)
-                for key in ("input_data", "output_data"):
-                    if item.get(key):
-                        try:
-                            item[key] = json.loads(item[key])
-                        except (TypeError, ValueError):
-                            item[key] = {}
-                item["compensation_required"] = bool(item.get("compensation_required"))
-                items.append(item)
-        return items
+        return self._workflows.list_workflow_items(workflow_id)
 
     def update_workflow_item(
         self,
@@ -5545,49 +2849,11 @@ class AdAgentStore:
         parent_resource_type: Optional[str] = None,
     ) -> bool:
         """Update one item during an explicitly verified reconciliation."""
-        assignments = ["status = ?", "error = ?", "updated_at = ?"]
-        values: list[Any] = [status, error, datetime.now().isoformat()]
-        if output_data is not None:
-            assignments.append("output_data = ?")
-            values.append(json.dumps(output_data))
-        if compensation_required is not None:
-            assignments.append("compensation_required = ?")
-            values.append(int(compensation_required))
-        for column, value in (
-            ("account_id", account_id),
-            ("resource_type", resource_type),
-            ("parent_resource_type", parent_resource_type),
-            ("parent_sequence", parent_sequence),
-            ("parent_resource_id", parent_resource_id),
-            ("provider_resource_id", provider_resource_id),
-            ("logical_resource_id", logical_resource_id),
-        ):
-            if value is not None:
-                assignments.append(f"{column} = ?")
-                values.append(value)
-        values.extend([workflow_id, int(sequence)])
-        with self._lock:
-            conn = self._get_conn()
-            current = conn.execute(
-                "SELECT status FROM workflow_items WHERE workflow_id = ? AND sequence = ?",
-                (workflow_id, int(sequence)),
-            ).fetchone()
-            if not current:
-                return False
-            current_status = str(current[0])
-            if status not in WORKFLOW_ITEM_TRANSITIONS.get(current_status, set()):
-                logger.warning(
-                    "Rejected invalid workflow item transition %s -> %s for %s/%s",
-                    current_status, status, workflow_id, sequence,
-                )
-                return False
-            cursor = conn.execute(
-                f"UPDATE workflow_items SET {', '.join(assignments)} "
-                "WHERE workflow_id = ? AND sequence = ?",
-                values,
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+        return self._workflows.update_workflow_item(
+            workflow_id, sequence, status, output_data, error, compensation_required,
+            resource_type, parent_sequence, parent_resource_id, provider_resource_id,
+            logical_resource_id, account_id, parent_resource_type,
+        )
 
     def list_resumable_workflows(
         self, user_id: Optional[str] = None, limit: int = 50,
@@ -5595,56 +2861,11 @@ class AdAgentStore:
         tenant_id: Optional[str] = None,
     ) -> list[dict]:
         """List non-terminal workflows for an operator/recovery worker."""
-        statuses = ["failed", "partially_failed", "recovery_required", "blocked"]
-        if include_stale_running:
-            statuses.append("running")
-        placeholders = ",".join("?" for _ in statuses)
-        params: list[Any] = list(statuses)
-        query = (
-            "SELECT w.* FROM workflows w JOIN sessions s "
-            f"ON s.session_id = w.session_id WHERE w.status IN ({placeholders})"
+        return self._workflows.list_resumable_workflows(
+            user_id, limit, include_stale_running, stale_after_seconds, tenant_id,
         )
-        if user_id is not None:
-            query += " AND s.user_id = ?"
-            params.append(str(user_id))
-        if tenant_id is not None:
-            query += " AND w.tenant_id = ?"
-            params.append(str(tenant_id))
-        query += " ORDER BY w.updated_at ASC LIMIT ?"
-        params.append(max(1, int(limit)))
-        with self._lock:
-            rows = self._get_conn().execute(query, params).fetchall()
-            result = []
-            for row in rows:
-                item = dict(row)
-                if item.get("status") == "running" and include_stale_running:
-                    try:
-                        age = time.time() - datetime.fromisoformat(
-                            str(item.get("updated_at"))
-                        ).timestamp()
-                    except (TypeError, ValueError, OverflowError):
-                        age = 0
-                    if age < float(stale_after_seconds):
-                        continue
-                try:
-                    item["metadata"] = json.loads(item.get("metadata") or "{}")
-                except (TypeError, ValueError):
-                    item["metadata"] = {}
-                result.append(item)
-            return result
 
     def mark_workflow_items_for_compensation(
         self, workflow_id: str, sequences: list[int]
     ) -> None:
-        if not sequences:
-            return
-        placeholders = ",".join("?" for _ in sequences)
-        with self._lock:
-            conn = self._get_conn()
-            conn.execute(
-                f"""UPDATE workflow_items SET compensation_required = 1,
-                       updated_at = ? WHERE workflow_id = ?
-                       AND sequence IN ({placeholders})""",
-                (datetime.now().isoformat(), workflow_id, *sequences),
-            )
-            conn.commit()
+        return self._workflows.mark_workflow_items_for_compensation(workflow_id, sequences)
